@@ -2,7 +2,15 @@
 
 > **For agentic workers:** two tasks. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Let AP bring the vendor credit balances that still sit in QuickBooks Online into `vendor_credits`, during the transition period before QBO is retired.
+**Goal:** Before QuickBooks is retired, (a) bring the *still-spendable* vendor credit balances into `vendor_credits`, and (b) make sure the *full* credit history stays retrievable for audit.
+
+**Scope decision (user, 2026-08-24).** The first instinct was to import all 461 QBO vendor credits so no history is lost when QB dies. Measurement changed that:
+
+- `vendor_credits` is not an archive — it is the ledger `payment_execute` spends from. Importing all 461 as usable credit would create **2.66M of spendable balance that QBO already consumed**. Importing them as `exhausted` avoids that, but still demands vendor mappings for **73** vendors (71 unmatched + 2 ambiguous), many long dead, just to satisfy a NOT NULL column.
+- **The history is already inside EPMS.** `qbo_vendor_credits` lives in the same Postgres, carries the raw QBO payload including the `LinkedTxn` that proves each application, and is backed up with everything else. It is a snapshot, not a live proxy — decommissioning QB does not empty it.
+- `QboMirrorPage` **already** browses, paginates, searches by name/doc-number, and opens a detail modal with lines and attachments for all 461.
+
+So: import the 18 spendable ones, and close the two real archive gaps — there is no export, and nothing says this table is the permanent record once QB is gone. **Do not build a second browse page.**
 
 **This is deliberately disposable.** QuickBooks is being decommissioned; once the balances are across, this tool is dead code to be deleted. Every design choice below is made on that basis:
 
@@ -156,3 +164,30 @@ One table, ~14 rows. Columns: **QBO vendor · credits · total · currency · EP
 - Run a QBO **FULL RELOAD** first — the import reads whatever the mirror currently holds and stamps each row with the run it came from.
 - **After cutover, vendor credits are applied only in EPMS. Nobody applies one inside QBO.** Two independently-decrementing ledgers double-spend. Drift detection *detects* violations; it cannot prevent them. Agree this with whoever still works in QBO before importing.
 - **When QuickBooks is retired, delete this tool**: `crud/vendor_credit_import.py`, `schemas/vendor_credit_import.py`, `api/v1/vendor_credit_import.py`, its router registration, the two frontend files, and the route. It leaves no schema behind by design.
+
+---
+
+## Task 3 — make the existing mirror a usable archive
+
+**Files:** `finance-api/app/api/v1/qbo.py`, `finance/src/pages/finance/QboMirrorPage.tsx`.
+
+`QboMirrorPage` already browses, searches and drills into all 461 vendor credits. Two gaps make it unusable *as an archive*:
+
+1. **No export.** Grep for `export` in that page returns only the TypeScript keyword; there is no CSV endpoint in `qbo.py` either. An auditor cannot take the record away.
+2. **Nothing says it is the record.** After QB is switched off this reads like a stale sync cache someone may clean up.
+
+- [ ] Add a CSV export for the browsed entity — `GET /qbo/{entity}/export` streaming the same rows the table shows, honouring the active search. Reuse the entity resolution already in `qbo.py`; do not special-case vendor credits.
+- [ ] Add an Export button beside Search on the page.
+- [ ] Add one line under the Vendor Credits tab header stating this is the permanent record of QuickBooks vendor credits, retained after QuickBooks is retired, and that `balance` is the unapplied remainder — `0.00` means the credit was fully applied inside QuickBooks.
+- [ ] Gate the export the same way the rest of `qbo.py` is gated. Do not widen access.
+
+Tests: one asserting the export returns the same row count as the list endpoint for `vendor-credits`, and one asserting a search term narrows both identically.
+
+## Done criteria (updated)
+
+- [ ] The 18 spendable credits import correctly; nothing else is written to `vendor_credits`
+- [ ] `tests/test_vendor_credit_import.py` passes in full
+- [ ] `tests/test_vendor_credit.py` and `tests/test_vendor_credit_netting.py` unchanged
+- [ ] finance tsc back at its measured baseline
+- [ ] No migration was added
+- [ ] The mirror exports all 461 rows and says what it is
