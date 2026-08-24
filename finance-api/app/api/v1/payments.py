@@ -17,6 +17,7 @@ from app.crud import payment as payment_crud
 from app.crud import payment_batch as batch_crud
 from app.crud import payment_execute
 from app.crud.payment_execute import PaymentPermissionError
+from app.crud.remittance import applied_credit_notes_by_payment
 from app.models.mirrors import ExpenseClaim
 from app.models.payment_batch import PaymentBatch, PaymentBatchLine
 from app.models.remittance import SENT
@@ -109,6 +110,14 @@ async def _remittance_status(db: AsyncSession, records: list) -> dict[uuid.UUID,
     return {r.id: ("sent" if str(r.id) in sent else "not_sent") for r in records}
 
 
+def _credit_notes_out(notes: list) -> list[dict]:
+    """AppliedCreditNote dataclasses -> plain dicts, so they slot straight
+    into a PaymentResponse.model_dump()-shaped dict without relying on
+    pydantic's attribute-introspection for a nested list."""
+    return [{"vendor_credit_number": n.vendor_credit_number,
+             "applied_amount": n.applied_amount} for n in notes]
+
+
 async def _payee_names(db: AsyncSession, records: list) -> dict[uuid.UUID, str]:
     """Vendor name for vendor payments (already on the record); the claimant's
     name for claim payments, which carry no vendor columns at all."""
@@ -140,11 +149,17 @@ async def list_payments(
         db, page=page, page_size=page_size, **filters.model_dump())
     status_by_id = await _remittance_status(db, items)
     payee_by_id = await _payee_names(db, items)
+    # Batch-loaded once for the whole page, not per row — the payments
+    # drawer is fed straight from this list response (never GET
+    # /payments/{id}), so this is the only place a page read populates
+    # credit_notes.
+    notes_by_payment = await applied_credit_notes_by_payment(db, [r.id for r in items])
     out = []
     for r in items:
         d = PaymentResponse.model_validate(r).model_dump()
         d["payee_name"] = payee_by_id.get(r.id) or None
         d["remittance_status"] = status_by_id.get(r.id)
+        d["credit_notes"] = _credit_notes_out(notes_by_payment.get(r.id, []))
         out.append(d)
     return PaymentListResponse(items=out, total=total)
 
@@ -383,4 +398,7 @@ async def get_payment(payment_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     p = await payment_crud.get_by_id(db, payment_id)
     if not p:
         raise HTTPException(status_code=404, detail="Payment record not found")
-    return p
+    notes_by_payment = await applied_credit_notes_by_payment(db, [p.id])
+    d = PaymentResponse.model_validate(p).model_dump()
+    d["credit_notes"] = _credit_notes_out(notes_by_payment.get(p.id, []))
+    return d

@@ -85,6 +85,10 @@ export const vendorCreditsService = {
 export interface CreditSuggestion {
   credit_id: string
   credit_number: string
+  /** The vendor's own credit-note number (e.g. "11DJ-MFHX-N4JG") — internal
+   * UI shows both this and credit_number: AP needs credit_number to find the
+   * record here, and vendor_credit_number to talk to the vendor about it. */
+  vendor_credit_number: string
   credit_date: string
   /** Decimal-as-string — Number() before arithmetic. */
   remaining: string

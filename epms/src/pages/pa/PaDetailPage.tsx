@@ -303,6 +303,11 @@ function ProcessModal({ paId, paNumber, currency, amount, busy, error, onConfirm
                                  return next
                                })} />
                         <span className="font-mono">{c.credit_number}</span>
+                        {/* The vendor's own credit-note number — AP needs
+                            both: credit_number to find the record here,
+                            vendor_credit_number to talk to the vendor about
+                            it. */}
+                        <span className="font-mono text-neutral-400">{c.vendor_credit_number}</span>
                         <span className="text-neutral-400">{formatDate(c.credit_date)}</span>
                         {/* The recomputed take, never c.apply: deselecting one
                             credit reshuffles what every later credit

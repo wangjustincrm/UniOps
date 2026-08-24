@@ -776,7 +776,8 @@ async def test_suggest_returns_the_fifo_plan(client, db_session):
     db_session.add(pa)
     db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("30.00"),
                            total_amount=Decimal("30.00"),
-                           remaining_amount=Decimal("30.00")))
+                           remaining_amount=Decimal("30.00"),
+                           vendor_credit_number="11DJ-MFHX-N4JG"))
     await db_session.flush()
 
     r = await client.get("/finance/v1/vendor-credits/suggest",
@@ -789,6 +790,11 @@ async def test_suggest_returns_the_fifo_plan(client, db_session):
     assert body["net"] == "70.00"
     assert len(body["suggested"]) == 1
     assert body["suggested"][0]["apply"] == "30.00"
+    # The VENDOR's own credit-note number must come back — it is the only
+    # identifier AP can use to talk to the vendor about this suggestion, and
+    # is distinct from our internal credit_number (also asserted below).
+    assert body["suggested"][0]["vendor_credit_number"] == "11DJ-MFHX-N4JG"
+    assert body["suggested"][0]["credit_number"] != "11DJ-MFHX-N4JG"
 
 
 @pytest.mark.anyio
@@ -1199,16 +1205,25 @@ def test_remittance_row_explains_a_netted_line():
     # (see tests/test_remittance.py's calls) — added here per the brief's own
     # fallback instruction rather than changing render()'s signature. render()
     # also returns (subject, html), not html alone; unpacked accordingly.
-    from app.crud.remittance import GroupLine, PayeeGroup
+    from app.crud.remittance import AppliedCreditNote, GroupLine, PayeeGroup
     from app.services import remittance_template
 
     group = PayeeGroup(
         recipient_kind="vendor", party_id=uuid.uuid4(), party_name="ULINE",
         email="ap@uline.test", currency="CAD",
         lines=[
+            # A payment can net MORE than one credit note — both of the
+            # vendor's own numbers must appear, each with its own amount,
+            # never just a total.
             GroupLine(vendor_inv_no="INV-1", doc_number="PA-1",
                       payment_date=date(2026, 8, 7), amount=Decimal("70.00"),
-                      credit_applied=Decimal("30.00"), gross=Decimal("100.00")),
+                      credit_applied=Decimal("30.00"), gross=Decimal("100.00"),
+                      credit_notes=[
+                          AppliedCreditNote(vendor_credit_number="11DJ-MFHX-N4JG",
+                                             applied_amount=Decimal("18.00")),
+                          AppliedCreditNote(vendor_credit_number="22KP-ZZZZ-Q9XX",
+                                             applied_amount=Decimal("12.00")),
+                      ]),
             GroupLine(vendor_inv_no="INV-2", doc_number="PA-2",
                       payment_date=date(2026, 8, 7), amount=Decimal("50.00")),
         ],
@@ -1218,6 +1233,34 @@ def test_remittance_row_explains_a_netted_line():
         group, company_name="CRM", reference="REF-1", payment_method="bank_transfer",
         template={}, logo_data_url=None)
 
-    assert "less credits" in html          # the netted line explains itself
     assert "100.00" in html and "70.00" in html
-    assert html.count("less credits") == 1  # the ordinary line is unchanged
+    # Both applied credit notes are named by the VENDOR's own number — never
+    # our internal credit_number, which means nothing to them.
+    assert "11DJ-MFHX-N4JG" in html
+    assert "22KP-ZZZZ-Q9XX" in html
+    assert "18.00" in html and "12.00" in html
+    assert html.count("less credit") == 2  # one line per applied credit note
+    assert "less credits" not in html      # the old bare-total line is gone
+
+
+def test_remittance_row_without_credits_has_no_credit_note_markup():
+    """An ordinary payment (no vendor credit) must still render exactly as
+    before — no credit-note line, no stray markup from the new branch."""
+    from app.crud.remittance import GroupLine, PayeeGroup
+    from app.services import remittance_template
+
+    group = PayeeGroup(
+        recipient_kind="vendor", party_id=uuid.uuid4(), party_name="ULINE",
+        email="ap@uline.test", currency="CAD",
+        lines=[
+            GroupLine(vendor_inv_no="INV-1", doc_number="PA-1",
+                      payment_date=date(2026, 8, 7), amount=Decimal("50.00")),
+        ],
+        total=Decimal("50.00"),
+    )
+    _, html = remittance_template.render(
+        group, company_name="CRM", reference="REF-1", payment_method="bank_transfer",
+        template={}, logo_data_url=None)
+
+    assert "50.00" in html
+    assert "less credit" not in html

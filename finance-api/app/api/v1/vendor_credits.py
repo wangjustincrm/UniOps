@@ -130,6 +130,7 @@ async def suggest_credits(user: CurrentUser,
         suggested=[
             CreditSuggestion(
                 credit_id=c.id, credit_number=c.credit_number,
+                vendor_credit_number=c.vendor_credit_number,
                 credit_date=c.credit_date, remaining=c.remaining_amount, apply=take,
             )
             for c, take in picks

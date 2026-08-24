@@ -76,6 +76,10 @@ class VendorCreditListResponse(BaseModel):
 class CreditSuggestion(BaseModel):
     credit_id: uuid.UUID
     credit_number: str
+    # The vendor's own credit-note number (e.g. "11DJ-MFHX-N4JG") — internal
+    # UI shows both this and credit_number, since AP needs credit_number to
+    # find the record here and vendor_credit_number to talk to the vendor.
+    vendor_credit_number: str
     credit_date: date
     remaining: Decimal
     apply: Decimal

@@ -43,6 +43,10 @@ interface PaymentRow {
    * none was (which is every payment before Phase B, and every expense-claim
    * payment). */
   credit_applied: string
+  /** Which credit note(s) made up credit_applied — the vendor's own number
+   * plus what THAT note contributed. A payment can net more than one; empty
+   * whenever credit_applied is "0.00". */
+  credit_notes: { vendor_credit_number: string; applied_amount: string }[]
   currency: string
   status: string
   batch_id: string | null
@@ -604,6 +608,19 @@ function PaymentDetailModal({ row, onClose }: { row: PaymentRow; onClose: () => 
             )} · {row.payment_date}
             {row.batch_id && <span className="ml-1 text-neutral-400">· part of a batch</span>}
           </p>
+          {/* The table column stays a single netted figure; this is the one
+              place that names which credit note(s) made it up — never just
+              the total, since a payment can net more than one. */}
+          {row.credit_notes && row.credit_notes.length > 0 && (
+            <ul className="mt-1 space-y-0.5 text-sm text-neutral-500">
+              {row.credit_notes.map((cn, i) => (
+                <li key={i}>
+                  Vendor credit <span className="font-mono">{cn.vendor_credit_number}</span>
+                  {' '}<span className="font-mono">{fmtMoney(cn.applied_amount, row.currency)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       }
     />

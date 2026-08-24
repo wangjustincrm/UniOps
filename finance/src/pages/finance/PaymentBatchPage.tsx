@@ -488,6 +488,11 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
                                   <input type="checkbox" checked={!off.has(c.credit_id)}
                                          onChange={() => toggleCredit(ln.doc_id, c.credit_id)} />
                                   <span className="font-mono">{c.credit_number}</span>
+                                  {/* The vendor's own credit-note number — AP
+                                      needs both: credit_number to find the
+                                      record here, vendor_credit_number to
+                                      talk to the vendor about it. */}
+                                  <span className="font-mono text-neutral-400">{c.vendor_credit_number}</span>
                                   <span className="text-neutral-400">{c.credit_date}</span>
                                   {/* The recomputed take, never c.apply — a
                                       deselection reshuffles what every later
