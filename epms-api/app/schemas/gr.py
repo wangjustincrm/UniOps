@@ -12,6 +12,11 @@ PHYSICAL_TYPES = {1, 2, 3, 5}   # Raw Materials, Consumables, Spare Parts, Fixed
 # pair was spelled out inline in api/v1/gr.py while the PR form only asked type
 # 4 for a completion date, so type 6 silently had no date to work from.
 SERVICE_TYPES = {4, 6}
+# GRs in these states never represent received goods. Anything asking "has this
+# PO actually received anything?" must exclude them — invoice auto-attach
+# (crud.invoice._discover_grs_for_allocations) and the receipt-evidence test
+# (crud.po.po_has_receipt_evidence) both read this set.
+DEAD_GR_STATUSES = ("cancelled", "rejected")
 GR_STATUSES = {"pending_ack", "collection_pending", "collected", "confirmed", "discrepancy", "rejected", "cancelled"}
 # A GR in one of these statuses does not discharge the obligation to receive —
 # the requester still has to produce a good one, so the due-date sweep keeps
