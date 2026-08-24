@@ -237,7 +237,20 @@ async def update(
     return po
 
 
-# ── Imported-PO buyer details (NC mirror, status='issued' only) ───────────────
+# ── Imported-PO buyer details (NC mirror, any status) ────────────────────────
+
+async def has_any_invoice(db: AsyncSession, po_id: uuid.UUID) -> bool:
+    """True once ANY invoice points at this PO.
+
+    The same broad definition the NC writer freezes a PO on (`_po_consumed`) and
+    the full reload preserves on: draft, matched, partially_paid or paid alike.
+    A PO the accounts-payable flow has started measuring against is one whose
+    header money must stop moving, whatever stage that flow has reached.
+    """
+    row = await db.execute(select(Invoice.id).where(Invoice.po_id == po_id).limit(1))
+    return row.scalar_one_or_none() is not None
+
+
 
 async def update_imported_details(
     db: AsyncSession,
