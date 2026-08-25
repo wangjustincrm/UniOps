@@ -41,7 +41,7 @@
 
 关掉所有 Claude Code 会话与编辑器, 迁移期间只在笔记本上操作。
 
-- [ ] **Step 2: 固化当前 dev 栈的真实挂载拓扑**
+- [x] **Step 2: 固化当前 dev 栈的真实挂载拓扑**
 
 最关键的一步。当前栈的源码来自 5 棵不同的树, **没有任何 compose 文件记录这个组合**。
 
@@ -59,7 +59,7 @@ cat db-snapshots/dev-stack-topology-20260825.txt
 `uniops-delegation` / `uniops-nc-po-edit` / `uniops` 六个来源, 且每个服务除 `/app` 外还有
 `/packages/authz` 或 `/packages/shell` 的挂载。
 
-- [ ] **Step 3: 记录未 push 的 commit 基线**
+- [x] **Step 3: 记录未 push 的 commit 基线**
 
 ```bash
 cd /c/Project/uniops
@@ -76,7 +76,7 @@ head -5 db-snapshots/unpushed-baseline-20260825.txt
 
 预期: `17` / `2` / `1` / `62`。数字不同说明有会话动过, 先查清再继续。
 
-- [ ] **Step 4: 记录测试套件的失败基线(大小写敏感问题的唯一探针)**
+- [x] **Step 4: 记录测试套件的失败基线(大小写敏感问题的唯一探针)**
 
 Linux 区分大小写而 NTFS 不区分, 可能有"引用了错误大小写却一直没暴露"的代码。
 迁移后要用同一套测试比对失败**集合**(只比数字会误判):
@@ -221,7 +221,7 @@ docker exec uniops-test_postgres psql -U epms -tAc "show synchronous_commit; sho
 
 预期: `off` 与 `2GB`。
 
-- [ ] **Step 5: 加 MailHog 服务**
+- [x] **Step 5: 加 MailHog 服务**
 
 在 `docker-compose.dev.yml` 的 `services:` 末尾加:
 
@@ -268,7 +268,7 @@ PYCHK
 
 预期: 恰好两行, `epms-api` 与 `identity-api`, 都是 `mailhog`。
 
-- [ ] **Step 6: 7 个前端加 allowedHosts 并关掉 usePolling**
+- [x] **Step 6: 7 个前端加 allowedHosts 并关掉 usePolling**
 
 `usePolling: true` 是为 Windows bind mount 开的, 实测让**每个前端常驻占 12% CPU**
 (7 个 ≈ 1 整核/栈, 4 套栈 ≈ 4 核纯浪费)。Linux 原生 inotify 不需要它。
@@ -285,7 +285,7 @@ server: {
 `portal/vite.config.ts` 现在是单行写法 `server: { port: 5174, watch: { usePolling: true } }`,
 改成 `server: { port: 5174, allowedHosts: true, watch: { usePolling: process.env.VITE_POLL === '1' } }`。
 
-- [ ] **Step 7: 验证 7 个前端都改到了**
+- [x] **Step 7: 验证 7 个前端都改到了**
 
 ```bash
 cd /c/Project/uniops
@@ -296,7 +296,7 @@ echo "残留写死 usePolling: true(必须为 0): $(grep -l 'usePolling: true' *
 
 预期: `7` / `7` / `0`。
 
-- [ ] **Step 8:(可选)写 5 树拓扑 override**
+- [x] **Step 8:(可选)写 5 树拓扑 override**
 
 **这一步不是迁移的必要条件, 默认可以跳过。**
 
@@ -476,7 +476,7 @@ export MSYS_NO_PATHCONV=1
 
 ---
 
-### Task 4: 服务器 — 装 Ubuntu 与基础环境 ✅ 已完成 2026-08-25
+### Task 4: 服务器 — 装 Ubuntu 与基础环境 ✅ 全部完成 2026-08-25
 
 **实际环境**(与初版设计的差异已在此更正):
 
@@ -607,11 +607,31 @@ chmod 600 ~/.ssh/authorized_keys
 **★ 先验证 key 能登录, 再关密码登录** —— 顺序反了会把自己锁在外面。
 笔记本上另开窗口测试 `ssh crmadmin@10.10.50.64 "hostname"`, **成功之后**再:
 
-```bash
-sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sudo systemctl restart ssh
-sudo sshd -T | grep -i passwordauthentication      # 预期 no
+**★ 改主文件是没用的 —— 实测踩到。** Ubuntu Server 的 `/etc/ssh/sshd_config` 顶部有
+`Include /etc/ssh/sshd_config.d/*.conf`, 而 cloud-init 在那里放了 `50-cloud-init.conf`,
+内容就是 `PasswordAuthentication yes`。**OpenSSH 取第一个出现的值**, include 在最前面,
+所以主文件里改的那行**根本轮不到**:
+
 ```
+/etc/ssh/sshd_config:57:                      PasswordAuthentication no    ← sed 改成功了
+/etc/ssh/sshd_config.d/50-cloud-init.conf:1:  PasswordAuthentication yes   ← 这个赢
+```
+
+正确改法是加一个**排序更靠前**的文件盖住它(不要去改 cloud-init 那个, 它可能被重新生成):
+
+```bash
+sudo tee /etc/ssh/sshd_config.d/00-uniops-hardening.conf > /dev/null <<'EOF'
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+EOF
+sudo systemctl restart ssh
+sudo sshd -T | grep -iE "passwordauthentication|kbdinteractive"     # 两个都要是 no
+```
+
+`KbdInteractiveAuthentication` 也要关 —— 只关前者的话, 某些 PAM 配置下还能走键盘交互绕回密码。
+
+**验证必须查 `sshd -T`(生效值), 不能 grep 配置文件** —— 这正是"命令跑对了却没生效"的典型:
+只看 sed 没报错就以为关掉了, 等于留了个密码登录的口子还自以为安全。
 
 (改的时候**保持一个已连上的 SSH 窗口别关**, 配错了还能补救。)
 
@@ -640,10 +660,27 @@ sudo ufw status numbered
 - [ ] **Step 8: 从笔记本一次性收尾验证**
 
 ```bash
-ssh crmadmin@10.10.50.64 "hostname; docker ps; df -h /var/lib/docker | tail -1; sysctl -n fs.inotify.max_user_watches; ls -ld /srv/uniops"
+ssh -o BatchMode=yes crmadmin@10.10.50.64 "hostname; id; docker ps; df -h /var/lib/docker | tail -1; sysctl -n fs.inotify.max_user_watches; ls -ld /srv/uniops; free -g | head -2; nproc"
 ```
 
-一条命令把所有关键项验一遍。
+`BatchMode=yes` 禁止一切交互提示 —— 能成功就证明是**纯 key 认证**, 而不是"其实弹了密码框"。
+
+**2026-08-25 实测结果(全部通过)**:
+
+| 项 | 实测 |
+|---|---|
+| 主机名 / IP | `uniops-dev` / `10.10.50.64` 静态 |
+| 组 | `999(docker)` + `1001(uniops)` |
+| **非交互 SSH 下 `docker ps` 免 sudo 可用** | ✅ 这正是 Docker Desktop 做不到的事 |
+| `/var/lib/docker` | `ubuntu--vg-docker--lv` 393 G(已用 260 K) |
+| `/srv/uniops` | `drwxrwsr-x root uniops`(setgid) |
+| inotify watches | 524288 |
+| 内存 / CPU | 47 GB(可用 46) / 12 核 |
+| ufw | active, 16 条规则; 开启后 SSH 仍通 |
+| 密码登录 | 已关(`sshd -T` 正面确认) |
+
+**注意**: 非交互 SSH 里跑 `sudo` 会失败(`a terminal is required`), 需要 `ssh -t` 并仍会提示输密码。
+服务器侧的 sudo 步骤在交互会话里跑最顺。
 
 
 ### Task 5: 传输
