@@ -1,4 +1,7 @@
 """QuickBooks Online mirror API — sync trigger/status + browse. Auth via CurrentUser."""
+import csv
+import io
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal
@@ -176,13 +179,13 @@ def _resolve(entity: str):
     return _ENTITIES[entity]
 
 
-@router.get("/{entity}")
-async def browse(entity: str, user: CurrentUser, db: AsyncSession = Depends(get_db),
-                 page: int = 1, page_size: int = 50,
-                 date_from: str | None = None, date_to: str | None = None, q: str | None = None):
-    model, _ = _resolve(entity)
-    page = max(page, 1)
-    page_size = min(max(page_size, 1), 200)
+def _filters(model, date_from: str | None, date_to: str | None, q: str | None) -> list:
+    """The browse filter set, shared with the CSV export.
+
+    Extracted rather than duplicated so the export cannot drift from what the
+    operator is looking at: an export that quietly ignored the search box would
+    hand an auditor a different population than the screen showed.
+    """
     conds = []
     if hasattr(model, "deleted_at"):
         conds.append(model.deleted_at.is_(None))
@@ -198,6 +201,57 @@ async def browse(entity: str, user: CurrentUser, db: AsyncSession = Depends(get_
                 ors.append(getattr(model, attr).ilike(like))
         if ors:
             conds.append(or_(*ors))
+    return conds
+
+
+# Declared BEFORE /{entity}/{qbo_id}: both are two-segment paths, so the
+# detail route would otherwise swallow "export" as a qbo_id and 404.
+@router.get("/{entity}/export")
+async def export_entity(entity: str, user: CurrentUser, db: AsyncSession = Depends(get_db),
+                        date_from: str | None = None, date_to: str | None = None,
+                        q: str | None = None):
+    """CSV of everything the browse table would show, for the same filters.
+
+    QuickBooks is being decommissioned; these mirror tables become the company's
+    permanent record of what was in it. Browsing was already possible — taking
+    the record away was not, which is what an auditor actually needs.
+
+    Built in memory rather than streamed: the session is request-scoped and
+    would be closed underneath a streaming generator, and the mirror is small
+    (the largest entity is a few thousand rows). `raw` is included as the final
+    column because it carries the LinkedTxn evidence of how each document was
+    applied inside QBO — the thing that cannot be reconstructed once QBO is off.
+    """
+    model, _ = _resolve(entity)
+    conds = _filters(model, date_from, date_to, q)
+    order = model.txn_date.desc() if hasattr(model, "txn_date") else model.qbo_id
+    rows = (await db.execute(select(model).where(*conds).order_by(order))).scalars().all()
+
+    cols = [c.name for c in model.__table__.columns if c.name != "raw"] + ["raw"]
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\r\n")
+    w.writerow(cols)
+    for r in rows:
+        d = _row_dict(r)
+        w.writerow([json.dumps(d.get(c), default=str) if isinstance(d.get(c), (dict, list))
+                    else ("" if d.get(c) is None else d.get(c))
+                    for c in cols])
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="qbo-{entity}.csv"'},
+    )
+
+
+@router.get("/{entity}")
+async def browse(entity: str, user: CurrentUser, db: AsyncSession = Depends(get_db),
+                 page: int = 1, page_size: int = 50,
+                 date_from: str | None = None, date_to: str | None = None, q: str | None = None):
+    model, _ = _resolve(entity)
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 200)
+    conds = _filters(model, date_from, date_to, q)
     total = (await db.execute(select(func.count()).select_from(model).where(*conds))).scalar()
     order = model.txn_date.desc() if hasattr(model, "txn_date") else model.qbo_id
     rows = (await db.execute(select(model).where(*conds).order_by(order)

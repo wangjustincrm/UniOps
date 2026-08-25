@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Mail, RefreshCw, X } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, ChevronRight, Download, Loader2, Mail, RefreshCw, X } from 'lucide-react'
 import { qboApi, ENTITY_TABS, type QboBackfillResult, type QboDetail } from '@/services/qboApi'
 import { financeDownload } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -158,6 +158,8 @@ function QboTabs() {
   const [qInput, setQInput] = useState('')
   const [page, setPage] = useState(1)
   const [openId, setOpenId] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const { data, isFetching } = useQuery({
     queryKey: ['qbo-browse', tab, q, page],
@@ -169,7 +171,7 @@ function QboTabs() {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const switchTab = (slug: string) => {
-    setTab(slug); setQ(''); setQInput(''); setPage(1); setOpenId(null)
+    setTab(slug); setQ(''); setQInput(''); setPage(1); setOpenId(null); setExportError(null)
   }
 
   return (
@@ -204,8 +206,41 @@ function QboTabs() {
             Search
           </button>
         </form>
+        <button
+          type="button"
+          className={secondaryBtn}
+          disabled={exporting}
+          onClick={async () => {
+            setExporting(true)
+            setExportError(null)
+            try {
+              await financeDownload(qboApi.exportPath(tab, q), `qbo-${tab}.csv`)
+            } catch (e) {
+              setExportError(e instanceof Error ? e.message : 'Export failed')
+            } finally {
+              setExporting(false)
+            }
+          }}
+        >
+          {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          Export CSV
+        </button>
         {tab === 'vendors' && <VendorEmailBackfill />}
       </div>
+
+      {exportError && (
+        <p className="text-sm text-red-600">{exportError}</p>
+      )}
+
+      {tab === 'vendor-credits' && (
+        <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+          This is the permanent record of QuickBooks vendor credits and is kept
+          after QuickBooks is retired. <strong>balance</strong> is the unapplied
+          remainder, so <strong>0.00</strong> means the credit was already fully
+          applied inside QuickBooks. Only credits with a balance above zero were
+          brought into UniOps as spendable vendor credit.
+        </p>
+      )}
 
       <div className="overflow-auto rounded-lg border border-neutral-200 max-h-[70vh]">
         <table className="w-full text-sm">

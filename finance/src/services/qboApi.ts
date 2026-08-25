@@ -50,6 +50,10 @@ export const qboApi = {
     return financeApi.get<QboPage>(`/qbo/${entity}?${qs.toString()}`)
   },
   detail: (entity: string, id: string) => financeApi.get<QboDetail>(`/qbo/${entity}/${id}`),
+  /** CSV of the whole filtered population, not just the visible page. Pass the
+   * same `q` the table is showing so the file matches the screen. */
+  exportPath: (entity: string, q?: string) =>
+    `/qbo/${entity}/export${q ? `?q=${encodeURIComponent(q)}` : ''}`,
   backfillVendorEmails: () =>
     financeApi.post<QboBackfillResult>('/qbo/vendor-emails/backfill', {}),
   fileUrl: (attachmentId: string) => `/qbo/attachments/${attachmentId}/file`,
