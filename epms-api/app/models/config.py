@@ -59,6 +59,11 @@ class CompanyConfig(Base):
     # nullable on purpose so "unset" stays distinguishable from a chosen value
     # (migration ai01 explains why).
     nc_purchase_sync_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # JV(凭证)与 ERP 主数据同步的间隔,语义与上面那列完全一致:
+    # NULL=回落默认 / 0=关闭 / >0=分钟数。分别由 finance-api 和 mdm-api 的
+    # 调度循环读取(它们各有一个 company_config 的 mirror 模型)。
+    nc_jv_sync_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    erp_mdm_sync_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # ── Security ────────────────────────────────────────────────────────────
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
