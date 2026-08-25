@@ -15,6 +15,7 @@ from app.crud import vendor_credit_import as crud
 from app.db.base import get_db
 from app.schemas.vendor_credit_import import (
     ImportCandidatesResponse, ImportRunRequest, ImportRunResponse,
+    VendorOptionsResponse,
 )
 
 router = APIRouter(prefix="/qbo-credit-import", tags=["qbo-credit-import"])
@@ -34,6 +35,13 @@ def _actor(user: dict) -> tuple[uuid.UUID, str | None]:
 async def list_candidates(user: dict = Depends(require_permission(_MANAGE_KEY)),
                           db: AsyncSession = Depends(get_db)):
     return await crud.list_candidates(db)
+
+
+@router.get("/vendors", response_model=VendorOptionsResponse)
+async def list_vendors(q: str | None = None,
+                       user: dict = Depends(require_permission(_MANAGE_KEY)),
+                       db: AsyncSession = Depends(get_db)):
+    return {"items": await crud.list_vendors(db, q)}
 
 
 @router.post("/run", response_model=ImportRunResponse)

@@ -443,3 +443,32 @@ async def test_run_defaults_to_a_dry_run(client):
                           headers=_h("system_admin"))
     assert r.status_code == 200, r.text
     assert r.json()["dry_run"] is True
+
+
+# ------------------------------------------------------------- vendor picker
+
+@pytest.mark.anyio
+async def test_vendor_options_list_suppliers_only(db_session):
+    from app.crud import vendor_credit_import as crud
+    sup = await _partner(db_session, name="Zed Supplies Ltd")
+    await _partner(db_session, name="Zed Customer Ltd", is_supplier=False)
+    items = await crud.list_vendors(db_session)
+    ids = {i["id"] for i in items}
+    assert str(sup.id) in ids
+    assert all(i["name"] != "Zed Customer Ltd" for i in items)
+
+
+@pytest.mark.anyio
+async def test_vendor_options_search_matches_name_or_code(db_session):
+    from app.crud import vendor_credit_import as crud
+    p = await _partner(db_session, name="Findable Widgets Inc.")
+    by_name = await crud.list_vendors(db_session, "Findable")
+    by_code = await crud.list_vendors(db_session, p.code)
+    assert str(p.id) in {i["id"] for i in by_name}
+    assert str(p.id) in {i["id"] for i in by_code}
+
+
+@pytest.mark.anyio
+async def test_vendor_options_require_the_manage_permission(client):
+    r = await client.get("/finance/v1/qbo-credit-import/vendors", headers=_h("ap_clerk"))
+    assert r.status_code == 403

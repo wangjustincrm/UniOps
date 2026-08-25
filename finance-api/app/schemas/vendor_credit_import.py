@@ -82,3 +82,14 @@ class ImportRunResponse(BaseModel):
     total_amount: str
     rows: list[ImportedRow]
     duplicates: list[ImportDuplicateRow]
+
+
+class VendorOption(BaseModel):
+    """An EPMS supplier the operator can map a QBO vendor onto."""
+    id: str
+    code: str
+    name: str
+
+
+class VendorOptionsResponse(BaseModel):
+    items: list[VendorOption]

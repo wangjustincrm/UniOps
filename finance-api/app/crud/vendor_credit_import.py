@@ -132,6 +132,26 @@ async def _suggestions(db: AsyncSession,
     return out
 
 
+async def list_vendors(db: AsyncSession, q: str | None = None,
+                       limit: int = 50) -> list[dict]:
+    """EPMS suppliers, for the mapping picker.
+
+    Lives on this disposable router rather than becoming a general vendor
+    endpoint: it exists to serve one screen and should disappear with it.
+    """
+    stmt = (
+        select(BusinessPartner.id, BusinessPartner.code, BusinessPartner.name)
+        .where(BusinessPartner.is_supplier.is_(True))
+    )
+    if q:
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(BusinessPartner.name.ilike(like)
+                          | BusinessPartner.code.ilike(like))
+    stmt = stmt.order_by(BusinessPartner.name).limit(max(1, min(limit, 200)))
+    return [{"id": str(pid), "code": code, "name": name}
+            for pid, code, name in (await db.execute(stmt)).all()]
+
+
 async def _latest_full_reload(db: AsyncSession) -> QboSyncRun | None:
     return (await db.execute(
         select(QboSyncRun)
