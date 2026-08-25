@@ -26,7 +26,7 @@ services:
 
   postgres:
     image: postgres:15-alpine
-    container_name: uniops_postgres
+    container_name: ${STACK_PREFIX:-uniops}_postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: epms
@@ -39,6 +39,15 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # 测试/开发栈跑在机械盘阵列上。synchronous_commit=off 去掉每次提交的 fsync 等待,
+    # 代价是断电时可能丢最后几百毫秒的事务 —— 对随时能从 dump 重建的库可以接受,
+    # 生产绝不能这么设。shared_buffers 默认仅 128MB, 对这台机器太小。
+    command: >
+      postgres
+      -c synchronous_commit=off
+      -c shared_buffers=${PG_SHARED_BUFFERS:-2GB}
+      -c effective_cache_size=${PG_EFFECTIVE_CACHE:-8GB}
+      -c max_wal_size=4GB
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U epms -d epms"]
       interval: 5s
@@ -47,7 +56,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: uniops_redis
+    container_name: ${STACK_PREFIX:-uniops}_redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -66,7 +75,7 @@ services:
     build:
       context: .
       dockerfile: epms-api/Dockerfile
-    container_name: uniops_epms_api
+    container_name: ${STACK_PREFIX:-uniops}_epms_api
     ports:
       - "8000:8000"
     volumes:
@@ -99,7 +108,10 @@ services:
       APP_NAME: EPMS API
       APP_VERSION: 0.1.0
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      # 测试/开发栈: 所有外发邮件进 MailHog, 绝不外发
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
       ACCESS_TOKEN_EXPIRE_MINUTES: "480"
       REFRESH_TOKEN_EXPIRE_DAYS: "7"
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
@@ -138,7 +150,7 @@ services:
     build:
       context: ./approval-api
       dockerfile: Dockerfile
-    container_name: uniops_approval_api
+    container_name: ${STACK_PREFIX:-uniops}_approval_api
     ports:
       - "8003:8003"
     volumes:
@@ -150,7 +162,7 @@ services:
       JWT_ALGORITHM: HS256
       SERVICE_NAME: approval-engine
       PORT: "8003"
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
     command: uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
@@ -164,7 +176,7 @@ services:
     build:
       context: .
       dockerfile: mdm-api/Dockerfile
-    container_name: uniops_mdm_api
+    container_name: ${STACK_PREFIX:-uniops}_mdm_api
     ports:
       - "8002:8002"
     volumes:
@@ -178,7 +190,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       SERVICE_NAME: mdm-stub
       PORT: "8002"
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
       ERP_BASE_URL: http://10.10.95.66
       ERP_TIMEOUT_SECONDS: "60"
       # NC65 read-only connection for the BOM raw mirror sync (values live in the
@@ -201,7 +213,7 @@ services:
     build:
       context: ./identity-api
       dockerfile: Dockerfile
-    container_name: uniops_identity_api
+    container_name: ${STACK_PREFIX:-uniops}_identity_api
     ports:
       - "8009:8009"
     volumes:
@@ -224,7 +236,10 @@ services:
       # specific person, so they would otherwise stay with the previous
       # holder). Missing/wrong value = silent "failed:" in the response.
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      # 测试/开发栈: 所有外发邮件进 MailHog, 绝不外发
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
     depends_on:
       redis:
         condition: service_healthy
@@ -241,7 +256,7 @@ services:
     build:
       context: .
       dockerfile: finance-api/Dockerfile
-    container_name: uniops_finance_api
+    container_name: ${STACK_PREFIX:-uniops}_finance_api
     ports:
       - "8004:8004"
     volumes:
@@ -260,7 +275,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       SERVICE_NAME: finance-core
       PORT: "8004"
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       BUDGET_API_URL: http://budget-api:8007
       # Where the client reads QBO creds inside the container (see the volume above).
@@ -285,7 +300,7 @@ services:
     build:
       context: ./file-api
       dockerfile: Dockerfile
-    container_name: uniops_file_api
+    container_name: ${STACK_PREFIX:-uniops}_file_api
     ports:
       - "8005:8005"
     volumes:
@@ -299,7 +314,7 @@ services:
       SERVICE_NAME: file-server
       PORT: "8005"
       STORAGE_ROOT: /file-storage
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
     command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
     healthcheck:
       # Router is mounted under /files/v1 (app/main.py) — health lives there, not at /health.
@@ -314,7 +329,7 @@ services:
     build:
       context: ./expense-api
       dockerfile: Dockerfile
-    container_name: uniops_expense_api
+    container_name: ${STACK_PREFIX:-uniops}_expense_api
     ports:
       - "8006:8006"
     volumes:
@@ -331,7 +346,7 @@ services:
       JWT_ALGORITHM: HS256
       SERVICE_NAME: expense-api
       PORT: "8006"
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
       DEBUG: "true"
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
@@ -352,7 +367,7 @@ services:
     build:
       context: .
       dockerfile: budget-api/Dockerfile
-    container_name: uniops_budget_api
+    container_name: ${STACK_PREFIX:-uniops}_budget_api
     ports:
       - "8007:8007"
     volumes:
@@ -369,7 +384,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
     command: uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
@@ -385,7 +400,7 @@ services:
     build:
       context: .
       dockerfile: mrp-api/Dockerfile
-    container_name: uniops_mrp_api
+    container_name: ${STACK_PREFIX:-uniops}_mrp_api
     ports:
       - "8011:8011"
     volumes:
@@ -402,7 +417,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
       # Server-to-server mdm-api URL (container DNS name), NOT the
@@ -447,7 +462,7 @@ services:
     build:
       context: ./vms-api
       dockerfile: Dockerfile
-    container_name: uniops_vms_api
+    container_name: ${STACK_PREFIX:-uniops}_vms_api
     ports:
       - "8008:8008"     # 8007 is taken by budget-api — VMS uses 8008
     volumes:
@@ -467,7 +482,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
@@ -489,7 +504,7 @@ services:
     build:
       context: .
       dockerfile: booking-api/Dockerfile
-    container_name: uniops_booking_api
+    container_name: ${STACK_PREFIX:-uniops}_booking_api
     ports:
       - "8010:8010"
     volumes:
@@ -509,7 +524,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
       SCHEDULER_ENABLED: "true"
@@ -531,7 +546,7 @@ services:
 
   epms-frontend:
     image: node:20-alpine
-    container_name: uniops_epms_frontend
+    container_name: ${STACK_PREFIX:-uniops}_epms_frontend
     restart: unless-stopped
     working_dir: /app
     ports:
@@ -543,21 +558,21 @@ services:
       # resolve @uniops/shell; --install-links copies it into /app/node_modules.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_API_URL: http://localhost:8000/api/v1
-      VITE_FILE_SERVER_URL: http://localhost:8005
-      VITE_OA_URL: http://localhost:5175
-      VITE_PORTAL_URL: http://localhost:5174
-      VITE_BUDGET_API_URL: http://localhost:8007
-      VITE_MDM_API_URL: http://localhost:8002
-      VITE_FINANCE_API_URL: http://localhost:8004
+      VITE_API_URL: http://${LAN_HOST:-localhost}:8000/api/v1
+      VITE_FILE_SERVER_URL: http://${LAN_HOST:-localhost}:8005
+      VITE_OA_URL: http://${LAN_HOST:-localhost}:5175
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
+      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:8007
+      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:8002
+      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:8004
       # expense-api (OA). epms calls it cross-service for invoice attachments and
       # for OCR (lib/api.ts EXPENSE_BASE, incl. the pickup-slip OCR endpoint).
       # Was missing here and only worked by accident, via EXPENSE_BASE's own
       # localhost:8006 fallback — declared explicitly now, matching
       # docker-compose.prod.yml's epms-web (VITE_EXPENSE_API_URL: ${OA_API_URL}).
-      VITE_EXPENSE_API_URL: http://localhost:8006
+      VITE_EXPENSE_API_URL: http://${LAN_HOST:-localhost}:8006
       # Task Inbox 里的 vms_* 任务整页跳 VMS(lib/api.ts VMS_URL)。
-      VITE_VMS_URL: http://localhost:5176
+      VITE_VMS_URL: http://${LAN_HOST:-localhost}:5176
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5173"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5173"]
@@ -568,7 +583,7 @@ services:
 
   portal-frontend:
     image: node:20-alpine
-    container_name: uniops_portal_frontend
+    container_name: ${STACK_PREFIX:-uniops}_portal_frontend
     restart: unless-stopped
     working_dir: /app
     ports:
@@ -580,21 +595,21 @@ services:
       # resolve @uniops/shell; --install-links copies it into /app/node_modules.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_EPMS_URL: http://localhost:5173
-      VITE_OA_URL: http://localhost:5175
-      VITE_VMS_URL: http://localhost:5176
-      VITE_FINANCE_URL: http://localhost:5177
-      VITE_BOOKING_URL: http://localhost:5178
-      VITE_MRP_URL: http://localhost:5179
-      VITE_EPMS_API_URL: http://localhost:8000
-      VITE_OA_API_URL: http://localhost:8006
-      VITE_VMS_API_URL: http://localhost:8008
-      VITE_BUDGET_API_URL: http://localhost:8007
-      VITE_MDM_API_URL: http://localhost:8002
+      VITE_EPMS_URL: http://${LAN_HOST:-localhost}:5173
+      VITE_OA_URL: http://${LAN_HOST:-localhost}:5175
+      VITE_VMS_URL: http://${LAN_HOST:-localhost}:5176
+      VITE_FINANCE_URL: http://${LAN_HOST:-localhost}:5177
+      VITE_BOOKING_URL: http://${LAN_HOST:-localhost}:5178
+      VITE_MRP_URL: http://${LAN_HOST:-localhost}:5179
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
+      VITE_OA_API_URL: http://${LAN_HOST:-localhost}:8006
+      VITE_VMS_API_URL: http://${LAN_HOST:-localhost}:8008
+      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:8007
+      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:8002
       # Admin -> WMS Sync talks to mrp-api directly. Browser-facing,
       # so localhost rather than the container DNS name.
-      VITE_MRP_API_URL: http://localhost:8011
-      VITE_FINANCE_API_URL: http://localhost:8004
+      VITE_MRP_API_URL: http://${LAN_HOST:-localhost}:8011
+      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:8004
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5174"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5174"]
@@ -605,7 +620,7 @@ services:
 
   vms-frontend:
     image: node:20-alpine
-    container_name: uniops_vms_frontend
+    container_name: ${STACK_PREFIX:-uniops}_vms_frontend
     restart: unless-stopped
     working_dir: /app
     ports:
@@ -618,9 +633,9 @@ services:
       # `/packages/shell` matches `../packages/shell` resolved from /app.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_API_URL: http://localhost:8008
-      VITE_EPMS_API_URL: http://localhost:8000
-      VITE_PORTAL_URL: http://localhost:5174
+      VITE_API_URL: http://${LAN_HOST:-localhost}:8008
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
     # --install-links copies the file:../packages/shell dep into /app/node_modules
     # as a real package (not a symlink to /packages/shell), so its transitive deps
     # resolve from /app/node_modules inside the container.
@@ -634,7 +649,7 @@ services:
 
   oa-frontend:
     image: node:20-alpine
-    container_name: uniops_oa_frontend
+    container_name: ${STACK_PREFIX:-uniops}_oa_frontend
     restart: unless-stopped
     working_dir: /app
     ports:
@@ -646,12 +661,12 @@ services:
       # resolve @uniops/shell; --install-links copies it into /app/node_modules.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_API_URL: http://localhost:8006
-      VITE_PORTAL_URL: http://localhost:5174
-      VITE_EPMS_URL: http://localhost:5173
-      VITE_EPMS_API_URL: http://localhost:8000
-      VITE_BUDGET_API_URL: http://localhost:8007
-      VITE_FINANCE_API_URL: http://localhost:8004
+      VITE_API_URL: http://${LAN_HOST:-localhost}:8006
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
+      VITE_EPMS_URL: http://${LAN_HOST:-localhost}:5173
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
+      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:8007
+      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:8004
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5175"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5175"]
@@ -662,7 +677,7 @@ services:
 
   finance-frontend:
     image: node:20-alpine
-    container_name: uniops_finance_frontend
+    container_name: ${STACK_PREFIX:-uniops}_finance_frontend
     restart: unless-stopped
     working_dir: /app
     ports:
@@ -673,15 +688,15 @@ services:
       # Shared workspace package (see vms-frontend) — mount + --install-links.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_PORTAL_URL: http://localhost:5174
-      VITE_FINANCE_API_URL: http://localhost:8004
-      VITE_BUDGET_API_URL: http://localhost:8007
-      VITE_EPMS_API_URL: http://localhost:8000
-      VITE_OA_API_URL: http://localhost:8006
-      VITE_MDM_API_URL: http://localhost:8002
-      VITE_EPMS_URL: http://localhost:5173
-      VITE_OA_URL: http://localhost:5175
-      VITE_VMS_URL: http://localhost:5176
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
+      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:8004
+      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:8007
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
+      VITE_OA_API_URL: http://${LAN_HOST:-localhost}:8006
+      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:8002
+      VITE_EPMS_URL: http://${LAN_HOST:-localhost}:5173
+      VITE_OA_URL: http://${LAN_HOST:-localhost}:5175
+      VITE_VMS_URL: http://${LAN_HOST:-localhost}:5176
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5177"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5177"]
@@ -692,7 +707,7 @@ services:
 
   booking-frontend:
     image: node:20-alpine
-    container_name: uniops_booking_frontend
+    container_name: ${STACK_PREFIX:-uniops}_booking_frontend
     restart: unless-stopped
     working_dir: /app
     ports:
@@ -705,10 +720,10 @@ services:
       # `../packages/shell` resolved from /app.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_API_URL: http://localhost:8010
-      VITE_EPMS_API_URL: http://localhost:8000
-      VITE_PORTAL_URL: http://localhost:5174
-      VITE_FILE_API_URL: http://localhost:8005
+      VITE_API_URL: http://${LAN_HOST:-localhost}:8010
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
+      VITE_FILE_API_URL: http://${LAN_HOST:-localhost}:8005
     # --install-links copies the file:../packages/shell dep into /app/node_modules
     # as a real package (not a symlink to /packages/shell), so its transitive deps
     # resolve from /app/node_modules inside the container.
@@ -722,7 +737,7 @@ services:
 
   mrp-frontend:
     image: node:20-alpine
-    container_name: uniops_mrp_frontend
+    container_name: ${STACK_PREFIX:-uniops}_mrp_frontend
     restart: unless-stopped
     working_dir: /app
     ports:
@@ -735,10 +750,10 @@ services:
       # `../packages/shell` resolved from /app.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_API_URL: http://localhost:8011
-      VITE_EPMS_API_URL: http://localhost:8000
-      VITE_MDM_API_URL: http://localhost:8002
-      VITE_PORTAL_URL: http://localhost:5174
+      VITE_API_URL: http://${LAN_HOST:-localhost}:8011
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
+      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:8002
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
     # --install-links copies the file:../packages/shell dep into /app/node_modules
     # as a real package (not a symlink to /packages/shell), so its transitive deps
     # resolve from /app/node_modules inside the container.
@@ -749,6 +764,18 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+
+  # ── MailHog: 拦下所有外发邮件 ──────────────────────────────────────────────
+  # dev 栈默认 SMTP_HOST=localhost:1025 且无人覆盖, 所以邮件本来就发不出去 ——
+  # 好处是同事测试不会真发给全公司和供应商, 坏处是通知类功能完全测不动。
+  # MailHog 把它们都收下来, 在 <LAN_HOST>:8025 可见。
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: ${STACK_PREFIX:-uniops}_mailhog
+    restart: unless-stopped
+    ports:
+      - "${MAILHOG_SMTP_PORT:-1025}:1025"
+      - "${MAILHOG_UI_PORT:-8025}:8025"
 
 # ── Volumes ───────────────────────────────────────────────────────────────────
 

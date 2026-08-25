@@ -108,13 +108,31 @@ robocopy `/L` 空跑实测(排除 node_modules / .venv / __pycache__ / .vite / d
 7 个前端全部 Vite 8 (epms `^8.0.1`, 其余 `^8.0.10`), **没有任何一个配过 `allowedHosts`**。
 Vite 默认允许 IP 直连, 但用主机名访问会被 `Blocked request` 挡下。
 
-### 2.8 邮件安全性
+### 2.8 ★ 邮件安全性: 环境变量只挡住了一半
 
-`epms-api/app/core/config.py:100-105` 默认 `SMTP_HOST=localhost` / `SMTP_PORT=1025`,
-且 dev compose 没有覆盖任何 SMTP 变量。
+初版设计据 `epms-api/app/core/config.py:100-105` 的默认值(`SMTP_HOST=localhost` / `SMTP_PORT=1025`)
+判断"测试环境不会真发邮件"。**逐服务核查后发现这个结论只对一半服务成立。**
 
-结论: 同事在测试环境里点审批 / 点付款, **不会真的把邮件发给全公司和供应商**。
-代价是通知类功能测不动 —— 因此本设计加入 MailHog。
+实测各服务的 SMTP 配置来源:
+
+| 服务 | SMTP 来源 | 挡法 |
+|---|---|---|
+| epms-api、identity-api | **环境变量** | compose 里设 `SMTP_HOST: mailhog` |
+| finance-api、vms-api、booking-api | **数据库 `company_config` 表** | 见下 |
+| expense-api、approval-api | 不发邮件(实测无任何发信代码) | 无需处理 |
+
+**危险在第二类**: 那三个服务从 `company_config` 表读 `smtp_host` / `smtp_port` / `smtp_user` /
+`smtp_password` / `smtp_use_tls` / `smtp_from`, 而测试库是从**生产快照**恢复的 ——
+也就是说它们会拿到**生产的真实 SMTP 配置, 并真的把邮件发出去**。
+
+其中 `finance-api/app/crud/remittance_send.py` 是**汇款通知, 收件人是供应商**。
+同事在测试环境点一次付款, 供应商可能真的收到信。
+
+**因此每次恢复快照后必须紧接着中和 `company_config` 的 SMTP 设置**, 与 `seed_authz`、
+重置 admin 密码同级, 不是可选项。见 §7 第 7 步。
+
+这条也是一个通用教训: **"环境变量没配所以发不出去"是一个只覆盖部分服务的推论**,
+配置来源必须逐服务核实。
 
 ### 2.9 数据库表数差异
 
@@ -313,8 +331,11 @@ node_modules  .venv  __pycache__  .vite  dist  .pytest_cache  nchome
    若 `alembic current` 与代码的 head 对不上, **说明栈没钉对版本**, 停下来查, 不要靠 upgrade 抹平
 5. **重跑 `seed_authz`** —— 否则 7 个 `mrp.*` 授权被冲掉, MRP 前端按钮静默消失
 6. **重置 admin 密码** —— 否则 `admin@epms.local` 变成生产哈希 + `must_change_password`
+7. **★ 中和 `company_config` 里的 SMTP 设置** —— 否则 finance-api / vms-api / booking-api
+   会拿着生产的真实 SMTP 把邮件(含发给**供应商**的汇款通知)真的发出去(§2.8)
 
-第 5、6 步在历史上已各踩过一次, 因此写死为必做步骤。**每套栈各恢复一份**(各自独立的 postgres 容器)。
+第 5、6 步在历史上已各踩过一次; 第 7 步是本次核查新发现的。三步都写死为必做步骤。
+**每套栈各恢复一份**(各自独立的 postgres 容器)。
 
 已知限制: 快照里业务行引用的**历史附件只在生产 file 卷上** ⇒ 历史附件下载 404。
 这是快照方案的固有限制, 不是故障, 需提前告知同事。
@@ -350,6 +371,8 @@ node_modules  .venv  __pycache__  .vite  dist  .pytest_cache  nchome
 2. **F12 Network 确认请求打的是 `<IP>:8000` 而不是 `localhost:8000`** —— LAN 化唯一真正会翻车的地方
 3. 在测试栈上**执行一次 PA 付款**(验证 §7 第 4 步的迁移真跑了)
 4. 触发一个通知动作, MailHog 里收到
+4b. **正面确认 `company_config` 的 SMTP 已被中和** —— 只看"MailHog 收到了"不够,
+   那只证明走环境变量的两个服务被挡住了; 数据库那三个要单独查表确认
 5. 附件: 新上传能下载; 历史附件 404 属预期
 6. **跑测试套件兜底大小写敏感问题**(§2.11): epms-api 与 finance-api 各跑一次,
    失败集合与笔记本上同条件跑的结果**逐个比对**(只比数字会误判)

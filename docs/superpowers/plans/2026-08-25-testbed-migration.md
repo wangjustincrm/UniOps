@@ -139,31 +139,49 @@ sed -i -E 's|^([[:space:]]+container_name: )uniops_|\1\$\{STACK_PREFIX:-uniops\}
 
 - [ ] **Step 3: 验证两条替换的范围都正确**
 
+**不要照抄任何绝对数字。** 这些计数随 main 变化 —— 实测同一天笔记本主 checkout 是 57 行,
+而 `386d257` 上是 59 行(main 期间新增了 `VITE_MRP_API_URL` 与 `VITE_VMS_URL`)。
+下面改成**自比对**: 拿改动前的备份当基线, 版本无关。
+
 ```bash
 cd /c/Project/uniops
-echo "LAN_HOST 参数化行数(应为 57): $(grep -c 'LAN_HOST' docker-compose.dev.yml)"
-echo "healthcheck 含 localhost(应为 18): $(grep -c 'test:.*localhost' docker-compose.dev.yml)"
+BEFORE=$(grep -cE '^[[:space:]]+(VITE_[A-Z_0-9]+|ALLOWED_ORIGINS):.*http://localhost:' docker-compose.dev.yml.bak-20260825)
+AFTER=$(grep -c 'LAN_HOST' docker-compose.dev.yml)
+echo "改前该参数化的行数: $BEFORE"
+echo "改后已参数化的行数: $AFTER   $([ "$BEFORE" = "$AFTER" ] && echo '✅ 相等' || echo '❌ 不等')"
+
+HC_BEFORE=$(grep -c 'test:.*localhost' docker-compose.dev.yml.bak-20260825)
+echo "healthcheck 改前/改后: $HC_BEFORE / $(grep -c 'test:.*localhost' docker-compose.dev.yml)  (必须相等)"
 echo "healthcheck 被误伤(必须为 0): $(grep -c 'test:.*LAN_HOST' docker-compose.dev.yml)"
-echo "container_name 参数化数(应为 20): $(grep -c 'container_name: \${STACK_PREFIX' docker-compose.dev.yml)"
+
+CN_BEFORE=$(grep -c 'container_name: uniops_' docker-compose.dev.yml.bak-20260825)
+echo "container_name 改前 $CN_BEFORE / 改后已参数化 $(grep -c 'container_name: \${STACK_PREFIX' docker-compose.dev.yml)  (必须相等)"
 echo "container_name 残留写死(必须为 0): $(grep -c 'container_name: uniops_' docker-compose.dev.yml)"
+
 echo "--- 漏网的裸 localhost(排除 healthcheck 与注释, 必须为空) ---"
 grep -nE "http://localhost:" docker-compose.dev.yml | grep -v 'test:' | grep -vE "^\s*[0-9]+:\s*#" | grep -v 'LAN_HOST'
 ```
 
-预期: `57` / `18` / `0` / `20` / `0` / 最后一行无输出。
+预期: 三组"相等"、两个 0、最后一行无输出。
 任何一项对不上就 `cp docker-compose.dev.yml.bak-20260825 docker-compose.dev.yml` 回滚重来。
 
 - [ ] **Step 4: 确认默认行为逐字不变**
 
+最强的一条证据: 不设任何变量时, compose **解析后的完整结果**与改动前逐字相同。
+这比数行数可靠得多 —— 它覆盖了所有服务的所有字段, 不依赖任何计数。
+
 ```bash
 cd /c/Project/uniops
-echo "不设变量时 VITE(应为 1): $(docker compose -f docker-compose.dev.yml --env-file .env config 2>/dev/null | grep -c 'VITE_API_URL: http://localhost:8000/api/v1')"
-docker compose -f docker-compose.dev.yml --env-file .env config 2>/dev/null | grep 'container_name: uniops_postgres'
+diff <(docker compose -f docker-compose.dev.yml.bak-20260825 --env-file .env config 2>/dev/null)      <(docker compose -f docker-compose.dev.yml --env-file .env config 2>/dev/null)   && echo "✅ 解析结果完全一致 —— 真默认值, 对现有用法零影响"
+
+# 再确认变量确实能生效
 STACK_PREFIX=uniops-test docker compose -f docker-compose.dev.yml --env-file .env config 2>/dev/null | grep 'container_name: uniops-test_postgres'
+LAN_HOST=10.0.0.9 docker compose -f docker-compose.dev.yml --env-file .env config 2>/dev/null | grep -m1 'VITE_API_URL: http://10.0.0.9'
 ```
 
-预期: `1`, 然后分别出现 `uniops_postgres` 与 `uniops-test_postgres`。
-即**不设变量时解析结果与改动前逐字一致** —— 证明这两个是真默认值, 不是强制不变量。
+预期: 先输出"完全一致", 再分别出现 `uniops-test_postgres` 与 `http://10.0.0.9`。
+**注意**: 此步在 Step 4b / Step 5 加入 postgres 调优和 MailHog **之前**做 ——
+那两项是有意的新增, 加完之后 diff 当然不再为空。
 
 - [ ] **Step 4b: 为机械盘阵列调 postgres**
 
@@ -217,19 +235,38 @@ docker exec uniops-test_postgres psql -U epms -tAc "show synchronous_commit; sho
       - "${MAILHOG_UI_PORT:-8025}:8025"
 ```
 
-并给会发邮件的四个后端(epms-api、expense-api、finance-api、approval-api)的 `environment:` 加:
+**★ 只有两个服务从环境变量读 SMTP。** 逐服务核查的结果(不要凭印象):
+
+| 服务 | SMTP 来源 | 这一步要做什么 |
+|---|---|---|
+| `epms-api`、`identity-api` | **环境变量** | 加下面两行 |
+| `finance-api`、`vms-api`、`booking-api` | **数据库 `company_config` 表** | 环境变量对它们无效, 见 Task 7 Step 11b |
+| `expense-api`、`approval-api` | 不发邮件(实测无发信代码) | 无需处理 |
+
+给 `epms-api` 和 `identity-api` 的 `environment:` 加:
 
 ```yaml
+      # 测试/开发栈: 所有外发邮件进 MailHog, 绝不外发
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
 ```
 
-验证:
+验证(用解析后的结果查, 不要 grep 源文件):
 
 ```bash
 cd /c/Project/uniops
-echo "SMTP 指向 mailhog 的服务数(应为 4): $(docker compose -f docker-compose.dev.yml --env-file .env config | grep -c 'SMTP_HOST: mailhog')"
+python - <<'PYCHK'
+import subprocess, yaml
+out = subprocess.run(["docker","compose","-f","docker-compose.dev.yml","--env-file",".env","config"],
+                     capture_output=True, text=True).stdout
+for name, svc in (yaml.safe_load(out).get("services") or {}).items():
+    env = svc.get("environment") or {}
+    if isinstance(env, dict) and "SMTP_HOST" in env:
+        print(f"  {name}: SMTP_HOST={env['SMTP_HOST']}")
+PYCHK
 ```
+
+预期: 恰好两行, `epms-api` 与 `identity-api`, 都是 `mailhog`。
 
 - [ ] **Step 6: 7 个前端加 allowedHosts 并关掉 usePolling**
 
@@ -884,6 +921,41 @@ docker exec uniops-test_postgres psql -U epms -d epms -c \
   "UPDATE users SET hashed_password='$HASH', must_change_password=false, is_active=true, mfa_enabled=false WHERE email='admin@epms.local';"
 ```
 
+- [ ] **Step 11b: ★ 中和 company_config 里的 SMTP —— 防止真发邮件给供应商**
+
+**这一步与 seed_authz、重置密码同级, 不是可选项。**
+
+`finance-api` / `vms-api` / `booking-api` 不读环境变量, 它们从 `company_config` 表读 SMTP 配置。
+而这张表刚刚被**生产快照**覆盖 —— 也就是说它们现在握着生产的真实 SMTP 服务器和凭据。
+
+其中 `finance-api/app/crud/remittance_send.py` 是**汇款通知, 收件人是供应商**。
+不做这一步, 同事在测试环境点一次付款, 供应商可能真的收到信。
+
+```bash
+docker exec uniops-test_postgres psql -U epms -d epms <<'SQL'
+-- 先看看生产快照带过来的是什么(留个记录)
+SELECT id, smtp_host, smtp_port, smtp_user, smtp_from FROM company_config;
+
+-- 全部指向 MailHog
+UPDATE company_config SET
+  smtp_host     = 'mailhog',
+  smtp_port     = 1025,
+  smtp_user     = NULL,
+  smtp_password = NULL,
+  smtp_use_tls  = false,
+  smtp_from     = 'testenv@uniops.local';
+SQL
+```
+
+- [ ] **Step 11c: 正面确认中和生效**
+
+```bash
+docker exec uniops-test_postgres psql -U epms -d epms -tAc "SELECT count(*) FROM company_config WHERE smtp_host IS DISTINCT FROM 'mailhog'"
+```
+
+预期: `0` —— 一行都不能剩。
+**非 0 就停下来**, 不要让同事碰这套环境。
+
 - [ ] **Step 12: 重启后端并本机自检**
 
 ```bash
@@ -996,8 +1068,9 @@ docker inspect -f '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}} => {{.Dest
 
 - [ ] **Step 7: 给开发栈恢复数据库**
 
-对 `uniops-dev1` 重复 Task 7 的 Step 5-11(容器名前缀换成 `uniops-dev1_`)。
-**其中 `seed_authz` 和重置 admin 密码两步不能省。**
+对 `uniops-dev1` 重复 Task 7 的 Step 5-11c(容器名前缀换成 `uniops-dev1_`)。
+**其中 `seed_authz`、重置 admin 密码、中和 `company_config` 的 SMTP 三步都不能省** ——
+开发栈同样是从生产快照恢复的, 同样握着真实 SMTP。
 `alembic` 那步同样只做**验证不做 upgrade** —— 除非该开发者正在开发带迁移的功能,
 那时才在自己的栈上跑 upgrade(这正是每人一套独立栈的意义)。
 
@@ -1187,4 +1260,5 @@ docker system prune -a --volumes    # 释放约 76 GB
 | admin 登不进去 | 密码被生产哈希覆盖 | Task 7 Step 11 |
 | 测试出现**新增**失败用例 | 大小写敏感(Linux 区分, NTFS 不区分) | Task 9 Step 2, 按报错修文件名或 import |
 | 历史附件 404 | 文件在生产 file 卷上 | 预期行为, 非故障 |
+| **测试环境把邮件真发给了供应商** | `company_config` 的 SMTP 没中和(那三个服务不读环境变量) | Task 7 Step 11b, 每套栈都要做 |
 | 隔天全站打不开 | 服务器 IP 变了 | Task 4 Step 2, 必须固定 IP |
