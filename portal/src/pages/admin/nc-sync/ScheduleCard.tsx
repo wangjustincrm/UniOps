@@ -33,10 +33,19 @@ const CLIENTS = { epms: epmsApi, finance: financeApi, mdm: mdmApi }
 
 const DEFAULT_MAX_MINUTES = 1440
 
+// Same convention as NcPurchaseSyncSection's `localTime` — the Purchase tab renders
+// this component right next to that one, both showing the same `next_due_at`, and a
+// bare `toLocaleString()` there used to disagree with a properly-converted instant
+// right beside it (see the project's UTC-4 off-by-one-day history). One format for
+// every instant on this screen.
 function formatWhen(iso: string | null): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString('en-CA', {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
 }
 
 /** 分钟数 → 便于阅读的 {amount, unit}。整小时用 Hours,否则用 Minutes。 */
