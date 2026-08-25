@@ -1,5 +1,6 @@
 """Shared PDF template utilities — applied uniformly to all document PDFs."""
 import base64
+from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 from typing import Any
 
@@ -16,6 +17,32 @@ _LIGHT = colors.HexColor("#F5F5F5")
 
 def _s(name: str, **kw) -> ParagraphStyle:
     return ParagraphStyle(name, **kw)
+
+
+#: The ERP quotes purchase prices to five decimals; the columns hold five.
+_PRICE_DP = 5
+_MONEY_DP = 2
+
+
+def unit_price_text(value) -> str:
+    """A unit price as a document should show it: at least two decimals, at most
+    five, with nothing but padding trimmed.
+
+    Two floors and one ceiling, each for a reason. Two decimals minimum because
+    a price on a document people read as money must not print as "10" — that
+    reads as a rounded figure, not an exact one. Five maximum because that is
+    what the column holds. And trailing zeros past the second place are trimmed
+    because "0.94400" invites the reader to wonder what was rounded away, when
+    nothing was.
+
+    Applies ONLY to unit prices. Line totals and every header amount keep two
+    decimals: those are payable currency amounts, and more digits there would
+    not be more accurate, only unpayable.
+    """
+    d = Decimal(str(value)).quantize(Decimal(1).scaleb(-_PRICE_DP), rounding=ROUND_HALF_UP)
+    whole, _, frac = f"{d:,.{_PRICE_DP}f}".partition(".")
+    frac = frac.rstrip("0").ljust(_MONEY_DP, "0")
+    return f"{whole}.{frac}"
 
 
 def build_logo(logo_data_url: str | None, size_mm: float = 18.0) -> Image | None:

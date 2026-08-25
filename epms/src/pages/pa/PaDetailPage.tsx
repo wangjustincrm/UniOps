@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatDateTime, formatUnitPrice } from '@/lib/utils'
 import { usePa, usePaAction, usePaEvents, useConfirmSettlement, usePaWorkflowSteps } from '@/hooks/usePas'
 import { usePo } from '@/hooks/usePos'
 import { useInvoices } from '@/hooks/useInvoices'
@@ -605,7 +605,7 @@ export default function PaDetailPage() {
                               </td>
                               <td className="px-4 py-3 text-right font-mono text-xs text-neutral-700">{line.qty}</td>
                               <td className="px-4 py-3 text-xs text-neutral-500">{line.unit}</td>
-                              <td className="px-4 py-3 text-right font-mono text-xs text-neutral-700">{formatAmount(line.unit_price, pa.currency)}</td>
+                              <td className="px-4 py-3 text-right font-mono text-xs text-neutral-700">{formatUnitPrice(line.unit_price, pa.currency)}</td>
                               <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{formatAmount(line.line_total, pa.currency)}</td>
                             </tr>
                           ))}

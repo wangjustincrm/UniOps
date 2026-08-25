@@ -1,6 +1,6 @@
 import type { ApiPo } from '@/services/po'
 import type { CompanyConfig } from '@/services/config'
-import { formatAmount, formatDate } from '@/lib/utils'
+import { formatAmount, formatDate, formatUnitPrice } from '@/lib/utils'
 
 export interface EmailVars {
   po_number: string
@@ -25,7 +25,7 @@ export function buildEmailVars(
 ): EmailVars {
   const lineItems = po.line_items
     .map((item, i) =>
-      `  ${String(i + 1).padStart(2)}. ${item.description.padEnd(36)} ${String(item.qty).padStart(6)} ${item.unit.padEnd(8)} @ ${formatAmount(item.unit_price, po.currency).padStart(12)}  =  ${formatAmount(item.line_total, po.currency).padStart(12)}`
+      `  ${String(i + 1).padStart(2)}. ${item.description.padEnd(36)} ${String(item.qty).padStart(6)} ${item.unit.padEnd(8)} @ ${formatUnitPrice(item.unit_price, po.currency).padStart(12)}  =  ${formatAmount(item.line_total, po.currency).padStart(12)}`
     )
     .join('\n')
 

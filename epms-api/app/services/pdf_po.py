@@ -20,6 +20,7 @@ from reportlab.platypus import (
 from app.models.po import PurchaseOrder
 from app.services.pdf_template import (
     build_logo, footer_note_element, get_tmpl, header_note_element, terms_element,
+    unit_price_text,
 )
 
 _PRIMARY = colors.HexColor("#0A7C7C")
@@ -154,7 +155,7 @@ def generate_po_pdf(
         _Col("Description",      None,    td_style,   lambda i, item: item.description),
         _Col("Qty",               18 * mm, td_r_style, lambda i, item: str(item.qty)),
         _Col("UOM",               13 * mm, td_style,   lambda i, item: item.unit or ""),
-        _Col("Unit Price",        18 * mm, td_r_style, lambda i, item: f"{float(item.unit_price):,.2f}"),
+        _Col("Unit Price",        18 * mm, td_r_style, lambda i, item: unit_price_text(item.unit_price)),
         _Col("Line Total",        22 * mm, td_r_style, lambda i, item: f"{float(item.line_total):,.2f}"),
         _Col("Sample",            15 * mm, td_style,   lambda i, item: getattr(item, "sample", None) or "",
              optional=True),
