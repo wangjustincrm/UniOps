@@ -1,6 +1,6 @@
 import type { ApiPo } from '@/services/po'
 import type { CompanyConfig } from '@/services/config'
-import { formatAmount, formatDate } from '@/lib/utils'
+import { formatAmount, formatDate, formatUnitPrice } from '@/lib/utils'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Materials / Packaging',
@@ -49,7 +49,7 @@ export function generatePoHtml(po: ApiPo, config: CompanyConfig): string {
       <td ${TD('text-align:right;font-family:Courier New,monospace;width:80px;', i)}>${item.qty}</td>
       <td ${TD('width:85px;', i)}>${escHtml(item.unit)}</td>
       ${hasSample ? `<td ${TD('width:90px;', i)}>${escHtml(item.sample ?? '—')}</td>` : ''}
-      <td ${TD('text-align:right;font-family:Courier New,monospace;width:120px;', i)}>${formatAmount(item.unit_price, po.currency)}</td>
+      <td ${TD('text-align:right;font-family:Courier New,monospace;width:120px;', i)}>${formatUnitPrice(item.unit_price, po.currency)}</td>
       <td ${TD('text-align:right;font-family:Courier New,monospace;font-weight:600;width:120px;', i)}>${formatAmount(item.line_total, po.currency)}</td>
     </tr>
   `).join('')

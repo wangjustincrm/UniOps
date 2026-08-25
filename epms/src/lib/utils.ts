@@ -17,6 +17,46 @@ export function formatCAD(amount: number): string {
  *  Handles built-in codes plus any valid ISO 4217 code (e.g. GBP, JPY, SGD).
  *  Custom codes that aren't valid ISO 4217 fall back to "CODE 1,234.56" format.
  */
+/** How many decimals a unit price may show — matches the NUMERIC(15,5) columns. */
+const PRICE_DP = 5
+
+/** Unit prices carry five decimals; every other amount is money at two.
+ *
+ * The ERP quotes purchase prices to five decimal places, and a price rounded
+ * to cents no longer multiplies out to the line total printed beside it — 319
+ * of 4,944 mirrored NC lines disagreed with the ERP, by 43,256 in total, the
+ * worst line by 2,000. So this shows at least two decimals (a money-looking
+ * figure must not print as "10") and at most five, trimming only padding.
+ *
+ * Use it for UNIT PRICES ONLY. Line totals, subtotals and grand totals stay on
+ * formatAmount: those are payable currency amounts, and extra digits there are
+ * not more accurate, only unpayable.
+ */
+export function formatUnitPrice(amount: number, currency: string): string {
+  // Deliberately the same construction as formatAmount below, differing in one
+  // argument: maximumFractionDigits. Anything else — a hand-placed symbol, a
+  // different locale — and the two would disagree about spacing or symbol in
+  // adjacent columns of the same table ("CA$100.00" beside "CA$ 0.944").
+  if (currency === 'RMB') {
+    return '¥ ' + new Intl.NumberFormat('zh-CN', {
+      minimumFractionDigits: 2, maximumFractionDigits: PRICE_DP,
+    }).format(amount)
+  }
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: PRICE_DP,
+    }).format(amount)
+  } catch {
+    const num = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2, maximumFractionDigits: PRICE_DP,
+    }).format(amount)
+    return `${currency} ${num}`
+  }
+}
+
 export function formatAmount(amount: number, currency: string): string {
   // RMB is a colloquial code (ISO code is CNY); handle it explicitly
   if (currency === 'RMB') {

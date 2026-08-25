@@ -11,7 +11,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
-import { formatAmount, formatDate, cn } from '@/lib/utils'
+import { formatAmount, formatDate, formatUnitPrice, cn } from '@/lib/utils'
 import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
@@ -922,7 +922,7 @@ export default function PoDetailPage() {
                                   {item.planned_arrival_date ? formatDate(item.planned_arrival_date) : '—'}
                                 </td>
                               )}
-                              <td className="px-4 py-2.5 amount text-right text-neutral-900">{formatAmount(item.unit_price, po.currency)}</td>
+                              <td className="px-4 py-2.5 amount text-right text-neutral-900">{formatUnitPrice(item.unit_price, po.currency)}</td>
                               <td className="px-4 py-2.5 amount text-right font-semibold text-neutral-900">{formatAmount(item.line_total, po.currency)}</td>
                               <td className="px-4 py-2.5">
                                 <div className="flex flex-col items-center gap-1">
