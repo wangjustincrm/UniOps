@@ -37,6 +37,11 @@ export interface ApiPoLineItem {
   planned_arrival_date?: string | null
   // 该 line 被其他发票累计分摊的税前额(仅 match-candidates 端点返回)
   already_allocated?: string | null
+  // False on a line a buyer added to an NC-imported PO for a charge the ERP
+  // cannot carry (a one-off mould/tooling quote). Those rows are fully
+  // editable here; NC's own are not. Absent on responses that predate the
+  // field, which reads as "not NC's" — see isNcSourced().
+  nc_sourced?: boolean
 }
 
 // Fields the client posts per line. Server derives line_total/received_qty;
@@ -139,6 +144,20 @@ export interface ImportedDetailsBody {
   is_prepaid?: boolean | null
   buyer_notes?: string | null
   lines: ImportedDetailsLineBody[]
+  // The COMPLETE set of buyer-added lines, not a patch: omitting one deletes
+  // it. Leave the key off entirely to say "don't touch them".
+  manual_lines?: ManualLineBody[]
+}
+
+export interface ManualLineBody {
+  // Absent on a row that has not been saved yet.
+  id?: string
+  description: string
+  qty: number
+  unit: string
+  unit_price: number
+  supplier_item_id?: string | null
+  sample?: string | null
 }
 
 export interface PoActionBody {

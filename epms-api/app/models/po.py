@@ -119,3 +119,20 @@ class PoLineItem(UUIDPrimaryKey, Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     po: Mapped["PurchaseOrder"] = relationship("PurchaseOrder", back_populates="line_items")
+
+    @property
+    def nc_sourced(self) -> bool:
+        """Whether the ERP put this line here.
+
+        On a mirrored PO this is the whole distinction between a line NC owns —
+        description, quantity and price rewritten from the ERP on every sync —
+        and one a buyer added on this side for a charge NC has no way to carry
+        (a one-off mould/tooling quote the supplier wants on the signed PO).
+        The mirror sets nc_source_pk on everything it writes, so a NULL is the
+        record of human authorship. No extra column, and nothing to keep in
+        step: the two facts cannot drift apart because they are one fact.
+
+        False for every line of a UniOps-native PO, where it is true but
+        uninteresting — the whole document is hand-entered.
+        """
+        return self.nc_source_pk is not None

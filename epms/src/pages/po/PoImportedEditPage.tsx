@@ -12,7 +12,10 @@ import { usePo, useUpdatePoImportedDetails, useRegeneratePoPdf } from '@/hooks/u
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { useConfig } from '@/hooks/useConfig'
 import { formatAmount, formatDate } from '@/lib/utils'
-import { isImportedEditablePo, isImportedTaxLocked } from '@/lib/importedPoEdit'
+import {
+  isImportedEditablePo, isImportedTaxLocked, isNcSourced,
+  manualLinesTotal, subtotalWith,
+} from '@/lib/importedPoEdit'
 import type { ImportedDetailsBody } from '@/services/po'
 
 // Same mapping as PoDetailPage.tsx / PoListPage.tsx.
@@ -98,6 +101,7 @@ export default function PoImportedEditPage() {
     setBuyerNotes(po.buyer_notes ?? '')
     setLines(po.line_items.map((li) => ({
       id: li.id,
+      ncSourced: isNcSourced(li, po),
       description: li.description,
       materialId: li.material_id ?? null,
       qty: Number(li.qty),
@@ -151,6 +155,21 @@ export default function PoImportedEditPage() {
   }, [po?.id, po?.delivery_address, config?.delivery_address])
 
   const editable = isImportedEditablePo(po)
+  // Whether this response can tell an NC line from a buyer-added one at all.
+  // An API build without `nc_sourced` cannot, and sending the declarative
+  // manual_lines list on that guess would DELETE every added line the buyer
+  // could not see. Absent the flag, the line editor stays closed and the key
+  // stays off the payload entirely — which the endpoint reads as "leave them".
+  const canEditLines = !!po?.line_items?.some((li) => li.nc_sourced !== undefined)
+  // What the added lines came to when the page loaded — the term that has to
+  // come back off the stored subtotal to recover NC's own figure.
+  const storedManualTotal = manualLinesTotal(
+    (po?.line_items ?? []).map((li) => ({
+      ncSourced: isNcSourced(li, po),
+      qty: Number(li.qty),
+      unitPrice: Number(li.unit_price),
+    })),
+  )
   // Locked, not hidden: the buyer should see the rate that is in force and
   // why it cannot move, rather than find the field missing.
   const taxLocked = isImportedTaxLocked(po)
@@ -160,8 +179,13 @@ export default function PoImportedEditPage() {
   // preview below must show the PO's own stored tax_amount/total rather than
   // recompute off a rate this page never sends — otherwise it reads as "tax
   // will be cleared on save" when it will not be.
+  // An added row with no description would come back a 422 the buyer has to
+  // decode. The server still enforces it — this only saves the round trip.
+  const blankAddedLine = lines.some((l) => !l.ncSourced && !l.description.trim())
   const effectiveTaxRate = isCadOrder ? taxRate : 0
-  const subtotal = Number(po?.subtotal ?? 0)
+  // Live, so the buyer sees what an added line does to the order before saving.
+  // Same reconstruction the endpoint performs, so the figure cannot jump on save.
+  const subtotal = subtotalWith(Number(po?.subtotal ?? 0), storedManualTotal, lines)
   const taxAmount = isCadOrder
     ? Math.round(subtotal * effectiveTaxRate * 100) / 100
     : Number(po?.tax_amount ?? 0)
@@ -194,14 +218,31 @@ export default function PoImportedEditPage() {
         incoterms: incoterms || null,
         is_prepaid: isPrepaid,
         buyer_notes: buyerNotes || null,
-        lines: lines.map((l) => ({
+        // The NC-owned lines: two patchable columns each, keyed by id.
+        // Empty string means "cleared" — the backend distinguishes an absent
+        // key from an explicit null, so send null (not '') to actually clear a
+        // previously-saved value.
+        lines: lines.filter((l) => l.ncSourced).map((l) => ({
           id: l.id,
-          // Empty string means "cleared" — the backend distinguishes an
-          // absent key from an explicit null, so send null (not '') to
-          // actually clear a previously-saved value.
           supplier_item_id: l.supplierItemId || null,
           sample: l.sample || null,
         })),
+      }
+      if (canEditLines) {
+        // Declarative: the complete set of added lines this PO should end up
+        // with. Omitting the key entirely (when the response could not tell the
+        // two kinds apart) is what leaves them alone — sending [] would delete
+        // them. A row that has never been saved carries a client-side id, which
+        // is dropped so the endpoint creates it.
+        payload.manual_lines = lines.filter((l) => !l.ncSourced).map((l) => ({
+          ...(l.id.startsWith('new-') ? {} : { id: l.id }),
+          description: l.description,
+          qty: l.qty,
+          unit: l.unit,
+          unit_price: l.unitPrice,
+          supplier_item_id: l.supplierItemId || null,
+          sample: l.sample || null,
+        }))
       }
       // Tax only applies to CAD orders — this page has no input for it on a
       // non-CAD PO (see isCadOrder above). NC POs are not always CAD and not
@@ -353,7 +394,13 @@ export default function PoImportedEditPage() {
 
       <section className="space-y-3 rounded-lg border border-neutral-200 p-4">
         <h2 className="text-base font-semibold text-neutral-900">Line Items</h2>
-        <ImportedPoLineItems items={lines} onChange={setLines} currency={po.currency} />
+        <ImportedPoLineItems
+          items={lines}
+          onChange={setLines}
+          currency={po.currency}
+          canAddLines={canEditLines}
+          locked={taxLocked}
+        />
         <div className="flex justify-end gap-6 text-sm">
           <span className="text-neutral-500">Subtotal <span className="ml-2 font-mono text-neutral-900">{formatAmount(subtotal, currency)}</span></span>
           <span className="text-neutral-500">Tax <span className="ml-2 font-mono text-neutral-900">{formatAmount(taxAmount, currency)}</span></span>
@@ -371,11 +418,18 @@ export default function PoImportedEditPage() {
         </FormField>
       </section>
 
+      {blankAddedLine && (
+        <p className="text-right text-sm text-danger-600">
+          Every added line needs a description.
+        </p>
+      )}
+
       <div className="flex justify-end gap-2">
         <BackLink to={`/po/${po.id}`}>
           <Button variant="secondary" type="button">Cancel</Button>
         </BackLink>
-        <Button type="button" onClick={handleSave} disabled={isSubmitting}>
+        <Button type="button" onClick={handleSave}
+                disabled={isSubmitting || blankAddedLine}>
           {isSubmitting ? 'Saving…' : 'Save & Regenerate PDF'}
         </Button>
       </div>

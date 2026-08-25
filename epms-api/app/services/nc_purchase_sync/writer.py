@@ -200,6 +200,17 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
     # order while it is another order's genuine vbillcode.
     erp_numbers = frozenset(o["number"] for o in payload["orders"])
 
+    # What each mirrored PO carries in BUYER-ADDED lines (nc_source_pk IS NULL).
+    # NC has no way to hold a one-off mould/tooling charge, so the buyer adds it
+    # on this side — and this write rebuilds the header money from NC, which
+    # would erase that charge from the total while leaving the line itself on
+    # screen. Adding the term back keeps the header and its own lines in
+    # agreement. Loaded once rather than per PO: a full reload walks ~1,700
+    # orders, and this is one grouped read against a table it already touches.
+    cur.execute("select po_id, coalesce(sum(line_total), 0) from po_line_items "
+                "where nc_source_pk is null group by po_id")
+    manual_by_po = dict(cur.fetchall())
+
     # Sorted, not fetch-ordered. When several orders share a number the suffix
     # goes to whoever is processed second, and Oracle promises no ordering — so
     # an unsorted loop could hand PO-005-2402-01 to a different one of the two
@@ -231,27 +242,32 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
             # no source for them, so they are deliberately absent from these
             # column lists. Never add them — a sync would silently erase work a
             # buyer did by hand.
+            # NC's own subtotal plus whatever the buyer added. Note this is
+            # NC's FRESH figure, never the stored one — adding the manual term
+            # to a subtotal that already contained it would compound the charge
+            # on every single sync.
+            subtotal = Decimal(po["subtotal"]) + Decimal(manual_by_po.get(pid, 0))
             cur.execute("select tax_rate from purchase_orders "
                         "where id=%s and buyer_edited_at is not null", (pid,))
             edited = cur.fetchone()
             if edited is None:
                 tax_rate = po["tax_rate"]
-                tax_amount = po["tax_amount"]
-                total = po["total"]
+                tax_amount = (subtotal * Decimal(po["tax_rate"])).quantize(Decimal("0.01"))
+                total = subtotal + tax_amount
             else:
                 # A buyer set this rate by hand (PATCH /po/{id}/imported-details).
                 # Keep it, but re-derive the money from NC's fresh subtotal —
                 # simply skipping the columns would leave subtotal + tax != total
                 # whenever NC changed the line amounts.
                 tax_rate = edited[0]
-                tax_amount = (Decimal(po["subtotal"]) * Decimal(tax_rate)).quantize(
+                tax_amount = (subtotal * Decimal(tax_rate)).quantize(
                     Decimal("0.01"))
-                total = Decimal(po["subtotal"]) + tax_amount
+                total = subtotal + tax_amount
             cur.execute("update purchase_orders set number=%s,title=%s,status=%s,currency=%s,"
                         "subtotal=%s,tax_rate=%s,tax_amount=%s,total=%s,"
                         "vendor_id=%s,vendor_name=%s,notes=%s,updated_at=now() where id=%s",
                         (number, po["title"], po["status"], po["currency"],
-                         po["subtotal"], tax_rate, tax_amount, total,
+                         subtotal, tax_rate, tax_amount, total,
                          po["vendor_id"], po["vendor_name"], po["notes"], pid))
         else:
             number = _free_number(cur, po["number"], po["nc_source_pk"], erp_numbers)
