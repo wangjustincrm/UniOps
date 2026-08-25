@@ -177,7 +177,7 @@ main 现含 `9f7c0c3`(vendor-credit 合并), 带 3 个 finance-api 迁移。生�
 | # | 决策 | 理由 |
 |---|---|---|
 | D1 | 整套迁到虚拟机, 笔记本变瘦客户端 | 笔记本可用内存只剩 7.5 GB(§1) |
-| D2 | **Ubuntu Server 24.04 LTS + 原生 Docker Engine** | 见下方"D2 详述" |
+| D2 | **Ubuntu Server 22.04.5 LTS + 原生 Docker Engine** | 见下方"D2 详述" |
 | D3 | 路径 `/srv/uniops`(对应原 `C:\Project`) | FHS 里 `/srv` 就是"本机对外提供服务的数据"; 需 `git worktree repair` 修 62 个 worktree 的路径 |
 | D4 | 数据库现导最新生产快照 | 同事测的是真实单据 / 真实账号 |
 | D5 | **所有栈默认钉「生产当前发布版」**, 不是 `main`, 也不复现 5 树拓扑 | 见下方"D5 详述" |
@@ -204,7 +204,7 @@ SSH 天然支持任意多并发会话, VS Code Remote-SSH 连 Linux 是最成熟
 附带收益:
 
 - 关掉 `usePolling` 省下约 1 核/栈的常驻空转(§2.1)
-- 同样 64 GB, Linux 能给容器约 60 GB, Windows 套娃后只剩约 40 GB
+- 同样 48 GB, Linux 能给容器约 44 GB, Windows 套娃后只剩约 28 GB
 - 生产环境本来就是 Linux, 测试机与生产同构, 少一整类"本地好好的、上线就炸"
 - 不再需要 `MSYS_NO_PATHCONV` 之类的路径转换绕行
 - Docker Engine 是 Apache 2.0, 无 Docker Desktop 的商业授权问题
@@ -255,9 +255,11 @@ SSH 天然支持任意多并发会话, VS Code Remote-SSH 连 Linux 是最成熟
 ## 4. 目标架构
 
 ```
-Ubuntu Server 24.04 (64 GB / 12 vCPU / 500 GB NVMe)
+Ubuntu Server 22.04.5  ·  10.10.50.64  ·  12 vCPU / 48 GB / 700 GB(机械盘阵列)
 │
 ├── dockerd (系统服务, docker 组内所有用户可用)
+│   └── /var/lib/docker 是独立的 400 G LVM 卷 —— Docker 撑爆磁盘不会拖垮整机
+│       (本项目已因镜像臃肿耗尽过磁盘; 卷组另留 198 G 可在线 lvextend)
 │
 ├── /srv/uniops/                       属主 root:uniops, setgid, 组可写
 │   ├── uniops/                        主 checkout(含 .git, 全部 62 worktree 的对象库)
@@ -357,11 +359,15 @@ node_modules  .venv  __pycache__  .vite  dist  .pytest_cache  nchome
 
 ## 9. 服务器环境要求
 
-- **固定 IP** —— IP 一变, 各栈的 `LAN_HOST` 全部失效
-- Ubuntu Server 24.04 LTS, 无桌面
+- **固定 IP**(已配 `10.10.50.64/24` 静态, 非 DHCP) —— IP 一变, 各栈的 `LAN_HOST` 全部失效
+- Ubuntu Server 22.04.5 LTS, 无桌面
 - Docker Engine + compose plugin(不是 Docker Desktop)
-- 防火墙(ufw)放行: `22`, `5173-5179`, `5273-5279`, `5373-5379`, `5473-5479`,
-  `8000-8011`, `8100-8111`, `8200-8211`, `8300-8311`, `8025`
+- 防火墙(ufw)放行: `22`, `5173-5179`, `5273-5279`, `5373-5379`,
+  `8000-8011`, `8100-8111`, `8200-8211`, `8025`/`8125`/`8225`
+  **★ 但 ufw 管不住 Docker 发布的端口** —— Docker 直接往 iptables 的 `DOCKER` 链插规则, 优先于 ufw。
+  应用端口不加规则也能访问, 且 `ufw deny` 对它们无效。真正被 ufw 保护的只有 SSH。
+  内网测试机可接受; 将来若要限制来源, 要写 `DOCKER-USER` 链
+- 时区 `America/Toronto`(EDT, -0400)+ NTP —— 时区错会让日志与数据库时间戳全部错位
 - 每个开发者: Linux 账号 + SSH key + `docker` 组 + `uniops` 组
 - `inotify` 上限调高(4 套栈 × 7 个 Vite 监听大量文件): `fs.inotify.max_user_watches=524288`
 

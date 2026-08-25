@@ -7,11 +7,11 @@
 **Goal:** 把 UniOps 全部开发测试环境从工作笔记本迁到 Ubuntu 虚拟机, 让同事能通过 IP 访问测试,
 并让 2-3 名开发者各自用 VS Code + Claude Code 远程改调服务器上的代码。
 
-**Architecture:** Ubuntu Server 24.04 + 原生 Docker Engine, 代码放 `/srv/uniops`(组共享)。
+**Architecture:** Ubuntu Server 22.04.5 + 原生 Docker Engine, 代码放 `/srv/uniops`(组共享)。
 同一份 compose 文件靠 `STACK_PREFIX` + 端口 override + `LAN_HOST` 分出 4 套栈:
 1 套主环境(钉「生产当前发布版」, 占标准端口, 对内网开放, 同事测试用) + 每位开发者 1 套。传输走 tar 打包直传, 不经过 git。
 
-**Tech Stack:** Ubuntu 24.04、Docker Engine + compose plugin、PostgreSQL 15、alembic、Vite 8、OpenSSH、tar/scp
+**Tech Stack:** Ubuntu 22.04、Docker Engine + compose plugin、PostgreSQL 15、alembic、Vite 8、OpenSSH、tar/scp
 
 **Spec:** `docs/superpowers/specs/2026-08-25-testbed-migration-design.md`
 
@@ -393,9 +393,9 @@ PYEOF
 然后写生成器 `make-stack-env.sh`(内容见仓库同名文件), 用法:
 
 ```bash
-./make-stack-env.sh 0 <SRV_IP> > /srv/uniops/uniops-prod/.env   # 主环境, 标准端口
-./make-stack-env.sh 1 <SRV_IP> > .env.dev1                      # 开发栈 1, 端口 +100
-./make-stack-env.sh 2 <SRV_IP> > .env.dev2                      # 开发栈 2, 端口 +200
+./make-stack-env.sh 0 10.10.50.64 > /srv/uniops/uniops-prod/.env   # 主环境, 标准端口
+./make-stack-env.sh 1 10.10.50.64 > .env.dev1                      # 开发栈 1, 端口 +100
+./make-stack-env.sh 2 10.10.50.64 > .env.dev2                      # 开发栈 2, 端口 +200
 ```
 
 索引 `i` 的端口 = 标准端口 + `i*100`, `STACK_PREFIX` 自动是 `uniops-test`(i=0)或 `uniops-dev<i>`。
@@ -476,131 +476,175 @@ export MSYS_NO_PATHCONV=1
 
 ---
 
-### Task 4: 服务器 — 装 Ubuntu 与基础环境
+### Task 4: 服务器 — 装 Ubuntu 与基础环境 ✅ 已完成 2026-08-25
 
-**Interfaces:**
-- Produces: 服务器固定 IP, 记为 `<SRV_IP>`, 后续所有任务引用
+**实际环境**(与初版设计的差异已在此更正):
 
-- [ ] **Step 1: 建虚拟机**
+| 项 | 实际值 |
+|---|---|
+| 虚拟化 | VMware, VMware Paravirtual SCSI + VMXNET3 |
+| 规格 | 12 vCPU / 48 GB / 700 GB(机械盘阵列) |
+| 系统 | **Ubuntu 22.04.5 LTS**(初版设计写的是 24.04; 22.04 逐条核对可用, 见下) |
+| 主机名 | `uniops-dev` |
+| IP | **10.10.50.64/24**(ens192, **静态**) |
+| 时区 | America/Toronto (EDT, -0400), NTP 已同步 |
+| 管理员 | `crmadmin` |
+| 磁盘 | `/` 100 G + `/boot` 2 G + **`/var/lib/docker` 400 G 独立 LV** + 卷组留 198 G 未分配 |
 
-规格(依据设计 §2.1 实测的 5.48 GB/栈 × 4 套栈):
+**为什么 22.04 可用**: Docker CE 官方仓库支持 jammy(下面的 `$VERSION_CODENAME` 自动解析);
+内核 6.8 HWE; cgroup v2 默认开启; 标准支持到 2027-04。所有服务都在容器里跑, 宿主 Python 版本差异碰不到。
 
-| 项目 | 推荐 | 最低 |
-|---|---|---|
-| 内存 | 64 GB | 48 GB |
-| vCPU | 12 | 8 |
-| 磁盘 | 500 GB NVMe 后端 | 300 GB |
+**为什么 `/var/lib/docker` 单独一个卷**: Docker 是唯一会失控增长的东西, 而本项目**已经因此出过事**
+(`import_pms/data` 2 GB 被烤进镜像导致磁盘耗尽)。放在 `/` 里的话, 一次失控的构建缓存会填满根分区,
+然后 SSH 登不进去、日志写不了、整机瘫痪。单独一个卷的话最坏只是 Docker 不可用, 系统还在。
+卷组留白是为了将来一条 `sudo lvextend -r -L +100G /dev/ubuntu-vg/docker-lv` 在线扩容。
 
-装 **Ubuntu Server 24.04 LTS**, 不装桌面。
-
-- [ ] **Step 2: 配固定 IP 并记录**
-
-用 DHCP 保留(按 MAC 绑定)最稳。建议与生产同网段。
+- [x] **Step 1: 装系统 + 基础确认**
 
 ```bash
-ip -4 addr show | grep inet
+hostnamectl                       # 主机名 uniops-dev, 不能带下划线(下划线不是合法 DNS 标签)
+ip -4 addr show | grep inet       # 10.10.50.64/24
+sudo timedatectl set-timezone America/Toronto
+timedatectl                       # 必须设: 时区错会让日志与数据库时间戳全部错位
+sudo cat /etc/netplan/*.yaml      # 确认是静态 IP 而非 dhcp4: true
 ```
 
-**把 IP 记在这里, 后续所有步骤引用: `SRV_IP = ____________`**
+**★ IP 必须固定** —— 一变则四套栈的 `LAN_HOST` 全部失效, 同事全部打不开。
 
-IP 一变, 四套栈的 `LAN_HOST` 全部失效 —— 必须固定。
+- [ ] **Step 2: 装 Docker Engine(不是 Docker Desktop, 更不是 snap 版)**
 
-- [ ] **Step 3: 装 Docker Engine(不是 Docker Desktop)**
+snap 版 Docker 有严格的路径限制(只能访问 `/home` 下的目录), 会和 `/srv/uniops` 冲突。
 
 ```bash
 sudo apt update && sudo apt install -y ca-certificates curl
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
-  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable"   | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
-- [ ] **Step 4: 验证 Docker 可用**
+验证:
 
 ```bash
 sudo docker run --rm hello-world
 docker compose version
+docker info | grep -E "Docker Root Dir|Storage Driver"
+df -h /var/lib/docker
 ```
 
-预期: hello-world 正常输出; compose 版本 v2.x。
+预期: `Docker Root Dir: /var/lib/docker`、`Storage Driver: overlay2`;
+`df` 显示 `/dev/mapper/ubuntu--vg-docker--lv` 约 400 G。
+**如果 `df` 显示的是 `/` 那个 100 G 的卷, 说明挂载没生效, 先别往下走。**
 
-- [ ] **Step 5: 调高 inotify 上限**
-
-4 套栈 × 7 个 Vite 会监听大量文件, 默认上限会导致 HMR 静默失效:
+- [ ] **Step 3: 内核参数**
 
 ```bash
-echo "fs.inotify.max_user_watches=524288" | sudo tee /etc/sysctl.d/60-inotify.conf
-echo "fs.inotify.max_user_instances=1024" | sudo tee -a /etc/sysctl.d/60-inotify.conf
+sudo tee /etc/sysctl.d/60-uniops.conf > /dev/null <<'EOF'
+# 4 套栈 × 7 个 Vite 会监听大量文件, 默认上限会让 HMR 静默失效
+fs.inotify.max_user_watches=524288
+fs.inotify.max_user_instances=1024
+# 多套栈 + 多用户, 提高文件句柄上限
+fs.file-max=2097152
+EOF
 sudo sysctl --system
 sysctl fs.inotify.max_user_watches fs.inotify.max_user_instances
 ```
 
-预期: 输出 `524288` 与 `1024`。
+预期: `524288` 与 `1024`。
 
-- [ ] **Step 6: 建用户与组**
+- [ ] **Step 4: 用户与组**
+
+初期 2 人 = 主环境栈 + 2 套开发栈(索引 0/1/2)。第三位以后再加。
 
 ```bash
 sudo groupadd -f uniops
-# 为每位开发者建账号(把 justin/devb/devc 换成真实用户名)
-for u in justin devb devc; do
-  sudo adduser --disabled-password --gecos "" "$u"
-  sudo usermod -aG uniops,docker "$u"
-done
-id justin
+sudo usermod -aG uniops,docker crmadmin
+sudo adduser --disabled-password --gecos "" devb      # 用户名按实际改
+sudo usermod -aG uniops,docker devb
+id crmadmin; id devb
 ```
 
-预期: `justin` 同时属于 `uniops` 和 `docker` 组。
-
-- [ ] **Step 7: 配 SSH key 登录并关掉密码登录**
-
-每位开发者把自己的公钥交上来:
+**★ 组变更要重新登录才生效。** 退出重连后:
 
 ```bash
-for u in justin devb devc; do
-  sudo mkdir -p /home/$u/.ssh
-  sudo chmod 700 /home/$u/.ssh
-  # 把该用户的公钥写进 /home/$u/.ssh/authorized_keys
-  sudo chown -R $u:$u /home/$u/.ssh
-  sudo chmod 600 /home/$u/.ssh/authorized_keys
-done
-sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sudo systemctl restart ssh
+docker ps
 ```
 
-- [ ] **Step 8: 放行防火墙**
+预期: 能列出且**不需要 sudo**。这一条正是 Windows + Docker Desktop 做不到的事,
+也是 D2 选 Ubuntu 的核心原因 —— Docker Desktop 绑定单个桌面登录用户, 其他人 SSH 进来拿不到 docker。
+
+- [ ] **Step 5: 代码目录**
+
+```bash
+sudo mkdir -p /srv/uniops
+sudo chgrp uniops /srv/uniops
+sudo chmod 2775 /srv/uniops
+ls -ld /srv/uniops
+```
+
+预期: `drwxrwsr-x ... root uniops` —— 注意那个 **`s`**(setgid),
+它让任何人在此新建的文件自动继承 `uniops` 组, 多人协作才不会互相锁死。
+
+- [ ] **Step 6: SSH key 登录**
+
+笔记本上生成(实测该机原本没有 key):
+
+```bash
+ssh-keygen -t ed25519 -C "crmadmin@uniops-dev" -f ~/.ssh/id_ed25519
+cat ~/.ssh/id_ed25519.pub
+```
+
+服务器上追加(**是 `>>` 不是 `>`**):
+
+```bash
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+echo "<公钥整行>" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+**★ 先验证 key 能登录, 再关密码登录** —— 顺序反了会把自己锁在外面。
+笔记本上另开窗口测试 `ssh crmadmin@10.10.50.64 "hostname"`, **成功之后**再:
+
+```bash
+sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo systemctl restart ssh
+sudo sshd -T | grep -i passwordauthentication      # 预期 no
+```
+
+(改的时候**保持一个已连上的 SSH 窗口别关**, 配错了还能补救。)
+
+- [ ] **Step 7: 防火墙 —— 但要知道它管不住 Docker**
 
 ```bash
 sudo ufw allow 22/tcp
-sudo ufw allow 5173:5179/tcp
-sudo ufw allow 5273:5279/tcp
-sudo ufw allow 5373:5379/tcp
-sudo ufw allow 5473:5479/tcp
-sudo ufw allow 8000:8011/tcp
+sudo ufw allow 5173:5179/tcp     # 主环境前端
+sudo ufw allow 5273:5279/tcp     # 开发栈 1
+sudo ufw allow 5373:5379/tcp     # 开发栈 2
+sudo ufw allow 8000:8011/tcp     # 主环境 API
 sudo ufw allow 8100:8111/tcp
 sudo ufw allow 8200:8211/tcp
-sudo ufw allow 8300:8311/tcp
-sudo ufw allow 8025/tcp
-sudo ufw allow 8125/tcp
-sudo ufw allow 8225/tcp
-sudo ufw allow 8325/tcp
+sudo ufw allow 8025,8125,8225/tcp   # MailHog
 sudo ufw --force enable
 sudo ufw status numbered
 ```
 
-预期: 规则列表里能看到以上全部端口。
+**★ ufw 管不住 Docker 发布的端口。** Docker 直接往 iptables 的 `DOCKER` 链插规则,
+**优先于 ufw**。所以那些应用端口**不加 ufw 规则也能从局域网访问**, 而 `ufw deny 5173` **是无效的**。
+真正被 ufw 保护的只有主机自身的服务(SSH)。
 
-- [ ] **Step 9: 从笔记本验证能 SSH 连上**
+这是内网测试机, 可以接受。**但别以为 ufw 在给应用端口把关** ——
+将来若要真正限制访问来源, 要写 `DOCKER-USER` 链, 不是 ufw。
+
+- [ ] **Step 8: 从笔记本一次性收尾验证**
 
 ```bash
-ssh justin@<SRV_IP> "hostname && docker ps"
+ssh crmadmin@10.10.50.64 "hostname; docker ps; df -h /var/lib/docker | tail -1; sysctl -n fs.inotify.max_user_watches; ls -ld /srv/uniops"
 ```
 
-预期: 输出主机名和空的容器列表(证明**非 sudo 也能用 docker** —— 这正是 Docker Desktop 做不到的)。
+一条命令把所有关键项验一遍。
 
----
 
 ### Task 5: 传输
 
@@ -636,7 +680,7 @@ tar -tzf /d/uniops-migrate.tar.gz | grep -c "^./nchome/" || echo "0 (nchome 已�
 - [ ] **Step 3: 传到服务器**
 
 ```bash
-scp /d/uniops-migrate.tar.gz justin@<SRV_IP>:/tmp/
+scp /d/uniops-migrate.tar.gz crmadmin@10.10.50.64:/tmp/
 ```
 
 千兆网下 4 GB 约 1-2 分钟。
@@ -670,7 +714,7 @@ setgid 让任何人新建的文件自动继承 `uniops` 组, 多人协作才不�
 
 ```bash
 tar -czf /d/claude-home.tar.gz -C "/c/Users/$USERNAME" .claude .gitconfig
-scp /d/claude-home.tar.gz justin@<SRV_IP>:/tmp/
+scp /d/claude-home.tar.gz crmadmin@10.10.50.64:/tmp/
 ```
 
 在服务器上:
@@ -803,7 +847,7 @@ cp /srv/uniops/uniops/.env /srv/uniops/uniops-prod/.env
 cat >> /srv/uniops/uniops-prod/.env <<EOF
 
 # 主环境: 同事的浏览器用这个地址访问
-LAN_HOST=<SRV_IP>
+LAN_HOST=10.10.50.64
 STACK_PREFIX=uniops-test
 EOF
 grep -E "LAN_HOST|STACK_PREFIX" /srv/uniops/uniops-prod/.env
@@ -823,7 +867,7 @@ cd /srv/uniops/uniops-prod
 STACK_PREFIX=uniops-test docker compose -f docker-compose.dev.yml --env-file .env config | grep "VITE_API_URL"
 ```
 
-预期: `VITE_API_URL: http://<SRV_IP>:8000/api/v1` —— **必须是 IP, 不是 localhost**。
+预期: `VITE_API_URL: http://10.10.50.64:8000/api/v1` —— **必须是 IP, 不是 localhost**。
 这里看到 localhost 就说明 `.env` 没生效, 后面全白搭。
 
 - [ ] **Step 3: 起测试栈**
@@ -1004,7 +1048,6 @@ curl -s -o /dev/null -w "epms-api health: %{http_code}\n" http://localhost:8000/
 ```bash
 cd /srv/uniops/uniops
 sudo -u devb git worktree add /srv/uniops/uniops-devb-work <PROD_SHA> -b feature/devb-scratch
-sudo -u devc git worktree add /srv/uniops/uniops-devc-work <PROD_SHA> -b feature/devc-scratch
 git worktree list | tail -3
 ```
 
@@ -1021,7 +1064,7 @@ for i in 1 2 3; do
   cat >> .env.dev$i <<EOF
 
 # ── 开发栈 $i: 浏览器在开发者自己的笔记本上, 所以 LAN_HOST 必须是服务器 IP ──
-LAN_HOST=<SRV_IP>
+LAN_HOST=10.10.50.64
 STACK_PREFIX=uniops-dev$i
 EOF
 done
@@ -1041,7 +1084,7 @@ docker compose -f docker-compose.dev.yml \
   | grep -E "VITE_API_URL|VITE_PORTAL_URL"
 ```
 
-预期: `http://<SRV_IP>:8100/api/v1` 与 `http://<SRV_IP>:5274`。
+预期: `http://10.10.50.64:8100/api/v1` 与 `http://10.10.50.64:5274`。
 **如果显示 `:8000` / `:5174`, 说明端口覆盖没做, 开发栈的页面会打到测试栈上** ——
 这是最隐蔽的一种串台, 必须在这里拦住。
 
@@ -1158,7 +1201,7 @@ diff <(grep -E "^(FAILED|ERROR)" /srv/uniops/uniops/db-snapshots/epms-api-test-b
 - [ ] **Step 1: 从笔记本确认端口真的对外开放**
 
 ```bash
-nc -zv <SRV_IP> 5174 && nc -zv <SRV_IP> 8000
+nc -zv 10.10.50.64 5174 && nc -zv 10.10.50.64 8000
 ```
 
 预期: 都 succeeded。失败说明 ufw 没放行(回 Task 4 Step 8)。
@@ -1167,11 +1210,11 @@ nc -zv <SRV_IP> 5174 && nc -zv <SRV_IP> 8000
 
 **这是整个 LAN 化唯一真正会翻车的地方。**
 
-1. 笔记本浏览器打开 `http://<SRV_IP>:5174`
+1. 笔记本浏览器打开 `http://10.10.50.64:5174`
 2. **先按 F12 打开 Network 面板**, 再登录
 3. 逐条看请求的 Request URL
 
-预期: 所有 API 请求指向 `http://<SRV_IP>:8000/...`。
+预期: 所有 API 请求指向 `http://10.10.50.64:8000/...`。
 **看到任何一条 `http://localhost:8000` 就是失败** —— 说明某个 `VITE_*` 没被参数化, 回 Task 2 Step 3 重查。
 
 - [ ] **Step 3: 走通一条完整业务链路**
@@ -1190,7 +1233,7 @@ nc -zv <SRV_IP> 5174 && nc -zv <SRV_IP> 8000
 
 - [ ] **Step 5: 验证邮件被 MailHog 拦下**
 
-触发一个会发通知的动作(如提交一张 PR 送审), 在笔记本浏览器打开 `http://<SRV_IP>:8025`。
+触发一个会发通知的动作(如提交一张 PR 送审), 在笔记本浏览器打开 `http://10.10.50.64:8025`。
 
 预期: MailHog 里能看到那封邮件, **同事的真实邮箱收不到任何东西**。
 
@@ -1198,7 +1241,7 @@ nc -zv <SRV_IP> 5174 && nc -zv <SRV_IP> 8000
 
 两个人同时从各自电脑操作:
 
-- 各自 VS Code Remote-SSH 连 `<SRV_IP>`, 打开各自的 worktree
+- 各自 VS Code Remote-SSH 连 `10.10.50.64`, 打开各自的 worktree
 - 各自跑 `./start-dev.sh 1 logs -f epms-api` / `./start-dev.sh 2 ...`
 - 各自改一个前端文件, 确认**自己的**栈热重载了、**对方的**没动
 - 各自在服务器上跑 `claude` 起 Claude Code
@@ -1211,7 +1254,7 @@ nc -zv <SRV_IP> 5174 && nc -zv <SRV_IP> 8000
 cd /srv/uniops/uniops && ./start-dev.sh 1 restart
 ```
 
-同时在笔记本刷新 `http://<SRV_IP>:5174`(测试栈)。
+同时在笔记本刷新 `http://10.10.50.64:5174`(测试栈)。
 预期: 测试栈毫无影响。
 
 ---
@@ -1220,19 +1263,19 @@ cd /srv/uniops/uniops && ./start-dev.sh 1 restart
 
 - [ ] **Step 1: 给同事一张访问说明**
 
-- 测试地址: `http://<SRV_IP>:5174`(Portal, 从这里进各模块)
+- 测试地址: `http://10.10.50.64:5174`(Portal, 从这里进各模块)
 - 用自己的公司账号登录(数据来自生产快照, 账号是真的)
 - **历史附件打不开是已知限制**, 不用报
-- **邮件不会真发出去**, 想看通知去 `http://<SRV_IP>:8025`
+- **邮件不会真发出去**, 想看通知去 `http://10.10.50.64:8025`
 - 数据是 2026-08-25 的生产快照
 - 遇到问题找 Justin, 说明操作步骤和大致时间
 
 - [ ] **Step 2: 给开发者一张上手说明**
 
-- `ssh <你的用户名>@<SRV_IP>`, 或 VS Code Remote-SSH
+- `ssh <你的用户名>@10.10.50.64`, 或 VS Code Remote-SSH
 - 代码在 `/srv/uniops`, 你的 worktree 是 `/srv/uniops/uniops-<你>-work`
 - 起自己的栈: `cd /srv/uniops/uniops && ./start-dev.sh <你的编号> up -d`
-- 你的前端在 `http://<SRV_IP>:52xx`, 你的 MailHog 在 `http://<SRV_IP>:8x25`
+- 你的前端在 `http://10.10.50.64:52xx`, 你的 MailHog 在 `http://10.10.50.64:8x25`
 - **一人一个 worktree**, 不要两个人改同一个
 - 别动 `uniops-prod` —— 那是主环境, 同事在用
 
