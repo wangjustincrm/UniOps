@@ -784,13 +784,24 @@ setgid 让任何人新建的文件自动继承 `uniops` 组, 多人协作才不�
 **坑二: 整目录覆盖会冲掉认证。** Task 4 Step 9 已在服务器上装了 Claude Code 并完成认证,
 凭据就在 `~/.claude` 里, `tar -xzf ... -C ~` 整个解开会把它替换成笔记本那份。
 
+**目录名规则(2026-08-25 实测)**: 项目路径里的 `/` 换成 `-`。
+`/srv/uniops` → **`-srv-uniops`**; `/home/crmadmin` → `-home-crmadmin`。
+
+**★ 由此定下一条团队约定: 统一从 `/srv/uniops` 启动 `claude`, 不要从 worktree 里启动。**
+
+从 worktree 启动(如 `/srv/uniops/uniops-prod`)会得到键 `-srv-uniops-uniops-prod` ——
+**又一份独立的空记忆**, 每个 worktree 一份, 把积累切得稀碎。
+笔记本上的做法是从 `C:\Project` 启动(键 `c--Project`), **一份记忆覆盖全部 62 个 worktree**;
+从 `/srv/uniops` 启动才能延续这个组织方式, 搬过去的记忆才连贯。
+工作目录在 `/srv/uniops` 同样能访问所有 worktree, 与笔记本上的用法一致。
+
 正确做法 —— **先让服务器自己建出目录, 再把记忆文件放进去**:
 
 ```bash
-# 1) 服务器: 从将来真正干活的目录跑一次 claude, 让它建出项目目录
-cd /srv/uniops/uniops-prod          # 或你自己的 worktree
+# 1) 服务器: 从 /srv/uniops 跑一次 claude, 让它建出项目目录(已于 2026-08-25 完成)
+cd /srv/uniops
 claude                               # 确认信任, 然后退出
-ls -d ~/.claude/projects/*/          # ★ 记下新出现的那个目录名
+ls -d ~/.claude/projects/*/          # 确认 -srv-uniops 已存在
 ```
 
 ```bash
@@ -801,11 +812,11 @@ scp /d/claude-memory.tar.gz /d/gitconfig.tar.gz crmadmin@10.10.50.64:/tmp/
 ```
 
 ```bash
-# 3) 服务器: 解到上一步记下的那个目录里(把 <PROJ_DIR> 换成实际目录名)
-tar -xzf /tmp/claude-memory.tar.gz -C ~/.claude/projects/<PROJ_DIR>/
+# 3) 服务器: 解到 -srv-uniops 里
+tar -xzf /tmp/claude-memory.tar.gz -C ~/.claude/projects/-srv-uniops/
 tar -xzf /tmp/gitconfig.tar.gz -C ~
-ls ~/.claude/projects/<PROJ_DIR>/memory/MEMORY.md
-ls ~/.claude/projects/<PROJ_DIR>/memory/*.md | wc -l
+ls ~/.claude/projects/-srv-uniops/memory/MEMORY.md
+ls ~/.claude/projects/-srv-uniops/memory/*.md | wc -l
 claude --version                     # 确认认证没被破坏
 ```
 
@@ -1367,6 +1378,7 @@ cd /srv/uniops/uniops && ./start-dev.sh 1 restart
 - 代码在 `/srv/uniops`, 你的 worktree 是 `/srv/uniops/uniops-<你>-work`
 - 起自己的栈: `cd /srv/uniops/uniops && ./start-dev.sh <你的编号> up -d`
 - 你的前端在 `http://10.10.50.64:52xx`, 你的 MailHog 在 `http://10.10.50.64:8x25`
+- **统一从 `/srv/uniops` 启动 `claude`**, 不要从 worktree 里启动 —— 从哪个目录启动决定用哪份记忆, 从 worktree 启动会各自得到一份空记忆
 - **一人一个 worktree**, 不要两个人改同一个
 - 别动 `uniops-prod` —— 那是主环境, 同事在用
 
