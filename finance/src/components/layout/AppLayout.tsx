@@ -4,7 +4,7 @@ import {
   CreditCard, Receipt, BookOpen, FileText, Banknote, Landmark, LayoutDashboard,
   ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Settings,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, Scale, Target,
-  RefreshCw, Wallet,
+  RefreshCw, Wallet, Download,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -37,6 +37,10 @@ const NAV: NavSection[] = [
       { label: 'Payment Batches', href: '/finance/payment-batches', icon: Banknote, permission: 'view_finance' },
       { label: 'Bank Reconciliation', href: '/finance/bank', icon: Landmark, permission: 'view_finance' },
       { label: 'QuickBooks', href: '/finance/qbo', icon: RefreshCw, permission: 'view_finance' },
+      // Throwaway: remove with QboCreditImportPage when QuickBooks is retired.
+      // Gated on the credit-manage key, not view_finance — this writes spendable
+      // credit into the ledger payments are made from, so read access is not enough.
+      { label: 'QBO Credit Import', href: '/finance/qbo-credit-import', icon: Download, permission: 'epms.vendor_credit.manage' },
     ],
   },
   {
