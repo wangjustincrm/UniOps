@@ -95,6 +95,29 @@ async def test_one_failing_kind_does_not_block_the_others(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_failing_kind_rolls_back_shared_session_before_next_kind(monkeypatch):
+    """三个小类共用一个 session。一类抛错后不 rollback,下一类的 autoflush
+    会在上一类留下的脏状态上炸 —— 变成互不相关的两类一起失败,正是这个
+    任务要求禁止的"一类抖动废了整轮"。这个测试用一个记录调用的假 db,
+    在 rollback 缺失时会失败(因为断言的调用顺序里没有 'rollback')。"""
+    calls = []
+
+    class FakeDb:
+        async def rollback(self):
+            calls.append("rollback")
+
+    async def _fake(db, kind, **kw):
+        calls.append(kind)
+        if kind == "material":
+            raise RuntimeError("dirty session left behind by material sync")
+        return {"total": 0, "inserted": 0, "updated": 0}
+
+    monkeypatch.setattr(sched, "sync_kind", _fake)
+    await sched.run_all_kinds(db=FakeDb())
+    assert calls == ["material", "rollback", "supplier", "person"]
+
+
+@pytest.mark.asyncio
 async def test_run_tick_disabled(monkeypatch):
     async def _interval():
         return 0

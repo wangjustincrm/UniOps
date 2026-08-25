@@ -76,6 +76,13 @@ async def last_sync_started_at() -> datetime | None:
     """三个小类里最早的那次 last_synced_at —— 只要有一类还没轮到,整轮就算没跑完。
 
     某一类从来没同步过时该行不存在,min() 得到 NULL,is_due 因此返回 True。
+
+    ⚠️ 命名是"started",读的其实是 `_write_state` 在同步跑完后才盖的时间戳
+    (erp_sync_state 没有开始时间列,写这一列的 services/erp_sync.py 归另一个
+    任务管,这里改不了)。所以这其实是"上次完成时间"。可以接受的原因是三张表
+    合计不到 4000 行,单轮跑得很快 —— 用完成时间当近似的开始时间,顶多让实际
+    的 next-due 比名义 interval 晚那么几秒,不影响调度语义(is_due 仍然是从
+    "上一轮的某个时间点"起算,只是那个点略微偏后)。
     """
     async with AsyncSessionLocal() as db:
         rows = (await db.execute(
@@ -89,13 +96,27 @@ async def last_sync_started_at() -> datetime | None:
 
 
 async def run_all_kinds(db) -> None:
-    """顺序跑三小类的增量同步。单类异常只记日志,不中断其余。"""
+    """顺序跑三小类的增量同步。单类异常只记日志,不中断其余。
+
+    三个小类共用 run_all_kinds_session() 开的同一个 session。一类失败时,
+    session 可能带着这一类留下的脏状态(未 flush 的挂起工作,或者被
+    IntegrityError/DBAPIError 标记为待回滚的事务)—— 不清掉就接着跑下一类,
+    下一类第一次 db.get()/db.execute() 触发的 autoflush 会在上一类的脏对象
+    上炸出 PendingRollbackError 或一个八竿子打不着的异常,变成"一类抖动
+    废了整轮"。所以异常处理必须先 rollback 这个共享 session,再进下一轮。
+    """
     for kind in SUB_KINDS:
         try:
             result = await sync_kind(db, kind, full=False)
             logger.info("ERP MDM scheduler: %s ok — %s", kind, result)
         except Exception as exc:  # noqa: BLE001 — 一类失败不连坐
             logger.error("ERP MDM scheduler: %s failed: %s", kind, exc)
+            # db 只在纯编排测试里会是 None(不碰任何 session,只验证三类都被
+            # 顺序调用);真实调用路径(run_all_kinds_session)永远传一个打开的
+            # AsyncSession,那里才是这个 rollback 真正生效、避免脏 session 拖累
+            # 下一类的地方。
+            if db is not None:
+                await db.rollback()
 
 
 async def run_all_kinds_session() -> None:
@@ -103,10 +124,12 @@ async def run_all_kinds_session() -> None:
 
     单独一层是为了可测:run_tick 的测试 patch 掉这一个函数,就完全不碰数据库;
     run_all_kinds 自己的测试则直接传一个假 db 进去。两者各测各的。
+
+    末尾不再 commit —— sync_kind 每一类自己 commit(成功时),失败时上面已经
+    rollback 过,循环跑完这里没有待提交的东西,commit 只会是个无操作的调用。
     """
     async with AsyncSessionLocal() as db:
         await run_all_kinds(db)
-        await db.commit()
 
 
 async def run_tick() -> str:
