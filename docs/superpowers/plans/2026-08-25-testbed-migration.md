@@ -100,7 +100,7 @@ tail -5 /c/Project/uniops/db-snapshots/epms-api-test-baseline-20260825.txt
 
 **Files:**
 - Modify: `docker-compose.dev.yml`(57 行 LAN + 20 行 container_name + MailHog)
-- Create: `docker-compose.ports-dev1.override.yml` / `-dev2` / `-dev3`
+- Create: `make-stack-env.sh` —— 每套栈的 .env 生成器
 - Create(可选): `docker-compose.devtopology.override.yml` —— 仅当要复原笔记本旧拓扑时
 - Modify: `epms/vite.config.ts`, `portal/`, `oa/`, `vms/`, `finance/`, `booking/`, `mrp/` 各一个
 
@@ -339,61 +339,83 @@ YAML
 `dev-stack-topology-20260825.txt` 补全** —— 抓取时只记录了 `/app`。
 是否真的复现对了, 由 Task 7 Step 3 的 diff 精确判定, 不靠肉眼。
 
-- [ ] **Step 9: 写三套开发栈的端口 override**
+- [ ] **Step 9: 参数化宿主端口, 并写 .env 生成器**
+
+原设计是给每套栈写一个端口 override 文件。**实施时改成了更安全的做法**, 原因是:
+
+容器内端口永远不变, 变的只是宿主映射。但 `VITE_*` 里写的是**宿主端口** ——
+如果只 override `ports:` 而不同步改 `VITE_*`, 开发栈的页面会去打标准端口, 也就是**主环境**,
+数据看起来正常但其实是别人的库。这是最难发现的一种串台。
+
+解法是让两者**共用同一批变量**, 结构上就不可能对不上:
 
 ```bash
 cd /c/Project/uniops
-for i in 1 2 3; do
-  fp=$((5173 + i*100))       # 前端起始: 5273 / 5373 / 5473
-  bp=$((8000 + i*100))       # 后端起始: 8100 / 8200 / 8300
-  cat > docker-compose.ports-dev$i.override.yml <<YAML
-# 开发栈 $i 的端口段。容器内端口不变, 只改宿主映射。
-services:
-  postgres:         { ports: ["$((5432+i*100)):5432"] }
-  redis:            { ports: ["$((6379+i*100)):6379"] }
-  epms-api:         { ports: ["$((bp+0)):8000"] }
-  mdm-api:          { ports: ["$((bp+2)):8002"] }
-  approval-api:     { ports: ["$((bp+3)):8003"] }
-  finance-api:      { ports: ["$((bp+4)):8004"] }
-  file-api:         { ports: ["$((bp+5)):8005"] }
-  expense-api:      { ports: ["$((bp+6)):8006"] }
-  budget-api:       { ports: ["$((bp+7)):8007"] }
-  vms-api:          { ports: ["$((bp+8)):8008"] }
-  identity-api:     { ports: ["$((bp+9)):8009"] }
-  booking-api:      { ports: ["$((bp+10)):8010"] }
-  mrp-api:          { ports: ["$((bp+11)):8011"] }
-  epms-frontend:    { ports: ["$((fp+0)):5173"] }
-  portal-frontend:  { ports: ["$((fp+1)):5174"] }
-  oa-frontend:      { ports: ["$((fp+2)):5175"] }
-  vms-frontend:     { ports: ["$((fp+3)):5176"] }
-  finance-frontend: { ports: ["$((fp+4)):5177"] }
-  booking-frontend: { ports: ["$((fp+5)):5178"] }
-  mrp-frontend:     { ports: ["$((fp+6)):5179"] }
-  mailhog:          { ports: ["$((1025+i*100)):1025", "$((8025+i*100)):8025"] }
-YAML
-done
-ls -1 docker-compose.ports-dev*.override.yml
+python - <<'PYEOF'
+import io, re
+PORTS = {
+    "5432": "POSTGRES_PORT", "6379": "REDIS_PORT",
+    "8000": "EPMS_API_PORT", "8002": "MDM_API_PORT", "8003": "APPROVAL_API_PORT",
+    "8004": "FINANCE_API_PORT", "8005": "FILE_API_PORT", "8006": "EXPENSE_API_PORT",
+    "8007": "BUDGET_API_PORT", "8008": "VMS_API_PORT", "8009": "IDENTITY_API_PORT",
+    "8010": "BOOKING_API_PORT", "8011": "MRP_API_PORT",
+    "5173": "EPMS_PORT", "5174": "PORTAL_PORT", "5175": "OA_PORT",
+    "5176": "VMS_PORT", "5177": "FINANCE_PORT", "5178": "BOOKING_PORT", "5179": "MRP_PORT",
+}
+p = "docker-compose.dev.yml"
+lines = io.open(p, encoding="utf-8").read().split("
+")
+n_ports = n_urls = 0
+for i, ln in enumerate(lines):
+    m = re.match(r'^(\s+- ")(\d+)(:\d+".*)$', ln)          # ports: 只改宿主侧
+    if m and m.group(2) in PORTS:
+        lines[i] = f'{m.group(1)}${{{PORTS[m.group(2)]}:-{m.group(2)}}}{m.group(3)}'
+        n_ports += 1
+        continue
+    if re.match(r'^\s+(VITE_[A-Z_0-9]+|ALLOWED_ORIGINS):', ln):   # 只改浏览器可见的 URL
+        def sub(mm):
+            global n_urls
+            if mm.group(1) not in PORTS: return mm.group(0)
+            n_urls += 1
+            return f'${{{PORTS[mm.group(1)]}:-{mm.group(1)}}}'
+        lines[i] = re.sub(r'(?<=:)(\d{4})(?=[/"\s\],]|$)', sub, ln)
+io.open(p, "w", encoding="utf-8", newline="
+").write("
+".join(lines))
+print(f"ports 映射 {n_ports} 处, 浏览器可见 URL 里的端口 {n_urls} 处")
+PYEOF
 ```
 
-预期: 生成 3 个文件。
+实测输出: `ports 映射 20 处, 浏览器可见 URL 里的端口 125 处`。
+**内部 service-to-service 的 URL(如 `http://epms-api:8000`)不受影响** —— 它们不在
+`VITE_*` / `ALLOWED_ORIGINS` 行上, 走的是容器网络, 端口本来就不该变。
 
-**★ 关键**: 容器内端口不变(右侧), 只改宿主映射(左侧)。所以 `VITE_*` 里写的端口号
-(`8000`、`5174` 等)对开发栈是**错的** —— 开发者的浏览器要访问 `<IP>:8100`。
-因此每套开发栈的 `.env` 必须同时覆盖 `LAN_HOST` 和各 `VITE_*` 的端口, 见 Task 8 Step 3。
+然后写生成器 `make-stack-env.sh`(内容见仓库同名文件), 用法:
 
-- [ ] **Step 10: 验证四套栈的 compose 都能解析**
+```bash
+./make-stack-env.sh 0 <SRV_IP> > /srv/uniops/uniops-prod/.env   # 主环境, 标准端口
+./make-stack-env.sh 1 <SRV_IP> > .env.dev1                      # 开发栈 1, 端口 +100
+./make-stack-env.sh 2 <SRV_IP> > .env.dev2                      # 开发栈 2, 端口 +200
+```
+
+索引 `i` 的端口 = 标准端口 + `i*100`, `STACK_PREFIX` 自动是 `uniops-test`(i=0)或 `uniops-dev<i>`。
+
+- [ ] **Step 10: 验证多套栈之间零冲突**
+
+这是整个多栈设计的决定性验证 —— 不是"能解析"就行, 而是**互相之间不能撞**:
 
 ```bash
 cd /c/Project/uniops
-STACK_PREFIX=uniops-test docker compose -f docker-compose.dev.yml --env-file .env config >/dev/null && echo "测试栈 OK"
-for i in 1 2 3; do
-  STACK_PREFIX=uniops-dev$i docker compose -f docker-compose.dev.yml \
-    -f docker-compose.ports-dev$i.override.yml --env-file .env config >/dev/null \
-    && echo "开发栈 $i OK"
+for i in 0 1 2; do
+  ./make-stack-env.sh $i 10.10.50.70 > /tmp/env$i
+  docker compose -f docker-compose.dev.yml --env-file /tmp/env$i config 2>/dev/null     | grep -E "container_name:|published:" > /tmp/stack$i.txt
 done
+echo "容器重名(必须为空):"; cat /tmp/stack{0,1,2}.txt | grep container_name | sort | uniq -d
+echo "端口撞车(必须为空):"; cat /tmp/stack{0,1,2}.txt | grep published | sort | uniq -d
+for i in 0 1 2; do echo "栈$i: $(grep -c published /tmp/stack$i.txt) 端口 / $(grep -c container_name /tmp/stack$i.txt) 容器"; done
 ```
 
-预期: 4 行 OK。
+实测结果: 两个"必须为空"都为空, 三套栈各 **21 容器 / 22 端口**。
 
 - [ ] **Step 11: 提交(需 Justin 同意后再执行)**
 
@@ -402,9 +424,7 @@ done
 ```bash
 cd /c/Project/uniops
 git checkout -b chore/multi-stack-lan-dev-server
-git add docker-compose.dev.yml \
-  docker-compose.ports-dev1.override.yml docker-compose.ports-dev2.override.yml \
-  docker-compose.ports-dev3.override.yml \
+git add docker-compose.dev.yml make-stack-env.sh \
   epms/vite.config.ts portal/vite.config.ts oa/vite.config.ts vms/vite.config.ts \
   finance/vite.config.ts booking/vite.config.ts mrp/vite.config.ts \
   docs/superpowers/specs/2026-08-25-testbed-migration-design.md \
@@ -1016,8 +1036,8 @@ ls -1 .env.dev*
 
 ```bash
 cd /srv/uniops/uniops
-STACK_PREFIX=uniops-dev1 docker compose -f docker-compose.dev.yml \
-  -f docker-compose.ports-dev1.override.yml --env-file .env.dev1 config \
+docker compose -f docker-compose.dev.yml \
+  --env-file .env.dev1 config \
   | grep -E "VITE_API_URL|VITE_PORTAL_URL"
 ```
 
@@ -1039,7 +1059,6 @@ TOPO=""
 [ -f docker-compose.devtopology.override.yml ] && TOPO="-f docker-compose.devtopology.override.yml"
 exec docker compose \
   -f docker-compose.dev.yml \
-  -f "docker-compose.ports-dev$i.override.yml" \
   $TOPO \
   --env-file ".env.dev$i" -p "uniops-dev$i" "$@"
 SH

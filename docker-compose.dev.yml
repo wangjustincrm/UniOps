@@ -36,7 +36,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: epms
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     # 测试/开发栈跑在机械盘阵列上。synchronous_commit=off 去掉每次提交的 fsync 等待,
@@ -59,7 +59,7 @@ services:
     container_name: ${STACK_PREFIX:-uniops}_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -77,7 +77,7 @@ services:
       dockerfile: epms-api/Dockerfile
     container_name: ${STACK_PREFIX:-uniops}_epms_api
     ports:
-      - "8000:8000"
+      - "${EPMS_API_PORT:-8000}:8000"
     volumes:
       - ./epms-api:/app
       - ./packages/authz:/packages/authz
@@ -108,7 +108,7 @@ services:
       APP_NAME: EPMS API
       APP_VERSION: 0.1.0
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
       # 测试/开发栈: 所有外发邮件进 MailHog, 绝不外发
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
@@ -152,7 +152,7 @@ services:
       dockerfile: Dockerfile
     container_name: ${STACK_PREFIX:-uniops}_approval_api
     ports:
-      - "8003:8003"
+      - "${APPROVAL_API_PORT:-8003}:8003"
     volumes:
       - ./approval-api:/app
     environment:
@@ -162,7 +162,7 @@ services:
       JWT_ALGORITHM: HS256
       SERVICE_NAME: approval-engine
       PORT: "8003"
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
     command: uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
@@ -178,7 +178,7 @@ services:
       dockerfile: mdm-api/Dockerfile
     container_name: ${STACK_PREFIX:-uniops}_mdm_api
     ports:
-      - "8002:8002"
+      - "${MDM_API_PORT:-8002}:8002"
     volumes:
       - ./mdm-api:/app
       - ./packages/authz:/packages/authz
@@ -190,7 +190,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       SERVICE_NAME: mdm-stub
       PORT: "8002"
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
       ERP_BASE_URL: http://10.10.95.66
       ERP_TIMEOUT_SECONDS: "60"
       # NC65 read-only connection for the BOM raw mirror sync (values live in the
@@ -215,7 +215,7 @@ services:
       dockerfile: Dockerfile
     container_name: ${STACK_PREFIX:-uniops}_identity_api
     ports:
-      - "8009:8009"
+      - "${IDENTITY_API_PORT:-8009}:8009"
     volumes:
       - ./identity-api:/app
     environment:
@@ -236,7 +236,7 @@ services:
       # specific person, so they would otherwise stay with the previous
       # holder). Missing/wrong value = silent "failed:" in the response.
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
       # 测试/开发栈: 所有外发邮件进 MailHog, 绝不外发
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
@@ -258,7 +258,7 @@ services:
       dockerfile: finance-api/Dockerfile
     container_name: ${STACK_PREFIX:-uniops}_finance_api
     ports:
-      - "8004:8004"
+      - "${FINANCE_API_PORT:-8004}:8004"
     volumes:
       - ./finance-api:/app
       - ./packages/authz:/packages/authz
@@ -275,7 +275,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       SERVICE_NAME: finance-core
       PORT: "8004"
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       BUDGET_API_URL: http://budget-api:8007
       # Where the client reads QBO creds inside the container (see the volume above).
@@ -302,7 +302,7 @@ services:
       dockerfile: Dockerfile
     container_name: ${STACK_PREFIX:-uniops}_file_api
     ports:
-      - "8005:8005"
+      - "${FILE_API_PORT:-8005}:8005"
     volumes:
       - ./file-api:/app
       - ./file-storage:/file-storage
@@ -314,7 +314,7 @@ services:
       SERVICE_NAME: file-server
       PORT: "8005"
       STORAGE_ROOT: /file-storage
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
     command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
     healthcheck:
       # Router is mounted under /files/v1 (app/main.py) — health lives there, not at /health.
@@ -331,7 +331,7 @@ services:
       dockerfile: Dockerfile
     container_name: ${STACK_PREFIX:-uniops}_expense_api
     ports:
-      - "8006:8006"
+      - "${EXPENSE_API_PORT:-8006}:8006"
     volumes:
       - ./expense-api:/app
     environment:
@@ -346,7 +346,7 @@ services:
       JWT_ALGORITHM: HS256
       SERVICE_NAME: expense-api
       PORT: "8006"
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
       DEBUG: "true"
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
@@ -369,7 +369,7 @@ services:
       dockerfile: budget-api/Dockerfile
     container_name: ${STACK_PREFIX:-uniops}_budget_api
     ports:
-      - "8007:8007"
+      - "${BUDGET_API_PORT:-8007}:8007"
     volumes:
       - ./budget-api:/app
       - ./packages/authz:/packages/authz
@@ -384,7 +384,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
     command: uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
@@ -402,7 +402,7 @@ services:
       dockerfile: mrp-api/Dockerfile
     container_name: ${STACK_PREFIX:-uniops}_mrp_api
     ports:
-      - "8011:8011"
+      - "${MRP_API_PORT:-8011}:8011"
     volumes:
       - ./mrp-api:/app
       - ./packages/authz:/packages/authz
@@ -417,7 +417,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
       # Server-to-server mdm-api URL (container DNS name), NOT the
@@ -464,7 +464,7 @@ services:
       dockerfile: Dockerfile
     container_name: ${STACK_PREFIX:-uniops}_vms_api
     ports:
-      - "8008:8008"     # 8007 is taken by budget-api — VMS uses 8008
+      - "${VMS_API_PORT:-8008}:8008"     # 8007 is taken by budget-api — VMS uses 8008
     volumes:
       - ./vms-api:/app
     environment:
@@ -482,7 +482,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
@@ -506,7 +506,7 @@ services:
       dockerfile: booking-api/Dockerfile
     container_name: ${STACK_PREFIX:-uniops}_booking_api
     ports:
-      - "8010:8010"
+      - "${BOOKING_API_PORT:-8010}:8010"
     volumes:
       - ./booking-api:/app
       - ./packages/authz:/packages/authz
@@ -524,7 +524,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:5173","http://${LAN_HOST:-localhost}:5174","http://${LAN_HOST:-localhost}:5175","http://${LAN_HOST:-localhost}:5176","http://${LAN_HOST:-localhost}:5177","http://${LAN_HOST:-localhost}:5178","http://${LAN_HOST:-localhost}:5179"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
       SCHEDULER_ENABLED: "true"
@@ -550,7 +550,7 @@ services:
     restart: unless-stopped
     working_dir: /app
     ports:
-      - "5173:5173"
+      - "${EPMS_PORT:-5173}:5173"
     volumes:
       - ./epms:/app
       - epms_node_modules:/app/node_modules
@@ -558,21 +558,21 @@ services:
       # resolve @uniops/shell; --install-links copies it into /app/node_modules.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_API_URL: http://${LAN_HOST:-localhost}:8000/api/v1
-      VITE_FILE_SERVER_URL: http://${LAN_HOST:-localhost}:8005
-      VITE_OA_URL: http://${LAN_HOST:-localhost}:5175
-      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
-      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:8007
-      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:8002
-      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:8004
+      VITE_API_URL: http://${LAN_HOST:-localhost}:${EPMS_API_PORT:-8000}/api/v1
+      VITE_FILE_SERVER_URL: http://${LAN_HOST:-localhost}:${FILE_API_PORT:-8005}
+      VITE_OA_URL: http://${LAN_HOST:-localhost}:${OA_PORT:-5175}
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}
+      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:${BUDGET_API_PORT:-8007}
+      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:${MDM_API_PORT:-8002}
+      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:${FINANCE_API_PORT:-8004}
       # expense-api (OA). epms calls it cross-service for invoice attachments and
       # for OCR (lib/api.ts EXPENSE_BASE, incl. the pickup-slip OCR endpoint).
       # Was missing here and only worked by accident, via EXPENSE_BASE's own
       # localhost:8006 fallback — declared explicitly now, matching
       # docker-compose.prod.yml's epms-web (VITE_EXPENSE_API_URL: ${OA_API_URL}).
-      VITE_EXPENSE_API_URL: http://${LAN_HOST:-localhost}:8006
+      VITE_EXPENSE_API_URL: http://${LAN_HOST:-localhost}:${EXPENSE_API_PORT:-8006}
       # Task Inbox 里的 vms_* 任务整页跳 VMS(lib/api.ts VMS_URL)。
-      VITE_VMS_URL: http://${LAN_HOST:-localhost}:5176
+      VITE_VMS_URL: http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5173"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5173"]
@@ -587,7 +587,7 @@ services:
     restart: unless-stopped
     working_dir: /app
     ports:
-      - "5174:5174"
+      - "${PORTAL_PORT:-5174}:5174"
     volumes:
       - ./portal:/app
       - portal_node_modules:/app/node_modules
@@ -595,21 +595,21 @@ services:
       # resolve @uniops/shell; --install-links copies it into /app/node_modules.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_EPMS_URL: http://${LAN_HOST:-localhost}:5173
-      VITE_OA_URL: http://${LAN_HOST:-localhost}:5175
-      VITE_VMS_URL: http://${LAN_HOST:-localhost}:5176
-      VITE_FINANCE_URL: http://${LAN_HOST:-localhost}:5177
-      VITE_BOOKING_URL: http://${LAN_HOST:-localhost}:5178
-      VITE_MRP_URL: http://${LAN_HOST:-localhost}:5179
-      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
-      VITE_OA_API_URL: http://${LAN_HOST:-localhost}:8006
-      VITE_VMS_API_URL: http://${LAN_HOST:-localhost}:8008
-      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:8007
-      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:8002
+      VITE_EPMS_URL: http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}
+      VITE_OA_URL: http://${LAN_HOST:-localhost}:${OA_PORT:-5175}
+      VITE_VMS_URL: http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}
+      VITE_FINANCE_URL: http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}
+      VITE_BOOKING_URL: http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}
+      VITE_MRP_URL: http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:${EPMS_API_PORT:-8000}
+      VITE_OA_API_URL: http://${LAN_HOST:-localhost}:${EXPENSE_API_PORT:-8006}
+      VITE_VMS_API_URL: http://${LAN_HOST:-localhost}:${VMS_API_PORT:-8008}
+      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:${BUDGET_API_PORT:-8007}
+      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:${MDM_API_PORT:-8002}
       # Admin -> WMS Sync talks to mrp-api directly. Browser-facing,
       # so localhost rather than the container DNS name.
-      VITE_MRP_API_URL: http://${LAN_HOST:-localhost}:8011
-      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:8004
+      VITE_MRP_API_URL: http://${LAN_HOST:-localhost}:${MRP_API_PORT:-8011}
+      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:${FINANCE_API_PORT:-8004}
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5174"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5174"]
@@ -624,7 +624,7 @@ services:
     restart: unless-stopped
     working_dir: /app
     ports:
-      - "5176:5176"
+      - "${VMS_PORT:-5176}:5176"
     volumes:
       - ./vms:/app
       - vms_node_modules:/app/node_modules
@@ -633,9 +633,9 @@ services:
       # `/packages/shell` matches `../packages/shell` resolved from /app.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_API_URL: http://${LAN_HOST:-localhost}:8008
-      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
-      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
+      VITE_API_URL: http://${LAN_HOST:-localhost}:${VMS_API_PORT:-8008}
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:${EPMS_API_PORT:-8000}
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}
     # --install-links copies the file:../packages/shell dep into /app/node_modules
     # as a real package (not a symlink to /packages/shell), so its transitive deps
     # resolve from /app/node_modules inside the container.
@@ -653,7 +653,7 @@ services:
     restart: unless-stopped
     working_dir: /app
     ports:
-      - "5175:5175"
+      - "${OA_PORT:-5175}:5175"
     volumes:
       - ./oa:/app
       - oa_node_modules:/app/node_modules
@@ -661,12 +661,12 @@ services:
       # resolve @uniops/shell; --install-links copies it into /app/node_modules.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_API_URL: http://${LAN_HOST:-localhost}:8006
-      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
-      VITE_EPMS_URL: http://${LAN_HOST:-localhost}:5173
-      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
-      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:8007
-      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:8004
+      VITE_API_URL: http://${LAN_HOST:-localhost}:${EXPENSE_API_PORT:-8006}
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}
+      VITE_EPMS_URL: http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:${EPMS_API_PORT:-8000}
+      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:${BUDGET_API_PORT:-8007}
+      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:${FINANCE_API_PORT:-8004}
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5175"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5175"]
@@ -681,22 +681,22 @@ services:
     restart: unless-stopped
     working_dir: /app
     ports:
-      - "5177:5177"
+      - "${FINANCE_PORT:-5177}:5177"
     volumes:
       - ./finance:/app
       - finance_node_modules:/app/node_modules
       # Shared workspace package (see vms-frontend) — mount + --install-links.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
-      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:8004
-      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:8007
-      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
-      VITE_OA_API_URL: http://${LAN_HOST:-localhost}:8006
-      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:8002
-      VITE_EPMS_URL: http://${LAN_HOST:-localhost}:5173
-      VITE_OA_URL: http://${LAN_HOST:-localhost}:5175
-      VITE_VMS_URL: http://${LAN_HOST:-localhost}:5176
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}
+      VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:${FINANCE_API_PORT:-8004}
+      VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:${BUDGET_API_PORT:-8007}
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:${EPMS_API_PORT:-8000}
+      VITE_OA_API_URL: http://${LAN_HOST:-localhost}:${EXPENSE_API_PORT:-8006}
+      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:${MDM_API_PORT:-8002}
+      VITE_EPMS_URL: http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}
+      VITE_OA_URL: http://${LAN_HOST:-localhost}:${OA_PORT:-5175}
+      VITE_VMS_URL: http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5177"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5177"]
@@ -711,7 +711,7 @@ services:
     restart: unless-stopped
     working_dir: /app
     ports:
-      - "5178:5178"
+      - "${BOOKING_PORT:-5178}:5178"
     volumes:
       - ./booking:/app
       - booking_node_modules:/app/node_modules
@@ -720,10 +720,10 @@ services:
       # `../packages/shell` resolved from /app.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_API_URL: http://${LAN_HOST:-localhost}:8010
-      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
-      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
-      VITE_FILE_API_URL: http://${LAN_HOST:-localhost}:8005
+      VITE_API_URL: http://${LAN_HOST:-localhost}:${BOOKING_API_PORT:-8010}
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:${EPMS_API_PORT:-8000}
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}
+      VITE_FILE_API_URL: http://${LAN_HOST:-localhost}:${FILE_API_PORT:-8005}
     # --install-links copies the file:../packages/shell dep into /app/node_modules
     # as a real package (not a symlink to /packages/shell), so its transitive deps
     # resolve from /app/node_modules inside the container.
@@ -741,7 +741,7 @@ services:
     restart: unless-stopped
     working_dir: /app
     ports:
-      - "5179:5179"
+      - "${MRP_PORT:-5179}:5179"
     volumes:
       - ./mrp:/app
       - mrp_node_modules:/app/node_modules
@@ -750,10 +750,10 @@ services:
       # `../packages/shell` resolved from /app.
       - ./packages/shell:/packages/shell
     environment:
-      VITE_API_URL: http://${LAN_HOST:-localhost}:8011
-      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:8000
-      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:8002
-      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:5174
+      VITE_API_URL: http://${LAN_HOST:-localhost}:${MRP_API_PORT:-8011}
+      VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:${EPMS_API_PORT:-8000}
+      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:${MDM_API_PORT:-8002}
+      VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}
     # --install-links copies the file:../packages/shell dep into /app/node_modules
     # as a real package (not a symlink to /packages/shell), so its transitive deps
     # resolve from /app/node_modules inside the container.
