@@ -102,7 +102,11 @@ class PoLineItem(UUIDPrimaryKey, Base):
     sample: Mapped[str | None] = mapped_column(String(100), nullable=True)
     qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), nullable=False)
     unit: Mapped[str] = mapped_column(String(30), nullable=False)
-    unit_price: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    # NUMERIC(15,5), not (15,2): NC quotes to five decimals and the ERP's own
+    # line amount cannot be reproduced from a price rounded to cents — 319 of
+    # 4,944 production lines disagreed, by 43,256 in total. line_total below
+    # stays at 2: that one is money. See alembic ak01_nc_price_scale5.
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(15, 5), nullable=False)
     line_total: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     received_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), nullable=False, default=Decimal("0"))
     # The ERP's own planned arrival date for THIS line

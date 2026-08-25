@@ -18,6 +18,7 @@ from reportlab.platypus import (
 from app.models.gr import GoodsReceipt
 from app.services.pdf_template import (
     build_logo, footer_note_element, get_tmpl, header_note_element, terms_element,
+    unit_price_text,
 )
 
 _PRIMARY = colors.HexColor("#0A7C7C")
@@ -141,7 +142,7 @@ def generate_gr_pdf(
             Paragraph(str(item.qty_ordered.normalize()), td_style),
             Paragraph(str(item.qty_received.normalize()), td_style),
             Paragraph(item.unit, td_style),
-            Paragraph(f"{item.unit_price:,.2f}", td_style),
+            Paragraph(unit_price_text(item.unit_price), td_style),
             Paragraph(f"{item.line_total:,.2f}", td_style),
         ]
         if has_discrepancy:

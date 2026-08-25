@@ -1,5 +1,5 @@
 import { Plus, Trash2 } from 'lucide-react'
-import { formatAmount, formatDate } from '@/lib/utils'
+import { formatAmount, formatDate, formatUnitPrice } from '@/lib/utils'
 import { lineTotalOf } from '@/lib/importedPoEdit'
 
 /** One line of an NC-imported PO as the buyer-detail form sees it.
@@ -146,7 +146,7 @@ export function ImportedPoLineItems({
                   )}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-neutral-700">
-                  {item.ncSourced ? formatAmount(item.unitPrice, currency) : (
+                  {item.ncSourced ? formatUnitPrice(item.unitPrice, currency) : (
                     <input
                       type="number" step="any"
                       value={item.unitPrice}
