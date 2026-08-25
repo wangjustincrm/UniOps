@@ -6,7 +6,7 @@ import { ArrowLeft, AlertTriangle, CheckCircle2, Package, Paperclip, X, Upload }
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
-import { usePos } from '@/hooks/usePos'
+import { usePo, usePos } from '@/hooks/usePos'
 import { useCreateGr } from '@/hooks/useGrs'
 import { type GrLineCondition, type GrAttachmentIn } from '@/services/gr'
 import { type ApiPo } from '@/services/po'
@@ -40,6 +40,15 @@ const CONDITION_OPTIONS: { value: GrLineCondition; label: string; color: string 
 // type 4 = Service, type 6 = Project — non-physical GR flow; everything else is physical
 const isPhysicalGr = (type: number) => type !== 4 && type !== 6
 
+// Which POs can still take a goods receipt. Mirrors the server-side gate in
+// `POST /gr` exactly (physical: issued/partially_received; service & project:
+// also approved) — keep the two in step, or the picker offers POs the API
+// rejects with a 409.
+const canReceive = (p: ApiPo) =>
+  p.status === 'issued' ||
+  p.status === 'partially_received' ||
+  ((p.type === 4 || p.type === 6) && p.status === 'approved')
+
 interface FormGrLineItem {
   id: string
   po_line_id: string
@@ -61,13 +70,7 @@ export default function GrCreatePage() {
   const [searchParams] = useSearchParams()
   const createGr = useCreateGr()
   const { data: posData } = usePos()
-  const eligiblePos = (posData?.items ?? []).filter(
-    (p) =>
-      p.status === 'issued' ||
-      p.status === 'partially_received' ||
-      // Service (type 4) and Project (type 6) POs can receive a GR once approved
-      ((p.type === 4 || p.type === 6) && p.status === 'approved')
-  )
+  const eligiblePos = (posData?.items ?? []).filter(canReceive)
   const { user } = useAuthStore()
 
   const preselectedPoId = searchParams.get('poId') ?? ''
@@ -75,7 +78,28 @@ export default function GrCreatePage() {
   const [poSearch, setPoSearch] = useState('')
   const [showPoDropdown, setShowPoDropdown] = useState(false)
 
-  const selectedPo: ApiPo | null = eligiblePos.find((p) => p.id === selectedPoId) ?? null
+  // A deep link (?poId=… from the PO detail page, or from a confirm_receipt
+  // reminder mail / task) fetches that one PO on its own instead of waiting for
+  // the picker's list: the list pages through every PO in the system — 30+
+  // parallel requests — and on this path the picker is never opened at all.
+  // GET /po/{id} enforces the same visibility scope as the list, so this widens
+  // nothing; it only makes the preselected PO arrive sooner and independently.
+  const { data: deepLinkedPo } = usePo(preselectedPoId)
+
+  const listedPo = eligiblePos.find((p) => p.id === selectedPoId) ?? null
+  const linkedPo =
+    deepLinkedPo && deepLinkedPo.id === selectedPoId && canReceive(deepLinkedPo)
+      ? deepLinkedPo
+      : null
+  const selectedPo: ApiPo | null = listedPo ?? linkedPo
+
+  // The deep link resolved to a real PO that can no longer take a receipt —
+  // typically a reminder mail opened after somebody else already received the
+  // goods. Say so, instead of dropping the user on a blank picker.
+  const linkedPoNotReceivable =
+    deepLinkedPo && deepLinkedPo.id === selectedPoId && !canReceive(deepLinkedPo)
+      ? deepLinkedPo
+      : null
 
   const [receivedAt, setReceivedAt] = useState(new Date().toISOString().slice(0, 10))
   const [storageLocation, setStorageLocation] = useState('')
@@ -86,9 +110,23 @@ export default function GrCreatePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [submitted, setSubmitted] = useState(false)
 
-  // When PO changes, rebuild line items from PO lines
+  // When PO changes, rebuild line items from PO lines.
+  //
+  // Keyed on a ref instead of on selectedPoId alone. With a deep link
+  // (?poId=… from the PO detail page or a confirm_receipt reminder) the id is
+  // already set on the very first render, while the PO query is still in
+  // flight — so selectedPo is null. An effect that watched only the id ran
+  // once against no data, cleared the lines, and never ran again once the PO
+  // arrived: the summary card rendered but "Items Received" stayed at 0 lines
+  // forever and the GR could not be saved. So: wait for the PO instead of
+  // clearing, and let the ref keep the prefill to once per PO so a background
+  // refetch cannot overwrite quantities the user has already typed.
+  const appliedForPoRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!selectedPo) { setLineItems([]); return }
+    if (!selectedPoId) { appliedForPoRef.current = null; setLineItems([]); return }
+    if (!selectedPo) return
+    if (appliedForPoRef.current === selectedPoId) return
+    appliedForPoRef.current = selectedPoId
     setLineItems(
       selectedPo.line_items.map((li) => ({
         id: crypto.randomUUID(),
@@ -105,7 +143,7 @@ export default function GrCreatePage() {
       }))
     )
     if (selectedPo.delivery_address) setStorageLocation(selectedPo.delivery_address)
-  }, [selectedPoId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedPoId, selectedPo])
 
   const updateLine = (idx: number, patch: Partial<FormGrLineItem>) => {
     setLineItems((prev) => {
@@ -303,6 +341,26 @@ export default function GrCreatePage() {
             <p className="text-xs text-danger-600">Please select a Purchase Order</p>
           )}
         </div>
+
+        {linkedPoNotReceivable && (
+          <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
+            <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-semibold text-warning-700">
+                {linkedPoNotReceivable.number} cannot take a goods receipt right now
+              </p>
+              <p className="text-warning-600 mt-0.5">
+                It is in status <span className="font-medium">{linkedPoNotReceivable.status.replace(/_/g, ' ')}</span>.
+                A receipt needs an issued or partially received PO — or an approved one for service and project POs.
+                {' '}
+                <Link to={`/po/${linkedPoNotReceivable.id}`} className="underline hover:text-warning-700">
+                  Open the PO
+                </Link>{' '}
+                to check whether it has already been received, or pick another PO above.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* PO summary card */}
         {selectedPo && (
