@@ -118,7 +118,15 @@ def _full_reload_delete(cur) -> int:
     po_line_items / gr_line_items cascade."""
     cur.execute(
         "select id from purchase_orders po where po.source='nc' "
-        "and exists (select 1 from invoices i where i.po_id = po.id)")
+        "and (exists (select 1 from invoices i where i.po_id = po.id) "
+        # A buyer-added line (nc_source_pk IS NULL on a mirrored PO) exists in
+        # no ERP and cannot be rebuilt by the reload that is about to run: a
+        # one-off mould/tooling charge NC has no way to carry. Deleting the PO
+        # cascades it away for good, along with the money it puts on the header.
+        # The reload's job is to rebuild what NC owns, not to discard what it
+        # never held.
+        "     or exists (select 1 from po_line_items l "
+        "                where l.po_id = po.id and l.nc_source_pk is null))")
     protected = [pid for (pid,) in cur.fetchall()]
     if protected:
         cur.execute("delete from goods_receipts where source='nc' "

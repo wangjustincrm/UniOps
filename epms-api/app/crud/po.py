@@ -252,6 +252,110 @@ async def has_any_invoice(db: AsyncSession, po_id: uuid.UUID) -> bool:
 
 
 
+def manual_lines_total(po: PurchaseOrder) -> Decimal:
+    """What the buyer-added lines on this PO come to, pre-tax.
+
+    Pre-tax because that is what ``purchase_orders.subtotal`` is, and the
+    subtotal is the figure the header arithmetic and the invoice variance are
+    both measured in. (NC's own mirrored lines store a TAX-INCLUSIVE line_total
+    — norigtaxmny — which differs from their pre-tax amount only on the four
+    in-scope orders that carry any tax at all. Manual lines are entered pre-tax
+    and their line_total is pre-tax, so this sum can go straight onto subtotal.)
+    """
+    return sum((ln.line_total for ln in po.line_items if ln.nc_source_pk is None),
+               Decimal("0"))
+
+
+def manual_lines_changed(po: PurchaseOrder, entries) -> bool:
+    """Whether ``entries`` would actually alter this PO's buyer-added lines.
+
+    The editor re-sends the complete manual set on every save, including a save
+    that only touched Incoterms — so the invoice guard has to ask whether the
+    set DIFFERS, not whether the key is present. Guarding on presence would make
+    an invoiced PO unsavable, which is the same trap the tax-rate guard had to
+    step around.
+    """
+    stored = {ln.id: ln for ln in po.line_items if ln.nc_source_pk is None}
+    submitted_ids = {e.id for e in entries if e.id is not None}
+    if submitted_ids != set(stored) or len(entries) != len(stored):
+        return True                       # something added, removed, or foreign
+    for entry in entries:
+        line = stored[entry.id]
+        if (line.description != entry.description
+                or line.qty != entry.qty
+                or line.unit != entry.unit
+                or line.unit_price != entry.unit_price
+                or line.supplier_item_id != entry.supplier_item_id
+                or line.sample != entry.sample):
+            return True
+    return False
+
+
+def _apply_manual_lines(po: PurchaseOrder, entries) -> list[dict]:
+    """Reconcile the PO's buyer-added lines to ``entries``. Returns audit deltas.
+
+    ``entries`` is the complete desired set, so a stored manual line that is not
+    in it is deleted (the relationship is delete-orphan, so dropping it from the
+    collection is the delete).
+
+    Raises ValueError — surfaced as a 400, never a 500 — for an id that is not
+    one of THIS PO's manual lines. That covers two different attacks with one
+    check: an NC-owned line, whose description/quantity/price the ERP owns and
+    this endpoint must never rewrite, and a line belonging to another document,
+    which would make this a cross-document write primitive.
+    """
+    stored = {ln.id: ln for ln in po.line_items if ln.nc_source_pk is None}
+    nc_ids = {ln.id for ln in po.line_items if ln.nc_source_pk is not None}
+    # Added lines sort after everything NC sent, so the ERP's own line order —
+    # which the supplier's copy is read against — is never disturbed.
+    next_sort = max((ln.sort_order for ln in po.line_items), default=-1) + 1
+
+    changes: list[dict] = []
+    kept: set[uuid.UUID] = set()
+    for entry in entries:
+        if entry.id is not None and entry.id in nc_ids:
+            raise ValueError(
+                f"Line {entry.id} comes from NC and cannot be edited here")
+        if entry.id is not None and entry.id not in stored:
+            raise ValueError(f"Line {entry.id} does not belong to PO {po.number}")
+        line_total = (entry.qty * entry.unit_price).quantize(Decimal("0.01"))
+        if entry.id is None:
+            po.line_items.append(PoLineItem(
+                po_id=po.id, description=entry.description, material_id=None,
+                supplier_item_id=entry.supplier_item_id, sample=entry.sample,
+                qty=entry.qty, unit=entry.unit, unit_price=entry.unit_price,
+                line_total=line_total, received_qty=Decimal("0"),
+                sort_order=next_sort, nc_source_pk=None,
+            ))
+            next_sort += 1
+            changes.append({"added": entry.description, "line_total": str(line_total)})
+            continue
+        line = stored[entry.id]
+        kept.add(entry.id)
+        delta: dict = {}
+        for field, value in (("description", entry.description),
+                             ("qty", entry.qty),
+                             ("unit", entry.unit),
+                             ("unit_price", entry.unit_price),
+                             ("line_total", line_total),
+                             ("supplier_item_id", entry.supplier_item_id),
+                             ("sample", entry.sample)):
+            old = getattr(line, field)
+            if old != value:
+                delta[field] = [str(old) if old is not None else None,
+                                str(value) if value is not None else None]
+                setattr(line, field, value)
+        if delta:
+            changes.append({"line_id": str(entry.id), **delta})
+
+    for line_id, line in stored.items():
+        if line_id not in kept:
+            changes.append({"removed": line.description,
+                            "line_total": str(line.line_total)})
+            po.line_items.remove(line)
+    return changes
+
+
 async def update_imported_details(
     db: AsyncSession,
     po: PurchaseOrder,
@@ -269,6 +373,9 @@ async def update_imported_details(
     """
     before: dict = {}
     after: dict = {}
+    # Captured before anything mutates, so the audit entry and the recompute
+    # below both read the figures this call started from.
+    _orig_subtotal, _orig_tax, _orig_total = po.subtotal, po.tax_amount, po.total
     # pydantic v2: which keys the caller's JSON body actually contained. A key
     # present with an explicit null must clear a nullable column; a key
     # absent from the body must leave the column untouched — those are not
@@ -295,16 +402,42 @@ async def update_imported_details(
         _set(field, getattr(payload, field))
     _set("is_prepaid", payload.is_prepaid, nullable=False)
 
+    # Buyer-added lines, before the money is recomputed — they are one of its
+    # two terms.
+    manual_before = manual_lines_total(po)
+    if "manual_lines" in fields_set and payload.manual_lines is not None:
+        manual_delta = _apply_manual_lines(po, payload.manual_lines)
+        if manual_delta:
+            after["manual_lines"] = manual_delta
+    manual_after = manual_lines_total(po)
+
+    if manual_after != manual_before:
+        # NC's own subtotal is not stored separately and does not need to be:
+        # the stored figure is NC's plus whatever the manual lines came to, and
+        # those are recoverable from the rows at any moment. Subtracting the
+        # previous manual term recovers NC's, and the new term goes back on top
+        # — so this stays exact across any number of edits, and the writer can
+        # reconstruct the same figure from NC's side after a re-sync.
+        po.subtotal = (_orig_subtotal - manual_before) + manual_after
+        before["subtotal"] = str(_orig_subtotal)
+        after["subtotal"] = str(po.subtotal)
+
     # tax_rate is NOT NULL too (default 0), so an explicit null is likewise a
     # no-op rather than a clear — only a present, non-null rate is applied.
-    if "tax_rate" in fields_set and payload.tax_rate is not None and payload.tax_rate != po.tax_rate:
+    rate_changed = ("tax_rate" in fields_set and payload.tax_rate is not None
+                    and payload.tax_rate != po.tax_rate)
+    if rate_changed:
         before["tax_rate"] = str(po.tax_rate)
-        before["tax_amount"] = str(po.tax_amount)
-        before["total"] = str(po.total)
         po.tax_rate = payload.tax_rate
-        po.tax_amount = (po.subtotal * payload.tax_rate).quantize(Decimal("0.01"))
-        po.total = po.subtotal + po.tax_amount
         after["tax_rate"] = str(po.tax_rate)
+    if rate_changed or manual_after != manual_before:
+        # Either term can move the tax: a new rate, or a new subtotal to apply
+        # the existing rate to. Recomputed in one place so the header can never
+        # hold a total that disagrees with its own subtotal and rate.
+        before["tax_amount"] = str(_orig_tax)
+        before["total"] = str(_orig_total)
+        po.tax_amount = (po.subtotal * po.tax_rate).quantize(Decimal("0.01"))
+        po.total = po.subtotal + po.tax_amount
         after["tax_amount"] = str(po.tax_amount)
         after["total"] = str(po.total)
 

@@ -49,3 +49,65 @@ export function isImportedEditablePo(po: ImportedEditablePo | null | undefined):
 export function isImportedTaxLocked(po: ImportedEditablePo | null | undefined): boolean {
   return !!po?.has_invoice
 }
+
+// ── buyer-added lines ────────────────────────────────────────────────────────
+
+/** The subset of a PO line these rules read. */
+export interface EditablePoLine {
+  ncSourced: boolean
+  qty: number
+  unitPrice: number
+}
+
+/**
+ * Whether NC put this line on the PO.
+ *
+ * A response that predates the `nc_sourced` field omits it. Reading a missing
+ * flag as "NC's" would make every line read-only and the feature invisible;
+ * reading it as "the buyer's" would offer to edit lines the ERP owns and let
+ * the save fail at the endpoint. The second is louder and recoverable, but the
+ * first is the one that silently does nothing — so an ABSENT flag is treated as
+ * NC's only when the PO itself came from NC, which is the only place the
+ * distinction exists at all.
+ */
+export function isNcSourced(
+  line: { nc_sourced?: boolean },
+  po: ImportedEditablePo | null | undefined,
+): boolean {
+  if (line.nc_sourced !== undefined) return line.nc_sourced
+  return isImportedEditablePo(po)
+}
+
+/** What the buyer-added lines come to, pre-tax. Mirrors crud.po.manual_lines_total. */
+export function manualLinesTotal(lines: EditablePoLine[]): number {
+  return round2(
+    lines.filter((l) => !l.ncSourced)
+      .reduce((sum, l) => sum + lineTotalOf(l), 0),
+  )
+}
+
+/** One line's pre-tax amount, rounded the way the server rounds it. */
+export function lineTotalOf(line: { qty: number; unitPrice: number }): number {
+  return round2(line.qty * line.unitPrice)
+}
+
+/**
+ * The PO's subtotal as it would stand with these lines.
+ *
+ * `storedSubtotal` already contains whatever the manual lines came to when the
+ * page loaded, so NC's own figure is what is left after taking that away. This
+ * is the same reconstruction the endpoint does — the preview and the saved
+ * value have to agree, or the buyer watches the number jump on save.
+ */
+export function subtotalWith(
+  storedSubtotal: number,
+  storedManualTotal: number,
+  lines: EditablePoLine[],
+): number {
+  return round2(storedSubtotal - storedManualTotal + manualLinesTotal(lines))
+}
+
+/** Currency arithmetic in floats needs pinning down at each step, not at the end. */
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100
+}

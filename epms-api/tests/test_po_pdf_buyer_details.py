@@ -507,3 +507,27 @@ def test_a_pending_nc_po_prints_the_same_signable_document():
     assert "nc_pending" not in pending_text
     # Same document, whatever NC thinks of its approval state.
     assert pending_text == issued_text
+
+
+def test_a_buyer_added_line_prints_alongside_the_erp_lines():
+    """The added line IS the point: a supplier asked for the tooling quote to be
+    itemised on the PO they sign, and NC has nowhere to put it. It renders from
+    the same line_items collection, with a blank Material ID rather than an
+    invented code."""
+    po = _po(source="nc", line_kw={"material_id": "MAT-1"})
+    po.line_items.append(PoLineItem(
+        id=uuid.uuid4(), po_id=po.id, description="Mould tooling one-off",
+        material_id=None, qty=Decimal("1"), unit="EA",
+        unit_price=Decimal("5000.00"), line_total=Decimal("5000.00"),
+        received_qty=Decimal("0"), sort_order=1,
+    ))
+    po.subtotal = Decimal("5100.00")
+    po.total = Decimal("5100.00")
+
+    text = _text_of(generate_po_pdf(po))
+
+    assert "Mould tooling one-off" in text
+    assert "MAT-1" in text
+    # Nothing on the vendor-facing page says which system a line came from.
+    assert "nc_source" not in text
+    assert "Added" not in text

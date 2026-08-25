@@ -185,13 +185,21 @@ async def update_imported_details(
     # variance was measured against. Guarded on the VALUE changing, not on the
     # key being present — the edit form re-sends the current rate on every CAD
     # save, so rejecting on presence would make an invoiced CAD order unsavable.
-    if (body.tax_rate is not None
-            and "tax_rate" in body.model_fields_set
-            and body.tax_rate != po.tax_rate
-            and await po_crud.has_any_invoice(db, po_id)):
+    _fields = body.model_fields_set
+    rate_moves = ("tax_rate" in _fields and body.tax_rate is not None
+                  and body.tax_rate != po.tax_rate)
+    # Buyer-added lines carry money too — adding, editing or removing one moves
+    # the same subtotal the rate does, and also changes which lines an invoice
+    # could be allocated across. Same evidence, same refusal. Compared by
+    # CONTENT for the same reason as the rate: the form re-sends the whole
+    # manual set on every save.
+    lines_move = ("manual_lines" in _fields and body.manual_lines is not None
+                  and po_crud.manual_lines_changed(po, body.manual_lines))
+    if (rate_moves or lines_move) and await po_crud.has_any_invoice(db, po_id):
+        what = "Tax rate" if rate_moves else "Added line items"
         raise HTTPException(
             status_code=409,
-            detail="Tax rate cannot be changed once an invoice has been raised "
+            detail=f"{what} cannot be changed once an invoice has been raised "
                    "against this PO. Every other field is still editable.",
         )
 

@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.current_step import CurrentStep
 
@@ -56,6 +56,9 @@ class PoLineItemResponse(BaseModel):
     notes: str | None
     sort_order: int
     planned_arrival_date: date | None = None
+    # False on a line a buyer added to a mirrored PO — see PoLineItem.nc_sourced.
+    # The editor uses it to decide which rows it may write to.
+    nc_sourced: bool = False
     # 该 line 被【其他发票】累计分摊的税前额(仅 match-candidates 端点填充)
     already_allocated: Decimal | None = None
 
@@ -102,6 +105,46 @@ class PoImportedLineUpdate(BaseModel):
     sample: str | None = Field(default=None, max_length=100)
 
 
+class PoManualLine(BaseModel):
+    """A line a buyer added to an NC-imported PO.
+
+    For a charge the ERP cannot carry: a one-off mould or tooling quote the
+    supplier wants itemised on the PO they sign, with no material code and no
+    place in NC's order.
+
+    Deliberately absent, and each for its own reason:
+
+    * ``material_id`` — a one-off charge has none, and a line that HAD one would
+      start counting as MRP in-transit supply (in_transit.py takes every line
+      whose material_id is not null). Unreachable rather than merely unset.
+    * ``line_total`` — derived server-side from qty x unit_price. Accepting it
+      would let the total disagree with its own factors, and it is the number
+      that moves the PO header.
+    * ``received_qty``, ``planned_arrival_date`` — receiving and ERP dates
+      belong to NC's lines, not to a hand-added charge.
+
+    An entry with no ``id`` is new; one with an ``id`` updates that line. This
+    model REPLACES the line, so an omitted optional field clears it — unlike
+    PoImportedLineUpdate, which patches two columns of an NC-owned line.
+    """
+    id: uuid.UUID | None = None
+    description: str = Field(min_length=1, max_length=500)
+    # Zero or negative would be a line that means nothing; a negative PRICE is
+    # a different matter and is allowed below (one-off credits are real).
+    qty: Decimal = Field(gt=0)
+    unit: str = Field(default="EA", max_length=30)
+    unit_price: Decimal
+    supplier_item_id: str | None = Field(default=None, max_length=100)
+    sample: str | None = Field(default=None, max_length=100)
+
+    @field_validator("description")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("description cannot be blank")
+        return v.strip()
+
+
 class PoImportedDetailsUpdate(BaseModel):
     """Buyer-supplied detail on an NC-imported PO.
 
@@ -118,6 +161,17 @@ class PoImportedDetailsUpdate(BaseModel):
     is_prepaid: bool | None = None
     buyer_notes: str | None = None
     lines: list[PoImportedLineUpdate] = Field(default_factory=list)
+    # The COMPLETE set of buyer-added lines this PO should end up with — not a
+    # patch. An entry with no id is created, one with an id is updated, and a
+    # stored manual line absent from the list is deleted. NC-owned lines are
+    # untouchable here: passing one of their ids is an error, not a shortcut.
+    #
+    # `None` (the key absent from the body) means "leave them alone", the same
+    # absent-key contract every other field on this model follows — a save that
+    # only changes Incoterms must not wipe the added lines. That is why it is
+    # nullable rather than defaulting to an empty list, which would read as
+    # "delete them all".
+    manual_lines: list[PoManualLine] | None = None
 
 
 class PoListResponse(BaseModel):
