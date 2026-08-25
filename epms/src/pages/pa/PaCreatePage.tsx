@@ -340,9 +340,21 @@ export default function PaCreatePage() {
 
   // Reset when PO changes. Skipped in Settle mode — there the source-prepayment
   // effect below owns PO/type/prepayment prefill and the PO is locked.
+  //
+  // Gated on the PO having actually loaded, and applied once per PO. Keyed on
+  // selectedPoId alone it ran on the very first render of a Task Inbox deep
+  // link (?poId=…), while the PO list was still in flight: `po` was undefined,
+  // so a prepaid PO's PA silently defaulted to 'regular'. Waiting costs
+  // nothing on a manual pick — there the PO is by definition already listed —
+  // and the ref keeps a background refetch of the list from wiping amounts the
+  // user has since typed.
+  const resetForPoRef = useRef<string | null>(null)
   useEffect(() => {
     if (lockedFromSettle || isAgreementMode) return
     const po = allPos.find((p) => p.id === selectedPoId)
+    if (selectedPoId && !po) return
+    if (resetForPoRef.current === selectedPoId) return
+    resetForPoRef.current = selectedPoId
     autoSelectedForPoRef.current = null
     setSelectedInvoiceIds(new Set())
     setSelectedGrIds(new Set())
@@ -359,7 +371,7 @@ export default function PaCreatePage() {
     setShipping('')
     setOther('')
     setOtherNote('')
-  }, [selectedPoId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedPoId, posData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Settle 模式:来源预付加载后锁定并预填 PO / 类型 / Original Prepayment PA / 抵扣额
   useEffect(() => {
