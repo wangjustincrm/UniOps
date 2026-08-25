@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import api_router
@@ -7,10 +10,20 @@ from app.core.config import settings
 # finance-api's budget endpoints now proxy to budget-api via HTTP.
 from app.models import admin_audit_log, ap_invoice, bank, coa, fiscal_period, mirrors, nc_customer, nc_export, nc_sync, pa, payment, payment_batch, posting  # noqa: F401 — register with metadata
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.tasks.nc_sync_scheduler import nc_sync_loop
+    scheduler_task = asyncio.create_task(nc_sync_loop())
+    yield
+    scheduler_task.cancel()
+
+
 app = FastAPI(
     title="UniOps Finance Core P1",
     description="Budget management · Accounts Payable · Payment recording — Phase 1",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
