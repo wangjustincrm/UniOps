@@ -15,6 +15,11 @@ class PaymentExecuteRequest(BaseModel):
     amount_paid: Decimal | None = None        # defaults to the document amount
     notes: str | None = None
     bank_account_id: uuid.UUID | None = None  # funding bank (records + GL cash account)
+    # Vendor credits to net off this payment. THREE-VALUED — compare with `is None`:
+    #   None  -> apply the automatic FIFO default
+    #   []    -> apply nothing this run
+    #   [ids] -> apply only these; any that is no longer applicable aborts the payment
+    credit_ids: list[uuid.UUID] | None = None
 
 
 class PaymentExecuteResponse(BaseModel):

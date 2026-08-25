@@ -55,6 +55,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Purchase Orders', href: '/po', icon: <Package className="h-4 w-4" />, permission: 'view_po' },
       { label: 'Goods Receipt', href: '/gr', icon: <Warehouse className="h-4 w-4" />, permission: 'view_gr' },
       { label: 'Invoices', href: '/invoices', icon: <FileText className="h-4 w-4" />, permission: 'view_invoice' },
+      { label: 'Vendor Credits', href: '/vendor-credits', icon: <FileText className="h-4 w-4" />, permission: 'view_invoice' },
       { label: 'Payment Applications', href: '/pa', icon: <CreditCard className="h-4 w-4" />, permission: 'view_pa' },
       { label: 'Agreements', href: '/agreements', icon: <FileSignature className="h-4 w-4" />, permission: 'epms.agreement.read' },
       // epms.agreement.read (read), NOT epms.agreement.receipt.write — anyone

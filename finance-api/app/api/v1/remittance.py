@@ -209,6 +209,12 @@ async def _serialize_groups(db: AsyncSession, groups: list[rem.PayeeGroup], *,
                           else l.doc_number),
             "payment_date": l.payment_date.isoformat(),
             "amount": str(l.amount),
+            "gross": str(l.gross),
+            "credit_applied": str(l.credit_applied),
+            "credit_notes": [{
+                "vendor_credit_number": cn.vendor_credit_number,
+                "applied_amount": str(cn.applied_amount),
+            } for cn in l.credit_notes],
         } for l in g.lines],
         # Fix 2: cross-scope-aware — see rem.last_send_for_group's
         # docstring for why a same-scope-only lookup lies for a payment

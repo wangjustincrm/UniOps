@@ -555,9 +555,14 @@ async def pa_action(
             # Payment is not a workflow action (Phase 0-B1.5): forward to
             # finance-api's unified executor — it owns can_pay, the status
             # flip, payment_records, invoice marking and the posting event.
+            # body.credit_ids is three-valued and passed through untouched:
+            # None (the Process dialog was left alone) keeps finance-api's
+            # automatic FIFO default; a list is the operator's explicit choice
+            # after deselecting credits in that dialog.
             result = await finance_client.execute_payment(
                 doc_kind="pa", doc_id=pa_id, bearer_token=token,
                 notes=body.comment, bank_account_id=body.bank_account_id,
+                credit_ids=body.credit_ids,
             )
         else:
             result = await delegate_action("pa", str(pa_id), body.action, body.comment, token)

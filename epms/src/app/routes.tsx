@@ -38,6 +38,7 @@ import ProjectsPage from '@/pages/projects/ProjectsPage'
 import PartsListPage from '@/pages/parts/PartsListPage'
 import ProfilePage from '@/pages/profile/ProfilePage'
 import AdminPanel from '@/pages/admin/AdminPanel'
+import { VendorCreditsPage } from '@/pages/vendorcredits/VendorCreditsPage'
 
 // Short, distinguishable title for an id-keyed detail/edit tab (UUIDs too long).
 const short = (id: string) => (id.length > 8 ? id.slice(0, 8) : id)
@@ -66,6 +67,7 @@ export const epmsRoutes: RouteDef[] = [
   { path: '/invoices', element: <InvoiceListPage />, tab: { title: 'Invoices', icon: 'FileText', keyStrategy: 'static' } },
   { path: '/invoices/:id', element: <InvoiceDetailPage />, tab: { title: (p) => `Invoice ${short(p.id)}`, icon: 'FileText', keyStrategy: 'param', paramName: 'id' } },
 
+  { path: '/vendor-credits', element: <VendorCreditsPage />, tab: { title: 'Vendor Credits', icon: 'FileText', keyStrategy: 'static' } },
   { path: '/agreements', element: <AgreementListPage />, tab: { title: 'Agreements', icon: 'FileSignature', keyStrategy: 'static' } },
   { path: '/agreements/new', element: <AgreementCreatePage />, tab: { title: 'New Agreement', icon: 'Plus', keyStrategy: 'static' } },
   { path: '/agreements/:id/edit', element: <AgreementEditPage />, tab: { title: (p) => `Edit Agreement ${short(p.id)}`, icon: 'FileSignature', keyStrategy: 'param', paramName: 'id' } },

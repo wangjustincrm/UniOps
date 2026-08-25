@@ -18,6 +18,7 @@ import { dueInfo, type DueTone } from '@/lib/dueDate'
 import { computeSla, type InvoiceStatus } from '@/stores/invoice.store'
 import { useInvoices, useCreateInvoice, useMatchInvoice, useDeleteInvoice } from '@/hooks/useInvoices'
 import { ResolveExceptionPanel } from '@/components/invoices/ResolveExceptionPanel'
+import { useCreateVendorCredit } from '@/hooks/useVendorCredits'
 import { usePos } from '@/hooks/usePos'
 import { useGrs } from '@/hooks/useGrs'
 import { useVendors } from '@/hooks/useVendors'
@@ -94,8 +95,22 @@ function fmtSize(bytes: number): string {
 
 interface UploadModalProps {
   onClose: () => void
-  onUploaded: (id: string) => void
+  // `kind` tells the caller which collection the id belongs to. A vendor credit
+  // id is NOT an invoice id — routing one to /invoices/:id lands on "Invoice not
+  // found" and pushes the operator into re-uploading a credit that was in fact
+  // created (409 duplicate). Defaults to 'invoice' for the many invoice-path
+  // call sites below.
+  onUploaded: (id: string, kind?: 'invoice' | 'credit') => void
 }
+
+/** Display-time sign derivation for the amount fields — NOT a normalisation
+ *  point. The single normalisation of a credit's sign lives server-side in
+ *  finance-api app/crud/vendor_credit.py `_positive()`. Here we only choose
+ *  what to show: a credit note is entered as a positive figure, an invoice
+ *  keeps whatever OCR parsed (including a negative, so the `amtNum <= 0`
+ *  guard can fire). */
+const displayAmount = (raw: number, kind: 'invoice' | 'credit_note'): string =>
+  String(kind === 'credit_note' ? Math.abs(raw) : raw)
 
 function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const { data: invoicesData } = useInvoices()
@@ -105,6 +120,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const { data: grsData } = useGrs()
   const grs = grsData?.items ?? []
   const createInvoice = useCreateInvoice()
+  const createVendorCredit = useCreateVendorCredit()
   const matchInvoiceMutation = useMatchInvoice()
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -121,7 +137,16 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState('')
   const [amount, setAmount] = useState('')
+  const [docType, setDocType] = useState<'invoice' | 'credit_note'>('invoice')
+  const [docTypeAutoDetected, setDocTypeAutoDetected] = useState(false)
   const [taxAmount, setTaxAmount] = useState('')
+  // The header figures exactly as OCR parsed them, kept untouched so switching
+  // the document type can re-derive the displayed amounts from the source of
+  // truth rather than from an already-abs()'d value. Without this, a credit
+  // note detected at -0.04 stays 0.04 after the user switches back to "Regular
+  // Invoice" and sails through epms-api's InvoiceCreate.amount gt=0 backstop.
+  const [rawAmount, setRawAmount] = useState<number | null>(null)
+  const [rawTax,    setRawTax]    = useState<number | null>(null)
   const [currency, setCurrency] = useState('CAD')
   const [notes, setNotes] = useState('')
   const [lineItems, setLineItems] = useState<InvoiceLineItem[]>([])
@@ -146,6 +171,10 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
     setVendorHint(null)
     setNetTermsHint(null)
     setLineItems([])
+    setDocType('invoice')
+    setDocTypeAutoDetected(false)
+    setRawAmount(null)
+    setRawTax(null)
 
     setParsing(true)
     try {
@@ -154,6 +183,29 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
       const { fields } = result
       const filled = new Set<string>()
+
+      // Two independent signals, OR'd: what the model called it, and the
+      // structural fact of a negative total. Either one flips the form.
+      //
+      // The structural test is HEADER-ONLY — the pre-tax amount, or pre-tax
+      // plus tax, being negative. It deliberately does NOT look at line items:
+      // an ordinary payable invoice routinely carries a negative line. Return
+      // and discount rows arrive from OCR as `quantity: -1`, and expense-api's
+      // _normalize_negative_quantities() (app/services/ocr_service.py) flips
+      // that sign onto unit_price, leaving the line amount negative under a
+      // positive header. Keying on lines would flip such an invoice into
+      // Credit Note mode under a banner claiming the total is negative, and an
+      // accepted default would record a payable as a credit — it would never
+      // reach the payment queue, and would later net down a real payment.
+      const headerTotal = fields.amount === null
+        ? null
+        : fields.amount + (fields.taxAmount ?? 0)
+      const looksNegative =
+        (fields.amount !== null && fields.amount < 0) ||
+        (headerTotal !== null && headerTotal < 0)
+      const detected = fields.documentType === 'credit_note' || looksNegative
+      setDocType(detected ? 'credit_note' : 'invoice')
+      setDocTypeAutoDetected(detected)
 
       if (fields.vendorName) {
         setVendorQuery(fields.vendorName)
@@ -185,15 +237,30 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
         setNetTermsHint(`Calculated from NET ${fields.paymentTermsNetDays} terms (issue date + ${fields.paymentTermsNetDays} days)`)
       }
 
-      if (fields.amount    !== null)  { setAmount(String(fields.amount));    filled.add('amount') }
-      if (fields.taxAmount !== null)  { setTaxAmount(String(fields.taxAmount)); filled.add('taxAmount') }
+      const kind = detected ? 'credit_note' : 'invoice'
+      setRawAmount(fields.amount)
+      setRawTax(fields.taxAmount)
+      if (fields.amount    !== null)  { setAmount(displayAmount(fields.amount, kind)); filled.add('amount') }
+      if (fields.taxAmount !== null)  { setTaxAmount(displayAmount(fields.taxAmount, kind)); filled.add('taxAmount') }
       if (fields.currency && ['CAD','USD','EUR','RMB'].includes(fields.currency)) {
         setCurrency(fields.currency); filled.add('currency')
       }
 
       // Line items
       if (fields.lineItems && fields.lineItems.length > 0) {
-        setLineItems(fields.lineItems)
+        // Same normalisation point as the amount/taxAmount prefill above — the
+        // only place OCR sign-flipping happens. A uniform negation (not abs()):
+        // credit notes can legitimately mix signs (e.g. +100 credit, -10
+        // restocking fee, header -90); negating every line by -1 preserves the
+        // relative signs and keeps quantity * unit_price === line_total, while
+        // still summing to the now-positive header. abs() would break that —
+        // it would turn +100/-10 into 100/10, summing to 110, not 90.
+        const headerWasNegative = fields.amount !== null && fields.amount < 0
+        const neg = (n: number) => (n === 0 ? 0 : -n)   // avoid -0
+        const items = detected && headerWasNegative
+          ? fields.lineItems.map((li) => ({ ...li, unit_price: neg(li.unit_price), line_total: neg(li.line_total) }))
+          : fields.lineItems
+        setLineItems(items)
         filled.add('lineItems')
       }
 
@@ -210,9 +277,28 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
     if (f) void handleFile(f)
   }
 
+  // The only way the document type changes after parsing. Re-deriving the
+  // displayed amounts from rawAmount/rawTax (what OCR actually read off the
+  // header) is what makes the switch reversible: flipping back to "Regular
+  // Invoice" restores the negative figure, so the `amtNum <= 0` guard below
+  // fires again instead of letting a mis-classified credit through as a
+  // positive invoice. No-ops when there is nothing parsed (manual entry).
+  const changeDocType = (next: 'invoice' | 'credit_note') => {
+    setDocType(next)
+    if (rawAmount !== null) setAmount(displayAmount(rawAmount, next))
+    if (rawTax    !== null) setTaxAmount(displayAmount(rawTax, next))
+  }
+
   const amtNum = parseFloat(amount) || 0
   const taxNum = parseFloat(taxAmount) || 0
   const total  = amtNum + taxNum
+
+  // Kept as a separate boolean (not inlined into the JSX ternary condition):
+  // if the ternary's test were `docType === 'credit_note'` directly, TS
+  // control-flow narrowing would pin `docType` to the literal 'credit_note'
+  // inside that branch, making the `docType === 'invoice'` radio check below
+  // a "no overlap" type error.
+  const showCreditNoteBanner = docTypeAutoDetected && docType === 'credit_note'
 
   // Live PO lookup by PO number
   const matchedPo: ApiPo | undefined = poNumber.trim()
@@ -256,8 +342,63 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const handleSubmit = async () => {
     setSubmitted(true)
     setSubmitError(null)
-    if (!selectedVendor || !vendorInvoiceNumber.trim() || !invoiceDate || !amount || amtNum <= 0) return
-    if (isDuplicate) return
+    if (!selectedVendor || !vendorInvoiceNumber.trim() || !invoiceDate || !amount) return
+    if (amtNum <= 0) {
+      setSubmitError(
+        docType === 'credit_note'
+          ? 'Credit amount must be greater than zero.'
+          : 'Negative total — this looks like a Credit Note. Switch the document type above.',
+      )
+      return
+    }
+    // isDuplicate checks vendorInvoiceNumber against the regular-invoice list —
+    // not meaningful for credit notes, whose numbers live in a separate
+    // namespace. finance-api does its own duplicate detection for credits
+    // (409 with the existing credit named), surfaced in the catch below.
+    if (docType === 'invoice' && isDuplicate) return
+
+    if (docType === 'credit_note') {
+      try {
+        const credit = await createVendorCredit.mutateAsync({
+          vendor_id: selectedVendor.id,
+          vendor_name: selectedVendor.name,
+          vendor_credit_number: vendorInvoiceNumber.trim(),
+          credit_date: invoiceDate,
+          currency,
+          amount: amtNum,
+          tax_amount: taxNum,
+          po_number: poNumber.trim() || null,
+          line_items: lineItems,
+          file_name: file?.name ?? null,
+          notes: notes.trim() || undefined,
+        })
+        if (file?.raw) {
+          const form = new FormData()
+          form.append('file', file.raw)
+          const token = useAuthStore.getState().token
+          // Non-fatal — the credit is already created — but a non-OK response
+          // must still be reported. Phase A offers no other way to view the
+          // document, so silently swallowing a 413/500 leaves a credit whose
+          // file_name names a file that was never stored. Mirrors the invoice
+          // branch below.
+          await fetch(
+            `${EXPENSE_BASE}/api/v1/invoice-attachments?invoice_id=${credit.id}&invoice_source=credit`,
+            { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form },
+          ).then((res) => {
+            if (!res.ok) console.error('Credit note attachment upload failed:', res.status)
+          }).catch((e) => console.error('Credit note attachment upload failed:', e))
+        }
+        onUploaded(credit.id, 'credit')
+      } catch (err) {
+        const status = (err as { status?: number }).status
+        setSubmitError(
+          status === 409
+            ? `${(err as Error).message}. Open Vendor Credits to review the existing entry.`
+            : err instanceof Error ? err.message : 'Upload failed',
+        )
+      }
+      return
+    }
 
     try {
       const inv = await createInvoice.mutateAsync({
@@ -507,6 +648,41 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
           )}
           <div className={cn(file ? 'flex-1 min-w-0 overflow-y-auto flex flex-col gap-4 pr-1' : 'contents')}>
 
+          {/* Document type */}
+          {showCreditNoteBanner ? (
+            <div className="mb-4 rounded-lg border border-warning-300 bg-warning-50 p-3">
+              <p className="text-sm font-medium text-warning-800">
+                This looks like a Credit Note — the document total is negative.
+              </p>
+              <div className="mt-2 flex gap-4 text-sm">
+                <label className="flex items-center gap-1.5">
+                  {/* Cast: TS narrows docType to the 'credit_note' literal in this
+                      branch (correctly — this block only renders when it is), which
+                      makes a direct `docType === 'invoice'` comparison a no-overlap
+                      type error. Widen back to compare; always evaluates false here,
+                      same as the unnarrowed comparison would. */}
+                  <input type="radio" checked={(docType as string) === 'invoice'}
+                         onChange={() => changeDocType('invoice')} />
+                  Regular Invoice
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input type="radio" checked={docType === 'credit_note'}
+                         onChange={() => changeDocType('credit_note')} />
+                  Credit Note
+                </label>
+              </div>
+            </div>
+          ) : (
+            <p className="mb-4 text-xs text-neutral-500">
+              Document type: {docType === 'credit_note' ? 'Credit Note' : 'Invoice'}
+              {' · '}
+              <button type="button" className="text-primary-600 underline"
+                      onClick={() => changeDocType(docType === 'invoice' ? 'credit_note' : 'invoice')}>
+                Change
+              </button>
+            </p>
+          )}
+
           {/* Vendor info */}
           <div className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
@@ -567,7 +743,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-neutral-700 flex items-center">
-                  Vendor Invoice # <span className="text-danger-600 ml-0.5">*</span>
+                  {docType === 'credit_note' ? 'Credit Note #' : 'Vendor Invoice #'} <span className="text-danger-600 ml-0.5">*</span>
                   {aiFields.has('vendorInvoiceNumber') && <AiBadge />}
                 </label>
                 <input value={vendorInvoiceNumber}
@@ -608,7 +784,12 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               placeholder="e.g. PO-ABC-2603-01"
               className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
             />
-            {poNumber.trim() && (
+            {docType === 'credit_note' && (
+              <p className="mt-1 text-xs text-neutral-500">
+                Optional — reference only. Credit notes are not 3-way matched.
+              </p>
+            )}
+            {docType === 'invoice' && poNumber.trim() && (
               matchedPo ? (
                 <div className="flex items-center gap-2 rounded-lg border border-success-300 bg-success-50 px-3 py-2 text-xs text-success-700">
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
@@ -642,29 +823,31 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
                 }}
                 className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
             </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700 flex items-center">
-                Due Date
-                {aiFields.has('dueDate') && <AiBadge />}
-              </label>
-              <input type="date" value={dueDate}
-                onChange={(e) => {
-                  setDueDate(e.target.value)
-                  setNetTermsHint(null)
-                  setAiFields((prev) => { const n = new Set(prev); n.delete('dueDate'); return n })
-                }}
-                className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
-              {netTermsHint && (
-                <p className="text-xs text-primary-500 mt-0.5">{netTermsHint}</p>
-              )}
-            </div>
+            {docType === 'invoice' && (
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-neutral-700 flex items-center">
+                  Due Date
+                  {aiFields.has('dueDate') && <AiBadge />}
+                </label>
+                <input type="date" value={dueDate}
+                  onChange={(e) => {
+                    setDueDate(e.target.value)
+                    setNetTermsHint(null)
+                    setAiFields((prev) => { const n = new Set(prev); n.delete('dueDate'); return n })
+                  }}
+                  className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+                {netTermsHint && (
+                  <p className="text-xs text-primary-500 mt-0.5">{netTermsHint}</p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Amounts */}
           <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-neutral-700 flex items-center">
-                Amount (pre-tax) <span className="text-danger-600 ml-0.5">*</span>
+                {docType === 'credit_note' ? 'Credit Amount (pre-tax)' : 'Amount (pre-tax)'} <span className="text-danger-600 ml-0.5">*</span>
                 {aiFields.has('amount') && <AiBadge />}
               </label>
               <input type="number" min={0} step={0.01} value={amount}
@@ -678,7 +861,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-neutral-700 flex items-center">
-                Tax Amount
+                {docType === 'credit_note' ? 'Credit Tax' : 'Tax Amount'}
                 {aiFields.has('taxAmount') && <AiBadge />}
               </label>
               <input type="number" min={0} step={0.01} value={taxAmount}
@@ -825,9 +1008,11 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
           )}
           <div className="flex justify-end gap-3">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={createInvoice.isPending || matchInvoiceMutation.isPending} className="gap-2">
+            <Button onClick={handleSubmit} disabled={createInvoice.isPending || createVendorCredit.isPending || matchInvoiceMutation.isPending} className="gap-2">
               <Upload className="h-4 w-4" />
-              {createInvoice.isPending || matchInvoiceMutation.isPending ? 'Uploading…' : 'Upload Invoice'}
+              {createInvoice.isPending || createVendorCredit.isPending || matchInvoiceMutation.isPending
+                ? 'Uploading…'
+                : docType === 'credit_note' ? 'Upload Credit Note' : 'Upload Invoice'}
             </Button>
           </div>
         </div>
@@ -1467,7 +1652,10 @@ export default function InvoiceListPage() {
       {showUpload && (
         <UploadModal
           onClose={() => setShowUpload(false)}
-          onUploaded={(id) => { setShowUpload(false); navigate(`/invoices/${id}`) }}
+          onUploaded={(id, kind) => {
+            setShowUpload(false)
+            navigate(kind === 'credit' ? '/vendor-credits' : `/invoices/${id}`)
+          }}
         />
       )}
     </div>

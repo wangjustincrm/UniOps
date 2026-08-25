@@ -22,6 +22,7 @@ You are an invoice data extraction assistant. Extract all available information 
 
 Return a JSON object with EXACTLY this structure (no extra keys, no markdown):
 {
+  "document_type": {"value": "invoice" or "credit_note", "confidence": 0.0-1.0},
   "vendor_name": {"value": "string or null", "confidence": 0.0-1.0},
   "invoice_number": {"value": "string or null", "confidence": 0.0-1.0},
   "po_number": {"value": "string or null", "confidence": 0.0-1.0},
@@ -70,6 +71,11 @@ Rules:
   also shown; do NOT compute due_date from the terms (the application does that).
 - If there are no line items, return an empty array
 - "line_items": include at most 100 rows; if the invoice has more, keep the first 100
+- "document_type": "credit_note" when the document is a credit note / credit memo /
+  credit invoice / adjustment note / avoir / 贷项通知单, or when the payable total is
+  negative. Otherwise "invoice".
+- Report amounts exactly as printed, including minus signs. Do NOT flip signs to
+  make a credit note look like an invoice.
 - Return ONLY the JSON object, minified (no indentation or extra whitespace), no other text"""
 
 _RECEIPT_PROMPT = """\
@@ -175,6 +181,73 @@ def _mime_to_media_type(mime: str) -> str:
     return mapping.get(mime.lower(), "image/jpeg")
 
 
+_VALID_DOCUMENT_TYPES = ("invoice", "credit_note")
+
+
+def _assemble_invoice_result(parsed: dict) -> dict:
+    """Flatten the model's {value, confidence} envelope into a flat result.
+
+    Split out of extract_invoice so the mapping is unit-testable without an
+    Anthropic API call.
+    """
+    scalar_fields = ["vendor_name", "invoice_number", "po_number",
+                     "invoice_date", "due_date", "payment_terms_net_days",
+                     "currency", "subtotal", "tax_amount", "total_amount"]
+
+    result: dict = {}
+    confidences: list[float] = []
+    low_confidence: list[str] = []
+
+    for field in scalar_fields:
+        item = parsed.get(field, {})
+        value = item.get("value") if isinstance(item, dict) else None
+        conf = float(item.get("confidence", 0.0)) if isinstance(item, dict) else 0.0
+        result[field] = value
+        if value is not None:
+            confidences.append(conf)
+            if conf < CONFIDENCE_THRESHOLD:
+                low_confidence.append(field)
+
+    # Document type steers the EPMS upload form down the credit-note branch.
+    # An unrecognised or missing value falls back to "invoice": the frontend
+    # still catches a negative total, and mis-labelling a real invoice as a
+    # credit would be the more damaging error.
+    dt_item = parsed.get("document_type", {})
+    dt = dt_item.get("value") if isinstance(dt_item, dict) else None
+    result["document_type"] = dt if dt in _VALID_DOCUMENT_TYPES else "invoice"
+
+    raw_lines = parsed.get("line_items", []) or []
+    lines = []
+    for i, li in enumerate(raw_lines[:100]):
+        lines.append({
+            "line_number": i + 1,
+            "description": str(li.get("description", "")),
+            "quantity": float(li.get("quantity", 1) or 1),
+            "unit_price": float(li.get("unit_price", 0) or 0),
+            "amount": float(li.get("amount", 0) or 0),
+            "tax_amount": float(li.get("tax_amount", 0) or 0),
+        })
+
+    def _num(v: object) -> float | None:
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    lines = _normalize_negative_quantities(lines)
+    lines = _reconcile_line_amounts(
+        lines, _num(result.get("subtotal")), _num(result.get("tax_amount")),
+        _num(result.get("total_amount")),
+    )
+
+    result["line_items"] = lines
+    result["ocr_confidence"] = (
+        round(sum(confidences) / len(confidences), 4) if confidences else 0.0)
+    result["low_confidence_fields"] = low_confidence
+    result["ocr_raw"] = parsed
+    return result
+
+
 async def extract_invoice(file_bytes: bytes, mime_type: str) -> dict:
     """Run invoice OCR and return structured extraction with confidence scores.
 
@@ -251,59 +324,7 @@ async def extract_invoice(file_bytes: bytes, mime_type: str) -> dict:
         log.error("OCR JSON parse error: %s\nRaw: %s", exc, raw_text[:500])
         raise ValueError(f"OCR returned invalid JSON: {exc}")
 
-    # Flatten extracted values and calculate confidence
-    scalar_fields = ["vendor_name", "invoice_number", "po_number",
-                     "invoice_date", "due_date", "payment_terms_net_days",
-                     "currency", "subtotal", "tax_amount", "total_amount"]
-
-    result: dict = {}
-    confidences: list[float] = []
-    low_confidence: list[str] = []
-
-    for field in scalar_fields:
-        item = parsed.get(field, {})
-        value = item.get("value") if isinstance(item, dict) else None
-        conf = float(item.get("confidence", 0.0)) if isinstance(item, dict) else 0.0
-        result[field] = value
-        if value is not None:
-            confidences.append(conf)
-            if conf < CONFIDENCE_THRESHOLD:
-                low_confidence.append(field)
-
-    # Line items (no confidence per-item in the response, use overall confidence)
-    raw_lines = parsed.get("line_items", []) or []
-    lines = []
-    for i, li in enumerate(raw_lines[:100]):  # safety cap, matches prompt limit
-        lines.append({
-            "line_number": i + 1,
-            "description": str(li.get("description", "")),
-            "quantity": float(li.get("quantity", 1) or 1),
-            "unit_price": float(li.get("unit_price", 0) or 0),
-            "amount": float(li.get("amount", 0) or 0),
-            "tax_amount": float(li.get("tax_amount", 0) or 0),
-        })
-
-    # Repair tax-inclusive line amounts before they reach the client (they map to
-    # line_total and must be pre-tax so PO matching can balance). See docstring.
-    def _num(v: object) -> float | None:
-        try:
-            return float(v) if v is not None else None
-        except (TypeError, ValueError):
-            return None
-
-    lines = _normalize_negative_quantities(lines)
-    lines = _reconcile_line_amounts(
-        lines, _num(result.get("subtotal")), _num(result.get("tax_amount")), _num(result.get("total_amount")),
-    )
-
-    overall_confidence = round(sum(confidences) / len(confidences), 4) if confidences else 0.0
-
-    result["line_items"] = lines
-    result["ocr_confidence"] = overall_confidence
-    result["low_confidence_fields"] = low_confidence
-    result["ocr_raw"] = parsed
-
-    return result
+    return _assemble_invoice_result(parsed)
 
 
 async def extract_receipt(file_bytes: bytes, mime_type: str) -> dict:

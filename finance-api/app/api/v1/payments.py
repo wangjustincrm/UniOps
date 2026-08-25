@@ -2,6 +2,7 @@ import csv
 import io
 import uuid
 from datetime import date
+from decimal import Decimal
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,12 +10,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.deps import _FINANCE_ROLES, BearerToken, CurrentUser
+from app.core.deps import BearerToken, CurrentUser
+from app.core.read_authz import authorize_finance_read
 from app.db.base import get_db
 from app.crud import payment as payment_crud
 from app.crud import payment_batch as batch_crud
 from app.crud import payment_execute
 from app.crud.payment_execute import PaymentPermissionError
+from app.crud.remittance import applied_credit_notes_by_payment
 from app.models.mirrors import ExpenseClaim
 from app.models.payment_batch import PaymentBatch, PaymentBatchLine
 from app.models.remittance import SENT
@@ -67,31 +70,13 @@ async def record_payment_deprecated(_: CurrentUser = ...):
 
 
 async def _authorize_read(db: AsyncSession, user: dict) -> None:
-    """Gate for the Payments hub's read surface (list / summary / export).
+    """Thin alias kept for this module's call sites.
 
-    Deliberately NOT `payment_execute._check_can_pay` — that bar is for
-    *executing* a payment (see create_batch/execute_batch below, and
-    app/api/v1/remittance.py's `_authorize`), which is stricter than needed
-    to merely *view* payment history. `_FINANCE_ROLES` (app.core.deps) is
-    already declared for exactly this — "who may see finance data" — but was
-    never wired to any endpoint, which is how any authenticated employee
-    (including OA-only users with no finance role) could hit
-    GET /payments/export and download every payment the company has made.
-    finance_bp / finance_manager granted as an ADDITIONAL identity role
-    assignment (not the JWT's primary `role`) also qualify — same lookup
-    `_check_can_pay` uses for write access, so a Finance BP assigned via
-    role_management sees the same payments they can execute.
+    The rule itself now lives in app/core/read_authz.py so
+    app/api/v1/vendor_credits.py's /suggest can share it verbatim rather than
+    grow a second copy that drifts. See that module for the rationale.
     """
-    role = user.get("role", "")
-    if role in _FINANCE_ROLES:
-        return
-    try:
-        user_id = uuid.UUID(str(user.get("sub", "")))
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Insufficient role to view payments")
-    codes = await payment_execute._user_role_codes(db, user_id, role)
-    if not codes & _FINANCE_ROLES:
-        raise HTTPException(status_code=403, detail="Insufficient role to view payments")
+    await authorize_finance_read(db, user)
 
 
 class PaymentFilters(BaseModel):
@@ -125,6 +110,14 @@ async def _remittance_status(db: AsyncSession, records: list) -> dict[uuid.UUID,
     return {r.id: ("sent" if str(r.id) in sent else "not_sent") for r in records}
 
 
+def _credit_notes_out(notes: list) -> list[dict]:
+    """AppliedCreditNote dataclasses -> plain dicts, so they slot straight
+    into a PaymentResponse.model_dump()-shaped dict without relying on
+    pydantic's attribute-introspection for a nested list."""
+    return [{"vendor_credit_number": n.vendor_credit_number,
+             "applied_amount": n.applied_amount} for n in notes]
+
+
 async def _payee_names(db: AsyncSession, records: list) -> dict[uuid.UUID, str]:
     """Vendor name for vendor payments (already on the record); the claimant's
     name for claim payments, which carry no vendor columns at all."""
@@ -156,11 +149,17 @@ async def list_payments(
         db, page=page, page_size=page_size, **filters.model_dump())
     status_by_id = await _remittance_status(db, items)
     payee_by_id = await _payee_names(db, items)
+    # Batch-loaded once for the whole page, not per row — the payments
+    # drawer is fed straight from this list response (never GET
+    # /payments/{id}), so this is the only place a page read populates
+    # credit_notes.
+    notes_by_payment = await applied_credit_notes_by_payment(db, [r.id for r in items])
     out = []
     for r in items:
         d = PaymentResponse.model_validate(r).model_dump()
         d["payee_name"] = payee_by_id.get(r.id) or None
         d["remittance_status"] = status_by_id.get(r.id)
+        d["credit_notes"] = _credit_notes_out(notes_by_payment.get(r.id, []))
         out.append(d)
     return PaymentListResponse(items=out, total=total)
 
@@ -188,15 +187,21 @@ async def export_payments(filters: PaymentFilters = Depends(),
     def _iter():
         buf = io.StringIO()
         w = csv.writer(buf)
+        # `amount` stays the NET cash that left the bank (column position and
+        # meaning unchanged for anyone with an existing import). `gross` and
+        # `credit_applied` are appended so a short payment is explicable from
+        # the export alone: gross = amount + credit_applied.
         w.writerow(["payment_date", "doc_kind", "doc_number", "payee", "amount",
-                    "currency", "payment_method", "source", "status"])
+                    "currency", "payment_method", "source", "status",
+                    "gross", "credit_applied"])
         yield buf.getvalue()
         for r in rows:
             buf.seek(0), buf.truncate(0)
+            credit = r.credit_applied or Decimal("0.00")
             w.writerow([r.payment_date, r.doc_kind or "", r.doc_number or "",
                         payee_by_id.get(r.id) or "", r.amount, r.currency,
                         r.payment_method, "batch" if r.batch_id else "single",
-                        r.status])
+                        r.status, r.amount + credit, credit])
             yield buf.getvalue()
 
     return StreamingResponse(_iter(), media_type="text/csv", headers={
@@ -266,6 +271,9 @@ class CreateBatchRequest(BaseModel):
 
 class ExecuteBatchRequest(BaseModel):
     bank_account_id: uuid.UUID | None = None
+    # doc_id -> credit ids to apply. A document absent from the map uses the
+    # automatic FIFO default; an explicit empty list pays that line in full.
+    credit_ids_by_doc: dict[uuid.UUID, list[uuid.UUID]] | None = None
 
 
 @router.get("/can-pay")
@@ -367,7 +375,8 @@ async def execute_batch(batch_id: uuid.UUID, token: BearerToken, user: CurrentUs
         raise HTTPException(status_code=404, detail="Batch not found")
     try:
         await batch_crud.execute_batch(db, batch, user, bearer_token=token,
-                                       bank_account_id=body.bank_account_id)
+                                       bank_account_id=body.bank_account_id,
+                                       credit_ids_by_doc=body.credit_ids_by_doc)
         await db.commit()
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -389,4 +398,7 @@ async def get_payment(payment_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     p = await payment_crud.get_by_id(db, payment_id)
     if not p:
         raise HTTPException(status_code=404, detail="Payment record not found")
-    return p
+    notes_by_payment = await applied_credit_notes_by_payment(db, [p.id])
+    d = PaymentResponse.model_validate(p).model_dump()
+    d["credit_notes"] = _credit_notes_out(notes_by_payment.get(p.id, []))
+    return d

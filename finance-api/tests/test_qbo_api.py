@@ -325,3 +325,105 @@ async def test_vendor_email_backfill_skips_ambiguous_deleted_and_empty(db_sessio
     untouched = (await db_session.execute(
         select(BusinessPartner.remittance_email))).scalars().all()
     assert set(untouched) == {None}
+
+
+# ── CSV export (archive) ────────────────────────────────────────────────
+# QuickBooks is being decommissioned, so these mirror tables become the
+# company's permanent record of what was in it. Browsing was already possible;
+# these cover taking the record away, which is what an auditor needs.
+
+async def _seed_credits(db_session):
+    from datetime import datetime, timezone
+    from decimal import Decimal
+
+    from app.models.qbo import QboVendorCredit
+    rows = [
+        ("e1", "CN-100", "Alpha Supply", "2026-05-01", "10.00", None),
+        ("e2", "CN-200", "Beta Traders", "2026-05-02", "20.00", None),
+        ("e3", "CN-300", "Alpha Supply", "2026-05-03", "30.00", None),
+        # Deleted rows are hidden from browse and must stay hidden in the
+        # export, or the two disagree about the population.
+        ("e4", "CN-400", "Gamma Gone", "2026-05-04", "40.00",
+         datetime(2026, 6, 1, tzinfo=timezone.utc)),
+    ]
+    for qid, doc, name, dt, amt, deleted in rows:
+        db_session.add(QboVendorCredit(
+            qbo_id=qid, doc_number=doc, txn_date=dt, currency="CAD",
+            total_amt=Decimal(amt), balance=Decimal(amt),
+            counterparty_id="V1", counterparty_name=name,
+            deleted_at=deleted, raw={"Id": qid, "LinkedTxn": [{"TxnType": "BillPayment"}]},
+        ))
+    await db_session.flush()
+
+
+def _csv_rows(text: str) -> list[list[str]]:
+    import csv
+    import io
+    return list(csv.reader(io.StringIO(text)))
+
+
+@pytest.mark.asyncio
+async def test_export_matches_the_browse_population(db_session):
+    await _seed_credits(db_session)
+    _override_auth_and_db(db_session)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        listed = await c.get("/finance/v1/qbo/vendor-credits?page_size=200",
+                             headers={"Authorization": "Bearer x"})
+        exported = await c.get("/finance/v1/qbo/vendor-credits/export",
+                               headers={"Authorization": "Bearer x"})
+    app.dependency_overrides.clear()
+
+    assert exported.status_code == 200, exported.text
+    assert exported.headers["content-type"].startswith("text/csv")
+    assert "qbo-vendor-credits.csv" in exported.headers["content-disposition"]
+
+    rows = _csv_rows(exported.text)
+    assert len(rows) - 1 == listed.json()["total"] == 3     # the deleted row is in neither
+
+
+@pytest.mark.asyncio
+async def test_export_honours_the_search_box(db_session):
+    """An export that ignored the filter would hand an auditor a different
+    population than the screen showed."""
+    await _seed_credits(db_session)
+    _override_auth_and_db(db_session)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        listed = await c.get("/finance/v1/qbo/vendor-credits?q=Alpha&page_size=200",
+                             headers={"Authorization": "Bearer x"})
+        exported = await c.get("/finance/v1/qbo/vendor-credits/export?q=Alpha",
+                               headers={"Authorization": "Bearer x"})
+    app.dependency_overrides.clear()
+
+    rows = _csv_rows(exported.text)
+    assert listed.json()["total"] == 2
+    assert len(rows) - 1 == 2
+    assert {r[rows[0].index("doc_number")] for r in rows[1:]} == {"CN-100", "CN-300"}
+
+
+@pytest.mark.asyncio
+async def test_export_carries_the_raw_payload_last(db_session):
+    """`raw` holds the LinkedTxn evidence of how each document was applied
+    inside QBO — the one thing that cannot be reconstructed once QBO is off."""
+    await _seed_credits(db_session)
+    _override_auth_and_db(db_session)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        exported = await c.get("/finance/v1/qbo/vendor-credits/export",
+                               headers={"Authorization": "Bearer x"})
+    app.dependency_overrides.clear()
+
+    rows = _csv_rows(exported.text)
+    assert rows[0][-1] == "raw"
+    assert any("LinkedTxn" in r[-1] for r in rows[1:])
+
+
+@pytest.mark.asyncio
+async def test_export_rejects_an_unknown_entity(db_session):
+    """Proves /{entity}/export resolves as the export route rather than being
+    swallowed by /{entity}/{qbo_id} — both are two-segment paths."""
+    _override_auth_and_db(db_session)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/finance/v1/qbo/not-an-entity/export",
+                        headers={"Authorization": "Bearer x"})
+    app.dependency_overrides.clear()
+    assert r.status_code == 404
+    assert "unknown entity" in r.json()["detail"]

@@ -16,20 +16,22 @@ def _ap_payload(**over):
 
 
 def _req(pa, **over):
-    """Mirror PaymentExecuteRequest shape used by app.crud.payment_execute.execute."""
-    class _Req:
-        doc_kind = "pa"
-        doc_id = pa.id
-        payment_method = "bank_transfer"
-        amount_paid = None
-        reference = None
-        notes = None
-        payment_date = None
-        bank_account_id = None
-    r = _Req()
-    for k, v in over.items():
-        setattr(r, k, v)
-    return r
+    """Build the REAL request model `app.crud.payment_execute.execute` takes.
+
+    This was a hand-rolled `_Req` stub that mirrored the schema's fields. It
+    drifted: Phase B added `credit_ids` to PaymentExecuteRequest and to
+    execute()'s `pa` branch, the stub never grew the field, and both tests in
+    this file started dying on `AttributeError: '_Req' object has no attribute
+    'credit_ids'`. A stub standing in for a contract is only as good as the
+    person who remembers to update it, so use the contract itself — the next
+    required field is then a construction error here, not a mystery
+    AttributeError deep inside the executor.
+    """
+    from app.schemas.payment_execute import PaymentExecuteRequest
+
+    kw = dict(doc_kind="pa", doc_id=pa.id, payment_method="bank_transfer")
+    kw.update(over)
+    return PaymentExecuteRequest(**kw)
 
 
 @pytest.mark.anyio

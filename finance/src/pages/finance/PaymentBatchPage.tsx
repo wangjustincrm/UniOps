@@ -10,7 +10,7 @@
  * Styling follows the Portal convention (CoaConfigPage): neutral palette,
  * zebra rows, status pills, #085E5E primary.
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Loader2, Play, Wallet, X } from 'lucide-react'
@@ -21,6 +21,8 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
 import { fetchPreview, scopeKey } from '@/services/remittance'
+import { planApplications, plannedTotal, suggestCredits,
+         type CreditSuggestResponse } from '@/services/vendorCredits'
 
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
@@ -253,6 +255,13 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
   // pop a modal in the operator's face every time they reopen a past batch
   // to check on it — the Remittance section below covers that case instead.
   const [showRemittance, setShowRemittance] = useState(false)
+  // Vendor-credit netting preview, keyed by doc_id — fetched read-only while
+  // the batch still sits in `draft` so the operator can see what the FIFO
+  // default would apply before committing to Execute. `deselected` holds the
+  // credit_ids the operator has unchecked per doc; a doc absent here (or
+  // present with an empty Set) means "leave the automatic default alone".
+  const [suggestions, setSuggestions] = useState<Record<string, CreditSuggestResponse>>({})
+  const [deselected, setDeselected] = useState<Record<string, Set<string>>>({})
   const { data, isLoading } = useQuery({
     queryKey: ['batch', batchId],
     queryFn: () => financeApi.get<{ batch: Batch; lines: BatchLine[] }>(`/payments/batches/${batchId}`),
@@ -262,9 +271,84 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
     queryFn: () => financeApi.get<BankAccount[]>('/bank/accounts'),
   })
 
+  const batch = data?.batch
+  const lines = data?.lines ?? []
+
+  // Vendor credits only apply to vendor payments (pa / pa_dir) — the suggest
+  // endpoint 422s for expense_claim, and expense-claim payments never take
+  // credits (Phase A design). Fetch one suggestion per creditable line in
+  // parallel, once, while the batch is still draft.
+  useEffect(() => {
+    if (batch?.status !== 'draft') return
+    const creditable = lines.filter((ln) => ln.doc_kind === 'pa' || ln.doc_kind === 'pa_dir')
+    if (creditable.length === 0) return
+    let cancelled = false
+    // allSettled, not all: one line's suggestCredits failing must not blank
+    // the whole panel — the lines that did resolve should still render their
+    // FIFO preview. A doc missing from `suggestions` just falls back to the
+    // server's automatic default at execute time (safe), but the operator
+    // still needs to be told the preview is incomplete, or they might read
+    // "no panel" as "no credits" — hence the flash on any failure.
+    void Promise.allSettled(
+      creditable.map(async (ln) => [ln.doc_id, await suggestCredits(ln.doc_kind, ln.doc_id)] as const),
+    ).then((results) => {
+      if (cancelled) return
+      const entries: Array<readonly [string, CreditSuggestResponse]> = []
+      let failed = 0
+      for (const r of results) {
+        if (r.status === 'fulfilled') entries.push(r.value)
+        else failed++
+      }
+      setSuggestions(Object.fromEntries(entries))
+      if (failed > 0) {
+        onError(`Could not load the vendor-credit preview for ${failed} of ${creditable.length} line(s) — the automatic default will still apply when you execute.`)
+      }
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batch?.status, lines])
+
+  const toggleCredit = (docId: string, creditId: string) => {
+    setDeselected((prev) => {
+      const off = new Set(prev[docId] ?? [])
+      off.has(creditId) ? off.delete(creditId) : off.add(creditId)
+      return { ...prev, [docId]: off }
+    })
+  }
+
+  /** What the server would actually apply to this doc given the current
+   * selection. Recomputed with planApplications (capped FIFO over the still-
+   * checked credits) rather than summing the preview's `apply` values: those
+   * were computed in the FULL FIFO context and stop being true the moment a
+   * credit is deselected — see planApplications' doc comment for the worked
+   * example. */
+  const planFor = (docId: string) => {
+    const s = suggestions[docId]
+    if (!s) return []
+    return planApplications(s, deselected[docId] ?? new Set<string>())
+  }
+
   const execute = useMutation({
-    mutationFn: () => financeApi.post<{ batch: Batch; paid: number; failed: number; lines: BatchLine[] }>(
-      `/payments/batches/${batchId}/execute`, { bank_account_id: bankId }),
+    mutationFn: () => {
+      // Build the override map only for docs the operator actually touched.
+      // A doc left untouched must stay absent from the map so the server
+      // keeps applying its own automatic FIFO default — sending its full id
+      // list here would work today but would silently diverge from the
+      // server's own choice if a new credit landed between preview and
+      // execute.
+      const creditIdsByDoc: Record<string, string[]> = {}
+      for (const ln of lines) {
+        const off = deselected[ln.doc_id]
+        if (!off || off.size === 0) continue
+        const s = suggestions[ln.doc_id]
+        creditIdsByDoc[ln.doc_id] = (s?.suggested ?? [])
+          .filter((c) => !off.has(c.credit_id))
+          .map((c) => c.credit_id)
+      }
+      return financeApi.post<{ batch: Batch; paid: number; failed: number; lines: BatchLine[] }>(
+        `/payments/batches/${batchId}/execute`,
+        { bank_account_id: bankId, credit_ids_by_doc: creditIdsByDoc })
+    },
     onSuccess: async (r) => {
       qc.invalidateQueries({ queryKey: ['batch', batchId] })
       onExecuted(r.paid, r.failed)
@@ -306,8 +390,6 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
     onError: (e: Error) => onError(e.message),
   })
 
-  const batch = data?.batch
-  const lines = data?.lines ?? []
   const banksForCcy = accounts.filter((a) => !batch || a.currency === batch.currency)
   const bankLabel = (id: string | null) => {
     const a = accounts.find((x) => x.id === id)
@@ -370,6 +452,68 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
                 </tbody>
               </table>
             </div>
+
+            {batch?.status === 'draft' && lines.some((ln) => (suggestions[ln.doc_id]?.suggested.length ?? 0) > 0) && (
+              <div className="mt-4">
+                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Vendor credits to apply</h3>
+                <div className="space-y-3 rounded-lg border border-neutral-200 p-3">
+                  {lines
+                    .filter((ln) => (suggestions[ln.doc_id]?.suggested.length ?? 0) > 0)
+                    .map((ln) => {
+                      const s = suggestions[ln.doc_id]!
+                      const off = deselected[ln.doc_id] ?? new Set<string>()
+                      const plan = planFor(ln.doc_id)
+                      // What each still-checked credit would actually take,
+                      // keyed for the per-row figure below. A credit absent
+                      // here contributes nothing: either deselected, or the
+                      // base ran out before FIFO reached it.
+                      const takeById = new Map(plan.map((p) => [p.credit.credit_id, p.take]))
+                      const applied = plannedTotal(plan)
+                      const net = Number(s.gross) - applied
+                      return (
+                        <div key={ln.doc_id} className="border-b border-neutral-100 pb-3 last:border-0 last:pb-0 last:pt-0">
+                          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
+                            <span className="font-mono text-neutral-700">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
+                            <span className="text-neutral-600">
+                              Gross <span className="font-mono">{fmtMoney(s.gross)}</span>
+                              {'  ·  '}Credits <span className="font-mono">{fmtMoney(String(applied))}</span>
+                              {'  ·  '}Net <span className="font-mono font-semibold text-neutral-800">{fmtMoney(String(net))}</span>
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                            {s.suggested.map((c) => {
+                              const take = takeById.get(c.credit_id)
+                              return (
+                                <label key={c.credit_id} className="flex items-center gap-1.5 text-xs text-neutral-600">
+                                  <input type="checkbox" checked={!off.has(c.credit_id)}
+                                         onChange={() => toggleCredit(ln.doc_id, c.credit_id)} />
+                                  <span className="font-mono">{c.credit_number}</span>
+                                  {/* The vendor's own credit-note number — AP
+                                      needs both: credit_number to find the
+                                      record here, vendor_credit_number to
+                                      talk to the vendor about it. */}
+                                  <span className="font-mono text-neutral-400">{c.vendor_credit_number}</span>
+                                  <span className="text-neutral-400">{c.credit_date}</span>
+                                  {/* The recomputed take, never c.apply — a
+                                      deselection reshuffles what every later
+                                      credit contributes, so showing the
+                                      preview figure would keep the individual
+                                      rows lying even once the total is right.
+                                      Excluded (or unreached) credits show
+                                      their remaining balance struck through. */}
+                                  {take === undefined
+                                    ? <span className="font-mono text-neutral-300 line-through">{fmtMoney(c.remaining)}</span>
+                                    : <span className="font-mono">{fmtMoney(String(take))}</span>}
+                                </label>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                </div>
+              </div>
+            )}
 
             {batch?.status === 'executed' && (
               <div className="mt-6">

@@ -30,6 +30,7 @@ from app.models.ap_invoice import ApInvoice
 from app.models.bank import BankAccount
 from app.models.pa import PaymentApplication
 from app.models.payment import PaymentRecord
+from app.crud import vendor_credit as vendor_credit_crud
 from app.services import budget_client
 from app.schemas.payment_execute import PaymentExecuteRequest, PaymentExecuteResponse
 from app.services.posting import emit_event
@@ -330,18 +331,77 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
                     ap.paid_amount = ap.total_amount
 
         bank = await _resolve_bank(db, req.bank_account_id, pa.currency)
-        amount = req.amount_paid if req.amount_paid is not None else pa.payment_amount
+        base = req.amount_paid if req.amount_paid is not None else pa.payment_amount
+
+        # Vendor credits reduce the cash that leaves the bank. Selection takes row
+        # locks, so it must happen inside this transaction, immediately before the
+        # PaymentRecord — a credit consumed without its payment (or the reverse)
+        # is money that exists in one place and not the other.
+        picks = await vendor_credit_crud.select_credits_for_payment(
+            db, vendor_id=pa.vendor_id, currency=pa.currency,
+            base=base, credit_ids=req.credit_ids,
+        )
+        # Decimal("0.00"), not Decimal("0"): an empty `picks` would otherwise
+        # store scale-0 zero and serialize as "0" where every other credit
+        # figure in the system (app/crud/vendor_credit.py, /suggest) says
+        # "0.00". Same value on the way to Numeric(15,2), consistent on the way
+        # back out.
+        credit_applied = sum((take for _, take in picks), Decimal("0.00"))
+        net = base - credit_applied
+
         record = PaymentRecord(
             doc_kind=doc_kind, doc_id=pa.id, doc_number=pa.pa_number,
             pa_id=pa.id, pa_number=pa.pa_number,
             vendor_id=pa.vendor_id, vendor_name=pa.vendor_name,
             payment_date=pay_date, payment_method=req.payment_method,
-            reference=req.reference, amount=amount, currency=pa.currency,
+            reference=req.reference, amount=net, credit_applied=credit_applied,
+            currency=pa.currency,
             recorded_by=recorded_by, notes=req.notes, batch_id=batch_id,
             bank_account_id=req.bank_account_id,
         )
         db.add(record)
         await db.flush()
+
+        if picks:
+            await vendor_credit_crud.apply_credits(
+                db, picks, payment_record_id=record.id, batch_id=batch_id,
+                doc_kind=doc_kind, doc_id=pa.id, doc_number=pa.pa_number,
+                applied_by=recorded_by,
+            )
+
+        posting_lines = [
+            {"line_role": "accounts_payable", "debit": base,
+             "partner_id": pa.vendor_id, "partner_name": pa.vendor_name,
+             "currency": pa.currency},
+            _bank_line(net, pa.currency, bank),
+        ]
+        if credit_applied > Decimal("0"):
+            # Bank is credited only with the cash that left; the netted portion
+            # parks in a clearing account so the GL bank balance still ties to
+            # the bank statement.
+            #
+            # "vendor_credit_clearing" requires an account_mappings row
+            # (mapping_type='line_role') to appear on the balance sheet / income
+            # statement: app/crud/gl.py's builders do `if not acct: continue`
+            # for an unmapped code, so an unmapped clearing line is silently
+            # dropped from both reports while AP and bank still move — the
+            # balance sheet then reports "balanced": false by exactly this
+            # amount on every credited payment. Only the trial balance shows it
+            # (as "(unmapped)"). Seeded by alembic/versions/
+            # 0032_vendor_credit_clearing_mapping.py to account 1123
+            # "Advance to suppliers" (existing IFRS asset account, no new NC
+            # account): an unapplied vendor credit is money the supplier owes
+            # us, so it belongs there until the credit note itself is booked.
+            # That migration guards on 1123 existing (COA is NC-synced and a
+            # given environment may not have it yet) — if it does not, the
+            # role stays unmapped and this line's account_code stays NULL,
+            # which is exactly the tolerated-but-visible-in-trial-balance
+            # state described above, not a payment blocker.
+            posting_lines.append({
+                "line_role": "vendor_credit_clearing", "credit": credit_applied,
+                "partner_id": pa.vendor_id, "partner_name": pa.vendor_name,
+                "currency": pa.currency,
+            })
 
         event_id = await emit_event(
             db,
@@ -350,12 +410,7 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
             source_doc_id=pa.id,
             source_doc_number=pa.pa_number,
             event_type="payment",
-            lines=await _stamp_fx(db, await _stamp_account_codes(db, [
-                {"line_role": "accounts_payable", "debit": pa.payment_amount,
-                 "partner_id": pa.vendor_id, "partner_name": pa.vendor_name,
-                 "currency": pa.currency},
-                _bank_line(pa.payment_amount, pa.currency, bank),
-            ]), pay_date),
+            lines=await _stamp_fx(db, await _stamp_account_codes(db, posting_lines), pay_date),
         )
         return PaymentExecuteResponse(
             doc_kind=doc_kind, doc_id=pa.id, doc_number=pa.pa_number,
@@ -364,6 +419,16 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
         )
 
     # expense_claim
+    #
+    # Vendor credits are a vendor-AP instrument: they net against what the
+    # company owes a SUPPLIER, never against an employee reimbursement. Reject
+    # the parameter loudly rather than letting eligibility fall out of "this
+    # branch happens not to read req.credit_ids" — a caller that passed credits
+    # here believed they would be applied, and silently paying the claim in
+    # full would leave the credit unconsumed with nobody told.
+    if req.credit_ids:
+        raise ValueError("Vendor credits do not apply to expense claims")
+
     claim = (await db.execute(
         select(ExpenseClaim).where(ExpenseClaim.id == req.doc_id)
     )).scalar_one_or_none()

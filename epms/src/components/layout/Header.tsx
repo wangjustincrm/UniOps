@@ -19,6 +19,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   new: 'New',
   gr: 'Goods Receipt',
   invoices: 'Invoices',
+  'vendor-credits': 'Vendor Credits',
   pa: 'Payment Applications',
   budget: 'Budget',
   reports: 'Reports',

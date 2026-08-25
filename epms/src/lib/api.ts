@@ -339,21 +339,29 @@ export const mdmApi = {
   post:   <T>(path: string, body?: unknown)        => mdmRequest<T>('POST',   path, body),
 }
 
-// ── finance-api (:8004) — bank/card accounts for the PA payment-source picker ──────
-async function financeRequest<T>(method: string, path: string): Promise<T> {
+// ── finance-api (:8004) — bank/card accounts, vendor credits ──────────────────
+async function financeRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = getToken()
   const headers: Record<string, string> = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${FINANCE_BASE}/finance/v1${path}`, { method, headers })
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const res = await fetch(`${FINANCE_BASE}/finance/v1${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
   if (res.status === 204) return undefined as T
   if (!res.ok) {
     let detail = res.statusText
     try { const err = await res.json(); if (typeof err.detail === 'string') detail = err.detail } catch { /* ignore */ }
-    throw new Error(`finance-api: ${detail}`)
+    const error = new Error(`finance-api: ${detail}`) as Error & { status?: number }
+    error.status = res.status
+    throw error
   }
   return res.json() as Promise<T>
 }
 
 export const financeApi = {
-  get: <T>(path: string) => financeRequest<T>('GET', path),
+  get:  <T>(path: string)                 => financeRequest<T>('GET',  path),
+  post: <T>(path: string, body?: unknown) => financeRequest<T>('POST', path, body),
 }

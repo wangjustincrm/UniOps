@@ -387,6 +387,24 @@ async def record_payment(
     # the status flip, payment_records (bank reference finally persisted) and
     # the posting event.
     try:
+        # credit_ids is deliberately NOT passed, so finance-api applies its
+        # automatic FIFO vendor-credit default (Phase B).
+        #
+        # OA's confirmation dialog for this action — ProcessPaymentModal
+        # (oa/src/components/ProcessPaymentModal.tsx, rendered from
+        # oa/src/pages/pa/PaDetailPage.tsx) — shows the gross `payment_amount`
+        # next to "Confirm Payment", so an operator here confirms a figure that
+        # is not the cash actually sent. EPMS's PA detail dialog had the same
+        # gap and was fixed; this one was NOT, deliberately: the OA Direct-PA
+        # feature is slated for removal (product decision, 2026-08-07), so it
+        # is not getting the netting preview or per-credit deselection.
+        #
+        # Do not "finish" this by wiring credit_ids through — without a preview
+        # that would be a blind toggle over money. If the removal is ever
+        # cancelled, give ProcessPaymentModal the same treatment EPMS's dialog
+        # got and add the parameter together with it. Until then the netting is
+        # explained on the remittance advice and in
+        # GET /finance/v1/vendor-credits/{id}/applications.
         await finance_client.execute_payment(
             doc_kind="pa_dir" if pa.is_direct else "pa",
             doc_id=pa_id, bearer_token=token,

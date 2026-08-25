@@ -48,7 +48,17 @@ async def execute_payment(
     bearer_token: str,
     notes: str | None = None,
     bank_account_id: uuid.UUID | None = None,   # funding bank/card (records + GL)
+    credit_ids: list[uuid.UUID] | None = None,
 ) -> dict[str, Any]:
+    """credit_ids is THREE-VALUED and must be compared with `is None` — it is
+    forwarded verbatim to finance-api's PaymentExecuteRequest.credit_ids:
+      None  -> omitted from the body, so finance-api applies its automatic
+               FIFO default (this is what every caller did before Phase B)
+      []    -> sent as [], meaning "apply no vendor credit this run"
+      [ids] -> sent as-is, meaning "apply only these"
+    `if credit_ids:` would collapse [] into None and silently net a payment the
+    operator asked to pay in full — hence the explicit `is not None`.
+    """
     payload: dict[str, Any] = {
         "doc_kind": doc_kind,
         "doc_id": str(doc_id),
@@ -58,6 +68,8 @@ async def execute_payment(
         payload["notes"] = notes
     if bank_account_id is not None:
         payload["bank_account_id"] = str(bank_account_id)
+    if credit_ids is not None:
+        payload["credit_ids"] = [str(c) for c in credit_ids]
 
     url = f"{settings.FINANCE_API_URL}/finance/v1/payments/execute"
     try:

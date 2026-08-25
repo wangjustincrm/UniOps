@@ -44,7 +44,8 @@ async def client(db_session):
 
 
 async def _rec(db, *, doc_kind="pa", amount="100.00", currency="CAD", batch_id=None,
-               payment_date=date(2026, 7, 22), method="bank_transfer", doc_id=None):
+               payment_date=date(2026, 7, 22), method="bank_transfer", doc_id=None,
+               credit_applied="0.00"):
     pa_id = pa_number = vendor_id = vendor_name = None
     if doc_kind != "expense_claim":
         pa = PaymentApplication(
@@ -59,7 +60,8 @@ async def _rec(db, *, doc_kind="pa", amount="100.00", currency="CAD", batch_id=N
         doc_kind=doc_kind, doc_id=doc_id if doc_id is not None else uuid.uuid4(),
         doc_number="DOC-1", pa_id=pa_id, pa_number=pa_number, vendor_id=vendor_id,
         vendor_name=vendor_name, payment_date=payment_date, payment_method=method,
-        amount=Decimal(amount), currency=currency, recorded_by=uuid.uuid4(),
+        amount=Decimal(amount), credit_applied=Decimal(credit_applied),
+        currency=currency, recorded_by=uuid.uuid4(),
         status="completed", batch_id=batch_id,
     )
     db.add(rec)
@@ -321,3 +323,39 @@ async def test_remittance_filter_splits_sent_from_not_sent(client, db_session):
     not_sent = (await client.get("/finance/v1/payments?remittance=not_sent",
                                  headers=_h())).json()
     assert [i["amount"] for i in not_sent["items"]] == ["20.00"]
+
+
+async def test_list_exposes_credit_applied(client, db_session):
+    """`amount` is the NET cash that left the bank. Without `credit_applied`
+    beside it a short payment has no explanation anywhere inside the system —
+    the only other place it is stated is the remittance email to the vendor."""
+    await _rec(db_session, amount="70.00", credit_applied="30.00")
+
+    body = (await client.get("/finance/v1/payments", headers=_h())).json()
+    row = body["items"][0]
+    assert row["amount"] == "70.00"
+    assert row["credit_applied"] == "30.00"
+
+
+async def test_export_carries_gross_and_credit_applied(client, db_session):
+    """gross = amount + credit_applied, so the export explains the short
+    payment on its own. `amount` keeps its position and meaning for anyone
+    with an existing import of this file."""
+    await _rec(db_session, amount="70.00", credit_applied="30.00")
+
+    r = await client.get("/finance/v1/payments/export", headers=_h())
+    assert r.status_code == 200
+    rows = list(csv.DictReader(io.StringIO(r.text)))
+    assert len(rows) == 1
+    assert rows[0]["amount"] == "70.00"
+    assert rows[0]["credit_applied"] == "30.00"
+    assert rows[0]["gross"] == "100.00"
+
+
+async def test_export_of_an_unnetted_payment_reports_gross_equal_to_amount(client, db_session):
+    await _rec(db_session, amount="42.00")
+
+    r = await client.get("/finance/v1/payments/export", headers=_h())
+    rows = list(csv.DictReader(io.StringIO(r.text)))
+    assert rows[0]["gross"] == "42.00"
+    assert rows[0]["credit_applied"] == "0.00"

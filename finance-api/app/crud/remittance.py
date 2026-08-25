@@ -22,6 +22,7 @@ from app.models.payment import PaymentRecord
 from app.models.remittance import (
     KIND_EMPLOYEE, KIND_VENDOR, SCOPE_BATCH, SCOPE_PAYMENT, RemittanceNotification,
 )
+from app.models.vendor_credit import VendorCredit, VendorCreditApplication
 
 BLOCK_MISSING_EMAIL = "missing_email"
 BLOCK_INVALID_EMAIL = "invalid_email"
@@ -66,11 +67,25 @@ _SELECTION_NS = uuid.UUID("6c9b6b1e-6f2d-4e4a-9c1a-6f2f6f2c9b1e")
 
 
 @dataclass
+class AppliedCreditNote:
+    """One vendor credit note netted off a payment — the vendor's own number
+    (never our internal `credit_number`) plus the amount THIS credit
+    contributed. A GroupLine can carry more than one: a single payment can
+    net several credit notes, and the remittance must name every one of
+    them, not just the first or a bare total."""
+    vendor_credit_number: str
+    applied_amount: Decimal
+
+
+@dataclass
 class GroupLine:
     vendor_inv_no: str
     doc_number: str
     payment_date: date
-    amount: Decimal
+    amount: Decimal                       # net cash paid
+    credit_applied: Decimal = Decimal("0")
+    gross: Decimal = Decimal("0")
+    credit_notes: list[AppliedCreditNote] = field(default_factory=list)
 
 
 @dataclass
@@ -209,6 +224,34 @@ async def build_groups(db: AsyncSession,
     return groups
 
 
+async def applied_credit_notes_by_payment(
+    db: AsyncSession, payment_record_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, list[AppliedCreditNote]]:
+    """Which vendor credit notes were netted off which payments, keyed by
+    `payment_record_id` — one batch query for the whole set of ids already in
+    hand, following the same pattern as this module's `pa_ids` lookup above.
+    Do NOT call this per line: it runs inside a remittance email send (and,
+    via app/api/v1/payments.py, inside a page read), and a per-row query
+    there is an N+1.
+    """
+    if not payment_record_ids:
+        return {}
+    rows = (await db.execute(
+        select(VendorCreditApplication.payment_record_id,
+               VendorCredit.vendor_credit_number,
+               VendorCreditApplication.applied_amount)
+        .join(VendorCredit, VendorCredit.id == VendorCreditApplication.credit_id)
+        .where(VendorCreditApplication.payment_record_id.in_(payment_record_ids))
+        .order_by(VendorCreditApplication.applied_at)
+    )).all()
+    out: dict[uuid.UUID, list[AppliedCreditNote]] = {}
+    for payment_record_id, vendor_credit_number, applied_amount in rows:
+        out.setdefault(payment_record_id, []).append(
+            AppliedCreditNote(vendor_credit_number=vendor_credit_number,
+                               applied_amount=applied_amount))
+    return out
+
+
 async def _vendor_groups(db: AsyncSession,
                           records: list[PaymentRecord]) -> list[PayeeGroup]:
     if not records:
@@ -219,6 +262,8 @@ async def _vendor_groups(db: AsyncSession,
     )).scalars().all()
     pa_by_id = {p.id: p for p in pas}
     inv_no = await vendor_inv_no_map(db, list(pas))
+    credit_notes_by_payment = await applied_credit_notes_by_payment(
+        db, [r.id for r in records])
 
     vendor_ids = {p.vendor_id for p in pas}
     partners = (await db.execute(
@@ -245,7 +290,10 @@ async def _vendor_groups(db: AsyncSession,
             out[pa.vendor_id] = g
         number = inv_no.get(pa.id, "")
         g.lines.append(GroupLine(vendor_inv_no=number, doc_number=pa.pa_number,
-                                  payment_date=r.payment_date, amount=r.amount))
+                                  payment_date=r.payment_date, amount=r.amount,
+                                  credit_applied=r.credit_applied,
+                                  gross=r.amount + r.credit_applied,
+                                  credit_notes=credit_notes_by_payment.get(r.id, [])))
         g.total += r.amount
         g.payment_record_ids.append(r.id)
 
@@ -290,7 +338,9 @@ async def _employee_groups(db: AsyncSession,
         # Claim number is the meaningful reference internally — employee
         # groups are exempt from the vendor-invoice-number requirement.
         g.lines.append(GroupLine(vendor_inv_no="", doc_number=claim.claim_number,
-                                  payment_date=r.payment_date, amount=r.amount))
+                                  payment_date=r.payment_date, amount=r.amount,
+                                  credit_applied=r.credit_applied,
+                                  gross=r.amount + r.credit_applied))
         g.total += r.amount
         g.payment_record_ids.append(r.id)
 

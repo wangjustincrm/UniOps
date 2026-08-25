@@ -175,6 +175,11 @@ async def create_batch(db: AsyncSession, *, docs: list[tuple[str, uuid.UUID]],
     db.add(batch)
     await db.flush()
     for p in pas:
+        # `amount` here is the gross payable snapshotted when the batch is
+        # built — it is what is owed, not what will actually be sent. Vendor
+        # credits net the cash at execution time (payment_execute.execute),
+        # after this line is written; the netted figure shows up in the
+        # payment preview and is recorded on the payment_record, not here.
         db.add(PaymentBatchLine(
             batch_id=batch.id,
             doc_kind="pa_dir" if p.is_direct else "pa",
@@ -191,11 +196,15 @@ async def create_batch(db: AsyncSession, *, docs: list[tuple[str, uuid.UUID]],
 
 async def execute_batch(db: AsyncSession, batch: PaymentBatch, user: dict,
                         bearer_token: str | None,
-                        bank_account_id: uuid.UUID | None = None) -> PaymentBatch:
+                        bank_account_id: uuid.UUID | None = None,
+                        credit_ids_by_doc: dict[uuid.UUID, list[uuid.UUID]] | None = None,
+                        ) -> PaymentBatch:
     """Run every line through the unified executor under one batch tag. A line
     failure is isolated (savepoint rollback) and recorded; the rest proceed.
     bank_account_id (chosen at execute) funds every line and is recorded on the
-    batch + each payment_record."""
+    batch + each payment_record. credit_ids_by_doc is keyed by doc_id: a
+    document absent from the map keeps the automatic FIFO default (None),
+    while an explicit empty list opts that line out of netting."""
     if batch.status != DRAFT:
         raise ValueError(f"Batch is already {batch.status}")
     # validate the funding bank up-front (currency must match the batch)
@@ -217,6 +226,7 @@ async def execute_batch(db: AsyncSession, batch: PaymentBatch, user: dict,
                         doc_kind=ln.doc_kind, doc_id=ln.doc_id,
                         payment_date=batch.batch_date, payment_method=batch.payment_method,
                         bank_account_id=bank_account_id,
+                        credit_ids=(credit_ids_by_doc or {}).get(ln.doc_id),
                     ),
                     user, bearer_token=bearer_token, batch_id=batch.id,
                 )

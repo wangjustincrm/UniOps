@@ -40,12 +40,28 @@ export function scopeKey(scope: RemittanceScope): string {
   return `${scope.kind}:${scope.id}`
 }
 
+export type AppliedCreditNote = {
+  /** The vendor's own credit-note number — never our internal credit_number. */
+  vendor_credit_number: string
+  /** Decimal serialized as a string by Pydantic — run through Number() before arithmetic. */
+  applied_amount: string
+}
+
 export type PayeeGroupLine = {
   /** Vendor invoice number for vendor payees, claim number for employees. */
   reference: string
   payment_date: string
   /** Decimal serialized as a string by Pydantic — run through Number() before arithmetic. */
   amount: string
+  /** Invoice/claim amount before any vendor credit was netted off — same
+   * figure as `amount` when nothing was netted. Decimal-as-string. */
+  gross: string
+  /** Total vendor credit netted off this line. "0.00" when none — the shape
+   * is uniform across every line, not conditional. Decimal-as-string. */
+  credit_applied: string
+  /** One entry per vendor credit note netted off this line, each naming the
+   * vendor's own document number — empty when `credit_applied` is "0.00". */
+  credit_notes: AppliedCreditNote[]
 }
 
 export type LastSend = {

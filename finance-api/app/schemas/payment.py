@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PaymentCreate(BaseModel):
@@ -12,6 +12,16 @@ class PaymentCreate(BaseModel):
     amount: Decimal
     currency: str = "CAD"
     notes: str | None = None
+
+
+class AppliedCreditNoteOut(BaseModel):
+    """One vendor credit note netted off this payment — the vendor's own
+    number (never our internal credit_number) plus what THAT note
+    contributed. A payment can net more than one; see PaymentResponse.credit_notes."""
+    vendor_credit_number: str
+    applied_amount: Decimal
+
+    model_config = {"from_attributes": True}
 
 
 class PaymentResponse(BaseModel):
@@ -27,7 +37,18 @@ class PaymentResponse(BaseModel):
     payment_date: date
     payment_method: str
     reference: str | None = None
+    # `amount` is the CASH that left the bank — net of any vendor credit. The
+    # gross the document asked for is `amount + credit_applied`; without that
+    # second field a short payment is inexplicable anywhere inside the system
+    # (the only other place it was ever stated is the remittance email to the
+    # vendor). Defaults to 0 so payments recorded before Phase B, and
+    # expense-claim payments (which never take credits), still validate.
     amount: Decimal
+    credit_applied: Decimal = Decimal("0.00")
+    # Which credit note(s) made up credit_applied — always empty pre-Phase-B
+    # payments and expense-claim payments (which never take credits), always
+    # populated by the API layer for the rest (see app/api/v1/payments.py).
+    credit_notes: list[AppliedCreditNoteOut] = Field(default_factory=list)
     currency: str
     status: str
     batch_id: uuid.UUID | None = None

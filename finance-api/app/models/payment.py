@@ -24,6 +24,9 @@ class PaymentRecord(UUIDPrimaryKey, TimestampMixin, Base):
     payment_method: Mapped[str] = mapped_column(String(20), nullable=False)  # eft|cheque|wire|other
     reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    # Vendor credit netted off this payment. `amount` above is the NET cash that
+    # actually left the bank; gross = amount + credit_applied.
+    credit_applied: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False, default=Decimal("0"))
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="CAD")
     recorded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
