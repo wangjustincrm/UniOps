@@ -7,13 +7,13 @@ JV 与 MDM 的调度器沿用同一套语义,所以各加一列,而不是另起�
   >0   = 分钟数(上限由各自的 MAX_INTERVAL_MINUTES 钳制)
 
 Revision ID: ai01_sync_intervals
-Revises: ai01_pr_service_completion
+Revises: ak01_nc_price_scale5
 """
 import sqlalchemy as sa
 from alembic import op
 
 revision = "ai01_sync_intervals"
-down_revision = "ai01_pr_service_completion"
+down_revision = "ak01_nc_price_scale5"
 branch_labels = None
 depends_on = None
 
