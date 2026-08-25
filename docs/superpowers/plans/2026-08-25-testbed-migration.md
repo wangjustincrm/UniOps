@@ -774,31 +774,49 @@ setgid 让任何人新建的文件自动继承 `uniops` 组, 多人协作才不�
 
 - [ ] **Step 6: 传 Claude Code 记忆库与 git 配置**
 
-**★ 只搬记忆子树, 不要覆盖整个 `~/.claude`** —— Task 4 Step 9 已在服务器上装了 Claude Code
-并完成认证, 凭据就在 `~/.claude` 里。整目录覆盖会把服务器侧的认证冲掉。
+**★ 两个坑, 任何一个踩到都会让记忆"搬过去了却读不到"。**
 
-在笔记本上(**Git Bash, 不是 PowerShell** —— PowerShell 不展开 `~`, 路径转换行为也不同):
+**坑一: 目录名是从项目路径推导的, 换机后对不上。**
+笔记本上记忆在 `~/.claude/projects/`**`c--Project`**`/memory/` —— 这个 `c--Project` 来自 `C:\Project`。
+服务器上代码在 `/srv/uniops`, 从那里启动 `claude` 会新建一个完全不同名的目录,
+**照搬过去的 `c--Project` 不会被读到**: 文件在, 但对不上号。
+
+**坑二: 整目录覆盖会冲掉认证。** Task 4 Step 9 已在服务器上装了 Claude Code 并完成认证,
+凭据就在 `~/.claude` 里, `tar -xzf ... -C ~` 整个解开会把它替换成笔记本那份。
+
+正确做法 —— **先让服务器自己建出目录, 再把记忆文件放进去**:
 
 ```bash
-tar -czf /d/claude-memory.tar.gz -C "/c/Users/$USERNAME/.claude" projects
+# 1) 服务器: 从将来真正干活的目录跑一次 claude, 让它建出项目目录
+cd /srv/uniops/uniops-prod          # 或你自己的 worktree
+claude                               # 确认信任, 然后退出
+ls -d ~/.claude/projects/*/          # ★ 记下新出现的那个目录名
+```
+
+```bash
+# 2) 笔记本(Git Bash, 不是 PowerShell —— PowerShell 不展开 ~, 路径转换也不同)
+tar -czf /d/claude-memory.tar.gz -C "/c/Users/$USERNAME/.claude/projects/c--Project" memory
 tar -czf /d/gitconfig.tar.gz -C "/c/Users/$USERNAME" .gitconfig
 scp /d/claude-memory.tar.gz /d/gitconfig.tar.gz crmadmin@10.10.50.64:/tmp/
 ```
 
-在服务器上:
-
 ```bash
-mkdir -p ~/.claude
-tar -xzf /tmp/claude-memory.tar.gz -C ~/.claude
+# 3) 服务器: 解到上一步记下的那个目录里(把 <PROJ_DIR> 换成实际目录名)
+tar -xzf /tmp/claude-memory.tar.gz -C ~/.claude/projects/<PROJ_DIR>/
 tar -xzf /tmp/gitconfig.tar.gz -C ~
-ls ~/.claude/projects/*/memory/MEMORY.md
-ls ~/.claude/projects/*/memory/*.md | wc -l
-claude --version        # 确认安装与认证没被破坏
+ls ~/.claude/projects/<PROJ_DIR>/memory/MEMORY.md
+ls ~/.claude/projects/<PROJ_DIR>/memory/*.md | wc -l
+claude --version                     # 确认认证没被破坏
 ```
 
 预期: `MEMORY.md` 存在, 记忆文件百余个, `claude --version` 仍正常。
+
+**正面验证(必做)**: 在那个目录下起 `claude`, 问它一个只有记忆里才有的事
+(例如"生产当前的 TAG 是什么"、"NC 的 BOM 用量为什么要除 HNPARENTNUM")。
+**答得出来才算搬成功** —— 只看文件在不在是假通过, 因为坑一正是"文件在但读不到"。
+
 **漏了这步等于服务器上的 Claude 失忆。** 其他开发者是全新的, 没有这份积累 ——
-记忆是按用户家目录存的, 不会共享。
+记忆按用户家目录存, 不会在开发者之间共享。
 
 
 ---
