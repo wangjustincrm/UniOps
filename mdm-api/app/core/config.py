@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     nc_user: str | None = None
     nc_password: str | None = None
 
+    # 部署级总开关。关掉 = 这个进程不起调度循环(手动触发不受影响)。
+    nc_sync_scheduler_enabled: bool = True
+
     allowed_origins: list[str] = [
         "http://localhost:5173", "http://localhost:5174",
         "http://localhost:5175", "http://localhost:5176", "http://localhost:3000",
