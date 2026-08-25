@@ -752,7 +752,8 @@ git commit -m "feat(finance): scheduled incremental NC voucher sync"
   - `app.models.company_config.CompanyConfig`（**mirror，不进 mdm 的 alembic**）
   - `app.tasks.erp_sync_scheduler` 的 `DEFAULT_INTERVAL_MINUTES = 1440`、`MAX_INTERVAL_MINUTES = 1440`、
     `TICK_SECONDS = 60`、`SUB_KINDS = ("material", "supplier", "person")`
-  - `resolve_interval_minutes` / `is_due` / `run_all_kinds(db)` / `run_tick()` / `erp_sync_loop()`
+  - `resolve_interval_minutes` / `is_due` / `run_all_kinds(db)` / `run_all_kinds_session()` /
+    `run_tick()` / `erp_sync_loop()`
   - HTTP：`GET /mdm/v1/erp/sync/schedule`、`PATCH /mdm/v1/erp/sync/interval`
 - Task 5 的 Portal 组件读 `GET /erp/sync/schedule`。
 
@@ -902,11 +903,14 @@ async def test_run_tick_synced(monkeypatch):
     async def _last():
         return None
 
-    async def _run(db):
+    async def _run():
         return None
     monkeypatch.setattr(sched, "load_interval_minutes", _interval)
     monkeypatch.setattr(sched, "last_sync_started_at", _last)
-    monkeypatch.setattr(sched, "run_all_kinds", _run)
+    # patch 的是开 session 的那层包装,不是 run_all_kinds 本身 ——
+    # 否则 run_tick 仍会去开一个真实 session(而且用的是 settings.database_url,
+    # 不是测试库)。
+    monkeypatch.setattr(sched, "run_all_kinds_session", _run)
     assert await sched.run_tick() == "synced"
 ```
 
@@ -1062,6 +1066,17 @@ async def run_all_kinds(db) -> None:
             logger.error("ERP MDM scheduler: %s failed: %s", kind, exc)
 
 
+async def run_all_kinds_session() -> None:
+    """run_all_kinds 的开 session 包装。
+
+    单独一层是为了可测:run_tick 的测试 patch 掉这一个函数,就完全不碰数据库;
+    run_all_kinds 自己的测试则直接传一个假 db 进去。两者各测各的。
+    """
+    async with AsyncSessionLocal() as db:
+        await run_all_kinds(db)
+        await db.commit()
+
+
 async def run_tick() -> str:
     """一次调度决策。'disabled' | 'not_due' | 'synced' | 'failed'。"""
     interval = await load_interval_minutes()
@@ -1071,9 +1086,7 @@ async def run_tick() -> str:
                   interval_minutes=interval, now=datetime.now(timezone.utc)):
         return "not_due"
     try:
-        async with AsyncSessionLocal() as db:
-            await run_all_kinds(db)
-            await db.commit()
+        await run_all_kinds_session()
     except Exception:  # noqa: BLE001
         logger.exception("Scheduled ERP MDM sync failed")
         return "failed"
@@ -1097,9 +1110,9 @@ async def erp_sync_loop() -> None:
         await asyncio.sleep(TICK_SECONDS)
 ```
 
-⚠️ `test_run_tick_synced` 会 monkeypatch `run_all_kinds`，所以 `run_tick` 里必须
-**通过模块名调用**（`run_all_kinds(db)` 在同模块内是全局查找，monkeypatch 生效）。不要
-把它 import 成别的名字。
+⚠️ `run_tick` 必须调用 `run_all_kinds_session()`（同模块内的全局查找，monkeypatch 才生效），
+**不要**在 `run_tick` 里直接开 `AsyncSessionLocal()` —— 那样测试里 patch 掉 `run_all_kinds`
+也仍会去连 `settings.database_url` 指向的库（不是测试库）。
 
 - [ ] **Step 6: 跑测试确认通过**
 
