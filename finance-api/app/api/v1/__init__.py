@@ -17,6 +17,7 @@ from app.api.v1.health import router as health_router
 from app.api.v1.nc_sync import router as nc_sync_router
 from app.api.v1.nc_coa_sync import router as nc_coa_sync_router
 from app.api.v1.qbo import router as qbo_router
+from app.api.v1.vendor_credit_import import router as qbo_credit_import_router
 from app.api.v1.vendor_credits import router as vendor_credits_router
 
 api_router = APIRouter()
@@ -39,3 +40,4 @@ api_router.include_router(nc_sync_router)
 api_router.include_router(nc_coa_sync_router)
 api_router.include_router(qbo_router)
 api_router.include_router(vendor_credits_router)
+api_router.include_router(qbo_credit_import_router)

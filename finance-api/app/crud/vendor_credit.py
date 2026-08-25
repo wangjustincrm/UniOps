@@ -60,7 +60,26 @@ async def _find_duplicate(db: AsyncSession, vendor_id: uuid.UUID,
 
 async def create(db: AsyncSession, *, payload: VendorCreditCreate,
                  uploaded_by: uuid.UUID,
-                 uploaded_by_name: str | None) -> VendorCredit:
+                 uploaded_by_name: str | None,
+                 source: str = SOURCE_UPLOAD,
+                 source_ref: str | None = None,
+                 opening_balance: bool = False,
+                 imported_from_sync_run_id: uuid.UUID | None = None,
+                 status: str = PENDING_REVIEW) -> VendorCredit:
+    """The ONE write path into vendor_credits.
+
+    The provenance keywords exist so the QBO import records a credit through
+    exactly this function rather than issuing its own INSERT. That is what
+    keeps _positive(), the duplicate check, and the numbering sequence
+    unconditional: a second insert site would be a second place for the sign
+    rule to be forgotten. Their defaults reproduce manual-upload behaviour, so
+    existing callers are unaffected.
+
+    `status` is a parameter for the same reason. An imported credit skips
+    review because it was already reconciled inside QuickBooks; expressing that
+    by post-hoc mutation would leave a pending_review row visible in the AP
+    queue for the width of the transaction.
+    """
     amount = _positive(payload.amount)
     tax = _positive(payload.tax_amount)
     total = amount + tax
@@ -92,14 +111,16 @@ async def create(db: AsyncSession, *, payload: VendorCreditCreate,
         total_amount=total,
         applied_amount=_ZERO,
         remaining_amount=total,
-        status=PENDING_REVIEW,
+        status=status,
         po_id=payload.po_id,
         po_number=payload.po_number,
         line_items=payload.line_items,
         file_name=payload.file_name,
         notes=payload.notes,
-        source=SOURCE_UPLOAD,
-        opening_balance=False,
+        source=source,
+        source_ref=source_ref,
+        opening_balance=opening_balance,
+        imported_from_sync_run_id=imported_from_sync_run_id,
         uploaded_by=uploaded_by,
         uploaded_by_name=uploaded_by_name,
         uploaded_at=now,
