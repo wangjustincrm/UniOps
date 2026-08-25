@@ -41,7 +41,7 @@
 
 关掉所有 Claude Code 会话与编辑器, 迁移期间只在笔记本上操作。
 
-- [x] **Step 2: 固化当前 dev 栈的真实挂载拓扑**
+- [ ] **Step 2: 固化当前 dev 栈的真实挂载拓扑**
 
 最关键的一步。当前栈的源码来自 5 棵不同的树, **没有任何 compose 文件记录这个组合**。
 
@@ -59,7 +59,7 @@ cat db-snapshots/dev-stack-topology-20260825.txt
 `uniops-delegation` / `uniops-nc-po-edit` / `uniops` 六个来源, 且每个服务除 `/app` 外还有
 `/packages/authz` 或 `/packages/shell` 的挂载。
 
-- [x] **Step 3: 记录未 push 的 commit 基线**
+- [ ] **Step 3: 记录未 push 的 commit 基线**
 
 ```bash
 cd /c/Project/uniops
@@ -76,7 +76,7 @@ head -5 db-snapshots/unpushed-baseline-20260825.txt
 
 预期: `17` / `2` / `1` / `62`。数字不同说明有会话动过, 先查清再继续。
 
-- [x] **Step 4: 记录测试套件的失败基线(大小写敏感问题的唯一探针)**
+- [ ] **Step 4: 记录测试套件的失败基线(大小写敏感问题的唯一探针)**
 
 Linux 区分大小写而 NTFS 不区分, 可能有"引用了错误大小写却一直没暴露"的代码。
 迁移后要用同一套测试比对失败**集合**(只比数字会误判):
@@ -108,7 +108,7 @@ tail -5 /c/Project/uniops/db-snapshots/epms-api-test-baseline-20260825.txt
 - Produces: 环境变量 `LAN_HOST`(默认 `localhost`)与 `STACK_PREFIX`(默认 `uniops`),
   供 Task 7 / Task 8 在各栈的启动脚本里设值
 
-- [ ] **Step 1: 备份原文件(不要用 git stash)**
+- [x] **Step 1: 备份原文件(不要用 git stash)**
 
 `git stash` 是仓库级共享的, 在 worktree 里 pop 会弹出别的会话的 WIP。用普通拷贝:
 
@@ -117,7 +117,7 @@ cd /c/Project/uniops
 cp docker-compose.dev.yml docker-compose.dev.yml.bak-20260825
 ```
 
-- [ ] **Step 2: 两条参数化 sed**
+- [x] **Step 2: 两条参数化 sed**
 
 第一条**只改 `VITE_*` 和 `ALLOWED_ORIGINS` 两类行**。healthcheck 里的
 `http://localhost:8000/api/v1/health` 是容器**自检**, 改了会让全部容器立刻 unhealthy ——
@@ -137,7 +137,7 @@ cd /c/Project/uniops
 sed -i -E 's|^([[:space:]]+container_name: )uniops_|\1\$\{STACK_PREFIX:-uniops\}_|' docker-compose.dev.yml
 ```
 
-- [ ] **Step 3: 验证两条替换的范围都正确**
+- [x] **Step 3: 验证两条替换的范围都正确**
 
 **不要照抄任何绝对数字。** 这些计数随 main 变化 —— 实测同一天笔记本主 checkout 是 57 行,
 而 `386d257` 上是 59 行(main 期间新增了 `VITE_MRP_API_URL` 与 `VITE_VMS_URL`)。
@@ -165,7 +165,7 @@ grep -nE "http://localhost:" docker-compose.dev.yml | grep -v 'test:' | grep -vE
 预期: 三组"相等"、两个 0、最后一行无输出。
 任何一项对不上就 `cp docker-compose.dev.yml.bak-20260825 docker-compose.dev.yml` 回滚重来。
 
-- [ ] **Step 4: 确认默认行为逐字不变**
+- [x] **Step 4: 确认默认行为逐字不变**
 
 最强的一条证据: 不设任何变量时, compose **解析后的完整结果**与改动前逐字相同。
 这比数行数可靠得多 —— 它覆盖了所有服务的所有字段, 不依赖任何计数。
@@ -183,7 +183,7 @@ LAN_HOST=10.0.0.9 docker compose -f docker-compose.dev.yml --env-file .env confi
 **注意**: 此步在 Step 4b / Step 5 加入 postgres 调优和 MailHog **之前**做 ——
 那两项是有意的新增, 加完之后 diff 当然不再为空。
 
-- [ ] **Step 4b: 为机械盘阵列调 postgres**
+- [x] **Step 4b: 为机械盘阵列调 postgres**
 
 服务器落在机械盘阵列上(与生产同构)。生产跑烤好的镜像、磁盘几乎不动, 所以"生产不卡"成立;
 但 dev 栈多了 `npm install`、Vite 预打包和**测试套件的高频事务提交**, 后者是机械盘上唯一
@@ -296,7 +296,7 @@ echo "残留写死 usePolling: true(必须为 0): $(grep -l 'usePolling: true' *
 
 预期: `7` / `7` / `0`。
 
-- [x] **Step 8:(可选)写 5 树拓扑 override**
+- [ ] **Step 8:(可选, 已跳过)写 5 树拓扑 override**
 
 **这一步不是迁移的必要条件, 默认可以跳过。**
 
@@ -339,7 +339,7 @@ YAML
 `dev-stack-topology-20260825.txt` 补全** —— 抓取时只记录了 `/app`。
 是否真的复现对了, 由 Task 7 Step 3 的 diff 精确判定, 不靠肉眼。
 
-- [ ] **Step 9: 参数化宿主端口, 并写 .env 生成器**
+- [x] **Step 9: 参数化宿主端口, 并写 .env 生成器**
 
 原设计是给每套栈写一个端口 override 文件。**实施时改成了更安全的做法**, 原因是:
 
@@ -400,7 +400,7 @@ PYEOF
 
 索引 `i` 的端口 = 标准端口 + `i*100`, `STACK_PREFIX` 自动是 `uniops-test`(i=0)或 `uniops-dev<i>`。
 
-- [ ] **Step 10: 验证多套栈之间零冲突**
+- [x] **Step 10: 验证多套栈之间零冲突**
 
 这是整个多栈设计的决定性验证 —— 不是"能解析"就行, 而是**互相之间不能撞**:
 
@@ -417,7 +417,7 @@ for i in 0 1 2; do echo "栈$i: $(grep -c published /tmp/stack$i.txt) 端口 / $
 
 实测结果: 两个"必须为空"都为空, 三套栈各 **21 容器 / 22 端口**。
 
-- [ ] **Step 11: 提交(需 Justin 同意后再执行)**
+- [x] **Step 11: 提交(需 Justin 同意后再执行)**
 
 主 checkout 当前在 `test/mrp-1c-local` 且带 26 个脏文件。**不要直接提交到那个分支。**
 
@@ -511,7 +511,7 @@ sudo cat /etc/netplan/*.yaml      # 确认是静态 IP 而非 dhcp4: true
 
 **★ IP 必须固定** —— 一变则四套栈的 `LAN_HOST` 全部失效, 同事全部打不开。
 
-- [ ] **Step 2: 装 Docker Engine(不是 Docker Desktop, 更不是 snap 版)**
+- [x] **Step 2: 装 Docker Engine(不是 Docker Desktop, 更不是 snap 版)**
 
 snap 版 Docker 有严格的路径限制(只能访问 `/home` 下的目录), 会和 `/srv/uniops` 冲突。
 
@@ -538,7 +538,7 @@ df -h /var/lib/docker
 `df` 显示 `/dev/mapper/ubuntu--vg-docker--lv` 约 400 G。
 **如果 `df` 显示的是 `/` 那个 100 G 的卷, 说明挂载没生效, 先别往下走。**
 
-- [ ] **Step 3: 内核参数**
+- [x] **Step 3: 内核参数**
 
 ```bash
 sudo tee /etc/sysctl.d/60-uniops.conf > /dev/null <<'EOF'
@@ -554,7 +554,7 @@ sysctl fs.inotify.max_user_watches fs.inotify.max_user_instances
 
 预期: `524288` 与 `1024`。
 
-- [ ] **Step 4: 用户与组**
+- [x] **Step 4: 用户与组**
 
 初期 2 人 = 主环境栈 + 2 套开发栈(索引 0/1/2)。第三位以后再加。
 
@@ -575,7 +575,7 @@ docker ps
 预期: 能列出且**不需要 sudo**。这一条正是 Windows + Docker Desktop 做不到的事,
 也是 D2 选 Ubuntu 的核心原因 —— Docker Desktop 绑定单个桌面登录用户, 其他人 SSH 进来拿不到 docker。
 
-- [ ] **Step 5: 代码目录**
+- [x] **Step 5: 代码目录**
 
 ```bash
 sudo mkdir -p /srv/uniops
@@ -587,7 +587,7 @@ ls -ld /srv/uniops
 预期: `drwxrwsr-x ... root uniops` —— 注意那个 **`s`**(setgid),
 它让任何人在此新建的文件自动继承 `uniops` 组, 多人协作才不会互相锁死。
 
-- [ ] **Step 6: SSH key 登录**
+- [x] **Step 6: SSH key 登录**
 
 笔记本上生成(实测该机原本没有 key):
 
@@ -635,7 +635,7 @@ sudo sshd -T | grep -iE "passwordauthentication|kbdinteractive"     # 两个都�
 
 (改的时候**保持一个已连上的 SSH 窗口别关**, 配错了还能补救。)
 
-- [ ] **Step 7: 防火墙 —— 但要知道它管不住 Docker**
+- [x] **Step 7: 防火墙 —— 但要知道它管不住 Docker**
 
 ```bash
 sudo ufw allow 22/tcp
@@ -657,7 +657,34 @@ sudo ufw status numbered
 这是内网测试机, 可以接受。**但别以为 ufw 在给应用端口把关** ——
 将来若要真正限制访问来源, 要写 `DOCKER-USER` 链, 不是 ufw。
 
-- [ ] **Step 8: 从笔记本一次性收尾验证**
+- [x] **Step 9: 装 Claude Code(服务器侧)**
+
+**初版计划漏了这一步。** 它是"团队各自 VS Code + Claude Code 改调服务器代码"这个需求的必要条件 ——
+VS Code Remote-SSH 模式下 Claude Code 扩展跑在**服务器侧**, 服务器上没有 `claude` 命令整条链路就断了。
+
+Ubuntu 22.04 自带的 Node 太老(Claude Code 要 18+), 先装 Node 22:
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+node --version && npm --version
+sudo npm install -g @anthropic-ai/claude-code
+claude --version && which claude
+```
+
+**全局装(`sudo npm -g`)是有意的**: 一次安装所有用户都能用; 凭据与配置各自存在自己的 `~/.claude`。
+
+2026-08-25 实测: `claude` **2.1.246** 在 `/usr/bin/claude`, Node **v22.23.2**。
+
+**★ 账号不能共享。** 个人订阅(Pro/Max)按人授权, 多人共用违反使用条款, 且并发会话会撞速率限制、
+用量无法归因。两条正规路径:
+- **Team/Enterprise 按席位**, 每人 `claude` 各自 `/login`
+- **组织 API Key**(本项目已有 Console 账号) —— **给每人发独立的一把**, 各自写进自己的 `~/.bashrc`:
+  `export ANTHROPIC_API_KEY='...'`。**不要写进 `/etc/environment` 等全局位置** ——
+  那等于又变回共享, 还多一个所有用户可读的明文凭据。
+  (`uniops/.env` 里那个 `ANTHROPIC_API_KEY` 是给应用容器的, 与开发者用 Claude Code 是两回事, 别混用。)
+
+- [x] **Step 8: 从笔记本一次性收尾验证**
 
 ```bash
 ssh -o BatchMode=yes crmadmin@10.10.50.64 "hostname; id; docker ps; df -h /var/lib/docker | tail -1; sysctl -n fs.inotify.max_user_watches; ls -ld /srv/uniops; free -g | head -2; nproc"
@@ -745,25 +772,34 @@ ls -ld /srv/uniops /srv/uniops/uniops
 预期: 组是 `uniops`, 目录权限含 `s`(如 `drwxrwsr-x`)。
 setgid 让任何人新建的文件自动继承 `uniops` 组, 多人协作才不会互相锁死。
 
-- [ ] **Step 6: 传 Claude Code 记忆库与 git 凭据**
+- [ ] **Step 6: 传 Claude Code 记忆库与 git 配置**
 
-在笔记本上:
+**★ 只搬记忆子树, 不要覆盖整个 `~/.claude`** —— Task 4 Step 9 已在服务器上装了 Claude Code
+并完成认证, 凭据就在 `~/.claude` 里。整目录覆盖会把服务器侧的认证冲掉。
+
+在笔记本上(**Git Bash, 不是 PowerShell** —— PowerShell 不展开 `~`, 路径转换行为也不同):
 
 ```bash
-tar -czf /d/claude-home.tar.gz -C "/c/Users/$USERNAME" .claude .gitconfig
-scp /d/claude-home.tar.gz crmadmin@10.10.50.64:/tmp/
+tar -czf /d/claude-memory.tar.gz -C "/c/Users/$USERNAME/.claude" projects
+tar -czf /d/gitconfig.tar.gz -C "/c/Users/$USERNAME" .gitconfig
+scp /d/claude-memory.tar.gz /d/gitconfig.tar.gz crmadmin@10.10.50.64:/tmp/
 ```
 
 在服务器上:
 
 ```bash
-tar -xzf /tmp/claude-home.tar.gz -C ~
+mkdir -p ~/.claude
+tar -xzf /tmp/claude-memory.tar.gz -C ~/.claude
+tar -xzf /tmp/gitconfig.tar.gz -C ~
 ls ~/.claude/projects/*/memory/MEMORY.md
 ls ~/.claude/projects/*/memory/*.md | wc -l
+claude --version        # 确认安装与认证没被破坏
 ```
 
-预期: `MEMORY.md` 存在, 记忆文件百余个。
-**漏了这步等于服务器上的 Claude 失忆。** 其他开发者是全新的, 没有这份积累。
+预期: `MEMORY.md` 存在, 记忆文件百余个, `claude --version` 仍正常。
+**漏了这步等于服务器上的 Claude 失忆。** 其他开发者是全新的, 没有这份积累 ——
+记忆是按用户家目录存的, 不会共享。
+
 
 ---
 
