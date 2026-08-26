@@ -21,9 +21,11 @@ interface WorkflowNodeDef {
   id: string
   label: string
   role: string
+  /** PO sign-off only — where this step's signature lands on the PO PDF. */
+  sig_slot?: 'initials' | 'signature' | null
 }
 
-type ActionKey = 'pr' | 'po' | 'agr' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
+type ActionKey = 'pr' | 'po' | 'posign' | 'agr' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
 
 interface CompanyConfig {
   name: string
@@ -1381,11 +1383,12 @@ function RemittanceSettings() {
 // so a key missing from this list is not merely uneditable, it is DELETED by
 // the next workflow save. approval-api reseeds it on its next boot (main.py
 // only fills gaps), but until then `workflow_defs->'agr'` reads NULL.
-const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'agr', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
+const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'posign', 'agr', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
 
 const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   pr:          'Purchase Request',
   po:          'Purchase Order',
+  posign:      'PO Sign-off (NC imports)',
   agr:         'Purchase Agreement',
   pa:          'PA (PO-Linked)',
   pa_dir:      'PA (Direct)',
@@ -1397,6 +1400,20 @@ const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   budget_plan: 'Budget Plan',
   vms_visit:   'VMS Visit',
 }
+
+// Sign-off runs on NC-imported POs, which have no department and no PR to
+// borrow one from. The four department-resolved roles would route to nobody:
+// the task is never created and the PO sits on that step forever. Company-level
+// singleton posts are the only ones that can hold a step here.
+const SIGNOFF_ROLE_VALUES = new Set([
+  'gm', 'opm', 'procurement_manager', 'finance_manager', 'vendor_manager',
+])
+
+const SIG_SLOTS: { value: '' | 'initials' | 'signature'; label: string }[] = [
+  { value: '',          label: 'Not on PDF' },
+  { value: 'initials',  label: 'Initials (between blocks)' },
+  { value: 'signature', label: 'Signature (our block)' },
+]
 
 const WORKFLOW_ROLES = [
   { value: 'supervisor',          label: 'Supervisor (dept-scoped, per requester)' },
@@ -1418,6 +1435,12 @@ const WORKFLOW_ROLES = [
 const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   pr:     [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }],
   po:     [{ id: 'proc_mgr', role: 'procurement_manager', label: 'Procurement Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }],
+  // Mirrors approval-api crud/engine.py::_WORKFLOW_DEFAULTS['posign'] — the
+  // paper form this replaces: Purchasing Manager initials, OPM signs.
+  posign: [
+    { id: 'proc_mgr', role: 'procurement_manager', label: 'Purchasing Manager', sig_slot: 'initials' },
+    { id: 'opm', role: 'opm', label: 'Operations Manager', sig_slot: 'signature' },
+  ],
   // Mirrors approval-api crud/engine.py::_WORKFLOW_DEFAULTS['agr'].
   agr:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'procurement_manager', role: 'procurement_manager', label: 'Procurement Manager' }, { id: 'finance_manager', role: 'finance_manager', label: 'Finance Manager' }],
   pa:     [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
@@ -1472,8 +1495,27 @@ function ApprovalWorkflows() {
   const removeStep = (i: number) =>
     setSteps(steps.filter((_, idx) => idx !== i))
 
+  const isSignoff = activeKey === 'posign'
+  const roleOptions = isSignoff
+    ? WORKFLOW_ROLES.filter(r => SIGNOFF_ROLE_VALUES.has(r.value))
+    : WORKFLOW_ROLES
+
   const addStep = () =>
-    setSteps([...steps, { id: crypto.randomUUID(), label: 'New Step', role: 'dept_manager' }])
+    setSteps([...steps, {
+      id: crypto.randomUUID(), label: 'New Step',
+      // dept_manager cannot route a sign-off — see SIGNOFF_ROLE_VALUES.
+      role: isSignoff ? 'procurement_manager' : 'dept_manager',
+      ...(isSignoff ? { sig_slot: null } : {}),
+    }])
+
+  // The PDF has exactly two places for a signature, so two steps cannot claim
+  // the same one — the second would silently overwrite the first.
+  const duplicateSlots = isSignoff
+    ? Array.from(new Set(
+        steps.map(s => s.sig_slot).filter((slot, i, all) =>
+          slot && all.indexOf(slot) !== i),
+      ))
+    : []
 
   const updateStep = (i: number, patch: Partial<WorkflowNodeDef>) =>
     setSteps(steps.map((s, idx) => idx === i ? { ...s, ...patch } : s))
@@ -1516,6 +1558,7 @@ function ApprovalWorkflows() {
           >
             {key === 'pa_dir'      ? 'PA-DIR'
               : key === 'vms_visit' ? 'VMS Visit'
+              : key === 'posign'    ? 'PO Sign-off'
               : key.toUpperCase()}
           </button>
         ))}
@@ -1551,10 +1594,31 @@ function ApprovalWorkflows() {
               onChange={e => updateStep(i, { role: e.target.value })}
               className="h-8 rounded-lg border border-neutral-200 bg-white px-2 text-xs text-neutral-800 focus:outline-none focus:border-[#085E5E]"
             >
-              {WORKFLOW_ROLES.map(r => (
+              {/* A role already saved but not offered here (e.g. a sign-off step
+                  left on dept_manager) still needs an entry, or the select would
+                  show an unrelated role while the stored value stays put. */}
+              {!roleOptions.some(r => r.value === step.role) && (
+                <option value={step.role}>{step.role} — cannot route here</option>
+              )}
+              {roleOptions.map(r => (
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
             </select>
+
+            {isSignoff && (
+              <select
+                value={step.sig_slot ?? ''}
+                onChange={e => updateStep(i, {
+                  sig_slot: (e.target.value || null) as WorkflowNodeDef['sig_slot'],
+                })}
+                title="Where this step's signature is drawn on the PO PDF"
+                className="h-8 rounded-lg border border-neutral-200 bg-white px-2 text-xs text-neutral-800 focus:outline-none focus:border-[#085E5E]"
+              >
+                {SIG_SLOTS.map(sl => (
+                  <option key={sl.value} value={sl.value}>{sl.label}</option>
+                ))}
+              </select>
+            )}
 
             <div className="flex items-center gap-0.5">
               <button onClick={() => moveUp(i)} disabled={i === 0}
@@ -1577,13 +1641,33 @@ function ApprovalWorkflows() {
           className="flex items-center gap-1.5 self-start text-sm font-medium text-[#085E5E] hover:text-[#064A4A] mt-1">
           <Plus className="h-4 w-4" /> Add step
         </button>
+
+        {isSignoff && (
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-500">
+            Signatures come from each signer's My Profile. The PO PDF has two
+            places for one — initials between the two signature blocks, and the
+            signature in our own block. A step set to <strong>Not on PDF</strong>{' '}
+            is still signed and recorded; it just does not appear on the document
+            the vendor receives. Only company-level posts can hold a step here:
+            an NC-imported PO has no department, so department-resolved roles
+            would route to nobody.
+          </div>
+        )}
+
+        {duplicateSlots.length > 0 && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-600">
+            Two steps are set to the same place on the PDF
+            ({duplicateSlots.join(', ')}). The PDF has one of each, so the second
+            signature would overwrite the first.
+          </div>
+        )}
       </div>
 
       {/* Save */}
       <div className="flex items-center gap-3 border-t border-neutral-100 pt-4">
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || duplicateSlots.length > 0}
           className="flex items-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 transition-colors"
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
