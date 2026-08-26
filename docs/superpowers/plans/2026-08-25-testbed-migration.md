@@ -27,9 +27,55 @@
 - 端口段分配: 测试栈 `5173-5179 / 8000-8011`; 开发栈依次 `+100`(`5273-5279 / 8100-8111`、
   `5373-5379 / 8200-8211`、`5473-5479 / 8300-8311`)
 
+
+## 执行结果 (2026-08-26 全部完成, 主环境已上线)
+
+`http://10.10.50.64:5174` · admin@epms.local / DevTest2026! · 浏览器实测通过。
+
+| 环节 | 实测 |
+|---|---|
+| 主环境版本 | `062775ab` = 生产 `1980f1e8` + 多栈基建(已合入 main) |
+| 传输 | **71 分钟 / 162,148 文件零缺失** |
+| worktree 修复 | 62 个全部可用 |
+| 未 push commit | 17 个完好, 107 个分支齐全 |
+| 快照恢复 | **3.96 秒 / 179 表** |
+| alembic | **7 个服务全部 current==heads, 零迁移** |
+| 容器 | 21 个; 11 个 API 全 healthy; 7 前端 HTTP 200 |
+| 数据 | 112 用户 / 6755 PO / 6445 发票 / 737 供应商 |
+
+**★ 前端 `unhealthy` 是长期既有误报**(healthcheck 走 IPv6 而 Vite 只听 IPv4), 不是故障。
+
+### 被证实的风险: 快照里是生产真实 SMTP 凭据
+
+`company_config` 里带过来的是 `mail.canadaroyalmilk.com` + `notice@canadaroyalmilk.com`
+的**完整可用凭据**。不中和的话, 同事点一次付款执行, finance-api 的汇款通知会**真发给供应商**,
+且完全静默。这不是理论推演 —— 是在真实数据上看到的。
+
+初版计划写的"给四个服务加 `SMTP_HOST: mailhog` 环境变量"**只挡得住一半**:
+只有 epms-api / identity-api 读环境变量, finance-api / vms-api / booking-api 从表里读。
+
+### 排掉的四个假信号 (每个都差点导致错误结论)
+
+1. **`tar: Exiting with failure status`** —— 良性: dev 栈在跑, "file changed as we read it"。
+   而命令末尾的"退出码=0"是 **ssh 的**, 不是 tar 的。**真凭据是两边文件数逐个吻合(162,148)**。
+2. **脏文件 1459 个**(笔记本 27) —— 不是丢数据, 是 Windows CRLF 工作区在 Linux 上
+   被逐个判成"已修改"。设 `core.autocrlf=true` 后回到 27。
+3. **脏文件列表"有差异"** —— Windows 与 Linux 排序规则不同; `LC_ALL=C sort` 后完全一致。
+4. **"传输还要 4.6 小时"** —— 测量假象: 用 `du -sb` 在正被写入的 17 万文件树上采样,
+   而 `du` 本身要走完整棵树。三端单独测都不慢(读 2.1 GB/s、写 511 文件/s、网络 6.9 MB/s);
+   真实瓶颈是**小文件 × WiFi 高延迟**的组合(实际 2.5 MB/s)。
+   ★ 笔记本走 WiFi 且与服务器**不同网段**(10.10.60.x vs 10.10.50.x)。
+
+### 两个自己写错的诊断命令 (诊断命令本身也会说谎)
+
+- 测 epms-api 读取速度时**漏了 `--exclude=.venv`**, 在读整个 Python 虚拟环境, 超时 4.5 分钟,
+  差点得出"本地磁盘慢"的结论。
+- 验证 mrp 授权时**凭记忆写列名** `permission_defs.id` —— 实际主键是 `key`,
+  且 `role_permissions(role_code, permission_key)`。**先 `\d 表名` 再写 SQL。**
+
 ---
 
-### Task 1: 笔记本侧 — 冻结、固化拓扑、记录基线
+### Task 1: 笔记本侧 — 冻结、固化拓扑、记录基线 ✅ 2026-08-26
 
 把即将丢失的隐性信息落成文件。**这些文件会随打包一起过去, 是服务器上复原的唯一依据。**
 
@@ -37,11 +83,11 @@
 - Create: `C:\Project\uniops\db-snapshots\dev-stack-topology-20260825.txt`
 - Create: `C:\Project\uniops\db-snapshots\unpushed-baseline-20260825.txt`
 
-- [ ] **Step 1: 停止在多处同时开工**
+- [x] **Step 1: 停止在多处同时开工**
 
 关掉所有 Claude Code 会话与编辑器, 迁移期间只在笔记本上操作。
 
-- [ ] **Step 2: 固化当前 dev 栈的真实挂载拓扑**
+- [x] **Step 2: 固化当前 dev 栈的真实挂载拓扑**
 
 最关键的一步。当前栈的源码来自 5 棵不同的树, **没有任何 compose 文件记录这个组合**。
 
@@ -59,7 +105,7 @@ cat db-snapshots/dev-stack-topology-20260825.txt
 `uniops-delegation` / `uniops-nc-po-edit` / `uniops` 六个来源, 且每个服务除 `/app` 外还有
 `/packages/authz` 或 `/packages/shell` 的挂载。
 
-- [ ] **Step 3: 记录未 push 的 commit 基线**
+- [x] **Step 3: 记录未 push 的 commit 基线**
 
 ```bash
 cd /c/Project/uniops
@@ -76,7 +122,7 @@ head -5 db-snapshots/unpushed-baseline-20260825.txt
 
 预期: `17` / `2` / `1` / `62`。数字不同说明有会话动过, 先查清再继续。
 
-- [ ] **Step 4: 记录测试套件的失败基线(大小写敏感问题的唯一探针)**
+- [x] **Step 4: 记录测试套件的失败基线(大小写敏感问题的唯一探针)**
 
 Linux 区分大小写而 NTFS 不区分, 可能有"引用了错误大小写却一直没暴露"的代码。
 迁移后要用同一套测试比对失败**集合**(只比数字会误判):
@@ -94,7 +140,7 @@ tail -5 /c/Project/uniops/db-snapshots/epms-api-test-baseline-20260825.txt
 
 ---
 
-### Task 2: 笔记本侧 — 代码改动(LAN 化 + 多栈支持 + 关掉 polling)
+### Task 2: 笔记本侧 — 代码改动(LAN 化 + 多栈支持 + 关掉 polling) ✅ 2026-08-26
 
 在笔记本上先改先验证, 改好的文件随打包过去, 服务器上不用再改。
 
@@ -296,7 +342,7 @@ echo "残留写死 usePolling: true(必须为 0): $(grep -l 'usePolling: true' *
 
 预期: `7` / `7` / `0`。
 
-- [ ] **Step 8:(可选, 已跳过)写 5 树拓扑 override**
+- [x] **Step 8:(可选, 已跳过)写 5 树拓扑 override**
 
 **这一步不是迁移的必要条件, 默认可以跳过。**
 
@@ -434,11 +480,11 @@ git commit -m "chore: support multi-stack LAN dev server (STACK_PREFIX + LAN_HOS
 
 ---
 
-### Task 3: 笔记本侧 — 数据库导出
+### Task 3: 笔记本侧 — 数据库导出 ✅ 2026-08-26
 
 导两份 dump。**不预先挑 MRP 表清单** —— 直接导整个 dev 库, 服务器上按需从里面挑表灌回。
 
-- [ ] **Step 1: 导出笔记本 dev 库全量(含那 23 张 MRP 表)**
+- [x] **Step 1: 导出笔记本 dev 库全量(含那 23 张 MRP 表)**
 
 ```bash
 export MSYS_NO_PATHCONV=1
@@ -449,7 +495,7 @@ ls -la /c/Project/uniops/db-snapshots/local_dev_full_20260825.dump
 
 预期: 文件存在, 约 45-55 MB。
 
-- [ ] **Step 2: 从生产导全量快照(只读, 约 40 秒)**
+- [x] **Step 2: 从生产导全量快照(只读, 约 40 秒)**
 
 ```bash
 export MSYS_NO_PATHCONV=1
@@ -462,7 +508,7 @@ ls -la /c/Project/uniops/db-snapshots/epms_prod_20260825.dump
 
 预期: 文件存在, 不小于 51 MB。
 
-- [ ] **Step 3: 记录表数基线**
+- [x] **Step 3: 记录表数基线**
 
 ```bash
 export MSYS_NO_PATHCONV=1
@@ -710,7 +756,7 @@ claude --version && which claude
   那等于又变回共享, 还多一个所有用户可读的明文凭据。
   (`uniops/.env` 里那个 `ANTHROPIC_API_KEY` 是给应用容器的, 与开发者用 Claude Code 是两回事, 别混用。)
 
-- [ ] **Step 10: 服务器上的 GitHub 凭据(每人各自配)**
+- [x] **Step 10: 服务器上的 GitHub 凭据(每人各自配)**
 
 git 操作发生在**服务器上**(代码在 `/srv/uniops`), 所以凭据要在服务器各自的家目录里, 不是笔记本上。
 服务器自带 git **2.34.1**, 无需安装 —— 三项依赖实测均可用:
@@ -789,11 +835,11 @@ ssh -o BatchMode=yes crmadmin@10.10.50.64 "hostname; id; docker ps; df -h /var/l
 服务器侧的 sudo 步骤在交互会话里跑最顺。
 
 
-### Task 5: 传输
+### Task 5: 传输 ✅ 2026-08-26
 
 约 7 GB / 17 万文件。**成本主导是文件数** —— 先打成单个 tar 包再传, 比逐文件同步快一个数量级。
 
-- [ ] **Step 1: 笔记本侧打包**
+- [x] **Step 1: 笔记本侧打包**
 
 在 Git Bash 里:
 
@@ -809,7 +855,7 @@ ls -lh /d/uniops-migrate.tar.gz
 
 (`/d/` 换成实际有空间的盘。)预期: 包大小 3-5 GB(压缩后)。
 
-- [ ] **Step 2: 验证包内容完整**
+- [x] **Step 2: 验证包内容完整**
 
 ```bash
 tar -tzf /d/uniops-migrate.tar.gz | wc -l
@@ -820,7 +866,7 @@ tar -tzf /d/uniops-migrate.tar.gz | grep -c "^./nchome/" || echo "0 (nchome 已�
 
 预期: 文件数约 17 万; `.git` 条目数 > 7000; 四个凭据文件都在; nchome 为 0。
 
-- [ ] **Step 3: 传到服务器**
+- [x] **Step 3: 传到服务器**
 
 ```bash
 scp /d/uniops-migrate.tar.gz crmadmin@10.10.50.64:/tmp/
@@ -828,7 +874,7 @@ scp /d/uniops-migrate.tar.gz crmadmin@10.10.50.64:/tmp/
 
 千兆网下 4 GB 约 1-2 分钟。
 
-- [ ] **Step 4: 服务器上解包到 /srv/uniops**
+- [x] **Step 4: 服务器上解包到 /srv/uniops**
 
 ```bash
 sudo mkdir -p /srv/uniops
@@ -839,7 +885,7 @@ du -sh /srv/uniops
 
 预期: 能看到 `uniops`、`uniops-*` 等目录; 总大小约 7 GB。
 
-- [ ] **Step 5: 设置属主与 setgid**
+- [x] **Step 5: 设置属主与 setgid**
 
 ```bash
 sudo chgrp -R uniops /srv/uniops
@@ -851,7 +897,7 @@ ls -ld /srv/uniops /srv/uniops/uniops
 预期: 组是 `uniops`, 目录权限含 `s`(如 `drwxrwsr-x`)。
 setgid 让任何人新建的文件自动继承 `uniops` 组, 多人协作才不会互相锁死。
 
-- [ ] **Step 6: 传 Claude Code 记忆库与 git 配置**
+- [x] **Step 6: 传 Claude Code 记忆库与 git 配置**
 
 **★ 两个坑, 任何一个踩到都会让记忆"搬过去了却读不到"。**
 
@@ -911,11 +957,11 @@ claude --version                     # 确认认证没被破坏
 
 ---
 
-### Task 6: 服务器 — 修复 git 与完整性核对
+### Task 6: 服务器 — 修复 git 与完整性核对 ✅ 2026-08-26
 
 **在起任何容器之前做完。**
 
-- [ ] **Step 1: 修 62 个 worktree 的路径**
+- [x] **Step 1: 修 62 个 worktree 的路径**
 
 worktree 的元数据里存着 `C:/Project/...` 的绝对路径, 换机后全部失效。
 git 自带修复命令:
@@ -929,7 +975,7 @@ git worktree list | wc -l
 
 预期: 62; 列出的路径全是 `/srv/uniops/...`。
 
-- [ ] **Step 2: 让 git 接受多用户共享**
+- [x] **Step 2: 让 git 接受多用户共享**
 
 ```bash
 cd /srv/uniops/uniops
@@ -940,7 +986,7 @@ sudo -u amir git -C /srv/uniops/uniops status >/dev/null && echo "✅ 其他用�
 
 (`safe.directory` 是必要的 —— 仓库属主不是当前用户时 git 会拒绝操作。)
 
-- [ ] **Step 3: 核对未 push 的 commit 一个没丢**
+- [x] **Step 3: 核对未 push 的 commit 一个没丢**
 
 ```bash
 cd /srv/uniops/uniops
@@ -953,14 +999,14 @@ echo "worktree 总数(应为 62): $(git worktree list | wc -l)"
 预期: `17` / `2` / `1` / `62`。
 **任何一项对不上就停下来**, 回笔记本重新打包 `uniops/.git`, 不要继续。
 
-- [ ] **Step 4: 核对脏文件还在**
+- [x] **Step 4: 核对脏文件还在**
 
 ```bash
 echo "主 checkout 脏文件(应为 26): $(git -C /srv/uniops/uniops status --porcelain | wc -l)"
 echo "uniops-release 脏文件(应为 5): $(git -C /srv/uniops/uniops-release status --porcelain | wc -l)"
 ```
 
-- [ ] **Step 5: 核对凭据、附件与 dump**
+- [x] **Step 5: 核对凭据、附件与 dump**
 
 ```bash
 ls -l /srv/uniops/uniops/.env /srv/uniops/qbo_conn.env /srv/uniops/nc65_conn.env /srv/uniops/wms_conn.env
@@ -974,7 +1020,7 @@ ls -la /srv/uniops/uniops/db-snapshots/*.dump
 **本来就没有自己的 `.env`, 这是正常的** —— compose 从主 checkout 跑, `--env-file` 指的是
 `/srv/uniops/uniops/.env`。不要在这里浪费时间找。
 
-- [ ] **Step 6: 修 .env 里的 Windows 路径**
+- [x] **Step 6: 修 .env 里的 Windows 路径**
 
 ```bash
 grep -n "C:/" /srv/uniops/uniops/.env
@@ -986,11 +1032,11 @@ grep -n "QBO_CONN_ENV_HOST" /srv/uniops/uniops/.env
 
 ---
 
-### Task 7: 服务器 — 起测试栈 + 恢复数据
+### Task 7: 服务器 — 起测试栈 + 恢复数据 ✅ 2026-08-26
 
 先起测试栈(它是最干净的一套, 起得通说明基础没问题), 再复制模式给开发栈。
 
-- [ ] **Step 0: ★ 查出「生产当前发布版」的真实 SHA**
+- [x] **Step 0: ★ 查出「生产当前发布版」的真实 SHA**
 
 主环境要跟生产当前发布的版本一致。**这个值必须实时查, 不能用记忆里的、也不能用本文档里的。**
 
@@ -1017,7 +1063,7 @@ git log --oneline -1 <生产TAG>
 二次确认(可选但推荐): 拉生产 web 镜像看烤进去的 bundle 名, 与线上 `curl` 到的比对 ——
 指纹一致才说明这个 TAG 真的就是线上那份。
 
-- [ ] **Step 1: 建主环境 worktree 并配 .env**
+- [x] **Step 1: 建主环境 worktree 并配 .env**
 
 ```bash
 cd /srv/uniops/uniops
@@ -1041,7 +1087,7 @@ grep -E "LAN_HOST|STACK_PREFIX" /srv/uniops/uniops-prod/.env
 **注意: 不要钉 `main`。** main 上有已合并但尚未发布的东西(如成文时的 vendor-credit),
 钉 main 会让代码要求的表在生产快照里不存在 —— 这正是 §2.10 那个付款报错的成因。
 
-- [ ] **Step 2: ★ 验证 LAN_HOST 真的解析进去了**
+- [x] **Step 2: ★ 验证 LAN_HOST 真的解析进去了**
 
 ```bash
 cd /srv/uniops/uniops-prod
@@ -1051,7 +1097,7 @@ STACK_PREFIX=uniops-test docker compose -f docker-compose.dev.yml --env-file .en
 预期: `VITE_API_URL: http://10.10.50.64:8000/api/v1` —— **必须是 IP, 不是 localhost**。
 这里看到 localhost 就说明 `.env` 没生效, 后面全白搭。
 
-- [ ] **Step 3: 起测试栈**
+- [x] **Step 3: 起测试栈**
 
 ```bash
 cd /srv/uniops/uniops-prod
@@ -1060,7 +1106,7 @@ STACK_PREFIX=uniops-test docker compose -f docker-compose.dev.yml --env-file .en
 
 首次会跑 `npm install` × 7 和 pip 安装 × 9 并拉基础镜像, **预计 30-60 分钟**。
 
-- [ ] **Step 4: 验证容器状态**
+- [x] **Step 4: 验证容器状态**
 
 ```bash
 docker compose -p uniops-test ps --format "table {{.Name}}\t{{.Status}}"
@@ -1070,7 +1116,7 @@ echo "healthy 数: $(docker compose -p uniops-test ps --format '{{.Status}}' | g
 预期: 13 个 API 容器全 `healthy`, 容器名前缀 `uniops-test_`。
 **前端容器显示 `unhealthy` 是长期既有误报**(healthcheck 走 IPv6), 不是故障。
 
-- [ ] **Step 5: 恢复生产快照**
+- [x] **Step 5: 恢复生产快照**
 
 ```bash
 docker cp /srv/uniops/uniops/db-snapshots/epms_prod_20260825.dump uniops-test_postgres:/tmp/prod.dump
@@ -1083,7 +1129,7 @@ docker exec uniops-test_postgres pg_restore -U epms -d epms --no-owner --role=ep
 
 (Linux 上不需要 `MSYS_NO_PATHCONV` —— 那是 Git Bash 的路径转换问题。)
 
-- [ ] **Step 6: ★ 实测生产快照里 mrp_* 表在不在**
+- [x] **Step 6: ★ 实测生产快照里 mrp_* 表在不在**
 
 **不能假设。** MRP 于 2026-08-08 上生产, 但 8/7 的记录说生产没有这些表:
 
@@ -1095,7 +1141,7 @@ docker exec uniops-test_postgres psql -U epms -d epms -tAc \
 - 结果 **> 0**: 生产已含 MRP 表, 跳过下一步
 - 结果 **= 0**: 执行下一步灌回
 
-- [ ] **Step 7: (仅当上一步为 0)从 dev 全量备份挑表灌回**
+- [ ] **Step 7: (仅当上一步为 0)从 dev 全量备份挑表灌回**  ← **实测生产快照已含 24 张 mrp 表, 本步跳过**
 
 ```bash
 # 先列出备份里所有 mrp 相关表, 确认清单
@@ -1109,7 +1155,7 @@ docker exec uniops-test_postgres pg_restore -U epms -d epms --no-owner --role=ep
 
 (表名以 `pg_restore -l` 的实际输出为准, 不要照抄。)
 
-- [ ] **Step 8: ★ 验证 alembic 版本一致 —— 但不要 upgrade**
+- [x] **Step 8: ★ 验证 alembic 版本一致 —— 但不要 upgrade**  ← **实测 7 个服务全部 current==heads**
 
 栈钉生产版, 快照来自生产库, 两边 schema 天然对齐。
 **这里跑 `upgrade head` 反而会把测试环境推到生产之前, 制造出生产上不存在的状态。**
@@ -1131,7 +1177,7 @@ done
 **对不上不要用 upgrade 抹平** —— 那说明栈没钉对版本(或快照不是这个版本的生产库导的),
 回 Step 0 重新核对 `PROD_SHA`。
 
-- [ ] **Step 9: 抽查一个 schema 一致性的正面证据**
+- [x] **Step 9: 抽查一个 schema 一致性的正面证据**
 
 `alembic current` 只看版本表, 不看真实结构。补一条直观的:
 
@@ -1143,7 +1189,7 @@ docker exec uniops-test_postgres psql -U epms -d epms -tAc \
 预期: 与生产表数一致(2026-08-25 时生产是 141 张; 若期间发布过带迁移的版本会更多)。
 可与 `db-snapshots/db-baseline-20260825.txt` 里记的数对照。
 
-- [ ] **Step 10: 重跑 seed_authz(必做)**
+- [x] **Step 10: 重跑 seed_authz(必做)**  ← **实测 granted_inserted=0**(生产早已部署 MRP, 42 条授权本就在快照里)
 
 ```bash
 docker exec uniops-test_identity_api sh -c 'cd /app && PYTHONPATH=/app python scripts/seed_authz.py'
@@ -1153,7 +1199,7 @@ docker exec uniops-test_postgres psql -U epms -d epms -tAc \
 
 预期: 计数 > 0。不做的话 MRP 前端按钮会静默消失。
 
-- [ ] **Step 11: 重置 admin 密码(必做)**
+- [x] **Step 11: 重置 admin 密码(必做)**
 
 ```bash
 HASH=$(docker exec -i -e PW='DevTest2026!' uniops-test_identity_api sh -c 'cd /app && PYTHONPATH=/app python' <<'PY'
@@ -1166,7 +1212,7 @@ docker exec uniops-test_postgres psql -U epms -d epms -c \
   "UPDATE users SET hashed_password='$HASH', must_change_password=false, is_active=true, mfa_enabled=false WHERE email='admin@epms.local';"
 ```
 
-- [ ] **Step 11b: ★ 中和 company_config 里的 SMTP —— 防止真发邮件给供应商**
+- [x] **Step 11b: ★ 中和 company_config 里的 SMTP —— 防止真发邮件给供应商**
 
 **这一步与 seed_authz、重置密码同级, 不是可选项。**
 
@@ -1192,7 +1238,7 @@ UPDATE company_config SET
 SQL
 ```
 
-- [ ] **Step 11c: 正面确认中和生效**
+- [x] **Step 11c: 正面确认中和生效**
 
 ```bash
 docker exec uniops-test_postgres psql -U epms -d epms -tAc "SELECT count(*) FROM company_config WHERE smtp_host IS DISTINCT FROM 'mailhog'"
@@ -1201,7 +1247,7 @@ docker exec uniops-test_postgres psql -U epms -d epms -tAc "SELECT count(*) FROM
 预期: `0` —— 一行都不能剩。
 **非 0 就停下来**, 不要让同事碰这套环境。
 
-- [ ] **Step 12: 重启后端并本机自检**
+- [x] **Step 12: 重启后端并本机自检**
 
 ```bash
 cd /srv/uniops/uniops-prod
