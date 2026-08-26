@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, Warehouse, ArrowUpDown } from 'lucide-react'
+import { Plus, Search, Warehouse, ArrowUpDown, ClipboardList } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -91,12 +91,18 @@ export default function GrListPage() {
           <h1 className="text-2xl font-bold text-neutral-900">Goods Receipt</h1>
           <p className="mt-1 text-sm text-neutral-500">Record received goods and service confirmations</p>
         </div>
-        {canCreate && (
-          <Button onClick={() => navigate('/gr/new')} className="gap-2">
-            <Plus className="h-4 w-4" />
-            New GR
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => navigate('/gr/report')} className="gap-2">
+            <ClipboardList className="h-4 w-4" />
+            Receiving Report
           </Button>
-        )}
+          {canCreate && (
+            <Button onClick={() => navigate('/gr/new')} className="gap-2">
+              <Plus className="h-4 w-4" />
+              New GR
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
