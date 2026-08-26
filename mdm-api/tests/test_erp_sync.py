@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.erp_material import ErpMaterial
 from app.models.erp_sync_state import ErpSyncState
+from app.services import erp_sync as erp_sync_module
 from app.services.erp_client import ErpError
 from app.services.erp_sync import sync_kind
 
@@ -79,4 +80,34 @@ async def test_sync_marks_failed_state_on_erp_error(db_session: AsyncSession):
     state = await db_session.get(ErpSyncState, "material")
     assert state is not None
     assert state.last_status == "failed"
+    assert "boom" in (state.last_message or "")
+
+
+@pytest.mark.anyio
+async def test_sync_marks_failed_state_on_non_erp_error(db_session: AsyncSession, monkeypatch):
+    """A failure that isn't ErpError (IntegrityError out of the upsert, an
+    oversized field, ...) has to advance the anchor exactly like the ErpError
+    path above does — otherwise the scheduler's is_due() keeps seeing the old
+    last_synced_at forever and retries the same broken sync every tick
+    instead of once per interval.
+
+    Without the fix, sync_kind never calls _write_state on this path, so no
+    ErpSyncState row for "material" is created at all and the assertion
+    below (state is not None) is what catches the regression.
+    """
+    stub = AsyncMock()
+    stub.fetch_materials.return_value = [{"part_NO": "M001", "description": "x"}]
+
+    def boom_mapper(rec):
+        raise RuntimeError("boom - not an ErpError")
+
+    monkeypatch.setitem(erp_sync_module._KIND_CONFIG["material"], "mapper", boom_mapper)
+
+    with pytest.raises(RuntimeError):
+        await sync_kind(db_session, "material", full=True, client=stub)
+
+    state = await db_session.get(ErpSyncState, "material")
+    assert state is not None
+    assert state.last_status == "failed"
+    assert state.last_synced_at is not None
     assert "boom" in (state.last_message or "")

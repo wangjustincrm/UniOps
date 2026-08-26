@@ -1,11 +1,15 @@
 """ERP MDM endpoints: trigger sync, browse mirrors, by-code lookups."""
+from datetime import timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.crud import erp as erp_crud
+from app.models.company_config import CompanyConfig
 from app.models.erp_sync_state import ErpSyncState
 from app.schemas.erp import (
     ErpMaterialListResponse, ErpMaterialResponse,
@@ -15,6 +19,7 @@ from app.schemas.erp import (
 )
 from app.services.erp_client import ErpError
 from app.services.erp_sync import sync_kind
+from app.tasks import erp_sync_scheduler as sched
 
 router = APIRouter(prefix="/erp", tags=["erp-mdm"])
 
@@ -132,3 +137,41 @@ async def get_person(code: str, db: AsyncSession = Depends(get_db), user: Curren
     if not p:
         raise HTTPException(status_code=404, detail="person not found")
     return p
+
+
+class IntervalIn(BaseModel):
+    minutes: int
+
+
+@router.get("/sync/schedule")
+async def sync_schedule(db: AsyncSession = Depends(get_db), user: CurrentUser = None):
+    """自动同步的排期。单开一个端点而不是塞进 /sync/status —— 后者返回的是
+    {material:…, supplier:…, person:…},Portal 正按 kind 取值,不该改它的形状。"""
+    _require_admin(user)
+    interval = sched.resolve_interval_minutes((await db.execute(
+        select(CompanyConfig.erp_mdm_sync_interval_minutes).limit(1))
+    ).scalar_one_or_none())
+    started = await sched.last_sync_started_at()
+    next_due_at = None
+    if interval > 0 and started is not None:
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        next_due_at = (started + timedelta(minutes=interval)).isoformat()
+    return {"interval_minutes": interval, "next_due_at": next_due_at}
+
+
+@router.patch("/sync/interval")
+async def set_sync_interval(body: IntervalIn,
+                            db: AsyncSession = Depends(get_db), user: CurrentUser = None):
+    """同步多久自己跑一次。0 关闭排期,只剩按钮这一个触发方式。"""
+    _require_admin(user)
+    if isinstance(body.minutes, bool) or not 0 <= body.minutes <= sched.MAX_INTERVAL_MINUTES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"minutes must be between 0 and {sched.MAX_INTERVAL_MINUTES} "
+                   f"(0 disables automatic sync)")
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalars().first()
+    if cfg is None:
+        raise HTTPException(status_code=404, detail="company config not found")
+    cfg.erp_mdm_sync_interval_minutes = body.minutes
+    return {"interval_minutes": body.minutes}

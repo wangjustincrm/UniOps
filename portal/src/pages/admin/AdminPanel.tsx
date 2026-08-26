@@ -12,7 +12,7 @@ import { useAuthStore } from '@/store/auth'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
-import { NcPurchaseSyncSection } from './NcPurchaseSyncSection'
+import { NcSyncSection } from './nc-sync/NcSyncSection'
 import { WmsSyncSection } from './WmsSyncSection'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -2154,7 +2154,7 @@ const SECTIONS = [
   { key: 'remittance',   label: 'Remittance Advice',    icon: Mail },
   { key: 'workflows',    label: 'Approval Workflows',   icon: Workflow },
   { key: 'erp_mdm',      label: 'ERP MDM',              icon: Database },
-  { key: 'nc_purchase',  label: 'NC Purchase Sync',     icon: DatabaseZap },
+  { key: 'nc_sync',      label: 'NC Sync',              icon: DatabaseZap },
   { key: 'wms_sync',     label: 'WMS Sync',             icon: Warehouse },
 ]
 
@@ -2238,7 +2238,7 @@ export default function AdminPanel() {
           {section === 'remittance'    && <RemittanceSettings />}
           {section === 'workflows'     && <ApprovalWorkflows />}
           {section === 'erp_mdm'     && <ErpMdmSection />}
-          {section === 'nc_purchase' && <NcPurchaseSyncSection />}
+          {section === 'nc_sync'     && <NcSyncSection />}
           {section === 'wms_sync'    && <WmsSyncSection />}
         </main>
       </div>

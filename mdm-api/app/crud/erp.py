@@ -4,6 +4,12 @@ from app.models.erp_material import ErpMaterial
 from app.models.erp_supplier import ErpSupplier
 from app.models.erp_person import ErpPerson
 
+# 现网 erp_materials.part_status 存的是 NC 的 ENABLESTATE 原值('2' 启用 / '3' 停用),
+# 而前端(PR Type 1 选料器、Admin 的 Materials tab)一直按 'A'/'B' 过滤 —— 等值比较
+# 永远不命中,两处都是空列表。这里让两种口径都能命中,所以将来写端归一成 'A'/'B'
+# 之后这段不用再改,两种口径并存的窗口期也不会失效。
+_STATUS_ALIASES = {"A": ("A", "2"), "B": ("B", "3")}
+
 
 async def list_materials(
     db: AsyncSession, *, search: str | None = None, part_status: str | None = None,
@@ -14,7 +20,8 @@ async def list_materials(
         term = f"%{search}%"
         q = q.where(ErpMaterial.erp_part_no.ilike(term) | ErpMaterial.description.ilike(term))
     if part_status:
-        q = q.where(ErpMaterial.part_status == part_status)
+        q = q.where(ErpMaterial.part_status.in_(
+            _STATUS_ALIASES.get(part_status, (part_status,))))
     if item_mes_type:
         q = q.where(ErpMaterial.item_mes_type == item_mes_type)
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
