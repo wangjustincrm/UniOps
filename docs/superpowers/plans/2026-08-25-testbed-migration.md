@@ -710,6 +710,59 @@ claude --version && which claude
   那等于又变回共享, 还多一个所有用户可读的明文凭据。
   (`uniops/.env` 里那个 `ANTHROPIC_API_KEY` 是给应用容器的, 与开发者用 Claude Code 是两回事, 别混用。)
 
+- [ ] **Step 10: 服务器上的 GitHub 凭据(每人各自配)**
+
+git 操作发生在**服务器上**(代码在 `/srv/uniops`), 所以凭据要在服务器各自的家目录里, 不是笔记本上。
+服务器自带 git **2.34.1**, 无需安装 —— 三项依赖实测均可用:
+`worktree repair`(Task 6 修 62 个 worktree 路径靠它)、`safe.directory`、`core.sharedRepository`。
+★ `git worktree -h` 的 usage 文本里**没有列出 `repair`**, 但实际能跑(exit 0) —— 看帮助会得出错误结论。
+
+amir 已被加为仓库 collaborator, 因此**每人用自己的 GitHub 账号**, 不共用凭据。
+
+**每人必做 —— 身份(决定 commit 作者署名, 与推送凭据无关)**:
+
+```bash
+git config --global user.name "<真实姓名>"
+git config --global user.email "<各自的 GitHub 邮箱>"
+```
+
+不配的话提交会用 `<user>@uniops-dev`, GitHub 认不出是谁, 贡献统计和头像都对不上。
+
+**推荐: SSH remote(无有效期问题)** —— 每人在服务器上生成一把给 GitHub 用的 key:
+
+```bash
+ssh-keygen -t ed25519 -C "$USER@uniops-dev-github" -f ~/.ssh/id_github
+cat ~/.ssh/id_github.pub          # 加到各自的 GitHub 账号
+cat >> ~/.ssh/config <<'EOF'
+Host github.com
+  IdentityFile ~/.ssh/id_github
+  IdentitiesOnly yes
+EOF
+chmod 600 ~/.ssh/config
+ssh -T git@github.com             # 首次问指纹输 yes; 成功显示 "Hi <用户名>!"
+```
+
+**★ `ssh -T` 显示的名字必须是各自的账号** —— 显示成别人说明 key 配串了。
+
+remote 换成 SSH(**仓库级设置, 改一次全员生效**; 代码搬过去后再做):
+
+```bash
+git -C /srv/uniops/uniops remote set-url origin git@github.com:wangjustincrm/UniOps.git
+git -C /srv/uniops/uniops remote -v
+```
+
+**备选: 保持 HTTPS + 各自的 fine-grained PAT**
+
+```bash
+git config --global credential.helper store
+# 首次 push 输 用户名 + 自己的 PAT, 然后立刻:
+chmod 600 ~/.git-credentials
+```
+
+更简单, 但 PAT 会过期要重配。凭据以明文存在 `~/.git-credentials`;
+服务器家目录是 `drwxr-x---`(750)且各属自己的组, 两个用户互相读不到, 因此可接受。
+
+
 - [x] **Step 8: 从笔记本一次性收尾验证**
 
 ```bash
