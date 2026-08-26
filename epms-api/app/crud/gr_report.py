@@ -25,7 +25,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import Date, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.delegation import PLANT_TIMEZONE
@@ -40,6 +40,22 @@ _TZ = ZoneInfo(PLANT_TIMEZONE)
 # Anything past this many rows is a range the browser cannot usefully render
 # and a query nobody meant to run; the caller is told it was capped.
 MAX_ROWS = 20_000
+
+
+@dataclass(slots=True)
+class ReceivingSummary:
+    """Totals for the whole window, not just the page on screen.
+
+    Computed in SQL over the same filtered set the rows come from — a summary
+    derived from one page would silently change as the reader pages through.
+    """
+
+    lines: int
+    receipts: int
+    orders: int
+    # Averaged only over rows that have a lead time, so a window of orders
+    # without an order date does not read as "0 days".
+    avg_lead_days: int | None
 
 
 @dataclass(slots=True)
@@ -82,8 +98,16 @@ async def receiving_rows(
     vendor_id: uuid.UUID | None = None,
     search: str | None = None,
     po_ids_subq=None,
-) -> tuple[list[ReceivingRow], bool]:
-    """Rows for the report, plus whether MAX_ROWS truncated the result."""
+    page: int | None = None,
+    page_size: int | None = None,
+) -> tuple[list[ReceivingRow], int, ReceivingSummary, bool]:
+    """Rows, the total behind them, the window's totals, and whether the row
+    cap bites — meaning the xlsx export of this same window would lose its tail.
+
+    `page` unset means "everything" — what the xlsx export asks for, bounded by
+    MAX_ROWS. With a page, only that slice comes back; `total` and the summary
+    still describe the whole window.
+    """
 
     # The PO's own "we placed this" stamp is only set by the Place Order action,
     # which about half the orders on file predate. Falling back to the last
@@ -164,16 +188,52 @@ async def receiving_rows(
             )
         )
 
+    # Totals over the whole filtered window, before any paging. The lead time is
+    # re-derived here in SQL rather than averaged over the page: it is the same
+    # local-day arithmetic the rows use — `timezone()` resolves each timestamptz
+    # to the plant's wall clock, and a date minus a date is a whole number of
+    # days in Postgres.
+    def _local_day(column):
+        return cast(func.timezone(PLANT_TIMEZONE, column), Date)
+
+    counted = q.add_columns(
+        (_local_day(GoodsReceipt.received_at) - _local_day(ordered_at)).label("lead_days")
+    ).subquery()
+    totals = (await db.execute(
+        select(
+            func.count(),
+            func.count(func.distinct(counted.c.id)),
+            func.count(func.distinct(counted.c.po_number)),
+            func.avg(counted.c.lead_days),
+        ).select_from(counted)
+    )).one()
+    summary = ReceivingSummary(
+        lines=totals[0] or 0,
+        receipts=totals[1] or 0,
+        orders=totals[2] or 0,
+        avg_lead_days=round(float(totals[3])) if totals[3] is not None else None,
+    )
+    total = summary.lines
+
     q = q.order_by(
         GoodsReceipt.received_at.asc(),
         GoodsReceipt.number.asc(),
         GrLineItem.sort_order.asc(),
-    ).limit(MAX_ROWS + 1)
+    )
+    if page is not None and page_size:
+        q = q.offset((page - 1) * page_size).limit(page_size)
+        # Paging itself never truncates — but a window this large will lose its
+        # tail on export, and the reader should hear that from the page they are
+        # about to press Export on.
+        truncated = total > MAX_ROWS
+    else:
+        q = q.limit(MAX_ROWS + 1)
 
     records = (await db.execute(q)).all()
-    truncated = len(records) > MAX_ROWS
-    if truncated:
-        records = records[:MAX_ROWS]
+    if page is None or not page_size:
+        truncated = len(records) > MAX_ROWS
+        if truncated:
+            records = records[:MAX_ROWS]
 
     rows: list[ReceivingRow] = []
     for r in records:
@@ -200,4 +260,4 @@ async def receiving_rows(
                 lead_time_days=(arrival - ordered).days if arrival and ordered else None,
             )
         )
-    return rows, truncated
+    return rows, total, summary, truncated

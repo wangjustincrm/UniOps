@@ -59,6 +59,11 @@ async def _stamp(engine, *, po_id=None, gr_id=None, po_fields=None, gr_fields=No
         await db.commit()
 
 
+# The suite shares one database across its tests, so rows accumulate; asking
+# for a wide page keeps "find the row I just made" honest as the file grows.
+WIDE = {"page_size": 500}
+
+
 def _row_for(payload, gr_number):
     return next(r for r in payload["items"] if r["gr_number"] == gr_number)
 
@@ -81,7 +86,7 @@ async def test_received_line_appears_with_every_column(admin_client, test_engine
         pr_fields={"department_name": "Engineering"},
     )
 
-    resp = await admin_client.get(REPORT_URL)
+    resp = await admin_client.get(REPORT_URL, params=WIDE)
     assert resp.status_code == 200, resp.text
     row = _row_for(resp.json(), gr["number"])
 
@@ -114,7 +119,7 @@ async def test_dates_are_plant_local_not_utc(admin_client, test_engine):
         gr_fields={"received_at": datetime(2026, 8, 14, 1, 0, tzinfo=timezone.utc)},
     )
 
-    row = _row_for((await admin_client.get(REPORT_URL)).json(), gr["number"])
+    row = _row_for((await admin_client.get(REPORT_URL, params=WIDE)).json(), gr["number"])
     assert row["date_ordered"] == "2026-08-03"
     assert row["arrival_date"] == "2026-08-13"
     assert row["lead_time_days"] == 10
@@ -148,7 +153,7 @@ async def test_date_ordered_falls_back_to_last_approval(admin_client, test_engin
         gr_fields={"received_at": datetime(2026, 8, 16, 14, 0, tzinfo=timezone.utc)},
     )
 
-    row = _row_for((await admin_client.get(REPORT_URL)).json(), gr["number"])
+    row = _row_for((await admin_client.get(REPORT_URL, params=WIDE)).json(), gr["number"])
     assert row["date_ordered"] == "2026-08-06"    # the LAST approval, not the first
     assert row["lead_time_days"] == 10
 
@@ -173,7 +178,7 @@ async def test_material_id_falls_back_to_the_ordered_line(admin_client, test_eng
         "unit": "EA", "unit_price": "350.00", "condition": "good",
     }])
 
-    row = _row_for((await admin_client.get(REPORT_URL)).json(), gr["number"])
+    row = _row_for((await admin_client.get(REPORT_URL, params=WIDE)).json(), gr["number"])
     assert row["material_id"] == "M1637"
 
 
@@ -186,7 +191,7 @@ async def test_service_confirmations_are_excluded(admin_client, test_engine):
     gr = await _create_gr(admin_client, po["id"])
     assert gr["gr_type"] == "service"
 
-    numbers = [r["gr_number"] for r in (await admin_client.get(REPORT_URL)).json()["items"]]
+    numbers = [r["gr_number"] for r in (await admin_client.get(REPORT_URL, params=WIDE)).json()["items"]]
     assert gr["number"] not in numbers
 
 
@@ -197,11 +202,11 @@ async def test_nc_mirrored_orders_are_excluded(admin_client, test_engine):
     po, _ = await _make_issued_po(admin_client, test_engine, "VND-RPT-NC")
     gr = await _create_gr(admin_client, po["id"])
 
-    before = [r["gr_number"] for r in (await admin_client.get(REPORT_URL)).json()["items"]]
+    before = [r["gr_number"] for r in (await admin_client.get(REPORT_URL, params=WIDE)).json()["items"]]
     assert gr["number"] in before
 
     await _stamp(test_engine, po_id=po["id"], po_fields={"source": "nc"})
-    after = [r["gr_number"] for r in (await admin_client.get(REPORT_URL)).json()["items"]]
+    after = [r["gr_number"] for r in (await admin_client.get(REPORT_URL, params=WIDE)).json()["items"]]
     assert gr["number"] not in after
 
 
@@ -211,7 +216,7 @@ async def test_cancelled_receipts_are_excluded(admin_client, test_engine):
     gr = await _create_gr(admin_client, po["id"])
     await _stamp(test_engine, gr_id=gr["id"], gr_fields={"status": "cancelled"})
 
-    numbers = [r["gr_number"] for r in (await admin_client.get(REPORT_URL)).json()["items"]]
+    numbers = [r["gr_number"] for r in (await admin_client.get(REPORT_URL, params=WIDE)).json()["items"]]
     assert gr["number"] not in numbers
 
 
@@ -228,13 +233,13 @@ async def test_date_window_is_inclusive_of_both_ends(admin_client, test_engine):
     })
 
     inside = await admin_client.get(REPORT_URL, params={
-        "date_from": "2026-08-13", "date_to": "2026-08-13"})
+        "date_from": "2026-08-13", "date_to": "2026-08-13", **WIDE})
     assert gr["number"] in [r["gr_number"] for r in inside.json()["items"]]
 
-    after = await admin_client.get(REPORT_URL, params={"date_from": "2026-08-14"})
+    after = await admin_client.get(REPORT_URL, params={"date_from": "2026-08-14", **WIDE})
     assert gr["number"] not in [r["gr_number"] for r in after.json()["items"]]
 
-    before = await admin_client.get(REPORT_URL, params={"date_to": "2026-08-12"})
+    before = await admin_client.get(REPORT_URL, params={"date_to": "2026-08-12", **WIDE})
     assert gr["number"] not in [r["gr_number"] for r in before.json()["items"]]
 
 
@@ -246,10 +251,10 @@ async def test_search_matches_the_line_description(admin_client, test_engine):
         "qty_received": "2", "unit": "box", "unit_price": "10.00", "condition": "good",
     }])
 
-    hit = await admin_client.get(REPORT_URL, params={"search": "Balaclava"})
+    hit = await admin_client.get(REPORT_URL, params={"search": "Balaclava", **WIDE})
     assert gr["number"] in [r["gr_number"] for r in hit.json()["items"]]
 
-    miss = await admin_client.get(REPORT_URL, params={"search": "Nothing Like This"})
+    miss = await admin_client.get(REPORT_URL, params={"search": "Nothing Like This", **WIDE})
     assert gr["number"] not in [r["gr_number"] for r in miss.json()["items"]]
 
 
@@ -269,10 +274,10 @@ async def test_department_filter(admin_client, test_engine):
     await _stamp(test_engine, po_id=po["id"],
                  pr_fields={"department_id": _uuid.UUID(dept_id), "department_name": "Maintenance"})
 
-    hit = await admin_client.get(REPORT_URL, params={"department_id": dept_id})
+    hit = await admin_client.get(REPORT_URL, params={"department_id": dept_id, **WIDE})
     assert gr["number"] in [r["gr_number"] for r in hit.json()["items"]]
 
-    other = await admin_client.get(REPORT_URL, params={"department_id": str(_uuid.uuid4())})
+    other = await admin_client.get(REPORT_URL, params={"department_id": str(_uuid.uuid4()), **WIDE})
     assert gr["number"] not in [r["gr_number"] for r in other.json()["items"]]
 
 
@@ -322,7 +327,7 @@ async def test_report_is_empty_when_the_matrix_hides_grs(admin_client, test_engi
     po, _ = await _make_issued_po(admin_client, test_engine, "VND-RPT-AUTHZ")
     gr = await _create_gr(admin_client, po["id"])
     assert gr["number"] in [
-        r["gr_number"] for r in (await admin_client.get(REPORT_URL)).json()["items"]
+        r["gr_number"] for r in (await admin_client.get(REPORT_URL, params=WIDE)).json()["items"]
     ]
 
     real_build_scope = None
@@ -336,7 +341,7 @@ async def test_report_is_empty_when_the_matrix_hides_grs(admin_client, test_engi
     real_build_scope = gr_api.build_scope
     monkeypatch.setattr(gr_api, "build_scope", _no_view)
 
-    payload = (await admin_client.get(REPORT_URL)).json()
+    payload = (await admin_client.get(REPORT_URL, params=WIDE)).json()
     assert payload["items"] == []
     assert payload["total"] == 0
 
@@ -354,5 +359,83 @@ async def test_rows_are_ordered_by_arrival_date(admin_client, test_engine):
     await _stamp(test_engine, gr_id=gr_early["id"],
                  gr_fields={"received_at": now - timedelta(days=3)})
 
-    numbers = [r["gr_number"] for r in (await admin_client.get(REPORT_URL)).json()["items"]]
+    numbers = [r["gr_number"] for r in (await admin_client.get(REPORT_URL, params=WIDE)).json()["items"]]
     assert numbers.index(gr_early["number"]) < numbers.index(gr_late["number"])
+
+
+# ── Paging ────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_paging_splits_the_window_without_gaps_or_repeats(admin_client, test_engine):
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-RPT-PAGE")
+    await _create_gr(admin_client, po["id"], line_items=[
+        {"description": f"Paged item {n}", "qty_ordered": "1", "qty_received": "1",
+         "unit": "EA", "unit_price": "1.00", "condition": "good"}
+        for n in range(5)
+    ])
+
+    whole = await admin_client.get(REPORT_URL, params={"search": "Paged item", **WIDE})
+    assert whole.json()["total"] == 5
+
+    first = (await admin_client.get(REPORT_URL, params={
+        "search": "Paged item", "page": 1, "page_size": 2})).json()
+    second = (await admin_client.get(REPORT_URL, params={
+        "search": "Paged item", "page": 2, "page_size": 2})).json()
+    third = (await admin_client.get(REPORT_URL, params={
+        "search": "Paged item", "page": 3, "page_size": 2})).json()
+
+    # `total` describes the window, not the page.
+    assert [first["total"], second["total"], third["total"]] == [5, 5, 5]
+    assert [len(first["items"]), len(second["items"]), len(third["items"])] == [2, 2, 1]
+
+    seen = [r["description"] for p in (first, second, third) for r in p["items"]]
+    assert len(set(seen)) == 5
+
+    beyond = (await admin_client.get(REPORT_URL, params={
+        "search": "Paged item", "page": 9, "page_size": 2})).json()
+    assert beyond["items"] == [] and beyond["total"] == 5
+
+
+@pytest.mark.asyncio
+async def test_summary_covers_the_window_not_the_page(admin_client, test_engine):
+    """A total that changed as the reader paged would be worse than none."""
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-RPT-SUM")
+    gr = await _create_gr(admin_client, po["id"], line_items=[
+        {"description": f"Summed item {n}", "qty_ordered": "1", "qty_received": "1",
+         "unit": "EA", "unit_price": "1.00", "condition": "good"}
+        for n in range(4)
+    ])
+    await _stamp(
+        test_engine, po_id=po["id"], gr_id=gr["id"],
+        po_fields={"placed_at": datetime(2026, 8, 3, 14, 0, tzinfo=timezone.utc)},
+        gr_fields={"received_at": datetime(2026, 8, 13, 14, 0, tzinfo=timezone.utc)},
+    )
+
+    page = (await admin_client.get(REPORT_URL, params={
+        "search": "Summed item", "page": 1, "page_size": 1})).json()
+    assert len(page["items"]) == 1
+    assert page["summary"] == {
+        "lines": 4, "receipts": 1, "orders": 1, "avg_lead_days": 10,
+    }
+
+
+@pytest.mark.asyncio
+async def test_export_ignores_paging(admin_client, test_engine):
+    """The spreadsheet is the window. A file holding page 1 of 7 would be a
+    trap — it looks complete."""
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-RPT-XPAGE")
+    await _create_gr(admin_client, po["id"], line_items=[
+        {"description": f"Exported item {n}", "qty_ordered": "1", "qty_received": "1",
+         "unit": "EA", "unit_price": "1.00", "condition": "good"}
+        for n in range(6)
+    ])
+
+    resp = await admin_client.get(EXPORT_URL, params={
+        "search": "Exported item", "page": 1, "page_size": 2})
+    sheet = load_workbook(BytesIO(resp.content)).active
+    exported = [r[1].value for r in sheet.iter_rows(min_row=2) if r[1].value]
+    assert len([d for d in exported if str(d).startswith("Exported item")]) == 6

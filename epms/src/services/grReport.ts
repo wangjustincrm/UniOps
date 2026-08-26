@@ -34,31 +34,55 @@ export interface ReceivingReportRow {
   lead_time_days: number | null
 }
 
+export interface ReceivingReportSummary {
+  lines: number
+  receipts: number
+  orders: number
+  avg_lead_days: number | null
+}
+
 export interface ReceivingReportResponse {
   items: ReceivingReportRow[]
   total: number
+  /** Totals for the whole window, not the page in `items`. */
+  summary: ReceivingReportSummary
   truncated: boolean
 }
 
 export interface ReceivingReportFilters {
   // Index signature so the object satisfies the query-param type `api.get` and
   // `downloadFile` take; without it every call site needs a cast.
-  [key: string]: string | undefined
+  [key: string]: string | number | undefined
   date_from?: string
   date_to?: string
   department_id?: string
   vendor_id?: string
   search?: string
+  page?: number
+  page_size?: number
 }
 
 export const grReportService = {
   receiving: (filters?: ReceivingReportFilters) =>
     api.get<ReceivingReportResponse>('/gr/receiving-report', filters),
 
-  exportReceiving: (filters?: ReceivingReportFilters) =>
-    // The filename is passed explicitly: EPMS talks to epms-api cross-origin,
-    // and a browser hides Content-Disposition from such a response unless the
-    // server exposes it — leaving the shared helper to fall back on
-    // "export.csv", an xlsx body under a CSV name that Excel then refuses.
-    downloadFile('/gr/receiving-report/export', filters, `receiving-report-${localDay()}.xlsx`),
+  // The window only — paging is listed out rather than spread in, so a
+  // spreadsheet can never come back holding page 1 of 7 while looking complete.
+  //
+  // The filename is passed explicitly: EPMS talks to epms-api cross-origin, and
+  // a browser hides Content-Disposition from such a response unless the server
+  // exposes it — leaving the shared helper to fall back on "export.csv", an
+  // xlsx body under a CSV name that Excel then refuses.
+  exportReceiving: (filters: ReceivingReportFilters = {}) =>
+    downloadFile(
+      '/gr/receiving-report/export',
+      {
+        date_from: filters.date_from,
+        date_to: filters.date_to,
+        department_id: filters.department_id,
+        vendor_id: filters.vendor_id,
+        search: filters.search,
+      },
+      `receiving-report-${localDay()}.xlsx`,
+    ),
 }

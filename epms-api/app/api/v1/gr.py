@@ -17,7 +17,11 @@ from app.crud import gr_report as gr_report_crud
 from app.crud import po as po_crud
 from app.models.task import Task
 from app.schemas.gr import GrActionRequest, GrCreate, GrListResponse, GrResponse, is_service
-from app.schemas.gr_report import ReceivingReportResponse, ReceivingReportRow
+from app.schemas.gr_report import (
+    ReceivingReportResponse,
+    ReceivingReportRow,
+    ReceivingReportSummary,
+)
 from app.services.notification import fire_and_forget_notify
 from app.services.receiving_report_xlsx import build_receiving_workbook
 
@@ -113,7 +117,8 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
 # falling through to these.
 
 
-async def _receiving_rows(db, user, *, date_from, date_to, department_id, vendor_id, search):
+async def _receiving_rows(db, user, *, date_from, date_to, department_id, vendor_id,
+                          search, page=None, page_size=None):
     """Shared body of the JSON and xlsx endpoints — same rows, same gate.
 
     Visibility is the GR list's, not a looser one: a report is a different
@@ -122,12 +127,13 @@ async def _receiving_rows(db, user, *, date_from, date_to, department_id, vendor
     """
     scope = await build_scope(db, user)
     if not scope["perms"].get("view_gr", False):
-        return [], False
+        return [], 0, gr_report_crud.ReceivingSummary(0, 0, 0, None), False
     return await gr_report_crud.receiving_rows(
         db,
         date_from=date_from, date_to=date_to,
         department_id=department_id, vendor_id=vendor_id, search=search,
         po_ids_subq=scope["po_subq"],
+        page=page, page_size=page_size,
     )
 
 
@@ -140,15 +146,19 @@ async def receiving_report(
     department_id: uuid.UUID | None = Query(default=None),
     vendor_id: uuid.UUID | None = Query(default=None),
     search: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=500),
 ):
-    """Every physically received line in the window, one row each."""
-    rows, truncated = await _receiving_rows(
+    """One page of the window's received lines, with the window's own totals."""
+    rows, total, summary, truncated = await _receiving_rows(
         db, user, date_from=date_from, date_to=date_to,
         department_id=department_id, vendor_id=vendor_id, search=search,
+        page=page, page_size=page_size,
     )
     return ReceivingReportResponse(
         items=[ReceivingReportRow.model_validate(r) for r in rows],
-        total=len(rows),
+        total=total,
+        summary=ReceivingReportSummary.model_validate(summary),
         truncated=truncated,
     )
 
@@ -163,8 +173,8 @@ async def export_receiving_report(
     vendor_id: uuid.UUID | None = Query(default=None),
     search: str | None = Query(default=None),
 ):
-    """The same rows as an xlsx download."""
-    rows, _ = await _receiving_rows(
+    """The whole window as an xlsx download — never just the page on screen."""
+    rows, _total, _summary, _truncated = await _receiving_rows(
         db, user, date_from=date_from, date_to=date_to,
         department_id=department_id, vendor_id=vendor_id, search=search,
     )

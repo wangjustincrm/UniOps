@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, Loader2, PackageSearch, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Pagination } from '@/components/ui/Pagination'
 import { cn, formatDate } from '@/lib/utils'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useReceivingReport } from '@/hooks/useGrReport'
@@ -56,22 +57,37 @@ export default function ReceivingReportPage() {
   const [range, setRange] = useState(() => presetRange('this_month'))
   const [departmentId, setDepartmentId] = useState('')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
 
   const { data: departments } = useDepartments()
 
-  const filters = useMemo(() => ({
+  // What the window selects, independent of which page of it is on screen.
+  // The export sends exactly this — a spreadsheet of page 3 of 7 would be a
+  // trap, not a report.
+  const windowFilters = useMemo(() => ({
     date_from: range.from || undefined,
     date_to: range.to || undefined,
     department_id: departmentId || undefined,
     search: search.trim() || undefined,
   }), [range.from, range.to, departmentId, search])
 
-  const { data, isLoading, isError, error } = useReceivingReport(filters)
-  // Memoised so the empty-result fallback is not a fresh array on every
-  // render — the summary below depends on it.
+  const { data, isLoading, isFetching, isError, error } = useReceivingReport({
+    ...windowFilters, page, page_size: pageSize,
+  })
   const rows = useMemo(() => data?.items ?? [], [data])
+  const total = data?.total ?? 0
+  const summary = data?.summary
+
+  // Any change to the window is a different result set; staying on page 7 of
+  // the old one would show an empty table.
+  useEffect(() => { setPage(1) }, [windowFilters])
+
+  // A new page starts at its own first row, not wherever the last one was left.
+  const scrollBox = useRef<HTMLDivElement>(null)
+  useEffect(() => { scrollBox.current?.scrollTo({ top: 0 }) }, [page])
 
   const applyPreset = (value: Preset) => {
     setPreset(value)
@@ -88,7 +104,7 @@ export default function ReceivingReportPage() {
     setExporting(true)
     setExportError(null)
     try {
-      await grReportService.exportReceiving(filters)
+      await grReportService.exportReceiving(windowFilters)
     } catch (e) {
       setExportError(e instanceof Error ? e.message : 'Export failed')
     } finally {
@@ -96,25 +112,15 @@ export default function ReceivingReportPage() {
     }
   }
 
-  // Summary of what is on screen. Lead time averages only over rows that have
-  // one, so a window of orders with no order date does not read as "0 days".
-  const summary = useMemo(() => {
-    const withLead = rows.filter((r) => r.lead_time_days !== null)
-    const avg = withLead.length
-      ? Math.round(withLead.reduce((s, r) => s + (r.lead_time_days ?? 0), 0) / withLead.length)
-      : null
-    return {
-      lines: rows.length,
-      receipts: new Set(rows.map((r) => r.gr_number)).size,
-      orders: new Set(rows.map((r) => r.po_number)).size,
-      avgLead: avg,
-    }
-  }, [rows])
-
   return (
-    <div className="flex flex-col gap-6">
+    // Fixed height, so the table below scrolls inside its own box instead of
+    // running off the bottom of the page: that is what keeps the horizontal
+    // scrollbar — this table is far wider than any screen — and the pager in
+    // view at all times. The min-height keeps it usable on a short window,
+    // where the page itself scrolls again.
+    <div className="flex flex-col gap-4 h-[calc(100vh-11rem)] min-h-[34rem]">
       {/* Page header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">Receiving Report</h1>
           <p className="mt-1 text-sm text-neutral-500">
@@ -122,15 +128,15 @@ export default function ReceivingReportPage() {
             Service confirmations and ERP-imported orders are excluded.
           </p>
         </div>
-        <Button onClick={handleExport} disabled={exporting || rows.length === 0} className="gap-2">
+        <Button onClick={handleExport} disabled={exporting || total === 0} className="gap-2">
           {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           {exporting ? 'Exporting…' : 'Export Excel'}
         </Button>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4">
-        <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5">
           {PRESETS.map((p) => (
             <button
               key={p.value}
@@ -150,6 +156,17 @@ export default function ReceivingReportPage() {
               Custom
             </span>
           )}
+
+          {/* Window totals, inline — the table below owns the vertical space. */}
+          <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-neutral-500">
+            <Stat label="Lines" value={summary ? summary.lines.toLocaleString() : '—'} />
+            <Stat label="Receipts" value={summary ? summary.receipts.toLocaleString() : '—'} />
+            <Stat label="POs" value={summary ? summary.orders.toLocaleString() : '—'} />
+            <Stat
+              label="Avg lead time"
+              value={summary?.avg_lead_days == null ? '—' : `${summary.avg_lead_days} days`}
+            />
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -190,31 +207,16 @@ export default function ReceivingReportPage() {
       </div>
 
       {exportError && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-2 text-sm text-danger-700">
+        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-2 text-sm text-danger-700 shrink-0">
           {exportError}
         </div>
       )}
-      {data?.truncated && (
-        <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-2 text-sm text-warning-700">
-          Showing the first {rows.length.toLocaleString()} lines only — narrow the date range to see the rest.
-        </div>
-      )}
 
-      {/* Summary */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard label="Lines Received" value={summary.lines.toLocaleString()} />
-        <SummaryCard label="Goods Receipts" value={summary.receipts.toLocaleString()} />
-        <SummaryCard label="Purchase Orders" value={summary.orders.toLocaleString()} />
-        <SummaryCard
-          label="Average Lead Time"
-          value={summary.avgLead === null ? '—' : `${summary.avgLead} days`}
-        />
-      </div>
-
-      {/* Table */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      {/* Table — scrolls in both directions inside this box; header row and
+          pager stay put. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white">
         {isLoading || isError || rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="flex flex-1 flex-col items-center justify-center py-20 text-center">
             <PackageSearch className="h-10 w-10 text-neutral-300 mb-3" />
             <p className="text-sm font-medium text-neutral-500">
               {isLoading ? 'Loading…'
@@ -226,10 +228,18 @@ export default function ReceivingReportPage() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div
+            ref={scrollBox}
+            className={cn(
+              'min-h-0 flex-1 overflow-auto transition-opacity',
+              // The previous page stays put while the next loads; dimming it is
+              // the only signal that it is not the answer yet.
+              isFetching && 'opacity-60',
+            )}
+          >
             <table className="w-full text-sm whitespace-nowrap">
               <thead>
-                <tr className="border-b border-neutral-200 bg-neutral-50">
+                <tr>
                   <Th>Material ID</Th>
                   <Th>Description</Th>
                   <Th>Manufacturer / Supplier</Th>
@@ -255,26 +265,47 @@ export default function ReceivingReportPage() {
             </table>
           </div>
         )}
+
+        <div className="shrink-0 border-t border-neutral-200">
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1) }}
+          />
+        </div>
       </div>
+
+      {data?.truncated && (
+        <p className="shrink-0 text-xs text-warning-700">
+          This window holds {total.toLocaleString()} lines — the export stops at 20,000.
+          Narrow the date range to get all of them.
+        </p>
+      )}
     </div>
   )
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-neutral-900">{value}</p>
-    </div>
+    <span className="whitespace-nowrap">
+      {label} <span className="ml-1 font-semibold text-neutral-900">{value}</span>
+    </span>
   )
 }
 
 function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
   return (
+    // Sticky on the th rather than the thead: the row itself cannot carry the
+    // background, and a transparent sticky header lets rows show through it.
+    // The inset shadow draws the bottom rule, which a border on a sticky cell
+    // scrolls away from.
     <th className={cn(
-      'px-3 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap',
+      'sticky top-0 z-10 bg-neutral-50 px-3 py-3 text-xs font-semibold uppercase tracking-wide',
+      'text-neutral-500 whitespace-nowrap shadow-[inset_0_-1px_0_var(--color-neutral-200)]',
       align === 'right' ? 'text-right' : 'text-left',
     )}>
       {children}

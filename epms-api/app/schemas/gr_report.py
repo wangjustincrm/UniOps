@@ -31,9 +31,22 @@ class ReceivingReportRow(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ReceivingReportSummary(BaseModel):
+    """Totals for the whole window — deliberately not derived from `items`,
+    which is one page of it."""
+
+    lines: int
+    receipts: int
+    orders: int
+    avg_lead_days: int | None
+
+    model_config = {"from_attributes": True}
+
+
 class ReceivingReportResponse(BaseModel):
     items: list[ReceivingReportRow]
     total: int
+    summary: ReceivingReportSummary
     # True when the row cap cut the result short — the UI says so rather than
     # letting a half-answer look complete.
     truncated: bool
