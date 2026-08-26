@@ -188,6 +188,12 @@ services:
       NC_SERVICE: ${NC65_SERVICE:-}
       NC_USER: ${NC65_USER:-}
       NC_PASSWORD: ${NC65_PASSWORD:-}
+      # OFF in dev, same reasoning as epms-api above: with a real ERP_BASE_URL
+      # and NC65_* values in the root .env, every developer machine would
+      # otherwise start pulling from production ERP/NC65 on first `up` —
+      # erp_sync_state has no rows yet, so it wouldn't even wait for an
+      # interval. The Admin button still works.
+      NC_SYNC_SCHEDULER_ENABLED: "false"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health').status==200 else 1)"]
@@ -272,6 +278,11 @@ services:
       NC_SERVICE: ${NC65_SERVICE:-}
       NC_USER: ${NC65_USER:-}
       NC_PASSWORD: ${NC65_PASSWORD:-}
+      # OFF in dev, same reasoning as epms-api above: with real NC65_* values
+      # in the root .env every developer machine would otherwise pull
+      # journal vouchers from production NC65 on production's schedule.
+      # The Admin button still works.
+      NC_SYNC_SCHEDULER_ENABLED: "false"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8004/health').status==200 else 1)"]
