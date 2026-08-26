@@ -131,7 +131,11 @@ async def test_run_tick_not_due(monkeypatch):
         return 1440
 
     async def _last():
-        return NOW
+        # run_tick() 内部用真实 datetime.now(),不是这份测试的 NOW 常量 ——
+        # 所以"刚跑过"必须相对真实时钟表达。写成 `return NOW` 会让这条用例
+        # 在 NOW + interval 之后开始假失败(本例 interval=1440,即写下它的
+        # 第二天就翻车 —— 实际发生过)。写法对齐 finance-api 的同名用例。
+        return datetime.now(timezone.utc) - timedelta(minutes=5)
     monkeypatch.setattr(sched, "load_interval_minutes", _interval)
     monkeypatch.setattr(sched, "last_sync_started_at", _last)
     assert await sched.run_tick() == "not_due"
