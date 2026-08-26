@@ -22,6 +22,11 @@ PHASE2_KEYS: dict[str, tuple[str, str, int]] = {
     "epms.pa.write":         ("epms",    "Create / Edit PAs",       102),
     "epms.gr.receive":       ("epms",    "Receive Goods",           103),
     "epms.po.edit_imported": ("epms",    "Edit Imported (NC) POs",  107),
+    # Raising the sign-off of an NC-imported PO. Separate from edit_imported:
+    # filling in Incoterms is not the same authority as putting a purchase in
+    # front of the Purchasing Manager and the OPM. Signing itself is gated by
+    # approval-api on the step's role, never by a key.
+    "epms.po.signoff":       ("epms",    "Raise PO Sign-off",       109),
     # 108, not 104: main took 104-106 for the agreement keys while this branch
     # was open, and sort is the Access Control matrix's display order.
     "epms.vendor_credit.manage": ("epms", "Manage Vendor Credits",   108),
@@ -55,6 +60,7 @@ PHASE2_DEFAULTS: dict[str, tuple[str, ...]] = {
     "epms.pa.write":        ("system_admin", "finance_bp", "finance_manager", "ap_clerk", "requester", "erp_pa_officer", "procurement_officer"),
     "epms.gr.receive":      ("system_admin", "warehouse_staff", "procurement_officer"),
     "epms.po.edit_imported": ("system_admin", "erp_pa_officer"),
+    "epms.po.signoff":       ("system_admin", "erp_pa_officer"),
     "epms.vendor_credit.manage": ("system_admin", "ap_clerk", "finance_manager", "finance_bp"),
     "finance.coa.manage":   ("system_admin", "finance_manager"),
     "finance.period.close": ("system_admin", "finance_manager"),
