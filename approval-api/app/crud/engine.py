@@ -128,6 +128,12 @@ _DOC_META: dict[str, dict] = {
         "revise_assignee_attr": "signoff_submitted_by",
         "labels": {"doc": "PO", "revise": "PO sign-off",
                    "approve_verb": "Sign", "approve_noun": "signature"},
+        # NOT "approve_*": delegation, in both the engine and EPMS's task inbox
+        # and document scope, keys off `type LIKE 'approve%'`. Keeping sign_po
+        # outside that prefix keeps a stand-in from signing — a signature is
+        # personal, and a delegate signing would stamp their own name and image
+        # into the slot the workflow assigned to someone else. A signature can
+        # be waited for; it cannot be covered.
         "task_approve": "sign_po",
         "task_revise":  "revise_po_signoff",
         "valid_submit":  ("draft", "returned"),
