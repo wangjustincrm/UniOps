@@ -16,8 +16,12 @@ export default defineConfig({
     exclude: ['@uniops/shell'],
   },
   server: {
+    // 内网 dev/test 栈: 允许用 IP 或主机名访问(Vite 默认会挡主机名)。不要用于生产。
+    allowedHosts: true,
+    // Linux 原生 inotify 够用; 只有在 Windows bind mount 下才需要轮询(VITE_POLL=1)。
+    // 轮询实测让每个前端常驻占用约 12% CPU。
     watch: {
-      usePolling: true,
+      usePolling: process.env.VITE_POLL === '1',
     },
     proxy: {
       '/api': {
