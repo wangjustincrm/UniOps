@@ -1,16 +1,17 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   User, Mail, Shield, KeyRound, ShieldCheck, ShieldOff,
   Eye, EyeOff, Save, ArrowLeft, Loader2, CheckCircle2, AlertTriangle,
-  Building2, AtSign, Bell,
+  Building2, AtSign, Bell, PenLine, Upload, Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
 import { authService, type ApiUser } from '@/services/auth'
 import { api } from '@/lib/api'
+import { SignaturePad, type SignaturePadHandle } from '@/components/shared/SignaturePad'
 
 const ROLE_LABELS: Record<string, string> = {
   system_admin: 'System Admin',
@@ -192,6 +193,171 @@ function PersonalInfoSection({ profile }: { profile: ApiUser }) {
 }
 
 // ─── Change Password Section ────────────────────────────────────────────────
+
+// Kept comfortably under identity's MAX_SIGNATURE_CHARS (400k characters of
+// base64): a photographed signature is the only realistic way to exceed it, and
+// the pad's own output is a few tens of KB.
+const MAX_UPLOAD_BYTES = 200 * 1024
+
+function SignatureSection({ profile }: { profile: ApiUser }) {
+  const queryClient = useQueryClient()
+  const padRef = useRef<SignaturePadHandle>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [mode, setMode] = useState<'draw' | 'upload'>('draw')
+  const [uploaded, setUploaded] = useState<string | null>(null)
+  const [padEmpty, setPadEmpty] = useState(true)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  const mutation = useMutation({
+    // "" is how the API clears a signature — null would read as "not supplied".
+    mutationFn: (signature_image: string) =>
+      api.patch<ApiUser>('/auth/me', { signature_image }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['me'] })
+      padRef.current?.clear()
+      setUploaded(null)
+      setError('')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Could not save signature'),
+  })
+
+  const onPickFile = (file: File | undefined) => {
+    setError('')
+    if (!file) return
+    if (!/^image\/(png|jpeg)$/.test(file.type)) {
+      setError('Use a PNG or JPEG image.')
+      return
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError('That image is too large — keep it under 200 KB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => setUploaded(String(reader.result))
+    reader.onerror = () => setError('Could not read that file.')
+    reader.readAsDataURL(file)
+  }
+
+  const handleSave = () => {
+    setError('')
+    const next = mode === 'draw' ? padRef.current?.toDataURL() : uploaded
+    if (!next) {
+      setError(mode === 'draw' ? 'Draw your signature first.' : 'Choose an image first.')
+      return
+    }
+    mutation.mutate(next)
+  }
+
+  const canSave = mode === 'draw' ? !padEmpty : uploaded !== null
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-neutral-500">
+        Used to sign documents in UniOps — a PO sign-off stamps this image onto
+        the order. It is copied onto each document as you sign it, so changing it
+        here never alters anything you have already signed.
+      </p>
+
+      {profile.signature_image ? (
+        <div className="flex items-center gap-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+          <img
+            src={profile.signature_image}
+            alt="Your saved signature"
+            className="h-14 max-w-[240px] object-contain"
+          />
+          <div className="flex-1">
+            <p className="text-xs font-medium text-neutral-700">Current signature</p>
+            <p className="text-xs text-neutral-400">Draw or upload a new one below to replace it.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => mutation.mutate('')}
+            disabled={mutation.isPending}
+            className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-danger-600 disabled:opacity-40"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Remove
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-start gap-2 rounded-xl border border-warning-200 bg-warning-50 px-4 py-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-600" />
+          <p className="text-xs text-warning-700">
+            You have no signature yet. Anything waiting for your signature cannot
+            be signed until you add one.
+          </p>
+        </div>
+      )}
+
+      <div className="flex gap-1 self-start rounded-lg bg-neutral-100 p-1">
+        {([['draw', 'Draw', PenLine], ['upload', 'Upload', Upload]] as const).map(
+          ([value, label, Icon]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => { setMode(value); setError('') }}
+              className={cn(
+                'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                mode === value ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-700',
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" /> {label}
+            </button>
+          ),
+        )}
+      </div>
+
+      {mode === 'draw' ? (
+        <SignaturePad ref={padRef} onChange={setPadEmpty} />
+      ) : (
+        <div className="flex flex-col gap-3">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg"
+            onChange={(e) => onPickFile(e.target.files?.[0])}
+            className="block w-full text-xs text-neutral-500 file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-2 file:text-xs file:font-medium file:text-primary-700 hover:file:bg-primary-100"
+          />
+          {uploaded && (
+            <div className="flex items-center gap-4 rounded-lg border border-dashed border-neutral-300 bg-white p-3">
+              <img src={uploaded} alt="Signature to be saved" className="h-14 max-w-[240px] object-contain" />
+              <button
+                type="button"
+                onClick={() => { setUploaded(null); if (fileRef.current) fileRef.current.value = '' }}
+                className="text-xs font-medium text-neutral-500 hover:text-neutral-700"
+              >
+                Choose another
+              </button>
+            </div>
+          )}
+          <p className="text-xs text-neutral-400">
+            PNG or JPEG under 200 KB. A PNG with a transparent background prints best.
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <p className="flex items-center gap-1.5 text-xs text-danger-600">
+          <AlertTriangle className="h-3.5 w-3.5" /> {error}
+        </p>
+      )}
+
+      <div className="flex items-center gap-3">
+        <Button onClick={handleSave} disabled={!canSave || mutation.isPending} className="gap-2">
+          {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Save Signature
+        </Button>
+        {saved && (
+          <span className="flex items-center gap-1.5 text-sm text-success-600">
+            <CheckCircle2 className="h-4 w-4" /> Saved
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function ChangePasswordSection() {
   const [currentPwd, setCurrentPwd] = useState('')
@@ -418,6 +584,10 @@ export default function ProfilePage() {
       <div className="flex flex-col gap-5">
         <SectionCard title="Personal Information" icon={<User className="h-4 w-4" />}>
           <PersonalInfoSection profile={profile} />
+        </SectionCard>
+
+        <SectionCard title="My Signature" icon={<PenLine className="h-4 w-4" />}>
+          <SignatureSection profile={profile} />
         </SectionCard>
 
         <SectionCard title="Change Password" icon={<KeyRound className="h-4 w-4" />}>
