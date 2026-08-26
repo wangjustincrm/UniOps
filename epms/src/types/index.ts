@@ -128,6 +128,9 @@ export type TaskType =
   | 'settle_prepayment'
   | 'link_invoice'
   | 'create_pa'
+  // PO sign-off (NC imports). document_type is 'posign', not 'po'.
+  | 'sign_po'
+  | 'revise_po_signoff'
 
 export interface PaLineItem {
   id: string
