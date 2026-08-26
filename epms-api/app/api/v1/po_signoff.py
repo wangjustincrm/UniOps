@@ -221,6 +221,12 @@ async def sign_signoff(
     await db.refresh(po)
 
     if po.signoff_status == "approved":
+        # Rebuild the PDF so it carries the signatures, replacing the unsigned
+        # one already attached.
+        from app.api.v1.po import _generate_po_pdf_background
+        from app.core.background import spawn
+        spawn(_generate_po_pdf_background(po_id, po.number, token, replace=True),
+              name=f"po_pdf_signed:{po.number}")
         fire_and_forget_signoff_complete(po_id)
     await _notify_open_tasks(db, po_id)
     return await _state(db, po, workflow, actor_id)
