@@ -561,9 +561,19 @@ sysctl fs.inotify.max_user_watches fs.inotify.max_user_instances
 ```bash
 sudo groupadd -f uniops
 sudo usermod -aG uniops,docker crmadmin
-sudo adduser --disabled-password --gecos "" devb      # 用户名按实际改
-sudo usermod -aG uniops,docker devb
-id crmadmin; id devb
+# 第二位开发者 amir(2026-08-26 由管理员用密码方式建好, 此处只需补两个组)
+sudo usermod -aG uniops,docker amir
+id crmadmin; id amir
+```
+
+**★ 建了用户不等于能干活。** 不加 `docker` 组连不上 daemon(`permission denied ... docker.sock`),
+不加 `uniops` 组写不了 `/srv/uniops`。两个都要, 且**改完必须重新登录才生效**。
+
+由本人验证:
+
+```bash
+docker ps                                        # 不带 sudo 能出表头
+touch /srv/uniops/_t && rm /srv/uniops/_t        # 能写
 ```
 
 **★ 组变更要重新登录才生效。** 退出重连后:
@@ -872,7 +882,7 @@ git worktree list | wc -l
 cd /srv/uniops/uniops
 git config core.sharedRepository group
 git config --global --add safe.directory '*'
-sudo -u devb git -C /srv/uniops/uniops status >/dev/null && echo "✅ 其他用户也能操作仓库"
+sudo -u amir git -C /srv/uniops/uniops status >/dev/null && echo "✅ 其他用户也能操作仓库"
 ```
 
 (`safe.directory` 是必要的 —— 仓库属主不是当前用户时 git 会拒绝操作。)
@@ -1165,7 +1175,7 @@ curl -s -o /dev/null -w "epms-api health: %{http_code}\n" http://localhost:8000/
 
 ```bash
 cd /srv/uniops/uniops
-sudo -u devb git worktree add /srv/uniops/uniops-devb-work <PROD_SHA> -b feature/devb-scratch
+sudo -u amir git worktree add /srv/uniops/uniops-amir-work <PROD_SHA> -b feature/amir-scratch
 git worktree list | tail -3
 ```
 
@@ -1360,7 +1370,7 @@ nc -zv 10.10.50.64 5174 && nc -zv 10.10.50.64 8000
 两个人同时从各自电脑操作:
 
 - 各自 VS Code Remote-SSH 连 `10.10.50.64`, 打开各自的 worktree
-- 各自跑 `./start-dev.sh 1 logs -f epms-api` / `./start-dev.sh 2 ...`
+- 各自跑 `./start-dev.sh 1 logs -f epms-api`(crmadmin) / `./start-dev.sh 2 ...`(amir)
 - 各自改一个前端文件, 确认**自己的**栈热重载了、**对方的**没动
 - 各自在服务器上跑 `claude` 起 Claude Code
 
