@@ -10,10 +10,15 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1 import api_router
 from app.core.config import settings
+from app.core.task_logging import configure_task_logging
 from app.db.redis import close_redis
 from app.db.session import engine
 
 logger = logging.getLogger(__name__)
+
+# Scheduler INFO logs (app.tasks.*) are otherwise silently dropped — see
+# app/core/task_logging.py for why this doesn't just flip root to INFO.
+configure_task_logging()
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 

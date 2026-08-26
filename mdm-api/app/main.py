@@ -4,8 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import api_router
 from app.db.base import engine, Base
 from app.core.config import settings
+from app.core.task_logging import configure_task_logging
 # Import models so Alembic/metadata can see them
 from app.models import vendor, department, cost_center, part, user, company, erp_material, erp_supplier, erp_person, erp_sync_state, uom, material, uom_conversion, nc_bom, bom, material_supplier, sync_state, company_config  # noqa: F401
+
+# Scheduler INFO logs (app.tasks.*) are otherwise silently dropped — see
+# app/core/task_logging.py for why this doesn't just flip root to INFO.
+configure_task_logging()
 
 
 @asynccontextmanager

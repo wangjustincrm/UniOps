@@ -6,9 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import api_router
 from app.api.v1.health import router as health_router
 from app.core.config import settings
+from app.core.task_logging import configure_task_logging
 # NOTE: budget model removed — budget data lives in budget-api (:8007).
 # finance-api's budget endpoints now proxy to budget-api via HTTP.
 from app.models import admin_audit_log, ap_invoice, bank, coa, fiscal_period, mirrors, nc_customer, nc_export, nc_sync, pa, payment, payment_batch, posting  # noqa: F401 — register with metadata
+
+# Scheduler INFO logs (app.tasks.*) are otherwise silently dropped — see
+# app/core/task_logging.py for why this doesn't just flip root to INFO.
+configure_task_logging()
 
 
 @asynccontextmanager
