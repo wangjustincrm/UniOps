@@ -630,6 +630,22 @@ sudo sshd -T | grep -iE "passwordauthentication|kbdinteractive"     # 两个都�
 
 `KbdInteractiveAuthentication` 也要关 —— 只关前者的话, 某些 PAM 配置下还能走键盘交互绕回密码。
 
+**★ 本机的实际决定(2026-08-26): 密码登录已重新打开, key 与密码并存。**
+理由是这是一台**纯内网服务器**, 不需要这一级的严格控制, 而多人多工具接入时密码回落更省事。
+这是有意为之, **不是配置疏漏, 不要"顺手修好"**:
+
+```bash
+sudo sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config.d/00-uniops-hardening.conf
+sudo systemctl restart ssh
+sudo sshd -T | grep -iE "pubkeyauthentication|passwordauthentication"    # 两行都应是 yes
+```
+
+`PubkeyAuthentication` 与 `PasswordAuthentication` 是独立开关, 都 `yes` 即两种方式并存
+(客户端先试 key, 失败回落密码)。若将来这台机器要接触内网以外的流量, 需要重新评估此决定。
+
+**救援通道(与 SSH 配置无关)**: VMware 的 VM 控制台不走网络协议, 永远可进 ——
+所以 `crmadmin` 的密码要留好, 它的用途是 sudo 与控制台救援。
+
 **验证必须查 `sshd -T`(生效值), 不能 grep 配置文件** —— 这正是"命令跑对了却没生效"的典型:
 只看 sed 没报错就以为关掉了, 等于留了个密码登录的口子还自以为安全。
 
