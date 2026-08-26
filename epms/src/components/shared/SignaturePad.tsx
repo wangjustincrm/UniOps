@@ -21,7 +21,39 @@ export interface SignaturePadHandle {
   clear(): void
 }
 
-interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
+export interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
+
+export interface CropRect { sx: number; sy: number; sw: number; sh: number }
+
+/**
+ * Source rectangle to copy out of the backing store, in device pixels.
+ *
+ * Split out and exported because this is the part that goes wrong quietly: the
+ * bounding box is tracked in CSS pixels while the canvas is sized in device
+ * pixels, so the ratio has to be applied exactly once, and the padded box has
+ * to be clamped to the canvas or drawImage silently yields a partly blank crop.
+ * Returns null when there is nothing to copy.
+ */
+export function cropRect(
+  bounds: Bounds | null,
+  canvasWidth: number,
+  canvasHeight: number,
+  ratio: number,
+  pad = 6,
+): CropRect | null {
+  if (!bounds || ratio <= 0) return null
+  const sx = Math.max(0, (bounds.minX - pad) * ratio)
+  const sy = Math.max(0, (bounds.minY - pad) * ratio)
+  // Width is measured from the padded LEFT edge, which clamping may have moved
+  // to 0 — deriving it from the box width alone would overshoot by the amount
+  // that was clamped away.
+  const right = Math.min(canvasWidth, (bounds.maxX + pad) * ratio)
+  const bottom = Math.min(canvasHeight, (bounds.maxY + pad) * ratio)
+  const sw = right - sx
+  const sh = bottom - sy
+  if (sw <= 0 || sh <= 0) return null
+  return { sx, sy, sw, sh }
+}
 
 interface SignaturePadProps {
   /** CSS height of the drawing surface, in pixels. */
@@ -123,21 +155,15 @@ export const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(
       clear,
       toDataURL: () => {
         const canvas = canvasRef.current
-        const b = bounds.current
-        if (!canvas || !b) return null
-        const dpr = ratio.current
-        const pad = 6
-        const sx = Math.max(0, (b.minX - pad) * dpr)
-        const sy = Math.max(0, (b.minY - pad) * dpr)
-        const sw = Math.min(canvas.width - sx, (b.maxX - b.minX + pad * 2) * dpr)
-        const sh = Math.min(canvas.height - sy, (b.maxY - b.minY + pad * 2) * dpr)
-        if (sw <= 0 || sh <= 0) return null
+        if (!canvas) return null
+        const rect = cropRect(bounds.current, canvas.width, canvas.height, ratio.current)
+        if (!rect) return null
         const out = document.createElement('canvas')
-        out.width = Math.round(sw)
-        out.height = Math.round(sh)
+        out.width = Math.round(rect.sw)
+        out.height = Math.round(rect.sh)
         const ctx = out.getContext('2d')
         if (!ctx) return null
-        ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height)
+        ctx.drawImage(canvas, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, out.width, out.height)
         return out.toDataURL('image/png')
       },
     }))
