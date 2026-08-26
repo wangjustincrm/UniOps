@@ -65,7 +65,7 @@ export function ScheduleCard({ endpoint, title, maxMinutes = DEFAULT_MAX_MINUTES
   const api = CLIENTS[endpoint.client]
   const queryKey = [endpoint.queryKey]
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey,
     queryFn: () => api.get<ScheduleState>(endpoint.readPath),
   })
@@ -117,6 +117,20 @@ export function ScheduleCard({ endpoint, title, maxMinutes = DEFAULT_MAX_MINUTES
     return (
       <div className="rounded-xl border border-neutral-200 bg-white px-4 py-6 text-center text-sm text-neutral-400">
         Loading schedule…
+      </div>
+    )
+  }
+
+  // A failed fetch (or, defensively, a query that finished loading with no
+  // data at all) must not fall through to the editable card below: `data`
+  // being undefined here previously meant `enabled` kept its initial
+  // `false`, rendering a card indistinguishable from a genuinely-disabled
+  // schedule ("Next run: Disabled") — and pressing Save on it would submit
+  // `minutes: 0`, actually disabling a schedule that was still running.
+  if (isError || data === undefined) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-6 text-center text-sm text-red-700">
+        Failed to load schedule. Try refreshing the page.
       </div>
     )
   }
