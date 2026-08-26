@@ -6,7 +6,7 @@ later cleanup. Columns are a verbatim copy of epms-api's model.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,3 +31,8 @@ class User(UUIDPrimaryKey, TimestampMixin, Base):
     notification_channel: Mapped[str] = mapped_column(String(20), nullable=False, default="email_only")
     erp_person_code: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     erp_imported: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Preset signature (base64 `data:image/...` URL) drawn or uploaded by the
+    # user in My Profile. Column lives in epms-api's alembic like every other
+    # users column; this is the mirror.
+    signature_image: Mapped[str | None] = mapped_column(Text, nullable=True)
