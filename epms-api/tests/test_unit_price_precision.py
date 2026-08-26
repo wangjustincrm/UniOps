@@ -207,7 +207,10 @@ def test_the_migration_chains_onto_the_real_head():
             parents.update(_re.findall(r"['\"]([^'\"]+)['\"]", tup))
 
     heads = [r for r in revisions if r not in parents]
-    assert heads == ["ak01_nc_price_scale5"], f"expected one head, got {heads}"
+    # 断言"恰好一个 head",而不是写死某个 revision 名 —— 后者每加一条迁移就要
+    # 改一次,而它并不比数量断言多守住什么(本测试自述的两个隐患是"双 head"和
+    # "id 超 32 字符")。ai01_sync_intervals 挂到 ak01 之后曾让这条断言假红。
+    assert len(heads) == 1, f"expected one head, got {heads}"
     assert all(len(r) <= 32 for r in revisions), \
         [r for r in revisions if len(r) > 32]
 
