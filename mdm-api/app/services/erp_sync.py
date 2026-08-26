@@ -217,39 +217,60 @@ async def sync_kind(
     updated = 0
     max_rowversion: datetime | None = None
 
-    for rec in records:
-        try:
-            row = mapper(rec)
-        except KeyError:
-            continue
-        row["synced_at"] = now
+    # Everything past the fetch (mapping/upserting each record, writing the
+    # success state) can also fail — e.g. an IntegrityError out of the
+    # upsert, or an oversized field. Those exceptions used to propagate
+    # straight out of sync_kind without touching erp_sync_state, so the
+    # scheduler's anchor (min(last_synced_at) across the three kinds) never
+    # moved and the next tick, 60s later, saw the same "due" decision and
+    # retried immediately — every tick, forever, instead of once per
+    # interval like the ErpError path already does below. Catch broadly
+    # here too and record a failed state before re-raising, so run_all_kinds
+    # still sees the exception (and still rolls back/logs/moves on to the
+    # next kind) but the anchor always advances regardless of *why* this
+    # kind failed.
+    try:
+        for rec in records:
+            try:
+                row = mapper(rec)
+            except KeyError:
+                continue
+            row["synced_at"] = now
 
-        exists_q = select(getattr(model, unique_col)).where(
-            getattr(model, unique_col) == row[unique_col]
+            exists_q = select(getattr(model, unique_col)).where(
+                getattr(model, unique_col) == row[unique_col]
+            )
+            existed = (await db.execute(exists_q)).scalar_one_or_none() is not None
+
+            stmt = pg_insert(model).values(**row).on_conflict_do_update(
+                index_elements=[unique_col],
+                set_={k: v for k, v in row.items() if k != unique_col},
+            )
+            await db.execute(stmt)
+
+            if existed:
+                updated += 1
+            else:
+                inserted += 1
+
+            rv = row.get("erp_rowversion")
+            if rv is not None and (max_rowversion is None or rv > max_rowversion):
+                max_rowversion = rv
+
+        new_last_ts = max_rowversion or (state.last_ts if state else None) or now
+        await _write_state(
+            db, kind=kind, status="success", message="ok",
+            last_ts=new_last_ts, row_count=len(records),
         )
-        existed = (await db.execute(exists_q)).scalar_one_or_none() is not None
-
-        stmt = pg_insert(model).values(**row).on_conflict_do_update(
-            index_elements=[unique_col],
-            set_={k: v for k, v in row.items() if k != unique_col},
-        )
-        await db.execute(stmt)
-
-        if existed:
-            updated += 1
-        else:
-            inserted += 1
-
-        rv = row.get("erp_rowversion")
-        if rv is not None and (max_rowversion is None or rv > max_rowversion):
-            max_rowversion = rv
-
-    new_last_ts = max_rowversion or (state.last_ts if state else None) or now
-    await _write_state(
-        db, kind=kind, status="success", message="ok",
-        last_ts=new_last_ts, row_count=len(records),
-    )
-    await db.commit()
+        await db.commit()
+    except Exception as e:
+        # The session may be unusable after e.g. an IntegrityError — roll
+        # back before the insert-heavy _write_state can run on it.
+        await db.rollback()
+        await _write_state(db, kind=kind, status="failed", message=str(e),
+                           last_ts=state.last_ts if state else None, row_count=0)
+        await db.commit()
+        raise
 
     return {
         "kind": kind,
