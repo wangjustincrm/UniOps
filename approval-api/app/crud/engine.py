@@ -43,6 +43,20 @@ def _set_status(meta: dict, doc: Any, value: str) -> None:
     setattr(doc, meta.get("status_attr", "status"), value)
 
 
+# The same indirection for the workflow cursor. A doc_type whose _DOC_META
+# carries `step_attr` walks its own column instead of `approval_step_idx`,
+# which is what lets a second, independent workflow run over a document that
+# already has one (PO sign-off over an NC-imported PO: its `approval_step_idx`
+# belongs to the PO's own approval chain and must not be touched). Default is
+# "approval_step_idx", so every existing doc_type is unchanged.
+def _step_of(meta: dict, doc: Any) -> int:
+    return getattr(doc, meta.get("step_attr", "approval_step_idx"))
+
+
+def _set_step(meta: dict, doc: Any, value: int) -> None:
+    setattr(doc, meta.get("step_attr", "approval_step_idx"), value)
+
+
 # ── Per-action-key metadata ───────────────────────────────────────────────────
 
 def _expense_meta(claim_type: str) -> dict:
@@ -83,6 +97,39 @@ _DOC_META: dict[str, dict] = {
         "vendor_attr":  "vendor_name",
         "task_approve": "approve_po",
         "task_revise":  "revise_po",
+        "valid_submit":  ("draft", "returned"),
+        "valid_approve": ("submitted", "in_review"),
+        "valid_return":  ("submitted", "in_review"),
+        "valid_cancel":  ("draft", "returned", "submitted"),
+    },
+    # PO sign-off — a SECOND workflow over the same purchase_orders row.
+    #
+    # NC-imported POs used to be printed and signed by hand (Purchasing Manager
+    # initials, OPM full signature) before anyone released them in NC. That
+    # process now runs here. It cannot reuse doc_type "po": these POs never walk
+    # the PO's own approval chain, and their `status` is rewritten from NC's
+    # forderstatus on every sync. status_attr / step_attr point the engine at
+    # the dedicated signoff_* columns instead, so the two workflows never
+    # collide — including their tasks, which _complete_tasks scopes by
+    # document_type.
+    #
+    # Steps are admin-configurable (Portal → Approval Workflows) like every
+    # other action key. Only company-level singleton posts make sense here:
+    # purchase_orders has no department column and an NC PO has no PR to borrow
+    # one from, so dept_manager / director / supervisor / gm_or_opm resolve to
+    # nobody at all. Portal filters the role dropdown accordingly.
+    "posign": {
+        "model":        PurchaseOrder,
+        "number_attr":  "number",
+        "amount_attr":  "total",
+        "vendor_attr":  "vendor_name",
+        "status_attr":  "signoff_status",
+        "step_attr":    "signoff_step_idx",
+        "revise_assignee_attr": "signoff_submitted_by",
+        "labels": {"doc": "PO", "revise": "PO sign-off",
+                   "approve_verb": "Sign", "approve_noun": "signature"},
+        "task_approve": "sign_po",
+        "task_revise":  "revise_po_signoff",
         "valid_submit":  ("draft", "returned"),
         "valid_approve": ("submitted", "in_review"),
         "valid_return":  ("submitted", "in_review"),
@@ -233,6 +280,13 @@ _WORKFLOW_DEFAULTS: dict[str, list[dict]] = {
     "po": [
         {"id": "proc_mgr",  "role": "procurement_manager", "label": "Procurement Manager"},
         {"id": "gm_or_opm", "role": "gm_or_opm",           "label": "GM / OPM"},
+    ],
+    # Mirrors the paper form: Purchasing Manager initials, OPM signs.
+    "posign": [
+        {"id": "proc_mgr", "role": "procurement_manager",
+         "label": "Purchasing Manager", "sig_slot": "initials"},
+        {"id": "opm", "role": "opm", "label": "Operations Manager",
+         "sig_slot": "signature"},
     ],
     "agr": [
         {"id": "dept_manager",        "role": "dept_manager",        "label": "Department Manager"},
@@ -701,7 +755,10 @@ async def _create_approve_task(
     if doc_type == "budget_plan":
         vendor = await _cc_label_for_plan(db, doc, vendor)
 
-    description = f"Step {step + 1}/{len(workflow)}: {wf['label']} review required."
+    labels = meta.get("labels", {})
+    doc_label = labels.get("doc", doc_type.upper())
+    description = (f"Step {step + 1}/{len(workflow)}: {wf['label']} "
+                   f"{labels.get('approve_noun', 'review')} required.")
     # OBG-002: enrich the over-budget pre-approval task with the requester's
     # justification so the approver sees it inline in the task inbox without
     # opening the PR detail page. Injected over-budget steps carry the ids
@@ -723,7 +780,7 @@ async def _create_approve_task(
         document_number=doc_number,
         assigned_role=assigned_role,
         assigned_user_id=assigned_user_id,
-        title=f"Approve {doc_type.upper()}: {doc_number} — {doc.title}",
+        title=f"{labels.get('approve_verb', 'Approve')} {doc_label}: {doc_number} — {doc.title}",
         description=description,
         amount=amount,
         vendor=vendor,
@@ -736,6 +793,16 @@ async def _create_revise_task(db: AsyncSession, doc_type: str, doc: Any, meta: d
     vendor = getattr(doc, meta["vendor_attr"], None) if meta.get("vendor_attr") else None
     if doc_type == "budget_plan":
         vendor = await _cc_label_for_plan(db, doc, vendor)
+    # Who gets the document back. Default is its creator, which is right for
+    # every doc_type a person raised themselves. A doc_type whose _DOC_META
+    # names `revise_assignee_attr` sends it elsewhere: an NC-imported PO's
+    # created_by is the nc-sync service account, so returning its sign-off to
+    # created_by would file the task in an inbox nobody logs into. Falls back to
+    # created_by rather than leaving assigned_user_id NULL — a NULL here
+    # broadcasts the task to every holder of assigned_role.
+    assignee = getattr(doc, meta.get("revise_assignee_attr", "created_by"), None) or doc.created_by
+    labels = meta.get("labels", {})
+    revise_label = labels.get("revise", labels.get("doc", doc_type.upper()))
     db.add(Task(
         type=meta["task_revise"],
         priority="normal",
@@ -743,9 +810,9 @@ async def _create_revise_task(db: AsyncSession, doc_type: str, doc: Any, meta: d
         document_id=doc.id,
         document_number=doc_number,
         assigned_role="requester",
-        assigned_user_id=doc.created_by,
-        title=f"Revise {doc_type.upper()}: {doc_number} — {doc.title}",
-        description=f"Your {doc_type.upper()} has been returned for revision.",
+        assigned_user_id=assignee,
+        title=f"Revise {revise_label}: {doc_number} — {doc.title}",
+        description=f"Your {revise_label} has been returned for revision.",
         amount=amount,
         vendor=vendor,
     ))
@@ -970,7 +1037,7 @@ async def execute_action(
 
     act = action.lower()
     now = datetime.now(timezone.utc)
-    step = doc.approval_step_idx
+    step = _step_of(meta, doc)
     cfg = await _get_config(db)
     rm = await get_role_management(db)
     dept_gm_opm = await get_dept_gm_opm_mapping(db)
@@ -1038,7 +1105,7 @@ async def execute_action(
             ))
             auto_skipped.append(start)
             start += 1
-        doc.approval_step_idx = start
+        _set_step(meta, doc, start)
         if start < len(workflow):
             await _create_approve_task(db, doc_type, doc, step=start, workflow=workflow,
                                        meta=meta, rm=rm, dept_gm_opm=dept_gm_opm,
@@ -1112,7 +1179,7 @@ async def execute_action(
             break
 
         if next_step < len(workflow):
-            doc.approval_step_idx = next_step
+            _set_step(meta, doc, next_step)
             _set_status(meta, doc, "in_review")
             await _create_approve_task(db, doc_type, doc, step=next_step, workflow=workflow, meta=meta, rm=rm, dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id, director_uid=director_uid, supervisor_uid=supervisor_uid)
         else:
@@ -1130,7 +1197,7 @@ async def execute_action(
             raise ValueError(f"Cannot return {doc_type.upper()} in status '{_status_of(meta, doc)}'")
         await _complete_tasks(db, doc_type, doc.id)
         _set_status(meta, doc, "returned")
-        doc.approval_step_idx = 0
+        _set_step(meta, doc, 0)
         await _create_revise_task(db, doc_type, doc, meta)
 
     elif act == "reject":
@@ -1163,7 +1230,7 @@ async def execute_action(
             raise ValueError(f"Only the submitter can recall this {doc_type.upper()}")
         await _complete_tasks(db, doc_type, doc.id)
         _set_status(meta, doc, "draft")
-        doc.approval_step_idx = 0
+        _set_step(meta, doc, 0)
 
     elif act == "cancel":
         if _status_of(meta, doc) not in meta["valid_cancel"]:
@@ -1219,7 +1286,7 @@ async def execute_action(
         doc_id=doc.id,
         doc_number=doc_number,
         new_status=new_status,
-        approval_step_idx=doc.approval_step_idx,
+        approval_step_idx=_step_of(meta, doc),
         workflow_complete=new_status in ("approved", "rejected", "cancelled", "processed"),
         auto_skipped_steps=auto_skipped,
     )
@@ -1310,7 +1377,7 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
         await db.flush()
         return {"doc_type": doc_type, "number": number,
                 "actions": [f"complete {len(open_tasks)} stale approve task(s) (status={status})"],
-                "final_step": doc.approval_step_idx}
+                "final_step": _step_of(meta, doc)}
 
     cfg = await _get_config(db)
     rm = await get_role_management(db)
@@ -1332,8 +1399,8 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
         if not mapped:
             return None  # only unknown-role tasks (e.g. ap_clerk) — leave alone
         true_step = min(i for i, _ in mapped)
-    elif doc.approval_step_idx < len(workflow):
-        true_step = doc.approval_step_idx
+    elif _step_of(meta, doc) < len(workflow):
+        true_step = _step_of(meta, doc)
     else:
         return None  # no task and step out of range — can't infer, leave alone
 
@@ -1359,7 +1426,7 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
             skipped.append(r)
             start += 1
         await _complete_tasks(db, doc_type, doc.id)
-        doc.approval_step_idx = start
+        _set_step(meta, doc, start)
         if start < len(workflow):
             _set_status(meta, doc, "in_review")
             await _create_approve_task(
@@ -1375,12 +1442,12 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
                 await post_fn(db, doc)
         actions.append(f"skip {skipped}: step {true_step}->{start}")
         await db.flush()
-        return {"doc_type": doc_type, "number": number, "actions": actions, "final_step": doc.approval_step_idx}
+        return {"doc_type": doc_type, "number": number, "actions": actions, "final_step": _step_of(meta, doc)}
 
     # Case B — realign the stored step index to the real (task-derived) step.
-    if doc.approval_step_idx != true_step:
-        actions.append(f"step {doc.approval_step_idx}->{true_step}")
-        doc.approval_step_idx = true_step
+    if _step_of(meta, doc) != true_step:
+        actions.append(f"step {_step_of(meta, doc)}->{true_step}")
+        _set_step(meta, doc, true_step)
 
     # Case C — fix a drifted / stray-step assignee at the real step.
     des_role, des_uid = await _resolved_assignee_for_step(
@@ -1416,7 +1483,7 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
     if not actions:
         return None
     await db.flush()
-    return {"doc_type": doc_type, "number": number, "actions": actions, "final_step": doc.approval_step_idx}
+    return {"doc_type": doc_type, "number": number, "actions": actions, "final_step": _step_of(meta, doc)}
 
 
 async def resync_inflight_approvals(db: AsyncSession) -> dict:

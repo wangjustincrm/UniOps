@@ -14,6 +14,14 @@ _DEFAULT_PA = [
     {"id": "finance_bp",      "role": "finance_bp",      "label": "Finance BP Review"},
     {"id": "finance_manager", "role": "finance_manager",  "label": "Finance Manager Approval"},
 ]
+# Mirrors engine._WORKFLOW_DEFAULTS["posign"] — the paper form this replaces:
+# Purchasing Manager initials, OPM signs.
+_DEFAULT_POSIGN = [
+    {"id": "proc_mgr", "role": "procurement_manager",
+     "label": "Purchasing Manager", "sig_slot": "initials"},
+    {"id": "opm", "role": "opm", "label": "Operations Manager",
+     "sig_slot": "signature"},
+]
 
 
 async def _get_config(db: AsyncSession) -> CompanyConfig | None:
@@ -26,7 +34,8 @@ async def get_workflow(db: AsyncSession, doc_type: str) -> list[dict]:
         nodes = cfg.workflow_defs.get(doc_type, [])
         if nodes:
             return nodes
-    defaults = {"pr": _DEFAULT_PR, "po": _DEFAULT_PO, "pa": _DEFAULT_PA}
+    defaults = {"pr": _DEFAULT_PR, "po": _DEFAULT_PO, "pa": _DEFAULT_PA,
+                "posign": _DEFAULT_POSIGN}
     return defaults.get(doc_type, [])
 
 

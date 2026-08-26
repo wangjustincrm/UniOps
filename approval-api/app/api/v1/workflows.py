@@ -8,7 +8,7 @@ from app.schemas.resolution import RoleManagementResponse
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
-_DOC_TYPES = ("pr", "po", "pa", "vms_visit")
+_DOC_TYPES = ("pr", "po", "pa", "vms_visit", "posign")
 
 
 @router.get("", response_model=AllWorkflowDefs)
