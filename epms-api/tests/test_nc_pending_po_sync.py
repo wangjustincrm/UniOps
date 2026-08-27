@@ -401,6 +401,52 @@ def test_reconcile_touches_nothing_but_pending_rows(
     assert _status(pg_cur, other)[0] == status
 
 
+def test_reconcile_takes_an_open_signoff_down_with_the_order(
+        pg_cur, seeded_vendor, system_user_id):
+    """An order NC has retracted is not something anyone should still sign.
+
+    signoff_status is otherwise none of this sync's business — it rewrites
+    `status` on every run and must never touch the sign-off columns — but a
+    withdrawn order would leave its signature task open in the Purchasing
+    Manager's inbox with nothing behind it.
+    """
+    pid = _insert_nc_po(pg_cur, seeded_vendor, system_user_id,
+                        nc_pk="O-GONE-SIG", number="PO-GONE-SIG-01",
+                        status="nc_pending")
+    pg_cur.execute(
+        "update purchase_orders set signoff_status='submitted', signoff_step_idx=0 "
+        "where id=%s", (pid,))
+    pg_cur.execute(
+        "insert into tasks (id,type,priority,document_type,document_id,document_number,"
+        " assigned_role,title,is_completed,created_at,updated_at) "
+        "values (%s,'sign_po','normal','posign',%s,'PO-GONE-SIG-01',"
+        " 'procurement_manager','Sign PO',false,now(),now())",
+        (uuid.uuid4(), pid))
+
+    writer.reconcile_pending(pg_cur, set())
+
+    pg_cur.execute("select status, signoff_status from purchase_orders where id=%s", (pid,))
+    assert pg_cur.fetchone() == ("cancelled", "cancelled")
+    pg_cur.execute(
+        "select is_completed from tasks where document_type='posign' and document_id=%s",
+        (pid,))
+    assert pg_cur.fetchone()[0] is True
+
+
+def test_reconcile_leaves_a_signoff_that_was_never_raised(
+        pg_cur, seeded_vendor, system_user_id):
+    """'draft' means nobody ever raised one — cancelling it would read, in the
+    UI and in any later report, as a sign-off that was called off."""
+    pid = _insert_nc_po(pg_cur, seeded_vendor, system_user_id,
+                        nc_pk="O-GONE-NOSIG", number="PO-GONE-NOSIG-01",
+                        status="nc_pending")
+
+    writer.reconcile_pending(pg_cur, set())
+
+    pg_cur.execute("select signoff_status from purchase_orders where id=%s", (pid,))
+    assert pg_cur.fetchone()[0] == "draft"
+
+
 def test_reconcile_is_idempotent(pg_cur, seeded_vendor, system_user_id):
     pid = _insert_nc_po(pg_cur, seeded_vendor, system_user_id,
                         nc_pk="O-GONE", number="PO-GONE-02", status="nc_pending")

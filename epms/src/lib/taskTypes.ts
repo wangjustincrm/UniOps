@@ -65,6 +65,9 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   gr_damage_report: 'Report Goods Damage',
   approve_budget_plan: 'Approve Budget Plan',
   revise_budget_plan: 'Revise Budget Plan',
+  // PO sign-off (NC imports) — approval-api's posign action key.
+  sign_po: 'Sign Purchase Order',
+  revise_po_signoff: 'Revise PO Sign-off',
 }
 
 // ─── Navigation ────────────────────────────────────────────────────────────────
@@ -77,6 +80,10 @@ const HREF_MAP: Record<string, string> = {
   invoice: '/invoices',
   pa: '/pa',
   agr: '/agreements',
+  // PO sign-off tasks carry document_type 'posign' but anchor on the PO. Miss
+  // this and the fallback below yields a bare "/<uuid>" — the same dead card
+  // the vms_* branch above was added to fix.
+  posign: '/po',
 }
 
 // A task carries a type plus the document it anchors on. Accept the minimal shape

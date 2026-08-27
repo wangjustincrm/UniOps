@@ -1,4 +1,6 @@
 """PDF generator for Purchase Orders using ReportLab."""
+import base64
+import logging
 from datetime import datetime, timezone
 from io import BytesIO
 from xml.sax.saxutils import escape
@@ -7,8 +9,10 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     HRFlowable,
+    Image,
     KeepTogether,
     Paragraph,
     SimpleDocTemplate,
@@ -29,8 +33,34 @@ _GRAY    = colors.HexColor("#737373")
 _DARK    = colors.HexColor("#1A1A1A")
 
 
+_log = logging.getLogger(__name__)
+
+
 def _s(name: str, **kw) -> ParagraphStyle:
     return ParagraphStyle(name, **kw)
+
+
+def _signature_image(data_url: str | None, max_w: float, max_h: float, align: str):
+    """Scale a stored signature into a flowable, or None if it cannot be read.
+
+    Always fails soft. A signature is one element of a document that must keep
+    rendering: a corrupt or unexpected image has to cost the ink on that line,
+    not the whole PO PDF.
+    """
+    if not data_url or not data_url.startswith("data:image/"):
+        return None
+    try:
+        raw = base64.b64decode(data_url.split(",", 1)[1])
+        width, height = ImageReader(BytesIO(raw)).getSize()
+        if not width or not height:
+            return None
+        scale = min(max_w / width, max_h / height)
+        img = Image(BytesIO(raw), width=width * scale, height=height * scale)
+        img.hAlign = align
+        return img
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("Could not render a stored signature: %s", exc)
+        return None
 
 
 def generate_po_pdf(
@@ -39,6 +69,7 @@ def generate_po_pdf(
     pdf_templates: dict | None = None,
     logo_data_url: str | None = None,
     signatory_name: str | None = None,
+    signatures: list[dict] | None = None,
 ) -> bytes:
     """Render an approved PurchaseOrder to PDF applying Admin Panel → PDF Templates settings."""
     tmpl = get_tmpl(pdf_templates, "po")
@@ -251,9 +282,23 @@ def generate_po_pdf(
         # Derived from _PRIMARY rather than hard-coded so a palette change moves both.
         _accent = f"#{_PRIMARY.hexval()[2:]}"
         sig_entity_style = _s("sig_entity", fontSize=10, textColor=_PRIMARY, fontName="Helvetica-Bold")
-        col_w = 80 * mm
+        # 70/30/70 rather than the original 80/10/80: the middle column stopped
+        # being a spacer once it started carrying the Purchasing Manager's
+        # initials, and 10mm cannot hold a signature. The two blocks stay wide
+        # enough for a long vendor name.
+        col_w = 70 * mm
         gap_w = W - 2 * col_w
         line_w = col_w - 8 * mm
+
+        # Signatures captured during sign-off, keyed by the slot their workflow
+        # step declares. A step with no slot is still signed and still recorded
+        # — it just does not appear on this vendor-facing document.
+        by_slot = {s["sig_slot"]: s for s in (signatures or []) if s.get("sig_slot")}
+        our_signature = by_slot.get("signature")
+        initials = by_slot.get("initials")
+        # Once signed, the person who actually signed names the block. Falling
+        # back to the resolved OPM keeps unsigned POs printing exactly as before.
+        our_name = (our_signature or {}).get("signer_name") or signatory_name
 
         # Built as a 3-row table — entity names / rules / Name+Title — rather
         # than two independently-flowing column cells, so that the rules
@@ -288,9 +333,19 @@ def generate_po_pdf(
         sig_table = Table(
             [
                 [_entity(company_name), "", _entity(po.vendor_name)],
-                ["", "", ""],                                   # clear signing space
+                # Signing space: our signature sits on its own rule, the
+                # Purchasing Manager's initials go between the two blocks —
+                # the same places they occupy on the paper form. Unsigned, all
+                # three stay blank and the sheet can still be signed by hand.
+                [
+                    _signature_image((our_signature or {}).get("signature_image"),
+                                     line_w, 11 * mm, "LEFT") or "",
+                    _signature_image((initials or {}).get("signature_image"),
+                                     gap_w - 6 * mm, 9 * mm, "CENTER") or "",
+                    "",
+                ],
                 [_rule(), "", _rule()],
-                [_field("Name", signatory_name), "", _field("Name", None)],
+                [_field("Name", our_name), "", _field("Name", None)],
                 # "Operations Manager" — the same spelling the opm role label
                 # carries everywhere else (identity's seed_authz, epms config,
                 # all three frontends). This block was the one place that said
@@ -298,10 +353,16 @@ def generate_po_pdf(
                 [_field("Title", "Operations Manager"), "", _field("Title", None)],
             ],
             colWidths=[col_w, gap_w, col_w],
+            # The signing band is a fixed height so a signed and an unsigned PO
+            # lay out identically — the image is scaled to fit it, never the
+            # other way round.
             rowHeights=[None, 13 * mm, None, None, None],
         )
         sig_table.setStyle(TableStyle([
             ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+            # Signatures sit ON the rule beneath them, not floating at the top
+            # of the band.
+            ("VALIGN",        (0, 1), (-1, 1), "BOTTOM"),
             # Keep ReportLab's default 6pt horizontal cell padding. Every W-wide
             # table on this page is laid out 6pt left of the frame's content edge,
             # and they all line up with the section headings only *because* that

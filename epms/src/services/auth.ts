@@ -24,6 +24,8 @@ export interface ApiUser {
   notification_channel?: NotificationChannel
   mfa_enabled?: boolean
   must_change_password?: boolean
+  /** Preset signature as a base64 data: URL. "" clears it; omit to leave it. */
+  signature_image?: string | null
 }
 
 export const authService = {

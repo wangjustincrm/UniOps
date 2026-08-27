@@ -61,6 +61,36 @@ class PurchaseOrder(UUIDPrimaryKey, TimestampMixin, Base):
 
     approval_step_idx: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    # ── Sign-off (NC-imported POs) ────────────────────────────────────────
+    # A workflow of its own, deliberately kept orthogonal to `status`:
+    # nc_purchase_sync/writer.py rewrites `status` on EVERY sync from NC's
+    # forderstatus, so anything parked there is gone by the next run. These
+    # columns are never in the writer's UPDATE lists.
+    #
+    # The value domain is the approval engine's standard one (draft →
+    # submitted → in_review → approved / returned / rejected / cancelled)
+    # because the engine writes these literals itself; the engine reaches
+    # them through _DOC_META's status_attr / step_attr indirection. The UI
+    # renders them as Not started / Awaiting signature / Signed.
+    signoff_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="draft", index=True
+    )
+    signoff_step_idx: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    signoff_submitted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    signoff_submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    signoff_signatures: Mapped[list["PoSignoffSignature"]] = relationship(
+        "PoSignoffSignature", back_populates="po",
+        cascade="all, delete-orphan", lazy="selectin",
+        order_by="PoSignoffSignature.step_idx",
+    )
+
     # Source PR (optional — PO can be created without a PR)
     pr_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("purchase_requests.id", ondelete="RESTRICT"),

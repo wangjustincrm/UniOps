@@ -681,6 +681,54 @@ async def is_pr_visible(db: AsyncSession, pr_id: uuid.UUID, scope: dict) -> bool
     return row is not None
 
 
+async def _signoff_grants_po_visibility(
+    db: AsyncSession, po_id: uuid.UUID, scope: dict,
+) -> bool:
+    """True if this user's part in the PO's sign-off entitles them to see it.
+
+    NC-imported POs have no department and no PR, so the department-scoped
+    po_subq never contains them — and OPM, the second signatory, is a
+    RESTRICTED role. Without this, being asked to sign a PO and being able to
+    open it were two different things: the task landed in the OPM's inbox and
+    the link 404'd.
+
+    Three ways in, all of them "you are actually part of this sign-off":
+      - an open sign-off task addressed to you, either pinned or broadcast to a
+        post you hold (the same match the Task Inbox makes, so inbox and
+        document agree);
+      - you already signed it — a signatory keeps access to what they signed;
+      - you raised it.
+    """
+    user_id = scope["user_id"]
+    codes = await _effective_role_codes(db, scope.get("role", ""), user_id)
+    task = (await db.execute(
+        select(Task.id).where(
+            Task.document_type == "posign",
+            Task.document_id == po_id,
+            Task.is_completed.is_(False),
+            sa.or_(
+                Task.assigned_user_id == user_id,
+                sa.and_(Task.assigned_user_id.is_(None),
+                        Task.assigned_role.in_(list(codes) or [""])),
+            ),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if task is not None:
+        return True
+    signed = (await db.execute(sa.text(
+        "SELECT 1 FROM po_signoff_signatures WHERE po_id = :p AND signed_by = :u LIMIT 1"),
+        {"p": str(po_id), "u": str(user_id)})).scalar_one_or_none()
+    if signed is not None:
+        return True
+    raised = (await db.execute(
+        select(PurchaseOrder.id).where(
+            PurchaseOrder.id == po_id,
+            PurchaseOrder.signoff_submitted_by == user_id,
+        )
+    )).scalar_one_or_none()
+    return raised is not None
+
+
 async def is_po_visible(db: AsyncSession, po_id: uuid.UUID, scope: dict) -> bool:
     """True if the given PO id falls inside the user's po_subq (or unrestricted)."""
     if not _scope_allows_view(scope, "view_po"):
@@ -691,7 +739,9 @@ async def is_po_visible(db: AsyncSession, po_id: uuid.UUID, scope: dict) -> bool
     row = (await db.execute(
         select(PurchaseOrder.id).where(PurchaseOrder.id == po_id).where(PurchaseOrder.id.in_(po_subq))
     )).scalar_one_or_none()
-    return row is not None
+    if row is not None:
+        return True
+    return await _signoff_grants_po_visibility(db, po_id, scope)
 
 
 async def is_gr_visible(db: AsyncSession, gr, scope: dict) -> bool:

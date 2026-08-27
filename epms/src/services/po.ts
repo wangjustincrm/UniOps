@@ -223,4 +223,62 @@ export const poService = {
 
   workflowSteps: (id: string) =>
     api.get<WorkflowNodeDef[]>(`/po/${id}/workflow-steps`),
+
+  // ── Sign-off (NC-imported POs) ────────────────────────────────────────────
+  signoff: (id: string) =>
+    api.get<PoSignoffState>(`/po/${id}/signoff`),
+
+  submitSignoff: (id: string, justification: string) =>
+    api.post<PoSignoffState>(`/po/${id}/signoff/submit`, { justification }),
+
+  signSignoff: (id: string, comment?: string) =>
+    api.post<PoSignoffState>(`/po/${id}/signoff/sign`, { comment }),
+
+  returnSignoff: (id: string, comment: string) =>
+    api.post<PoSignoffState>(`/po/${id}/signoff/return`, { comment }),
+
+  addSignoffNote: (id: string, comment: string) =>
+    api.post<PoSignoffState>(`/po/${id}/signoff/note`, { comment }),
+}
+
+// ── Sign-off types ──────────────────────────────────────────────────────────
+// signoff_status reuses the approval engine's own literals; the UI renders them
+// as Not started / Awaiting signature / Signed rather than showing them raw.
+export type PoSignoffStatus =
+  | 'draft' | 'submitted' | 'in_review' | 'approved' | 'returned'
+  | 'rejected' | 'cancelled'
+
+export interface PoSignoffStep {
+  id: string
+  role: string
+  label: string
+  /** Where this step's signature lands on the PDF, null = nowhere. */
+  sig_slot: 'initials' | 'signature' | null
+  holder_count: number
+  holders_without_signature: string[]
+  signed_by_name: string | null
+  signed_at: string | null
+}
+
+export interface PoSignoffThreadEntry {
+  action: string
+  actor_name: string | null
+  actor_role: string
+  comment: string | null
+  at: string
+}
+
+export interface PoSignoffState {
+  status: PoSignoffStatus
+  step_idx: number
+  submitted_by: string | null
+  submitted_by_name: string | null
+  submitted_at: string | null
+  steps: PoSignoffStep[]
+  thread: PoSignoffThreadEntry[]
+  can_submit: boolean
+  can_sign: boolean
+  can_note: boolean
+  /** Full sentences, shown verbatim — each says what to go and fix. */
+  blockers: string[]
 }

@@ -24,6 +24,7 @@ from app.api.v1.pa_attachments import router as pa_attachments_router
 from app.api.v1.parts import router as parts_router
 from app.api.v1.pms_import import router as pms_import_router
 from app.api.v1.po import router as po_router
+from app.api.v1.po_signoff import router as po_signoff_router
 from app.api.v1.po_attachments import router as po_attachments_router
 from app.api.v1.pr import router as pr_router
 from app.api.v1.pr_attachments import router as pr_attachments_router
@@ -44,6 +45,7 @@ api_router.include_router(projects_router)
 api_router.include_router(pr_router)
 api_router.include_router(pr_attachments_router)
 api_router.include_router(po_router)
+api_router.include_router(po_signoff_router)
 api_router.include_router(po_attachments_router)
 api_router.include_router(gr_router)
 api_router.include_router(gr_attachments_router)

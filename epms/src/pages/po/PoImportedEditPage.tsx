@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { ImportedPoLineItems, type ImportedPoLine } from '@/components/po/ImportedPoLineItems'
+import { PoSignoffSummary } from '@/components/po/PoSignoffSummary'
 import { usePo, useUpdatePoImportedDetails, useRegeneratePoPdf } from '@/hooks/usePos'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { useConfig } from '@/hooks/useConfig'
@@ -417,6 +418,8 @@ export default function PoImportedEditPage() {
                     className="w-full rounded border border-neutral-300 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600" />
         </FormField>
       </section>
+
+      <PoSignoffSummary poId={po.id} source={po.source ?? null} />
 
       {blankAddedLine && (
         <p className="text-right text-sm text-danger-600">

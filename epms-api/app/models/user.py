@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -56,3 +56,9 @@ class User(UUIDPrimaryKey, TimestampMixin, Base):
     # True when the user was created via the ERP import flow. ERP-imported users
     # have a read-only ERP Code; manually created users can edit it.
     erp_imported: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Hand-drawn or uploaded signature, as a base64 `data:image/...` URL. Used
+    # by the PO sign-off flow: the signature is snapshotted onto the document
+    # at the moment of signing, never read live at render time (see
+    # models/po_signoff_signature.py for why).
+    signature_image: Mapped[str | None] = mapped_column(Text, nullable=True)

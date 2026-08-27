@@ -14,7 +14,7 @@ vi.mock('@/stores/auth.store', () => ({
   useAuthStore: { getState: () => ({ token: null, refreshToken: null, user: null }) },
 }))
 
-import { taskHref } from './taskTypes'
+import { TASK_TYPE_LABELS, taskHref } from './taskTypes'
 import { VMS_URL } from './api'
 
 const VISIT_ID = '11111111-1111-4111-8111-111111111111'
@@ -57,5 +57,33 @@ describe('taskHref — EPMS doc types still resolve in-app', () => {
   it('sends create_pa to the prefilled PA create page', () => {
     expect(taskHref({ type: 'create_pa', document_type: 'po', document_id: VISIT_ID }))
       .toBe(`/pa/create?poId=${VISIT_ID}`)
+  })
+})
+
+describe('taskHref — PO sign-off', () => {
+  const PO_ID = '33333333-3333-4333-8333-333333333333'
+
+  it('routes a sign-off task to the PO it anchors on', () => {
+    // document_type is 'posign', not 'po' — the sign-off is a separate workflow
+    // over the same row, so its tasks and the PO's own tasks stay apart. The
+    // card still has to open the PO.
+    for (const type of ['sign_po', 'revise_po_signoff']) {
+      expect(taskHref({ type, document_type: 'posign', document_id: PO_ID }))
+        .toBe(`/po/${PO_ID}`)
+    }
+  })
+
+  it('does not fall through to the dead bare-uuid link', () => {
+    const href = taskHref({ type: 'sign_po', document_type: 'posign', document_id: PO_ID })
+    expect(href).not.toBe(`/${PO_ID}`)
+  })
+})
+
+describe('TASK_TYPE_LABELS — PO sign-off', () => {
+  it('labels both sign-off task types', () => {
+    // The inbox falls back to the raw type string, so a missing label shows
+    // "sign_po" on the card rather than failing loudly.
+    expect(TASK_TYPE_LABELS.sign_po).toBe('Sign Purchase Order')
+    expect(TASK_TYPE_LABELS.revise_po_signoff).toBe('Revise PO Sign-off')
   })
 })

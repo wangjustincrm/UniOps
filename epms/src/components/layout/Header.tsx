@@ -31,6 +31,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   create: 'Create',
   edit: 'Edit',
   collect: 'Collection',
+  report: 'Receiving Report',
   settle: 'Settlement',
 }
 

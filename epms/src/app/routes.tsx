@@ -12,6 +12,7 @@ import PoEditPage from '@/pages/po/PoEditPage'
 import PoImportedEditPage from '@/pages/po/PoImportedEditPage'
 import GrListPage from '@/pages/gr/GrListPage'
 import GrCreatePage from '@/pages/gr/GrCreatePage'
+import ReceivingReportPage from '@/pages/gr/ReceivingReportPage'
 import GrDetailPage from '@/pages/gr/GrDetailPage'
 import CollectionConfirmPage from '@/pages/gr/CollectionConfirmPage'
 import ServiceGrConfirmPage from '@/pages/gr/ServiceGrConfirmPage'
@@ -60,6 +61,9 @@ export const epmsRoutes: RouteDef[] = [
 
   { path: '/gr', element: <GrListPage />, tab: { title: 'Goods Receipt', icon: 'Warehouse', keyStrategy: 'static' } },
   { path: '/gr/new', element: <GrCreatePage />, tab: { title: 'New GR', icon: 'Plus', keyStrategy: 'static' } },
+  // Literal, so it must sit above /gr/:id — that route would otherwise claim
+  // 'report' as a document id.
+  { path: '/gr/report', element: <ReceivingReportPage />, tab: { title: 'Receiving Report', icon: 'ClipboardList', keyStrategy: 'static' } },
   { path: '/gr/:id/collect', element: <CollectionConfirmPage />, tab: { title: (p) => `Collect ${short(p.id)}`, icon: 'Warehouse', keyStrategy: 'param', paramName: 'id' } },
   { path: '/gr/:id/service-confirm', element: <ServiceGrConfirmPage />, tab: { title: (p) => `Confirm ${short(p.id)}`, icon: 'Warehouse', keyStrategy: 'param', paramName: 'id' } },
   { path: '/gr/:id', element: <GrDetailPage />, tab: { title: (p) => `GR ${short(p.id)}`, icon: 'Warehouse', keyStrategy: 'param', paramName: 'id' } },

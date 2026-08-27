@@ -182,6 +182,14 @@ async function request<T>(
   return res.json() as Promise<T>
 }
 
+/**
+ * Download an epms-api file response, triggering a browser Save-As dialog.
+ * The server's Content-Disposition names the file unless `filename` overrides it.
+ */
+export async function downloadFile(path: string, params?: Params, filename?: string): Promise<void> {
+  return downloadCsv(path, params, filename)
+}
+
 /** Download a CSV file, triggering a browser Save-As dialog. */
 export async function downloadCsv(path: string, params?: Params, filename?: string): Promise<void> {
   const url = new URL(`${BASE}${path}`, window.location.origin)

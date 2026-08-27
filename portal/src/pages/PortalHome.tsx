@@ -117,6 +117,10 @@ const DOC_PATH: Record<string, string> = {
   vms_visit: '/',
   vms_train: '/visitor',
   vms_ppe:   '/visitor',
+  // PO sign-off tasks carry document_type 'posign' and anchor on the PO.
+  // Without this the fallback below deep-links to /dashboard/<uuid>, which is
+  // not a page.
+  posign: '/po',
 }
 
 // Tasks whose document_type belongs to VMS (deep-linked to VMS_URL, not EPMS_URL).

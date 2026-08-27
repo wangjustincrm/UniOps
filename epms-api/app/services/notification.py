@@ -51,6 +51,10 @@ def _task_link(document_type: str, document_id: Any, task_type: str | None = Non
         # OA expense-claim default below and deep-linked to /expenses/<agr id>,
         # which 404s.
         "agr":         (settings.EPMS_URL,    "/agreements/{id}"),
+        # PO sign-off tasks carry document_type "posign" but point at the PO
+        # itself. Without this row they would fall through to the OA default
+        # below and deep-link to /expenses/<po id>, exactly as agr once did.
+        "posign":      (settings.EPMS_URL,    "/po/{id}"),
         "pa_dir":      (settings.OA_URL,      "/pa/{id}"),          # OA Direct PA detail
         "budget_plan": (settings.FINANCE_URL, "/budget/plans/{id}"),
         "vms_visit":   (settings.VMS_URL,     ""),                  # VMS routes by role from its root
@@ -422,6 +426,8 @@ def _infer_template(task_type: str, is_followup: bool) -> str:
         "revise_pr": "pr_returned",
         "create_po": "po_creation_request",
         "approve_po": "po_approval_request",
+        "sign_po": "po_signature_request",
+        "revise_po_signoff": "po_signoff_returned",
         "place_order": "po_place_order",
         "acknowledge_gr": "gr_created",
         "collect_goods": "gr_collection_ready",
@@ -478,6 +484,68 @@ async def send_admin_alert(subject: str, body_html: str, db: AsyncSession | None
                 logger.warning("Admin alert to %s failed: %s", admin.email, exc)
     except Exception as exc:  # noqa: BLE001
         logger.error("send_admin_alert failed (%s): %s", subject, exc)
+
+
+async def send_signoff_complete(po_id, db: AsyncSession | None = None) -> None:
+    """Tell whoever raised a PO sign-off that every signatory has signed.
+
+    Deliberately an email and not a Task: the remaining step happens in NC, so
+    UniOps has nothing to mark done and a task would sit open forever. Never
+    raises — a failed notification must not roll back the signature that
+    triggered it.
+    """
+    try:
+        if db is None:
+            from app.db.session import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                await send_signoff_complete(po_id, db=session)
+            return
+
+        from app.crud.config import get_or_create as get_config
+        from app.models.po import PurchaseOrder
+        from app.services.email import send_email
+
+        po = (await db.execute(
+            select(PurchaseOrder).where(PurchaseOrder.id == po_id)
+        )).scalar_one_or_none()
+        if po is None or po.signoff_submitted_by is None:
+            return
+        recipient = (await db.execute(
+            select(User).where(User.id == po.signoff_submitted_by)
+        )).scalar_one_or_none()
+        if recipient is None or not recipient.email or not recipient.is_active:
+            return
+
+        cfg = await get_config(db)
+        settings_map = cfg.notification_settings or {}
+        if settings_map.get("default_channel") == "none":
+            return
+        # Respect the recipient's own delivery preference, same as _dispatch.
+        if recipient.notification_channel in ("none", "teams_only"):
+            return
+
+        signatories = ", ".join(
+            f"{s.signer_name}" for s in sorted(po.signoff_signatures, key=lambda x: x.step_idx)
+        ) or "—"
+        tpl = (cfg.email_templates or {}).get("po_signoff_complete") or {}
+        variables = {
+            "company_name": cfg.name,
+            "recipient_name": recipient.full_name,
+            "po_number": po.number,
+            "signatories": signatories,
+            "link": _task_link("posign", po.id),
+        }
+        subject = _render(tpl.get("subject", "PO {po_number} is fully signed"), variables)
+        body = _render(tpl.get("body", "PO {po_number} has been signed."), variables)
+        await send_email(recipient.email, subject, _build_email_html(body), **_smtp_kwargs(cfg))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("send_signoff_complete failed for PO %s: %s", po_id, exc)
+
+
+def fire_and_forget_signoff_complete(po_id) -> None:
+    """Schedule the sign-off completion email (own DB session)."""
+    from app.core.background import spawn
+    spawn(send_signoff_complete(po_id), name=f"signoff_complete:{po_id}")
 
 
 def fire_and_forget_admin_alert(subject: str, body_html: str) -> None:
