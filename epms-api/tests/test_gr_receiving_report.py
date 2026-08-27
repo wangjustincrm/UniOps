@@ -205,7 +205,16 @@ async def test_nc_mirrored_orders_are_excluded(admin_client, test_engine):
     before = [r["gr_number"] for r in (await admin_client.get(REPORT_URL, params=WIDE)).json()["items"]]
     assert gr["number"] in before
 
-    await _stamp(test_engine, po_id=po["id"], po_fields={"source": "nc"})
+    # Both sides get source='nc', which is what the mirror actually writes: an
+    # ERP order arrives with its receipts. Stamping only the PO would leave a
+    # pair that cannot exist in production — and would wedge the suite, because
+    # test_nc_purchase_writer's cleanup deletes NC goods receipts before NC
+    # orders, so a non-NC receipt hanging off an NC order makes that DELETE
+    # raise ForeignKeyViolation and every test after it error out in setup.
+    await _stamp(
+        test_engine, po_id=po["id"], gr_id=gr["id"],
+        po_fields={"source": "nc"}, gr_fields={"source": "nc"},
+    )
     after = [r["gr_number"] for r in (await admin_client.get(REPORT_URL, params=WIDE)).json()["items"]]
     assert gr["number"] not in after
 
