@@ -136,6 +136,7 @@ async def _generate_pr_pdf_background(pr_id: uuid.UUID, pr_number: str, token: s
     from app.models.pr import PurchaseRequest
     from app.models.pr_attachment import PrAttachment
     from app.models.config import CompanyConfig
+    from app.services import budget_client
     from app.services.attachment_helper import upload_to_file_server
     from app.db.session import AsyncSessionLocal
     from sqlalchemy import select as sa_select
@@ -166,12 +167,16 @@ async def _generate_pr_pdf_background(pr_id: uuid.UUID, pr_number: str, token: s
                 fresh_db, "pr", pr_id, pr_row.created_by
             )
 
+            budget_account_name = await budget_client.get_account_name(
+                token, pr_row.budget_code
+            )
+
             loop = asyncio.get_event_loop()
             pdf_bytes = await loop.run_in_executor(
                 None, generate_pr_pdf, pr_row, company_name,
                 cfg.pdf_templates if cfg else None,
                 cfg.logo_data_url if cfg else None,
-                requester_name, approvals,
+                requester_name, approvals, budget_account_name,
             )
             storage_key = await upload_to_file_server(
                 pdf_bytes, f"{pr_number}.pdf", "application/pdf", "pr", pr_id, token,

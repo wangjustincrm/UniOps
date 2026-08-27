@@ -58,6 +58,31 @@ async def get_balance(
         return None
 
 
+async def get_account_name(bearer_token: str | None, code: str | None) -> str | None:
+    """The budget account's display name for a given code, or None.
+
+    budget-api exposes no by-code lookup, so this pulls the catalog (168 rows
+    today) and matches client-side -- the same thing the PR Detail page does
+    with its cached catalog query.
+
+    Fail-open like the rest of this module: a document must still render when
+    budget-api is unreachable, just with the bare code as before.
+    """
+    if not code:
+        return None
+    url = f"{settings.BUDGET_API_URL}/api/v1/accounts"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(url, headers=_auth_headers(bearer_token))
+            r.raise_for_status()
+            for acct in r.json():
+                if acct.get("code") == code:
+                    return acct.get("name") or None
+    except (httpx.HTTPError, ValueError) as e:
+        logger.warning("budget-api /accounts unreachable: %s — rendering the code alone", e)
+    return None
+
+
 async def compute_over_budget(
     bearer_token: str | None,
     cost_center_id: uuid.UUID | None,

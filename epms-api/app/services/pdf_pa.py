@@ -18,7 +18,7 @@ from reportlab.platypus import (
 from app.models.pa import PaymentApplication
 from app.services.pdf_template import (
     approvals_element, build_logo, footer_note_element, get_tmpl,
-    header_note_element, terms_element,
+    header_note_element, qty_text, terms_element, unit_price_text,
 )
 
 _PRIMARY = colors.HexColor("#0A7C7C")
@@ -127,9 +127,13 @@ def generate_pa_pdf(
         rows.append([
             Paragraph(str(i), td_style),
             Paragraph(item.description, td_style),
-            Paragraph(str(item.qty.normalize()), td_style),
+            Paragraph(qty_text(item.qty), td_style),
             Paragraph(item.unit, td_style),
-            Paragraph(f"{item.unit_price:,.2f}", td_style),
+            # pa_line_items.unit_price holds five decimals (it is copied from
+            # the PO line, and NC quotes purchase prices to five) -- printing
+            # it at two silently rounds the price the PDF vouches for. Line
+            # totals below stay at two: those are payable amounts.
+            Paragraph(unit_price_text(item.unit_price), td_style),
             Paragraph(f"{item.line_total:,.2f}", td_style),
         ])
 

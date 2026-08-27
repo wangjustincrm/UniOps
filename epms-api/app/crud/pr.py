@@ -462,11 +462,26 @@ async def action(
 
 # ── PDF attachment helper ──────────────────────────────────────────────────────
 
-async def _attach_pr_pdf(db: AsyncSession, pr: PurchaseRequest, company_name: str) -> None:
-    """Generate an approved-PR PDF and store it as an attachment."""
+async def _attach_pr_pdf(
+    db: AsyncSession, pr: PurchaseRequest, company_name: str,
+    bearer_token: str | None = None,
+) -> None:
+    """Generate an approved-PR PDF and store it as an attachment.
+
+    ``action()`` carries no bearer token, so the budget account name usually
+    resolves to None here and the PDF shows the bare code -- as it always did.
+    The live approval path (api/v1/pr.py) regenerates the PDF with a token.
+    """
     import asyncio
+    budget_account_name = (
+        await budget_client.get_account_name(bearer_token, pr.budget_code)
+        if bearer_token else None  # budget-api rejects unauthenticated reads
+    )
     loop = asyncio.get_event_loop()
-    pdf_bytes = await loop.run_in_executor(None, generate_pr_pdf, pr, company_name)
+    pdf_bytes = await loop.run_in_executor(
+        None, generate_pr_pdf, pr, company_name, None, None, None, None,
+        budget_account_name,
+    )
     filename = f"{pr.number}.pdf"
     db.add(PrAttachment(
         pr_id=pr.id,
