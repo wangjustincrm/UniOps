@@ -167,17 +167,24 @@ async def test_submit_is_refused_when_a_signer_has_no_signature(
 
 
 async def test_submit_is_refused_when_a_step_has_no_holder(
-    test_engine, stub_engine, admin_client,
+    test_engine, stub_engine, admin_client, monkeypatch,
 ):
+    """A step whose role nobody holds must stop the sign-off before it starts.
+
+    Configured with a role that cannot exist rather than by retiring the real
+    Purchasing Managers: the suite shares one database, holders are counted
+    from users.role UNION user_roles, and any other test that grants the post
+    either way would decide this one's outcome.
+    """
+    from app.services import approval_client
+
+    async def _ghost_workflow(doc_type, doc_id, token):  # noqa: ANN001
+        return [{"id": "ghost", "role": "no_such_post",
+                 "label": "Nobody Holds This", "sig_slot": "signature"}]
+
+    monkeypatch.setattr(approval_client, "get_workflow_steps", _ghost_workflow)
+
     officer = await _make_user(test_engine, "erp_pa_officer")
-    await _make_user(test_engine, "opm", signature=_PNG)
-    # The suite shares one database, so retire any Purchasing Manager an
-    # earlier test left behind — this test is about the step having nobody.
-    async with _factory(test_engine)() as db:
-        for u in (await db.execute(select(User).where(
-                User.role == "procurement_manager"))).scalars().all():
-            u.is_active = False
-        await db.commit()
     po_id = await _make_po(test_engine, officer)
 
     resp = await admin_client.post(f"/api/v1/po/{po_id}/signoff/submit",
