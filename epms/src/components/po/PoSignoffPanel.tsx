@@ -21,7 +21,7 @@ import {
 } from '@/hooks/usePos'
 import type { PoSignoffState, PoSignoffStatus, PoSignoffStep } from '@/services/po'
 
-const STATUS_LABELS: Record<PoSignoffStatus, { label: string; className: string }> = {
+export const STATUS_LABELS: Record<PoSignoffStatus, { label: string; className: string }> = {
   draft:      { label: 'Not started',       className: 'bg-neutral-100 text-neutral-600' },
   submitted:  { label: 'Awaiting signature', className: 'bg-warning-100 text-warning-700' },
   in_review:  { label: 'Awaiting signature', className: 'bg-warning-100 text-warning-700' },
@@ -31,12 +31,12 @@ const STATUS_LABELS: Record<PoSignoffStatus, { label: string; className: string 
   cancelled:  { label: 'Cancelled',         className: 'bg-neutral-100 text-neutral-500' },
 }
 
-const SLOT_LABELS: Record<string, string> = {
+export const SLOT_LABELS: Record<string, string> = {
   initials:  'Initials on PDF',
   signature: 'Signature on PDF',
 }
 
-const THREAD_LABELS: Record<string, string> = {
+export const THREAD_LABELS: Record<string, string> = {
   submit:  'Raised the sign-off',
   approve: 'Signed',
   return:  'Returned',
