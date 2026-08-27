@@ -672,7 +672,7 @@ export default function PortalHome() {
 
       {/* ── Main area ───────────────────────────── */}
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        <TopHeader epmsHref={epmsHref} onMobileMenuToggle={() => setMobileOpen(v => !v)} />
+        <TopHeader session={session} onMobileMenuToggle={() => setMobileOpen(v => !v)} />
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <div className="w-full">
