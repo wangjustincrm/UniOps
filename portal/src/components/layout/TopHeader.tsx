@@ -9,6 +9,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { LogOut, ChevronDown, User, KeyRound, Menu, X } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
+import { EPMS_URL } from '@/lib/api'
 import { globalSignOut } from '@/lib/signOut'
 import { cn } from '@/lib/utils'
 import { ChangePasswordForm } from '@/components/auth/ChangePasswordForm'
@@ -49,14 +50,20 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
 
 // ── Top header ────────────────────────────────────────────────────────────────
 
-export function TopHeader({ epmsHref, onMobileMenuToggle }: { epmsHref: string; onMobileMenuToggle: () => void }) {
+export function TopHeader({ session, onMobileMenuToggle }: { session: string; onMobileMenuToggle: () => void }) {
   const { user } = useAuthStore()
   const [menuOpen, setMenuOpen] = useState(false)
   const [showChangePwd, setShowChangePwd] = useState(false)
   const initials = user?.full_name?.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() ?? 'U'
   const roleLabel = user?.role?.replace(/_/g, ' ') ?? ''
-  const [base, hash] = epmsHref.split('#')
-  const profileHref = `${base}/profile${hash ? '#' + hash : ''}`
+  // EPMS owns the profile page. Built from EPMS_URL directly rather than by
+  // appending to the module href: that href already carries a landing path
+  // (`${EPMS_URL}/dashboard#…`), so appending produced `/dashboard/profile`,
+  // which matches no EPMS route — the tab shell fell back to Dashboard and the
+  // menu item looked like it just opened EPMS.
+  const profileHref = session
+    ? `${EPMS_URL}/profile#__session=${session}`
+    : `${EPMS_URL}/profile`
 
   return (
     <>
