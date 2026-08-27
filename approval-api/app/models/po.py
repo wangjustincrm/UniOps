@@ -16,6 +16,16 @@ class PurchaseOrder(UUIDPrimaryKey, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False)
     approval_step_idx: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Second, independent workflow over the same row: the sign-off of an
+    # NC-imported PO. doc_type "posign" points the engine's status_attr /
+    # step_attr here so it never touches the two columns above (nor they it —
+    # nc_purchase_sync rewrites `status` on every sync).
+    signoff_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="draft")
+    signoff_step_idx: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0")
+    signoff_submitted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True)
     total: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     vendor_name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_prepaid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

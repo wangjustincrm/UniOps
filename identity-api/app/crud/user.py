@@ -51,6 +51,7 @@ async def update_me(
     full_name: str | None,
     teams_account: str | None,
     notification_channel: str | None = None,
+    signature_image: str | None = None,
 ) -> User:
     if full_name is not None:
         user.full_name = full_name
@@ -58,6 +59,9 @@ async def update_me(
         user.teams_account = teams_account
     if notification_channel is not None:
         user.notification_channel = notification_channel
+    # "" means "clear it"; None means "not supplied, leave as is".
+    if signature_image is not None:
+        user.signature_image = signature_image or None
     await db.flush()
     await db.refresh(user)
     return user

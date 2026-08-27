@@ -164,6 +164,29 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "<b>Vendor:</b> {vendor}\n<b>Amount:</b> CAD {amount}\n\n"
         "<a href=\"{link}\">Review &amp; Approve PO</a>\n\n{company_name}",
     ),
+    # ── PO sign-off (NC-imported POs) ────────────────────────────────────────
+    "po_signature_request": _DEFAULT_EMAIL_TEMPLATE(
+        "Action Required: Sign PO {po_number}",
+        "Hi {recipient_name},\n\nPurchase Order <b>{po_number}</b> is waiting for your signature.\n\n"
+        "<b>Vendor:</b> {vendor}\n<b>Amount:</b> CAD {amount}\n\n"
+        "<a href=\"{link}\">Review &amp; Sign</a>\n\n{company_name}",
+    ),
+    "po_signoff_returned": _DEFAULT_EMAIL_TEMPLATE(
+        "PO {po_number} sign-off returned for revision",
+        "Hi {recipient_name},\n\nThe sign-off you raised for Purchase Order <b>{po_number}</b> "
+        "has been returned.\n\n<b>Comment:</b> {comment}\n\n"
+        "<a href=\"{link}\">View PO</a>\n\n{company_name}",
+    ),
+    # Sent to whoever raised the sign-off once every step has signed. This one
+    # is NOT a task — nothing in UniOps can do the remaining step, which is to
+    # release the order in NC.
+    "po_signoff_complete": _DEFAULT_EMAIL_TEMPLATE(
+        "PO {po_number} is fully signed — release it in NC",
+        "Hi {recipient_name},\n\nPurchase Order <b>{po_number}</b> has been signed by every "
+        "required signatory.\n\n<b>Signed by:</b> {signatories}\n\n"
+        "You can now release the order in NC.\n\n"
+        "<a href=\"{link}\">View PO</a>\n\n{company_name}",
+    ),
     "po_place_order": _DEFAULT_EMAIL_TEMPLATE(
         "Action Required: Place Order — {po_number}",
         "Hi {recipient_name},\n\nPurchase Order <b>{po_number}</b> has been fully approved and is ready to be placed with the vendor.\n\n"

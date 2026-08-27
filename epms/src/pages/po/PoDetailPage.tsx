@@ -15,6 +15,7 @@ import { formatAmount, formatDate, formatUnitPrice, cn } from '@/lib/utils'
 import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
+import { PoSignoffPanel } from '@/components/po/PoSignoffPanel'
 import { generatePoHtml } from '@/lib/po-document'
 import { buildEmailVars, renderTemplate } from '@/lib/email-template'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
@@ -783,6 +784,14 @@ export default function PoDetailPage() {
               </button>
             ))}
           </div>
+
+          {/* Sign-off — NC imports only; the panel renders nothing otherwise.
+              Kept above the tabs rather than inside Details: while a sign-off
+              is open it is the only thing anyone opening this PO is here to
+              do. */}
+          {activeTab === 'Details' && (
+            <PoSignoffPanel poId={po.id} source={po.source ?? null} />
+          )}
 
           {/* Details Tab */}
           {activeTab === 'Details' && (

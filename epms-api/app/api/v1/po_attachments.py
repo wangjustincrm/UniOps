@@ -126,6 +126,12 @@ async def regenerate_pdf(
                 select(User.full_name).where(User.id == next(iter(opm_holders)))
             )).scalar_one_or_none()
 
+    signatures = [
+        {"sig_slot": sig.sig_slot, "signer_name": sig.signer_name,
+         "signature_image": sig.signature_image}
+        for sig in sorted(po.signoff_signatures, key=lambda s: s.step_idx)
+    ]
+
     filename = f"{po.number}.pdf"
     loop = asyncio.get_event_loop()
     pdf_bytes = await loop.run_in_executor(
@@ -133,6 +139,7 @@ async def regenerate_pdf(
         cfg.pdf_templates if cfg else None,
         cfg.logo_data_url if cfg else None,
         signatory_name,
+        signatures,
     )
 
     existing = (await db.execute(

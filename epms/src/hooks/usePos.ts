@@ -7,6 +7,7 @@ import {
   type ImportedDetailsBody,
   type PoActionBody,
   type PlaceOrderBody,
+  type PoSignoffState,
 } from '@/services/po'
 import { api } from '@/lib/api'
 import { poAttachmentService } from '@/services/poAttachments'
@@ -156,4 +157,54 @@ export function usePlaceOrder(id: string) {
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to place order'),
   })
+}
+
+
+// ── Sign-off (NC-imported POs) ────────────────────────────────────────────────
+// Every mutation returns the full state, so the query cache is set from the
+// response rather than refetched — the panel never blinks through a stale step.
+
+export function usePoSignoff(id: string, enabled = true) {
+  return useQuery<PoSignoffState>({
+    queryKey: ['pos', id, 'signoff'],
+    queryFn: () => poService.signoff(id),
+    enabled: Boolean(id) && enabled,
+  })
+}
+
+function useSignoffMutation<TArgs>(
+  id: string,
+  fn: (args: TArgs) => Promise<PoSignoffState>,
+) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: (state) => {
+      queryClient.setQueryData(['pos', id, 'signoff'], state)
+      queryClient.invalidateQueries({ queryKey: ['pos', id] })
+      queryClient.invalidateQueries({ queryKey: ['pos', id, 'attachments'] })
+      queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+export function useSubmitPoSignoff(id: string) {
+  return useSignoffMutation<string>(id, (justification) =>
+    poService.submitSignoff(id, justification))
+}
+
+export function useSignPoSignoff(id: string) {
+  return useSignoffMutation<string | undefined>(id, (comment) =>
+    poService.signSignoff(id, comment))
+}
+
+export function useReturnPoSignoff(id: string) {
+  return useSignoffMutation<string>(id, (comment) =>
+    poService.returnSignoff(id, comment))
+}
+
+export function useAddPoSignoffNote(id: string) {
+  return useSignoffMutation<string>(id, (comment) =>
+    poService.addSignoffNote(id, comment))
 }

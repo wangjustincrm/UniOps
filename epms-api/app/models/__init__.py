@@ -17,6 +17,7 @@ from app.models.nc_purchase_sync import NcPurchaseSyncRun  # noqa: F401
 from app.models.pa import PaLineItem, PaymentApplication  # noqa: F401
 from app.models.part import Part  # noqa: F401
 from app.models.po import PoLineItem, PurchaseOrder  # noqa: F401
+from app.models.po_signoff_signature import PoSignoffSignature  # noqa: F401
 from app.models.pr import PrLineItem, PurchaseRequest  # noqa: F401
 from app.models.notification_log import NotificationLog  # noqa: F401
 from app.models.pr_attachment import PrAttachment  # noqa: F401

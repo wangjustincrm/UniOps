@@ -171,9 +171,28 @@ def reconcile_pending(cur, in_scope_pks) -> int:
         "updated_at = now() "
         "where source='nc' and status='nc_pending' "
         "and not (nc_source_pk = any(%s)) "
-        "and not exists (select 1 from invoices i where i.po_id = purchase_orders.id)",
+        "and not exists (select 1 from invoices i where i.po_id = purchase_orders.id) "
+        "returning id",
         (_WITHDRAWN_TAG, _WITHDRAWN_TAG, _WITHDRAWN_TAG, list(in_scope_pks)))
-    return cur.rowcount
+    cancelled = [row[0] for row in cur.fetchall()]
+
+    # A withdrawn order takes its sign-off down with it. The two are otherwise
+    # independent on purpose — this sync rewrites `status` on every run and must
+    # never touch signoff_status — but an order NC has retracted is not
+    # something anyone should still be asked to sign, and the task would
+    # otherwise sit open in the Purchasing Manager's inbox forever.
+    if cancelled:
+        cur.execute(
+            "update purchase_orders set signoff_status='cancelled', updated_at=now() "
+            "where id = any(%s) "
+            "and signoff_status in ('submitted','in_review','returned')",
+            (cancelled,))
+        cur.execute(
+            "update tasks set is_completed=true, completed_at=now() "
+            "where document_type='posign' and document_id = any(%s) "
+            "and is_completed = false",
+            (cancelled,))
+    return len(cancelled)
 
 
 def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:

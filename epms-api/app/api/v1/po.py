@@ -224,8 +224,16 @@ async def update_imported_details(
     return po
 
 
-async def _generate_po_pdf_background(po_id: uuid.UUID, po_number: str, token: str) -> None:
-    """Generate and attach the approved-PO PDF using a fresh DB session (PRD §3.4)."""
+async def _generate_po_pdf_background(
+    po_id: uuid.UUID, po_number: str, token: str, *, replace: bool = False,
+) -> None:
+    """Generate and attach the approved-PO PDF using a fresh DB session (PRD §3.4).
+
+    `replace=True` re-renders over an existing attachment. Used when a sign-off
+    completes: the PDF has to be rebuilt to carry the signatures, and the
+    default skip-if-present would otherwise leave the signed PO showing the
+    unsigned document forever.
+    """
     import asyncio
     import logging
     from app.services.pdf_po import generate_po_pdf
@@ -255,7 +263,7 @@ async def _generate_po_pdf_background(po_id: uuid.UUID, po_number: str, token: s
                     PoAttachment.filename == f"{po_number}.pdf",
                 )
             )).scalar_one_or_none()
-            if existing:
+            if existing and not replace:
                 return
 
             # Type 1 POs carry a signature block naming the OPM as our
@@ -271,16 +279,29 @@ async def _generate_po_pdf_background(po_id: uuid.UUID, po_number: str, token: s
                         sa_select(User.full_name).where(User.id == next(iter(opm_holders)))
                     )).scalar_one_or_none()
 
+            # Signatures captured during sign-off, resolved here because
+            # generate_po_pdf runs in an executor with no DB session (same
+            # reason signatory_name is passed in — see crud/signatories.py).
+            signatures = [
+                {"sig_slot": sig.sig_slot, "signer_name": sig.signer_name,
+                 "signature_image": sig.signature_image}
+                for sig in sorted(po_row.signoff_signatures, key=lambda s: s.step_idx)
+            ]
+
             loop = asyncio.get_event_loop()
             pdf_bytes = await loop.run_in_executor(
                 None, generate_po_pdf, po_row, company_name,
                 cfg.pdf_templates if cfg else None,
                 cfg.logo_data_url if cfg else None,
                 signatory_name,
+                signatures,
             )
             storage_key = await upload_to_file_server(
                 pdf_bytes, f"{po_number}.pdf", "application/pdf", "po", po_id, token,
             )
+            if existing is not None:
+                await fresh_db.delete(existing)
+                await fresh_db.flush()
             fresh_db.add(PoAttachment(
                 po_id=po_id, filename=f"{po_number}.pdf",
                 content_type="application/pdf", file_size=len(pdf_bytes),

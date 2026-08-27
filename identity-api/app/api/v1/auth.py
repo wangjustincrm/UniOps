@@ -273,6 +273,7 @@ async def update_me(body: UpdateMeRequest, payload: CurrentUserPayload, db: Sess
         full_name=body.full_name,
         teams_account=body.teams_account,
         notification_channel=body.notification_channel,
+        signature_image=body.signature_image,
     )
 
 
