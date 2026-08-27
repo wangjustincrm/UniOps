@@ -14,6 +14,7 @@ from app.crud.signatories import approval_signatories
 from app.models.config import CompanyConfig
 from app.models.pr_attachment import PrAttachment
 from app.services.attachment_helper import delete_from_file_server, proxy_download, upload_to_file_server
+from app.services import budget_client
 from app.services.pdf_pr import generate_pr_pdf
 
 router = APIRouter(prefix="/pr/{pr_id}/attachments", tags=["pr-attachments"])
@@ -104,12 +105,13 @@ async def regenerate_pdf(
     company_name = cfg.name if cfg else "EPMS"
     filename = f"{pr.number}.pdf"
     requester_name, approvals = await approval_signatories(db, "pr", pr_id, pr.created_by)
+    budget_account_name = await budget_client.get_account_name(token, pr.budget_code)
     loop = asyncio.get_event_loop()
     pdf_bytes = await loop.run_in_executor(
         None, generate_pr_pdf, pr, company_name,
         cfg.pdf_templates if cfg else None,
         cfg.logo_data_url if cfg else None,
-        requester_name, approvals,
+        requester_name, approvals, budget_account_name,
     )
 
     # Replace any prior auto-PDF of the same name (row + backing file).

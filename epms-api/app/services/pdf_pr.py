@@ -1,6 +1,7 @@
 """PDF generator for Purchase Requests using ReportLab."""
 from datetime import datetime, timezone
 from io import BytesIO
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -47,6 +48,7 @@ def generate_pr_pdf(
     logo_data_url: str | None = None,
     requester_name: str | None = None,
     approvals: list[dict] | None = None,
+    budget_account_name: str | None = None,
 ) -> bytes:
     """Render a PurchaseRequest to PDF applying Admin Panel → PDF Templates settings."""
     tmpl = get_tmpl(pdf_templates, "pr")
@@ -103,6 +105,17 @@ def generate_pr_pdf(
     required_str = pr.required_by.strftime("%Y-%m-%d") if pr.required_by else "—"
     pr_type_str = PR_TYPES.get(pr.type, str(pr.type))
     submitted_str = pr.submitted_at.strftime("%Y-%m-%d") if pr.submitted_at else "—"
+    # "CRM00901 — Building Repairs & maintenance", the same code-and-name form
+    # the PR Detail page shows. The name is resolved by the caller (budget-api
+    # owns the catalog); when it can't be, the code alone still stands.
+    #
+    # Escaped because Paragraph parses its content as mini-XML (same reason as
+    # the escape() sites in pdf_po.py): 16 of the 168 budget accounts have "&"
+    # in their name, and the no-space form is the one that breaks -- unescaped,
+    # "Food&Beverage for hospitality" renders as "Food &Beverage;".
+    budget_str = pr.budget_code
+    if budget_str and budget_account_name:
+        budget_str = escape(f"{pr.budget_code} — {budget_account_name}")
 
     meta = Table(
         [
@@ -110,7 +123,7 @@ def generate_pr_pdf(
             [*_cell("Title", pr.title),              *_cell("Type", pr_type_str)],
             [*_cell("Vendor", pr.vendor_name),       *_cell("Currency", pr.currency)],
             [*_cell("Department", pr.department_name), *_cell("Required By", required_str)],
-            [*_cell("Cost Center", pr.cost_center_name), *_cell("Budget Code", pr.budget_code)],
+            [*_cell("Cost Center", pr.cost_center_name), *_cell("Budget Code", budget_str)],
             [*_cell("Requested By", requester_name), *_cell("Submitted", submitted_str)],
         ],
         # Label columns widened from 0.12 to 0.14 (value narrowed 0.38 -> 0.36 to
