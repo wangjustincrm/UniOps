@@ -45,6 +45,20 @@ def unit_price_text(value) -> str:
     return f"{whole}.{frac}"
 
 
+def qty_text(value) -> str:
+    """A quantity as a document should show it: no padding zeros, no exponents.
+
+    `str(Decimal("30.0000").normalize())` is `"3E+1"` -- normalize() strips the
+    trailing zeros of an integral value by raising the exponent, so every
+    quantity that is a multiple of ten printed as scientific notation on the
+    document. Integral values are therefore quantized rather than normalized;
+    fractional ones normalize safely (`"1.500"` -> `"1.5"`).
+    """
+    d = Decimal(str(value))
+    d = d.quantize(Decimal(1)) if d == d.to_integral_value() else d.normalize()
+    return f"{d:,f}"
+
+
 def build_logo(logo_data_url: str | None, size_mm: float = 18.0) -> Image | None:
     """Decode a base64 data-URL logo and return a ReportLab Image preserving aspect ratio.
 

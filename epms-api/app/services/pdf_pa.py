@@ -18,7 +18,7 @@ from reportlab.platypus import (
 from app.models.pa import PaymentApplication
 from app.services.pdf_template import (
     approvals_element, build_logo, footer_note_element, get_tmpl,
-    header_note_element, terms_element,
+    header_note_element, qty_text, terms_element,
 )
 
 _PRIMARY = colors.HexColor("#0A7C7C")
@@ -127,7 +127,7 @@ def generate_pa_pdf(
         rows.append([
             Paragraph(str(i), td_style),
             Paragraph(item.description, td_style),
-            Paragraph(str(item.qty.normalize()), td_style),
+            Paragraph(qty_text(item.qty), td_style),
             Paragraph(item.unit, td_style),
             Paragraph(f"{item.unit_price:,.2f}", td_style),
             Paragraph(f"{item.line_total:,.2f}", td_style),

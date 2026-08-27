@@ -18,7 +18,7 @@ from reportlab.platypus import (
 from app.models.pr import PurchaseRequest
 from app.services.pdf_template import (
     approvals_element, build_logo, footer_note_element, get_tmpl,
-    header_note_element, terms_element,
+    header_note_element, qty_text, terms_element,
 )
 
 PR_TYPES = {
@@ -151,7 +151,7 @@ def generate_pr_pdf(
         if has_supplier:
             row.append(Paragraph(item.supplier_item_id or "", td_style))
         row += [
-            Paragraph(str(item.qty.normalize()), td_style),
+            Paragraph(qty_text(item.qty), td_style),
             Paragraph(item.unit, td_style),
             Paragraph(f"{item.unit_price:,.2f}", td_style),
             Paragraph(f"{item.line_total:,.2f}", td_style),

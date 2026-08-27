@@ -17,8 +17,8 @@ from reportlab.platypus import (
 
 from app.models.gr import GoodsReceipt
 from app.services.pdf_template import (
-    build_logo, footer_note_element, get_tmpl, header_note_element, terms_element,
-    unit_price_text,
+    build_logo, footer_note_element, get_tmpl, header_note_element, qty_text,
+    terms_element, unit_price_text,
 )
 
 _PRIMARY = colors.HexColor("#0A7C7C")
@@ -139,8 +139,8 @@ def generate_gr_pdf(
         if has_material:
             row.append(Paragraph(item.material_id or "", td_style))
         row += [
-            Paragraph(str(item.qty_ordered.normalize()), td_style),
-            Paragraph(str(item.qty_received.normalize()), td_style),
+            Paragraph(qty_text(item.qty_ordered), td_style),
+            Paragraph(qty_text(item.qty_received), td_style),
             Paragraph(item.unit, td_style),
             Paragraph(unit_price_text(item.unit_price), td_style),
             Paragraph(f"{item.line_total:,.2f}", td_style),
