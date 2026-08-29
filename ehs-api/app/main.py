@@ -1,0 +1,113 @@
+"""ehs-api FastAPI application factory.
+
+Mirrors the booking-api / vms-api shape so tooling (check-health.sh,
+docker-compose healthcheck, Portal module card) treats Safety like any other
+UniOps microservice.
+"""
+import logging
+import time
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.api.v1 import api_router
+from app.core import background
+from app.core.config import settings
+from app.db.session import engine
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # noqa: ARG001
+    logger.info(
+        "Starting up %s v%s [%s]",
+        settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT,
+    )
+    yield
+    logger.info("Shutting down — draining background work, then closing engine")
+    # Settle fire-and-forget work (notification sends) before disposing the
+    # engine. Skipping this leaves sessions suspended mid-transaction and
+    # their connections go back to the pool still holding locks.
+    await background.drain(timeout=10.0)
+    await engine.dispose()
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title=settings.APP_NAME,
+        version=settings.APP_VERSION,
+        docs_url="/docs" if settings.DEBUG else None,
+        redoc_url="/redoc" if settings.DEBUG else None,
+        openapi_url="/openapi.json" if settings.DEBUG else None,
+        lifespan=lifespan,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+    )
+
+    # Pure ASGI request logger (avoids BaseHTTPMiddleware task spawn).
+    from starlette.types import ASGIApp, Receive, Scope, Send
+
+    class _LoggingMiddleware:
+        def __init__(self, app: ASGIApp) -> None:
+            self.app = app
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+            request = Request(scope)
+            start = time.perf_counter()
+            status_code = 500
+
+            async def _send_wrapper(message):
+                nonlocal status_code
+                if message["type"] == "http.response.start":
+                    status_code = message["status"]
+                await send(message)
+
+            try:
+                await self.app(scope, receive, _send_wrapper)
+            finally:
+                duration_ms = (time.perf_counter() - start) * 1000
+                logger.info(
+                    "%s %s %d %.1fms",
+                    request.method, request.url.path, status_code, duration_ms,
+                )
+
+    app.add_middleware(_LoggingMiddleware)
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):  # noqa: ARG001
+        logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+        headers: dict[str, str] = {}
+        origin = request.headers.get("origin")
+        if origin and origin in settings.ALLOWED_ORIGINS:
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Vary"] = "Origin"
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal server error"},
+            headers=headers,
+        )
+
+    app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+    # Also expose /health at root so docker-compose healthchecks and
+    # check-health.sh work without the /api/v1 prefix.
+    from app.api.v1.health import router as health_router
+    app.include_router(health_router)
+
+    return app
+
+
+app = create_app()
