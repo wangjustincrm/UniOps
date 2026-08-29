@@ -74,6 +74,7 @@ class EhsCommonDims:
             nullable=False,
             index=True,
             default=getattr(cls, "__default_status__", "draft"),
+            server_default=getattr(cls, "__default_status__", "draft"),
         )
 
     # ── Who owns it ─────────────────────────────────────────────────────────

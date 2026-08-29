@@ -46,6 +46,8 @@ class FirstAidLog(UUIDPrimaryKey, TimestampMixin, Base):
     body_part_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     body_part_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
     treatment_given: Mapped[str] = mapped_column(Text, nullable=False)
-    sent_offsite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sent_offsite: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
     follow_up: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")

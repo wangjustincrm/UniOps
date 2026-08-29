@@ -37,8 +37,12 @@ class Vocabulary(TimestampMixin, Base):
     code: Mapped[str] = mapped_column(String(40), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_hierarchical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    is_system_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_hierarchical: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
+    is_system_locked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
     # Declares which extra attributes an entry in this list may carry, so the
     # Settings UI can render the right fields (e.g. a course's "statutory"
     # flag, a severity level's colour).
@@ -63,9 +67,11 @@ class VocabularyItem(UUIDPrimaryKey, TimestampMixin, Base):
     )
     code: Mapped[str] = mapped_column(String(60), nullable=False)
     label: Mapped[str] = mapped_column(String(200), nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     # Retire, never delete — see the module docstring.
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true", index=True,
+    )
     attrs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     # Materialized path so a tree filter is one LIKE instead of a recursive CTE.
     path: Mapped[str | None] = mapped_column(String(500), nullable=True)

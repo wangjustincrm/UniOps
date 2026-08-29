@@ -54,7 +54,9 @@ class Action(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
         nullable=True, index=True,
     )
 
-    action_type: Mapped[str] = mapped_column(String(15), nullable=False, default="corrective")
+    action_type: Mapped[str] = mapped_column(
+        String(15), nullable=False, default="corrective", server_default="corrective",
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -62,13 +64,17 @@ class Action(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
     # audit asks which level of control was applied, so it is a column rather
     # than something to infer from the description.
     hierarchy_of_control: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
-    priority: Mapped[str] = mapped_column(String(10), nullable=False, default="normal")
+    priority: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="normal", server_default="normal",
+    )
 
     due_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     # open -> in_progress -> pending_verification -> closed | cancelled
     # (`status` and its default come from EhsCommonDims / __default_status__.)
     # 0 none, 1 reminded, 2 supervisor notified, 3 HSE Manager notified.
-    escalation_level: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    escalation_level: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0",
+    )
     last_escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

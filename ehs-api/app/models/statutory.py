@@ -60,4 +60,6 @@ class StatutoryDeadline(UUIDPrimaryKey, TimestampMixin, Base):
     evidence_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # 0 none, 1 warned at T-24h, 2 warned at T-4h, 3 overdue.
-    escalation_level: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    escalation_level: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0",
+    )

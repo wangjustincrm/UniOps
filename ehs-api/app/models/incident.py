@@ -49,7 +49,9 @@ class Incident(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
     )
     reported_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_anonymous: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
     reported_to_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
     )
@@ -61,7 +63,9 @@ class Incident(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
     injury_class: Mapped[str | None] = mapped_column(String(15), nullable=True, index=True)
     # Critical injury or fatality. Independent of injury_class — an incident
     # can be both. Drives the MOL 48-hour clock.
-    mol_reportable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    mol_reportable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false", index=True,
+    )
     mol_reportable_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
     classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     classified_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -188,4 +192,4 @@ class IncidentCause(UUIDPrimaryKey, TimestampMixin, Base):
     # Snapshot of the wording at the time — see app/models/vocabulary.py.
     label: Mapped[str] = mapped_column(String(200), nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

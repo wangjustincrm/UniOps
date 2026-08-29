@@ -31,7 +31,9 @@ class RtwPlan(UUIDPrimaryKey, TimestampMixin, Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     expected_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     actual_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default="active",
+    )
 
 
 class RtwCheckin(UUIDPrimaryKey, TimestampMixin, Base):

@@ -42,7 +42,9 @@ class WorkerProfile(TimestampMixin, Base):
     )
     # PHIPA-sensitive: restrictions relevant to return-to-work planning.
     medical_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_safety_sensitive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_safety_sensitive: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
     # member | certified_member | co_chair — 23 members, 20 of them certified.
     jhsc_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
@@ -52,7 +54,9 @@ class JobPosition(UUIDPrimaryKey, TimestampMixin, Base):
 
     code: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
 
 
 class PositionRequirement(UUIDPrimaryKey, TimestampMixin, Base):
@@ -70,7 +74,9 @@ class PositionRequirement(UUIDPrimaryKey, TimestampMixin, Base):
     course_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     vocabulary_item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     label: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    is_mandatory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_mandatory: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
 
 
 class WorkerPosition(UUIDPrimaryKey, TimestampMixin, Base):

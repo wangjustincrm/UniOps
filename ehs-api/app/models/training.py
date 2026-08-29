@@ -34,12 +34,18 @@ class Course(UUIDPrimaryKey, TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Required by regulation rather than by internal policy — drives the
     # compliance percentage an inspector is shown.
-    is_statutory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    is_statutory: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false", index=True,
+    )
     # Applies to everyone, versus only to the positions that require it.
-    applies_to_all: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    applies_to_all: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
     # Null means the training does not expire.
     validity_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
 
 
 class TrainingRecord(UUIDPrimaryKey, TimestampMixin, Base):
@@ -58,7 +64,9 @@ class TrainingRecord(UUIDPrimaryKey, TimestampMixin, Base):
     course_label: Mapped[str] = mapped_column(String(200), nullable=False)
     completed_on: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     expires_on: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
-    delivery: Mapped[str] = mapped_column(String(15), nullable=False, default="internal")
+    delivery: Mapped[str] = mapped_column(
+        String(15), nullable=False, default="internal", server_default="internal",
+    )
     certificate_file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     recorded_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
@@ -86,4 +94,6 @@ class WorkerCertification(UUIDPrimaryKey, TimestampMixin, Base):
     issued_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     expires_on: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    is_blocking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_blocking: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )

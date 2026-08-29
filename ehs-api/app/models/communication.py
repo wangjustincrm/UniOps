@@ -43,7 +43,9 @@ class Communication(UUIDPrimaryKey, TimestampMixin, Base):
 
     message_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     in_reply_to: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    is_auto_reply: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_auto_reply: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
 
     attachments: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     template_key: Mapped[str | None] = mapped_column(String(60), nullable=True)

@@ -25,21 +25,31 @@ class EhsConfig(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
 
     # ── Corrective action escalation (HSE Manager's schedule) ───────────────
-    capa_remind_before_days: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
-    capa_escalate_supervisor_days: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
-    capa_escalate_manager_days: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    capa_remind_before_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3, server_default="3",
+    )
+    capa_escalate_supervisor_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5, server_default="5",
+    )
+    capa_escalate_manager_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=10, server_default="10",
+    )
 
     # ── Certificate expiry warnings, in days before expiry ──────────────────
     cert_warn_days: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=lambda: [90, 60, 30], server_default="[90, 60, 30]",
     )
 
-    allow_anonymous_report: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_anonymous_report: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
 
     # ── Statutory deadline scanner ──────────────────────────────────────────
     # Re-read on every tick, so a change takes effect within the minute without
     # a restart. 0 disables the scanner entirely.
-    statutory_scan_interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    statutory_scan_interval_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=60, server_default="60",
+    )
 
     # ── Notification routing ────────────────────────────────────────────────
     # {incident_category_code: [user_id, ...]} — who is emailed when an
