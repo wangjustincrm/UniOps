@@ -16,6 +16,9 @@ CanReportIncident = Annotated[dict, Depends(require_permission("ehs.incident.rep
 CanReadIncident = Annotated[dict, Depends(require_permission("ehs.incident.read"))]
 CanInvestigate = Annotated[dict, Depends(require_permission("ehs.incident.investigate"))]
 CanCloseIncident = Annotated[dict, Depends(require_permission("ehs.incident.close"))]
+# Classifying is what starts the statutory clocks, so it sits with
+# investigation rather than with reporting.
+CanClassifyIncident = Annotated[dict, Depends(require_permission("ehs.incident.investigate"))]
 
 # Medical detail on an incident is PHIPA-sensitive and gated separately from
 # the incident record itself.
