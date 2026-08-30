@@ -108,3 +108,13 @@ export const api = {
 export const epmsApi = {
   get: <T>(path: string) => request<T>(EPMS_BASE, path),
 }
+
+/** One person as the directory returns them. */
+export interface DirectoryPerson {
+  id: string
+  full_name: string
+  email: string
+  role: string
+  department_id: string | null
+  department_name: string | null
+}

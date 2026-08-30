@@ -17,6 +17,7 @@ import { AlertTriangle, ArrowLeft, Eye, Wrench } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { discardDraft, loadDraft, saveDraft } from '@/lib/draftStore'
 import type { CompressedImage } from '@/lib/imageCompress'
+import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { PhotoCapture } from '@/components/PhotoCapture'
 import { SignaturePad } from '@/components/SignaturePad'
 
@@ -61,7 +62,7 @@ interface FormState {
   time: string
   locationId: string
   description: string
-  injuredName: string
+  injured: PersonValue
   talkedToOperator: '' | 'yes' | 'no' | 'na'
   whyNot: string
   anonymous: boolean
@@ -70,7 +71,7 @@ interface FormState {
 
 const EMPTY: FormState = {
   kind: null, title: '', date: '', time: '', locationId: '', description: '',
-  injuredName: '', talkedToOperator: '', whyNot: '', anonymous: false, signature: null,
+  injured: EMPTY_PERSON, talkedToOperator: '', whyNot: '', anonymous: false, signature: null,
 }
 
 const DRAFT_KIND = 'incident'
@@ -132,8 +133,15 @@ export default function IncidentReportPage() {
         description: form.description || null,
         is_anonymous: form.anonymous,
       }
-      if (form.kind === 'medical' && form.injuredName.trim()) {
-        body.persons = [{ role: 'injured', person_name: form.injuredName.trim() }]
+      if (form.kind === 'medical' && form.injured.name.trim()) {
+        // An employee match carries a user id; a written-in name does not, and
+        // keeps whatever company was given. The record tells the two apart.
+        body.persons = [{
+          role: 'injured',
+          person_name: form.injured.name.trim(),
+          user_id: form.injured.userId,
+          external_company: form.injured.externalCompany,
+        }]
       }
       if (form.kind === 'near_miss') {
         body.extra = {
@@ -256,10 +264,8 @@ export default function IncidentReportPage() {
       </Field>
 
       {form.kind === 'medical' && (
-        <Field label="Who was hurt?">
-          <input className={inputClass} value={form.injuredName}
-                 onChange={(e) => set('injuredName', e.target.value)}
-                 placeholder="Name — a contractor or visitor can be named here too" />
+        <Field label="Who was hurt?" help="Search for an employee, or type the name of a contractor or visitor.">
+          <PersonPicker value={form.injured} onChange={(v) => set('injured', v)} />
         </Field>
       )}
 
