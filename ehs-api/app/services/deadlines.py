@@ -13,7 +13,7 @@ written report, on different deadlines measured from different instants.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.config import Holiday
 from app.models.incident import Incident
 from app.models.statutory import StatutoryDeadline
+from app.models.training import WorkerCertification
 from app.services import statutory
 
 
@@ -118,5 +119,58 @@ async def satisfy(
     deadline.satisfied_by_name = user_name
     deadline.evidence_file_id = evidence_file_id
     deadline.evidence_note = evidence_note
+    await db.flush()
+    return deadline
+
+
+async def ensure_certification_deadline(
+    db: AsyncSession, cert: WorkerCertification
+) -> StatutoryDeadline | None:
+    """Put a certification's expiry on the same clock as everything else.
+
+    Certificate expiries need no scanner of their own: they become rows in
+    ehs_statutory_deadlines, so the sweep that chases the Ministry's 48 hours
+    chases these too, they escalate the same way, and they appear on the same
+    compliance calendar. That reuse is the reason the table was built to hold
+    every kind of clock rather than just the two statutory ones.
+
+    The deadline is the expiry date itself. Nothing is created for a
+    certification with no expiry — it does not lapse.
+    """
+    if cert.expires_on is None:
+        return None
+
+    existing = (await db.execute(
+        select(StatutoryDeadline).where(
+            StatutoryDeadline.source_type == "cert",
+            StatutoryDeadline.source_id == cert.id,
+        )
+    )).scalar_one_or_none()
+
+    # End of the expiry day, in Ontario terms — a licence is valid all day.
+    due_at = datetime.combine(
+        cert.expires_on, time(23, 59, 59), tzinfo=statutory.ONTARIO,
+    )
+    if existing is not None:
+        # Renewing pushes the date out; the row is reused so its history stays.
+        if existing.due_at != due_at:
+            existing.due_at = due_at
+            existing.escalation_level = 0
+            await db.flush()
+        return existing
+
+    deadline = StatutoryDeadline(
+        id=uuid.uuid4(),
+        source_type="cert",
+        source_id=cert.id,
+        source_ref=cert.cert_type_label,
+        kind="cert_expiry",
+        regulation_ref=None,
+        clock_type="calendar",
+        starts_at=datetime.combine(
+            cert.issued_on or cert.expires_on, time(0, 0), tzinfo=statutory.ONTARIO),
+        due_at=due_at,
+    )
+    db.add(deadline)
     await db.flush()
     return deadline
