@@ -13,6 +13,13 @@
  * for days gets flagged rather than silently kept forever.
  */
 const PREFIX = 'ehs-draft'
+
+// Bumped whenever a form's saved shape changes. A draft written by an older
+// version is discarded rather than restored: merging half a structure back
+// into a form is how a page ends up reading a field that no longer exists,
+// which is exactly what happened when "who was hurt" went from a text field
+// to a picker and every saved draft started crashing the page.
+const SCHEMA_VERSION = 2
 // A draft with several photographs is the large case; browsers give a single
 // origin around 5MB, so a runaway draft would break saving for every other one.
 const MAX_DRAFT_BYTES = 2_000_000
@@ -22,6 +29,7 @@ export interface Draft<T = unknown> {
   id: string
   kind: string
   savedAt: string
+  version: number
   data: T
 }
 
@@ -30,7 +38,9 @@ function key(kind: string, id: string): string {
 }
 
 export function saveDraft<T>(kind: string, id: string, data: T): boolean {
-  const draft: Draft<T> = { id, kind, savedAt: new Date().toISOString(), data }
+  const draft: Draft<T> = {
+    id, kind, savedAt: new Date().toISOString(), version: SCHEMA_VERSION, data,
+  }
   const payload = JSON.stringify(draft)
   if (payload.length > MAX_DRAFT_BYTES) return false
   try {
@@ -46,7 +56,15 @@ export function saveDraft<T>(kind: string, id: string, data: T): boolean {
 export function loadDraft<T>(kind: string, id: string): Draft<T> | null {
   try {
     const raw = localStorage.getItem(key(kind, id))
-    return raw ? (JSON.parse(raw) as Draft<T>) : null
+    if (!raw) return null
+    const draft = JSON.parse(raw) as Draft<T>
+    if (draft.version !== SCHEMA_VERSION) {
+      // Written by an older build. Drop it — a stale shape restored into a
+      // newer form crashes the page, and a crash is worse than a lost draft.
+      discardDraft(kind, id)
+      return null
+    }
+    return draft
   } catch {
     return null
   }
@@ -68,7 +86,9 @@ export function listDrafts(kind?: string): Draft[] {
       if (!k?.startsWith(`${PREFIX}:`)) continue
       if (kind && !k.startsWith(`${PREFIX}:${kind}:`)) continue
       const raw = localStorage.getItem(k)
-      if (raw) out.push(JSON.parse(raw) as Draft)
+      if (!raw) continue
+      const draft = JSON.parse(raw) as Draft
+      if (draft.version === SCHEMA_VERSION) out.push(draft)
     }
   } catch {
     return out

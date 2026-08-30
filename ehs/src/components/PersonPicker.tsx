@@ -30,18 +30,21 @@ export interface PersonValue {
 export const EMPTY_PERSON: PersonValue = { userId: null, name: '', externalCompany: null }
 
 export function PersonPicker({
-  value,
+  value: valueProp,
   onChange,
   placeholder = 'Search by name, or type someone who is not an employee',
   allowExternal = true,
   disabled = false,
 }: {
-  value: PersonValue
+  // Tolerates a missing value: a caller restoring older saved state should get
+  // an empty picker, not a crash.
+  value: PersonValue | undefined
   onChange: (next: PersonValue) => void
   placeholder?: string
   allowExternal?: boolean
   disabled?: boolean
 }) {
+  const value = valueProp ?? EMPTY_PERSON
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [rect, setRect] = useState<DOMRect | null>(null)

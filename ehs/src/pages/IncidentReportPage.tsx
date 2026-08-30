@@ -97,7 +97,11 @@ export default function IncidentReportPage() {
   useEffect(() => {
     const draft = loadDraft<{ form: FormState; photos: CompressedImage[] }>(DRAFT_KIND, DRAFT_ID)
     if (draft) {
-      setForm(draft.data.form)
+      // Merge over the empty form rather than replacing it. The version check
+      // in loadDraft already rejects a draft from an older shape, and this is
+      // the second guard: a field added since the draft was written must come
+      // back as its default, not as undefined for the page to read through.
+      setForm({ ...EMPTY, ...draft.data.form, injured: draft.data.form?.injured ?? EMPTY_PERSON })
       setPhotos(draft.data.photos ?? [])
       setRestored(true)
     }
