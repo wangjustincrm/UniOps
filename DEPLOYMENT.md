@@ -411,6 +411,63 @@ Additional one-time steps are required before the first booking release:
 
 ---
 
+## Safety Module Release Steps
+
+`ehs-api` (`:8012`) and `ehs-web` (`:5180`, image `uniops-safety-web`, served at
+`safety.canadaroyalmilk.com`) follow the same build/push/deploy pattern as the
+other services. The module is called **Safety** everywhere a person sees it, and
+`ehs` everywhere a machine does — in Canadian usage "security" means guarding
+and access control, and an auditor reading a menu should not have to guess.
+
+Four things are specific to the first Safety release:
+
+1. **Migrations run in a fixed order, and one of them belongs to another
+   service.** `ehs_incidents` and friends carry foreign keys to `users` and the
+   new `locations` table, so:
+
+   | Order | Service | Revision | What it does |
+   |---|---|---|---|
+   | 1 | mdm-api | `0018_locations` | creates `locations` and seeds the plant tree |
+   | 2 | identity-api | `0013_ehs_perms` | six roles, fifteen permission keys, and the grants |
+   | 3 | ehs-api | `20260829_0001` | the 23 tables Safety owns |
+   | 4 | ehs-api | `20260829_0002` | vocabularies, Ontario holidays, statutory courses |
+
+   `migrate-prod.sh` already lists `ehs-api` and runs `mdm-api` before it, so a
+   plain run gets this right. **Do not remove `ehs-api` from `SERVICES`** — the
+   image starts and reports healthy with no tables underneath it, and the first
+   incident report then 500s.
+
+2. **No permission seeding script to remember.** Unlike MRP and the phase-2
+   keys, the Safety roles and permission keys are registered by the identity
+   migration itself, so they exist as soon as `migrate-prod.sh` has run and
+   appear in Portal → Access Control without anyone running `seed_authz.py`.
+   `ehs.incident.report` is granted to **every active role** by that migration:
+   `uniops_authz` resolves each key to an explicit true/false with no fallback,
+   so an ungranted key denies everyone — which for this key would mean a couple
+   of hundred people meeting a 403 while trying to report an injury.
+
+3. **New environment variables.** `EHS_URL` and `EHS_API_URL` in `.env`
+   (see `.env.prod.example` / `.env.lan.example`), plus the new origin in
+   `ALLOWED_ORIGINS`. `SAFETY_URL` is passed to **epms-api** as well — it is
+   what the notifier uses to deep-link Safety tasks. Without it those emails
+   fall through to the OA default and link to `/expenses/<safety id>`, which
+   404s, exactly as `agr` and `posign` once did.
+
+   Because `Caddyfile` and `.env.prod.example` both change, this release needs
+   `docker compose --profile edge up -d edge` to reload the proxy — the two new
+   sites (`safety.` and `safety-api.`) do not exist until it restarts.
+
+4. **The holiday table expires at the end of 2030.** WSIB's three-business-day
+   clock skips Ontario statutory holidays, which are seeded five years ahead by
+   `20260829_0002`. When that list lapses the deadline silently computes a day
+   early — nothing errors, the dates are just wrong. Topping it up is an annual
+   operations task.
+
+After deploying, confirm the two clocks are live rather than assuming: report a
+test incident, classify it as lost time, and check that a WSIB countdown appears
+on it with the right date. A statutory deadline that never got created is
+invisible until the day it is needed.
+
 ## MRP Module Release Steps
 
 `mrp-api` (`:8011`) and `mdm-api`'s BOM sync (`nc_bom*` raw mirror + canonical

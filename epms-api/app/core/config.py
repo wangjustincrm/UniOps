@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     EPMS_URL: str = "http://localhost:5173"
     OA_URL: str = "http://localhost:5175"
     VMS_URL: str = "http://localhost:5176"
+    # Safety frontend — used by _task_link to deep-link Safety notifications.
+    SAFETY_URL: str = "http://localhost:5180"
     FINANCE_URL: str = "http://localhost:5177"
     BOOKING_URL: str = "http://localhost:5178"
     PORTAL_URL: str = "http://localhost:5174"

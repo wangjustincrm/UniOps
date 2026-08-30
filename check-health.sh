@@ -64,6 +64,7 @@ ok "expense-api   " 8006
 ok "budget-api    " 8007
 ok "vms-api       " 8008
 ok "mrp-api       " 8011
+ok "ehs-api       " 8012
 
 echo ""
 echo "── Dependencies (via epms-api) ───────────"

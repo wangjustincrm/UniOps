@@ -61,6 +61,7 @@ services:
       EPMS_URL: ${EPMS_URL}
       OA_URL: ${OA_URL}
       VMS_URL: ${VMS_URL}
+      SAFETY_URL: ${EHS_URL}
       FINANCE_URL: ${FINANCE_URL}
       BOOKING_URL: ${BOOKING_URL}
       PORTAL_URL: ${PORTAL_URL}
@@ -267,6 +268,39 @@ services:
       retries: 5
       start_period: 20s
 
+  ehs-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-ehs-api:${TAG:-latest}
+    build: { context: ., dockerfile: ehs-api/Dockerfile }
+    environment:
+      <<: *db-env
+      APP_NAME: UniOps Safety API
+      APP_VERSION: 0.1.0
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      DEBUG: "false"
+      ENVIRONMENT: production
+      API_V1_PREFIX: /api/v1
+      # Server-to-server URLs use container DNS names, never the browser-facing
+      # build vars — see docker-compose.dev.yml's mrp-api block for what goes
+      # wrong when those are confused.
+      EPMS_API_URL: http://epms-api:8000/api/v1
+      MDM_API_URL: http://mdm-api:8002/mdm/v1
+      APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
+      FILE_SERVER_URL: ${FILE_SERVER_URL}
+      SAFETY_WEB_URL: ${EHS_URL}
+      # The sweep that chases statutory deadlines and overdue corrective
+      # actions. The interval lives in ehs_config and is re-read every tick;
+      # setting it to 0 there disables the sweep without a redeploy.
+      SCHEDULER_ENABLED: "true"
+    ports: ["8012:8012"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8012
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8012/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   mrp-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-mrp-api:${TAG:-latest}
@@ -401,6 +435,7 @@ services:
         VITE_FINANCE_URL: ${FINANCE_URL}
         VITE_BOOKING_URL: ${BOOKING_URL}
         VITE_MRP_URL: ${MRP_URL}
+        VITE_EHS_URL: ${EHS_URL}
         VITE_EPMS_API_URL: ${EPMS_API_URL}
         VITE_OA_API_URL: ${OA_API_URL}
         VITE_VMS_API_URL: ${VMS_API_URL}
@@ -495,6 +530,26 @@ services:
         VITE_VMS_URL: ${VMS_URL}
         VITE_VMS_API_URL: ${VMS_API_URL}
     ports: ["5177:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  ehs-web:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-safety-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: ehs/Dockerfile
+      args:
+        VITE_API_URL: ${EHS_API_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+        VITE_MDM_API_URL: ${MDM_API_URL}
+        VITE_FILE_API_URL: ${FILE_SERVER_URL}
+    ports: ["5180:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
       interval: 30s

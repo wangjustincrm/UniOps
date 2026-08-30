@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   UserCheck,
   ArrowRight, CheckCircle2, AlertCircle,
-  Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock, Network,
+  Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock, Network, HardHat,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, encodeSession } from '@/lib/api'
@@ -12,7 +12,7 @@ import { groupTasks } from '@/lib/groupTasks'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { PortalSidebar } from '@/components/layout/PortalSidebar'
 import { TopHeader } from '@/components/layout/TopHeader'
-import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS, MRP_URL } from '@/components/layout/navConfig'
+import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS, MRP_URL, EHS_URL } from '@/components/layout/navConfig'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -48,7 +48,7 @@ interface OaTask {
 
 interface UnifiedTask {
   id: string
-  module: 'EPMS' | 'EXPENSE' | 'VMS'
+  module: 'EPMS' | 'EXPENSE' | 'VMS' | 'SAFETY'
   title: string
   docNumber: string
   /** Identity used to merge the same task echoed across feeds. Defaults to
@@ -121,7 +121,16 @@ const DOC_PATH: Record<string, string> = {
   // Without this the fallback below deep-links to /dashboard/<uuid>, which is
   // not a page.
   posign: '/po',
+  // Safety doc types deep-link into the Safety frontend, not EPMS — see
+  // EHS_DOC_TYPES below. Without these the fallback sends every Safety task
+  // to /dashboard/<uuid>, which is not a page.
+  ehs_inc: '/incidents',
+  ehs_act: '/actions',
+  ehs_cert: '/training',
 }
+
+// Tasks whose document_type belongs to Safety (deep-linked to EHS_URL).
+const EHS_DOC_TYPES = new Set(['ehs_inc', 'ehs_act', 'ehs_cert'])
 
 // Tasks whose document_type belongs to VMS (deep-linked to VMS_URL, not EPMS_URL).
 const VMS_DOC_TYPES = new Set(['vms_visit', 'vms_train', 'vms_ppe'])
@@ -226,16 +235,23 @@ const MODULE_STYLE: Record<string, { border: string; badge: string; label: strin
   EPMS:    { border: 'border-l-primary-500',  badge: 'text-primary-600',  label: 'EPMS' },
   EXPENSE: { border: 'border-l-amber-400',    badge: 'text-amber-600',    label: 'Expense' },
   VMS:     { border: 'border-l-emerald-500',  badge: 'text-emerald-600',  label: 'Visitor' },
+  SAFETY:  { border: 'border-l-teal-500',     badge: 'text-teal-600',     label: 'Safety' },
 }
 
-const MODULE_ORDER: UnifiedTask['module'][] = ['EPMS', 'EXPENSE', 'VMS']
+const MODULE_ORDER: UnifiedTask['module'][] = ['EPMS', 'EXPENSE', 'VMS', 'SAFETY']
 
 const MODULE_HEADING: Record<UnifiedTask['module'], string> = {
-  EPMS: 'EPMS', EXPENSE: 'Expense', VMS: 'Visitor',
+  EPMS: 'EPMS', EXPENSE: 'Expense', VMS: 'Visitor', SAFETY: 'Safety',
 }
 
 // EPMS engine task types → display labels (inlined; portal has no taskTypes.ts).
 const EPMS_TYPE_LABELS: Record<string, string> = {
+  // Safety task types. Without these the inbox shows the raw type string.
+  ehs_do_action: 'Corrective Action',
+  ehs_verify_action: 'Verify Corrective Action',
+  ehs_investigate: 'Investigate Incident',
+  ehs_statutory: 'Statutory Deadline',
+  ehs_cert_expiry: 'Certification Expiring',
   create_pr: 'Create Purchase Request',
   create_po: 'Create Purchase Order',
   create_pa: 'Create Payment Application',
@@ -306,6 +322,7 @@ function TaskRow({ task }: { task: UnifiedTask }) {
         {task.module === 'EPMS' && <Briefcase className="h-4 w-4 text-primary-500" />}
         {task.module === 'EXPENSE' && <CreditCard className="h-4 w-4 text-amber-500" />}
         {task.module === 'VMS' && <UserCheck className="h-4 w-4 text-emerald-500" />}
+        {task.module === 'SAFETY' && <HardHat className="h-4 w-4 text-teal-500" />}
       </div>
 
       {/* Content */}
@@ -497,6 +514,10 @@ export default function PortalHome() {
   // Bare MRP root (redirects to its default page) — same shape as navConfig's
   // resolveNavHref('mrp'), separate origin so the session fragment rides along.
   const mrpHref = session ? `${MRP_URL}/#__session=${session}` : MRP_URL
+  // Safety: every role can report an incident, so the tile is shown to
+  // everyone who holds that key.
+  const hasSafetyAccess = role === 'system_admin' || !!perms?.['ehs.incident.report']
+  const safetyHref = session ? `${EHS_URL}/#__session=${session}` : EHS_URL
 
   const allTasks = useMemo<UnifiedTask[]>(() => {
     const withSession = (url: string) => (session ? `${url}#__session=${session}` : url)
@@ -527,6 +548,10 @@ export default function PortalHome() {
       if (isVms) {
         module = 'VMS'; base = VMS_URL
         path = vmsDeeplinkPath(t.document_type, t.document_id)
+      } else if (EHS_DOC_TYPES.has(t.document_type.toLowerCase())) {
+        // Safety-owned doc surfaced through the shared task table.
+        module = 'SAFETY'; base = EHS_URL
+        path = `${DOC_PATH[t.document_type.toLowerCase()] ?? '/actions'}/${t.document_id}`
       } else if (oaPath) {
         // OA-owned doc surfaced via approval-api → deep-link into OA, not EPMS.
         module = 'EXPENSE'; base = OA_URL
@@ -645,6 +670,15 @@ export default function PortalHome() {
       label: 'MRP',
       description: 'Demand forecast, MPS production planning, BOM explorer',
       href: mrpHref,
+      healthy: undefined,
+      loading: false,
+    }] : []),
+    ...(hasSafetyAccess ? [{
+      icon: <HardHat className="h-5 w-5 text-teal-600" />,
+      iconBg: 'bg-teal-50',
+      label: 'Safety',
+      description: 'Report an incident, corrective actions, statutory deadlines',
+      href: safetyHref,
       healthy: undefined,
       loading: false,
     }] : []),

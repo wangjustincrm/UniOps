@@ -60,6 +60,12 @@ def _task_link(document_type: str, document_id: Any, task_type: str | None = Non
         "vms_visit":   (settings.VMS_URL,     ""),                  # VMS routes by role from its root
         "vms_train":   (settings.VMS_URL,     ""),
         "vms_ppe":     (settings.VMS_URL,     ""),
+        # Safety. Its tasks reach approvers and owners through this same
+        # table, so without these rows every Safety notification would
+        # deep-link to /expenses/<safety id> like agr and posign once did.
+        "ehs_inc":     (settings.SAFETY_URL, "/incidents/{id}"),
+        "ehs_act":     (settings.SAFETY_URL, "/actions/{id}"),
+        "ehs_cert":    (settings.SAFETY_URL, "/training/{id}"),
     }
     base, path = routes.get(dt, (settings.OA_URL, "/expenses/{id}"))  # default: OA expense claim
     return f"{base}{path.format(id=document_id)}"

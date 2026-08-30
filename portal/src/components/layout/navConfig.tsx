@@ -14,6 +14,7 @@
 import {
   Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
   Network, Repeat,
+  HardHat,
 } from 'lucide-react'
 
 // MRP has no single landing tile like the other modules — Portal links
@@ -23,6 +24,7 @@ import {
 // fields are populated by PortalSidebar/PortalPageLayout/PortalHome) so this
 // file is the single place that needs to change to wire the new module in.
 export const MRP_URL = (import.meta.env.VITE_MRP_URL as string | undefined) || 'http://localhost:5179'
+export const EHS_URL = (import.meta.env.VITE_EHS_URL as string | undefined) || 'http://localhost:5180'
 
 export interface NavItemDef {
   label: string
@@ -84,6 +86,11 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       // have every fetch 403 forever (I5, final-phase review). mrp.demand.write
       // is still required for the in-page write actions.
       { label: 'MRP',         icon: Network,      href: 'mrp', permission: 'mrp.report.view' },
+      // Safety is gated on the one permission every role holds —
+      // ehs.incident.report — because reporting an injury is the reason a
+      // production worker opens UniOps at all. Gating it on a narrower key
+      // would hide the module from the people it exists for.
+      { label: 'Safety',      icon: HardHat,      href: 'ehs', permission: 'ehs.incident.report' },
     ],
   },
   {
@@ -138,6 +145,7 @@ export function resolveNavHref(key: string, ctx: HrefContext): string {
   // same shape as the sibling module entries above. The session fragment is
   // still needed because MRP is a separate origin.
   if (key === 'mrp') return ctx.session ? `${MRP_URL}/#__session=${ctx.session}` : MRP_URL
+  if (key === 'ehs') return ctx.session ? `${EHS_URL}/#__session=${ctx.session}` : EHS_URL
   if (key === 'admin') return '/admin'
   if (key.startsWith('portal:')) return key.slice('portal:'.length)
   if (key.startsWith('epms:')) {

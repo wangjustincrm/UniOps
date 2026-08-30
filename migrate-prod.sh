@@ -24,7 +24,7 @@ COMPOSE="docker compose -f docker-compose.prod.yml"
 # position in this list is unconstrained, appended here so a release can
 # never ship the mrp-api image without its tables (WMS_* inventory-lot mirror)
 # while /health still reports healthy.
-SERVICES="finance-api mdm-api epms-api identity-api approval-api budget-api expense-api vms-api booking-api mrp-api"
+SERVICES="finance-api mdm-api epms-api identity-api approval-api budget-api expense-api vms-api booking-api mrp-api ehs-api"
 
 for svc in $SERVICES; do
   echo ">> alembic upgrade head: ${svc}"
