@@ -108,7 +108,7 @@ services:
       APP_NAME: EPMS API
       APP_VERSION: 0.1.0
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}","http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}"]'
       # 测试/开发栈: 所有外发邮件进 MailHog, 绝不外发
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
@@ -162,7 +162,7 @@ services:
       JWT_ALGORITHM: HS256
       SERVICE_NAME: approval-engine
       PORT: "8003"
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}","http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}"]'
     command: uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
@@ -190,7 +190,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       SERVICE_NAME: mdm-stub
       PORT: "8002"
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}","http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}"]'
       ERP_BASE_URL: http://10.10.95.66
       ERP_TIMEOUT_SECONDS: "60"
       # NC65 read-only connection for the BOM raw mirror sync (values live in the
@@ -242,7 +242,7 @@ services:
       # specific person, so they would otherwise stay with the previous
       # holder). Missing/wrong value = silent "failed:" in the response.
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}","http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}"]'
       # 测试/开发栈: 所有外发邮件进 MailHog, 绝不外发
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
@@ -281,7 +281,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       SERVICE_NAME: finance-core
       PORT: "8004"
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}","http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       BUDGET_API_URL: http://budget-api:8007
       # Where the client reads QBO creds inside the container (see the volume above).
@@ -325,7 +325,7 @@ services:
       SERVICE_NAME: file-server
       PORT: "8005"
       STORAGE_ROOT: /file-storage
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}","http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}"]'
     command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
     healthcheck:
       # Router is mounted under /files/v1 (app/main.py) — health lives there, not at /health.
@@ -357,7 +357,7 @@ services:
       JWT_ALGORITHM: HS256
       SERVICE_NAME: expense-api
       PORT: "8006"
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}","http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}"]'
       DEBUG: "true"
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
@@ -395,7 +395,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}","http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}"]'
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
     command: uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
@@ -460,7 +460,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}","http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}"]'
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
       # Server-to-server mdm-api URL (container DNS name), NOT the
@@ -525,7 +525,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}","http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
@@ -567,7 +567,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
+      ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}","http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
       SCHEDULER_ENABLED: "true"

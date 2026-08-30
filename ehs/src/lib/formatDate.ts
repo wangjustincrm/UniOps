@@ -1,27 +1,19 @@
 /**
- * Date formatting for the Safety module.
+ * Time formatting for the Safety module.
  *
- * The one rule that matters here: a date-only string is never handed to
- * `new Date()`. `new Date('2026-08-28')` is parsed as UTC midnight, which in
- * Kingston (UTC−4, or −5 in winter) is the evening of the 27th — so every
- * date-only value renders a day early, and a 1 January value renders in the
- * previous year. This has already caught the project once across all seven
- * frontends. Date-only strings are split and formatted as text.
+ * `formatDate` itself is re-exported from lib/utils, which already carries the
+ * repository's fix for date-only strings: `new Date('2026-08-28')` parses as
+ * UTC midnight and renders as the 27th anywhere west of Greenwich, so every
+ * date-only field in the app showed a day early until that was corrected.
+ * Shipping a second implementation of the same rule is how the two drift.
  *
- * Timestamps are a different matter: they carry an offset, so `new Date()` is
- * correct for them and the browser renders them in the viewer's zone.
+ * What lives here is what Safety needs on top: how late something is, and the
+ * statutory countdown.
  */
+export { formatDate } from './utils'
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-/** Format a date-only value (`2026-08-28`) without going through Date. */
-export function formatDate(value: string | null | undefined): string {
-  if (!value) return '—'
-  const [y, m, d] = value.slice(0, 10).split('-')
-  if (!y || !m || !d) return value
-  return `${Number(d)} ${MONTHS[Number(m) - 1] ?? m} ${y}`
-}
-
 /** Format a timestamp in the viewer's timezone. */
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return '—'
