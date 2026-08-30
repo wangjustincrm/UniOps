@@ -235,14 +235,25 @@ async def test_an_absurd_interval_is_refused(hse_manager, config_row):
 
 # ── Permissions ─────────────────────────────────────────────────────────────
 
-async def test_a_worker_can_read_lists_but_not_change_them(worker, vocabs, config_row):
+async def test_a_worker_can_read_the_lists_a_form_needs(worker, vocabs, config_row):
+    """The reference data a report form offers has to be readable by whoever
+    is filing. Gating it on ehs.incident.read left the location picker empty
+    for production workers — the people the module exists for."""
     _, client = worker
-    # Reading is gated on incident.read, which a worker does not hold either.
-    assert (await client.get("/api/v1/settings/vocabularies")).status_code == 403
+    assert (await client.get("/api/v1/settings/vocabularies")).status_code == 200
+    assert (await client.get("/api/v1/settings/vocabularies/ppe/items")).status_code == 200
+    assert (await client.get("/api/v1/settings/locations")).status_code == 200
+
+
+async def test_a_worker_still_cannot_change_anything(worker, vocabs, config_row):
+    _, client = worker
     assert (await client.post("/api/v1/settings/vocabularies/ppe/items",
                               json={"code": "X", "label": "X"})).status_code == 403
     assert (await client.put("/api/v1/settings/config",
                              json={"capa_remind_before_days": 1})).status_code == 403
+    # Behaviour parameters are not form data — a worker has no reason to read
+    # the escalation ladder or the notification groups.
+    assert (await client.get("/api/v1/settings/config")).status_code == 403
 
 
 async def test_an_auditor_can_read_but_not_change(auditor, vocabs, config_row):

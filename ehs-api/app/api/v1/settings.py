@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
 from app.core.deps import SessionDep
-from app.core.permissions import CanManageSettings, CanReadIncident
+from app.core.permissions import CanManageSettings, CanReadIncident, CanReportIncident
 from app.crud import vocabulary as crud
 from app.models.config import EhsConfig
 from app.models.mirrors import Location
@@ -76,7 +76,14 @@ async def update_config(payload: ConfigUpdate, db: SessionDep, user: CanManageSe
 
 
 @router.get("/vocabularies", response_model=list[VocabularyOut])
-async def list_vocabularies(db: SessionDep, user: CanReadIncident):  # noqa: ARG001
+async def list_vocabularies(db: SessionDep, user: CanReportIncident):  # noqa: ARG001
+    """Readable by anyone who can file a report, which is everyone.
+
+    These lists are what a form offers as choices — causes, hazards, PPE. A
+    production worker filling in an incident needs them, and gating them behind
+    ehs.incident.read left the location picker empty for exactly the people the
+    module exists for. Editing is still ehs.settings.manage.
+    """
     return [
         VocabularyOut.model_validate(v).model_copy(
             update={"item_count": total, "active_item_count": active})
@@ -88,7 +95,7 @@ async def list_vocabularies(db: SessionDep, user: CanReadIncident):  # noqa: ARG
 async def list_items(
     code: str,
     db: SessionDep,
-    user: CanReadIncident,  # noqa: ARG001
+    user: CanReportIncident,  # noqa: ARG001
     include_inactive: bool = Query(
         default=False,
         description="Retired entries. Off by default so pickers only offer live ones.",
@@ -130,10 +137,12 @@ async def retire_item(code: str, item_id: uuid.UUID, db: SessionDep, user: CanMa
 # ── Plant tree (read-only — mdm-api owns the table) ─────────────────────────
 
 
+# Every incident is filed against an area, so the tree has to be readable by
+# whoever is filing — not only by the people who can browse the register.
 @router.get("/locations", response_model=list[LocationNode])
 async def location_tree(
     db: SessionDep,
-    user: CanReadIncident,  # noqa: ARG001
+    user: CanReportIncident,  # noqa: ARG001
     include_inactive: bool = False,
 ):
     stmt = select(Location)
