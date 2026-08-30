@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.actions import router as actions_router
+from app.api.v1.deadlines import router as deadlines_router
 from app.api.v1.first_aid import router as first_aid_router
 from app.api.v1.health import router as health_router
 from app.api.v1.incidents import router as incidents_router
@@ -16,3 +17,4 @@ api_router.include_router(actions_router, prefix="/actions", tags=["actions"])
 api_router.include_router(settings_router, prefix="/settings", tags=["settings"])
 api_router.include_router(training_router, prefix="/training", tags=["training"])
 api_router.include_router(first_aid_router, prefix="/first-aid", tags=["first-aid"])
+api_router.include_router(deadlines_router, prefix="/deadlines", tags=["statutory"])
