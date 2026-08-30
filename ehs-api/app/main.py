@@ -16,6 +16,7 @@ from app.api.v1 import api_router
 from app.core import background
 from app.core.config import settings
 from app.db.session import engine
+from app.tasks import scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,10 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
         "Starting up %s v%s [%s]",
         settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT,
     )
+    scheduler_task = scheduler.start()
     yield
-    logger.info("Shutting down — draining background work, then closing engine")
+    logger.info("Shutting down — stopping scheduler, draining background work")
+    await scheduler.stop(scheduler_task)
     # Settle fire-and-forget work (notification sends) before disposing the
     # engine. Skipping this leaves sessions suspended mid-transaction and
     # their connections go back to the pool still holding locks.
