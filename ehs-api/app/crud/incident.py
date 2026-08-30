@@ -113,10 +113,13 @@ async def list_(
     statuses: list[str] | None = None,
     form_kind: str | None = None,
     location_id: uuid.UUID | None = None,
+    reported_by: uuid.UUID | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[Incident]:
     stmt = select(Incident)
+    if reported_by:
+        stmt = stmt.where(Incident.reported_by == reported_by)
     if statuses:
         stmt = stmt.where(Incident.status.in_(statuses))
     if form_kind:

@@ -247,3 +247,60 @@ async def test_unknown_incident_is_404(hse_manager):
     _, client = hse_manager
     r = await client.get(f"/api/v1/incidents/{uuid.uuid4()}")
     assert r.status_code == 404
+
+
+# ── A reporter can see what they reported ───────────────────────────────────
+
+async def test_a_worker_can_open_the_incident_they_just_reported(worker):
+    """Submitting used to bounce the reporter off the page they were sent to:
+    ehs.incident.read means "browse the register", which a worker does not
+    have, and the guard did not make an exception for their own report."""
+    _, client = worker
+    created = (await client.post("/api/v1/incidents", json=_payload())).json()
+    await client.post(f"/api/v1/incidents/{created['id']}/submit")
+
+    assert (await client.get(f"/api/v1/incidents/{created['id']}")).status_code == 200
+    assert (await client.get(f"/api/v1/incidents/{created['id']}/cause-tree")).status_code == 200
+
+
+async def test_a_worker_cannot_open_someone_elses_incident(worker, hse_manager):
+    _, wclient = worker
+    _, mclient = hse_manager
+    theirs = (await mclient.post("/api/v1/incidents", json=_payload(title="not yours"))).json()
+    r = await wclient.get(f"/api/v1/incidents/{theirs['id']}")
+    assert r.status_code == 403
+    assert "reported or were involved in" in r.text
+
+
+async def test_a_worker_can_open_an_incident_they_were_involved_in(worker, hse_manager):
+    """Being the injured person is reason enough to see the record."""
+    injured, wclient = worker
+    _, mclient = hse_manager
+    incident = (await mclient.post("/api/v1/incidents", json=_payload(
+        persons=[{"role": "injured", "person_name": injured.full_name,
+                  "user_id": str(injured.id)}]))).json()
+    assert (await wclient.get(f"/api/v1/incidents/{incident['id']}")).status_code == 200
+
+
+async def test_the_list_narrows_to_your_own_rather_than_refusing(worker, hse_manager):
+    _, wclient = worker
+    _, mclient = hse_manager
+    mine = (await wclient.post("/api/v1/incidents", json=_payload(title="mine"))).json()
+    theirs = (await mclient.post("/api/v1/incidents", json=_payload(title="theirs"))).json()
+
+    rows = await wclient.get("/api/v1/incidents")
+    assert rows.status_code == 200
+    ids = {r["id"] for r in rows.json()}
+    assert mine["id"] in ids
+    assert theirs["id"] not in ids
+
+
+async def test_someone_with_read_sees_the_whole_register(worker, hse_manager):
+    _, wclient = worker
+    _, mclient = hse_manager
+    mine = (await wclient.post("/api/v1/incidents", json=_payload(title="mine"))).json()
+    theirs = (await mclient.post("/api/v1/incidents", json=_payload(title="theirs"))).json()
+
+    ids = {r["id"] for r in (await mclient.get("/api/v1/incidents")).json()}
+    assert mine["id"] in ids
+    assert theirs["id"] in ids

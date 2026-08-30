@@ -19,6 +19,9 @@ from app.core.permissions import (
     CanReadIncident,
     CanReportIncident,
 )
+from app.models.incident import IncidentPerson
+from sqlalchemy import select
+from uniops_authz import has_permission
 from app.crud import incident as crud
 from app.crud import investigation as inv_crud
 from app.schemas.incident import (
@@ -39,6 +42,29 @@ from app.schemas.investigation import (
 )
 
 router = APIRouter()
+
+
+async def _may_read(db, payload: dict, incident) -> bool:
+    """Whether this caller may see this incident.
+
+    ehs.incident.read means "browse the register", and most people do not have
+    it. But the person who filed a report, and anyone recorded as involved in
+    one, can always see their own — without that, a worker submitting a report
+    is bounced off the page they were just sent to, which is what happened.
+    """
+    if await has_permission(db, _user_id(payload), payload.get("role", ""),
+                            "ehs.incident.read"):
+        return True
+    me = _user_id(payload)
+    if incident.reported_by == me:
+        return True
+    involved = (await db.execute(
+        select(IncidentPerson.id).where(
+            IncidentPerson.incident_id == incident.id,
+            IncidentPerson.user_id == me,
+        ).limit(1)
+    )).scalar_one_or_none()
+    return involved is not None
 
 
 def _user_id(payload: dict) -> uuid.UUID:
@@ -68,23 +94,34 @@ async def create_incident(payload: IncidentCreate, db: SessionDep, user: CanRepo
 @router.get("", response_model=list[IncidentListItem])
 async def list_incidents(
     db: SessionDep,
-    user: CanReadIncident,  # noqa: ARG001
+    user: CanReportIncident,
     status_in: list[str] | None = Query(default=None, alias="status"),
     form_kind: str | None = None,
     location_id: uuid.UUID | None = None,
     limit: int = Query(default=50, le=200),
     offset: int = 0,
 ):
+    # Without ehs.incident.read the register is not browsable, but a person's
+    # own reports are: the list narrows rather than refusing outright.
+    mine_only = not await has_permission(
+        db, _user_id(user), user.get("role", ""), "ehs.incident.read")
     rows = await crud.list_(
         db, statuses=status_in, form_kind=form_kind,
         location_id=location_id, limit=limit, offset=offset,
+        reported_by=_user_id(user) if mine_only else None,
     )
     return [IncidentListItem.model_validate(r) for r in rows]
 
 
 @router.get("/{incident_id}", response_model=IncidentOut)
-async def get_incident(incident_id: uuid.UUID, db: SessionDep, user: CanReadIncident):  # noqa: ARG001
-    return await _to_out(db, await crud.get(db, incident_id))
+async def get_incident(incident_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    incident = await crud.get(db, incident_id)
+    if not await _may_read(db, user, incident):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "You can only open incidents you reported or were involved in",
+        )
+    return await _to_out(db, incident)
 
 
 @router.post("/{incident_id}/submit", response_model=IncidentOut)
@@ -117,8 +154,10 @@ async def classify_incident(
 
 
 @router.get("/{incident_id}/investigation", response_model=InvestigationOut | None)
-async def get_investigation(incident_id: uuid.UUID, db: SessionDep, user: CanReadIncident):  # noqa: ARG001
-    await crud.get(db, incident_id)
+async def get_investigation(incident_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    incident = await crud.get(db, incident_id)
+    if not await _may_read(db, user, incident):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your incident")
     inv = await inv_crud.get_investigation(db, incident_id)
     return InvestigationOut.model_validate(inv) if inv else None
 
@@ -153,13 +192,19 @@ async def replace_causes(
 
 
 @router.get("/{incident_id}/cause-tree", response_model=CauseTreeOut)
-async def cause_tree(incident_id: uuid.UUID, db: SessionDep, user: CanReadIncident):  # noqa: ARG001
+async def cause_tree(incident_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
     """Causes with the corrective actions hanging off each one.
 
     A root cause with nothing under it is flagged rather than left to the
     reader to notice — that gap is exactly what an audit looks for.
     """
-    return await _cause_tree(db, await crud.get(db, incident_id))
+    incident = await crud.get(db, incident_id)
+    if not await _may_read(db, user, incident):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "You can only open incidents you reported or were involved in",
+        )
+    return await _cause_tree(db, incident)
 
 
 async def _cause_tree(db, incident) -> CauseTreeOut:
