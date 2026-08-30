@@ -238,3 +238,56 @@ async def test_overdue_filter_finds_only_past_due_open_actions(hse_manager, work
 async def test_unknown_action_is_404(hse_manager):
     _, client = hse_manager
     assert (await client.get(f"/api/v1/actions/{uuid.uuid4()}")).status_code == 404
+
+
+# ── Seeing only what you are part of ────────────────────────────────────────
+
+async def test_a_worker_sees_only_their_own_actions_in_the_list(hse_manager, worker, test_engine):
+    """A worker holds ehs.action.read so they can work what is assigned to
+    them. That is not the same as reading everybody's."""
+    from tests.conftest import make_user
+    _, mclient = hse_manager
+    owner, wclient = worker
+    other = await make_user(test_engine, role="worker")
+
+    mine = (await mclient.post("/api/v1/actions", json=_payload(owner.id))).json()
+    theirs = (await mclient.post("/api/v1/actions", json=_payload(other.id))).json()
+
+    ids = {r["id"] for r in (await wclient.get("/api/v1/actions")).json()}
+    assert mine["id"] in ids
+    assert theirs["id"] not in ids
+
+
+async def test_a_worker_cannot_open_someone_elses_action(hse_manager, worker, test_engine):
+    from tests.conftest import make_user
+    _, mclient = hse_manager
+    _, wclient = worker
+    other = await make_user(test_engine, role="worker")
+    theirs = (await mclient.post("/api/v1/actions", json=_payload(other.id))).json()
+
+    r = await wclient.get(f"/api/v1/actions/{theirs['id']}")
+    assert r.status_code == 403
+    assert "assigned to you" in r.text
+
+
+async def test_a_worker_cannot_report_progress_on_someone_elses_action(
+    hse_manager, worker, test_engine
+):
+    from tests.conftest import make_user
+    _, mclient = hse_manager
+    _, wclient = worker
+    other = await make_user(test_engine, role="worker")
+    theirs = (await mclient.post("/api/v1/actions", json=_payload(other.id))).json()
+
+    r = await wclient.post(f"/api/v1/actions/{theirs['id']}/updates", json={"body": "not mine"})
+    assert r.status_code == 403
+
+
+async def test_an_auditor_sees_the_whole_action_register(hse_manager, worker, auditor):
+    """Auditors browse without managing — they hold the read marker."""
+    _, mclient = hse_manager
+    owner, _ = worker
+    _, aclient = auditor
+    a = (await mclient.post("/api/v1/actions", json=_payload(owner.id))).json()
+    ids = {r["id"] for r in (await aclient.get("/api/v1/actions")).json()}
+    assert a["id"] in ids
