@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.core.deps import SessionDep
 from app.core.permissions import (
     CanClassifyIncident,
+    CanManageStatutory,
     CanReadIncident,
     CanReportIncident,
 )
@@ -26,6 +27,7 @@ from app.schemas.incident import (
     IncidentListItem,
     IncidentOut,
 )
+from app.schemas.wsib import Form7FiledIn, Form7Package
 from app.schemas.investigation import (
     CauseActionOut,
     CauseOut,
@@ -182,3 +184,60 @@ async def _cause_tree(db, incident) -> CauseTreeOut:
         root=root,
         unaddressed_root_causes=sum(1 for c in root if c.needs_action),
     )
+
+
+# ── WSIB Form 7 ─────────────────────────────────────────────────────────────
+
+
+@router.get("/{incident_id}/wsib-form7", response_model=Form7Package)
+async def wsib_form7(incident_id: uuid.UUID, db: SessionDep, user: CanReadIncident):  # noqa: ARG001
+    """Everything needed to fill in Form 7 in one sitting.
+
+    UniOps does not file it — statutory submission goes through WSIB's own
+    service. What this returns is the fields we hold plus the ones we do not,
+    so whoever files knows what to gather before they start.
+    """
+    from app.services.wsib import build_package
+    return await build_package(db, await crud.get(db, incident_id))
+
+
+@router.post("/{incident_id}/wsib-form7/filed", response_model=Form7Package)
+async def wsib_form7_filed(
+    incident_id: uuid.UUID, payload: Form7FiledIn, db: SessionDep, user: CanManageStatutory,
+):
+    """Record that Form 7 was filed, which is what stops the clock.
+
+    The confirmation number WSIB returns is the evidence the obligation was
+    discharged, so it is required rather than optional — a deadline marked
+    satisfied with nothing behind it is worse than one still showing as open.
+    """
+    from app.services import deadlines as deadline_service
+    from app.services.wsib import build_package
+
+    incident = await crud.get(db, incident_id)
+    deadline = next(
+        (d for d in await crud.load_deadlines(db, incident.id) if d.kind == "wsib_form7"),
+        None,
+    )
+    if deadline is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{incident.incident_no} owes WSIB nothing — it has not been classified "
+            "as a medical-aid or lost-time injury",
+        )
+    if deadline.satisfied_at is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Form 7 for {incident.incident_no} was already recorded as filed on "
+            f"{deadline.satisfied_at.date().isoformat()}",
+        )
+
+    await deadline_service.satisfy(
+        db, deadline,
+        user_id=_user_id(user),
+        user_name=None,
+        evidence_file_id=payload.evidence_file_id,
+        evidence_note=payload.confirmation_number,
+        when=payload.filed_at or datetime.now(timezone.utc),
+    )
+    return await build_package(db, incident)
