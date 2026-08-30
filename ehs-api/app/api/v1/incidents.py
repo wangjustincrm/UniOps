@@ -19,11 +19,21 @@ from app.core.permissions import (
     CanReportIncident,
 )
 from app.crud import incident as crud
+from app.crud import investigation as inv_crud
 from app.schemas.incident import (
     IncidentClassify,
     IncidentCreate,
     IncidentListItem,
     IncidentOut,
+)
+from app.schemas.investigation import (
+    CauseActionOut,
+    CauseOut,
+    CausesReplace,
+    CauseTreeOut,
+    InvestigationIn,
+    InvestigationOut,
+    InvestigationSignIn,
 )
 
 router = APIRouter()
@@ -99,3 +109,76 @@ async def classify_incident(
     await crud.classify(db, incident, payload, user_id=_user_id(user),
                         now=datetime.now(timezone.utc))
     return await _to_out(db, incident)
+
+
+# ── Investigation and causes ────────────────────────────────────────────────
+
+
+@router.get("/{incident_id}/investigation", response_model=InvestigationOut | None)
+async def get_investigation(incident_id: uuid.UUID, db: SessionDep, user: CanReadIncident):  # noqa: ARG001
+    await crud.get(db, incident_id)
+    inv = await inv_crud.get_investigation(db, incident_id)
+    return InvestigationOut.model_validate(inv) if inv else None
+
+
+@router.put("/{incident_id}/investigation", response_model=InvestigationOut)
+async def upsert_investigation(
+    incident_id: uuid.UUID, payload: InvestigationIn, db: SessionDep, user: CanClassifyIncident,  # noqa: ARG001
+):
+    incident = await crud.get(db, incident_id)
+    inv = await inv_crud.upsert_investigation(db, incident, payload)
+    return InvestigationOut.model_validate(inv)
+
+
+@router.post("/{incident_id}/investigation/sign", response_model=InvestigationOut)
+async def sign_investigation(
+    incident_id: uuid.UUID, payload: InvestigationSignIn, db: SessionDep, user: CanClassifyIncident,
+):
+    incident = await crud.get(db, incident_id)
+    inv = await inv_crud.sign_investigation(
+        db, incident, payload.signature, user_id=_user_id(user),
+        now=datetime.now(timezone.utc))
+    return InvestigationOut.model_validate(inv)
+
+
+@router.put("/{incident_id}/causes", response_model=CauseTreeOut)
+async def replace_causes(
+    incident_id: uuid.UUID, payload: CausesReplace, db: SessionDep, user: CanClassifyIncident,  # noqa: ARG001
+):
+    incident = await crud.get(db, incident_id)
+    await inv_crud.replace_causes(db, incident, payload)
+    return await _cause_tree(db, incident)
+
+
+@router.get("/{incident_id}/cause-tree", response_model=CauseTreeOut)
+async def cause_tree(incident_id: uuid.UUID, db: SessionDep, user: CanReadIncident):  # noqa: ARG001
+    """Causes with the corrective actions hanging off each one.
+
+    A root cause with nothing under it is flagged rather than left to the
+    reader to notice — that gap is exactly what an audit looks for.
+    """
+    return await _cause_tree(db, await crud.get(db, incident_id))
+
+
+async def _cause_tree(db, incident) -> CauseTreeOut:
+    causes = await inv_crud.list_causes(db, incident.id)
+    grouped = await inv_crud.actions_by_cause(db, incident.id)
+
+    def _to_out(cause) -> CauseOut:
+        actions = grouped.get(cause.id, [])
+        out = CauseOut.model_validate(cause)
+        out.actions = [CauseActionOut.model_validate(a) for a in actions]
+        # Only root causes are expected to have actions; an immediate cause is
+        # a description of what happened, not something to fix.
+        out.needs_action = cause.cause_type == "root" and not actions
+        return out
+
+    immediate = [_to_out(c) for c in causes if c.cause_type == "immediate"]
+    root = [_to_out(c) for c in causes if c.cause_type == "root"]
+    return CauseTreeOut(
+        incident_id=incident.id,
+        incident_no=incident.incident_no,
+        immediate=immediate,
+        root=root,
+        unaddressed_root_causes=sum(1 for c in root if c.needs_action),
+    )
