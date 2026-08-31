@@ -37,9 +37,10 @@ async def client(db_session):
     app.dependency_overrides.clear()
 
 
-def _pa(status="approved", po_id=None, invoice_ids=None, agreement_id=None) -> PaymentApplication:
+def _pa(status="approved", po_id=None, invoice_ids=None, agreement_id=None,
+        pa_type="PA-DIR") -> PaymentApplication:
     return PaymentApplication(
-        pa_number=f"PA-{uuid.uuid4().hex[:8]}", title="Test PA", pa_type="PA-DIR",
+        pa_number=f"PA-{uuid.uuid4().hex[:8]}", title="Test PA", pa_type=pa_type,
         status=status, po_id=po_id, po_number="PO-1" if po_id else None,
         agreement_id=agreement_id,
         vendor_id=uuid.uuid4(), vendor_name="ACME Inc",
@@ -335,3 +336,109 @@ async def test_other_payer_unaffected_by_sod(client, db_session):
 
     r = await _execute(client, "pa_dir", pa.id)  # random payer ≠ creator
     assert r.status_code == 200, r.text
+
+
+# ── _check_invoice_link: refuse to pay a PA that names no invoice ───────────
+# Regression cover for the 2026-08-31 production case (PA-20260729-0001, batch
+# BP-20260831-0007): the PA was paid with invoice_ids empty, so BOTH writeback
+# loops in execute() iterated zero times. The invoice stayed 'matched', its
+# ap_invoices row stayed 'posted' at paid_amount 0, the remittance advice was
+# blocked 'missing_invoice_no', and nothing claimed the invoice against being
+# paid a second time — none of it repairable afterwards, since a PA is editable
+# only in draft/returned. Payment is the last point where it is still catchable.
+
+def _po_invoice(po_id, status="matched", ref=None) -> Invoice:
+    from datetime import date as _date
+    return Invoice(
+        status=status, internal_ref=ref or f"INV-{uuid.uuid4().hex[:8]}",
+        vendor_invoice_number="VI-9", vendor_id=uuid.uuid4(), vendor_name="ACME",
+        amount=Decimal("10.00"), tax_amount=Decimal("0"), total_amount=Decimal("10.00"),
+        currency="CAD", invoice_date=_date(2026, 6, 1), due_date=_date(2026, 7, 1),
+        po_id=po_id, po_number="PO-1",
+    )
+
+
+async def test_execute_refuses_pa_linking_no_invoice_when_po_has_an_unclaimed_one(
+    client, db_session
+):
+    po_id = uuid.uuid4()
+    inv = _po_invoice(po_id)
+    db_session.add(inv)
+    await db_session.flush()
+    pa = _pa(po_id=po_id)               # invoice_ids deliberately left empty
+    db_session.add(pa)
+    await db_session.flush()
+
+    r = await _execute(client, "pa", pa.id)
+
+    assert r.status_code == 409, r.text
+    # The message must name the invoice, or the operator cannot act on it.
+    assert inv.internal_ref in r.json()["detail"]
+    # And nothing may have been written: no status flip, no payment record.
+    await db_session.refresh(pa)
+    assert pa.status == "approved"
+    assert (await db_session.execute(
+        select(PaymentRecord).where(PaymentRecord.doc_id == pa.id)
+    )).scalar_one_or_none() is None
+
+
+async def test_execute_allows_prepayment_pa_without_invoice(client, db_session):
+    """A prepayment is paid before the vendor has invoiced anything — there is
+    nothing to link yet, so the gate must not touch it even when the PO already
+    carries an invoice for a later instalment."""
+    po_id = uuid.uuid4()
+    db_session.add(_po_invoice(po_id))
+    await db_session.flush()
+    pa = _pa(po_id=po_id, pa_type="prepayment")
+    db_session.add(pa)
+    await db_session.flush()
+
+    r = await _execute(client, "pa", pa.id)
+    assert r.status_code == 200, r.text
+
+
+async def test_execute_allows_pa_without_invoice_when_po_has_none(client, db_session):
+    """GR-only payment on a PO nobody has invoiced. The gate fires on a
+    forgotten link, not on the absence of an invoice."""
+    pa = _pa(po_id=uuid.uuid4())
+    db_session.add(pa)
+    await db_session.flush()
+
+    r = await _execute(client, "pa", pa.id)
+    assert r.status_code == 200, r.text
+
+
+async def test_execute_allows_pa_without_invoice_when_sibling_pa_claims_it(
+    client, db_session
+):
+    """The PO's only invoice is already somebody else's payable (prepayment
+    first, settlement after). Nothing was forgotten here, so nothing is
+    refused."""
+    po_id = uuid.uuid4()
+    inv = _po_invoice(po_id)
+    db_session.add(inv)
+    await db_session.flush()
+    sibling = _pa(po_id=po_id, invoice_ids=[str(inv.id)])
+    db_session.add(sibling)
+    pa = _pa(po_id=po_id)
+    db_session.add(pa)
+    await db_session.flush()
+
+    r = await _execute(client, "pa", pa.id)
+    assert r.status_code == 200, r.text
+
+
+async def test_execute_ignores_a_cancelled_sibling_pa_claim(client, db_session):
+    """A cancelled PA's claim releases the invoice — it is unclaimed again, so
+    the gate must fire rather than treat the dead PA as cover."""
+    po_id = uuid.uuid4()
+    inv = _po_invoice(po_id)
+    db_session.add(inv)
+    await db_session.flush()
+    db_session.add(_pa(po_id=po_id, invoice_ids=[str(inv.id)], status="cancelled"))
+    pa = _pa(po_id=po_id)
+    db_session.add(pa)
+    await db_session.flush()
+
+    r = await _execute(client, "pa", pa.id)
+    assert r.status_code == 409, r.text

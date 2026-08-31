@@ -4,7 +4,10 @@
 
 export interface FieldSpec {
   name: string
-  type: 'string' | 'number' | 'decimal' | 'bool' | 'date' | 'datetime' | 'uuid' | 'json' | 'enum' | 'reference'
+  // 'reference_list' = a JSONB array of ids edited via ReferenceListPicker
+  // (payment_applications.invoice_ids / gr_ids). Keep in sync with
+  // epms-api/app/admin/fields.py::FieldType.
+  type: 'string' | 'number' | 'decimal' | 'bool' | 'date' | 'datetime' | 'uuid' | 'json' | 'enum' | 'reference' | 'reference_list'
   editable: boolean
   label: string
   options: string[] | null

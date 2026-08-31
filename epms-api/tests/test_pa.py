@@ -741,3 +741,48 @@ async def test_finance_client_puts_credit_ids_on_the_wire_only_when_given(monkey
     await finance_client.execute_payment(
         doc_kind="pa", doc_id=doc_id, bearer_token="tok", credit_ids=[cid])
     assert captured["payload"]["credit_ids"] == [str(cid)]
+
+
+# ── Submit gate: a PO-based PA must name the invoice it settles ────────────────
+# Cover for the 2026-08-31 production case: PA-20260729-0001 reached approval and
+# payment with invoice_ids empty. finance-api's payment executor then closed
+# nothing — the invoice stayed 'matched', its ap_invoices row stayed open at
+# paid_amount 0, and the remittance advice was blocked 'missing_invoice_no' with
+# no screen able to lift it, because update_pa accepts only draft/returned.
+# The gate sits on the submit ACTION (not in PaCreate) so a draft can still be
+# saved half-finished; these tests therefore create the draft, then submit.
+
+@pytest.mark.asyncio
+async def test_submit_refuses_pa_that_links_no_invoice(admin_client, test_engine):
+    # A three-way PO is what makes this the real shape: creation already
+    # demands that the PO carry a matched invoice with a GR behind it, and
+    # passes — because that gate asks whether the PO has an invoice, never
+    # whether THIS PA points at one. That gap is the whole bug.
+    v = await _make_vendor(admin_client, "VND-PA-NOINV-01")
+    po = await _make_three_way_po(admin_client, test_engine, v["id"])
+    pa = await _create_pa(admin_client, po["id"])          # invoice_ids left empty
+    assert pa["status"] == "draft"                          # the draft itself is fine
+
+    r = await admin_client.post(f"{PA_URL}/{pa['id']}/action", json={"action": "submit"})
+
+    assert r.status_code == 409, r.text
+    # Must name the PO, or the operator has nowhere to go to fix it.
+    assert po["number"] in r.json()["detail"]
+    # And it must not have entered approval.
+    still = await admin_client.get(f"{PA_URL}/{pa['id']}")
+    assert still.json()["status"] == "draft"
+
+
+@pytest.mark.asyncio
+async def test_submit_allows_prepayment_pa_without_invoice(admin_client, test_engine):
+    """A prepayment is paid before the vendor has invoiced anything, so it must
+    pass the gate. It still fails further down when approval-api is unavailable
+    in this environment — what matters here is that it is not OUR 409."""
+    v = await _make_vendor(admin_client, "VND-PA-NOINV-02")
+    po = await _make_three_way_po(admin_client, test_engine, v["id"])
+    pa = await _create_pa(admin_client, po["id"], pa_type="prepayment",
+                          prepayment_pct="30", expected_settlement_date="2026-12-31")
+
+    r = await admin_client.post(f"{PA_URL}/{pa['id']}/action", json={"action": "submit"})
+
+    assert "links no invoice" not in r.text

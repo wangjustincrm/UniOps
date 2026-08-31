@@ -539,6 +539,41 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWr
     return await pa_crud.update(db, pa, body)
 
 
+def _assert_invoice_link_on_submit(pa) -> None:
+    """A PO-based PA must name the invoice it settles before it enters approval.
+
+    pa.invoice_ids is the only place that link exists, and four things read it:
+    finance-api's payment executor closes the invoice and its ap_invoices row
+    from it, the remittance advice takes the vendor invoice numbers from it,
+    and the create-PA screen locks an invoice against a second PA by it. An
+    empty array no-ops all of them at once — the cash leaves, the invoice stays
+    open in AP, the advice is blocked 'missing_invoice_no', and nothing stops
+    the same invoice being paid again by another PA.
+
+    None of that is repairable afterwards: update_pa above accepts only
+    draft/returned, so the omission becomes permanent the moment the PA is
+    approved. That is why this refuses entry to approval rather than warning.
+
+    On the action, not in PaCreate: a draft must still be savable
+    half-finished. (Same placement, and same reason, as the PR budget-code
+    gate — putting it in the schema would block the draft that shares it.)
+
+    Exemptions, both structural rather than discretionary:
+      * prepayment PAs — paid before the vendor has invoiced anything;
+      * agreement PAs (po_id NULL) — gated by _validate_agreement_pa_invoices.
+    """
+    if pa.po_id is None or pa.pa_type == "prepayment" or pa.invoice_ids:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "This payment application links no invoice. Open it, tick the "
+            f"invoice(s) on {pa.po_number} that it settles, and submit again. "
+            "Only prepayments may be submitted without one."
+        ),
+    )
+
+
 @router.post("/{pa_id}/action", response_model=PaResponse)
 async def pa_action(
     pa_id: uuid.UUID,
@@ -550,6 +585,8 @@ async def pa_action(
     pa = await pa_crud.get_by_id(db, pa_id)
     if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
         raise HTTPException(status_code=404, detail="PA not found")
+    if body.action == "submit":
+        _assert_invoice_link_on_submit(pa)
     try:
         if body.action == "process":
             # Payment is not a workflow action (Phase 0-B1.5): forward to

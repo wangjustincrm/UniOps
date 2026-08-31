@@ -137,3 +137,26 @@ async def upsert_ap_invoice(*, payload: dict, bearer_token: str) -> dict | None:
         logger.error("finance-api /ap/invoices upsert failed for %s/%s: %s — failing open",
                      payload.get("source"), payload.get("source_invoice_id"), e)
         return None
+
+async def resync_pa_writeback(*, pa_id: uuid.UUID, bearer_token: str) -> dict | None:
+    """Ask finance-api to replay a PAID PA's invoice + AP writeback against the
+    PA's current invoice_ids.
+
+    Called from Data Maintenance AFTER the edit has been committed — finance-api
+    reads the shared DB on its own connection and cannot see an uncommitted
+    change (the same constraint that makes mark_ap_settled's placement matter).
+
+    Fail-open like the rest of this client: a repair that lands in EPMS but
+    cannot reach finance must not roll back the repair. The caller surfaces the
+    failure as a warning so it is visible rather than silent.
+    """
+    url = f"{settings.FINANCE_API_URL}/finance/v1/ap/resync-pa-writeback"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(url, json={"pa_id": str(pa_id)},
+                                  headers={"Authorization": f"Bearer {bearer_token}"})
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        logger.error("finance-api /ap/resync-pa-writeback failed for %s: %s", pa_id, e)
+        raise
