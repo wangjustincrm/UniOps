@@ -1,6 +1,7 @@
 """Generic CRUD + audit over registered entities."""
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import date, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
@@ -15,6 +16,8 @@ from app.admin.resolvers import get_resolver
 from app.crud.gr import resync_po_received_qty, sync_po_receipt_status
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.approval import ApprovalEvent
+from app.models.invoice import Invoice
+from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -118,7 +121,38 @@ async def get_record(db: AsyncSession, entity: str, record_id: uuid.UUID) -> dic
             select(child.model).where(getattr(child.model, child.fk_field) == row.id)
             .order_by(child.model.sort_order.asc()))).scalars().all()
         rec["line_items"] = [_serialize_child(child, li) for li in lis]
+    rec["_ref_list_labels"] = await _ref_list_labels(db, spec, rec)
     return rec
+
+
+async def _ref_list_labels(db: AsyncSession, spec: EntitySpec, rec: dict) -> dict:
+    """{field: [{id, label}]} for every reference_list field, so the editor can
+    show what is linked instead of a row of raw uuids.
+
+    An id that resolves to nothing is labelled rather than dropped or raised on.
+    That case is real and not always an error: an OA Direct PA's invoice_ids
+    hold expense_invoices ids, which the `invoices` resolver cannot find by
+    design (different table, different id space — see
+    finance-api crud/payment_batch.py::vendor_inv_no_map). Showing it as
+    unresolved tells the operator what they are looking at; hiding it would let
+    a Save silently drop a link that other services still read.
+    """
+    out: dict[str, list[dict]] = {}
+    for f in spec.schema.fields:
+        if f.type != "reference_list" or not f.ref_source:
+            continue
+        resolver = get_resolver(f.ref_source)
+        labels: list[dict] = []
+        for raw in (rec.get(f.name) or []):
+            hit = None
+            try:
+                hit = await resolver.fetch_by_id(db, uuid.UUID(str(raw)))
+            except (ValueError, TypeError):
+                pass
+            labels.append({"id": str(raw),
+                           "label": hit.label if hit else f"{raw} — not found in {f.ref_source}"})
+        out[f.name] = labels
+    return out
 
 
 async def _load(db: AsyncSession, spec: EntitySpec, record_id: uuid.UUID):
@@ -141,6 +175,82 @@ async def _apply_reference(db, spec, row, field, value):
     if field.ref_name_field:
         setattr(row, field.ref_name_field, hit.label)
     return hit.label
+
+
+async def _apply_reference_list(db, field, row, value) -> list[str]:
+    """Set a JSONB array-of-ids field from a list of ids, verifying every one of
+    them resolves. Stored as a list of STRING uuids because that is what the rest
+    of the codebase reads back (`for i in pa.invoice_ids: uuid.UUID(str(i))`) —
+    writing raw UUID objects here would serialize differently and silently break
+    those consumers. Order is preserved and duplicates collapse."""
+    if value in (None, ""):
+        value = []
+    if isinstance(value, str):
+        # A client that stringified the array (the generic text input path) still
+        # has to work — the picker sends a real list.
+        value = json.loads(value) if value.strip() else []
+    if not isinstance(value, list):
+        raise ValueError(f"Field '{field.name}' must be a list of ids")
+    resolver = get_resolver(field.ref_source)
+    out: list[str] = []
+    for v in value:
+        try:
+            rid = uuid.UUID(str(v))
+        except (ValueError, TypeError):
+            raise ValueError(f"'{v}' is not a valid {field.ref_source} id")
+        if await resolver.fetch_by_id(db, rid) is None:
+            raise ValueError(f"{field.ref_source} reference '{rid}' not found")
+        if str(rid) not in out:
+            out.append(str(rid))
+    setattr(row, field.name, out)
+    return out
+
+
+async def _validate_pa_invoice_links(db, pa, invoice_ids: list[str]) -> None:
+    """Guard the two ways a hand-typed invoice link goes wrong.
+
+    Both are refusals rather than warnings: this screen exists to REPAIR the
+    link, and a repair that attaches the wrong invoice is worse than the empty
+    array it replaced — paying the PA would then close an invoice nobody paid.
+
+    Direct (OA) PAs are exempt from the PO check: their invoice_ids hold
+    expense_invoices ids, a different table in a different id space (see
+    crud/payment_batch.py::vendor_inv_no_map), so `Invoice` will not find them
+    and a po_id comparison is meaningless.
+    """
+    if not invoice_ids:
+        return
+    rows = (await db.execute(
+        select(Invoice).where(Invoice.id.in_([uuid.UUID(i) for i in invoice_ids]))
+    )).scalars().all()
+    by_id = {str(r.id): r for r in rows}
+
+    if pa.po_id is not None:
+        wrong = [f"{r.internal_ref} (on {r.po_number or 'no PO'})"
+                 for r in rows if r.po_id is not None and r.po_id != pa.po_id]
+        if wrong:
+            raise ValueError(
+                f"These invoices belong to a different PO than {pa.po_number}: "
+                + ", ".join(wrong)
+                + ". Correct the invoice's PO first — attaching it here would let this "
+                  "PA close an invoice it does not pay."
+            )
+
+    for iid in invoice_ids:
+        claimed = (await db.execute(
+            select(PaymentApplication.pa_number).where(
+                PaymentApplication.id != pa.id,
+                PaymentApplication.status.not_in(("cancelled", "rejected")),
+                PaymentApplication.invoice_ids.contains([iid]),
+            )
+        )).scalars().all()
+        if claimed:
+            ref = by_id[iid].internal_ref if iid in by_id else iid
+            raise ValueError(
+                f"Invoice {ref} is already linked to {', '.join(claimed)}. "
+                "Two live PAs pointing at one invoice is how it gets paid twice — "
+                "detach it there first if this PA is the right owner."
+            )
 
 
 def _line_total(qty, unit_price) -> Decimal:
@@ -207,6 +317,7 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
     editable = spec.schema.editable_field_names()
     before = _serialize(spec, row)
     routing_requester_changed = False
+    invoice_links_changed = False
     if entity == "pa":
         src_req = patch.pop("source_requester_id", None)
         if src_req not in (None, ""):
@@ -227,6 +338,15 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
             await _apply_reference(db, spec, row, fspec, value)
             if entity == "pr" and fspec.name == "created_by":
                 routing_requester_changed = True
+        elif fspec is not None and fspec.type == "reference_list":
+            ids = await _apply_reference_list(db, fspec, row, value)
+            if entity == "pa" and fspec.name == "invoice_ids":
+                await _validate_pa_invoice_links(db, row, ids)
+                # Only a PA that has already been PAID needs the writeback
+                # replayed: payment ran the loops once over an array that was
+                # then wrong. An unpaid PA needs nothing — its own payment will
+                # do the writeback later, over the corrected array.
+                invoice_links_changed = row.status in ("processed", "paid")
         else:
             setattr(row, key, _coerce(spec.schema.field_type(key), value))
     received_qty_resynced = 0
@@ -263,6 +383,7 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
     if received_qty_resynced:
         after["po_lines_received_qty_resynced"] = received_qty_resynced
     after["_routing_requester_changed"] = routing_requester_changed
+    after["_invoice_links_changed"] = invoice_links_changed
     db.add(AdminAuditLog(
         actor_id=actor_id, actor_email=actor_email, action="edit", system=spec.system,
         entity=entity, record_id=record_id,

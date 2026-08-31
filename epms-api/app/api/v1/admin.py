@@ -9,7 +9,7 @@ from app.admin import service
 from app.admin.registry import REGISTRY
 from app.admin.resolvers import get_resolver, resolver_sources
 from app.core.deps import BearerToken, SessionDep, require_permission
-from app.services import approval_client
+from app.services import approval_client, finance_client
 
 router = APIRouter(prefix="/admin", tags=["data-maintenance"])
 
@@ -89,6 +89,21 @@ async def edit_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: A
             result["routing_resync"] = "ok"
         except Exception as e:
             result["routing_resync"] = f"failed: {e}"
+    # Same post-commit rule, same reason: repairing invoice_ids on an ALREADY
+    # PAID PA leaves finance's side stale, because payment ran its invoice/AP
+    # writeback once over the array as it stood then. finance-api replays it on
+    # its own connection, so it can only see the new array after this commit.
+    # Flagged as a warning rather than raising: the link repair is the valuable
+    # half and must survive finance-api being down.
+    if result.pop("_invoice_links_changed", False):
+        try:
+            res = await finance_client.resync_pa_writeback(pa_id=record_id, bearer_token=token)
+            result["finance_writeback"] = res
+        except Exception as e:
+            result["finance_writeback"] = (
+                f"failed: {e} — the link is saved, but this PA's invoice and AP rows "
+                "still show unpaid. Re-save the PA once finance-api is reachable."
+            )
     return result
 
 

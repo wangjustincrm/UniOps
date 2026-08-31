@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { EntitySchema, FieldSpec, RefHit } from '@/services/adminApi'
 import { adminApi } from '@/services/adminApi'
 import { ReferencePicker } from './ReferencePicker'
+import { ReferenceListPicker, type RefListItem } from './ReferenceListPicker'
 import { LineItemsEditor, type LineRow } from './LineItemsEditor'
 import { ApprovalStatePanel } from './ApprovalStatePanel'
 
@@ -18,6 +19,10 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
   const [form, setForm] = useState<Record<string, string>>({})
   const [refLabels, setRefLabels] = useState<Record<string, string>>({})
   const [refDirty, setRefDirty] = useState<Record<string, string>>({})   // name → new id
+  // reference_list fields (invoice_ids / gr_ids): held as {id,label} so the
+  // list stays readable, and sent back as a bare id array on save.
+  const [refLists, setRefLists] = useState<Record<string, RefListItem[]>>({})
+  const [refListDirty, setRefListDirty] = useState<Record<string, boolean>>({})
   const [lines, setLines] = useState<LineRow[]>([])
   const [regenPo, setRegenPo] = useState(true)
   const [vendorChanged, setVendorChanged] = useState(false)
@@ -30,6 +35,13 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
     setRefLabels(Object.fromEntries(schema.fields.filter((f) => f.type === 'reference')
       .map((f) => [f.name, f.ref_name_field ? String(full[f.ref_name_field] ?? '') : String(full[f.name] ?? '')])))
     setLines((full.line_items as LineRow[] | undefined) ?? [])
+    // Labels are resolved server-side (service._ref_list_labels) — an id that
+    // resolves to nothing still comes back, labelled, so a Save never silently
+    // drops a link other services are still reading.
+    const labels = (full._ref_list_labels ?? {}) as Record<string, RefListItem[]>
+    setRefLists(Object.fromEntries(schema.fields.filter((f) => f.type === 'reference_list')
+      .map((f) => [f.name, labels[f.name] ?? []])))
+    setRefListDirty({})
   }, [full, schema])
 
   const isRef = (f: FieldSpec) => f.type === 'reference'
@@ -48,6 +60,11 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
     const patch: Record<string, unknown> = {}
     for (const f of editable) {
       if (isRef(f)) { if (refDirty[f.name] !== undefined) patch[f.name] = refDirty[f.name] }
+      else if (f.type === 'reference_list') {
+        // Only send it when actually touched: an untouched field would round-trip
+        // a paid PA's links through validation for no reason.
+        if (refListDirty[f.name]) patch[f.name] = (refLists[f.name] ?? []).map((v) => v.id)
+      }
       else if (f.type === 'bool') patch[f.name] = form[f.name] === 'true'
       else patch[f.name] = form[f.name] === '' ? null : form[f.name]
     }
@@ -75,11 +92,19 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
 
         <section className="mb-5 grid grid-cols-2 gap-3">
           {schema.fields.map((f) => (
-            <div key={f.name} className="flex flex-col gap-1">
+            <div key={f.name}
+              className={`flex flex-col gap-1${f.type === 'reference_list' ? ' col-span-2' : ''}`}>
               <label className="text-xs font-medium text-neutral-600">{f.label}{!f.editable && ' (read-only)'}</label>
               {isRef(f) && f.editable ? (
                 <ReferencePicker system={schema.system} source={f.ref_source ?? ''}
                   valueLabel={refLabels[f.name] ?? ''} onPick={(h) => pickRef(f, h)} />
+              ) : f.type === 'reference_list' ? (
+                <ReferenceListPicker system={schema.system} source={f.ref_source ?? ''}
+                  value={refLists[f.name] ?? []}
+                  onChange={(next) => {
+                    setRefLists((p) => ({ ...p, [f.name]: next }))
+                    setRefListDirty((p) => ({ ...p, [f.name]: true }))
+                  }} />
               ) : f.type === 'enum' && f.options ? (
                 <select value={form[f.name] ?? ''} disabled={!f.editable}
                   onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}

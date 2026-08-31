@@ -559,6 +559,17 @@ _PA_SCHEMA = EntitySchema(
         FieldSpec("source_requester_id", "reference", True, label="Source Requester (PR creator)", ref_source="users"),
         FieldSpec("vendor_id", "reference", True, label="Vendor", ref_source="vendors", ref_name_field="vendor_name"),
         FieldSpec("vendor_name", "string", False),
+        # The PA's only record of what it settles. finance-api's payment executor
+        # closes these invoices and their ap_invoices rows from this array, the
+        # remittance advice reads the vendor invoice numbers off it, and the
+        # create-PA screen locks an invoice against a second PA by it — an empty
+        # array silently no-ops all three. Editable HERE and nowhere else once the
+        # PA leaves draft/returned (see pa.py::update_pa), which is why an
+        # approved PA that links nothing was previously unrepairable.
+        FieldSpec("invoice_ids", "reference_list", True, label="Linked Invoices",
+                  ref_source="invoices"),
+        FieldSpec("gr_ids", "reference_list", True, label="Linked Goods Receipts",
+                  ref_source="grs"),
         FieldSpec("notes", "string", True),
         FieldSpec("created_at", "datetime", False),
         FieldSpec("approval_step_idx", "number", False),

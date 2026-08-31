@@ -656,3 +656,183 @@ async def test_pa_source_requester_edits_source_pr_creator(test_engine, monkeypa
         assert str(pr.created_by) == str(new_c)         # source PR creator updated
     # resync fires for the PA and/or PR chain
     assert result.get("_routing_requester_changed") is True
+
+
+# ── reference_list: the repair path for a PA that links no invoice ────────────
+# An approved/paid PA cannot be edited anywhere else (pa.py::update_pa accepts
+# draft/returned only), and its invoice_ids array is what finance-api's payment
+# executor, the remittance advice and the create-PA "already claimed" lock all
+# read. Data Maintenance is therefore the only place a wrong or empty link can
+# be repaired — these cover that it works, and that it refuses the two repairs
+# that would be worse than the damage they replace.
+
+
+async def _rl_setup(db, *, creator, vid, po_id, tag):
+    """Invoices and PAs sit on a real FK chain — users, business_partners and
+    purchase_orders must all exist first, or the insert fails long before any
+    assertion runs."""
+    from app.models.user import User
+    from app.models.vendor import Vendor
+    from app.models.po import PurchaseOrder
+    db.add(User(id=creator, email=f"{tag}-{creator.hex[:6]}@x.com", hashed_password="x",
+                full_name="C", role="requester"))
+    db.add(Vendor(id=vid, code=f"V-{tag}-{vid.hex[:5]}", name="RL Vendor",
+                  category="supplier", contact_name="R", contact_email="r@x.com"))
+    await db.flush()
+    db.add(PurchaseOrder(id=po_id, number=f"PO-RL-{po_id.hex[:6]}", title="t", type=1,
+                         status="approved", currency="CAD", subtotal=Decimal("0"),
+                         tax_rate=Decimal("0"), tax_amount=Decimal("0"), total=Decimal("0"),
+                         vendor_id=vid, vendor_name="RL Vendor", created_by=creator))
+    await db.flush()
+
+
+def _rl_invoice(inv_id, po_id, vid, creator, ref):
+    from datetime import date as _date
+    from app.models.invoice import Invoice
+    return Invoice(
+        id=inv_id, internal_ref=ref, vendor_invoice_number=f"V{ref}",
+        vendor_id=vid, vendor_name="RL Vendor", amount=Decimal("100"),
+        tax_amount=Decimal("0"), total_amount=Decimal("100"), currency="CAD",
+        invoice_date=_date(2026, 1, 1), due_date=_date(2026, 2, 1),
+        status="matched", po_id=po_id, po_number="PO-RL", uploaded_by=creator,
+    )
+
+
+def _rl_pa(pa_id, po_id, vid, creator, number, *, status="approved", invoice_ids=None):
+    from app.models.pa import PaymentApplication
+    return PaymentApplication(
+        id=pa_id, pa_number=number, title="t", pa_type="regular", status=status,
+        po_id=po_id, po_number="PO-RL", vendor_id=vid, vendor_name="RL Vendor",
+        invoice_ids=invoice_ids or [], gr_ids=[],
+        subtotal=Decimal("100"), tax_amount=Decimal("0"), payment_amount=Decimal("100"),
+        currency="CAD", created_by=creator,
+    )
+
+
+@pytest.mark.asyncio
+async def test_edit_reference_list_links_invoices_to_a_paid_pa(test_engine):
+    from app.models.pa import PaymentApplication
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator, vid, po_id, pa_id, inv_id = (uuid.uuid4() for _ in range(5))
+    async with factory() as db:
+        await _rl_setup(db, creator=creator, vid=vid, po_id=po_id, tag="rl1")
+        db.add(_rl_invoice(inv_id, po_id, vid, creator, "I-RL-1"))
+        db.add(_rl_pa(pa_id, po_id, vid, creator, "PA-RL1", status="processed"))
+        await db.commit()
+
+    async with factory() as db:
+        out = await service.edit_record(db, "pa", pa_id, {"invoice_ids": [str(inv_id)]},
+                                        actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+
+    # Stored as STRING uuids — every consumer does uuid.UUID(str(i)) over them.
+    async with factory() as db:
+        pa = (await db.execute(select(PaymentApplication).where(PaymentApplication.id == pa_id))).scalar_one()
+        assert pa.invoice_ids == [str(inv_id)]
+    # A PAID PA must signal that finance's writeback needs replaying; the caller
+    # fires it AFTER commit, since finance-api reads on its own connection.
+    assert out["_invoice_links_changed"] is True
+
+
+@pytest.mark.asyncio
+async def test_edit_reference_list_on_unpaid_pa_does_not_ask_for_replay(test_engine):
+    """An approved-but-unpaid PA needs no replay — its own payment will do the
+    writeback later, over the corrected array."""
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator, vid, po_id, pa_id, inv_id = (uuid.uuid4() for _ in range(5))
+    async with factory() as db:
+        await _rl_setup(db, creator=creator, vid=vid, po_id=po_id, tag="rl2")
+        db.add(_rl_invoice(inv_id, po_id, vid, creator, "I-RL-2"))
+        db.add(_rl_pa(pa_id, po_id, vid, creator, "PA-RL2"))
+        await db.commit()
+    async with factory() as db:
+        out = await service.edit_record(db, "pa", pa_id, {"invoice_ids": [str(inv_id)]},
+                                        actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+    assert out["_invoice_links_changed"] is False
+
+
+@pytest.mark.asyncio
+async def test_edit_reference_list_rejects_invoice_from_another_po(test_engine):
+    from app.models.po import PurchaseOrder
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator, vid, po_id, other_po, pa_id, inv_id = (uuid.uuid4() for _ in range(6))
+    async with factory() as db:
+        await _rl_setup(db, creator=creator, vid=vid, po_id=po_id, tag="rl3")
+        db.add(PurchaseOrder(id=other_po, number=f"PO-OTHER-{other_po.hex[:6]}", title="t",
+                             type=1, status="approved", currency="CAD", subtotal=Decimal("0"),
+                             tax_rate=Decimal("0"), tax_amount=Decimal("0"), total=Decimal("0"),
+                             vendor_id=vid, vendor_name="RL Vendor", created_by=creator))
+        await db.flush()
+        db.add(_rl_invoice(inv_id, other_po, vid, creator, "I-RL-3"))
+        db.add(_rl_pa(pa_id, po_id, vid, creator, "PA-RL3"))
+        await db.commit()
+    async with factory() as db:
+        with pytest.raises(ValueError, match="different PO"):
+            await service.edit_record(db, "pa", pa_id, {"invoice_ids": [str(inv_id)]},
+                                      actor_id=creator, actor_email="admin@x.com")
+
+
+@pytest.mark.asyncio
+async def test_edit_reference_list_rejects_invoice_claimed_by_another_pa(test_engine):
+    """Two live PAs pointing at one invoice is how it gets paid twice."""
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator, vid, po_id, pa_id, other_pa, inv_id = (uuid.uuid4() for _ in range(6))
+    async with factory() as db:
+        await _rl_setup(db, creator=creator, vid=vid, po_id=po_id, tag="rl4")
+        db.add(_rl_invoice(inv_id, po_id, vid, creator, "I-RL-4"))
+        db.add(_rl_pa(other_pa, po_id, vid, creator, "PA-RL4-OWNER", invoice_ids=[str(inv_id)]))
+        db.add(_rl_pa(pa_id, po_id, vid, creator, "PA-RL4"))
+        await db.commit()
+    async with factory() as db:
+        with pytest.raises(ValueError, match="already linked"):
+            await service.edit_record(db, "pa", pa_id, {"invoice_ids": [str(inv_id)]},
+                                      actor_id=creator, actor_email="admin@x.com")
+
+
+@pytest.mark.asyncio
+async def test_edit_reference_list_rejects_unknown_id(test_engine):
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator, vid, po_id, pa_id = (uuid.uuid4() for _ in range(4))
+    async with factory() as db:
+        await _rl_setup(db, creator=creator, vid=vid, po_id=po_id, tag="rl5")
+        db.add(_rl_pa(pa_id, po_id, vid, creator, "PA-RL5"))
+        await db.commit()
+    async with factory() as db:
+        with pytest.raises(ValueError, match="not found"):
+            await service.edit_record(db, "pa", pa_id, {"invoice_ids": [str(uuid.uuid4())]},
+                                      actor_id=creator, actor_email="admin@x.com")
+
+
+@pytest.mark.asyncio
+async def test_get_record_labels_reference_list_including_unresolvable_ids(test_engine):
+    """An id the resolver cannot find is labelled, never dropped: an OA Direct
+    PA's invoice_ids hold expense_invoices ids, which `invoices` will never match
+    by design. Dropping them would let a Save quietly delete a link other
+    services still read."""
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator, vid, po_id, pa_id, inv_id, stranger = (uuid.uuid4() for _ in range(6))
+    async with factory() as db:
+        await _rl_setup(db, creator=creator, vid=vid, po_id=po_id, tag="rl6")
+        db.add(_rl_invoice(inv_id, po_id, vid, creator, "I-RL-6"))
+        db.add(_rl_pa(pa_id, po_id, vid, creator, "PA-RL6",
+                      invoice_ids=[str(inv_id), str(stranger)]))
+        await db.commit()
+    async with factory() as db:
+        rec = await service.get_record(db, "pa", pa_id)
+    labels = rec["_ref_list_labels"]["invoice_ids"]
+    assert [l["id"] for l in labels] == [str(inv_id), str(stranger)]
+    assert "I-RL-6" in labels[0]["label"]
+    assert "not found" in labels[1]["label"]

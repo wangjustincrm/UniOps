@@ -3,8 +3,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# adds "reference" — a FK the admin edits via a picker (id + denormalized name)
-FieldType = str  # "string"|"number"|"decimal"|"bool"|"date"|"datetime"|"uuid"|"json"|"enum"|"reference"
+# adds "reference"      — a FK the admin edits via a picker (id + denormalized name)
+#      "reference_list"  — a JSONB array of ids edited via a multi-picker. Not a FK:
+#                          payment_applications.invoice_ids / gr_ids are bare id
+#                          arrays with nothing enforcing them, which is exactly why
+#                          they need a repair path here.
+FieldType = str  # "string"|"number"|"decimal"|"bool"|"date"|"datetime"|"uuid"|"json"|"enum"|"reference"|"reference_list"
 
 
 @dataclass
