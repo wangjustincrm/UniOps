@@ -160,6 +160,71 @@ async def _check_period_open(db: AsyncSession, pay_date: date) -> None:
         raise ValueError(f"Fiscal period {period} is closed ({row.status})")
 
 
+async def _check_invoice_link(db: AsyncSession, pa: PaymentApplication) -> None:
+    """Refuse to pay a PO-based PA that links no invoice while its PO still
+    carries a payable one nobody has claimed.
+
+    Everything downstream of payment reads pa.invoice_ids: the two loops in
+    execute() that close the invoice and its ap_invoices row, the remittance
+    advice's vendor invoice numbers (crud/remittance.py), and the create-PA
+    screen's "already claimed" lock. An empty array makes all of them no-ops
+    at once, so the cash leaves while the invoice stays 'matched', AP keeps
+    reporting it as an open payable, the advice is blocked 'missing_invoice_no'
+    with no screen able to lift it (epms-api edits draft/returned PAs only),
+    and nothing stops a second PA from paying that same invoice again. Payment
+    is the point of no return for all four, which is why the check sits here
+    rather than at approval.
+
+    Deliberately narrow — an empty invoice_ids is legitimate in several flows
+    and every one of them must keep working:
+      * prepayment PAs, paid before any invoice exists;
+      * Direct (OA) and agreement PAs, which carry no po_id — agreement
+        invoices have their own gate in epms-api's _validate_agreement_pa_invoices;
+      * GR-only payment on a PO nobody has invoiced yet;
+      * a PA whose invoices a sibling PA already claims (prepayment first,
+        settlement after).
+    It therefore fires only when the PO holds a payable invoice that no live PA
+    has spoken for — the case where the link was simply forgotten.
+    """
+    if pa.invoice_ids or pa.po_id is None or pa.pa_type == "prepayment":
+        return
+
+    candidates = (await db.execute(
+        select(Invoice.id, Invoice.internal_ref, Invoice.vendor_invoice_number)
+        .where(Invoice.po_id == pa.po_id,
+               Invoice.status.in_(("matched", "approved", "partially_paid")))
+    )).all()
+    if not candidates:
+        return
+
+    # Whatever any other live PA on this PO already points at is somebody
+    # else's payable, not a forgotten link on this one.
+    claimed: set[str] = set()
+    for (ids,) in (await db.execute(
+        select(PaymentApplication.invoice_ids).where(
+            PaymentApplication.po_id == pa.po_id,
+            PaymentApplication.status.not_in(("cancelled", "rejected")),
+            PaymentApplication.id != pa.id,
+        )
+    )).all():
+        claimed.update(str(i) for i in (ids or []))
+
+    unclaimed = [c for c in candidates if str(c.id) not in claimed]
+    if not unclaimed:
+        return
+
+    refs = ", ".join(
+        f"{c.internal_ref} (#{c.vendor_invoice_number})" if c.vendor_invoice_number
+        else c.internal_ref
+        for c in unclaimed
+    )
+    raise ValueError(
+        f"PA {pa.pa_number} links no invoice, but {pa.po_number} still carries "
+        f"unclaimed invoice(s): {refs}. Link the invoice before paying — "
+        "otherwise it stays open in AP, no remittance advice can be sent, and "
+        "nothing prevents a second PA from paying it again."
+    )
+
 async def _stamp_account_codes(db: AsyncSession, lines: list[dict]) -> list[dict]:
     """A1: resolve line_role → COA account_code from account_mappings so every
     posting line carries a ledger account from now on (GL replay depends on it).
@@ -270,6 +335,59 @@ async def _book_claim_budget(db: AsyncSession, claim: ExpenseClaim,
     )
 
 
+async def apply_pa_invoice_writeback(db: AsyncSession, pa: PaymentApplication) -> dict:
+    """Bring a paid PA's invoices and AP subledger rows in step with it.
+
+    Extracted from execute() so it can be REPLAYED. The two loops used to live
+    inline, which meant they ran exactly once — at payment — over whatever
+    pa.invoice_ids held at that instant. A PA paid with an empty array therefore
+    left its invoice at 'matched' and its ap_invoices row 'posted' at
+    paid_amount 0 forever, with no code path anywhere able to catch up once the
+    link was repaired (2026-08-31: PA-20260729-0001, fixed by hand in SQL).
+    Data Maintenance now calls this after editing invoice_ids on a paid PA.
+
+    Idempotent by construction: every write is guarded on a status the flow has
+    not passed yet, so replaying it changes nothing. It only ever moves a
+    document FORWARD — it will not reopen an invoice dropped from the array,
+    because "this invoice is no longer covered" is a reversal, not a catch-up,
+    and reversing a settled payable silently is not something a repair screen
+    should do on its own.
+
+    A prepayment leaves both at 'partially_paid' (still an open item); every
+    other PA type closes them. Invoice rows are touched only for a PO/agreement
+    PA: a Direct (OA) PA's invoice_ids hold expense_invoices ids, which live in
+    a different table and would never match here — but their ap_invoices rows
+    do exist and are keyed by the same id, so the AP half runs for both.
+    """
+    closed = settled = 0
+    inv_status = "partially_paid" if pa.pa_type == "prepayment" else "paid"
+
+    for inv_id_str in pa.invoice_ids or []:
+        try:
+            inv_id = uuid.UUID(str(inv_id_str))
+        except (ValueError, TypeError):
+            continue
+
+        if not pa.is_direct:
+            inv = (await db.execute(
+                select(Invoice).where(Invoice.id == inv_id)
+            )).scalar_one_or_none()
+            if inv and inv.status in ("matched", "approved", "partially_paid"):
+                inv.status = inv_status
+                closed += 1
+
+        ap = (await db.execute(
+            select(ApInvoice).where(ApInvoice.source_invoice_id == inv_id)
+        )).scalar_one_or_none()
+        if ap and ap.status in ("posted", "partially_paid"):
+            ap.status = inv_status
+            if inv_status == "paid":
+                ap.paid_amount = ap.total_amount
+            settled += 1
+
+    return {"invoices_closed": closed, "ap_invoices_settled": settled}
+
+
 async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
                   bearer_token: str | None = None,
                   batch_id: uuid.UUID | None = None) -> PaymentExecuteResponse:
@@ -289,6 +407,7 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
         await _check_self_payment(db, recorded_by, pa.created_by, "PA creator")
         if pa.status != "approved":
             raise ValueError(f"Cannot pay PA in status '{pa.status}'")
+        await _check_invoice_link(db, pa)
         # actual kind derives from the document, not the client
         doc_kind = "pa_dir" if pa.is_direct else "pa"
         pa.status = "processed"
@@ -297,38 +416,7 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
         pa.paid_at = datetime.combine(pay_date, datetime.min.time(), tzinfo=timezone.utc)
         await _complete_open_tasks(db, ["pa", "pa_dir"], pa.id)
 
-        if doc_kind == "pa":
-            # A4b partial payment: a prepayment PA leaves the invoice
-            # partially_paid (still an open item); a regular/balance/settlement
-            # PA closes it. Reuses the existing PA prepayment model — no generic
-            # installment engine.
-            new_inv_status = "partially_paid" if pa.pa_type == "prepayment" else "paid"
-            for inv_id_str in pa.invoice_ids:
-                try:
-                    inv_id = uuid.UUID(str(inv_id_str))
-                except ValueError:
-                    continue
-                inv = (await db.execute(
-                    select(Invoice).where(Invoice.id == inv_id)
-                )).scalar_one_or_none()
-                if inv and inv.status in ("matched", "approved", "partially_paid"):
-                    inv.status = new_inv_status
-
-        # Writeback to finance-owned ap_invoices (EPMS + OA sources): flip
-        # status + paid_amount so AP open-items/aging reflect payment (Plan 4).
-        ap_paid_status = "partially_paid" if pa.pa_type == "prepayment" else "paid"
-        for inv_id_str in pa.invoice_ids:
-            try:
-                _aid = uuid.UUID(str(inv_id_str))
-            except ValueError:
-                continue
-            ap = (await db.execute(
-                select(ApInvoice).where(ApInvoice.source_invoice_id == _aid)
-            )).scalar_one_or_none()
-            if ap and ap.status in ("posted", "partially_paid"):
-                ap.status = ap_paid_status
-                if ap_paid_status == "paid":
-                    ap.paid_amount = ap.total_amount
+        await apply_pa_invoice_writeback(db, pa)
 
         bank = await _resolve_bank(db, req.bank_account_id, pa.currency)
         base = req.amount_paid if req.amount_paid is not None else pa.payment_amount
