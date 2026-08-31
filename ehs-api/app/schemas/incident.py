@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from app.services import incident_type
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
@@ -157,6 +158,8 @@ class IncidentOut(BaseModel):
     immediate_action_taken: str | None
     reported_to_name: str | None
     signature: str | None
+    cost: Decimal | None
+    lost_time_hours: Decimal | None
     hse_reviewed_at: datetime | None
     hse_reviewed_by_name: str | None
     signer_name: str | None

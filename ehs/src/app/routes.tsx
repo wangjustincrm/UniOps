@@ -7,6 +7,7 @@ import ComplianceCalendarPage from '@/pages/ComplianceCalendarPage'
 import FirstAidLogPage from '@/pages/FirstAidLogPage'
 import IncidentDetailPage from '@/pages/IncidentDetailPage'
 import IncidentListPage from '@/pages/IncidentListPage'
+import DashboardPage from '@/pages/DashboardPage'
 import EquipmentPage from '@/pages/settings/EquipmentPage'
 import FormBuilderPage from '@/pages/settings/FormBuilderPage'
 import FormFillPage from '@/pages/FormFillPage'
@@ -23,6 +24,11 @@ import RulesPage from '@/pages/settings/RulesPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
 
 export const ehsRoutes: RouteDef[] = [
+  {
+    path: '/dashboard',
+    element: <DashboardPage />,
+    tab: { title: 'Dashboard', icon: 'BarChart3', keyStrategy: 'static' },
+  },
   {
     path: '/report',
     element: <IncidentReportPage />,

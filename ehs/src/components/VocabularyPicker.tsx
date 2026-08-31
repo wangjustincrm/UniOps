@@ -1,18 +1,24 @@
 /**
  * Choosing from one of HSE's reference lists.
  *
- * Every list they supplied is two levels deep — a heading with items under it —
- * so the group is a label, never a choice. This is the same rule the area
- * picker follows: you select the specific thing, not the bucket it sits in.
- * Keeping the two consistent matters more than either rule on its own, because
- * someone who learns one and meets the other will assume it works the same way.
+ * Two levels, because the lists are two levels. An earlier version flattened
+ * them into one list of `Group › item` strings, which put eighty-five hazards in
+ * front of someone in an order that looked random — group and child carry their
+ * own independent sort_order, so a flat sort interleaves the children of
+ * different groups. Picking the group first is both how the list is organised
+ * and how somebody thinks about it: you know it was a fall before you know
+ * whether it was from height or on the level.
  *
- * A flat list is used rather than a tree widget. These lists run to ninety
- * entries, and on a phone an expanding tree is more taps than a filtered list.
+ * Search stays, and cuts across the groups: eighty-five entries is more than
+ * anyone wants to navigate when they already know the word. Searching shows the
+ * full path so a result is unambiguous.
+ *
+ * A flat list (immediate causes, body parts) renders as one level. The shape of
+ * the data decides, not a prop — a caller should not have to know.
  */
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Check, Search, X } from 'lucide-react'
+import { ChevronLeft, Search, X } from 'lucide-react'
 import { api } from '@/lib/api'
 
 export interface VocabItem {
@@ -21,6 +27,13 @@ export interface VocabItem {
   label: string
   parent_id: string | null
   path: string | null
+  sort_order?: number
+}
+
+interface Grouped {
+  /** Null when the list has no groups at all. */
+  group: VocabItem | null
+  items: VocabItem[]
 }
 
 function useVocabulary(code: string) {
@@ -31,17 +44,46 @@ function useVocabulary(code: string) {
   })
 }
 
-/** `Chemical Exposure Items/Chemical Gloves` -> `Chemical Exposure Items › Chemical Gloves` */
+const bySort = (a: VocabItem, b: VocabItem) =>
+  (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.label.localeCompare(b.label)
+
+/**
+ * Split a flat list into groups and their children.
+ *
+ * Sorting happens within each group rather than across the whole list, which is
+ * the fix for the interleaving: a group's children are ordered among themselves
+ * and never against another group's.
+ */
+function group(items: VocabItem[]): Grouped[] {
+  const parents = new Set(items.map((i) => i.parent_id).filter(Boolean) as string[])
+  const tops = items.filter((i) => !i.parent_id).sort(bySort)
+
+  // No item has a parent → the whole list is one level.
+  if (parents.size === 0) return [{ group: null, items: tops }]
+
+  const out: Grouped[] = []
+  for (const top of tops) {
+    const children = items.filter((i) => i.parent_id === top.id).sort(bySort)
+    // A top-level entry with no children is selectable in its own right —
+    // immediate causes mix both shapes in one list.
+    out.push(children.length ? { group: top, items: children } : { group: null, items: [top] })
+  }
+  return out
+}
+
+/** Every selectable entry, for search and for resolving ids to labels. */
+function leaves(items: VocabItem[]): VocabItem[] {
+  const parents = new Set(items.map((i) => i.parent_id).filter(Boolean) as string[])
+  return items.filter((i) => !parents.has(i.id))
+}
+
 function trail(item: VocabItem): string {
   return (item.path ?? item.label).split('/').join(' › ')
 }
 
-/** Leaves only — a heading is a label, not a choice. A list with no children at
- *  all (immediate causes, body parts) is all leaves. */
-function selectable(items: VocabItem[]): VocabItem[] {
-  const parents = new Set(items.map((i) => i.parent_id).filter(Boolean))
-  return items.filter((i) => !parents.has(i.id))
-}
+const rowCls =
+  'flex min-h-[44px] w-full items-center justify-between gap-2 px-3 text-left text-sm ' +
+  'text-neutral-800 hover:bg-neutral-50'
 
 export function VocabularyMultiSelect({
   vocabulary, value, onChange, placeholder = 'Search…', emptyHint,
@@ -54,23 +96,21 @@ export function VocabularyMultiSelect({
 }) {
   const { data, isLoading } = useVocabulary(vocabulary)
   const [query, setQuery] = useState('')
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
 
-  const options = useMemo(() => selectable(data ?? []), [data])
-  const chosen = useMemo(
-    () => options.filter((o) => value.includes(o.id)),
-    [options, value],
-  )
+  const all = useMemo(() => leaves(data ?? []), [data])
+  const groups = useMemo(() => group(data ?? []), [data])
+  const chosen = useMemo(() => all.filter((o) => value.includes(o.id)), [all, value])
+
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const pool = options.filter((o) => !value.includes(o.id))
-    if (!q) return pool.slice(0, 40)
-    return pool.filter((o) => trail(o).toLowerCase().includes(q)).slice(0, 40)
-  }, [options, value, query])
+    if (!q) return []
+    return all.filter((o) => !value.includes(o.id) && trail(o).toLowerCase().includes(q))
+      .slice(0, 40)
+  }, [all, value, query])
 
-  if (isLoading) {
-    return <p className="text-sm text-neutral-500">Loading…</p>
-  }
-  if (options.length === 0) {
+  if (isLoading) return <p className="text-sm text-neutral-500">Loading…</p>
+  if (all.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-neutral-300 p-3 text-sm text-neutral-500">
         {emptyHint ?? 'This list has no entries yet. Add them under Settings.'}
@@ -78,17 +118,20 @@ export function VocabularyMultiSelect({
     )
   }
 
+  const current = groups.find((g) => g.group?.id === openGroup)
+  const flat = groups.length === 1 && groups[0].group === null
+
+  const add = (id: string) => { onChange([...value, id]); setQuery('') }
+
   return (
     <div>
       {chosen.length > 0 && (
         <ul className="mb-2 flex flex-wrap gap-1.5">
           {chosen.map((c) => (
             <li key={c.id}>
-              <button
-                type="button"
-                onClick={() => onChange(value.filter((v) => v !== c.id))}
-                className="flex min-h-[32px] items-center gap-1.5 rounded-full bg-primary-50 px-2.5 text-xs font-medium text-primary-700"
-              >
+              <button type="button"
+                      onClick={() => onChange(value.filter((v) => v !== c.id))}
+                      className="flex min-h-[32px] items-center gap-1.5 rounded-full bg-primary-50 px-2.5 text-xs font-medium text-primary-700">
                 {trail(c)}
                 <X className="h-3 w-3" aria-hidden />
                 <span className="sr-only">Remove</span>
@@ -103,34 +146,90 @@ export function VocabularyMultiSelect({
                 aria-hidden />
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => { setQuery(e.target.value); setOpenGroup(null) }}
           placeholder={placeholder}
           className="min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white pl-8 pr-3 text-sm focus:border-primary-400 focus:outline-none"
         />
       </div>
 
-      <ul className="mt-1.5 max-h-56 overflow-y-auto rounded-lg border border-neutral-200 bg-white">
-        {matches.length === 0 ? (
-          <li className="px-3 py-2.5 text-sm text-neutral-500">Nothing matches “{query}”.</li>
-        ) : matches.map((o) => (
-          <li key={o.id}>
-            <button
-              type="button"
-              onClick={() => { onChange([...value, o.id]); setQuery('') }}
-              className="flex min-h-[40px] w-full items-center justify-between gap-2 px-3 text-left text-sm text-neutral-800 hover:bg-neutral-50"
-            >
-              <span className="min-w-0 truncate">{trail(o)}</span>
-              <Check className="h-3.5 w-3.5 shrink-0 text-neutral-300" aria-hidden />
+      <div className="mt-1.5 max-h-64 overflow-y-auto rounded-lg border border-neutral-200 bg-white">
+        {/* Searching cuts across the groups — the full path keeps a result
+            unambiguous when two groups use the same word. */}
+        {query.trim() ? (
+          matches.length === 0 ? (
+            <p className="px-3 py-2.5 text-sm text-neutral-500">Nothing matches “{query}”.</p>
+          ) : (
+            <ul>
+              {matches.map((o) => (
+                <li key={o.id}>
+                  <button type="button" className={rowCls} onClick={() => add(o.id)}>
+                    <span className="min-w-0 truncate">{trail(o)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : flat ? (
+          <ul>
+            {groups[0].items.filter((o) => !value.includes(o.id)).map((o) => (
+              <li key={o.id}>
+                <button type="button" className={rowCls} onClick={() => add(o.id)}>
+                  <span className="min-w-0 truncate">{o.label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : current ? (
+          <>
+            <button type="button" onClick={() => setOpenGroup(null)}
+                    className="flex min-h-[40px] w-full items-center gap-1.5 border-b border-neutral-200 bg-neutral-50 px-2.5 text-left text-xs font-semibold text-neutral-700">
+              <ChevronLeft className="h-4 w-4" aria-hidden />
+              {current.group?.label}
             </button>
-          </li>
-        ))}
-      </ul>
+            <ul>
+              {current.items.filter((o) => !value.includes(o.id)).map((o) => (
+                <li key={o.id}>
+                  <button type="button" className={rowCls} onClick={() => add(o.id)}>
+                    <span className="min-w-0 truncate">{o.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <ul>
+            {groups.map((g) => g.group ? (
+              <li key={g.group.id}>
+                <button type="button" className={rowCls}
+                        onClick={() => setOpenGroup(g.group!.id)}>
+                  <span className="min-w-0 truncate font-medium">{g.group.label}</span>
+                  <span className="shrink-0 text-xs text-neutral-400">{g.items.length}</span>
+                </button>
+              </li>
+            ) : (
+              // Top-level entries with no children sit alongside the groups.
+              g.items.filter((o) => !value.includes(o.id)).map((o) => (
+                <li key={o.id}>
+                  <button type="button" className={rowCls} onClick={() => add(o.id)}>
+                    <span className="min-w-0 truncate">{o.label}</span>
+                  </button>
+                </li>
+              ))
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }
 
-/** Single choice from a list, returning the item so the caller can snapshot the
- *  label — a cause keeps the wording it was recorded under. */
+/**
+ * One choice, as two selects: the group, then the entry within it.
+ *
+ * Two selects rather than one long list for the same reason as above. A flat
+ * vocabulary collapses to a single select, so a caller does not have to know
+ * which shape it is getting.
+ */
 export function VocabularySelect({
   vocabulary, value, onChange, placeholder = 'Select…',
 }: {
@@ -140,18 +239,67 @@ export function VocabularySelect({
   placeholder?: string
 }) {
   const { data } = useVocabulary(vocabulary)
-  const options = useMemo(() => selectable(data ?? []), [data])
+  const groups = useMemo(() => group(data ?? []), [data])
+  const all = useMemo(() => leaves(data ?? []), [data])
+
+  const selected = all.find((o) => o.id === value) ?? null
+  // The group of whatever is selected, so reopening the field lands where the
+  // value came from rather than back at the top.
+  const groupOf = (item: VocabItem | null) =>
+    item ? (groups.find((g) => g.items.some((i) => i.id === item.id))?.group?.id ?? '') : ''
+
+  const [openGroup, setOpenGroup] = useState<string>('')
+  const activeGroup = openGroup || groupOf(selected)
+
+  const flat = groups.length === 1 && groups[0].group === null
+  const selectCls =
+    'min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm ' +
+    'focus:border-primary-400 focus:outline-none'
+
+  if (flat) {
+    return (
+      <select className={selectCls} value={value ?? ''}
+              onChange={(e) => onChange(all.find((o) => o.id === e.target.value) ?? null)}>
+        <option value="">{placeholder}</option>
+        {groups[0].items.map((o) => (
+          <option key={o.id} value={o.id}>{o.label}</option>
+        ))}
+      </select>
+    )
+  }
+
+  // Ungrouped top-level entries are offered alongside the groups, since a list
+  // can hold both — immediate causes does.
+  const loose = groups.filter((g) => !g.group).flatMap((g) => g.items)
+  const withGroups = groups.filter((g) => g.group)
+  const current = withGroups.find((g) => g.group!.id === activeGroup)
 
   return (
-    <select
-      value={value ?? ''}
-      onChange={(e) => onChange(options.find((o) => o.id === e.target.value) ?? null)}
-      className="min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:border-primary-400 focus:outline-none"
-    >
-      <option value="">{placeholder}</option>
-      {options.map((o) => (
-        <option key={o.id} value={o.id}>{trail(o)}</option>
-      ))}
-    </select>
+    <div className="flex flex-col gap-1.5">
+      <select
+        className={selectCls}
+        value={activeGroup || (selected && !groupOf(selected) ? '__loose__' : '')}
+        onChange={(e) => {
+          setOpenGroup(e.target.value === '__loose__' ? '' : e.target.value)
+          onChange(null)
+        }}
+      >
+        <option value="">{placeholder}</option>
+        {withGroups.map((g) => (
+          <option key={g.group!.id} value={g.group!.id}>{g.group!.label}</option>
+        ))}
+        {loose.length > 0 && <option value="__loose__">Other</option>}
+      </select>
+
+      {(current || (loose.length > 0 && !activeGroup && selected && !groupOf(selected))) && (
+        <select className={selectCls} value={value ?? ''}
+                onChange={(e) => onChange(all.find((o) => o.id === e.target.value) ?? null)}>
+          <option value="">Select…</option>
+          {(current ? current.items : loose).map((o) => (
+            <option key={o.id} value={o.id}>{o.label}</option>
+          ))}
+        </select>
+      )}
+    </div>
   )
 }

@@ -53,6 +53,7 @@ interface NavItem {
 // ehs.incident.report, because filing one is the reason a production worker
 // opens this module at all.
 const NAV: NavItem[] = [
+  { label: 'Dashboard',          href: '/dashboard',     icon: BarChart3,       permission: 'ehs.incident.read' },
   { label: 'Report an Incident', href: '/report',        icon: TriangleAlert },
   { label: 'My Actions',         href: '/actions/mine',  icon: ClipboardCheck },
   // No permission: every role holds ehs.incident.report, and filling in an

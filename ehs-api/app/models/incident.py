@@ -26,8 +26,9 @@ silently.
 """
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -109,6 +110,11 @@ class Incident(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
     # may access, not what they do.
     # HSE's second pair of eyes. Separate from the investigation (a supervisor
     # may do that) and from closing (either may do that).
+    # What the incident cost, and hours actually lost. Neither is derivable —
+    # cost is a company judgement and lost hours come from payroll — so both are
+    # entered after the fact and stay null until someone knows.
+    cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    lost_time_hours: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     hse_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     hse_reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
