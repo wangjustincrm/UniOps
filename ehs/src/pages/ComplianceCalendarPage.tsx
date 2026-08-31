@@ -5,6 +5,7 @@
  * the same kind of object in this system, which is why they can share a screen
  * — and why the regulation each one comes from is shown beside it.
  */
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDateTime } from '@/lib/formatDate'
@@ -13,6 +14,10 @@ import type { Deadline } from '@/lib/types'
 
 interface CalendarDeadline extends Deadline {
   source_type: string
+  /** The incident this clock is running against. The endpoint has always sent
+   *  it; the interface simply never declared it, so the rows had nothing to
+   *  link to. */
+  source_id: string | null
   source_ref: string | null
 }
 
@@ -57,20 +62,44 @@ function Section({ title, rows, empty }: {
       ) : (
         <ul className="flex flex-col gap-2">
           {rows.map((d) => (
-            <li key={d.id} className="rounded-xl border border-neutral-200 bg-white p-3.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <Countdown kind={d.kind} dueAt={d.due_at} satisfiedAt={d.satisfied_at} />
-                <span className="min-w-0 flex-1 text-sm text-neutral-800">
-                  {d.source_ref ?? d.source_type}
-                </span>
-              </div>
-              <p className="mt-1.5 text-xs text-neutral-400">
-                {d.regulation_ref ? `${d.regulation_ref} · ` : ''}due {formatDateTime(d.due_at)}
-              </p>
+            <li key={d.id}>
+              <DeadlineRow d={d} />
             </li>
           ))}
         </ul>
       )}
     </>
   )
+}
+
+/** A clock, linked to whatever it is running against. Only incidents have a
+ *  detail page today; other source types render as plain rows rather than as
+ *  links that go nowhere. */
+function DeadlineRow({ d }: { d: CalendarDeadline }) {
+  const body = (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <Countdown kind={d.kind} dueAt={d.due_at} satisfiedAt={d.satisfied_at} />
+        <span className="min-w-0 flex-1 text-sm text-neutral-800">
+          {d.source_ref ?? d.source_type}
+        </span>
+      </div>
+      <p className="mt-1.5 text-xs text-neutral-400">
+        {d.regulation_ref ? `${d.regulation_ref} · ` : ''}due {formatDateTime(d.due_at)}
+      </p>
+    </>
+  )
+  const card = 'block rounded-xl border border-neutral-200 bg-white p-3.5'
+
+  if (d.source_type === 'incident' && d.source_id) {
+    return (
+      <Link
+        to={`/incidents/${d.source_id}`}
+        className={`${card} transition-colors hover:border-primary-300 hover:bg-primary-50/40`}
+      >
+        {body}
+      </Link>
+    )
+  }
+  return <div className={card}>{body}</div>
 }

@@ -431,7 +431,7 @@ services:
       EPMS_API_URL: http://epms-api:8000/api/v1
       MDM_API_URL: http://mdm-api:8002/mdm/v1
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
-      FILE_SERVER_URL: ${FILE_SERVER_URL:-http://host.docker.internal:8005/files/v1}
+      FILE_SERVER_URL: http://file-api:8005/files/v1
       SAFETY_WEB_URL: http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}
       # The statutory sweep is on in dev so the escalation ladder can be
       # exercised; the interval itself lives in ehs_config (0 disables it).

@@ -27,7 +27,7 @@ silently.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -104,6 +104,18 @@ class Incident(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
     approval_step_idx: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     signature: Mapped[str | None] = mapped_column(Text, nullable=True)  # base64 PNG
+    # Snapshots taken at signing time. `signer_role` is a job title from the EHS
+    # position tables, never the UniOps `role` column — that says what someone
+    # may access, not what they do.
+    # HSE's second pair of eyes. Separate from the investigation (a supervisor
+    # may do that) and from closing (either may do that).
+    hse_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    hse_reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    hse_reviewed_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    signer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    signer_role: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class IncidentPerson(UUIDPrimaryKey, TimestampMixin, Base):
@@ -193,3 +205,30 @@ class IncidentCause(UUIDPrimaryKey, TimestampMixin, Base):
     label: Mapped[str] = mapped_column(String(200), nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+class IncidentAttachment(UUIDPrimaryKey, Base):
+    """A photograph (or document) attached to an incident report.
+
+    The bytes live in file-api; this row is the join. file-api has no
+    "list by document" endpoint, so the owning service is what knows which
+    files belong to which record — the same arrangement `pr_attachments` uses.
+    """
+
+    __tablename__ = "ehs_incident_attachments"
+
+    incident_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_incidents.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    storage_key: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    uploaded_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )

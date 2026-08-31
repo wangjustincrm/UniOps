@@ -4,7 +4,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.services import incident_type
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
 
 FORM_KINDS = ("medical", "equipment", "near_miss")
 INJURY_CLASSES = ("first_aid", "medical_aid", "lost_time")
@@ -18,6 +19,8 @@ class IncidentPersonIn(BaseModel):
     # identifier available for contractors and visitors.
     person_name: str = Field(min_length=1, max_length=255)
     external_company: str | None = Field(default=None, max_length=200)
+    # Carried from the staff picker (E55) rather than asked for again.
+    department_id: uuid.UUID | None = None
     body_part_id: uuid.UUID | None = None
     body_part_label: str | None = Field(default=None, max_length=200)
     nature_of_injury_id: uuid.UUID | None = None
@@ -39,9 +42,29 @@ class IncidentCreate(BaseModel):
     immediate_action_taken: str | None = None
     reported_to_id: uuid.UUID | None = None
     is_anonymous: bool = False
+    # One of the twelve options on HSE's form. The server fans it out into
+    # injury_class / mol_reportable / category — see services/incident_type.py.
+    # Explicit injury_class still wins, which is how Fatality and Unconscious
+    # carry a severity the type itself does not imply.
+    incident_type: str | None = None
+    injury_class: str | None = None
+    # Base64 PNG, drawn on the pad or taken from the reporter's profile. The
+    # form has always captured one; until now there was nowhere to put it, so
+    # every signature drawn since launch was discarded on submit.
+    signature: str | None = None
     persons: list[IncidentPersonIn] = Field(default_factory=list)
     # Form-specific sections that have no column of their own.
     extra: dict = Field(default_factory=dict)
+
+    @field_validator("incident_type")
+    @classmethod
+    def _known_incident_type(cls, v: str | None) -> str | None:
+        # Validated here rather than in crud so an unknown type is a 422 the
+        # caller can act on, not a 500 that reads like the server broke.
+        if v is not None and v not in incident_type.BY_CODE:
+            allowed = ", ".join(sorted(incident_type.BY_CODE))
+            raise ValueError(f"Unknown incident type '{v}'. One of: {allowed}")
+        return v
 
     @model_validator(mode="after")
     def _occurred_at_must_be_aware(self):
@@ -130,6 +153,20 @@ class IncidentOut(BaseModel):
     is_anonymous: bool
     description: str | None
     equipment_involved: str | None
+    witnesses_note: str | None
+    immediate_action_taken: str | None
+    reported_to_name: str | None
+    signature: str | None
+    hse_reviewed_at: datetime | None
+    hse_reviewed_by_name: str | None
+    signer_name: str | None
+    signer_role: str | None
+    signed_at: datetime | None
+    # Answers to the sections that belong to one form kind only — the near-miss
+    # "did you talk to the operator" pair lives here.
+    extra: dict = Field(default_factory=dict)
+    classified_at: datetime | None
+    classified_by_name: str | None
     submitted_at: datetime | None
     closed_at: datetime | None
     created_at: datetime

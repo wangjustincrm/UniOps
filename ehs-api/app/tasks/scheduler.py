@@ -38,6 +38,8 @@ from app.models.config import EhsConfig
 from app.models.mirrors import User
 from app.models.statutory import StatutoryDeadline
 from app.services import tasks as task_service
+from app.crud import toolbox as toolbox_crud
+from app.services import schedule_sweep
 from app.services.escalation import CapaLadder, capa_level, statutory_level
 
 logger = logging.getLogger(__name__)
@@ -51,13 +53,19 @@ TICK_SECONDS = settings.SCHEDULER_TICK_SECONDS
 class SweepResult:
     statutory_escalated: int = 0
     actions_escalated: int = 0
+    inspections_generated: int = 0
+    inspections_missed: int = 0
+    talks_chased: int = 0
     skipped_reason: str | None = None
 
     def __str__(self) -> str:
         if self.skipped_reason:
             return f"skipped ({self.skipped_reason})"
         return (f"{self.statutory_escalated} statutory, "
-                f"{self.actions_escalated} corrective actions escalated")
+                f"{self.actions_escalated} actions, "
+                f"{self.inspections_generated} inspections due, "
+                f"{self.inspections_missed} missed, "
+                f"{self.talks_chased} talks chased")
 
 
 async def _load_config(db: AsyncSession) -> EhsConfig | None:
@@ -173,9 +181,22 @@ async def run_tick(now: datetime | None = None) -> SweepResult:
             supervisor_days=config.capa_escalate_supervisor_days,
             manager_days=config.capa_escalate_manager_days,
         )
+        # Scheduled inspections ride the same tick: creating the occurrences
+        # that are due and marking the ones that were not done. Both passes are
+        # idempotent, so sharing a tick with the escalation sweeps is safe even
+        # when the interval is shortened.
+        today = now.astimezone(timezone.utc).date()
+        generated = await schedule_sweep.generate_due(db, today=today)
+        missed = await schedule_sweep.chase_overdue(db, today=today)
+        # HSE: biweekly reminders until the toolbox talk is signed off.
+        nudged = await toolbox_crud.chase_outstanding(db, today=today)
+
         result = SweepResult(
             statutory_escalated=await sweep_statutory(db, now),
             actions_escalated=await sweep_actions(db, now, ladder),
+            inspections_generated=len(generated),
+            inspections_missed=len(missed),
+            talks_chased=len(nudged),
         )
         await db.commit()
         return result

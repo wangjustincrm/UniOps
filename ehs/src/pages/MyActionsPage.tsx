@@ -4,6 +4,7 @@
  * Card list rather than a table: this is read one-handed on a phone, and a
  * table hides the one thing that matters, which is how late something is.
  */
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -75,9 +76,10 @@ export default function MyActionsPage() {
   return (
     <div className="flex flex-col gap-2 p-4">
       {actions.map((a) => (
-        <article
+        <Link
           key={a.id}
-          className="rounded-xl border border-neutral-200 bg-white p-3.5"
+          to={`/actions/${a.id}`}
+          className="block rounded-xl border border-neutral-200 bg-white p-3.5 transition-colors hover:border-primary-300 hover:bg-primary-50/40"
         >
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
@@ -97,7 +99,7 @@ export default function MyActionsPage() {
           <div className="mt-2.5">
             <StatusBadge status={a.status} />
           </div>
-        </article>
+        </Link>
       ))}
     </div>
   )

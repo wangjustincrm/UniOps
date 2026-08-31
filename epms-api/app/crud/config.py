@@ -432,7 +432,11 @@ async def get_or_create(db: AsyncSession) -> CompanyConfig:
     DBs). A stored template whose content differs from the previous default —
     i.e. a customer edited it — is never touched.
     """
-    result = await db.execute(select(CompanyConfig).limit(1))
+    # Ordered because `limit(1)` over an unordered heap is only stable until a
+    # row moves. `uq_company_config_single_row` now keeps this to one row, but
+    # a read whose result depends on physical order is the bug that let three
+    # rows go unnoticed — an edit landing on a row a later read did not pick.
+    result = await db.execute(select(CompanyConfig).order_by(CompanyConfig.id).limit(1))
     cfg = result.scalar_one_or_none()
     if cfg is None:
         cfg = _build_default()

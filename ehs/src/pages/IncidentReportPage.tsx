@@ -20,6 +20,7 @@ import type { CompressedImage } from '@/lib/imageCompress'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { PhotoCapture } from '@/components/PhotoCapture'
 import { SignaturePad } from '@/components/SignaturePad'
+import { useMyProfile } from '@/hooks/useMyProfile'
 
 type Kind = 'medical' | 'equipment' | 'near_miss'
 
@@ -47,6 +48,15 @@ const KINDS: { kind: Kind; label: string; hint: string; Icon: typeof AlertTriang
   },
 ]
 
+interface IncidentTypeOption {
+  code: string
+  label: string
+  form_kind: string
+  /** Fatality and Unconscious are MOL-reportable and say nothing about lost
+   *  time, so the form asks for the injury class separately. */
+  asks_injury_class: boolean
+}
+
 interface LocationNode {
   id: string
   name: string
@@ -61,6 +71,8 @@ interface FormState {
   date: string
   time: string
   locationId: string
+  incidentType: string
+  injuryClass: string
   description: string
   injured: PersonValue
   talkedToOperator: '' | 'yes' | 'no' | 'na'
@@ -70,24 +82,42 @@ interface FormState {
 }
 
 const EMPTY: FormState = {
-  kind: null, title: '', date: '', time: '', locationId: '', description: '',
+  kind: null, title: '', date: '', time: '', locationId: '', incidentType: '',
+  injuryClass: '', description: '',
   injured: EMPTY_PERSON, talkedToOperator: '', whyNot: '', anonymous: false, signature: null,
 }
 
 const DRAFT_KIND = 'incident'
 const DRAFT_ID = 'current'
 
-function flatten(nodes: LocationNode[], out: LocationNode[] = []): LocationNode[] {
+/**
+ * Only leaves are reportable places. An interior node is a grouping — Building
+ * 102, or Pretreatment, which HSE's plant list names only as `Pretreatment –
+ * <line>` — and picking one would record an incident at a whole building.
+ *
+ * Depth is not the test: the tree is deliberately ragged (Packaging sits one
+ * level above Milk Receiving because Building 104 has no sub-areas), so
+ * "childless" is the only rule that holds across branches.
+ */
+function leaves(nodes: LocationNode[], out: LocationNode[] = []): LocationNode[] {
   for (const n of nodes) {
-    out.push(n)
-    flatten(n.children ?? [], out)
+    if ((n.children ?? []).length === 0) out.push(n)
+    else leaves(n.children, out)
   }
   return out
+}
+
+/** `Kingston Plant/Building 103/Filling` -> `Building 103 › Filling`. The site
+ *  prefix is dropped: it is the same for every row and only costs width on a
+ *  phone, where this select renders as the OS picker and indentation is lost. */
+function trail(path: string): string {
+  return path.split('/').slice(1).join(' › ')
 }
 
 export default function IncidentReportPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const profile = useMyProfile()
   const [form, setForm] = useState<FormState>(EMPTY)
   const [photos, setPhotos] = useState<CompressedImage[]>([])
   const [restored, setRestored] = useState(false)
@@ -115,12 +145,19 @@ export default function IncidentReportPage() {
       : 'This draft is too large to keep on the phone — submit it while you have signal.')
   }, [form, photos])
 
+  const { data: incidentTypes } = useQuery({
+    queryKey: ['incident-types', form.kind],
+    queryFn: () => api.get<IncidentTypeOption[]>(
+      `/api/v1/incidents/types?form_kind=${form.kind}`),
+    enabled: Boolean(form.kind),
+  })
+
   const { data: locations } = useQuery({
     queryKey: ['locations'],
     queryFn: () => api.get<LocationNode[]>('/api/v1/settings/locations'),
     staleTime: 10 * 60_000,
   })
-  const flatLocations = useMemo(() => flatten(locations ?? []), [locations])
+  const leafLocations = useMemo(() => leaves(locations ?? []), [locations])
 
   const submit = useMutation({
     mutationFn: async () => {
@@ -136,6 +173,9 @@ export default function IncidentReportPage() {
         location_id: form.locationId || null,
         description: form.description || null,
         is_anonymous: form.anonymous,
+        signature: form.signature,
+        incident_type: form.incidentType || null,
+        injury_class: form.injuryClass || null,
       }
       if (form.kind === 'medical' && form.injured.name.trim()) {
         // An employee match carries a user id; a written-in name does not, and
@@ -145,7 +185,12 @@ export default function IncidentReportPage() {
           person_name: form.injured.name.trim(),
           user_id: form.injured.userId,
           external_company: form.injured.externalCompany,
+          department_id: form.injured.departmentId,
         }]
+        // The department of the person hurt is the department of the incident.
+        // HSE asked for this so nobody picks a name and then picks the
+        // department that name already implies.
+        if (form.injured.departmentId) body.department_id = form.injured.departmentId
       }
       if (form.kind === 'near_miss') {
         body.extra = {
@@ -155,14 +200,39 @@ export default function IncidentReportPage() {
       }
       const created = await api.post<{ id: string }>('/api/v1/incidents', body)
       await api.post(`/api/v1/incidents/${created.id}/submit`)
-      return created
+
+      // Photos go up after the incident exists, because they hang off its id.
+      // A failure here is reported but does not fail the submit: the report is
+      // already filed, and telling someone their injury report failed because
+      // a photo did not upload would be both false and alarming.
+      let photosFailed = 0
+      for (const photo of photos) {
+        try {
+          const blob = await (await fetch(photo.dataUrl)).blob()
+          const form = new FormData()
+          form.append('file', blob, photo.name)
+          await api.upload(`/api/v1/incidents/${created.id}/attachments`, form)
+        } catch {
+          photosFailed += 1
+        }
+      }
+      return { ...created, photosFailed }
     },
     onSuccess: (created) => {
       discardDraft(DRAFT_KIND, DRAFT_ID)
       queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      if (created.photosFailed > 0) {
+        window.alert(
+          `Your report was filed as INC. ${created.photosFailed} of ${photos.length} ` +
+          `photo(s) could not be uploaded — open the report and add them again.`,
+        )
+      }
       navigate(`/incidents/${created.id}`)
     },
   })
+
+  const asksInjuryClass = Boolean(
+    incidentTypes?.find((t) => t.code === form.incidentType)?.asks_injury_class)
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
@@ -209,7 +279,10 @@ export default function IncidentReportPage() {
   }
 
   // ── Step 2: the details ──────────────────────────────────────────────────
-  const canSubmit = form.title.trim() && form.date &&
+  const canSubmit = form.title.trim() && form.date && form.incidentType &&
+    // A type that carries no severity has to have one supplied, or the injury
+    // rates lose a count that nobody will notice is missing.
+    (!asksInjuryClass || form.injuryClass) &&
     (form.kind !== 'near_miss' || form.talkedToOperator !== 'no' || form.whyNot.trim())
 
   return (
@@ -255,20 +328,48 @@ export default function IncidentReportPage() {
         </Field>
       </div>
 
+      <Field label="What kind of incident was this?" required>
+        <select className={inputClass} value={form.incidentType}
+                onChange={(e) => set('incidentType', e.target.value)}>
+          <option value="">Select the type</option>
+          {(incidentTypes ?? []).map((t) => (
+            <option key={t.code} value={t.code}>{t.label}</option>
+          ))}
+        </select>
+      </Field>
+
+      {/* Fatality and Unconscious tell us the Ministry must be told; they say
+          nothing about lost time, and a death is nearly always — but not
+          always — a lost-time injury. Asked rather than assumed. */}
+      {asksInjuryClass && (
+        <Field label="How badly was the person hurt?" required
+               help="Reported separately because this type does not imply it.">
+          <select className={inputClass} value={form.injuryClass}
+                  onChange={(e) => set('injuryClass', e.target.value)}>
+            <option value="">Select</option>
+            <option value="first_aid">First aid</option>
+            <option value="medical_aid">Medical aid</option>
+            <option value="lost_time">Lost time</option>
+          </select>
+        </Field>
+      )}
       <Field label="Where did this happen?">
         <select className={inputClass} value={form.locationId}
                 onChange={(e) => set('locationId', e.target.value)}>
           <option value="">Select an area</option>
-          {flatLocations.map((l) => (
-            <option key={l.id} value={l.id}>
-              {' '.repeat(l.depth * 2)}{l.name}
-            </option>
+          {leafLocations.map((l) => (
+            <option key={l.id} value={l.id}>{trail(l.path)}</option>
           ))}
         </select>
       </Field>
 
       {form.kind === 'medical' && (
-        <Field label="Who was hurt?" help="Search for an employee, or type the name of a contractor or visitor.">
+        <Field
+        label="Who was hurt?"
+        help={form.injured.departmentName
+          ? `Department: ${form.injured.departmentName} — filled in from their record.`
+          : 'Search for an employee, or type the name of a contractor or visitor.'}
+      >
           <PersonPicker value={form.injured} onChange={(v) => set('injured', v)} />
         </Field>
       )}
@@ -315,7 +416,11 @@ export default function IncidentReportPage() {
       </Field>
 
       <Field label="Sign">
-        <SignaturePad value={form.signature} onChange={(v) => set('signature', v)} />
+        <SignaturePad
+          value={form.signature}
+          onChange={(v) => set('signature', v)}
+          savedSignature={profile.data?.signature_image ?? null}
+        />
       </Field>
 
       <label className="mt-2 flex min-h-[44px] items-center gap-2.5 text-sm text-neutral-700">

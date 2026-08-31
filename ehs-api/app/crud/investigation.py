@@ -97,7 +97,16 @@ async def replace_causes(
     A cause that already has a corrective action attached is kept rather than
     deleted, matched on its label — dropping it would orphan the action and
     lose the link between a root cause and what is being done about it.
+
+    Refused on a draft for the same reason `upsert_investigation` refuses: the
+    two are halves of one screen, and a rule that holds on one half and not the
+    other lets causes be recorded against an incident nobody has reported yet.
     """
+    if incident.status == "draft":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Submit the incident before recording its causes",
+        )
     existing = await list_causes(db, incident.id)
     attached = {
         c_id for (c_id,) in (

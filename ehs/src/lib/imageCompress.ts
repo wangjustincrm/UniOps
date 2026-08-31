@@ -16,6 +16,9 @@ const MAX_EDGE = 1920
 const QUALITY = 0.8
 
 export interface CompressedImage {
+  /** Set once the bytes have reached the server, so a retried submit does not
+   *  upload the same photo twice. */
+  uploaded?: boolean
   dataUrl: string
   bytes: number
   width: number

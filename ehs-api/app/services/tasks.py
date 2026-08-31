@@ -39,6 +39,8 @@ TASK_VERIFY_ACTION = "ehs_verify_action"
 TASK_INVESTIGATE = "ehs_investigate"
 TASK_STATUTORY = "ehs_statutory"
 TASK_CERT_EXPIRY = "ehs_cert_expiry"
+TASK_DO_FORM = "ehs_do_form"
+TASK_TOOLBOX_TALK = "ehs_toolbox_talk"
 
 
 async def open_task(

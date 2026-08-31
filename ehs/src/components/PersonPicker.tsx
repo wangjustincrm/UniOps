@@ -25,9 +25,17 @@ export interface PersonValue {
   userId: string | null
   name: string
   externalCompany: string | null
+  /** Carried from the directory when an employee is picked, so nobody is asked
+   *  for a department the system already knows (E55). Null for a written-in
+   *  contractor or visitor, who has none. */
+  departmentId: string | null
+  departmentName: string | null
 }
 
-export const EMPTY_PERSON: PersonValue = { userId: null, name: '', externalCompany: null }
+export const EMPTY_PERSON: PersonValue = {
+  userId: null, name: '', externalCompany: null,
+  departmentId: null, departmentName: null,
+}
 
 export function PersonPicker({
   value: valueProp,
@@ -93,13 +101,21 @@ export function PersonPicker({
   }, [open, listId])
 
   const pickEmployee = (p: DirectoryPerson) => {
-    onChange({ userId: p.id, name: p.full_name, externalCompany: null })
+    onChange({
+      userId: p.id, name: p.full_name, externalCompany: null,
+      departmentId: p.department_id ?? null,
+      departmentName: p.department_name ?? null,
+    })
     setQuery('')
     setOpen(false)
   }
 
   const useTypedName = () => {
-    onChange({ userId: null, name: query.trim(), externalCompany: value.externalCompany })
+    // A written-in contractor or visitor has no department in our directory.
+    onChange({
+      userId: null, name: query.trim(), externalCompany: value.externalCompany,
+      departmentId: null, departmentName: null,
+    })
     setQuery('')
     setOpen(false)
   }

@@ -11,13 +11,14 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
 from app.core.deps import SessionDep
 from app.core.permissions import CanManageSettings, CanReadIncident, CanReportIncident
 from app.crud import vocabulary as crud
 from app.models.config import EhsConfig
-from app.models.mirrors import Location
+from app.models.mirrors import Department, Location
 from app.schemas.settings import (
     ConfigOut,
     ConfigUpdate,
@@ -160,3 +161,23 @@ async def location_tree(
         else:
             parent.children.append(node)
     return roots
+
+
+class DepartmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    code: str
+    name: str
+
+
+@router.get("/departments", response_model=list[DepartmentOut])
+async def list_departments(db: SessionDep, user: CanReportIncident):  # noqa: ARG001
+    """Departments, from the mdm mirror.
+
+    Served here so the inspection rotation can be built in the UI. Read-only —
+    departments are mdm's, and a second place to edit them would drift.
+    """
+    return list((await db.execute(
+        select(Department).where(Department.is_active.is_(True)).order_by(Department.code)
+    )).scalars().all())

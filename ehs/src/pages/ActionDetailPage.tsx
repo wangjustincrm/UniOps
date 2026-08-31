@@ -8,6 +8,8 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTabTitle } from '@uniops/shell'
+import { ehsRoutes } from '@/app/routes'
 import { ShieldCheck } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { daysOverdue, formatDate, formatDateTime } from '@/lib/formatDate'
@@ -48,6 +50,10 @@ export default function ActionDetailPage() {
     queryKey: ['action', id],
     queryFn: () => api.get<ActionDetail>(`/api/v1/actions/${id}`),
   })
+
+  // Same as the incident page: the route table can only name this tab from the
+  // URL, so it reads `Action 4e8e5b7e` until the document arrives.
+  useTabTitle(ehsRoutes, data?.action_no)
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['action', id] })

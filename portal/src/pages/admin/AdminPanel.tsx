@@ -182,6 +182,11 @@ const MODULE_TAGLINE_KEYS: { key: string; label: string }[] = [
   { key: 'vms', label: 'VMS' },
   { key: 'finance', label: 'Finance' },
   { key: 'booking', label: 'Booking' },
+  { key: 'mrp', label: 'MRP' },
+  // Safety's app key is `ehs` (the service is ehs-api); the label is what the
+  // module calls itself in the UI. They differ on purpose — do not "fix" the
+  // key to `safety`, it is what the module already asks for.
+  { key: 'ehs', label: 'Safety' },
 ]
 
 function CompanySettings() {

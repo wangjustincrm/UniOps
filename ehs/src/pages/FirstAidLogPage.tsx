@@ -6,8 +6,9 @@
  * control here by design.
  */
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { ArrowUpRight, Plus } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -21,6 +22,8 @@ interface Entry {
 export default function FirstAidLogPage() {
   const queryClient = useQueryClient()
   const { can } = usePermissions()
+  const canWrite = can('ehs.firstaid.write')
+  const [escalating, setEscalating] = useState<{ id: string; log_no: string; injured_name: string } | null>(null)
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState({
     injured_name: '', body_part_label: '', treatment_given: '',
@@ -137,6 +140,19 @@ export default function FirstAidLogPage() {
               )}
             </div>
             <p className="mt-1.5 text-sm text-neutral-700">{e.treatment_given}</p>
+            {/* The common path to a WSIB obligation: first aid at the time, a
+                clinic two days later. Offered from the entry because that entry
+                is usually the only contemporaneous record of when it happened. */}
+            {!e.incident_id && canWrite && (
+              <button
+                type="button"
+                onClick={() => setEscalating({ id: e.id, log_no: e.log_no, injured_name: e.injured_name })}
+                className="mt-2 flex min-h-[36px] items-center gap-1.5 text-xs font-medium text-primary-700"
+              >
+                <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+                This became more than first aid
+              </button>
+            )}
             <p className="mt-1 text-xs text-neutral-400">
               {formatDateTime(e.occurred_at)}
               {e.location_path ? ` · ${e.location_path}` : ''}
@@ -145,6 +161,105 @@ export default function FirstAidLogPage() {
           </li>
         ))}
       </ul>
+
+      {escalating && (
+        <EscalateDialog entry={escalating} onClose={() => setEscalating(null)} />
+      )}
+    </div>
+  )
+}
+
+/** Local "now" as a datetime-local value — the employer-aware instant defaults
+ *  to when someone is doing this, which is usually right. */
+function localNow(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+         `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/**
+ * Turning a first-aid entry into an incident.
+ *
+ * The usual path to a WSIB obligation: treatment that looked like first aid at
+ * the time, and the worker goes to a clinic two days later. The register entry
+ * is often the only contemporaneous record of when it happened.
+ *
+ * The date asked for here is deliberately NOT the treatment date. WSIB's three
+ * business days run from when the employer learned there was an obligation, and
+ * that is today, not the day of the cut. Getting these two confused starts the
+ * clock in the past and makes a report look late that is not.
+ */
+function EscalateDialog({ entry, onClose }: {
+  entry: { id: string; log_no: string; injured_name: string }
+  onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const [title, setTitle] = useState(`${entry.injured_name} — treatment became medical aid`)
+  const [description, setDescription] = useState('')
+  const [awareAt, setAwareAt] = useState(localNow())
+  const [error, setError] = useState<string | null>(null)
+
+  const escalate = useMutation({
+    mutationFn: () => api.post<{ id: string; incident_no: string }>(
+      `/api/v1/first-aid/${entry.id}/escalate`, {
+        title,
+        description: description || null,
+        // Sent with the browser's offset so the clock starts from a real
+        // instant rather than a floating local time.
+        employer_aware_at: new Date(awareAt).toISOString(),
+      }),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ['first-aid'] })
+      onClose()
+      navigate(`/incidents/${created.id}`)
+    },
+    onError: (e: unknown) => setError(e instanceof ApiError ? e.message : String(e)),
+  })
+
+  const field = 'min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm ' +
+                'focus:border-primary-400 focus:outline-none'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
+      <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white p-4 sm:max-w-md sm:rounded-2xl">
+        <h2 className="text-base font-bold text-neutral-900">Raise an incident</h2>
+        <p className="mt-0.5 text-xs text-neutral-500">From {entry.log_no}</p>
+
+        <label className="mb-1 mt-3 block text-sm font-medium text-neutral-800">What happened</label>
+        <input className={field} value={title} onChange={(e) => setTitle(e.target.value)} />
+
+        <label className="mb-1 mt-3 block text-sm font-medium text-neutral-800">Detail</label>
+        <textarea rows={3} className={`${field} py-2`} value={description}
+                  onChange={(e) => setDescription(e.target.value)} />
+
+        <label className="mb-1 mt-3 block text-sm font-medium text-neutral-800">
+          When did we learn it was more than first aid?
+        </label>
+        <p className="mb-1.5 text-xs text-neutral-500">
+          Not the date of the treatment. WSIB&rsquo;s three business days run from this
+          moment, so putting the treatment date here starts the clock in the past.
+        </p>
+        <input type="datetime-local" className={field} value={awareAt}
+               onChange={(e) => setAwareAt(e.target.value)} />
+
+        {error && (
+          <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>
+        )}
+
+        <div className="mt-4 flex gap-2">
+          <button type="button" onClick={onClose}
+                  className="min-h-[44px] flex-1 rounded-lg border border-neutral-300 text-sm font-medium text-neutral-700">
+            Cancel
+          </button>
+          <button type="button" disabled={!title.trim() || escalate.isPending}
+                  onClick={() => { if (title.trim() && !escalate.isPending) { setError(null); escalate.mutate() } }}
+                  className="min-h-[44px] flex-[1.4] rounded-lg bg-primary-600 text-sm font-semibold text-white disabled:opacity-50">
+            {escalate.isPending ? 'Raising…' : 'Raise incident'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

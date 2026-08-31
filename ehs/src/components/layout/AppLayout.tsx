@@ -3,7 +3,8 @@ import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { TabBar, TabHost, TabRouterSync, TabStoreProvider } from '@uniops/shell'
 import type { TabMeta } from '@uniops/shell'
 import {
-  ArrowLeft, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck,
+  ArrowLeft, BarChart3, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck,
+  ClipboardList, Users, Wrench,
   GraduationCap, HeartPulse, List, LogOut, Map, Menu, Settings, TriangleAlert, User,
 } from 'lucide-react'
 import { ehsRoutes } from '@/app/routes'
@@ -39,6 +40,13 @@ interface NavItem {
   href: string
   icon: typeof TriangleAlert
   permission?: string
+  /**
+   * Shown *instead of hiding the item* when `permission` is absent. The
+   * incident list narrows to your own reports rather than refusing, so a
+   * worker still has somewhere to go — the same page, a shorter list. Without
+   * this the endpoint's fallback would be unreachable: correct, and invisible.
+   */
+  labelWithoutPermission?: string
 }
 
 // Reporting and my own actions carry no permission: every role holds
@@ -47,15 +55,23 @@ interface NavItem {
 const NAV: NavItem[] = [
   { label: 'Report an Incident', href: '/report',        icon: TriangleAlert },
   { label: 'My Actions',         href: '/actions/mine',  icon: ClipboardCheck },
-  { label: 'Incidents',          href: '/incidents',     icon: TriangleAlert,   permission: 'ehs.incident.read' },
+  // No permission: every role holds ehs.incident.report, and filling in an
+  // inspection is the same kind of act as filing one.
+  { label: 'Forms',              href: '/forms',         icon: ClipboardList },
+  { label: 'Incidents',          href: '/incidents',     icon: TriangleAlert,   permission: 'ehs.incident.read', labelWithoutPermission: 'My Reports' },
   { label: 'First Aid Register', href: '/first-aid',     icon: HeartPulse,      permission: 'ehs.incident.read' },
   { label: 'Compliance Calendar', href: '/calendar',     icon: CalendarClock,   permission: 'ehs.incident.read' },
+  { label: 'Reports',            href: '/reports',       icon: BarChart3,       permission: 'ehs.incident.read' },
+  // No permission: a supervisor delivers these and everyone signs one.
+  { label: 'Toolbox Talks',      href: '/toolbox-talks', icon: Users },
   { label: 'Training',           href: '/training',      icon: GraduationCap,   permission: 'ehs.training.read' },
 ]
 
 const SETTINGS_NAV: NavItem[] = [
+  { label: 'Forms',       href: '/settings/forms', icon: ClipboardList, permission: 'ehs.settings.manage' },
   { label: 'Lists',       href: '/settings/lists', icon: List,     permission: 'ehs.settings.manage' },
   { label: 'Plant Areas', href: '/settings/areas', icon: Map,      permission: 'ehs.settings.manage' },
+  { label: 'Equipment',   href: '/settings/equipment', icon: Wrench, permission: 'ehs.settings.manage' },
   { label: 'Rules',       href: '/settings/rules', icon: Settings, permission: 'ehs.settings.manage' },
 ]
 
@@ -79,10 +95,16 @@ function Sidebar({
   const brandInitials =
     brandName.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || 'SF'
 
-  // While permissions are loading, show the two entries everybody has rather
-  // than flashing the full list and then removing most of it.
+  // While permissions are loading, show the entries everybody has rather than
+  // flashing the full list and then removing most of it. An item carrying a
+  // `labelWithoutPermission` is in that group: it renders under the narrower
+  // label until permissions arrive, which may then widen it.
   const visible = (items: NavItem[]) =>
-    items.filter((n) => !n.permission || (!isLoading && can(n.permission)))
+    items.flatMap((n) => {
+      if (!n.permission || (!isLoading && can(n.permission))) return [n]
+      if (n.labelWithoutPermission) return [{ ...n, label: n.labelWithoutPermission }]
+      return []
+    })
   const settings = visible(SETTINGS_NAV)
 
   const navLinkCls = (isActive: boolean) => cn(

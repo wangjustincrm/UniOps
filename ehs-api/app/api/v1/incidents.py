@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.core.deps import SessionDep
 from app.core.permissions import (
     CanClassifyIncident,
+    CanCloseIncident,
     CanManageStatutory,
     CanReadIncident,
     CanReportIncident,
@@ -22,6 +23,10 @@ from app.core.permissions import (
 from app.models.incident import IncidentPerson
 from sqlalchemy import select
 from uniops_authz import has_permission
+
+from pydantic import BaseModel
+
+from app.services import incident_type
 from app.crud import incident as crud
 from app.crud import investigation as inv_crud
 from app.schemas.incident import (
@@ -113,6 +118,25 @@ async def list_incidents(
     return [IncidentListItem.model_validate(r) for r in rows]
 
 
+class IncidentTypeOption(BaseModel):
+    code: str
+    label: str
+    form_kind: str
+    asks_injury_class: bool
+
+
+@router.get("/types", response_model=list[IncidentTypeOption])
+async def list_incident_types(form_kind: str | None = None):
+    """The incident types HSE's form offers, optionally for one form.
+
+    Served rather than hardcoded in the frontend: the list changed once already
+    (three options became twelve on 31 August) and a second copy would drift.
+    """
+    types = incident_type.for_form(form_kind) if form_kind else list(incident_type.TYPES)
+    return [IncidentTypeOption(code=t.code, label=t.label, form_kind=t.form_kind,
+                               asks_injury_class=t.asks_injury_class) for t in types]
+
+
 @router.get("/{incident_id}", response_model=IncidentOut)
 async def get_incident(incident_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
     incident = await crud.get(db, incident_id)
@@ -151,6 +175,28 @@ async def classify_incident(
 
 
 # ── Investigation and causes ────────────────────────────────────────────────
+
+
+@router.post("/{incident_id}/hse-review", response_model=IncidentOut)
+async def hse_review_incident(
+    incident_id: uuid.UUID, db: SessionDep, user: CanCloseIncident,
+):
+    """Record HSE's review — the gate an injury or damage incident passes to close.
+
+    Held behind `ehs.incident.close`, which only the HSE Manager has. A
+    supervisor may investigate; the review is deliberately somebody else.
+    """
+    incident = await crud.get(db, incident_id)
+    await crud.hse_review(db, incident, _user_id(user))
+    return await _to_out(db, incident)
+
+
+@router.post("/{incident_id}/close", response_model=IncidentOut)
+async def close_incident(incident_id: uuid.UUID, db: SessionDep, user: CanCloseIncident):  # noqa: ARG001
+    """Close an incident. Refused where HSE has not reviewed one that needs it."""
+    incident = await crud.get(db, incident_id)
+    await crud.close(db, incident)
+    return await _to_out(db, incident)
 
 
 @router.get("/{incident_id}/investigation", response_model=InvestigationOut | None)

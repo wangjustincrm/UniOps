@@ -30,11 +30,15 @@ ONTARIO = ZoneInfo("America/Toronto")
 LOCK_INCIDENT = 981_001
 LOCK_ACTION = 981_002
 LOCK_FIRST_AID = 981_003
+LOCK_FORM = 981_004
+LOCK_TBT = 981_005
 
 _SPECS = {
     "incident": (LOCK_INCIDENT, "INC", "ehs_incidents", "incident_no"),
     "action": (LOCK_ACTION, "CAPA", "ehs_actions", "action_no"),
     "first_aid": (LOCK_FIRST_AID, "FA", "ehs_first_aid_log", "log_no"),
+    "form": (LOCK_FORM, "FRM", "ehs_form_submissions", "submission_no"),
+    "toolbox_talk": (LOCK_TBT, "TBT", "ehs_toolbox_talks", "talk_no"),
 }
 
 

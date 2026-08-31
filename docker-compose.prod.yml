@@ -286,7 +286,7 @@ services:
       EPMS_API_URL: http://epms-api:8000/api/v1
       MDM_API_URL: http://mdm-api:8002/mdm/v1
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
-      FILE_SERVER_URL: ${FILE_SERVER_URL}
+      FILE_SERVER_URL: ${FILE_SERVER_INTERNAL_URL}
       SAFETY_WEB_URL: ${EHS_URL}
       # The sweep that chases statutory deadlines and overdue corrective
       # actions. The interval lives in ehs_config and is re-read every tick;
