@@ -396,18 +396,34 @@ export default function PaCreatePage() {
       (inv) => inv.status === 'matched' && !lockedInvoiceIds.has(inv.id)
     )
 
-    // GRs referenced by those matched invoices (the receipts proven by the match).
-    const matchedGrIds = new Set<string>()
-    for (const inv of matchedInvoices) {
-      if (inv.gr_ids?.length) inv.gr_ids.forEach((id) => matchedGrIds.add(id))
-      else if (inv.gr_id) matchedGrIds.add(inv.gr_id)
-    }
-    const matchedGrs = poGrs.filter((g) => matchedGrIds.has(g.id))
-
     autoSelectedForPoRef.current = selectedPoId
     if (matchedInvoices.length > 0) setSelectedInvoiceIds(new Set(matchedInvoices.map((i) => i.id)))
-    if (matchedGrs.length > 0) setSelectedGrIds(new Set(matchedGrs.map((g) => g.id)))
+    // The receipts are NOT chosen here — they follow the invoice selection in
+    // the effect below, which covers this first fill and every later change
+    // with one rule instead of two.
   }, [selectedPoId, invoicesData, grsData, poActivePas]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Goods receipts follow the invoices. An invoice is matched against the
+  // receipts it covers before it can be paid, so "which goods did this payment
+  // cover" is not an independent question — the ticked invoices already answer
+  // it. Deriving it on every change (rather than pre-filling once) means
+  // unticking an invoice also releases the receipts it brought in.
+  //
+  // Only an invoice change re-runs this, so a receipt the operator adds or
+  // removes by hand stands until they touch the invoice selection again: this
+  // is a default recomputed at each change, not a standing invariant that
+  // would make a manual correction impossible to keep.
+  useEffect(() => {
+    if (isAgreementMode) return   // the agreement route has no GR concept
+    const fromInvoices = new Set<string>()
+    for (const inv of docInvoices) {
+      if (!selectedInvoiceIds.has(inv.id)) continue
+      if (inv.gr_ids?.length) inv.gr_ids.forEach((id) => fromInvoices.add(id))
+      else if (inv.gr_id) fromInvoices.add(inv.gr_id)
+    }
+    // Intersect with the PO's live GRs so a cancelled receipt never comes back.
+    setSelectedGrIds(new Set(poGrs.filter((g) => fromInvoices.has(g.id)).map((g) => g.id)))
+  }, [selectedInvoiceIds, invoicesData, grsData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Agreement mode's equivalent: pre-select the agreement's matched-but-unpaid
   // invoices (status 'matched', not already claimed by another open PA on this
@@ -480,6 +496,20 @@ export default function PaCreatePage() {
       if (netPayable <= 0) errors.push('Total payment amount must be greater than zero')
     } else {
       if (!selectedPo)     errors.push('Please select a PO')
+      // Every invoice is matched to its PO and its GR before it can be paid, so
+      // a PA that identifies nothing to settle should not exist. An empty link
+      // is exactly what leaves the invoice open in AP after the cash has gone,
+      // blocks the remittance advice as 'missing_invoice_no' with no screen
+      // able to lift it (a PA is editable only in draft/returned), and leaves
+      // the invoice unclaimed so a second PA can pay it all over again.
+      // Prepayments are the one exemption: they are paid before the vendor has
+      // invoiced anything, so there is nothing to link yet.
+      if (paType !== 'prepayment' && selectedInvoiceIds.size === 0)
+        errors.push(
+          docInvoices.length === 0
+            ? 'No invoice on this PO yet — a payment must settle an invoice. Upload and match the invoice first.'
+            : 'Select the invoice(s) this payment settles',
+        )
       if (!title.trim())   errors.push('PA Title is required')
       if (subtotalNum <= 0) errors.push('Pre-tax amount must be greater than zero')
       if (taxNum < 0)      errors.push('Tax amount cannot be negative')
@@ -504,6 +534,11 @@ export default function PaCreatePage() {
         )
     }
   }
+
+  // Drives the red styling on the invoice block — same condition the validation
+  // above pushes an error for, kept in one place so they can never disagree.
+  const invoiceRequiredMissing =
+    submitted && !isAgreementMode && paType !== 'prepayment' && selectedInvoiceIds.size === 0
 
   const toggleInvoice = (id: string) => {
     setSelectedInvoiceIds((prev) => {
@@ -823,16 +858,25 @@ ${submitError}
                   <span className="text-neutral-400 font-normal">(select all that apply)</span>
                 </p>
                 {docInvoices.length === 0 ? (
-                  <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
-                    No invoices found for this PO yet
+                  <p className={cn(
+                    'text-xs italic px-3 py-2 border rounded-lg',
+                    invoiceRequiredMissing
+                      ? 'text-danger-700 border-danger-300 bg-danger-50 not-italic'
+                      : 'text-neutral-400 border-neutral-200 bg-neutral-50',
+                  )}>
+                    {invoiceRequiredMissing
+                      ? 'No invoice on this PO yet — a payment must settle an invoice. Upload and match the invoice first.'
+                      : 'No invoices found for this PO yet'}
                   </p>
                 ) : (
-                  <InvoiceSelectList
-                    invoices={docInvoices}
-                    selectedIds={selectedInvoiceIds}
-                    lockedIds={lockedInvoiceIds}
-                    onToggle={toggleInvoice}
-                  />
+                  <div className={cn(invoiceRequiredMissing && 'rounded-lg ring-1 ring-danger-400')}>
+                    <InvoiceSelectList
+                      invoices={docInvoices}
+                      selectedIds={selectedInvoiceIds}
+                      lockedIds={lockedInvoiceIds}
+                      onToggle={toggleInvoice}
+                    />
+                  </div>
                 )}
               </div>
 
@@ -840,7 +884,7 @@ ${submitError}
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
                   <Package className="h-3.5 w-3.5" /> Goods / Service Receipts for this PO
-                  <span className="text-neutral-400 font-normal">(select all that apply)</span>
+                  <span className="text-neutral-400 font-normal">(ticked automatically from the invoices above)</span>
                 </p>
                 {poGrs.length === 0 ? (
                   <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
