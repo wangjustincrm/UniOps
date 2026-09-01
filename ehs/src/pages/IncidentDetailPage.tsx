@@ -16,6 +16,7 @@ import { Countdown } from '@/components/Countdown'
 import { InjuryBadge, MolBadge, StatusBadge } from '@/components/StatusBadge'
 import { usePermissions } from '@/hooks/usePermissions'
 import { CommunicationLog } from '@/components/CommunicationLog'
+import { ReturnToWorkPanel } from '@/components/ReturnToWorkPanel'
 import { NewActionDialog } from '@/components/NewActionDialog'
 import { RiskAssessmentDialog } from '@/components/RiskAssessmentDialog'
 import { useTabTitle } from '@uniops/shell'
@@ -516,6 +517,12 @@ export default function IncidentDetailPage() {
               )}
             </div>
           )}
+
+          {/* Modified duties and the check-ins on them. Behind the medical
+              key, and the panel hides itself rather than showing an empty
+              state — "no plan" and "you cannot see the plan" must not look
+              the same to a supervisor. */}
+          <ReturnToWorkPanel incidentId={id} />
 
           {/* Everything the system said about this incident, and to whom.
               Sits with the statutory panel rather than in the narrative: it

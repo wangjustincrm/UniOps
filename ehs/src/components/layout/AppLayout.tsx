@@ -82,6 +82,9 @@ const SETTINGS_NAV: NavItem[] = [
   { label: 'Lists',       href: '/settings/lists', icon: List,     permission: 'ehs.settings.manage' },
   { label: 'Plant Areas', href: '/settings/areas', icon: Map,      permission: 'ehs.settings.manage' },
   { label: 'Equipment',   href: '/settings/equipment', icon: Wrench, permission: 'ehs.settings.manage' },
+  // Under ehs.worker.write, not settings: a supervisor who maintains who does
+  // which job is not the same person who edits vocabularies.
+  { label: 'Positions',   href: '/settings/positions', icon: Users, permission: 'ehs.worker.read' },
   { label: 'Rules',       href: '/settings/rules', icon: Settings, permission: 'ehs.settings.manage' },
 ]
 

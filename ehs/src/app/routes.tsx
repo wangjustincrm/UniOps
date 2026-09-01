@@ -29,6 +29,7 @@ import IncidentReportPage from '@/pages/IncidentReportPage'
 import MyActionsPage from '@/pages/MyActionsPage'
 import TrainingPage from '@/pages/TrainingPage'
 import LocationsPage from '@/pages/settings/LocationsPage'
+import PositionsPage from '@/pages/settings/PositionsPage'
 import RulesPage from '@/pages/settings/RulesPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
 
@@ -182,6 +183,11 @@ export const ehsRoutes: RouteDef[] = [
     path: '/settings/equipment',
     element: <EquipmentPage />,
     tab: { title: 'Equipment', icon: 'Settings', keyStrategy: 'static' },
+  },
+  {
+    path: '/settings/positions',
+    element: <PositionsPage />,
+    tab: { title: 'Positions', icon: 'Users', keyStrategy: 'static' },
   },
   {
     path: '/settings/lists',

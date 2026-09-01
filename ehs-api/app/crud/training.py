@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mirrors import User
 from app.models.training import Course, TrainingRecord, WorkerCertification
+from app.crud import worker as worker_crud
 from app.models.worker import PositionRequirement, WorkerPosition
 from app.schemas.training import CertificationIn, GapReport, GapRow, TrainingRecordIn
 from app.services import deadlines as deadline_service
@@ -176,9 +177,11 @@ async def training_gaps(db: AsyncSession, *, today: date | None = None) -> GapRe
     # user -> positions currently held
     positions_by_user: dict[uuid.UUID, set[uuid.UUID]] = {}
     for held in (await db.execute(select(WorkerPosition))).scalars():
-        if held.effective_to and held.effective_to < today:
-            continue
-        if held.effective_from > today:
+        # One definition of "holds this position", shared with the roster
+        # screens — an assignment ended today is no longer in force today, so
+        # somebody taken off lift trucks this morning stops needing the licence
+        # now rather than at midnight.
+        if not worker_crud.holds_on(held, today):
             continue
         positions_by_user.setdefault(held.user_id, set()).add(held.position_id)
 

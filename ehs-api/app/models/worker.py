@@ -80,7 +80,18 @@ class PositionRequirement(UUIDPrimaryKey, TimestampMixin, Base):
 
 
 class WorkerPosition(UUIDPrimaryKey, TimestampMixin, Base):
-    """Which positions a worker holds, and when. Drives the training gap report."""
+    """Which positions a worker holds, and when. Drives the training gap report.
+
+    `effective_to` is the day the assignment **ended**, and the position is not
+    held on that day or after it. Half-open, in other words, and the reason is
+    the gap report: somebody taken off lift trucks this morning does not need a
+    lift-truck licence this afternoon, and an inclusive end date would keep
+    them in the compliance report for a job they no longer do until midnight.
+
+    The row is never deleted. Somebody who held the position last year did need
+    the licence then, and removing the row would make last year's compliance
+    report retroactively read clean.
+    """
 
     __tablename__ = "ehs_worker_positions"
     __table_args__ = (
