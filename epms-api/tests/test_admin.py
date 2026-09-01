@@ -225,7 +225,12 @@ async def test_service_list_get_and_edit_writes_audit(test_engine):
         fresh = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))).scalar_one()
         assert fresh.title == "fixed"
         assert fresh.budget_code == "BC-9"
-        audits = (await db.execute(select(AdminAuditLog).where(AdminAuditLog.action == "edit"))).scalars().all()
+        # Scoped to THIS record, not the whole table: the audit log is shared
+        # by every test in the run, so a table-wide count only held as long as
+        # no other test in the session happened to edit anything.
+        audits = (await db.execute(select(AdminAuditLog).where(
+            AdminAuditLog.action == "edit",
+            AdminAuditLog.record_id == pr_id))).scalars().all()
         assert len(audits) == 1
         assert audits[0].before["title"] == "orig"
         assert audits[0].after["title"] == "fixed"

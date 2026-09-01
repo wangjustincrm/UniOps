@@ -410,3 +410,161 @@ async def test_admin_invoice_delete_recomputes_agreement_consumed(test_engine):
         assert agr.consumed_amount == Decimal("300.00"), \
             "consumed_amount must be re-derived from the surviving invoices"
         assert keep  # the other invoice is untouched
+
+
+# ── owner change reassigns the open confirm tasks ───────────────────────────
+# create_confirm_task resolves the assignee once, at the moment a period is
+# claimed, and never revisits it. Data Maintenance is the only write path that
+# reaches a live agreement's owner (the EPMS PATCH endpoint is fenced to
+# draft/returned), so without this the documented repair — "set an owner and
+# the right person will see it" — silently does nothing: the new owner still
+# has no Confirm button (the schedule table renders it from "I hold this
+# task"), and the previous assignee keeps a to-do that is no longer theirs.
+
+async def _make_confirm_task(factory, agreement_id, *, assignee=None,
+                             role="dept_manager", label="2026-09", completed=False):
+    from app.models.task import Task
+
+    tid = uuid.uuid4()
+    async with factory() as db:
+        db.add(Task(
+            id=tid, type="confirm_period", priority="normal", document_type="agr",
+            document_id=agreement_id, document_number=f"AGR-DMT · {label}",
+            assigned_role=role, assigned_user_id=assignee,
+            title=f"Confirm service for {label}", is_completed=completed,
+        ))
+        await db.commit()
+    return tid
+
+
+async def _seed_person(factory, *, role="procurement_officer", department_id=None):
+    from app.models.user import User
+
+    uid = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=uid, email=f"p-{uid.hex[:8]}@x.com", hashed_password="x",
+                    full_name="Person", role=role, department_id=department_id))
+        await db.commit()
+    return uid
+
+
+@pytest.mark.asyncio
+async def test_dm_owner_change_reassigns_open_confirm_tasks(test_engine):
+    from app.models.task import Task
+    from app.admin import service
+
+    factory = _factory(test_engine)
+    uid, vid = await _seed_actor_and_vendor(factory)
+    agr_id = await _make_agreement(factory, uid, vid)
+    old_owner = await _seed_person(factory, role="dept_manager")
+    new_owner = await _seed_person(factory, role="procurement_officer")
+    open_task = await _make_confirm_task(factory, agr_id, assignee=old_owner)
+    done_task = await _make_confirm_task(
+        factory, agr_id, assignee=old_owner, label="2026-08", completed=True)
+
+    async with factory() as db:
+        after = await service.edit_record(db, "agreement", agr_id,
+                                          {"owner_id": str(new_owner)},
+                                          actor_id=uid, actor_email="admin@x.com")
+        await db.commit()
+    assert after["confirm_tasks_reassigned"] == 1
+
+    async with factory() as db:
+        t = (await db.execute(select(Task).where(Task.id == open_task))).scalar_one()
+        assert t.assigned_user_id == new_owner
+        # assigned_role describes who the assignee actually is, matching what
+        # _confirm_assignee stores when owner_id resolves on the create path.
+        assert t.assigned_role == "procurement_officer"
+        # A completed task is history, not a to-do — it must not be rewritten.
+        d = (await db.execute(select(Task).where(Task.id == done_task))).scalar_one()
+        assert d.assigned_user_id == old_owner
+
+
+# The two fallback rungs below are exercised against the crud helper directly,
+# not through Data Maintenance: _apply_reference refuses to clear ANY reference
+# field ("is a required reference and cannot be cleared"), so an owner can be
+# replaced there but never emptied. The helper still has to handle an empty
+# owner, because the EPMS PATCH path can send owner_id: null — and it must
+# degrade the same way create_confirm_task does.
+
+@pytest.mark.asyncio
+async def test_reassign_falls_back_to_the_department_manager_with_no_owner(test_engine):
+    from app.models.agreement import PurchaseAgreement
+    from app.models.department import Department
+    from app.models.task import Task
+    from app.crud.agreement_schedule import reassign_open_confirm_tasks
+
+    factory = _factory(test_engine)
+    uid, vid = await _seed_actor_and_vendor(factory)
+    dept_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(Department(id=dept_id, code=f"D{dept_id.hex[:4]}", name="Supply Chain DMT"))
+        await db.commit()
+    manager = await _seed_person(factory, role="dept_manager", department_id=dept_id)
+    previous = await _seed_person(factory)
+    agr_id = await _make_agreement(factory, uid, vid)
+    task_id = await _make_confirm_task(factory, agr_id, assignee=previous)
+
+    async with factory() as db:
+        agr = (await db.execute(
+            select(PurchaseAgreement).where(PurchaseAgreement.id == agr_id))).scalar_one()
+        agr.owner_id, agr.department_id = None, dept_id
+        assert await reassign_open_confirm_tasks(db, agr) == 1
+        await db.commit()
+
+    async with factory() as db:
+        t = (await db.execute(select(Task).where(Task.id == task_id))).scalar_one()
+        assert t.assigned_user_id == manager
+        assert t.assigned_role == "dept_manager"
+
+
+@pytest.mark.asyncio
+async def test_reassign_with_neither_owner_nor_manager_lands_on_system_admin(test_engine):
+    """Not a dept_manager role broadcast — a NULL-assignee dept_manager task
+    reaches every department manager in the company (task.py::get_for_role does
+    not narrow dept_manager by department). Same reasoning, and the same stored
+    role, as create_confirm_task's no-assignee branch."""
+    from app.models.agreement import PurchaseAgreement
+    from app.models.task import Task
+    from app.crud.agreement_schedule import reassign_open_confirm_tasks
+
+    factory = _factory(test_engine)
+    uid, vid = await _seed_actor_and_vendor(factory)
+    previous = await _seed_person(factory)
+    agr_id = await _make_agreement(factory, uid, vid)   # no department_id
+    task_id = await _make_confirm_task(factory, agr_id, assignee=previous)
+
+    async with factory() as db:
+        agr = (await db.execute(
+            select(PurchaseAgreement).where(PurchaseAgreement.id == agr_id))).scalar_one()
+        agr.owner_id = None
+        assert await reassign_open_confirm_tasks(db, agr) == 1
+        await db.commit()
+
+    async with factory() as db:
+        t = (await db.execute(select(Task).where(Task.id == task_id))).scalar_one()
+        assert t.assigned_user_id is None
+        assert t.assigned_role == "system_admin"
+
+
+@pytest.mark.asyncio
+async def test_dm_edit_that_leaves_owner_alone_does_not_touch_the_tasks(test_engine):
+    from app.models.task import Task
+    from app.admin import service
+
+    factory = _factory(test_engine)
+    uid, vid = await _seed_actor_and_vendor(factory)
+    owner = await _seed_person(factory, role="dept_manager")
+    agr_id = await _make_agreement(factory, uid, vid)
+    task_id = await _make_confirm_task(factory, agr_id, assignee=owner, role="dept_manager")
+
+    async with factory() as db:
+        after = await service.edit_record(db, "agreement", agr_id,
+                                          {"title": "Renamed, owner untouched"},
+                                          actor_id=uid, actor_email="admin@x.com")
+        await db.commit()
+    assert "confirm_tasks_reassigned" not in after
+
+    async with factory() as db:
+        t = (await db.execute(select(Task).where(Task.id == task_id))).scalar_one()
+        assert t.assigned_user_id == owner
