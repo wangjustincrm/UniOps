@@ -1,11 +1,13 @@
 """ERP MDM endpoints: trigger sync, browse mirrors, by-code lookups."""
 from datetime import timedelta, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authz import require_any_permission
 from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.crud import erp as erp_crud
@@ -29,10 +31,20 @@ def _require_admin(user: dict) -> None:
         raise HTTPException(status_code=403, detail="system_admin required")
 
 
-def _require_admin_or(user: dict, *roles: str) -> None:
-    role = user.get("role")
-    if role != "system_admin" and role not in roles:
-        raise HTTPException(status_code=403, detail=f"requires one of: system_admin, {','.join(roles)}")
+# Browsing the ERP supplier mirror is what the EPMS "From ERP" vendor-import
+# drawer does, and that button is shown on the Access Control matrix key
+# `vendor_master` — not on the caller's PRIMARY role. Gating this read on
+# `role == system_admin|vendor_manager` therefore 403'd every other role the
+# matrix had granted vendor_master to (ap_clerk, procurement_officer,
+# procurement_manager, dept_admin, warehouse_staff …), and the drawer rendered
+# that 403 as an empty supplier list. Gate on the matrix instead, so the read
+# follows whatever the admin ticked; `mdm.vendor.write` is accepted alongside
+# it because the two keys are granted together (see the vendor_master ⇢
+# mdm.vendor.write coupling in identity-api patch_matrix) and finance_manager
+# holds only the latter. system_admin still bypasses inside require_*.
+SupplierReadDep = Annotated[
+    dict, Depends(require_any_permission("vendor_master", "mdm.vendor.write"))
+]
 
 
 @router.post("/sync/{kind}", response_model=ErpSyncResultResponse)
@@ -94,9 +106,8 @@ async def list_suppliers(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    user: CurrentUser = None,
+    _user: SupplierReadDep = None,
 ):
-    _require_admin_or(user, "vendor_manager")
     excludes = [c.strip() for c in exclude_codes.split(",")] if exclude_codes else None
     items, total = await erp_crud.list_suppliers(
         db, search=search, exclude_codes=excludes, page=page, page_size=page_size,
@@ -105,8 +116,8 @@ async def list_suppliers(
 
 
 @router.get("/suppliers/{code}", response_model=ErpSupplierResponse)
-async def get_supplier(code: str, db: AsyncSession = Depends(get_db), user: CurrentUser = None):
-    _require_admin_or(user, "vendor_manager")
+async def get_supplier(code: str, db: AsyncSession = Depends(get_db),
+                       _user: SupplierReadDep = None):
     s = await erp_crud.get_supplier_by_code(db, code)
     if not s:
         raise HTTPException(status_code=404, detail="supplier not found")
