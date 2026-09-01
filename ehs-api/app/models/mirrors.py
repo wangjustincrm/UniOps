@@ -80,12 +80,18 @@ class Location(Base):
     # with Line 1 and Line 2 under it must stay selectable, because a reporter
     # who does not know which line it happened on would otherwise have to
     # guess, and a guessed line is worse than no line.
-    is_selectable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # server_default mirrors the physical column, not just the Python default:
+    # the test database is built by create_all from this declaration, and a
+    # mirror that omits the server default makes an insert that works in
+    # production fail there.
+    is_selectable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true")
     # HSE listed the general areas with Outside the Plant and Production first,
     # and the operational areas in process order from milk receiving to
     # packaging. Sorting by name throws both away and puts the warehouse above
     # production, so the order is stored rather than derived.
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0")
 
 
 class CompanyConfig(Base):
