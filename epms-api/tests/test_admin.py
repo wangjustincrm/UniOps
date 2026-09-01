@@ -452,3 +452,192 @@ def test_pa_override_receipt_permission_registered():
     assert _DEFAULT_ROLE_PERMISSIONS["finance_manager"]["pa_override_receipt"] is True
     assert _DEFAULT_ROLE_PERMISSIONS["procurement_officer"]["pa_override_receipt"] is True
     assert _DEFAULT_ROLE_PERMISSIONS["requester"]["pa_override_receipt"] is False
+
+
+# ── Cascade ORDER, under the session settings production actually runs with ────
+# Every other cascade test above builds its factory WITHOUT autoflush=False, so
+# each db.execute() inside a handler silently flushes the pending child deletes
+# and the statement order comes out right by accident. The request session
+# (app/db/session.py) sets autoflush=False, so nothing flushes until the end and
+# SQLAlchemy orders the whole tree itself — with no relationship() between these
+# documents it had no idea invoices must precede goods_receipts. These two tests
+# therefore MUST keep autoflush=False; drop it and they stop testing anything.
+
+def _prod_like_factory(test_engine):
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    return async_sessionmaker(test_engine, class_=AsyncSession,
+                              expire_on_commit=False, autoflush=False)
+
+
+async def _seed_po_gr_invoice(factory, *, with_invoice_po_link: bool):
+    """PO + GR + one invoice matched to both (the shape Data Maintenance chokes on)."""
+    from datetime import date
+    from decimal import Decimal
+    from app.models.gr import GoodsReceipt
+    from app.models.invoice import Invoice
+    from app.models.po import PurchaseOrder
+    from app.models.user import User
+    from app.models.vendor import Vendor
+
+    vendor_id = uuid.uuid4(); user_id = uuid.uuid4()
+    po_id = uuid.uuid4(); gr_id = uuid.uuid4(); inv_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(Vendor(id=vendor_id, code=f"V-{vendor_id.hex[:8]}", name="Test Vendor",
+                      category="supplier", contact_name="A", contact_email="a@example.com"))
+        db.add(User(id=user_id, email=f"u-{user_id.hex[:8]}@example.com",
+                    hashed_password="x", full_name="Test User", role="requester"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseOrder(id=po_id, number=f"PO-{po_id.hex[:6]}", title="PO", type=1,
+                             status="approved", currency="CAD", subtotal=Decimal("10"),
+                             tax_rate=Decimal("0"), tax_amount=Decimal("0"), total=Decimal("10"),
+                             vendor_id=vendor_id, vendor_name="Test Vendor", created_by=user_id))
+        await db.commit()
+    async with factory() as db:
+        db.add(GoodsReceipt(id=gr_id, number=f"GR-{gr_id.hex[:6]}", title="GR", status="confirmed",
+                            po_id=po_id, po_number=f"PO-{po_id.hex[:6]}",
+                            vendor_id=vendor_id, vendor_name="Test Vendor",
+                            gr_type="physical", procurement_type=1, currency="CAD",
+                            created_by=user_id))
+        await db.flush()
+        db.add(Invoice(id=inv_id, internal_ref=f"INV-{inv_id.hex[:6]}",
+                       vendor_invoice_number="VI-001", vendor_id=vendor_id,
+                       vendor_name="Test Vendor", status="unmatched",
+                       po_id=po_id if with_invoice_po_link else None, gr_id=gr_id,
+                       amount=Decimal("10"), tax_amount=Decimal("0"), total_amount=Decimal("10"),
+                       currency="CAD", invoice_date=date(2025, 1, 1), due_date=date(2025, 2, 1),
+                       line_items=[], uploaded_by=user_id))
+        await db.commit()
+    return po_id, gr_id, inv_id, user_id
+
+
+@pytest.mark.asyncio
+async def test_gr_cascade_unlinks_its_invoice_instead_of_deleting_it(test_engine):
+    """Deleting a GR withdraws the receipt link and LEAVES the invoice.
+
+    Two regressions in one: the delete used to die on invoices_gr_id_fkey (the
+    parent DELETE went out first, and the resulting 500 reached the dialog as a
+    bare "Failed to fetch"), and what it was trying to do in the first place —
+    take a financial record down with a mis-keyed receipt — was wrong.
+    """
+    from sqlalchemy import func, select
+    from app.models.gr import GoodsReceipt
+    from app.models.invoice import Invoice
+    from app.admin import service
+
+    factory = _prod_like_factory(test_engine)
+    po_id, gr_id, inv_id, actor = await _seed_po_gr_invoice(factory, with_invoice_po_link=True)
+
+    async with factory() as db:
+        summary = await service.delete_record(db, "gr", gr_id, actor_id=actor,
+                                              actor_email="a@x.com")
+        await db.commit()
+    assert summary["goods_receipts"] == 1
+    assert summary["invoices_unlinked"] == 1
+    assert "invoices" not in summary
+
+    async with factory() as db:
+        gone = (await db.execute(select(func.count()).select_from(GoodsReceipt)
+                                 .where(GoodsReceipt.id == gr_id))).scalar_one()
+        assert gone == 0
+        inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        # Receipt evidence withdrawn ...
+        assert inv.gr_id is None
+        assert not inv.gr_ids
+        assert inv.gr_number is None
+        # ... everything that describes the PO match left alone.
+        assert inv.po_id == po_id
+        assert inv.status == "unmatched"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invoice_status", ["approved", "paid"])
+async def test_gr_delete_refused_while_its_invoice_is_in_payment(test_engine, invoice_status):
+    """Unlinking would pull the evidence out from under a payment, so the GR
+    delete is refused outright rather than quietly going around the same three
+    conditions the AP-facing Unmatch button is gated on."""
+    from sqlalchemy import select
+    from app.models.gr import GoodsReceipt
+    from app.models.invoice import Invoice
+    from app.admin import service
+
+    factory = _prod_like_factory(test_engine)
+    _, gr_id, inv_id, actor = await _seed_po_gr_invoice(factory, with_invoice_po_link=True)
+    async with factory() as db:
+        inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        inv.status = invoice_status
+        await db.commit()
+
+    async with factory() as db:
+        preview = await service.delete_preview(db, "gr", gr_id)
+        # The admin is told BEFORE clicking, not after.
+        assert preview["blocked_by_in_payment_invoices"] == 1
+
+    async with factory() as db:
+        with pytest.raises(ValueError) as e:
+            await service.delete_record(db, "gr", gr_id, actor_id=actor, actor_email="a@x.com")
+        assert invoice_status in str(e.value)
+        await db.rollback()
+
+    async with factory() as db:
+        # Nothing moved: neither the receipt nor the link it carries.
+        assert (await db.execute(select(GoodsReceipt).where(
+            GoodsReceipt.id == gr_id))).scalar_one_or_none() is not None
+        inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        assert inv.gr_id == gr_id
+
+
+@pytest.mark.asyncio
+async def test_gr_delete_refused_while_a_live_pa_claims_its_invoice(test_engine):
+    """A PA sitting in draft/submitted/approved holds the invoice without the
+    invoice's own status showing it — the check has to read invoice_ids."""
+    from decimal import Decimal
+    from sqlalchemy import select
+    from app.models.invoice import Invoice
+    from app.models.pa import PaymentApplication
+    from app.admin import service
+
+    factory = _prod_like_factory(test_engine)
+    po_id, gr_id, inv_id, actor = await _seed_po_gr_invoice(factory, with_invoice_po_link=True)
+    async with factory() as db:
+        inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        db.add(PaymentApplication(pa_number="PA-CLAIM", title="claim", status="submitted",
+                                  payment_amount=Decimal("10"), subtotal=Decimal("10"),
+                                  tax_amount=Decimal("0"), currency="CAD", created_by=actor,
+                                  vendor_id=inv.vendor_id, vendor_name="Test Vendor",
+                                  po_id=po_id, invoice_ids=[str(inv_id)]))
+        await db.commit()
+
+    async with factory() as db:
+        assert (await service.delete_preview(db, "gr", gr_id))["blocked_by_claimed_by_pa_invoices"] == 1
+
+    async with factory() as db:
+        with pytest.raises(ValueError) as e:
+            await service.delete_record(db, "gr", gr_id, actor_id=actor, actor_email="a@x.com")
+        assert "PA-CLAIM" in str(e.value)
+        await db.rollback()
+
+
+@pytest.mark.asyncio
+async def test_po_preview_reports_a_po_and_gr_matched_invoice_once(test_engine):
+    """An invoice reachable through BOTH po_id and gr_id is one row, not two.
+
+    The dialog's numbers are the only warning an admin gets before an
+    irreversible delete, so they have to match what the delete actually does —
+    and this invoice goes away with the PO branch, so the GR branch must not
+    also report it as an unlink.
+    """
+    from app.admin import service
+
+    factory = _prod_like_factory(test_engine)
+    po_id, _, _, actor = await _seed_po_gr_invoice(factory, with_invoice_po_link=True)
+
+    async with factory() as db:
+        preview = await service.delete_preview(db, "po", po_id)
+        assert preview["invoices"] == 1
+        assert "invoices_unlinked" not in preview
+        summary = await service.delete_record(db, "po", po_id, actor_id=actor,
+                                              actor_email="a@x.com")
+        await db.commit()
+    assert summary["invoices"] == preview["invoices"]
+    assert "invoices_unlinked" not in summary

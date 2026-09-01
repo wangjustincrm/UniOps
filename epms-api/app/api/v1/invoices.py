@@ -476,11 +476,15 @@ async def invoice_chain(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUser
 async def _guard_unmatch(db, inv) -> None:
     """The three things that make reversing a match unsafe.
 
-    Order matters: an agreement invoice has po_id NULL, so the agreement check
-    has to come before "not matched to a PO" or it would be told the wrong
-    thing about itself.
+    The predicate itself lives in crud.invoice.gr_unlink_blocker — Data
+    Maintenance has to refuse a GR delete on exactly these three conditions,
+    and two hand-kept copies of a safety check are two copies that drift. Only
+    the wording is ours: this one talks to the person who clicked Unmatch.
     """
-    if inv.match_route == "agreement" or inv.agreement_id is not None:
+    blocker = await invoice_crud.gr_unlink_blocker(db, inv)
+    if blocker is None:
+        return
+    if blocker.code == "agreement":
         raise HTTPException(
             status_code=422,
             detail=("This invoice is matched to an agreement, not a PO. Unlink it from "
@@ -488,25 +492,18 @@ async def _guard_unmatch(db, inv) -> None:
                     "route holds claimed receipts and schedule rows this action would "
                     "leave stranded."),
         )
-    if inv.status in ("approved", "paid"):
+    if blocker.code == "in_payment":
         raise HTTPException(
             status_code=422,
-            detail=(f"This invoice has already entered payment (status '{inv.status}'). "
+            detail=(f"This invoice has already entered payment (status '{blocker.invoice_status}'). "
                     "Unmatching it would leave the payment without the evidence it was "
                     "approved on."),
         )
-    # Same predicate as the receipt-evidence gate (crud/invoice.py). The
-    # invoice's own status is NOT a substitute: it only flips to approved/paid
-    # once money moves, so for the whole stretch a PA sits in draft/submitted/
-    # in_review/approved with this invoice in its invoice_ids, the invoice
-    # looks untouched.
-    pa = await invoice_crud._invoice_referenced_by_active_pa(db, inv.id)
-    if pa is not None:
-        raise HTTPException(
-            status_code=422,
-            detail=(f"Payment Application {pa.pa_number} ({pa.status}) still claims this "
-                    "invoice. Cancel that payment application first."),
-        )
+    raise HTTPException(
+        status_code=422,
+        detail=(f"Payment Application {blocker.pa_number} ({blocker.pa_status}) still claims this "
+                "invoice. Cancel that payment application first."),
+    )
 
 
 async def _po_has_matched_invoice(db, po_id: uuid.UUID) -> bool:
