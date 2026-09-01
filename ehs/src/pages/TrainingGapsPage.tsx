@@ -3,6 +3,9 @@
  *
  * Usually the first record a Ministry inspector asks for. It separates never
  * took it from took it and it lapsed, because those need different action.
+ *
+ * Rendered as a panel inside the Training page's tabs rather than as a page of
+ * its own, so it carries no heading and no padding — the page supplies both.
  */
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
@@ -17,13 +20,13 @@ interface Report {
   compliance_rate: number; gaps: Gap[]
 }
 
-export default function TrainingGapsPage() {
+export default function TrainingGapsPanel() {
   const { data, isLoading } = useQuery({
     queryKey: ['training', 'gaps'],
     queryFn: () => api.get<Report>('/api/v1/training/gaps'),
   })
 
-  if (isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
+  if (isLoading) return <p className="text-sm text-neutral-500">Loading…</p>
   const r = data!
 
   const byWorker = new Map<string, Gap[]>()
@@ -34,9 +37,8 @@ export default function TrainingGapsPage() {
   }
 
   return (
-    <div className="p-4">
-      <h1 className="text-lg font-bold tracking-tight text-neutral-900">Training compliance</h1>
-      <p className="mb-4 text-xs text-neutral-500">As of {formatDate(r.as_of)}</p>
+    <div>
+      <p className="mb-3 text-xs text-neutral-500">As of {formatDate(r.as_of)}</p>
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Stat label="Compliant" value={`${r.workers_compliant} of ${r.workers_considered}`} />

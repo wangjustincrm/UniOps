@@ -32,6 +32,10 @@ from app.models.mirrors import Task
 DOC_INCIDENT = "ehs_inc"
 DOC_ACTION = "ehs_act"
 DOC_CERT = "ehs_cert"
+DOC_COURSE = "ehs_crs"
+DOC_JHSC = "ehs_jhsc"
+DOC_DOCUMENT = "ehs_doc"
+DOC_ASSET = "ehs_asset"
 
 # Task types. None of these may start with "approve".
 TASK_DO_ACTION = "ehs_do_action"
@@ -41,6 +45,12 @@ TASK_STATUTORY = "ehs_statutory"
 TASK_CERT_EXPIRY = "ehs_cert_expiry"
 TASK_DO_FORM = "ehs_do_form"
 TASK_TOOLBOX_TALK = "ehs_toolbox_talk"
+# Running a course session's roster, versus being on it.
+TASK_COURSE_ADMIN = "ehs_course_admin"
+TASK_COURSE_ATTEND = "ehs_course_attend"
+TASK_JHSC_REPLY = "ehs_jhsc_reply"
+TASK_READ_SIGN = "ehs_read_sign"
+TASK_ASSET_INSPECT = "ehs_asset_inspect"
 
 
 async def open_task(

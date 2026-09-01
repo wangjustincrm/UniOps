@@ -174,3 +174,87 @@ async def ensure_certification_deadline(
     db.add(deadline)
     await db.flush()
     return deadline
+
+
+async def ensure_jhsc_reply_deadline(
+    db: AsyncSession, recommendation, *, meeting_ref: str
+) -> StatutoryDeadline:
+    """OHSA s.9(20): twenty-one days to respond in writing.
+
+    The clock starts when the recommendation is recorded, not when the meeting
+    was held. That is the conservative reading — a minute book written up three
+    weeks late would otherwise arrive with its deadline already expired, and
+    the module would be reporting a breach it caused itself.
+    """
+    existing = (await db.execute(
+        select(StatutoryDeadline).where(
+            StatutoryDeadline.source_type == "jhsc_rec",
+            StatutoryDeadline.source_id == recommendation.id,
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    starts_at = recommendation.created_at or datetime.now(statutory.ONTARIO)
+    clock_type, authority = statutory.RULES["jhsc_reply_21d"]
+    deadline = StatutoryDeadline(
+        id=uuid.uuid4(),
+        source_type="jhsc_rec",
+        source_id=recommendation.id,
+        source_ref=f"{meeting_ref} #{recommendation.seq}",
+        kind="jhsc_reply_21d",
+        regulation_ref=authority,
+        clock_type=clock_type,
+        starts_at=starts_at,
+        due_at=statutory.compute_due("jhsc_reply_21d", starts_at),
+    )
+    db.add(deadline)
+    await db.flush()
+    return deadline
+
+
+async def ensure_document_review_deadline(db: AsyncSession, document) -> StatutoryDeadline | None:
+    """The annual policy review, OHSA s.25(2)(j), on the same clock as the rest.
+
+    Nothing is created for a document with no review date — a form template
+    does not lapse. The row is reused when the date moves so that a reviewed
+    and re-published policy keeps one history rather than accumulating one
+    deadline per year.
+    """
+    if document.review_due_on is None:
+        return None
+
+    due_at = datetime.combine(
+        document.review_due_on, time(23, 59, 59), tzinfo=statutory.ONTARIO)
+
+    existing = (await db.execute(
+        select(StatutoryDeadline).where(
+            StatutoryDeadline.source_type == "document",
+            StatutoryDeadline.source_id == document.id,
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        if existing.due_at != due_at:
+            existing.due_at = due_at
+            existing.satisfied_at = None
+            existing.escalation_level = 0
+            await db.flush()
+        return existing
+
+    _, authority = statutory.RULES["policy_annual"]
+    deadline = StatutoryDeadline(
+        id=uuid.uuid4(),
+        source_type="document",
+        source_id=document.id,
+        source_ref=document.doc_no,
+        kind="policy_annual",
+        regulation_ref=authority if document.category == "policy" else None,
+        clock_type="calendar",
+        starts_at=datetime.combine(
+            document.effective_on or document.review_due_on, time(0, 0),
+            tzinfo=statutory.ONTARIO),
+        due_at=due_at,
+    )
+    db.add(deadline)
+    await db.flush()
+    return deadline

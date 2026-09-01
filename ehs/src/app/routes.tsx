@@ -4,6 +4,9 @@
 import type { RouteDef } from '@uniops/shell'
 import ActionDetailPage from '@/pages/ActionDetailPage'
 import ComplianceCalendarPage from '@/pages/ComplianceCalendarPage'
+import CourseSessionPage from '@/pages/CourseSessionPage'
+import DocumentDetailPage from '@/pages/DocumentDetailPage'
+import DocumentsPage from '@/pages/DocumentsPage'
 import FirstAidLogPage from '@/pages/FirstAidLogPage'
 import IncidentDetailPage from '@/pages/IncidentDetailPage'
 import IncidentListPage from '@/pages/IncidentListPage'
@@ -14,11 +17,15 @@ import FormFillPage from '@/pages/FormFillPage'
 import FormTemplatesPage from '@/pages/settings/FormTemplatesPage'
 import FormsListPage from '@/pages/FormsListPage'
 import InvestigationPage from '@/pages/InvestigationPage'
+import JhscMeetingPage from '@/pages/JhscMeetingPage'
+import JhscPage from '@/pages/JhscPage'
+import QrLandingPage from '@/pages/QrLandingPage'
+import SafetyEquipmentPage from '@/pages/SafetyEquipmentPage'
 import ReportsPage from '@/pages/ReportsPage'
 import ToolboxTalksPage from '@/pages/ToolboxTalksPage'
 import IncidentReportPage from '@/pages/IncidentReportPage'
 import MyActionsPage from '@/pages/MyActionsPage'
-import TrainingGapsPage from '@/pages/TrainingGapsPage'
+import TrainingPage from '@/pages/TrainingPage'
 import LocationsPage from '@/pages/settings/LocationsPage'
 import RulesPage from '@/pages/settings/RulesPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
@@ -100,8 +107,48 @@ export const ehsRoutes: RouteDef[] = [
   },
   {
     path: '/training',
-    element: <TrainingGapsPage />,
+    element: <TrainingPage />,
     tab: { title: 'Training', icon: 'GraduationCap', keyStrategy: 'static' },
+  },
+  {
+    path: '/training/sessions/:id',
+    element: <CourseSessionPage />,
+    // Titled from the document number once loaded — a tab reading
+    // "Session 8f3a2b1c" tells nobody which session it is.
+    tab: { title: 'Session', icon: 'GraduationCap',
+           keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    path: '/jhsc',
+    element: <JhscPage />,
+    tab: { title: 'Committee', icon: 'Users', keyStrategy: 'static' },
+  },
+  {
+    path: '/jhsc/meetings/:id',
+    element: <JhscMeetingPage />,
+    tab: { title: 'Meeting', icon: 'Users', keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    path: '/documents',
+    element: <DocumentsPage />,
+    tab: { title: 'Documents', icon: 'FileText', keyStrategy: 'static' },
+  },
+  {
+    path: '/documents/:id',
+    element: <DocumentDetailPage />,
+    tab: { title: 'Document', icon: 'FileText', keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    path: '/equipment',
+    element: <SafetyEquipmentPage />,
+    tab: { title: 'Safety equipment', icon: 'Wrench', keyStrategy: 'static' },
+  },
+  {
+    // Where a scanned label lands. No tab of its own: it forwards to whatever
+    // the code points at, and a tab for the redirect would outlive its purpose.
+    path: '/qr/:token',
+    element: <QrLandingPage />,
+    tab: { title: 'Scanned code', icon: 'QrCode', keyStrategy: 'param', paramName: 'token' },
   },
   {
     path: '/settings/forms',

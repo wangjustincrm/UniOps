@@ -7,8 +7,9 @@ off the records the module already holds.
 Two panels on their sheet have no source here and are reported as such rather
 than filled with something plausible:
 
-* **JHSC meeting attendance** needs the committee module, which is Phase 2 work
-  not yet built. Returned empty with a reason.
+* **JHSC meeting attendance** comes from the committee module. It reports
+  "no meetings recorded" rather than a flat line when the year is empty — an
+  empty chart and a committee that never met look identical otherwise.
 * **RIR** needs hours worked, which come from payroll. Returned null with a
   reason rather than as a zero, because a zero injury rate reads like a good
   year rather than like a missing divisor.
@@ -212,16 +213,34 @@ async def participation(db: AsyncSession, *, year: int) -> list[dict]:
     return rows[:12]
 
 
-async def jhsc_attendance(db: AsyncSession, *, year: int) -> dict:  # noqa: ARG001
-    """Not yet available.
+async def jhsc_attendance(db: AsyncSession, *, year: int) -> dict:
+    """Attendance at each meeting, against the size of the committee.
 
-    Their sheet plots monthly attendance against minimum required and total
-    membership. All three come from the JHSC module, which is Phase 2 work not
-    yet built, so this reports the gap instead of inventing a line.
+    Their sheet plots attendance against total membership. `invited` is the
+    attendance sheet's own length rather than today's roster size, so a meeting
+    held before somebody joined is not scored against a committee they were not
+    on yet.
+
+    A year with no meetings reports that in words. Returning twelve zeroes
+    would draw a committee that met and nobody came, which is a different and
+    much more alarming statement.
     """
+    from app.crud import jhsc as jhsc_crud
+
+    months = await jhsc_crud.attendance_by_month(db, year=year)
+    composition = await jhsc_crud.composition(db)
+    if not months:
+        return {
+            "available": False,
+            "reason": ("No committee meetings have been recorded for this year yet."
+                       if composition["total"]
+                       else "The committee roster has not been set up yet."),
+            "months": [],
+            "members": composition["total"],
+        }
     return {
-        "available": False,
-        "reason": "JHSC meeting management has not been built yet — the roster, "
-                  "meetings and attendance it charts do not exist in the system.",
-        "months": [],
+        "available": True,
+        "reason": None,
+        "months": months,
+        "members": composition["total"],
     }

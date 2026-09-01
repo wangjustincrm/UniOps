@@ -39,5 +39,20 @@ CanWriteWorker = Annotated[dict, Depends(require_permission("ehs.worker.write"))
 # Marking a statutory obligation as filed — the act that stops a legal clock.
 CanManageStatutory = Annotated[dict, Depends(require_permission("ehs.statutory.manage"))]
 
+# The Joint Health and Safety Committee: roster, meetings, recommendations.
+CanReadJhsc = Annotated[dict, Depends(require_permission("ehs.jhsc.read"))]
+CanManageJhsc = Annotated[dict, Depends(require_permission("ehs.jhsc.manage"))]
+
+# Every active role holds ehs.document.read: Read & Sign asks people to
+# acknowledge a policy, which they cannot do behind a 403.
+CanReadDocument = Annotated[dict, Depends(require_permission("ehs.document.read"))]
+CanManageDocument = Annotated[dict, Depends(require_permission("ehs.document.manage"))]
+
+# Inspecting an extinguisher and editing the register are different acts by
+# different people, so they are different keys.
+CanReadAsset = Annotated[dict, Depends(require_permission("ehs.asset.read"))]
+CanInspectAsset = Annotated[dict, Depends(require_permission("ehs.asset.inspect"))]
+CanManageAsset = Annotated[dict, Depends(require_permission("ehs.asset.manage"))]
+
 # Vocabularies, the plant area tree, escalation timings, notification templates.
 CanManageSettings = Annotated[dict, Depends(require_permission("ehs.settings.manage"))]

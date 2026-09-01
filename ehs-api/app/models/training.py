@@ -46,6 +46,10 @@ class Course(UUIDPrimaryKey, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true",
     )
+    # The standing handout for the course. A particular sitting may attach its
+    # own on top of this, which is why the delivery carries the same pair.
+    material_file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    material_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class TrainingRecord(UUIDPrimaryKey, TimestampMixin, Base):

@@ -56,10 +56,21 @@ class ParticipationRow(BaseModel):
     hazard_assessment: int
 
 
+class JhscMonth(BaseModel):
+    month: str
+    held_on: str
+    present: int
+    # The attendance sheet's own length, not today's roster: a meeting held
+    # before somebody joined is not scored against a committee they were
+    # not on yet.
+    invited: int
+
+
 class Jhsc(BaseModel):
     available: bool
     reason: str | None = None
-    months: list = []
+    months: list[JhscMonth] = []
+    members: int = 0
 
 
 class DashboardOut(BaseModel):

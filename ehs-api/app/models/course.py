@@ -1,0 +1,109 @@
+"""Running a training course: one session, its roster, and who passed.
+
+The catalogue (`ehs_courses`) says a course exists. This says it was *held* —
+on a date, in a room, by an instructor, with these people in it. HSE gave the
+sequence they follow, and the model is shaped to it: create the session and
+attach the material, name a supervisor as its administrator, let that person
+build the roster, remind the roster the day before, then mark each attendee
+passed or failed.
+
+Two decisions worth stating:
+
+**The coordinator is stored on the session, not derived from a role.** HSE
+nominates a different supervisor per course. Reading it from the roster or
+from who created it would be wrong on the first course somebody else runs.
+
+**Passing writes a training record; failing does not.** The record in a
+person's file is the evidence an inspector asks for, and the enrolment keeps
+`training_record_id` so the two can never disagree about whether it was
+issued. Re-marking someone who already passed does not issue a second one.
+"""
+import uuid
+from datetime import date, datetime, time
+
+from sqlalchemy import Date, DateTime, ForeignKey, String, Text, Time, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
+
+
+class CourseDelivery(UUIDPrimaryKey, TimestampMixin, Base):
+    """One scheduled sitting of a course."""
+
+    __tablename__ = "ehs_course_deliveries"
+
+    delivery_no: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_courses.id", ondelete="RESTRICT"),
+        nullable=True, index=True)
+    # Snapshot, so a renamed course does not rewrite last year's sessions.
+    course_label: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Defaults to the course name; overridden when a session covers a variant
+    # ("WHMIS — refresher", "Forklift — counterbalance only").
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    session_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # Separate columns because the sample forms ask them separately, and
+    # because a session with no fixed end is normal.
+    start_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    end_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    location_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    location_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    # The supervisor HSE puts in charge of this session's roster.
+    coordinator_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    coordinator_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Free text: often an external trainer who has no UniOps account. HSE fills
+    # it in after the session, which is why it is nullable at creation.
+    instructor_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # Course material — slide deck, handout — held in file-api.
+    material_file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    material_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # scheduled | completed | cancelled
+    status: Mapped[str] = mapped_column(String(15), nullable=False,
+                                        default="scheduled", server_default="scheduled",
+                                        index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stamped when the day-before reminder went out, so the sweep — which runs
+    # many times a day — sends it once rather than on every tick of that day.
+    reminded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class CourseEnrolment(UUIDPrimaryKey, TimestampMixin, Base):
+    """One person on one session's roster, and how they did."""
+
+    __tablename__ = "ehs_course_enrolments"
+    __table_args__ = (
+        UniqueConstraint("delivery_id", "user_id", name="uq_ehs_course_enrolment"),
+    )
+
+    delivery_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_course_deliveries.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    department_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # enrolled | passed | failed | absent
+    result: Mapped[str] = mapped_column(String(10), nullable=False,
+                                        default="enrolled", server_default="enrolled",
+                                        index=True)
+    marked_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    marked_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # The record issued into this person's file when they passed. Set once.
+    training_record_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_training_records.id", ondelete="SET NULL"),
+        nullable=True)

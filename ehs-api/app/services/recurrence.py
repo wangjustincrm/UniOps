@@ -10,7 +10,10 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date, timedelta
 
-FREQUENCIES = ("daily", "weekly", "monthly", "quarterly", "annual")
+# semiannual is here for the equipment register: fall-arrest harnesses and
+# eyewash stations are checked twice a year, and expressing that as "every two
+# quarters" would put the schedule out of step with what the label says.
+FREQUENCIES = ("daily", "weekly", "monthly", "quarterly", "semiannual", "annual")
 
 
 def add_months(day: date, months: int) -> date:
@@ -38,6 +41,8 @@ def next_due(current: date, frequency: str) -> date:
         return add_months(current, 1)
     if frequency == "quarterly":
         return add_months(current, 3)
+    if frequency == "semiannual":
+        return add_months(current, 6)
     if frequency == "annual":
         return add_months(current, 12)
     raise ValueError(f"unknown frequency {frequency!r}; known: {', '.join(FREQUENCIES)}")

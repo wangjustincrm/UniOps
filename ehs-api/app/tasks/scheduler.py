@@ -38,6 +38,8 @@ from app.models.config import EhsConfig
 from app.models.mirrors import User
 from app.models.statutory import StatutoryDeadline
 from app.services import tasks as task_service
+from app.crud import asset as asset_crud
+from app.crud import course as course_crud
 from app.crud import toolbox as toolbox_crud
 from app.services import schedule_sweep
 from app.services.escalation import CapaLadder, capa_level, statutory_level
@@ -56,6 +58,9 @@ class SweepResult:
     inspections_generated: int = 0
     inspections_missed: int = 0
     talks_chased: int = 0
+    checks_generated: int = 0
+    checks_missed: int = 0
+    courses_reminded: int = 0
     skipped_reason: str | None = None
 
     def __str__(self) -> str:
@@ -65,11 +70,25 @@ class SweepResult:
                 f"{self.actions_escalated} actions, "
                 f"{self.inspections_generated} inspections due, "
                 f"{self.inspections_missed} missed, "
-                f"{self.talks_chased} talks chased")
+                f"{self.talks_chased} talks chased, "
+                f"{self.checks_generated} equipment checks due, "
+                f"{self.checks_missed} checks missed, "
+                f"{self.courses_reminded} courses reminded")
 
 
 async def _load_config(db: AsyncSession) -> EhsConfig | None:
     return (await db.execute(select(EhsConfig).where(EhsConfig.id == 1))).scalar_one_or_none()
+
+
+# Which document a deadline's task should point at. Every clock lives in one
+# table, but they hang off four different records, and a task deep-linking to
+# an incident that does not exist is worse than no task at all.
+_DEADLINE_DOC_TYPE = {
+    "incident": task_service.DOC_INCIDENT,
+    "cert": task_service.DOC_CERT,
+    "jhsc_rec": task_service.DOC_JHSC,
+    "document": task_service.DOC_DOCUMENT,
+}
 
 
 async def sweep_statutory(db: AsyncSession, now: datetime) -> int:
@@ -91,7 +110,8 @@ async def sweep_statutory(db: AsyncSession, now: datetime) -> int:
         await task_service.open_task(
             db,
             task_type=task_service.TASK_STATUTORY,
-            doc_type=task_service.DOC_INCIDENT,
+            doc_type=_DEADLINE_DOC_TYPE.get(
+                deadline.source_type, task_service.DOC_INCIDENT),
             doc_id=deadline.source_id,
             doc_number=deadline.source_ref or str(deadline.source_id)[:8],
             title=f"{deadline.kind.replace('_', ' ')} — {when}",
@@ -190,6 +210,13 @@ async def run_tick(now: datetime | None = None) -> SweepResult:
         missed = await schedule_sweep.chase_overdue(db, today=today)
         # HSE: biweekly reminders until the toolbox talk is signed off.
         nudged = await toolbox_crud.chase_outstanding(db, today=today)
+        # Safety equipment runs its own cycle rather than the form scheduler's:
+        # "when was extinguisher 47 last checked" is per asset, and a rotation
+        # cannot express it.
+        checks = await asset_crud.generate_due(db, today=today)
+        checks_missed = await asset_crud.chase_overdue(db, today=today)
+        # HSE: attendees are reminded the day before a course runs.
+        reminded = await course_crud.remind_upcoming(db, today=today)
 
         result = SweepResult(
             statutory_escalated=await sweep_statutory(db, now),
@@ -197,6 +224,9 @@ async def run_tick(now: datetime | None = None) -> SweepResult:
             inspections_generated=len(generated),
             inspections_missed=len(missed),
             talks_chased=len(nudged),
+            checks_generated=len(checks),
+            checks_missed=len(checks_missed),
+            courses_reminded=len(reminded),
         )
         await db.commit()
         return result

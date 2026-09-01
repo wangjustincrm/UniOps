@@ -32,6 +32,10 @@ LOCK_ACTION = 981_002
 LOCK_FIRST_AID = 981_003
 LOCK_FORM = 981_004
 LOCK_TBT = 981_005
+LOCK_COURSE = 981_006
+LOCK_JHSC = 981_007
+LOCK_DOCUMENT = 981_008
+LOCK_ASSET = 981_009
 
 _SPECS = {
     "incident": (LOCK_INCIDENT, "INC", "ehs_incidents", "incident_no"),
@@ -39,6 +43,10 @@ _SPECS = {
     "first_aid": (LOCK_FIRST_AID, "FA", "ehs_first_aid_log", "log_no"),
     "form": (LOCK_FORM, "FRM", "ehs_form_submissions", "submission_no"),
     "toolbox_talk": (LOCK_TBT, "TBT", "ehs_toolbox_talks", "talk_no"),
+    "course_delivery": (LOCK_COURSE, "CRS", "ehs_course_deliveries", "delivery_no"),
+    "jhsc_meeting": (LOCK_JHSC, "JHSC", "ehs_jhsc_meetings", "meeting_no"),
+    "document": (LOCK_DOCUMENT, "DOC", "ehs_documents", "doc_no"),
+    "safety_asset": (LOCK_ASSET, "SA", "ehs_safety_assets", "asset_no"),
 }
 
 
