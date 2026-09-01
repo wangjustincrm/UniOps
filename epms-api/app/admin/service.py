@@ -13,6 +13,7 @@ from app.admin.po_number import regenerate_and_cascade
 from app.admin.recompute import recompute_header
 from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
+from app.crud.agreement_schedule import reassign_open_confirm_tasks
 from app.crud.gr import resync_po_received_qty, sync_po_receipt_status
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.approval import ApprovalEvent
@@ -366,6 +367,19 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
         await db.flush()
         received_qty_resynced = await resync_po_received_qty(db, row.po_id)
 
+    confirm_tasks_reassigned = 0
+    if entity == "agreement" and before.get("owner_id") != (
+            str(row.owner_id) if row.owner_id is not None else None):
+        # This is the ONLY write path that reaches a live agreement's owner
+        # (the EPMS PATCH endpoint is fenced to draft/returned), and it is the
+        # one an admin uses to fix an agreement whose periods landed on the
+        # wrong person. Changing owner_id alone would not move the tasks:
+        # create_confirm_task resolves the assignee once, when the period is
+        # claimed, and never revisits it — so the new owner would still see no
+        # Confirm button and the old assignee would keep the to-do.
+        await db.flush()
+        confirm_tasks_reassigned = await reassign_open_confirm_tasks(db, row)
+
     cascade = None
     if entity == "po" and regenerate_po_number:
         new_vendor_id = getattr(row, "vendor_id", None)
@@ -382,6 +396,8 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
         after["_line_items_count"] = len(line_items)
     if received_qty_resynced:
         after["po_lines_received_qty_resynced"] = received_qty_resynced
+    if confirm_tasks_reassigned:
+        after["confirm_tasks_reassigned"] = confirm_tasks_reassigned
     after["_routing_requester_changed"] = routing_requester_changed
     after["_invoice_links_changed"] = invoice_links_changed
     db.add(AdminAuditLog(

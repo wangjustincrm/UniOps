@@ -116,6 +116,7 @@ async def create(
 async def update(
     db: AsyncSession, agr: PurchaseAgreement, body: AgreementUpdate
 ) -> PurchaseAgreement:
+    previous_owner_id = agr.owner_id
     for field, value in body.model_dump(exclude_unset=True, exclude={"milestones"}).items():
         setattr(agr, field, value)
 
@@ -154,6 +155,15 @@ async def update(
             not_to_exceed=agr.not_to_exceed,
         )
         await agreement_schedule.replace_milestone_rows(db, agr, body.milestones)
+
+    # A live agreement's open confirm tasks have to follow its owner — see
+    # agreement_schedule.reassign_open_confirm_tasks. Normally a no-op on this
+    # path (EDITABLE_STATUSES is draft/returned, and no period is claimed before
+    # an agreement goes active, so there is usually nothing open to move); the
+    # Data Maintenance edit path is the one that reaches a live agreement.
+    # Wired here too so the two write paths cannot drift apart.
+    if agr.owner_id != previous_owner_id:
+        await agreement_schedule.reassign_open_confirm_tasks(db, agr)
     await db.commit()
     await db.refresh(agr)
     return agr

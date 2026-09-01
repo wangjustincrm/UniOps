@@ -71,8 +71,16 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
     if (schema.child) patch.line_items = lines
     setSaving(true)
     try {
-      await adminApi.editWithOptions(schema.system, schema.key, id, patch,
+      const res = await adminApi.editWithOptions(schema.system, schema.key, id, patch,
         { regeneratePoNumber: schema.key === 'po' && vendorChanged && regenPo })
+      // Changing an agreement's owner also moves its open confirm-period tasks
+      // (epms-api admin/service.py). Say so: the whole point of that repair is
+      // that the new owner can now act, and this dialog otherwise closes with
+      // no sign anything beyond the field itself changed.
+      const moved = Number(res?.confirm_tasks_reassigned ?? 0)
+      if (moved > 0) {
+        alert(`Owner updated. ${moved} open service-confirmation task(s) moved to the new owner.`)
+      }
       // editWithOptions bypasses useAdminEdit's mutation, so mirror its invalidation
       // key here (see useAdminEdit in hooks/useAdmin.ts) plus the full-record query.
       await qc.invalidateQueries({ queryKey: ['admin', schema.system, schema.key] })

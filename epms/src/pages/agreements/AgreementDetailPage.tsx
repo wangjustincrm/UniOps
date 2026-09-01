@@ -347,6 +347,12 @@ export default function AgreementDetailPage() {
   // Return action is a permanent dead end: the creator can neither fix nor
   // resubmit what came back.
   const canSubmit = canWrite && !!agreement && ['draft', 'returned'].includes(agreement.status)
+  // epms-api rejects a submit with no owner (agreements.py::agreement_action):
+  // the owner is who gets each period's confirm task, and owner_id is frozen
+  // once the agreement leaves EDITABLE_STATUSES, so draft is the last chance to
+  // set it. The button stays visible and disabled rather than disappearing —
+  // a missing submit button reads as a broken page, not as a missing field.
+  const missingOwner = !!agreement && !agreement.owner_id
   const canEdit = canWrite && !!agreement && ['draft', 'returned'].includes(agreement.status)
   // Matches approval-api's _DOC_META["agr"]["valid_cancel"] = ("draft", "returned", "submitted")
   // (engine.py:104) — NOT "in_review": once a human has already acted (the
@@ -484,14 +490,22 @@ export default function AgreementDetailPage() {
               </Link>
             )}
             {canSubmit && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => agreementAction.mutate({ action: 'submit' })}
-                disabled={agreementAction.isPending}
-              >
-                Submit for Approval
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => agreementAction.mutate({ action: 'submit' })}
+                  disabled={agreementAction.isPending || missingOwner}
+                  title={missingOwner ? 'Set an Owner on this agreement before submitting it' : undefined}
+                >
+                  Submit for Approval
+                </Button>
+                {missingOwner && (
+                  <span className="text-xs text-danger-600">
+                    Set an Owner (Edit) before submitting — the owner confirms each period.
+                  </span>
+                )}
+              </>
             )}
             {canCancel && (
               <Button

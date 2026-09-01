@@ -318,6 +318,53 @@ async def create_confirm_task(
     await db.flush()
 
 
+async def reassign_open_confirm_tasks(
+    db: AsyncSession, agr: PurchaseAgreement
+) -> int:
+    """协议责任人变了以后,把还没做完的履约确认任务改派给新责任人。
+
+    create_confirm_task 是在发票认领某一期的**那一刻**解析责任人的,之后再改
+    owner 不会回头动已经建好的任务 —— 于是「把 owner 改成 X」这个动作看上去
+    没生效:X 打开协议页依然没有 Confirm 按钮(前端按「我持有这条任务」渲染,
+    components/agreements/ScheduleTable.tsx),而旧责任人、或者那条只有
+    system_admin 看得见的兜底任务,还占着一条本该易主的待办。
+
+    走 _confirm_assignee 而不是直接写 agr.owner_id:「谁被指派」在建任务和改派
+    两条路上必须是同一个口径 —— 包括 owner 被清空后回落到部门经理、以及两者都
+    没有时那条 system_admin 兜底。
+
+    不发邮件,和 create_confirm_task 的无人可派告警不同:那里是自动流程,没人在
+    看;这里是有人正在管理台上手动改这条协议,结果当场就在他眼前。
+
+    Returns 实际改动了几条。已完成的任务一律不碰 —— 那是历史记录,不是待办。
+    """
+    assignee_id, assigned_role = await _confirm_assignee(db, agr)
+    if assignee_id is None:
+        # 同 create_confirm_task:不做 dept_manager 角色广播(会漏进全公司每个
+        # 部门经理的收件箱),改存一个没人会在 broadcast_roles 里撞上的 role。
+        assigned_role = "system_admin"
+        logger.warning(
+            "agreement %s (id=%s) now has no resolvable confirm assignee — its "
+            "open confirm_period task(s) fall back to system_admin visibility",
+            agr.number, agr.id,
+        )
+    tasks = (await db.execute(
+        select(Task).where(Task.document_type == "agr", Task.document_id == agr.id,
+                           Task.type == "confirm_period",
+                           Task.is_completed.is_(False))
+    )).scalars().all()
+    changed = 0
+    for t in tasks:
+        if t.assigned_user_id == assignee_id and t.assigned_role == assigned_role:
+            continue
+        t.assigned_user_id = assignee_id
+        t.assigned_role = assigned_role
+        changed += 1
+    if changed:
+        await db.flush()
+    return changed
+
+
 async def confirm_period(
     db: AsyncSession, agr: PurchaseAgreement, row_id: uuid.UUID, user_id: uuid.UUID
 ) -> AgreementPaymentSchedule:

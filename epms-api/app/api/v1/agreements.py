@@ -136,6 +136,25 @@ async def agreement_action(
     # Gated by the open approval task, not by epms.agreement.write — approval
     # authority comes from the approval engine, mirroring po.py::po_action.
     agr = await _visible_agreement_or_404(db, user, agreement_id)
+    # Owner is mandatory from the moment an agreement leaves draft. It is the
+    # first thing _confirm_assignee (crud/agreement_schedule.py) looks at when
+    # it has to decide who confirms a period; with no owner it falls back to
+    # the department's manager, and with neither it creates a task nobody but
+    # system_admin can see — which is how a live agreement ends up with a
+    # period only an admin can confirm. Enforced HERE, on the submit action,
+    # rather than on AgreementCreate: the create schema is shared with the
+    # "Save as draft" path, and a draft is allowed to be incomplete. This is
+    # also the only gate that survives a caller who skips the UI, since
+    # owner_id can no longer be edited once the agreement leaves
+    # EDITABLE_STATUSES.
+    if body.action == "submit" and agr.owner_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Set an Owner before submitting this agreement for approval — "
+                   "the owner is the person asked to confirm each period's service "
+                   "before its invoice can be paid, and the owner cannot be changed "
+                   "once the agreement is approved.",
+        )
     # Whole-branch review finding: validate_milestones never checks emptiness
     # (recurring is protected the same way by validate_recurrence's own
     # coherence rule), so a milestone agreement could be submitted and

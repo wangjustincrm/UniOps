@@ -119,6 +119,12 @@ export default function AgreementCreatePage() {
     const e: Record<string, string> = {}
     if (!title.trim()) e.title = 'Title is required'
     if (!selectedVendor) e.vendor = 'Please select a vendor'
+    // Required on the draft path too, exactly like Title/Vendor above: the
+    // owner is who gets the confirm-period task for every period of this
+    // agreement, and owner_id can no longer be edited once the agreement
+    // leaves draft (EDITABLE_STATUSES). epms-api rejects a submit without
+    // one as well — see agreements.py::agreement_action.
+    if (!selectedOwner) e.owner = 'Please select an owner'
     if (!validFrom) e.validFrom = 'Valid From date is required'
     if (!validTo) e.validTo = 'Valid To date is required'
     if (validFrom && validTo && validTo < validFrom) e.validTo = 'Valid To must be on or after Valid From'
@@ -161,7 +167,7 @@ export default function AgreementCreatePage() {
         tax_rate: taxRate ?? undefined,
         department_id: departmentId || undefined,
         budget_code: budgetCode || undefined,
-        owner_id: selectedOwner?.id || undefined,
+        owner_id: selectedOwner!.id,
         notes: notes || undefined,
         cost_center_id: costCenterId || undefined,
       }
@@ -484,7 +490,9 @@ export default function AgreementCreatePage() {
 
               {/* Owner */}
               <div ref={ownerAnchorRef} className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Owner</label>
+                <label className="text-sm font-medium text-neutral-700">
+                  Owner <span className="text-danger-600">*</span>
+                </label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                   <input
@@ -492,8 +500,11 @@ export default function AgreementCreatePage() {
                     placeholder="Search people by name…"
                     value={selectedOwner ? selectedOwner.full_name : ownerQuery}
                     onFocus={() => { setOwnerOpen(true); if (selectedOwner) setOwnerQuery('') }}
-                    onChange={(e) => { setOwnerQuery(e.target.value); setSelectedOwner(null); setOwnerOpen(true) }}
-                    className="h-10 w-full rounded-md border border-neutral-300 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    onChange={(e) => { setOwnerQuery(e.target.value); setSelectedOwner(null); setOwnerOpen(true); setErrors((p) => ({ ...p, owner: '' })) }}
+                    className={cn(
+                      'h-10 w-full rounded-md border bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                      errors.owner ? 'border-danger-600' : 'border-neutral-300'
+                    )}
                   />
                   {selectedOwner && (
                     <button
@@ -512,7 +523,7 @@ export default function AgreementCreatePage() {
                         key={u.id}
                         type="button"
                         className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-primary-50 text-left"
-                        onClick={() => { setSelectedOwner(u); setOwnerOpen(false); setOwnerQuery('') }}
+                        onClick={() => { setSelectedOwner(u); setOwnerOpen(false); setOwnerQuery(''); setErrors((p) => ({ ...p, owner: '' })) }}
                       >
                         <span>{u.full_name}</span>
                         {u.department_name && <span className="text-xs text-neutral-400">{u.department_name}</span>}
@@ -523,6 +534,7 @@ export default function AgreementCreatePage() {
                     )}
                   </DropdownPortal>
                 )}
+                {errors.owner && <p className="text-xs text-danger-600">{errors.owner}</p>}
               </div>
             </div>
           </div>
