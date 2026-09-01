@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from app.admin import service
 from app.admin.registry import REGISTRY
@@ -12,6 +13,18 @@ from app.core.deps import BearerToken, SessionDep, require_permission
 from app.services import approval_client, finance_client
 
 router = APIRouter(prefix="/admin", tags=["data-maintenance"])
+
+
+def _constraint_error(e: IntegrityError) -> HTTPException:
+    """Turn a cascade that a foreign key refused into something an admin can act on.
+
+    An unhandled exception here becomes a bare 500 emitted OUTSIDE the CORS
+    middleware, which the browser can only report to the confirm dialog as
+    "Failed to fetch" — no status, no reason, nothing to search for. Naming the
+    constraint keeps the next one diagnosable from the screenshot alone.
+    """
+    detail = getattr(getattr(e, "orig", None), "__cause__", None) or e.orig
+    return HTTPException(409, f"Database refused the delete: {detail}")
 
 AdminUser = Annotated[dict, Depends(require_permission("data_maintenance"))]
 
@@ -195,6 +208,9 @@ async def delete_record(entity: str, record_id: uuid.UUID, db: SessionDep, user:
     except ValueError as e:
         await db.rollback()
         raise HTTPException(404, str(e))
+    except IntegrityError as e:
+        await db.rollback()
+        raise _constraint_error(e)
 
 
 @router.post("/{entity}/bulk-delete")
@@ -207,3 +223,6 @@ async def bulk_delete(entity: str, db: SessionDep, user: AdminUser, body: BulkDe
     except ValueError as e:
         await db.rollback()
         raise HTTPException(400, str(e))
+    except IntegrityError as e:
+        await db.rollback()
+        raise _constraint_error(e)

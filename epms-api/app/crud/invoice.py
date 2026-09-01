@@ -1,6 +1,7 @@
 """CRUD for Invoice with 3-way match logic."""
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -870,6 +871,45 @@ async def _invoice_referenced_by_active_pa(
                PaymentApplication.status != "cancelled")
         .limit(1)
     )).scalars().first()
+
+
+@dataclass(frozen=True)
+class UnlinkBlocker:
+    """Why an invoice's receipt link must not be torn down right now.
+
+    `code` is stable and machine-readable so callers can phrase their own
+    message: the AP-facing unmatch endpoints answer with a 422 aimed at the
+    person who clicked Unmatch, while Data Maintenance has to explain the same
+    three facts to an admin who was trying to delete the GOODS RECEIPT and may
+    not even know this invoice exists.
+    """
+    code: str                                   # agreement | in_payment | claimed_by_pa
+    invoice_ref: str
+    invoice_status: str
+    pa_number: str | None = None
+    pa_status: str | None = None
+
+
+async def gr_unlink_blocker(db: AsyncSession, invoice: Invoice) -> UnlinkBlocker | None:
+    """The three conditions that make withdrawing an invoice's GR link unsafe,
+    in ONE place so the AP route and the admin route can never drift apart.
+
+    Order matters: an agreement invoice has po_id NULL, so the agreement check
+    has to come before anything that reasons about the PO match.
+    """
+    if invoice.match_route == "agreement" or invoice.agreement_id is not None:
+        return UnlinkBlocker("agreement", invoice.internal_ref, invoice.status)
+    if invoice.status in ("approved", "paid"):
+        return UnlinkBlocker("in_payment", invoice.internal_ref, invoice.status)
+    # The invoice's own status is NOT a substitute: it only flips to
+    # approved/paid once money moves, so for the whole stretch a PA sits in
+    # draft/submitted/in_review/approved holding this invoice, the invoice
+    # looks untouched. See _invoice_referenced_by_active_pa.
+    pa = await _invoice_referenced_by_active_pa(db, invoice.id)
+    if pa is not None:
+        return UnlinkBlocker("claimed_by_pa", invoice.internal_ref, invoice.status,
+                             pa.pa_number, pa.status)
+    return None
 
 
 async def set_receipts(

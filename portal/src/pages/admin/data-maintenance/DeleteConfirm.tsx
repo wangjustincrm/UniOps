@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { EntitySchema, CascadeSummary } from '@/services/adminApi'
 import { adminApi } from '@/services/adminApi'
 import { useAdminDelete } from '@/hooks/useAdmin'
+import { CascadeBreakdown, splitCascade } from './cascadeDisplay'
 
 interface Props {
   schema: EntitySchema
@@ -26,6 +27,11 @@ export function DeleteConfirm({ schema, record, onClose }: Props) {
     catch (e) { setError(e instanceof Error ? e.message : 'Delete failed') }
   }
 
+  const parts = cascade ? splitCascade(cascade) : null
+  // A preview that already names a blocker is a delete the backend will refuse:
+  // let the admin read why instead of finding out through a failed request.
+  const isBlocked = !!parts && parts.blocked.length > 0
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
@@ -33,25 +39,16 @@ export function DeleteConfirm({ schema, record, onClose }: Props) {
           Delete {schema.label} · {String(record[schema.number_field] ?? '')}
         </h3>
         <p className="mt-2 text-sm text-neutral-600">
-          This cascades across the shared database and cannot be undone. The following will be removed:
+          This cascades across the shared database and cannot be undone.
         </p>
         <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm">
           {!cascade && !error && <p className="text-neutral-400">Computing impact…</p>}
-          {cascade && (
-            <ul className="space-y-1">
-              {Object.entries(cascade).map(([table, n]) => (
-                <li key={table} className="flex justify-between">
-                  <span className="text-neutral-700">{table}</span>
-                  <span className="font-semibold text-red-700">{n}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          {parts && <CascadeBreakdown parts={parts} removedLabel="Will be deleted" />}
         </div>
         {error && <p className="mt-3 text-xs text-red-600">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100">Cancel</button>
-          <button onClick={confirm} disabled={del.isPending || !cascade}
+          <button onClick={confirm} disabled={del.isPending || !cascade || isBlocked}
             className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
             {del.isPending ? 'Deleting…' : 'Delete permanently'}
           </button>

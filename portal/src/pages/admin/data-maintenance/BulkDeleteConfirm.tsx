@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { EntitySchema, CascadeSummary } from '@/services/adminApi'
 import { useAdminBulkDelete } from '@/hooks/useAdmin'
+import { CascadeBreakdown, splitCascade } from './cascadeDisplay'
 
 interface Props {
   schema: EntitySchema
@@ -38,15 +39,7 @@ export function BulkDeleteConfirm({ schema, ids, onClose, onDone }: Props) {
 
         {result && (
           <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm">
-            <p className="mb-1 font-medium text-neutral-700">Removed:</p>
-            <ul className="space-y-1">
-              {Object.entries(result).map(([table, n]) => (
-                <li key={table} className="flex justify-between">
-                  <span className="text-neutral-700">{table}</span>
-                  <span className="font-semibold text-red-700">{n}</span>
-                </li>
-              ))}
-            </ul>
+            <CascadeBreakdown parts={splitCascade(result)} removedLabel="Deleted" />
           </div>
         )}
 

@@ -9,6 +9,19 @@ Each entity exposes:
 Cascade handlers run leaf-first so RESTRICT foreign keys never block the delete:
 Invoice -> PA -> GR -> PO -> PR. Line items and *_attachment rows are removed
 automatically by their ondelete=CASCADE FKs when the parent row is deleted.
+
+"Leaf-first" is only true if each leaf's DELETE actually REACHES the database
+before its parent's does. The session runs with autoflush=False, so without an
+explicit flush every db.delete() in a cascade merely queues, and the whole tree
+goes out in one flush whose statement order SQLAlchemy derives from mapper
+relationships — of which there are NONE between these documents (Invoice.gr_id,
+Invoice.po_id, GoodsReceipt.po_id ... are plain FK columns, no relationship()).
+The unit of work therefore has no idea invoices must go before goods_receipts,
+and emitted the parent DELETE first: deleting a GR that carried an invoice died
+on `invoices_gr_id_fkey`, i.e. a 500 the confirm dialog showed as "Failed to
+fetch" (an unhandled 500 bypasses the CORS middleware). Hence: every handler
+flushes right after deleting its own row, so it is on disk before the caller
+touches the parent. The caller still owns the commit.
 """
 from __future__ import annotations
 
@@ -21,7 +34,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.admin.cascade import count_polymorphic, purge_workflow_refs
 from app.admin.fields import EntitySchema, FieldSpec, ChildSchema
 from app.crud.gr import resync_po_received_qty
-from app.crud.invoice import _recompute_consumed, _release_agreement_evidence
+from app.crud.invoice import (
+    _apply_gr_selection,
+    _recompute_consumed,
+    _release_agreement_evidence,
+    gr_unlink_blocker,
+)
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_attachment import AgreementAttachment
 from app.models.agreement_receipt import AgreementReceipt
@@ -88,14 +106,14 @@ async def _invoice_delete(db: AsyncSession, inv) -> dict[str, int]:
     agreement_id = inv.agreement_id
     summary = await purge_workflow_refs(db, inv.id)
     await db.delete(inv)            # invoice has no child tables in epms
+    await db.flush()                # leaf-first: land it before any parent DELETE
     # consumed_amount is DERIVED from the invoice set (crud.invoice._recompute_consumed)
     # and drives the NTE warning banner. crud.invoice.delete recomputes it on every
     # hard delete for exactly that reason; this cascade never did, so deleting an
     # agreement-matched invoice through Data Maintenance left the agreement
-    # permanently over-consumed by a row that no longer exists. Flush first — the
-    # sum must not still see the pending delete.
+    # permanently over-consumed by a row that no longer exists. The flush above
+    # is what lets the sum run without still seeing the pending delete.
     if agreement_id is not None:
-        await db.flush()
         await _recompute_consumed(db, agreement_id)
     return _merge(summary, {"invoices": 1})
 
@@ -162,6 +180,7 @@ async def _pa_delete(db: AsyncSession, pa) -> dict[str, int]:
                 summary["create_pa_tasks_reopened"] = reopened
     _merge(summary, await purge_workflow_refs(db, pa.id))
     await db.delete(pa)             # pa_line_items + pa_attachment cascade via FK
+    await db.flush()
     return _merge(summary, {"payment_applications": 1})
 
 
@@ -173,31 +192,94 @@ async def _pa_preview(db: AsyncSession, pa) -> dict[str, int]:
     return _merge(summary, await _wf_counts(db, pa.id))
 
 
-# ── GR (blocked by Invoice.gr_id) ───────────────────────────────────────────────
+# ── GR (invoices are UNLINKED, never deleted) ──────────────────────────────────
+# User decision (2026-09-01): deleting a goods receipt must not take an invoice
+# with it. A GR and an invoice are MATCHED, not parent and child — the invoice is
+# a financial record that outlives a mis-keyed receipt, and the system already has
+# a name for what this needs: unmatch-gr, which withdraws the receipt evidence and
+# leaves the invoice, its status and its PO match standing. So the cascade does
+# exactly that, and refuses the whole delete when withdrawing would be unsafe
+# (crud.invoice.gr_unlink_blocker — the same three conditions the AP-facing
+# Unmatch button is gated on, so this cannot become a back door around them).
+
+
+def _blocker_sentence(b) -> str:
+    if b.code == "agreement":
+        return (f"invoice {b.invoice_ref} is matched to an agreement — unlink it from the "
+                "agreement's own receipt panel first")
+    if b.code == "in_payment":
+        return (f"invoice {b.invoice_ref} has already entered payment (status "
+                f"'{b.invoice_status}')")
+    return (f"invoice {b.invoice_ref} is claimed by Payment Application {b.pa_number} "
+            f"({b.pa_status})")
+
+
+async def _gr_invoices(db: AsyncSession, gr, seen_invoices: set | None) -> list:
+    """The invoices this GR delete has to deal with.
+
+    `seen_invoices` is how a PO cascade says "these are already being deleted by
+    the PO branch" — they are neither unlinked nor a reason to refuse, and
+    counting them again is what used to make the dialog say "2 invoices" for one
+    row. In the DELETE path the same exclusion happens for free: the PO branch
+    deletes and flushes first, so this query no longer returns them.
+    """
+    return [inv for inv in await _children(db, Invoice, "gr_id", gr.id)
+            if seen_invoices is None or inv.id not in seen_invoices]
+
+
+async def _gr_invoice_blockers(db: AsyncSession, gr, seen_invoices: set | None = None) -> list:
+    out = []
+    for inv in await _gr_invoices(db, gr, seen_invoices):
+        b = await gr_unlink_blocker(db, inv)
+        if b is not None:
+            out.append(b)
+    return out
+
 
 async def _gr_delete(db: AsyncSession, gr, *, resync_po: bool = True) -> dict[str, int]:
     summary: dict[str, int] = {}
     po_id, gr_id = gr.po_id, gr.id
+    blockers = await _gr_invoice_blockers(db, gr)
+    if blockers:
+        raise ValueError(
+            "Cannot delete this goods receipt: " + "; ".join(_blocker_sentence(b) for b in blockers)
+            + ". Resolve that first — deleting the receipt would pull the evidence out from "
+            "under it."
+        )
+    unlinked = 0
     for inv in await _children(db, Invoice, "gr_id", gr.id):
-        _merge(summary, await _invoice_delete(db, inv))
+        # Clears gr_id / gr_ids / gr_number / gr_value. The PO match, the
+        # allocations and the invoice's status are deliberately untouched —
+        # same helper, same effect as crud.invoice.unmatch_gr.
+        await _apply_gr_selection(db, inv, [])
+        unlinked += 1
+    if unlinked:
+        summary["invoices_unlinked"] = unlinked
     _merge(summary, await purge_workflow_refs(db, gr.id))
+    await db.flush()                # land the unlink before the GR row goes
     await db.delete(gr)             # gr_line_items + gr_attachment cascade via FK
+    await db.flush()                # also lets the GR's lines leave before the resync below
     if resync_po:
         # po_line_items.received_qty only ever accumulated, so without this the PO
         # keeps crediting itself for goods this receipt brought: the outstanding
         # quantity a replacement GR needs stays eaten, and a PO left at
         # fully_received can never accept one (api/v1/gr.py gates on the status).
-        await db.flush()            # let the GR's lines leave before recomputing
         changed = await resync_po_received_qty(db, po_id, exclude_gr_ids=(gr_id,))
         if changed:
             _merge(summary, {"po_lines_received_qty_resynced": changed})
     return _merge(summary, {"goods_receipts": 1})
 
 
-async def _gr_preview(db: AsyncSession, gr) -> dict[str, int]:
+async def _gr_preview(db: AsyncSession, gr, *, seen_invoices: set | None = None) -> dict[str, int]:
     summary: dict[str, int] = {"goods_receipts": 1}
-    for inv in await _children(db, Invoice, "gr_id", gr.id):
-        _merge(summary, await _invoice_preview(db, inv))
+    n = len(await _gr_invoices(db, gr, seen_invoices))
+    if n:
+        summary["invoices_unlinked"] = n
+    # Surfaced in the SAME preview the confirm dialog renders, so the admin sees
+    # the refusal before clicking rather than after it — the shape the agreement
+    # entity already uses for its blockers.
+    for b in await _gr_invoice_blockers(db, gr, seen_invoices):
+        _merge(summary, {f"blocked_by_{b.code}_invoices": 1})
     return _merge(summary, await _wf_counts(db, gr.id))
 
 
@@ -219,17 +301,22 @@ async def _po_delete(db: AsyncSession, po) -> dict[str, int]:
         pr.po_number = None
     _merge(summary, await purge_workflow_refs(db, po.id))
     await db.delete(po)             # po_line_items + po_attachment cascade via FK
+    await db.flush()
     return _merge(summary, {"purchase_orders": 1})
 
 
-async def _po_preview(db: AsyncSession, po) -> dict[str, int]:
+async def _po_preview(db: AsyncSession, po, *, seen_grs: set | None = None) -> dict[str, int]:
     summary: dict[str, int] = {"purchase_orders": 1}
+    seen_invoices: set = set()
     for inv in await _children(db, Invoice, "po_id", po.id):
+        seen_invoices.add(inv.id)
         _merge(summary, await _invoice_preview(db, inv))
     for pa in await _children(db, PaymentApplication, "po_id", po.id):
         _merge(summary, await _pa_preview(db, pa))
     for gr in await _children(db, GoodsReceipt, "po_id", po.id):
-        _merge(summary, await _gr_preview(db, gr))
+        if seen_grs is not None:
+            seen_grs.add(gr.id)
+        _merge(summary, await _gr_preview(db, gr, seen_invoices=seen_invoices))
     return _merge(summary, await _wf_counts(db, po.id))
 
 
@@ -244,14 +331,20 @@ async def _pr_delete(db: AsyncSession, pr) -> dict[str, int]:
         _merge(summary, await _gr_delete(db, gr))
     _merge(summary, await purge_workflow_refs(db, pr.id))
     await db.delete(pr)             # pr_line_items + pr_attachment cascade via FK
+    await db.flush()
     return _merge(summary, {"purchase_requests": 1})
 
 
 async def _pr_preview(db: AsyncSession, pr) -> dict[str, int]:
     summary: dict[str, int] = {"purchase_requests": 1}
+    # Same double-count on the level above: a GR usually carries BOTH pr_id and
+    # po_id, so it is reachable through the PO branch and again directly.
+    seen_grs: set = set()
     for po in await _children(db, PurchaseOrder, "pr_id", pr.id):
-        _merge(summary, await _po_preview(db, po))
+        _merge(summary, await _po_preview(db, po, seen_grs=seen_grs))
     for gr in await _children(db, GoodsReceipt, "pr_id", pr.id):
+        if gr.id in seen_grs:
+            continue
         _merge(summary, await _gr_preview(db, gr))
     return _merge(summary, await _wf_counts(db, pr.id))
 
@@ -301,6 +394,7 @@ async def _receipt_delete(db: AsyncSession, receipt) -> dict[str, int]:
         summary["agreement_receipt_attachments"] = att
     _merge(summary, await purge_workflow_refs(db, receipt.id))
     await db.delete(receipt)        # agreement_receipt_attachments cascade via FK
+    await db.flush()
     return _merge(summary, {"agreement_receipts": 1})
 
 
@@ -370,6 +464,7 @@ async def _agreement_delete(db: AsyncSession, agr) -> dict[str, int]:
 
     _merge(summary, await purge_workflow_refs(db, agr.id))
     await db.delete(agr)   # schedule + attachments cascade via FK
+    await db.flush()
     return _merge(summary, {"purchase_agreements": 1})
 
 
@@ -673,6 +768,7 @@ _AGREEMENT_RECEIPT_SCHEMA = EntitySchema(
 
 async def _task_delete(db: AsyncSession, task) -> dict[str, int]:
     await db.delete(task)
+    await db.flush()
     return {"tasks": 1}
 
 
