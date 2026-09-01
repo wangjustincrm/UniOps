@@ -108,4 +108,8 @@ class LocationNode(BaseModel):
     access_area: str | None
     qr_token: str | None
     is_active: bool
+    # False on a node that is only a heading — "Production" groups the
+    # operational areas and is not itself somewhere an incident happens.
+    is_selectable: bool = True
+    sort_order: int = 0
     children: list[LocationNode] = Field(default_factory=list)

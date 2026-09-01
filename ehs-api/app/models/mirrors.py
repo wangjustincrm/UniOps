@@ -74,6 +74,18 @@ class Location(Base):
     department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     qr_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Whether an incident may be recorded against this node itself, as opposed
+    # to only against something beneath it. A column rather than the old
+    # "offer only childless nodes" rule, at HSE's request: an operational area
+    # with Line 1 and Line 2 under it must stay selectable, because a reporter
+    # who does not know which line it happened on would otherwise have to
+    # guess, and a guessed line is worse than no line.
+    is_selectable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # HSE listed the general areas with Outside the Plant and Production first,
+    # and the operational areas in process order from milk receiving to
+    # packaging. Sorting by name throws both away and puts the warehouse above
+    # production, so the order is stored rather than derived.
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class CompanyConfig(Base):

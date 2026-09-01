@@ -23,11 +23,13 @@ confirmed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services import hours as hours_service
 
 # OSHA's constant: 100 employees × 50 weeks × 40 hours. HSE confirmed TRIR and
 # RIR are the same metric under two names, so there is one figure, not two.
@@ -158,9 +160,14 @@ async def injury_rates(
 ) -> dict:
     """TRIR, LTIFR and DART over a period.
 
-    `hours_worked` has no home in this system — it comes from payroll — so it is
-    a parameter and the response says so when it is missing, rather than
-    returning a zero that reads like a good month.
+    Hours come from the monthly figures HSE enters under Settings. The
+    parameter remains, and wins when given, so somebody can try a what-if
+    number without editing the record — but it is no longer the only source,
+    which is what made these rates permanently blank.
+
+    When months inside the period have no figure the rates are still returned,
+    with a note naming them. A short divisor makes an injury rate read *higher*
+    than it is, and there is nothing in the number itself to reveal that.
     """
     where = ["1=1"]
     params: dict[str, object] = {}
@@ -183,7 +190,20 @@ async def injury_rates(
     """), params)).one()
 
     recordable, lost_time, dart = row
-    hours = Decimal(str(hours_worked)) if hours_worked else None
+
+    entered = None
+    if hours_worked:
+        hours = Decimal(str(hours_worked))
+    else:
+        # Default the window to the calendar year so the rates mean something
+        # without the caller having to pass dates as well.
+        today = date.today()
+        entered = await hours_service.hours_for(
+            db,
+            date_from=date_from or date(today.year, 1, 1),
+            date_to=date_to or date(today.year, today.month, 1) + timedelta(days=32),
+        )
+        hours = entered.usable
 
     def rate(n: int) -> float | None:
         if not hours or hours <= 0:
@@ -195,13 +215,17 @@ async def injury_rates(
         "lost_time": lost_time,
         "dart_cases": dart,
         "hours_worked": float(hours) if hours else None,
+        "hours_months_missing": entered.missing if entered else [],
         # Same metric, two names — HSE confirmed. Reported once.
         "trir": rate(recordable),
         "lost_time_rate": rate(lost_time),
         "dart_rate": rate(dart),
-        "note": None if hours else (
-            "Hours worked were not supplied, so the rates cannot be calculated. "
-            "They come from payroll — record the monthly figure in Settings."
+        # The service's own note where there is one (it names the missing
+        # months); otherwise the plain "nothing entered" message.
+        "note": (entered.note() if entered else None) or (
+            None if hours else
+            "Hours worked have not been entered, so the rates cannot be "
+            "calculated. HSE records one figure a month under Settings."
         ),
     }
 

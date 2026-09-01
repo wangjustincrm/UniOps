@@ -10,9 +10,12 @@ than filled with something plausible:
 * **JHSC meeting attendance** comes from the committee module. It reports
   "no meetings recorded" rather than a flat line when the year is empty — an
   empty chart and a committee that never met look identical otherwise.
-* **RIR** needs hours worked, which come from payroll. Returned null with a
-  reason rather than as a zero, because a zero injury rate reads like a good
-  year rather than like a missing divisor.
+* **RIR** needs hours worked. HSE enters one figure a month under Settings;
+  where months are missing the rate is still shown, with a note saying which,
+  because a short divisor makes the rate read *higher* than it is and nobody
+  can tell by looking. With nothing entered at all it is null rather than
+  zero — a zero injury rate reads like a good year rather than a missing
+  divisor.
 
 Everything else is real. The year is the calendar year in Ontario local time —
 a report filed at 20:00 on 31 December belongs to that year, not to the next one
@@ -27,6 +30,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import hours as hours_service
+
 ONTARIO = ZoneInfo("America/Toronto")
 OSHA_BASE_HOURS = 200_000
 
@@ -39,7 +44,7 @@ def _year_bounds(year: int) -> tuple[date, date]:
     return date(year, 1, 1), date(year + 1, 1, 1)
 
 
-async def headline(db: AsyncSession, *, year: int, hours_worked: float | None) -> dict:
+async def headline(db: AsyncSession, *, year: int, hours_worked: float | None) -> dict:  # noqa: PLR0914
     """The tiles along the top of HSE's sheet."""
     start, end = _year_bounds(year)
 
@@ -68,7 +73,10 @@ async def headline(db: AsyncSession, *, year: int, hours_worked: float | None) -
         days_since = (datetime.now(timezone.utc).astimezone(ONTARIO).date()
                       - last.astimezone(ONTARIO).date()).days
 
-    hours = Decimal(str(hours_worked)) if hours_worked else None
+    # An explicit figure wins — the reports let somebody try a what-if number —
+    # but the stored monthly entries are the real source.
+    entered = await hours_service.hours_for_year(db, year)
+    hours = Decimal(str(hours_worked)) if hours_worked else entered.usable
     rir = (round(float(Decimal(recordable) * OSHA_BASE_HOURS / hours), 2)
            if hours and hours > 0 else None)
 
@@ -88,10 +96,10 @@ async def headline(db: AsyncSession, *, year: int, hours_worked: float | None) -
         "cost_average": (round(float(cost_total) / cost_known, 2) if cost_known else None),
         "cost_known_count": cost_known,
         "lost_time_hours": float(lost_hours or 0),
-        "rir_note": None if hours else (
-            "Hours worked were not supplied, so RIR cannot be calculated. "
-            "The figure comes from payroll."
-        ),
+        "hours_worked": float(hours) if hours else None,
+        # Says which months are missing when some are, rather than presenting a
+        # rate computed on a short divisor as though it were complete.
+        "rir_note": None if hours_worked else entered.note(),
     }
 
 

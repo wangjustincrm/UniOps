@@ -149,7 +149,12 @@ async def location_tree(
     stmt = select(Location)
     if not include_inactive:
         stmt = stmt.where(Location.is_active.is_(True))
-    rows = list((await db.execute(stmt.order_by(Location.path))).scalars())
+    # HSE's order, not the alphabet's: they put Outside the Plant and
+    # Production first because those are what most reports are filed against,
+    # and listed the operational areas in process order. `path` as the
+    # tie-break keeps siblings stable where nothing was specified.
+    rows = list((await db.execute(
+        stmt.order_by(Location.depth, Location.sort_order, Location.path))).scalars())
 
     nodes = {r.id: LocationNode.model_validate(r) for r in rows}
     roots: list[LocationNode] = []

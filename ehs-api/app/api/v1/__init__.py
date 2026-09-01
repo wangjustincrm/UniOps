@@ -12,6 +12,7 @@ from app.api.v1.first_aid import router as first_aid_router
 from app.api.v1.forms import router as forms_router
 from app.api.v1.hazards import router as hazards_router
 from app.api.v1.health import router as health_router
+from app.api.v1.hours import router as hours_router
 from app.api.v1.incident_attachments import router as incident_attachments_router
 from app.api.v1.incident_medical import router as incident_medical_router
 from app.api.v1.incidents import router as incidents_router
@@ -43,6 +44,9 @@ api_router.include_router(risk_router, tags=["risk"])
 api_router.include_router(equipment_router, tags=["equipment"])
 api_router.include_router(reports_router, tags=["reports"])
 api_router.include_router(dashboard_router, tags=["dashboard"])
+# The divisor for every injury rate. Read where the dashboard is read,
+# written where Settings is written.
+api_router.include_router(hours_router, tags=["dashboard"])
 # Carries its own /workers and /positions prefixes. The position matrix is
 # what makes the training gap report able to require anything beyond the
 # courses that apply to everyone.

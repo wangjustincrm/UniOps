@@ -10,13 +10,14 @@
  * the rule is simple: somebody who has finished typing has never lost their
  * work.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, Eye, Wrench } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { discardDraft, loadDraft, saveDraft } from '@/lib/draftStore'
 import type { CompressedImage } from '@/lib/imageCompress'
+import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { PhotoCapture } from '@/components/PhotoCapture'
 import { SignaturePad } from '@/components/SignaturePad'
@@ -57,14 +58,6 @@ interface IncidentTypeOption {
   asks_injury_class: boolean
 }
 
-interface LocationNode {
-  id: string
-  name: string
-  path: string
-  depth: number
-  children: LocationNode[]
-}
-
 interface FormState {
   kind: Kind | null
   title: string
@@ -89,30 +82,6 @@ const EMPTY: FormState = {
 
 const DRAFT_KIND = 'incident'
 const DRAFT_ID = 'current'
-
-/**
- * Only leaves are reportable places. An interior node is a grouping — Building
- * 102, or Pretreatment, which HSE's plant list names only as `Pretreatment –
- * <line>` — and picking one would record an incident at a whole building.
- *
- * Depth is not the test: the tree is deliberately ragged (Packaging sits one
- * level above Milk Receiving because Building 104 has no sub-areas), so
- * "childless" is the only rule that holds across branches.
- */
-function leaves(nodes: LocationNode[], out: LocationNode[] = []): LocationNode[] {
-  for (const n of nodes) {
-    if ((n.children ?? []).length === 0) out.push(n)
-    else leaves(n.children, out)
-  }
-  return out
-}
-
-/** `Kingston Plant/Building 103/Filling` -> `Building 103 › Filling`. The site
- *  prefix is dropped: it is the same for every row and only costs width on a
- *  phone, where this select renders as the OS picker and indentation is lost. */
-function trail(path: string): string {
-  return path.split('/').slice(1).join(' › ')
-}
 
 export default function IncidentReportPage() {
   const navigate = useNavigate()
@@ -152,12 +121,6 @@ export default function IncidentReportPage() {
     enabled: Boolean(form.kind),
   })
 
-  const { data: locations } = useQuery({
-    queryKey: ['locations'],
-    queryFn: () => api.get<LocationNode[]>('/api/v1/settings/locations'),
-    staleTime: 10 * 60_000,
-  })
-  const leafLocations = useMemo(() => leaves(locations ?? []), [locations])
 
   const submit = useMutation({
     mutationFn: async () => {
@@ -353,14 +316,16 @@ export default function IncidentReportPage() {
           </select>
         </Field>
       )}
+      {/* The shared picker rather than a flat list of leaves. HSE asked for
+          the general area first and the line last and optional, because
+          "employees may not know the building numbers" — and because a
+          leaf-only list would force a reporter who does not know which line it
+          happened on to guess one. */}
       <Field label="Where did this happen?">
-        <select className={inputClass} value={form.locationId}
-                onChange={(e) => set('locationId', e.target.value)}>
-          <option value="">Select an area</option>
-          {leafLocations.map((l) => (
-            <option key={l.id} value={l.id}>{trail(l.path)}</option>
-          ))}
-        </select>
+        <LocationSelect
+          value={form.locationId || null}
+          onChange={(id) => set('locationId', id ?? '')}
+        />
       </Field>
 
       {form.kind === 'medical' && (

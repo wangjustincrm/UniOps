@@ -37,6 +37,9 @@ class RatesOut(BaseModel):
     lost_time: int
     dart_cases: int
     hours_worked: float | None
+    # Named rather than counted: "six months missing" is a number somebody can
+    # act on only once they know which six.
+    hours_months_missing: list[str] = []
     trir: float | None
     lost_time_rate: float | None
     dart_rate: float | None

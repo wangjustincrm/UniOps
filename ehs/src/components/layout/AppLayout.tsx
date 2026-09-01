@@ -85,6 +85,9 @@ const SETTINGS_NAV: NavItem[] = [
   // Under ehs.worker.write, not settings: a supervisor who maintains who does
   // which job is not the same person who edits vocabularies.
   { label: 'Positions',   href: '/settings/positions', icon: Users, permission: 'ehs.worker.read' },
+  // The divisor for every injury rate. Without it the dashboard's rate tiles
+  // are empty, which is why it sits in the menu rather than inside a report.
+  { label: 'Hours Worked', href: '/settings/hours', icon: CalendarClock, permission: 'ehs.settings.manage' },
   { label: 'Rules',       href: '/settings/rules', icon: Settings, permission: 'ehs.settings.manage' },
 ]
 

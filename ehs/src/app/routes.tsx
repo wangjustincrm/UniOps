@@ -8,6 +8,7 @@ import CourseSessionPage from '@/pages/CourseSessionPage'
 import DocumentDetailPage from '@/pages/DocumentDetailPage'
 import DocumentsPage from '@/pages/DocumentsPage'
 import HazardsPage from '@/pages/HazardsPage'
+import HoursWorkedPage from '@/pages/settings/HoursWorkedPage'
 import FirstAidLogPage from '@/pages/FirstAidLogPage'
 import IncidentDetailPage from '@/pages/IncidentDetailPage'
 import IncidentListPage from '@/pages/IncidentListPage'
@@ -183,6 +184,11 @@ export const ehsRoutes: RouteDef[] = [
     path: '/settings/equipment',
     element: <EquipmentPage />,
     tab: { title: 'Equipment', icon: 'Settings', keyStrategy: 'static' },
+  },
+  {
+    path: '/settings/hours',
+    element: <HoursWorkedPage />,
+    tab: { title: 'Hours worked', icon: 'CalendarClock', keyStrategy: 'static' },
   },
   {
     path: '/settings/positions',

@@ -28,6 +28,9 @@ class Headline(BaseModel):
     cost_average: float | None
     cost_known_count: int
     lost_time_hours: float
+    # The divisor actually used, so a reader can see the rate is real rather
+    # than wondering whether the tile is stale.
+    hours_worked: float | None = None
     rir_note: str | None
 
 

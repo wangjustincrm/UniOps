@@ -19,6 +19,7 @@ from app.models.hazard import Hazard, Jsa, JsaSignoff, JsaStep  # noqa: F401
 from app.models.jhsc import (  # noqa: F401
     JhscAttendance, JhscMeeting, JhscMember, JhscRecommendation,
 )
+from app.models.hours import HoursWorked  # noqa: F401
 from app.models.incident import (  # noqa: F401
     Incident, IncidentAttachment, IncidentCause, IncidentInvestigation, IncidentPerson,
 )
