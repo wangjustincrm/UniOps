@@ -37,6 +37,7 @@ from app.models.action import Action
 from app.models.config import EhsConfig
 from app.models.mirrors import User
 from app.models.statutory import StatutoryDeadline
+from app.services import notify
 from app.services import tasks as task_service
 from app.crud import asset as asset_crud
 from app.crud import course as course_crud
@@ -120,6 +121,9 @@ async def sweep_statutory(db: AsyncSession, now: datetime) -> int:
                          f"Due {deadline.due_at.isoformat()}."),
             priority="high" if level >= 2 else "normal",
         )
+        # HSE gets this by email as well as by inbox. It is the one category
+        # where a list somebody has not opened today is not good enough.
+        await notify.statutory_escalated(db, deadline, overdue=overdue)
         raised += 1
     return raised
 
@@ -169,6 +173,9 @@ async def sweep_actions(db: AsyncSession, now: datetime, ladder: CapaLadder) -> 
                 description=f"{action.owner_name or 'The owner'} has not closed this.",
                 priority="high",
             )
+            await notify.action_escalated(
+                db, action, level=level, days_late=days_late,
+                supervisor_id=supervisor_id)
         else:
             await task_service.open_task(
                 db,
@@ -181,6 +188,8 @@ async def sweep_actions(db: AsyncSession, now: datetime, ladder: CapaLadder) -> 
                 description=f"Past the {ladder.manager_days}-day threshold.",
                 priority="high",
             )
+            await notify.action_escalated(
+                db, action, level=level, days_late=days_late, supervisor_id=None)
         logger.info("Action %s escalated %d -> %d", action.action_no, previous, level)
         raised += 1
     return raised

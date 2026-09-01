@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from app.services import incident_type
 from app.crud import incident as crud
+from app.services import notify
 from app.crud import investigation as inv_crud
 from app.schemas.incident import (
     IncidentClassify,
@@ -93,6 +94,9 @@ async def _to_out(db, incident) -> IncidentOut:
 @router.post("", response_model=IncidentOut, status_code=status.HTTP_201_CREATED)
 async def create_incident(payload: IncidentCreate, db: SessionDep, user: CanReportIncident):
     incident = await crud.create(db, payload, reporter_id=_user_id(user))
+    # Filed against the incident in the same transaction, so a report that
+    # fails to save cannot leave behind a note saying it was circulated.
+    await notify.incident_reported(db, incident)
     return await _to_out(db, incident)
 
 

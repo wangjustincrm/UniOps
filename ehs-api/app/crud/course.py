@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.course import CourseDelivery, CourseEnrolment
 from app.models.mirrors import Department, User
 from app.models.training import Course, TrainingRecord
+from app.services import notify
 from app.services import tasks as task_service
 from app.services.numbering import next_number
 
@@ -325,7 +326,12 @@ async def remind_upcoming(db: AsyncSession, *, today: date | None = None) -> lis
     for delivery in due:
         when = delivery.start_time.strftime("%H:%M") if delivery.start_time else "the usual time"
         where = f" at {delivery.location_text}" if delivery.location_text else ""
-        for enrolment in await roster(db, delivery.id):
+        attending = await roster(db, delivery.id)
+        # HSE's step six. One message to the room, and a task each — the task
+        # is what shows up beside their other work on the morning.
+        await notify.course_tomorrow(
+            db, delivery, [e.user_id for e in attending if e.user_id])
+        for enrolment in attending:
             if enrolment.user_id is None:
                 continue
             await task_service.open_task(

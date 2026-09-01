@@ -1,0 +1,319 @@
+"""What Safety emails, and to whom.
+
+Every function here answers one question — who needs to be told about this —
+and hands the answer to `mail.queue`, which files it and schedules the send.
+Keeping the two apart means the routing rules are readable in one place and
+testable without a mail server.
+
+The rule this module is built around, from an earlier UniOps post-mortem: a
+task in the inbox is for the person who has to *do* something. Email is for
+everybody else — the escalation, the copy, the notice. So the two are not
+parallel channels. Where somebody must act, a task is opened and an email
+merely tells them it is there; where somebody must merely know, there is an
+email and no task, because a task nobody can complete never clears.
+
+Recipient lists come from `ehs_config.incident_notify_groups` where HSE has set
+them, and fall back to role membership where they have not. Falling back rather
+than sending nothing is deliberate: an unconfigured group must not mean an
+injury goes unreported to anyone.
+"""
+from __future__ import annotations
+
+import logging
+import uuid
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.config import EhsConfig
+from app.models.mirrors import User
+from app.services import mail
+from app.services import tasks as task_service
+
+logger = logging.getLogger(__name__)
+
+# Who hears about an incident when no group has been configured for its
+# category. HSE and their coordinator, always — they own the statutory clocks.
+DEFAULT_INCIDENT_ROLES = ("ehs_manager", "ehs_coordinator")
+
+
+async def _by_roles(db: AsyncSession, roles: tuple[str, ...]) -> list[User]:
+    """Active holders of any of these roles, primary or additional.
+
+    Reads `user_roles` as well as `users.role` for the same reason
+    `uniops_authz` does: a first aider or JHSC member holds that in addition to
+    their job, and looking only at the primary role would miss all of them.
+    """
+    from sqlalchemy import text
+
+    extra = set((await db.execute(
+        text("SELECT ur.user_id FROM user_roles ur "
+             " JOIN role_defs rd ON rd.code = ur.role_code AND rd.is_active "
+             " WHERE ur.role_code = ANY(:roles)"),
+        {"roles": list(roles)})).scalars().all())
+
+    rows = (await db.execute(
+        select(User).where(User.is_active.is_(True)))).scalars().all()
+    return [u for u in rows if u.role in roles or u.id in extra]
+
+
+async def _config(db: AsyncSession) -> EhsConfig | None:
+    return (await db.execute(select(EhsConfig).where(EhsConfig.id == 1))).scalar_one_or_none()
+
+
+async def _incident_audience(db: AsyncSession, category_code: str | None) -> list[User]:
+    cfg = await _config(db)
+    groups = (cfg.incident_notify_groups if cfg else None) or {}
+    configured = groups.get(category_code or "", []) or groups.get("*", [])
+    if configured:
+        picked = await mail.recipients(
+            db, [uuid.UUID(str(u)) for u in configured])
+        if picked:
+            return picked
+    return await mail.recipients(
+        db, [u.id for u in await _by_roles(db, DEFAULT_INCIDENT_ROLES)])
+
+
+# ── Incidents ────────────────────────────────────────────────────────────────
+
+async def incident_reported(db: AsyncSession, incident) -> None:
+    """Tell the people who need to know that something happened.
+
+    Not a task: nobody on this list has been assigned anything yet. Whoever
+    ends up investigating gets a task when the incident is classified.
+    """
+    people = await _incident_audience(db, incident.category_label)
+    if not people:
+        return
+
+    where = incident.location_path or "the plant"
+    lines = [
+        f"{incident.incident_no} was reported at {where}.",
+        "",
+        (incident.description or "")[:600],
+    ]
+    if incident.mol_reportable:
+        lines += ["", "This has been flagged as reportable to the Ministry. "
+                      "OHSA s.51(1) allows forty-eight hours from the occurrence "
+                      "for the written report."]
+    if incident.injury_class:
+        lines += ["", f"Recorded as: {incident.injury_class.replace('_', ' ')}."]
+
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"Safety incident {incident.incident_no}",
+        body="\n".join(lines),
+        doc_type=task_service.DOC_INCIDENT,
+        doc_id=incident.id,
+        template_key="incident_reported",
+        link=mail.module_link(f"/incidents/{incident.id}"),
+        link_label="Open the incident",
+    )
+
+
+async def statutory_escalated(db: AsyncSession, deadline, *, overdue: bool) -> None:
+    """A legal clock is close, or has passed.
+
+    Goes to HSE by email as well as by task, because this is the one category
+    where an inbox somebody has not opened today is not good enough.
+    """
+    people = await mail.recipients(
+        db, [u.id for u in await _by_roles(db, DEFAULT_INCIDENT_ROLES)])
+    if not people:
+        return
+
+    what = deadline.kind.replace("_", " ")
+    when = "has passed" if overdue else "is approaching"
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=(f"{'OVERDUE' if overdue else 'Due soon'}: {what} "
+                 f"— {deadline.source_ref or ''}").strip(),
+        body=(f"The {what} deadline for {deadline.source_ref or 'a Safety record'} "
+              f"{when}.\n\n"
+              f"{deadline.regulation_ref or 'Statutory obligation'}. "
+              f"Due {deadline.due_at.isoformat(timespec='minutes')}."),
+        doc_type=task_service.DOC_INCIDENT,
+        doc_id=deadline.source_id,
+        template_key="statutory_escalation",
+        link=mail.module_link("/calendar"),
+        link_label="Open the compliance calendar",
+    )
+
+
+# ── Corrective actions ───────────────────────────────────────────────────────
+
+async def action_escalated(
+    db: AsyncSession, action, *, level: int, days_late: int,
+    supervisor_id: uuid.UUID | None,
+) -> None:
+    """HSE's escalation ladder, by email as well as by task.
+
+    Level 1 is the owner's own reminder and is not mailed — they already hold
+    the task, and a mail saying "the thing in your list is due tomorrow" is the
+    kind of message that teaches people to ignore the sender.
+    """
+    if level < 2:
+        return
+
+    ids: list[uuid.UUID | None] = [action.owner_id]
+    if level >= 2:
+        ids.append(supervisor_id)
+    role_people: list[User] = []
+    if level >= 3:
+        role_people = await _by_roles(db, ("ehs_manager",))
+    people = await mail.recipients(db, ids + [u.id for u in role_people])
+    if not people:
+        return
+
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"Overdue {days_late} days: {action.title}",
+        body=(f"{action.action_no} was due {action.due_date.isoformat()} and is "
+              f"still open.\n\nOwner: {action.owner_name or 'unassigned'}.\n\n"
+              f"{(action.description or '')[:400]}"),
+        doc_type=task_service.DOC_ACTION,
+        doc_id=action.id,
+        template_key="action_escalation",
+        link=mail.module_link(f"/actions/{action.id}"),
+        link_label="Open the action",
+    )
+
+
+# ── Scheduled work ───────────────────────────────────────────────────────────
+
+async def inspection_due(
+    db: AsyncSession, run, *, template_name: str, assignee_id: uuid.UUID | None,
+) -> None:
+    """HSE: due inspections go to the inbox *and* by email.
+
+    The assignee comes from the schedule rather than from the run — a run is
+    the occurrence, and who does it is a property of the schedule. A schedule
+    assigned to a role rather than a person has nobody to email, and the task
+    is then the only channel, which is the correct behaviour rather than a gap.
+    """
+    people = await mail.recipients(db, [assignee_id])
+    if not people:
+        return
+    where = f" — {run.department_name}" if run.department_name else ""
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"Due {run.due_on.isoformat()}: {template_name}{where}",
+        body=f"{template_name}{where} is due on {run.due_on.isoformat()}.",
+        doc_type="ehs_run",
+        doc_id=run.id,
+        template_key="inspection_due",
+        link=mail.module_link("/forms"),
+        link_label="Open the form",
+    )
+
+
+async def toolbox_talk_chase(db: AsyncSession, delivery, *, talk_title: str) -> None:
+    """The fortnightly nudge HSE asked for, until the talk is signed off."""
+    people = await mail.recipients(db, [delivery.supervisor_id])
+    if not people:
+        return
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"Still outstanding: {talk_title}",
+        body=(f"The toolbox talk for {delivery.department_name or 'your team'} has "
+              "not been signed off yet.\n\nHold it with your team and collect "
+              "everyone's signature on one device afterwards."),
+        doc_type="ehs_tbt",
+        doc_id=delivery.id,
+        template_key="toolbox_chase",
+        link=mail.module_link("/toolbox-talks"),
+        link_label="Open toolbox talks",
+    )
+
+
+async def course_tomorrow(db: AsyncSession, delivery, attendee_ids: list[uuid.UUID]) -> None:
+    """HSE's step six: attendees are reminded the day before."""
+    people = await mail.recipients(db, list(attendee_ids))
+    if not people:
+        return
+    when = delivery.start_time.strftime("%H:%M") if delivery.start_time else "the usual time"
+    where = f" at {delivery.location_text}" if delivery.location_text else ""
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"Tomorrow: {delivery.title}",
+        body=(f"{delivery.title} runs tomorrow, {delivery.session_date.isoformat()}, "
+              f"starting at {when}{where}."),
+        doc_type="ehs_crs",
+        doc_id=delivery.id,
+        template_key="course_reminder",
+        link=mail.module_link(f"/training/sessions/{delivery.id}"),
+        link_label="See the session",
+    )
+
+
+# ── Documents and the committee ──────────────────────────────────────────────
+
+async def document_published(db: AsyncSession, document, audience_ids: list[uuid.UUID]) -> None:
+    """A policy that needs acknowledging.
+
+    One message to the whole audience rather than one each: this is a notice,
+    the audience is everybody, and two hundred separate sends would take longer
+    than the request that triggered them.
+    """
+    people = await mail.recipients(db, list(audience_ids))
+    if not people:
+        return
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"Please read and sign: {document.title}",
+        body=(f"{document.title} version {document.version} has been published "
+              "and needs your acknowledgement.\n\nOpen it, read it, and sign at "
+              "the bottom of the page."),
+        doc_type=task_service.DOC_DOCUMENT,
+        doc_id=document.id,
+        template_key="document_published",
+        link=mail.module_link(f"/documents/{document.id}"),
+        link_label="Read and sign it",
+    )
+
+
+async def jhsc_recommendation(db: AsyncSession, meeting, recommendation) -> None:
+    """The committee has recommended something; the employer owes a reply."""
+    people = await mail.recipients(
+        db, [u.id for u in await _by_roles(db, DEFAULT_INCIDENT_ROLES)])
+    if not people:
+        return
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"JHSC recommendation {meeting.meeting_no} #{recommendation.seq}",
+        body=(f"{recommendation.recommendation}\n\n"
+              "OHSA s.9(20) requires a written response within twenty-one days "
+              "of the recommendation."),
+        doc_type=task_service.DOC_JHSC,
+        doc_id=meeting.id,
+        template_key="jhsc_recommendation",
+        link=mail.module_link(f"/jhsc/meetings/{meeting.id}"),
+        link_label="Open the meeting",
+    )
+
+
+async def jhsc_minutes_published(db: AsyncSession, meeting, member_ids: list[uuid.UUID]) -> None:
+    """HSE: minutes go to management and to every member."""
+    people = await mail.recipients(
+        db, list(member_ids) + [u.id for u in await _by_roles(db, DEFAULT_INCIDENT_ROLES)])
+    if not people:
+        return
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"JHSC minutes — {meeting.held_on.isoformat()}",
+        body=(meeting.minutes or "")[:2000],
+        doc_type=task_service.DOC_JHSC,
+        doc_id=meeting.id,
+        template_key="jhsc_minutes",
+        link=mail.module_link(f"/jhsc/meetings/{meeting.id}"),
+        link_label="Open the minutes",
+    )

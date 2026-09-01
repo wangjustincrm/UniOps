@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import DocumentAcknowledgement, SafetyDocument
 from app.models.mirrors import User
 from app.services import deadlines as deadline_service
+from app.services import notify
 from app.services import tasks as task_service
 from app.services.numbering import next_number
 
@@ -129,7 +130,9 @@ async def publish(
     await deadline_service.ensure_document_review_deadline(db, doc)
 
     if doc.requires_ack:
-        for person in await _audience(db, doc):
+        audience = await _audience(db, doc)
+        await notify.document_published(db, doc, [p.id for p in audience])
+        for person in audience:
             await task_service.open_task(
                 db,
                 task_type=task_service.TASK_READ_SIGN,

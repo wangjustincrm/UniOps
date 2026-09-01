@@ -7,6 +7,7 @@ import ComplianceCalendarPage from '@/pages/ComplianceCalendarPage'
 import CourseSessionPage from '@/pages/CourseSessionPage'
 import DocumentDetailPage from '@/pages/DocumentDetailPage'
 import DocumentsPage from '@/pages/DocumentsPage'
+import HazardsPage from '@/pages/HazardsPage'
 import FirstAidLogPage from '@/pages/FirstAidLogPage'
 import IncidentDetailPage from '@/pages/IncidentDetailPage'
 import IncidentListPage from '@/pages/IncidentListPage'
@@ -19,6 +20,7 @@ import FormsListPage from '@/pages/FormsListPage'
 import InvestigationPage from '@/pages/InvestigationPage'
 import JhscMeetingPage from '@/pages/JhscMeetingPage'
 import JhscPage from '@/pages/JhscPage'
+import JsaPage, { JsaDetailPage } from '@/pages/JsaPage'
 import QrLandingPage from '@/pages/QrLandingPage'
 import SafetyEquipmentPage from '@/pages/SafetyEquipmentPage'
 import ReportsPage from '@/pages/ReportsPage'
@@ -127,6 +129,21 @@ export const ehsRoutes: RouteDef[] = [
     path: '/jhsc/meetings/:id',
     element: <JhscMeetingPage />,
     tab: { title: 'Meeting', icon: 'Users', keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    path: '/hazards',
+    element: <HazardsPage />,
+    tab: { title: 'Hazards', icon: 'ShieldAlert', keyStrategy: 'static' },
+  },
+  {
+    path: '/jsa',
+    element: <JsaPage />,
+    tab: { title: 'Job analyses', icon: 'ClipboardList', keyStrategy: 'static' },
+  },
+  {
+    path: '/jsa/:id',
+    element: <JsaDetailPage />,
+    tab: { title: 'Analysis', icon: 'ClipboardList', keyStrategy: 'param', paramName: 'id' },
   },
   {
     path: '/documents',

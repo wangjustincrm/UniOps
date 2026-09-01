@@ -15,6 +15,7 @@ import { formatDateTime } from '@/lib/formatDate'
 import { Countdown } from '@/components/Countdown'
 import { InjuryBadge, MolBadge, StatusBadge } from '@/components/StatusBadge'
 import { usePermissions } from '@/hooks/usePermissions'
+import { CommunicationLog } from '@/components/CommunicationLog'
 import { NewActionDialog } from '@/components/NewActionDialog'
 import { RiskAssessmentDialog } from '@/components/RiskAssessmentDialog'
 import { useTabTitle } from '@uniops/shell'
@@ -515,6 +516,11 @@ export default function IncidentDetailPage() {
               )}
             </div>
           )}
+
+          {/* Everything the system said about this incident, and to whom.
+              Sits with the statutory panel rather than in the narrative: it
+              answers "were they told", which is the same kind of question. */}
+          <CommunicationLog docType="ehs_inc" docId={id} />
         </section>
       </div>
     </div>

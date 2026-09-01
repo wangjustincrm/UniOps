@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.form import FormTemplate
 from app.models.mirrors import Department
 from app.models.schedule import FormSchedule, FormScheduleRun
+from app.services import notify
 from app.services import tasks as task_service
 from app.services.recurrence import due_occurrences, next_due, rotation_pick
 
@@ -107,6 +108,10 @@ async def generate_due(db: AsyncSession, *, today: date | None = None) -> list[F
                 description=f"Due {due_on.isoformat()}",
                 priority="normal",
             )
+            # HSE: "due tasks should go to the inbox and also be emailed."
+            await notify.inspection_due(
+                db, run, template_name=template.name,
+                assignee_id=sched.assigned_user_id)
 
             sched.next_due_on = next_due(due_on, sched.frequency)
             sched.last_generated_on = today

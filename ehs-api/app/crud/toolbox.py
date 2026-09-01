@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud.incident import _resolve_name
 from app.models.mirrors import Department, User
 from app.models.toolbox import TbtDelivery, TbtSignature, ToolboxTalk
+from app.services import notify
 from app.services import tasks as task_service
 from app.services.numbering import next_number
 
@@ -194,6 +195,9 @@ async def chase_outstanding(db: AsyncSession, *, today: date | None = None) -> l
 
     for delivery in due:
         delivery.last_reminded_on = today
+        talk = await db.get(ToolboxTalk, delivery.talk_id)
+        await notify.toolbox_talk_chase(
+            db, delivery, talk_title=talk.title if talk else "this month's toolbox talk")
 
     await db.flush()
     return list(due)

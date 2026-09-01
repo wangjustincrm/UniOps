@@ -4,7 +4,7 @@ import { TabBar, TabHost, TabRouterSync, TabStoreProvider } from '@uniops/shell'
 import type { TabMeta } from '@uniops/shell'
 import {
   ArrowLeft, BarChart3, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck,
-  ClipboardList, FileText, Users, Wrench,
+  ClipboardList, FileText, ShieldAlert, Users, Wrench,
   GraduationCap, HeartPulse, List, LogOut, Map, Menu, Settings, TriangleAlert, User,
 } from 'lucide-react'
 import { ehsRoutes } from '@/app/routes'
@@ -68,6 +68,10 @@ const NAV: NavItem[] = [
   { label: 'Training',           href: '/training',      icon: GraduationCap,   permission: 'ehs.training.read' },
   // Every active role holds ehs.document.read: a policy that cannot be opened
   // cannot be acknowledged, which is what Read & Sign asks people to do.
+  { label: 'Hazard Register',    href: '/hazards',       icon: ShieldAlert,     permission: 'ehs.action.read' },
+  // No permission: the crew signing a job analysis before starting is every
+  // worker, and the list is what they open to find theirs.
+  { label: 'Job Analyses',       href: '/jsa',           icon: ClipboardList },
   { label: 'Documents',          href: '/documents',     icon: FileText,        permission: 'ehs.document.read' },
   { label: 'Safety Equipment',   href: '/equipment',     icon: Wrench,          permission: 'ehs.asset.read' },
   { label: 'Committee',          href: '/jhsc',          icon: Users,           permission: 'ehs.jhsc.read' },

@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.jhsc import JhscAttendance, JhscMeeting, JhscMember, JhscRecommendation
 from app.models.mirrors import Department, User
 from app.services import deadlines as deadline_service
+from app.services import notify
 from app.services import tasks as task_service
 from app.services.numbering import next_number
 
@@ -189,6 +190,9 @@ async def publish_meeting(
     meeting.published_at = datetime.now(timezone.utc)
     meeting.published_by = user_id
     await db.flush()
+    # HSE: minutes go to management and to every member, and onto the board.
+    await notify.jhsc_minutes_published(
+        db, meeting, [m.user_id for m in await list_members(db) if m.user_id])
     return meeting
 
 
@@ -268,6 +272,7 @@ async def add_recommendation(
                      f"{text[:200]}"),
         priority="normal",
     )
+    await notify.jhsc_recommendation(db, meeting, rec)
     return rec
 
 

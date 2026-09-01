@@ -73,6 +73,17 @@ class Settings(BaseSettings):
     FILE_SERVER_URL: str = "http://localhost:8005/files/v1"
     SAFETY_WEB_URL: str = "http://localhost:5180"
 
+    # ── Outbound email ──────────────────────────────────────────────────────
+    # Fallbacks only. The live credentials come from `company_config`, the same
+    # row epms-api sends through — one mail server to configure, one place to
+    # change it. These matter in a test database that has no company_config row.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+    SMTP_FROM: str = "safety@canadaroyalmilk.com"
+
     # ── Statutory deadline scanner ──────────────────────────────────────────
     # In-process asyncio loop started in the FastAPI lifespan. The interval
     # itself lives in ehs_config and is re-read on every tick (0 = disabled);

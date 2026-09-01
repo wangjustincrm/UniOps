@@ -17,3 +17,7 @@ tzdata==2025.1
 reportlab==4.2.5
 # Training matrix / incident register exports
 openpyxl>=3.1
+# Outbound notification email. Same version epms-api pins, because the two
+# talk to the same SMTP server through the same company_config credentials and
+# a version skew here would show up as one module's mail silently failing.
+aiosmtplib==3.0.2

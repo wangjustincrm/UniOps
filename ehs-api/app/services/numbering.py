@@ -36,6 +36,8 @@ LOCK_COURSE = 981_006
 LOCK_JHSC = 981_007
 LOCK_DOCUMENT = 981_008
 LOCK_ASSET = 981_009
+LOCK_HAZARD = 981_010
+LOCK_JSA = 981_011
 
 _SPECS = {
     "incident": (LOCK_INCIDENT, "INC", "ehs_incidents", "incident_no"),
@@ -47,6 +49,8 @@ _SPECS = {
     "jhsc_meeting": (LOCK_JHSC, "JHSC", "ehs_jhsc_meetings", "meeting_no"),
     "document": (LOCK_DOCUMENT, "DOC", "ehs_documents", "doc_no"),
     "safety_asset": (LOCK_ASSET, "SA", "ehs_safety_assets", "asset_no"),
+    "hazard": (LOCK_HAZARD, "HAZ", "ehs_hazards", "hazard_no"),
+    "jsa": (LOCK_JSA, "JSA", "ehs_jsa", "jsa_no"),
 }
 
 

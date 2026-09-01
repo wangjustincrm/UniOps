@@ -17,8 +17,8 @@ The schema is owned by epms-api.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -33,6 +33,9 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(50), nullable=False)
+    # email | teams | both | none. A person who has opted out of email must
+    # not be mailed by this module either.
+    notification_channel: Mapped[str | None] = mapped_column(String(20), nullable=True)
     department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     supervisor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -71,6 +74,33 @@ class Location(Base):
     department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     qr_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class CompanyConfig(Base):
+    """Read-only mirror of epms-api's `company_config` — the SMTP block only.
+
+    Safety sends its own mail rather than routing through epms-api, because the
+    messages are Safety's (a statutory countdown, a policy to acknowledge) and
+    an HTTP hop to another service to send them would add a failure mode with
+    nothing in return. It uses the same credentials so there is one mail server
+    to configure, and one place to change it.
+
+    Columns verified against information_schema on 2026-09-01 rather than
+    assumed: a mirror that disagrees with the physical table fails at query
+    time, and this codebase has been caught by that three times.
+    """
+
+    __tablename__ = "company_config"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    smtp_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_use_tls: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    smtp_from: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notification_settings: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
 
 class Task(UUIDPrimaryKey, TimestampMixin, Base):
