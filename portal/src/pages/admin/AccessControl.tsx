@@ -141,7 +141,12 @@ export default function AccessControl() {
 
   return (
     <PortalPageLayout activeKey="portal:/admin/access-control">
-      <div className="flex flex-col gap-5">
+      {/*
+        `h-full` so the matrix below can be given the leftover height instead of
+        a guessed one. PortalPageLayout's <main> is a flex child of an h-screen
+        column, so its height is definite and a percentage resolves against it.
+      */}
+      <div className="flex h-full min-h-0 flex-col gap-5">
         <div>
           <h1 className="text-lg font-semibold">Access Control</h1>
           <p className="text-sm text-neutral-500">
@@ -219,15 +224,27 @@ function PermissionMatrixTab() {
     [defsQ.data],
   )
 
-  // Group permissions by module, preserving the backend-defined sort order.
+  /**
+   * Group permissions by module.
+   *
+   * This walked the sorted list and started a new group whenever the module
+   * changed, which gives a group per *run* rather than per module — and the
+   * sort ranges interleave. `epms` owns 0–12 and again 102–109; `finance` owns
+   * 13–15 and again 113–114. So the matrix showed EPMS twice and Finance
+   * twice, several screens apart, with no way to tell the halves apart.
+   *
+   * Keyed by module instead: first appearance fixes the order of the groups,
+   * and a later permission joins the group it belongs to. Rows inside a group
+   * stay in `sort` order because `permissions` is already sorted.
+   */
   const groups = useMemo(() => {
-    const out: { module: string; perms: AuthzPermission[] }[] = []
+    const byModule = new Map<string, AuthzPermission[]>()
     for (const p of permissions) {
-      const last = out[out.length - 1]
-      if (last && last.module === p.module) last.perms.push(p)
-      else out.push({ module: p.module, perms: [p] })
+      const existing = byModule.get(p.module)
+      if (existing) existing.push(p)
+      else byModule.set(p.module, [p])
     }
-    return out
+    return [...byModule].map(([module, perms]) => ({ module, perms }))
   }, [permissions])
 
   if (defsQ.isLoading || matrixQ.isLoading) return <LoadingBlock />
@@ -280,7 +297,7 @@ function PermissionMatrixTab() {
     !!lockedCells?.some((l) => l.role === role && l.key === key)
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {error && (
         <div className="flex flex-col gap-1 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           <span className="flex items-center gap-2"><AlertCircle className="h-4 w-4 shrink-0" />{error}</span>
@@ -294,15 +311,39 @@ function PermissionMatrixTab() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
-        <table className="w-full min-w-max text-sm">
-          <thead className="border-b border-neutral-100 bg-neutral-50">
+      {/*
+        A real two-axis scroll container: it takes the height left over in the
+        column and scrolls on both axes. Everything below depends on that. A
+        sticky header sticks to its own scroll container, and this box used to
+        have no height limit — it never scrolled vertically itself, the page
+        did, so a sticky header would have ridden off the top of the screen
+        along with everything else. Bounding it also brings the horizontal
+        scrollbar back onto the screen rather than parking it under sixty rows
+        of permissions, which is what made going sideways such a chore.
+
+        `flex-1` rather than a `calc()` off the viewport, because the height
+        above the table is not fixed: the unsaved-changes bar appears the
+        moment you tick anything, and a guessed number would push the
+        horizontal scrollbar back off the bottom at exactly the point you are
+        using it most. `min-h-0` because a flex item will not shrink below its
+        content without it, which would quietly undo the whole thing.
+      */}
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-neutral-200 bg-white">
+        {/*
+          border-separate rather than border-collapse: a collapsed border is
+          painted by the table, not by the cell that declares it, so it does
+          not travel with a sticky cell — the frozen column would slide under
+          the others with no edge of its own.
+        */}
+        <table className="w-full min-w-max border-separate border-spacing-0 text-sm">
+          <thead>
             <tr>
-              <th className="sticky left-0 bg-neutral-50 px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">
+              {/* The corner. Frozen both ways, so it outranks both. */}
+              <th className="sticky left-0 top-0 z-30 whitespace-nowrap bg-neutral-50 px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500 shadow-[inset_-1px_-1px_0_#e5e7eb]">
                 Permission
               </th>
               {roles.map((r) => (
-                <th key={r.code} className="whitespace-nowrap px-3 py-3 text-center text-xs font-medium uppercase tracking-wide text-neutral-500">
+                <th key={r.code} className="sticky top-0 z-20 whitespace-nowrap bg-neutral-50 px-3 py-3 text-center text-xs font-medium uppercase tracking-wide text-neutral-500 shadow-[inset_0_-1px_0_#e5e7eb]">
                   {r.label}
                 </th>
               ))}
@@ -310,16 +351,16 @@ function PermissionMatrixTab() {
           </thead>
           <tbody>
             {groups.map((group) => (
-              <FragmentGroup key={group.module} module={group.module}>
-                {group.perms.map((perm, i) => (
-                  <tr
-                    key={perm.key}
-                    className={cn(
-                      'border-b border-neutral-100',
-                      i === group.perms.length - 1 && 'border-b-0',
-                    )}
-                  >
-                    <td className="sticky left-0 whitespace-nowrap bg-white px-4 py-2.5 text-neutral-700">
+              <FragmentGroup key={group.module} module={group.module} colSpan={roles.length + 1}>
+                {group.perms.map((perm) => (
+                  <tr key={perm.key}>
+                    {/*
+                      The frozen column. `bg-white` is not decoration: without
+                      an opaque background the checkboxes scroll through it.
+                      The inset shadow is its right-hand edge, drawn by the
+                      cell so that it moves with it.
+                    */}
+                    <td className="sticky left-0 z-10 whitespace-nowrap border-b border-neutral-100 bg-white px-4 py-2.5 text-neutral-700 shadow-[inset_-1px_0_0_#e5e7eb]">
                       {perm.label}
                     </td>
                     {roles.map((r) => {
@@ -327,7 +368,7 @@ function PermissionMatrixTab() {
                       const rejected = cellIsLockedError(r.code, perm.key)
                       const cellKey = `${r.code}.${perm.key}`
                       return (
-                        <td key={r.code} className={cn('px-3 py-2.5 text-center', rejected && 'bg-red-50')}>
+                        <td key={r.code} className={cn('border-b border-neutral-100 px-3 py-2.5 text-center', rejected && 'bg-red-50')}>
                           <label
                             className={cn('inline-flex items-center justify-center gap-1', locked ? 'cursor-not-allowed' : 'cursor-pointer')}
                             title={locked ? 'Locked for this role' : undefined}
@@ -378,12 +419,22 @@ function PermissionMatrixTab() {
 }
 
 /** Renders a module group header row followed by its permission rows. */
-function FragmentGroup({ module, children }: { module: string; children: React.ReactNode }) {
+function FragmentGroup({
+  module, colSpan, children,
+}: { module: string; colSpan: number; children: React.ReactNode }) {
   return (
     <>
       <tr>
-        <td colSpan={999} className="sticky left-0 bg-neutral-100 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          {module.toUpperCase()}
+        <td colSpan={colSpan} className="border-b border-neutral-200 bg-neutral-100 p-0">
+          {/*
+            Sticky on the label rather than on the cell. The cell spans the
+            whole table, so freezing it would do nothing; freezing the text
+            inside keeps the module name in view when you have scrolled twenty
+            roles to the right and no longer remember which block you are in.
+          */}
+          <div className="sticky left-0 w-max px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            {module.toUpperCase()}
+          </div>
         </td>
       </tr>
       {children}
