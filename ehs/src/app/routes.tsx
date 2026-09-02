@@ -3,6 +3,7 @@
  */
 import type { RouteDef } from '@uniops/shell'
 import ActionDetailPage from '@/pages/ActionDetailPage'
+import ChemicalsPage from '@/pages/ChemicalsPage'
 import ComplianceCalendarPage from '@/pages/ComplianceCalendarPage'
 import CourseSessionPage from '@/pages/CourseSessionPage'
 import DocumentDetailPage from '@/pages/DocumentDetailPage'
@@ -146,6 +147,17 @@ export const ehsRoutes: RouteDef[] = [
     path: '/jsa/:id',
     element: <JsaDetailPage />,
     tab: { title: 'Analysis', icon: 'ClipboardList', keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    path: '/chemicals',
+    element: <ChemicalsPage />,
+    tab: { title: 'Chemicals', icon: 'FlaskConical', keyStrategy: 'static' },
+  },
+  {
+    // Scanning a drum lands on the inventory row for that product.
+    path: '/chemicals/:id',
+    element: <ChemicalsPage />,
+    tab: { title: 'Chemicals', icon: 'FlaskConical', keyStrategy: 'static' },
   },
   {
     path: '/documents',

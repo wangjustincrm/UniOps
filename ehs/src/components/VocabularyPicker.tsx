@@ -90,7 +90,12 @@ export function VocabularyMultiSelect({
 }: {
   vocabulary: string
   value: string[]
-  onChange: (ids: string[]) => void
+  /** The ids, and the chosen items themselves.
+   *
+   *  The second argument exists because this module stores a label snapshot
+   *  beside every vocabulary reference — a renamed entry must not rewrite a
+   *  three-year-old record. Callers that only need ids ignore it. */
+  onChange: (ids: string[], items?: VocabItem[]) => void
   placeholder?: string
   emptyHint?: string
 }) {
@@ -121,7 +126,9 @@ export function VocabularyMultiSelect({
   const current = groups.find((g) => g.group?.id === openGroup)
   const flat = groups.length === 1 && groups[0].group === null
 
-  const add = (id: string) => { onChange([...value, id]); setQuery('') }
+  const chosenFor = (ids: string[]) => all.filter((o) => ids.includes(o.id))
+  const emit = (ids: string[]) => onChange(ids, chosenFor(ids))
+  const add = (id: string) => { emit([...value, id]); setQuery('') }
 
   return (
     <div>
@@ -130,7 +137,7 @@ export function VocabularyMultiSelect({
           {chosen.map((c) => (
             <li key={c.id}>
               <button type="button"
-                      onClick={() => onChange(value.filter((v) => v !== c.id))}
+                      onClick={() => emit(value.filter((v) => v !== c.id))}
                       className="flex min-h-[32px] items-center gap-1.5 rounded-full bg-primary-50 px-2.5 text-xs font-medium text-primary-700">
                 {trail(c)}
                 <X className="h-3 w-3" aria-hidden />

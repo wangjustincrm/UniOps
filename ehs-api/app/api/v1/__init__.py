@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.actions import router as actions_router
 from app.api.v1.assets import router as assets_router
+from app.api.v1.chemicals import router as chemicals_router
 from app.api.v1.communications import router as communications_router
 from app.api.v1.courses import router as courses_router
 from app.api.v1.dashboard import router as dashboard_router
@@ -63,6 +64,9 @@ api_router.include_router(documents_router, tags=["documents"])
 api_router.include_router(assets_router, tags=["assets"])
 # Carries its own /hazards and /jsa prefixes.
 api_router.include_router(hazards_router, tags=["hazards"])
+# Carries its own /chemicals and /sds prefixes. /chemicals/gaps and
+# /chemicals/by-hazard are declared before /chemicals/{id} inside it.
+api_router.include_router(chemicals_router, tags=["chemicals"])
 api_router.include_router(qr_router, tags=["qr"])
 api_router.include_router(communications_router, tags=["communications"])
 api_router.include_router(toolbox_router, tags=["toolbox"])

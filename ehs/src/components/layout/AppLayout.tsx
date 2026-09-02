@@ -4,7 +4,7 @@ import { TabBar, TabHost, TabRouterSync, TabStoreProvider } from '@uniops/shell'
 import type { TabMeta } from '@uniops/shell'
 import {
   ArrowLeft, BarChart3, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck,
-  ClipboardList, FileText, ShieldAlert, Users, Wrench,
+  ClipboardList, FileText, FlaskConical, ShieldAlert, Users, Wrench,
   GraduationCap, HeartPulse, List, LogOut, Map, Menu, Settings, TriangleAlert, User,
 } from 'lucide-react'
 import { ehsRoutes } from '@/app/routes'
@@ -73,6 +73,9 @@ const NAV: NavItem[] = [
   // worker, and the list is what they open to find theirs.
   { label: 'Job Analyses',       href: '/jsa',           icon: ClipboardList },
   { label: 'Documents',          href: '/documents',     icon: FileText,        permission: 'ehs.document.read' },
+  // Same key as the document library, and every active role holds it: WHMIS
+  // makes a worker's access to the data sheet for what they handle a right.
+  { label: 'Chemicals',          href: '/chemicals',     icon: FlaskConical,    permission: 'ehs.document.read' },
   { label: 'Safety Equipment',   href: '/equipment',     icon: Wrench,          permission: 'ehs.asset.read' },
   { label: 'Committee',          href: '/jhsc',          icon: Users,           permission: 'ehs.jhsc.read' },
 ]

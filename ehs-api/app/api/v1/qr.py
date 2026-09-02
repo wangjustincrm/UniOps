@@ -1,7 +1,7 @@
 """One QR resolver for the whole module.
 
 Four things carry a printed code — a plant area, a piece of safety equipment, a
-document, and (later) a chemical label — and each one was going to grow its own
+document, and a chemical's data sheet — and each one was going to grow its own
 scan endpoint and its own front-end route. That is four ways to be wrong about
 an unknown token, and four places to add the fifth kind.
 
@@ -30,6 +30,7 @@ from sqlalchemy import select
 from app.core.deps import SessionDep
 from app.core.permissions import CanReportIncident
 from app.crud import asset as asset_crud
+from app.crud import chemical as chemical_crud
 from app.crud import document as document_crud
 from app.models.mirrors import Location
 
@@ -84,6 +85,19 @@ async def resolve(token: str, db: SessionDep, user: CanReportIncident):  # noqa:
             label=f"{document.title} v{document.version}",
             path=f"/documents/{document.id}",
             actions=["read", "acknowledge"] if document.requires_ack else ["read"],
+        )
+
+    sheet = await chemical_crud.by_qr_token(db, token)
+    if sheet is not None:
+        # Straight to the sheet. A code on a drum is scanned by somebody who
+        # needs to know what is in it, usually in a hurry, and a menu between
+        # them and the answer is the wrong thing to build.
+        chemical = await chemical_crud.get_chemical(db, sheet.chemical_id)
+        return QrTarget(
+            kind="sds", id=sheet.id,
+            label=f"{chemical.name} — safety data sheet",
+            path=f"/chemicals/{chemical.id}",
+            actions=["read_sds", "report_incident"],
         )
 
     raise HTTPException(
