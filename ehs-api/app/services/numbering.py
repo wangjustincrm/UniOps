@@ -39,6 +39,7 @@ LOCK_ASSET = 981_009
 LOCK_HAZARD = 981_010
 LOCK_JSA = 981_011
 LOCK_CHEMICAL = 981_012
+LOCK_PERMIT = 981_013
 
 _SPECS = {
     "incident": (LOCK_INCIDENT, "INC", "ehs_incidents", "incident_no"),
@@ -53,6 +54,7 @@ _SPECS = {
     "hazard": (LOCK_HAZARD, "HAZ", "ehs_hazards", "hazard_no"),
     "jsa": (LOCK_JSA, "JSA", "ehs_jsa", "jsa_no"),
     "chemical": (LOCK_CHEMICAL, "CHM", "ehs_chemicals", "chemical_no"),
+    "permit": (LOCK_PERMIT, "PTW", "ehs_permits", "permit_no"),
 }
 
 

@@ -54,5 +54,12 @@ CanReadAsset = Annotated[dict, Depends(require_permission("ehs.asset.read"))]
 CanInspectAsset = Annotated[dict, Depends(require_permission("ehs.asset.inspect"))]
 CanManageAsset = Annotated[dict, Depends(require_permission("ehs.asset.manage"))]
 
+# Work permits. Three keys because three different people are involved: the
+# person who needs the work done is not the person authorised to allow it, and
+# conflating them is the defect the permit exists to prevent.
+CanRequestPermit = Annotated[dict, Depends(require_permission("ehs.permit.request"))]
+CanReadPermit = Annotated[dict, Depends(require_permission("ehs.permit.read"))]
+CanIssuePermit = Annotated[dict, Depends(require_permission("ehs.permit.issue"))]
+
 # Vocabularies, the plant area tree, escalation timings, notification templates.
 CanManageSettings = Annotated[dict, Depends(require_permission("ehs.settings.manage"))]

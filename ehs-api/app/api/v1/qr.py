@@ -32,6 +32,7 @@ from app.core.permissions import CanReportIncident
 from app.crud import asset as asset_crud
 from app.crud import chemical as chemical_crud
 from app.crud import document as document_crud
+from app.crud import permit as permit_crud
 from app.models.mirrors import Location
 
 router = APIRouter(prefix="/qr")
@@ -85,6 +86,19 @@ async def resolve(token: str, db: SessionDep, user: CanReportIncident):  # noqa:
             label=f"{document.title} v{document.version}",
             path=f"/documents/{document.id}",
             actions=["read", "acknowledge"] if document.requires_ack else ["read"],
+        )
+
+    permit = await permit_crud.by_qr_token(db, token)
+    if permit is not None:
+        # The code on the permit board by the space. Whoever scans it wants one
+        # thing: is this still valid. The computed status is what they get.
+        state = permit_crud.effective(permit)
+        return QrTarget(
+            kind="permit", id=permit.id,
+            label=f"{permit.permit_no} · {permit.type_label} — {state}",
+            path=f"/permits/{permit.id}",
+            actions=["view_permit"] if state != "issued"
+                    else ["view_permit", "record_gas", "close_permit"],
         )
 
     sheet = await chemical_crud.by_qr_token(db, token)

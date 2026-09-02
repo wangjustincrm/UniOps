@@ -23,6 +23,7 @@ import InvestigationPage from '@/pages/InvestigationPage'
 import JhscMeetingPage from '@/pages/JhscMeetingPage'
 import JhscPage from '@/pages/JhscPage'
 import JsaPage, { JsaDetailPage } from '@/pages/JsaPage'
+import PermitsPage from '@/pages/PermitsPage'
 import QrLandingPage from '@/pages/QrLandingPage'
 import SafetyEquipmentPage from '@/pages/SafetyEquipmentPage'
 import ReportsPage from '@/pages/ReportsPage'
@@ -147,6 +148,17 @@ export const ehsRoutes: RouteDef[] = [
     path: '/jsa/:id',
     element: <JsaDetailPage />,
     tab: { title: 'Analysis', icon: 'ClipboardList', keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    path: '/permits',
+    element: <PermitsPage />,
+    tab: { title: 'Work permits', icon: 'ShieldCheck', keyStrategy: 'static' },
+  },
+  {
+    // Scanning the board by a confined space lands on the permit list.
+    path: '/permits/:id',
+    element: <PermitsPage />,
+    tab: { title: 'Work permits', icon: 'ShieldCheck', keyStrategy: 'static' },
   },
   {
     path: '/chemicals',

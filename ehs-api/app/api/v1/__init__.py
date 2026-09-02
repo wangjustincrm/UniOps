@@ -18,6 +18,7 @@ from app.api.v1.incident_attachments import router as incident_attachments_route
 from app.api.v1.incident_medical import router as incident_medical_router
 from app.api.v1.incidents import router as incidents_router
 from app.api.v1.jhsc import router as jhsc_router
+from app.api.v1.permits import router as permits_router
 from app.api.v1.qr import router as qr_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.rtw import router as rtw_router
@@ -67,6 +68,8 @@ api_router.include_router(hazards_router, tags=["hazards"])
 # Carries its own /chemicals and /sds prefixes. /chemicals/gaps and
 # /chemicals/by-hazard are declared before /chemicals/{id} inside it.
 api_router.include_router(chemicals_router, tags=["chemicals"])
+# Carries its own /permits and /permit-types prefixes.
+api_router.include_router(permits_router, tags=["permits"])
 api_router.include_router(qr_router, tags=["qr"])
 api_router.include_router(communications_router, tags=["communications"])
 api_router.include_router(toolbox_router, tags=["toolbox"])

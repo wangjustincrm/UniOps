@@ -36,6 +36,7 @@ DOC_COURSE = "ehs_crs"
 DOC_JHSC = "ehs_jhsc"
 DOC_DOCUMENT = "ehs_doc"
 DOC_ASSET = "ehs_asset"
+DOC_PERMIT = "ehs_ptw"
 
 # Task types. None of these may start with "approve".
 TASK_DO_ACTION = "ehs_do_action"
@@ -51,6 +52,7 @@ TASK_COURSE_ATTEND = "ehs_course_attend"
 TASK_JHSC_REPLY = "ehs_jhsc_reply"
 TASK_READ_SIGN = "ehs_read_sign"
 TASK_ASSET_INSPECT = "ehs_asset_inspect"
+TASK_CLOSE_PERMIT = "ehs_close_permit"
 
 
 async def open_task(

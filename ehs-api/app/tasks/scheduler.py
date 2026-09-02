@@ -41,6 +41,7 @@ from app.services import notify
 from app.services import tasks as task_service
 from app.crud import asset as asset_crud
 from app.crud import course as course_crud
+from app.crud import permit as permit_crud
 from app.crud import toolbox as toolbox_crud
 from app.services import schedule_sweep
 from app.services.escalation import CapaLadder, capa_level, statutory_level
@@ -59,6 +60,7 @@ class SweepResult:
     inspections_generated: int = 0
     inspections_missed: int = 0
     talks_chased: int = 0
+    permits_expired: int = 0
     checks_generated: int = 0
     checks_missed: int = 0
     courses_reminded: int = 0
@@ -74,7 +76,8 @@ class SweepResult:
                 f"{self.talks_chased} talks chased, "
                 f"{self.checks_generated} equipment checks due, "
                 f"{self.checks_missed} checks missed, "
-                f"{self.courses_reminded} courses reminded")
+                f"{self.courses_reminded} courses reminded, "
+                f"{self.permits_expired} permits expired")
 
 
 async def _load_config(db: AsyncSession) -> EhsConfig | None:
@@ -227,6 +230,10 @@ async def run_tick(now: datetime | None = None) -> SweepResult:
         checks_missed = await asset_crud.chase_overdue(db, today=today)
         # HSE: attendees are reminded the day before a course runs.
         reminded = await course_crud.remind_upcoming(db, today=today)
+        # Reconciles the stored status with the clock. Not what makes a
+        # permit expire — that is computed on every read — but it raises
+        # the task that says one lapsed without being closed out.
+        expired = await permit_crud.expire_lapsed(db, now=now)
 
         result = SweepResult(
             statutory_escalated=await sweep_statutory(db, now),
@@ -237,6 +244,7 @@ async def run_tick(now: datetime | None = None) -> SweepResult:
             checks_generated=len(checks),
             checks_missed=len(checks_missed),
             courses_reminded=len(reminded),
+            permits_expired=len(expired),
         )
         await db.commit()
         return result

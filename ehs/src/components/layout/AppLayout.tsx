@@ -4,7 +4,7 @@ import { TabBar, TabHost, TabRouterSync, TabStoreProvider } from '@uniops/shell'
 import type { TabMeta } from '@uniops/shell'
 import {
   ArrowLeft, BarChart3, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck,
-  ClipboardList, FileText, FlaskConical, ShieldAlert, Users, Wrench,
+  ClipboardList, FileText, FlaskConical, ShieldAlert, ShieldCheck, Users, Wrench,
   GraduationCap, HeartPulse, List, LogOut, Map, Menu, Settings, TriangleAlert, User,
 } from 'lucide-react'
 import { ehsRoutes } from '@/app/routes'
@@ -76,6 +76,10 @@ const NAV: NavItem[] = [
   // Same key as the document library, and every active role holds it: WHMIS
   // makes a worker's access to the data sheet for what they handle a right.
   { label: 'Chemicals',          href: '/chemicals',     icon: FlaskConical,    permission: 'ehs.document.read' },
+  // Every active role holds ehs.permit.request: the person who needs a tank
+  // cleaned is not the person authorised to allow entry into it, and the
+  // requester has to be able to raise one.
+  { label: 'Work Permits',       href: '/permits',       icon: ShieldCheck,     permission: 'ehs.permit.request' },
   { label: 'Safety Equipment',   href: '/equipment',     icon: Wrench,          permission: 'ehs.asset.read' },
   { label: 'Committee',          href: '/jhsc',          icon: Users,           permission: 'ehs.jhsc.read' },
 ]
