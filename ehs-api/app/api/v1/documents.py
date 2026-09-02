@@ -28,7 +28,10 @@ ALLOWED_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
-_CATEGORY = "^(policy|procedure|sds|guideline|form|other)$"
+# `emergency` is here rather than being its own table: an emergency plan is
+# a controlled document with a review cycle and a read-and-sign list, which
+# is exactly what this library already is.
+_CATEGORY = "^(policy|procedure|emergency|sds|guideline|form|other)$"
 
 
 class DocumentIn(BaseModel):

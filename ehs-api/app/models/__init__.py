@@ -10,6 +10,7 @@ from app.models.chemical import Chemical, SafetyDataSheet  # noqa: F401
 from app.models.communication import Communication  # noqa: F401
 from app.models.course import CourseDelivery, CourseEnrolment  # noqa: F401
 from app.models.document import DocumentAcknowledgement, SafetyDocument  # noqa: F401
+from app.models.drill import Drill, DrillParticipant  # noqa: F401
 from app.models.config import EhsConfig, Holiday  # noqa: F401
 from app.models.equipment import Equipment  # noqa: F401
 from app.models.first_aid import FirstAidLog  # noqa: F401

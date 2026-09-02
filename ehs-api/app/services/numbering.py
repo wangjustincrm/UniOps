@@ -40,6 +40,7 @@ LOCK_HAZARD = 981_010
 LOCK_JSA = 981_011
 LOCK_CHEMICAL = 981_012
 LOCK_PERMIT = 981_013
+LOCK_DRILL = 981_014
 
 _SPECS = {
     "incident": (LOCK_INCIDENT, "INC", "ehs_incidents", "incident_no"),
@@ -55,6 +56,7 @@ _SPECS = {
     "jsa": (LOCK_JSA, "JSA", "ehs_jsa", "jsa_no"),
     "chemical": (LOCK_CHEMICAL, "CHM", "ehs_chemicals", "chemical_no"),
     "permit": (LOCK_PERMIT, "PTW", "ehs_permits", "permit_no"),
+    "drill": (LOCK_DRILL, "DRL", "ehs_drills", "drill_no"),
 }
 
 

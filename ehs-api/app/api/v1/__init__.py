@@ -8,6 +8,7 @@ from app.api.v1.courses import router as courses_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.deadlines import router as deadlines_router
 from app.api.v1.documents import router as documents_router
+from app.api.v1.drills import router as drills_router
 from app.api.v1.equipment import router as equipment_router
 from app.api.v1.first_aid import router as first_aid_router
 from app.api.v1.forms import router as forms_router
@@ -70,6 +71,9 @@ api_router.include_router(hazards_router, tags=["hazards"])
 api_router.include_router(chemicals_router, tags=["chemicals"])
 # Carries its own /permits and /permit-types prefixes.
 api_router.include_router(permits_router, tags=["permits"])
+# Carries its own /drills and /emergency prefixes. /drills/trend is
+# declared before /drills/{id} inside it.
+api_router.include_router(drills_router, tags=["emergency"])
 api_router.include_router(qr_router, tags=["qr"])
 api_router.include_router(communications_router, tags=["communications"])
 api_router.include_router(toolbox_router, tags=["toolbox"])

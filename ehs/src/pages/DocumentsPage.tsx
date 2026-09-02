@@ -29,8 +29,8 @@ export interface SafetyDoc {
 }
 
 export const CATEGORY_LABELS: Record<string, string> = {
-  policy: 'Policy', procedure: 'Procedure', sds: 'Safety data sheet',
-  guideline: 'Guideline', form: 'Form', other: 'Other',
+  policy: 'Policy', procedure: 'Procedure', emergency: 'Emergency plan',
+  sds: 'Safety data sheet', guideline: 'Guideline', form: 'Form', other: 'Other',
 }
 
 const TABS = [

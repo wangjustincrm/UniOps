@@ -8,6 +8,7 @@ import ComplianceCalendarPage from '@/pages/ComplianceCalendarPage'
 import CourseSessionPage from '@/pages/CourseSessionPage'
 import DocumentDetailPage from '@/pages/DocumentDetailPage'
 import DocumentsPage from '@/pages/DocumentsPage'
+import EmergencyPage from '@/pages/EmergencyPage'
 import HazardsPage from '@/pages/HazardsPage'
 import HoursWorkedPage from '@/pages/settings/HoursWorkedPage'
 import FirstAidLogPage from '@/pages/FirstAidLogPage'
@@ -148,6 +149,11 @@ export const ehsRoutes: RouteDef[] = [
     path: '/jsa/:id',
     element: <JsaDetailPage />,
     tab: { title: 'Analysis', icon: 'ClipboardList', keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    path: '/emergency',
+    element: <EmergencyPage />,
+    tab: { title: 'Emergency', icon: 'Siren', keyStrategy: 'static' },
   },
   {
     path: '/permits',
