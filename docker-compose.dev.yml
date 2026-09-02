@@ -433,6 +433,11 @@ services:
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
       SAFETY_WEB_URL: http://${LAN_HOST:-localhost}:${EHS_PORT:-5180}
+      # Reading GHS label elements off a supplier's data sheet. The same key
+      # expense-api uses for invoice OCR — one credential, one place to
+      # rotate it. Optional: without it the label is filled in by hand, and
+      # nothing prints without HSE approval either way.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # The statutory sweep is on in dev so the escalation ladder can be
       # exercised; the interval itself lives in ehs_config (0 disables it).
       SCHEDULER_ENABLED: "true"

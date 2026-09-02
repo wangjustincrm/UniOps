@@ -288,6 +288,11 @@ services:
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: ${FILE_SERVER_INTERNAL_URL}
       SAFETY_WEB_URL: ${EHS_URL}
+      # Reading GHS label elements off a supplier's data sheet. The same key
+      # expense-api uses for invoice OCR — one credential, one place to
+      # rotate it. Optional: without it the label is filled in by hand, and
+      # nothing prints without HSE approval either way.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # The sweep that chases statutory deadlines and overdue corrective
       # actions. The interval lives in ehs_config and is re-read every tick;
       # setting it to 0 there disables the sweep without a redeploy.

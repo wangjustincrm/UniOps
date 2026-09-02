@@ -63,6 +63,9 @@ Return a JSON object with EXACTLY this structure and no markdown:
 Rules:
 - Section 2 of the sheet carries the label elements. Prefer it over any other.
 - Give the H- and P-codes exactly as printed, with their own wording.
+- supplier: the company name and where they are. Not their emergency number,
+  which belongs elsewhere on the sheet and makes the label's supplier line
+  read as something else.
 - first_aid: one or two sentences from Section 4, for the label.
 - ppe_note: the personal protection from Section 8, briefly.
 - Confidence reflects how plainly the sheet states it, not how likely you think
