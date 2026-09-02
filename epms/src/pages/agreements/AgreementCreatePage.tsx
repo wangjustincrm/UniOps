@@ -138,6 +138,13 @@ export default function AgreementCreatePage() {
         !recurringValue.anchorMonth
       ) {
         e.recurring = 'Anchor month is required for a quarterly/yearly cycle'
+      } else if (
+        recurringValue.recurringType === 'special_monthly' &&
+        recurringValue.activeMonths.length === 0
+      ) {
+        // An empty selection is not "every month" — it is a schedule with no
+        // periods at all, which epms-api rejects too (validate_recurrence).
+        e.recurring = 'Tick at least one billing month for a special monthly cycle'
       }
     }
     if (agreementType === 'milestone' && milestoneRows.some((r) => !r.milestone_name.trim())) {
@@ -179,6 +186,10 @@ export default function AgreementCreatePage() {
         body.recurring_type = recurringValue.recurringType || undefined
         body.expected_invoice_day = recurringValue.expectedInvoiceDay ? Number(recurringValue.expectedInvoiceDay) : undefined
         body.anchor_month = recurringValue.anchorMonth ? Number(recurringValue.anchorMonth) : undefined
+        // Only special_monthly may carry a month list — the backend 422s any
+        // other cycle that does.
+        body.active_months = recurringValue.recurringType === 'special_monthly'
+          ? recurringValue.activeMonths : undefined
         body.schedule_start_date = recurringValue.scheduleStartDate || undefined
         body.expected_amount_per_period = recurringValue.amountPerPeriod ? Number(recurringValue.amountPerPeriod) : undefined
         body.tolerance_pct = recurringValue.tolerancePct ? Number(recurringValue.tolerancePct) : undefined

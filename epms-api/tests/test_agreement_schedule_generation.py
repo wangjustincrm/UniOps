@@ -311,3 +311,37 @@ async def test_no_start_date_is_todays_behaviour(test_engine):
             recurring_type="monthly", expected_invoice_day=5)
         assert await sched_crud.ensure_period_rows(db, agr) == 3
         await db.commit()
+
+
+async def test_special_monthly_generates_only_the_ticked_months(test_engine):
+    """用户的原始场景走一遍真实写路径:三年期、只勾 5..11 月 → 21 行。
+
+    纯函数那层已经在 test_agreement_period_math.py 里覆盖了;这条要证的是另一
+    件事 —— active_months 是 JSONB 列,存进去再读回来必须还是一串 int(存成
+    "5,6,7" 那样的字符串,月份判断会静默全部落空,排期变成空表)。
+    """
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        agr = await _seed(
+            db, recurring_type="special_monthly", expected_invoice_day=15,
+            valid_from=date(2026, 1, 1), valid_to=date(2028, 12, 31),
+            active_months=[5, 6, 7, 8, 9, 10, 11],
+        )
+        assert await sched_crud.ensure_period_rows(db, agr) == 21
+        await db.commit()
+
+    # 另开一个 session 读回 —— 确认走的是数据库里那份值,不是内存里的对象。
+    async with factory() as db:
+        stored = (await db.execute(
+            select(PurchaseAgreement).where(PurchaseAgreement.id == agr.id)
+        )).scalar_one()
+        assert stored.active_months == [5, 6, 7, 8, 9, 10, 11]
+        rows = (await db.execute(
+            select(AgreementPaymentSchedule)
+            .where(AgreementPaymentSchedule.agreement_id == agr.id)
+            .order_by(AgreementPaymentSchedule.sequence)
+        )).scalars().all()
+        assert len(rows) == 21
+        assert {int(r.period_label[5:]) for r in rows} == {5, 6, 7, 8, 9, 10, 11}
+        assert rows[0].period_label == "2026-05"
+        assert rows[-1].period_label == "2028-11"

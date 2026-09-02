@@ -8,6 +8,15 @@ export interface RecurringFieldsValue {
   expectedInvoiceDay: string
   scheduleStartDate: string
   anchorMonth: string
+  /**
+   * Months 1..12 a `special_monthly` cycle bills in. Deliberately starts
+   * EMPTY rather than all twelve: "special monthly" exists because the
+   * agreement does NOT run every month, so a pre-ticked list would be the one
+   * default that is always wrong, and a user who just skips the field would
+   * silently get a plain monthly schedule. The backend rejects an empty
+   * selection outright (schemas/agreement.py::validate_recurrence).
+   */
+  activeMonths: number[]
   amountPerPeriod: string
   tolerancePct: string
   overdueAfterDays: string
@@ -20,6 +29,7 @@ export const EMPTY_RECURRING_FIELDS: RecurringFieldsValue = {
   expectedInvoiceDay: '',
   scheduleStartDate: '',
   anchorMonth: '',
+  activeMonths: [],
   amountPerPeriod: '',
   tolerancePct: '',
   overdueAfterDays: '7',
@@ -60,11 +70,25 @@ export function RecurringFields(props: {
 }): JSX.Element {
   const { value, validFrom, onChange, disabled } = props
   const isAnchored = ANCHORED_TYPES.includes(value.recurringType as RecurringType)
+  const isSpecialMonthly = value.recurringType === 'special_monthly'
 
   const set = (patch: Partial<RecurringFieldsValue>) => onChange({ ...value, ...patch })
 
+  const toggleMonth = (month: number) => {
+    const has = value.activeMonths.includes(month)
+    set({
+      activeMonths: has
+        ? value.activeMonths.filter((m) => m !== month)
+        : [...value.activeMonths, month].sort((a, b) => a - b),
+    })
+  }
+
   const handleCycleChange = (next: RecurringType | '') => {
     const patch: Partial<RecurringFieldsValue> = { recurringType: next }
+    // The month list only exists on special_monthly; the backend 422s any
+    // other cycle that carries one, so it has to be dropped on the switch
+    // out and not merely hidden.
+    if (next !== 'special_monthly') patch.activeMonths = []
     const nextIsAnchored = ANCHORED_TYPES.includes(next as RecurringType)
     if (nextIsAnchored) {
       // Prefill from valid_from's month on the switch INTO quarterly/yearly,
@@ -100,6 +124,7 @@ export function RecurringFields(props: {
             <option value="monthly">Monthly</option>
             <option value="quarterly">Quarterly</option>
             <option value="yearly">Yearly</option>
+            <option value="special_monthly">Special Monthly</option>
           </select>
         </div>
 
@@ -154,6 +179,62 @@ export function RecurringFields(props: {
           onChange={(e) => set({ scheduleStartDate: e.target.value })}
         />
       </FormField>
+
+      {isSpecialMonthly && (
+        <FormField
+          label="Billing months"
+          required
+          hint="A period is generated only for the months ticked here. Everything else follows the monthly cycle — one period per ticked month, per year of the validity window."
+        >
+          <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
+              {MONTHS.map((m, i) => {
+                const month = i + 1
+                return (
+                  <label
+                    key={m}
+                    className={`flex items-center gap-2 text-sm ${
+                      disabled ? 'text-neutral-400' : 'cursor-pointer text-neutral-700'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={value.activeMonths.includes(month)}
+                      disabled={disabled}
+                      onChange={() => toggleMonth(month)}
+                      className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600 disabled:opacity-50"
+                    />
+                    {m}
+                  </label>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-3 text-xs">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => set({ activeMonths: MONTHS.map((_, i) => i + 1) })}
+                className="text-primary-600 hover:underline disabled:text-neutral-400 disabled:no-underline"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => set({ activeMonths: [] })}
+                className="text-primary-600 hover:underline disabled:text-neutral-400 disabled:no-underline"
+              >
+                Clear
+              </button>
+              <span className="text-neutral-500">
+                {value.activeMonths.length === 0
+                  ? 'No months selected yet — tick at least one'
+                  : `${value.activeMonths.length} month${value.activeMonths.length === 1 ? '' : 's'} per year`}
+              </span>
+            </div>
+          </div>
+        </FormField>
+      )}
 
       {isAnchored && (
         <FormField

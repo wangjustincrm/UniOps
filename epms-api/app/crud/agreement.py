@@ -136,6 +136,7 @@ async def update(
         recurring_type=agr.recurring_type,
         expected_invoice_day=agr.expected_invoice_day,
         anchor_month=agr.anchor_month,
+        active_months=agr.active_months,
         expected_amount_per_period=agr.expected_amount_per_period,
         tolerance_pct=agr.tolerance_pct,
         overdue_after_days=agr.overdue_after_days,

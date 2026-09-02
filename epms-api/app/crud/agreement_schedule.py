@@ -92,6 +92,7 @@ async def ensure_period_rows(db: AsyncSession, agr: PurchaseAgreement) -> int:
         valid_to=agr.valid_to, expected_invoice_day=agr.expected_invoice_day,
         anchor_month=agr.anchor_month,
         schedule_start_date=agr.schedule_start_date,
+        active_months=agr.active_months,
     )
     for r in rows:
         db.add(AgreementPaymentSchedule(
