@@ -167,7 +167,7 @@ async def test_expiring_soon_filter(hse_manager, worker, test_engine):
     from tests.conftest import make_user
     _, client = hse_manager
     soon_holder, _ = worker
-    later_holder = await make_user(test_engine, role="worker")
+    later_holder = await make_user(test_engine, role="requester")
 
     soon = (await client.post("/api/v1/training/certifications", json={
         "user_id": str(soon_holder.id), "cert_type_label": "Expiring soon",
@@ -233,7 +233,7 @@ async def test_a_position_course_is_required_only_of_those_who_hold_it(
     from tests.conftest import make_user
     _, client = hse_manager
     driver, _ = worker
-    non_driver = await make_user(test_engine, role="worker")
+    non_driver = await make_user(test_engine, role="requester")
 
     position = JobPosition(id=uuid.uuid4(), code="LIFT", name="Lift truck operator")
     db_session.add(position)

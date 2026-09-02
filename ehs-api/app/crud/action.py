@@ -74,7 +74,7 @@ async def create(
         doc_id=action.id,
         doc_number=action.action_no,
         title=action.title,
-        assigned_role="worker",
+        assigned_role=task_service.ROLE_ANY_EMPLOYEE,
         assigned_user_id=action.owner_id,
         description=f"Due {action.due_date.isoformat()}"
                     + (f" — raised from {source_ref}" if source_ref else ""),
@@ -221,7 +221,7 @@ async def verify(
             doc_id=action.id,
             doc_number=action.action_no,
             title=f"Reopened: {action.title}",
-            assigned_role="worker",
+            assigned_role=task_service.ROLE_ANY_EMPLOYEE,
             assigned_user_id=action.owner_id,
             description="Verification found the control was not effective.",
             priority="high",

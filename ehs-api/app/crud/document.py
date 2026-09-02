@@ -140,7 +140,7 @@ async def publish(
                 doc_id=doc.id,
                 doc_number=doc.doc_no,
                 title=f"Read and sign: {doc.title}",
-                assigned_role="worker",
+                assigned_role=task_service.ROLE_ANY_EMPLOYEE,
                 assigned_user_id=person.id,
                 description=f"{doc.title} v{doc.version} was published and needs "
                             "your acknowledgement.",

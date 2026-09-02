@@ -199,7 +199,7 @@ async def test_mine_returns_only_the_callers_open_actions(hse_manager, worker, t
     from tests.conftest import make_user
     _, mclient = hse_manager
     owner, wclient = worker
-    other = await make_user(test_engine, role="worker")
+    other = await make_user(test_engine, role="requester")
 
     ours = (await mclient.post("/api/v1/actions", json=_payload(owner.id))).json()
     theirs = (await mclient.post("/api/v1/actions", json=_payload(other.id))).json()
@@ -248,7 +248,7 @@ async def test_a_worker_sees_only_their_own_actions_in_the_list(hse_manager, wor
     from tests.conftest import make_user
     _, mclient = hse_manager
     owner, wclient = worker
-    other = await make_user(test_engine, role="worker")
+    other = await make_user(test_engine, role="requester")
 
     mine = (await mclient.post("/api/v1/actions", json=_payload(owner.id))).json()
     theirs = (await mclient.post("/api/v1/actions", json=_payload(other.id))).json()
@@ -262,7 +262,7 @@ async def test_a_worker_cannot_open_someone_elses_action(hse_manager, worker, te
     from tests.conftest import make_user
     _, mclient = hse_manager
     _, wclient = worker
-    other = await make_user(test_engine, role="worker")
+    other = await make_user(test_engine, role="requester")
     theirs = (await mclient.post("/api/v1/actions", json=_payload(other.id))).json()
 
     r = await wclient.get(f"/api/v1/actions/{theirs['id']}")
@@ -276,7 +276,7 @@ async def test_a_worker_cannot_report_progress_on_someone_elses_action(
     from tests.conftest import make_user
     _, mclient = hse_manager
     _, wclient = worker
-    other = await make_user(test_engine, role="worker")
+    other = await make_user(test_engine, role="requester")
     theirs = (await mclient.post("/api/v1/actions", json=_payload(other.id))).json()
 
     r = await wclient.post(f"/api/v1/actions/{theirs['id']}/updates", json={"body": "not mine"})

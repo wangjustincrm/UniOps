@@ -52,6 +52,14 @@ TASK_COURSE_ATTEND = "ehs_course_attend"
 TASK_JHSC_REPLY = "ehs_jhsc_reply"
 TASK_READ_SIGN = "ehs_read_sign"
 TASK_ASSET_INSPECT = "ehs_asset_inspect"
+
+
+# The role to label a task with when it is pinned to one person and the role is
+# not what routes it. These read "whoever this individual employee is", and used
+# to say "worker" until identity 0014 retired that role — everyone here is an
+# employee, so a role meaning "an employee" told nobody anything. `requester` is
+# the role every UniOps account actually holds.
+ROLE_ANY_EMPLOYEE = "requester"
 TASK_CLOSE_PERMIT = "ehs_close_permit"
 
 

@@ -42,6 +42,20 @@ EHS_ROLES = ("ehs_manager", "ehs_coordinator", "area_supervisor",
              "jhsc_member", "first_aider", "worker")
 ALL_ROLES = BASE_ROLES + EHS_ROLES
 
+# Keys granted to *every active role*, in the order the migrations do it.
+# `ehs.action.read` is on this list because 0014 widened it — and it grants it
+# while `worker` is still active, deactivating the role in the same migration,
+# so worker keeps that one. 0015 and 0016 ran afterwards and passed worker by.
+# Getting this wrong is not a test-only problem: the seed is the only place the
+# end state of four migrations is written down in one piece.
+EVERYONE_KEYS = (
+    "ehs.incident.report",   # 0013, worker still active
+    "ehs.action.read",       # 0014, worker still active
+    "ehs.document.read",     # 0015, worker already retired
+    "ehs.permit.request",    # 0016, worker already retired
+)
+RETIRED_ROLES = ("worker",)  # 0014
+
 # Mirrors identity-api/alembic/versions/0013_ehs_perms.py.
 EHS_KEYS = (
     "ehs.incident.report", "ehs.incident.read", "ehs.incident.investigate",
@@ -50,6 +64,9 @@ EHS_KEYS = (
     "ehs.firstaid.write", "ehs.training.read", "ehs.training.write",
     "ehs.worker.read", "ehs.worker.write",
     "ehs.statutory.manage", "ehs.settings.manage",
+    # Added by 0015 / 0016. Listed so the key exists to be granted; who holds
+    # it is decided by EVERYONE_KEYS below.
+    "ehs.document.read", "ehs.permit.request",
 )
 EHS_GRANTS = {
     "ehs.incident.read": ["ehs_manager", "ehs_coordinator", "area_supervisor",
@@ -129,21 +146,28 @@ async def test_engine():
 
         for i, code in enumerate(ALL_ROLES):
             await conn.execute(sqlalchemy.text(
-                "INSERT INTO role_defs (code,label,sort) VALUES (:c,:c,:s)"), {"c": code, "s": i})
+                "INSERT INTO role_defs (code,label,sort,is_active) VALUES (:c,:c,:s,:a)"),
+                {"c": code, "s": i, "a": code not in RETIRED_ROLES})
         for i, key in enumerate(EHS_KEYS):
             await conn.execute(sqlalchemy.text(
                 "INSERT INTO permission_defs (key,module,label,sort) VALUES (:k,'ehs',:k,:s)"),
                 {"k": key, "s": i})
-        # Reporting goes to every role — the grant the real migration makes.
-        for code in ALL_ROLES:
-            await conn.execute(sqlalchemy.text(
-                "INSERT INTO role_permissions (role_code,permission_key)"
-                " VALUES (:r,'ehs.incident.report')"), {"r": code})
+        # The "every active role" grants. Active *at the time that migration
+        # ran* — which is why the first two reach `worker` and the last two
+        # do not.
+        for key in EVERYONE_KEYS:
+            reaches_retired = key in ("ehs.incident.report", "ehs.action.read")
+            for code in ALL_ROLES:
+                if code in RETIRED_ROLES and not reaches_retired:
+                    continue
+                await conn.execute(sqlalchemy.text(
+                    "INSERT INTO role_permissions (role_code,permission_key)"
+                    " VALUES (:r,:k) ON CONFLICT DO NOTHING"), {"r": code, "k": key})
         for key, roles in EHS_GRANTS.items():
             for role in roles:
                 await conn.execute(sqlalchemy.text(
-                    "INSERT INTO role_permissions (role_code,permission_key) VALUES (:r,:k)"),
-                    {"r": role, "k": key})
+                    "INSERT INTO role_permissions (role_code,permission_key) VALUES (:r,:k)"
+                    " ON CONFLICT DO NOTHING"), {"r": role, "k": key})
 
         for year, day, name in TEST_HOLIDAYS:
             await conn.execute(sqlalchemy.text(
@@ -187,7 +211,7 @@ def make_session_override(session: AsyncSession):
     return _override
 
 
-async def make_user(test_engine, *, role: str = "worker", full_name: str | None = None) -> User:
+async def make_user(test_engine, *, role: str = "requester", full_name: str | None = None) -> User:
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     user = User(
         id=uuid.uuid4(),
@@ -218,7 +242,7 @@ def authed_client(token: str, session: AsyncSession | None = None) -> AsyncClien
 
 @pytest.fixture
 async def worker(test_engine, db_session):
-    user = await make_user(test_engine, role="worker")
+    user = await make_user(test_engine, role="requester")
     async with authed_client(make_token(user.id, user.role), db_session) as c:
         yield user, c
 

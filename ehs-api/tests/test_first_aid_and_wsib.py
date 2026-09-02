@@ -218,7 +218,7 @@ async def test_the_package_picks_up_the_worker_profile(
     from tests.conftest import make_user
     _, wclient = worker
     _, mclient = hse_manager
-    injured = await make_user(test_engine, role="worker", full_name="Dario Okafor")
+    injured = await make_user(test_engine, role="requester", full_name="Dario Okafor")
     db_session.add(WorkerProfile(user_id=injured.id, employee_no="E-2041"))
     await db_session.flush()
 

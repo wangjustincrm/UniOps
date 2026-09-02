@@ -147,14 +147,14 @@ async def test_an_action_due_soon_only_raises_the_priority(db_session, monkeypat
     """Level one goes to the owner, who already has a task — saying it twice
     adds nothing, so the existing task just becomes urgent."""
     from tests.conftest import make_user
-    owner = await make_user(test_engine, role="worker")
+    owner = await make_user(test_engine, role="requester")
     await _config(db_session, statutory_scan_interval_minutes=60)
     action = await _action(db_session, due_date=NOW.date() + timedelta(days=2), owner_id=owner.id)
     await task_service.open_task(
         db_session, task_type=task_service.TASK_DO_ACTION,
         doc_type=task_service.DOC_ACTION, doc_id=action.id,
         doc_number=action.action_no, title=action.title,
-        assigned_role="worker", assigned_user_id=owner.id)
+        assigned_role="requester", assigned_user_id=owner.id)
     await db_session.flush()
     monkeypatch.setattr(scheduler, "AsyncSessionLocal", lambda: _Ctx(db_session))
 
@@ -168,7 +168,7 @@ async def test_an_action_due_soon_only_raises_the_priority(db_session, monkeypat
 async def test_five_days_overdue_brings_in_the_supervisor(db_session, monkeypatch, test_engine):
     from tests.conftest import make_user
     supervisor = await make_user(test_engine, role="area_supervisor")
-    owner = await make_user(test_engine, role="worker")
+    owner = await make_user(test_engine, role="requester")
     await db_session.execute(sqlalchemy.text(
         "UPDATE users SET supervisor_id = :s WHERE id = :o"),
         {"s": str(supervisor.id), "o": str(owner.id)})
@@ -185,7 +185,7 @@ async def test_five_days_overdue_brings_in_the_supervisor(db_session, monkeypatc
 
 async def test_ten_days_overdue_reaches_the_hse_manager(db_session, monkeypatch, test_engine):
     from tests.conftest import make_user
-    owner = await make_user(test_engine, role="worker")
+    owner = await make_user(test_engine, role="requester")
     await _config(db_session, statutory_scan_interval_minutes=60)
     action = await _action(db_session, due_date=NOW.date() - timedelta(days=10),
                            owner_id=owner.id, level=2)
@@ -210,7 +210,7 @@ async def test_thresholds_follow_configuration(db_session, monkeypatch, test_eng
     """Two days overdue is nothing on the default ladder and a supervisor
     escalation on a stricter one."""
     from tests.conftest import make_user
-    owner = await make_user(test_engine, role="worker")
+    owner = await make_user(test_engine, role="requester")
     await _config(db_session, statutory_scan_interval_minutes=60,
                   capa_remind_before_days=0, capa_escalate_supervisor_days=2,
                   capa_escalate_manager_days=4)
