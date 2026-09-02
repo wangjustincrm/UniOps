@@ -3,6 +3,7 @@
  */
 import type { RouteDef } from '@uniops/shell'
 import ActionDetailPage from '@/pages/ActionDetailPage'
+import AuditPackPage from '@/pages/AuditPackPage'
 import ChemicalsPage from '@/pages/ChemicalsPage'
 import ComplianceCalendarPage from '@/pages/ComplianceCalendarPage'
 import CourseSessionPage from '@/pages/CourseSessionPage'
@@ -149,6 +150,11 @@ export const ehsRoutes: RouteDef[] = [
     path: '/jsa/:id',
     element: <JsaDetailPage />,
     tab: { title: 'Analysis', icon: 'ClipboardList', keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    path: '/audit',
+    element: <AuditPackPage />,
+    tab: { title: 'Audit evidence', icon: 'ClipboardCheck', keyStrategy: 'static' },
   },
   {
     path: '/emergency',

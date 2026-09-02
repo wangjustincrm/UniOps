@@ -135,6 +135,22 @@ async def create(
             id=uuid.uuid4(), incident_id=incident.id, **person.model_dump()
         ))
     await db.flush()
+
+    # Start any legal clock the report itself already establishes.
+    #
+    # These used to begin only at classification, which quietly gave away the
+    # part of the window that matters most: OHSA s.51(1) runs forty-eight hours
+    # from the *occurrence*, not from the moment HSE got round to opening the
+    # record. Somebody reporting "Unconscious" has already told us it is
+    # reportable — waiting for a formal classification to notice burns hours of
+    # a legal deadline against an injury nobody has yet acted on.
+    #
+    # `ensure_incident_deadlines` is idempotent and derives which clocks apply
+    # from the incident's own fields, so classifying later neither duplicates
+    # these nor is prevented from adding one the reporter could not know about.
+    if incident.mol_reportable or incident.injury_class:
+        await deadline_service.ensure_incident_deadlines(db, incident)
+
     return incident
 
 

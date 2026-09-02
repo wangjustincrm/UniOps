@@ -81,6 +81,9 @@ const NAV: NavItem[] = [
   // requester has to be able to raise one.
   { label: 'Work Permits',       href: '/permits',       icon: ShieldCheck,     permission: 'ehs.permit.request' },
   { label: 'Emergency',          href: '/emergency',     icon: Siren,           permission: 'ehs.incident.read' },
+  // The built-in auditor role already holds ehs.incident.read along with read
+  // access to everything this counts, which is what that role is for.
+  { label: 'Audit Evidence',     href: '/audit',         icon: ClipboardCheck,  permission: 'ehs.incident.read' },
   { label: 'Safety Equipment',   href: '/equipment',     icon: Wrench,          permission: 'ehs.asset.read' },
   { label: 'Committee',          href: '/jhsc',          icon: Users,           permission: 'ehs.jhsc.read' },
 ]
