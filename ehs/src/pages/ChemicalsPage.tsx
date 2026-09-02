@@ -19,7 +19,8 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertTriangle, Download, FileText, FlaskConical, Plus, Search, Upload, X,
+  AlertTriangle, Download, FileText, FlaskConical, Plus, Printer,
+  Search, Sparkles, Upload, X,
 } from 'lucide-react'
 import { api, apiBlob } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
@@ -47,6 +48,18 @@ interface Chemical {
   quantity_on_site: string | null; unit: string | null
   ppe_required: string | null; first_aid_note: string | null; notes: string | null
   is_active: boolean; current_sheet: Sheet | null
+}
+interface Label {
+  id: string; chemical_id: string; product_identifier: string
+  signal_word: string | null; pictograms: string[]
+  hazard_statements: { code: string | null; text: string }[]
+  precautionary_statements: { code: string | null; text: string }[]
+  source: string; status: string; approved_by_name: string | null
+  print_count: number; missing: string[]
+}
+interface Extraction {
+  available: boolean; applied: boolean
+  check_closely: string[]; note: string | null
 }
 interface Gaps {
   products: number; with_current_sheet: number
@@ -351,6 +364,166 @@ function Detail({ chemical, mayManage }: { chemical: Chemical; mayManage: boolea
       )}
 
       {mayManage && <NewSheetForm chemicalId={chemical.id} />}
+
+      <LabelPanel chemical={chemical} mayManage={mayManage} />
+    </div>
+  )
+}
+
+/**
+ * The workplace label for this product.
+ *
+ * WHMIS requires one on any container the product is decanted into, and the
+ * information all sits on the supplier's data sheet — the work is transcribing
+ * it. Reading the sheet automatically is an assist and is allowed to be
+ * unavailable; what is not optional is the approval, which is why the print
+ * button only appears once somebody has approved the draft.
+ */
+function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: boolean }) {
+  const queryClient = useQueryClient()
+  const [busy, setBusy] = useState(false)
+
+  const labels = useQuery({
+    queryKey: ['chemical-labels', chemical.id],
+    queryFn: () => api.get<Label[]>(`/api/v1/labels?chemical_id=${chemical.id}`),
+  })
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ['chemical-labels', chemical.id] })
+
+  const draft = useMutation({
+    mutationFn: () => api.post(`/api/v1/chemicals/${chemical.id}/labels`, {}),
+    onSuccess: invalidate,
+  })
+  const read = useMutation({
+    mutationFn: (labelId: string) =>
+      api.post<Extraction>(`/api/v1/labels/${labelId}/read-sds`, {}),
+    onSuccess: invalidate,
+  })
+  const approve = useMutation({
+    mutationFn: (labelId: string) => api.post(`/api/v1/labels/${labelId}/approve`, {}),
+    onSuccess: invalidate,
+  })
+
+  const current = (labels.data ?? []).find(
+    (l) => l.status === 'draft' || l.status === 'approved' || l.status === 'printed')
+
+  const print = async (labelId: string) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const blob = await apiBlob(`/api/v1/labels/${labelId}/pdf?copies=2`)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      invalidate()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-4">
+      <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
+        Workplace label
+      </h3>
+
+      {!current ? (
+        <>
+          <p className="mb-2 max-w-[60ch] text-sm text-neutral-600">
+            Needed on any container this is decanted into. A draft starts from
+            what is already recorded here; the hazard statements come off the
+            data sheet.
+          </p>
+          {mayManage && (
+            <button type="button" className={secondaryButton} disabled={draft.isPending}
+                    onClick={() => { if (!draft.isPending) draft.mutate() }}>
+              <Plus className="h-4 w-4" aria-hidden />
+              {draft.isPending ? 'Starting…' : 'Start a label'}
+            </button>
+          )}
+        </>
+      ) : (
+        <div className="rounded-lg border border-neutral-200 p-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="min-w-0 flex-1 text-sm font-medium text-neutral-900">
+              {current.product_identifier}
+            </span>
+            <span className={
+              'rounded-full px-2 py-0.5 text-[11px] font-semibold ' +
+              (current.status === 'draft' ? 'bg-warning-50 text-warning-700'
+                : 'bg-success-50 text-success-700')
+            }>
+              {current.status === 'draft' ? 'Draft — not approved'
+                : current.status === 'printed'
+                  ? `Approved · printed ${current.print_count}×` : 'Approved'}
+            </span>
+          </div>
+
+          <p className="mt-1 text-xs text-neutral-500">
+            {current.signal_word ?? 'No signal word'} ·
+            {' '}{current.pictograms.length} pictogram
+            {current.pictograms.length === 1 ? '' : 's'} ·
+            {' '}{current.hazard_statements.length} hazard statement
+            {current.hazard_statements.length === 1 ? '' : 's'}
+          </p>
+
+          {current.missing.length > 0 && (
+            <p className="mt-1.5 rounded-lg bg-warning-50 px-2.5 py-1.5 text-xs text-warning-700">
+              Not yet a label — missing {current.missing.join(' and ')}.
+            </p>
+          )}
+
+          {read.data && !read.data.available && (
+            <p className="mt-1.5 rounded-lg bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-600">
+              {read.data.note}
+            </p>
+          )}
+          {read.data?.applied && (
+            <p className="mt-1.5 rounded-lg bg-primary-50 px-2.5 py-1.5 text-xs text-primary-800">
+              {read.data.note}
+              {read.data.check_closely.length > 0 && (
+                <> Look hardest at: {read.data.check_closely.join(', ')}.</>
+              )}
+            </p>
+          )}
+
+          <ErrorNote error={draft.error || read.error || approve.error} />
+
+          {mayManage && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {current.status === 'draft' && (
+                <>
+                  <button type="button" className={secondaryButton}
+                          disabled={read.isPending}
+                          onClick={() => { if (!read.isPending) read.mutate(current.id) }}>
+                    <Sparkles className="h-4 w-4" aria-hidden />
+                    {read.isPending ? 'Reading the sheet…' : 'Read it off the data sheet'}
+                  </button>
+                  <button type="button" className={primaryButton}
+                          disabled={current.missing.length > 0 || approve.isPending}
+                          onClick={() => { if (!approve.isPending) approve.mutate(current.id) }}>
+                    Approve it
+                  </button>
+                </>
+              )}
+              {(current.status === 'approved' || current.status === 'printed') && (
+                <button type="button" className={primaryButton} disabled={busy}
+                        onClick={() => print(current.id)}>
+                  <Printer className="h-4 w-4" aria-hidden />
+                  {busy ? 'Opening…' : 'Print'}
+                </button>
+              )}
+            </div>
+          )}
+          {current.status === 'draft' && (
+            <p className="mt-1.5 text-xs text-neutral-500">
+              Nothing prints until somebody approves it — a container labelled
+              with the wrong pictogram is worse than one with none.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -25,6 +25,7 @@ from app.models.hours import HoursWorked  # noqa: F401
 from app.models.incident import (  # noqa: F401
     Incident, IncidentAttachment, IncidentCause, IncidentInvestigation, IncidentPerson,
 )
+from app.models.label import ChemicalLabel  # noqa: F401
 from app.models.medical import IncidentMedical  # noqa: F401
 from app.models.mirrors import (  # noqa: F401
     CompanyConfig, Department, Location, Task, User,
@@ -33,6 +34,7 @@ from app.models.schedule import FormSchedule, FormScheduleRun  # noqa: F401
 from app.models.permit import (  # noqa: F401
     Permit, PermitGasReading, PermitSignature, PermitType,
 )
+from app.models.quiz import Quiz, QuizAttempt, QuizQuestion  # noqa: F401
 from app.models.risk import RiskAssessment, RiskLikelihood, RiskSeverity  # noqa: F401
 from app.models.rtw import RtwCheckin, RtwPlan  # noqa: F401
 from app.models.statutory import StatutoryDeadline  # noqa: F401

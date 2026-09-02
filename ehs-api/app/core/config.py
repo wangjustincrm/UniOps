@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     FILE_SERVER_URL: str = "http://localhost:8005/files/v1"
     SAFETY_WEB_URL: str = "http://localhost:5180"
 
+    # ── Reading data sheets for GHS label elements ──────────────────────────
+    # Optional. Without it the label is filled in from the chemical record and
+    # edited by hand, which is what happens on paper today; nothing prints
+    # without HSE approval either way, so this only saves transcription.
+    ANTHROPIC_API_KEY: str = ""
+
     # ── Outbound email ──────────────────────────────────────────────────────
     # Fallbacks only. The live credentials come from `company_config`, the same
     # row epms-api sends through — one mail server to configure, one place to

@@ -27,6 +27,7 @@ import JhscPage from '@/pages/JhscPage'
 import JsaPage, { JsaDetailPage } from '@/pages/JsaPage'
 import PermitsPage from '@/pages/PermitsPage'
 import QrLandingPage from '@/pages/QrLandingPage'
+import QuizPage, { EditQuizPage, TakeQuizPage } from '@/pages/QuizPage'
 import SafetyEquipmentPage from '@/pages/SafetyEquipmentPage'
 import ReportsPage from '@/pages/ReportsPage'
 import ToolboxTalksPage from '@/pages/ToolboxTalksPage'
@@ -171,6 +172,22 @@ export const ehsRoutes: RouteDef[] = [
     path: '/permits/:id',
     element: <PermitsPage />,
     tab: { title: 'Work permits', icon: 'ShieldCheck', keyStrategy: 'static' },
+  },
+  {
+    path: '/quizzes',
+    element: <QuizPage />,
+    tab: { title: 'Quizzes', icon: 'ClipboardList', keyStrategy: 'static' },
+  },
+  {
+    // Where a scanned quiz code lands. One question per screen.
+    path: '/quizzes/:id/take',
+    element: <TakeQuizPage />,
+    tab: { title: 'Quiz', icon: 'ClipboardList', keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    path: '/quizzes/:id/edit',
+    element: <EditQuizPage />,
+    tab: { title: 'Quiz', icon: 'ClipboardList', keyStrategy: 'param', paramName: 'id' },
   },
   {
     path: '/chemicals',

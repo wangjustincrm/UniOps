@@ -66,6 +66,9 @@ const NAV: NavItem[] = [
   // No permission: a supervisor delivers these and everyone signs one.
   { label: 'Toolbox Talks',      href: '/toolbox-talks', icon: Users },
   { label: 'Training',           href: '/training',      icon: GraduationCap,   permission: 'ehs.training.read' },
+  // No permission: taking a quiz is something every worker does, usually by
+  // scanning a code the trainer put on the screen.
+  { label: 'Quizzes',            href: '/quizzes',       icon: ClipboardList },
   // Every active role holds ehs.document.read: a policy that cannot be opened
   // cannot be acknowledged, which is what Read & Sign asks people to do.
   { label: 'Hazard Register',    href: '/hazards',       icon: ShieldAlert,     permission: 'ehs.action.read' },

@@ -21,3 +21,7 @@ openpyxl>=3.1
 # talk to the same SMTP server through the same company_config credentials and
 # a version skew here would show up as one module's mail silently failing.
 aiosmtplib==3.0.2
+# Reading GHS label elements off a supplier's data sheet. Same major line
+# expense-api already runs for invoice OCR — one way of talking to this API
+# across the estate rather than two.
+anthropic==0.43.0

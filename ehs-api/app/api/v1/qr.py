@@ -33,6 +33,7 @@ from app.crud import asset as asset_crud
 from app.crud import chemical as chemical_crud
 from app.crud import document as document_crud
 from app.crud import permit as permit_crud
+from app.crud import quiz as quiz_crud
 from app.models.mirrors import Location
 
 router = APIRouter(prefix="/qr")
@@ -86,6 +87,15 @@ async def resolve(token: str, db: SessionDep, user: CanReportIncident):  # noqa:
             label=f"{document.title} v{document.version}",
             path=f"/documents/{document.id}",
             actions=["read", "acknowledge"] if document.requires_ack else ["read"],
+        )
+
+    quiz = await quiz_crud.by_qr_token(db, token)
+    if quiz is not None:
+        # The code the trainer puts on the screen at the end of a session.
+        return QrTarget(
+            kind="quiz", id=quiz.id, label=quiz.title,
+            path=f"/quizzes/{quiz.id}/take",
+            actions=["take_quiz"],
         )
 
     permit = await permit_crud.by_qr_token(db, token)

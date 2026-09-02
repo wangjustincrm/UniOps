@@ -20,8 +20,10 @@ from app.api.v1.incident_attachments import router as incident_attachments_route
 from app.api.v1.incident_medical import router as incident_medical_router
 from app.api.v1.incidents import router as incidents_router
 from app.api.v1.jhsc import router as jhsc_router
+from app.api.v1.labels import router as labels_router
 from app.api.v1.permits import router as permits_router
 from app.api.v1.qr import router as qr_router
+from app.api.v1.quizzes import router as quizzes_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.rtw import router as rtw_router
 from app.api.v1.risk import router as risk_router
@@ -59,6 +61,7 @@ api_router.include_router(training_router, prefix="/training", tags=["training"]
 # Carries its own /course-sessions prefix. Registered after /training so the
 # two read as one area in the generated docs.
 api_router.include_router(courses_router, tags=["training"])
+api_router.include_router(quizzes_router, tags=["training"])
 api_router.include_router(jhsc_router, tags=["jhsc"])
 # /documents/mine is a static path and must precede /documents/{id}; it does,
 # inside the router.
@@ -70,6 +73,9 @@ api_router.include_router(hazards_router, tags=["hazards"])
 # Carries its own /chemicals and /sds prefixes. /chemicals/gaps and
 # /chemicals/by-hazard are declared before /chemicals/{id} inside it.
 api_router.include_router(chemicals_router, tags=["chemicals"])
+# Carries /labels and /chemicals/{id}/labels. Registered after the
+# chemicals router so both prefixes read together in the docs.
+api_router.include_router(labels_router, tags=["chemicals"])
 # Carries its own /permits and /permit-types prefixes.
 api_router.include_router(permits_router, tags=["permits"])
 # Carries its own /drills and /emergency prefixes. /drills/trend is
