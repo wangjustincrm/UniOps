@@ -192,6 +192,7 @@ function PermissionMatrixTab() {
   const [dirty, setDirty] = useState<DirtyMap>({})
   const [error, setError] = useState('')
   const [lockedCells, setLockedCells] = useState<{ role: string; key: string }[] | null>(null)
+  const [showRetired, setShowRetired] = useState(false)
 
   const save = useMutation<Matrix, ApiError, Matrix>({
     mutationFn: (changes) => epmsApi.patch<Matrix>('/config/role-permissions', changes),
@@ -213,9 +214,28 @@ function PermissionMatrixTab() {
     },
   })
 
-  const roles = useMemo(
+  const allRoles = useMemo(
     () => [...(defsQ.data?.roles ?? [])].sort((a, b) => a.sort - b.sort),
     [defsQ.data],
+  )
+  /**
+   * Retired roles are out of the matrix by default.
+   *
+   * They were shown, and `worker` is the case that made it a problem: identity
+   * migration 0014 retired it — everyone in UniOps is an employee, so a role
+   * meaning "an employee" carries no information — but the column stayed,
+   * sitting a few places along from `requester` with a near-identical set of
+   * ticks. Two live-looking columns for one idea is worse than none.
+   *
+   * Behind the toggle rather than gone, because a retired role can still be
+   * somebody's *primary* role: uniops_authz joins additional roles on
+   * `is_active` but takes a primary role at face value, so its grants are
+   * still worth being able to read.
+   */
+  const retiredCount = allRoles.filter((r) => !r.is_active).length
+  const roles = useMemo(
+    () => (showRetired ? allRoles : allRoles.filter((r) => r.is_active)),
+    [allRoles, showRetired],
   )
   const permissions = useMemo(
     () => [...(defsQ.data?.permissions ?? [])]
@@ -311,6 +331,21 @@ function PermissionMatrixTab() {
         </div>
       )}
 
+      {retiredCount > 0 && (
+        <div className="flex items-center justify-end gap-2 text-xs text-neutral-500">
+          <span>
+            {retiredCount} retired role{retiredCount === 1 ? '' : 's'}
+            {showRetired ? ' shown' : ' hidden'}
+          </span>
+          <button
+            onClick={() => setShowRetired((v) => !v)}
+            className="rounded-md border border-neutral-200 px-2 py-1 font-medium text-neutral-600 hover:bg-neutral-50"
+          >
+            {showRetired ? 'Hide' : 'Show'}
+          </button>
+        </div>
+      )}
+
       {/*
         A real two-axis scroll container: it takes the height left over in the
         column and scrolls on both axes. Everything below depends on that. A
@@ -345,6 +380,11 @@ function PermissionMatrixTab() {
               {roles.map((r) => (
                 <th key={r.code} className="sticky top-0 z-20 whitespace-nowrap bg-neutral-50 px-3 py-3 text-center text-xs font-medium uppercase tracking-wide text-neutral-500 shadow-[inset_0_-1px_0_#e5e7eb]">
                   {r.label}
+                  {!r.is_active && (
+                    <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal text-amber-600">
+                      retired
+                    </span>
+                  )}
                 </th>
               ))}
             </tr>
