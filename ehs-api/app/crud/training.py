@@ -14,11 +14,13 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.mirrors import User
+from app.models.mirrors import Department, User
 from app.models.training import Course, TrainingRecord, WorkerCertification
 from app.crud import worker as worker_crud
 from app.models.worker import PositionRequirement, WorkerPosition
-from app.schemas.training import CertificationIn, GapReport, GapRow, TrainingRecordIn
+from app.schemas.training import (
+    CertificationIn, CourseGapSummary, GapReport, GapRow, TrainingRecordIn,
+)
 from app.services import deadlines as deadline_service
 
 
@@ -161,6 +163,9 @@ async def training_gaps(db: AsyncSession, *, today: date | None = None) -> GapRe
     workers = list((await db.execute(
         select(User).where(User.is_active.is_(True)).order_by(User.full_name)
     )).scalars())
+    departments = {
+        d.id: d.name for d in (await db.execute(select(Department))).scalars()
+    }
     courses = {c.id: c for c in await list_courses(db)}
     universal = [c for c in courses.values() if c.applies_to_all]
 
@@ -196,28 +201,38 @@ async def training_gaps(db: AsyncSession, *, today: date | None = None) -> GapRe
 
     gaps: list[GapRow] = []
     compliant = 0
+    # course -> [required_of, missing, expired]. Counted alongside the rows
+    # rather than from them, so a course everybody is up to date on still
+    # appears — at nought outstanding, which is the answer.
+    tally: dict[uuid.UUID, list[int]] = {}
     for worker in workers:
         required = {c.id for c in universal}
         for position_id in positions_by_user.get(worker.id, set()):
             required |= required_by_position.get(position_id, set())
 
+        department = departments.get(worker.department_id) if worker.department_id else None
         held = held_by_user.get(worker.id, {})
         worker_gaps: list[GapRow] = []
         for course_id in sorted(required, key=lambda c: courses[c].name if c in courses else ""):
             course = courses.get(course_id)
             if course is None:
                 continue  # a retired course is no longer required of anyone
+            counts = tally.setdefault(course_id, [0, 0, 0])
+            counts[0] += 1
             if course_id not in held:
+                counts[1] += 1
                 worker_gaps.append(GapRow(
                     user_id=worker.id, user_name=worker.full_name, course_id=course_id,
-                    course_code=course.code, course_name=course.name, reason="missing"))
+                    course_code=course.code, course_name=course.name, reason="missing",
+                    department_name=department))
                 continue
             expiry = held[course_id]
             if expiry is not None and expiry < today:
+                counts[2] += 1
                 worker_gaps.append(GapRow(
                     user_id=worker.id, user_name=worker.full_name, course_id=course_id,
                     course_code=course.code, course_name=course.name,
-                    reason="expired", expired_on=expiry))
+                    reason="expired", expired_on=expiry, department_name=department))
         if worker_gaps:
             gaps.extend(worker_gaps)
         else:
@@ -230,4 +245,17 @@ async def training_gaps(db: AsyncSession, *, today: date | None = None) -> GapRe
         workers_compliant=compliant,
         compliance_rate=round(compliant / considered, 4) if considered else 1.0,
         gaps=gaps,
+        # Worst first: the course the plant is furthest behind on is the one to
+        # book a room for.
+        courses=sorted(
+            (
+                CourseGapSummary(
+                    course_id=cid, course_code=courses[cid].code,
+                    course_name=courses[cid].name,
+                    required_of=n[0], missing=n[1], expired=n[2],
+                )
+                for cid, n in tally.items() if cid in courses
+            ),
+            key=lambda c: (-(c.missing + c.expired), c.course_name),
+        ),
     )

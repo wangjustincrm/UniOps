@@ -290,3 +290,56 @@ async def test_an_auditor_can_read_the_gap_report(auditor, courses):
 async def test_a_worker_cannot_read_the_gap_report(worker, courses):
     _, client = worker
     assert (await client.get("/api/v1/training/gaps")).status_code == 403
+
+
+async def test_a_course_everyone_has_taken_still_appears_at_nought(
+    hse_manager, worker, courses, db_session
+):
+    """The reason the per-course counts are made here and not in the browser.
+
+    A course nobody is behind on produces no gap rows, so a summary built from
+    those rows would drop it — and the screen that course sessions are booked
+    from would stop showing the one course the plant is on top of, which reads
+    as the course having been withdrawn rather than completed.
+    """
+    from sqlalchemy import text
+    _, client = hse_manager
+
+    everyone = (await db_session.execute(
+        text("SELECT id FROM users WHERE is_active"))).scalars().all()
+    for user_id in everyone:
+        r = await client.post("/api/v1/training/records", json={
+            "user_id": str(user_id), "course_id": str(courses["whmis"].id),
+            "completed_on": TODAY.isoformat(),
+        })
+        assert r.status_code in (200, 201), r.text
+
+    report = (await client.get("/api/v1/training/gaps")).json()
+    summary = {c["course_code"]: c for c in report["courses"]}
+
+    assert "WHMIS" in summary, "a fully-trained course must still be reported"
+    assert summary["WHMIS"]["missing"] == 0
+    assert summary["WHMIS"]["expired"] == 0
+    assert summary["WHMIS"]["required_of"] == len(everyone)
+    assert not [g for g in report["gaps"] if g["course_code"] == "WHMIS"]
+
+
+async def test_the_gap_report_says_which_department_to_chase(
+    hse_manager, worker, courses, db_session
+):
+    """A name on its own does not tell a supervisor whether it is theirs."""
+    from sqlalchemy import text
+    _, client = hse_manager
+    learner, _ = worker
+
+    dept_id = (await db_session.execute(text(
+        "INSERT INTO departments (id, code, name, is_active)"
+        " VALUES (gen_random_uuid(), 'PKG', 'Packaging', true) RETURNING id"))).scalar()
+    await db_session.execute(text("UPDATE users SET department_id = :d WHERE id = :u"),
+                             {"d": dept_id, "u": learner.id})
+    await db_session.flush()
+
+    report = (await client.get("/api/v1/training/gaps")).json()
+    theirs = [g for g in report["gaps"] if g["user_id"] == str(learner.id)]
+    assert theirs, "this user has taken nothing, so they are behind on WHMIS"
+    assert all(g["department_name"] == "Packaging" for g in theirs)

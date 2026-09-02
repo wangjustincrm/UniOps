@@ -97,6 +97,31 @@ class GapRow(BaseModel):
     # missing = never taken. expired = taken, no longer valid.
     reason: str
     expired_on: date | None = None
+    # Who a supervisor would go and talk to. Snapshot, like every other name in
+    # this module — the report is read long after it was run.
+    department_name: str | None = None
+
+
+class CourseGapSummary(BaseModel):
+    """One required course, and how far short of it the plant is.
+
+    Counted here rather than derived in the browser because `required_of` is
+    not visible from the gap rows: a course everybody has taken produces no
+    rows at all, and would silently drop off a list built from them. It is also
+    the number the Course sessions tab is scheduled against — "WHMIS, 87
+    outstanding" is the size of the problem, not a filter result.
+    """
+
+    course_id: uuid.UUID
+    course_code: str
+    course_name: str
+    required_of: int
+    missing: int
+    expired: int
+
+    @property
+    def outstanding(self) -> int:
+        return self.missing + self.expired
 
 
 class GapReport(BaseModel):
@@ -105,3 +130,4 @@ class GapReport(BaseModel):
     workers_compliant: int
     compliance_rate: float
     gaps: list[GapRow] = Field(default_factory=list)
+    courses: list[CourseGapSummary] = Field(default_factory=list)
