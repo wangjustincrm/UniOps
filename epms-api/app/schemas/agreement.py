@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # 独立审批流(用户决策:不复用 PO 链)。这是种子默认值 —— 生产以 CompanyConfig
 # .workflow_defs["agr"] 为准,管理员可在 Portal Admin 改。
@@ -14,8 +14,21 @@ AGR_WORKFLOW = [
 ]
 
 AGREEMENT_TYPES = ("house_account", "recurring", "milestone")
-RECURRING_TYPES = ("weekly", "monthly", "quarterly", "yearly")
+RECURRING_TYPES = ("weekly", "monthly", "quarterly", "yearly", "special_monthly")
 ANCHORED_TYPES = ("quarterly", "yearly")
+
+
+def normalize_active_months(value: list[int] | None) -> list[int] | None:
+    """1..12,升序去重。存进库的是这份规范化后的值 —— 排期生成只做集合判断,
+    但这一列还要被人读(协议详情、Data Maintenance、以后的 PDF),乱序或重复
+    的 [11, 5, 5] 会让同一份选择在不同协议上长得不一样。"""
+    if value is None:
+        return None
+    bad = sorted({m for m in value if not 1 <= m <= 12})
+    if bad:
+        raise ValueError(
+            f"active_months must be month numbers 1..12 (got {bad})")
+    return sorted(set(value))
 
 
 def validate_validity_window(*, valid_from: date, valid_to: date) -> None:
@@ -39,6 +52,7 @@ def validate_recurrence(
     valid_from: date,
     valid_to: date,
     schedule_start_date: date | None = None,
+    active_months: list[int] | None = None,
 ) -> None:
     """The recurrence coherence rule. Factored out of AgreementCreate's schema
     validator so crud.agreement.update() can run the SAME check against the
@@ -61,6 +75,21 @@ def validate_recurrence(
         if recurring_type == "weekly" and not 1 <= expected_invoice_day <= 7:
             raise ValueError(
                 "For a weekly cycle expected_invoice_day is a weekday, 1..7 (1 = Monday)")
+        # special_monthly 的月份清单是这个周期存在的全部理由 —— 空选择等于一份
+        # 没有任何期次的排期,与 schedule_start_date 落在窗口外是同一类事故:
+        # 协议看着是 recurring,却一行期次都没有,发票认领不到、PA 那道"未链接
+        # 期次"闸门永远过不去,而那时协议已 active、字段不可再改。
+        if recurring_type == "special_monthly":
+            if not active_months:
+                raise ValueError(
+                    "Tick at least one month for a special monthly cycle — an "
+                    "empty selection generates an agreement with no billing "
+                    "periods at all")
+        elif active_months is not None:
+            raise ValueError(
+                "active_months only applies to a special_monthly cycle — the "
+                f"other cycles ({', '.join(t for t in RECURRING_TYPES if t != 'special_monthly')}) "
+                "bill in every period of the cycle")
         if recurring_type in ANCHORED_TYPES and anchor_month is None:
             raise ValueError(
                 f"anchor_month is required for a {recurring_type} cycle — real "
@@ -84,7 +113,8 @@ def validate_recurrence(
             rows = build_period_rows(
                 recurring_type=recurring_type, valid_from=valid_from,
                 valid_to=valid_to, expected_invoice_day=expected_invoice_day,
-                anchor_month=anchor_month, schedule_start_date=schedule_start_date)
+                anchor_month=anchor_month, schedule_start_date=schedule_start_date,
+                active_months=active_months)
         except TooManyPeriods as exc:
             raise ValueError(str(exc)) from exc
         # 同一个理由的另一半:窗口本身合法,但起始期把最后一期也挤掉了
@@ -99,6 +129,7 @@ def validate_recurrence(
             ("recurring_type", recurring_type),
             ("expected_invoice_day", expected_invoice_day),
             ("anchor_month", anchor_month),
+            ("active_months", active_months),
             ("schedule_start_date", schedule_start_date),
             ("expected_amount_per_period", expected_amount_per_period),
             ("tolerance_pct", tolerance_pct),
@@ -181,11 +212,19 @@ class AgreementCreate(BaseModel):
     recurring_type: str | None = None
     expected_invoice_day: int | None = Field(default=None, ge=1, le=31)
     anchor_month: int | None = Field(default=None, ge=1, le=12)
+    # special_monthly 专用。normalize_active_months 在 field_validator 里跑,
+    # 所以落库前就已经是升序去重的 1..12。
+    active_months: list[int] | None = None
     schedule_start_date: date | None = None
     expected_amount_per_period: Decimal | None = Field(default=None, ge=0)
     tolerance_pct: Decimal | None = Field(default=None, ge=0, le=100)
     overdue_after_days: int | None = Field(default=None, ge=0, le=365)
     milestones: list[MilestoneRowIn] = Field(default_factory=list)
+
+    @field_validator("active_months")
+    @classmethod
+    def _normalize_active_months(cls, v):
+        return normalize_active_months(v)
 
     @model_validator(mode="after")
     def _validity_window_is_ordered(self):
@@ -199,6 +238,7 @@ class AgreementCreate(BaseModel):
             recurring_type=self.recurring_type,
             expected_invoice_day=self.expected_invoice_day,
             anchor_month=self.anchor_month,
+            active_months=self.active_months,
             schedule_start_date=self.schedule_start_date,
             expected_amount_per_period=self.expected_amount_per_period,
             tolerance_pct=self.tolerance_pct,
@@ -238,12 +278,18 @@ class AgreementUpdate(BaseModel):
     recurring_type: str | None = None
     expected_invoice_day: int | None = Field(default=None, ge=1, le=31)
     anchor_month: int | None = Field(default=None, ge=1, le=12)
+    active_months: list[int] | None = None
     schedule_start_date: date | None = None
     expected_amount_per_period: Decimal | None = Field(default=None, ge=0)
     tolerance_pct: Decimal | None = Field(default=None, ge=0, le=100)
     overdue_after_days: int | None = Field(default=None, ge=0, le=365)
     # None = 不动阶段行(维持既有排期);[] = 清空阶段行。
     milestones: list[MilestoneRowIn] | None = None
+
+    @field_validator("active_months")
+    @classmethod
+    def _normalize_active_months(cls, v):
+        return normalize_active_months(v)
 
 
 class AgreementActionRequest(BaseModel):
@@ -276,6 +322,7 @@ class AgreementResponse(BaseModel):
     recurring_type: str | None
     expected_invoice_day: int | None
     anchor_month: int | None
+    active_months: list[int] | None
     schedule_start_date: date | None
     expected_amount_per_period: Decimal | None
     tolerance_pct: Decimal | None

@@ -82,3 +82,40 @@ def test_milestone_with_an_absolute_amount_needs_no_ceiling():
             expected_timing="Within 1 week after contract signing",
             expected_amount=Decimal("15000"))]))
     assert a.milestones[0].expected_timing == "Within 1 week after contract signing"
+
+
+def test_special_monthly_requires_at_least_one_month():
+    with pytest.raises(ValidationError, match="Tick at least one month"):
+        AgreementCreate(**_base(recurring_type="special_monthly",
+                                expected_invoice_day=15))
+
+
+def test_special_monthly_rejects_an_empty_selection():
+    with pytest.raises(ValidationError, match="Tick at least one month"):
+        AgreementCreate(**_base(recurring_type="special_monthly",
+                                expected_invoice_day=15, active_months=[]))
+
+
+def test_special_monthly_normalizes_the_month_list():
+    a = AgreementCreate(**_base(
+        recurring_type="special_monthly", expected_invoice_day=15,
+        active_months=[11, 5, 5, 6]))
+    assert a.active_months == [5, 6, 11]
+
+
+def test_special_monthly_rejects_a_month_outside_1_to_12():
+    with pytest.raises(ValidationError, match=r"1\.\.12"):
+        AgreementCreate(**_base(recurring_type="special_monthly",
+                                expected_invoice_day=15, active_months=[0, 13]))
+
+
+def test_active_months_is_rejected_on_the_other_cycles():
+    with pytest.raises(ValidationError, match="only applies to a special_monthly"):
+        AgreementCreate(**_base(recurring_type="monthly", expected_invoice_day=5,
+                                active_months=[5, 6]))
+
+
+def test_non_recurring_must_not_carry_active_months():
+    with pytest.raises(ValidationError, match="only apply to a recurring agreement"):
+        AgreementCreate(**_base(agreement_type="house_account",
+                                active_months=[5, 6]))

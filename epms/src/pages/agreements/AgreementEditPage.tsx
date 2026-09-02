@@ -146,6 +146,7 @@ export default function AgreementEditPage() {
       recurringType: agreement.recurring_type ?? '',
       expectedInvoiceDay: agreement.expected_invoice_day != null ? String(agreement.expected_invoice_day) : '',
       anchorMonth: agreement.anchor_month != null ? String(agreement.anchor_month) : '',
+      activeMonths: agreement.active_months ?? [],
       scheduleStartDate: agreement.schedule_start_date ?? '',
       amountPerPeriod: agreement.expected_amount_per_period ?? '',
       tolerancePct: agreement.tolerance_pct ?? '',
@@ -246,6 +247,11 @@ export default function AgreementEditPage() {
         !recurringValue.anchorMonth
       ) {
         e.recurring = 'Anchor month is required for a quarterly/yearly cycle'
+      } else if (
+        recurringValue.recurringType === 'special_monthly' &&
+        recurringValue.activeMonths.length === 0
+      ) {
+        e.recurring = 'Tick at least one billing month for a special monthly cycle'
       }
     }
     if (agreement?.agreement_type === 'milestone' && milestoneRows.some((r) => !r.milestone_name.trim())) {
@@ -307,6 +313,13 @@ export default function AgreementEditPage() {
         body.recurring_type = recurringValue.recurringType || null
         body.expected_invoice_day = recurringValue.expectedInvoiceDay ? Number(recurringValue.expectedInvoiceDay) : null
         body.anchor_month = recurringValue.anchorMonth ? Number(recurringValue.anchorMonth) : null
+        // Explicit null on the other cycles, not undefined: switching a
+        // special_monthly agreement to plain monthly has to CLEAR the stored
+        // month list, and PATCH uses exclude_unset — an omitted key would
+        // leave the old list behind, which the backend then rejects as
+        // "active_months only applies to a special_monthly cycle".
+        body.active_months = recurringValue.recurringType === 'special_monthly'
+          ? recurringValue.activeMonths : null
         body.schedule_start_date = recurringValue.scheduleStartDate || null
         body.expected_amount_per_period = recurringValue.amountPerPeriod ? Number(recurringValue.amountPerPeriod) : null
         body.tolerance_pct = recurringValue.tolerancePct ? Number(recurringValue.tolerancePct) : null

@@ -173,3 +173,82 @@ def test_monthly_ignores_anchor_month():
         valid_to=date(2026, 3, 31), expected_invoice_day=5, anchor_month=None,
     )
     assert [r.period_label for r in with_anchor] == [r.period_label for r in without_anchor]
+
+
+# ── special_monthly:只在勾选的月份出账 ──────────────────────────────────
+
+def test_special_monthly_generates_only_the_ticked_months():
+    # 用户提的原始场景:三年期,12 个月里只勾 5..11 月 → 每年 7 期,共 21 期。
+    rows = build_period_rows(
+        recurring_type="special_monthly", valid_from=date(2026, 1, 1),
+        valid_to=date(2028, 12, 31), expected_invoice_day=15, anchor_month=None,
+        active_months=[5, 6, 7, 8, 9, 10, 11],
+    )
+    assert len(rows) == 21
+    assert {int(r.period_label[5:]) for r in rows} == {5, 6, 7, 8, 9, 10, 11}
+    assert rows[0].period_label == "2026-05"
+    assert rows[0].expected_date == date(2026, 5, 15)
+    assert rows[-1].period_label == "2028-11"
+    # 序号在**过滤之后**连续 —— 它是排期内的行号,不是日历月份数。
+    assert [r.sequence for r in rows] == list(range(1, 22))
+
+
+def test_special_monthly_keeps_the_monthly_grid_rules():
+    # 标签、到票日钳月末、首期跳过 —— 全部与 monthly 一致,只是多一道月份过滤。
+    rows = build_period_rows(
+        recurring_type="special_monthly", valid_from=date(2026, 2, 20),
+        valid_to=date(2026, 12, 31), expected_invoice_day=31, anchor_month=None,
+        active_months=[2, 4, 11],
+    )
+    # 2 月那期到票日(2/28)早于 2/20 生效?没有 —— 2/28 在生效日之后,保留。
+    assert [r.period_label for r in rows] == ["2026-02", "2026-04", "2026-11"]
+    assert [r.expected_date for r in rows] == [
+        date(2026, 2, 28), date(2026, 4, 30), date(2026, 11, 30)]
+
+
+def test_special_monthly_first_period_still_skipped_when_it_precedes_valid_from():
+    rows = build_period_rows(
+        recurring_type="special_monthly", valid_from=date(2026, 5, 20),
+        valid_to=date(2026, 12, 31), expected_invoice_day=5, anchor_month=None,
+        active_months=[5, 6],
+    )
+    # 5 月那张票(5/5)在协议 5/20 生效之前就该到了 —— 不排。
+    assert [r.period_label for r in rows] == ["2026-06"]
+    assert rows[0].sequence == 1
+
+
+def test_special_monthly_honours_schedule_start_date():
+    rows = build_period_rows(
+        recurring_type="special_monthly", valid_from=date(2026, 1, 1),
+        valid_to=date(2027, 12, 31), expected_invoice_day=10, anchor_month=None,
+        active_months=[3, 9], schedule_start_date=date(2026, 10, 1),
+    )
+    assert [r.period_label for r in rows] == ["2027-03", "2027-09"]
+
+
+def test_special_monthly_ignores_anchor_month():
+    # 月份是逐个勾出来的,锚点在这个周期里没有意义 —— 给了也不该改变结果。
+    kw = dict(
+        recurring_type="special_monthly", valid_from=date(2026, 1, 1),
+        valid_to=date(2026, 12, 31), expected_invoice_day=1,
+        active_months=[6, 7],
+    )
+    assert ([r.period_label for r in build_period_rows(anchor_month=None, **kw)]
+            == [r.period_label for r in build_period_rows(anchor_month=8, **kw)]
+            == ["2026-06", "2026-07"])
+
+
+def test_special_monthly_without_active_months_is_rejected():
+    with pytest.raises(ValueError, match="active_months is required"):
+        build_period_rows(
+            recurring_type="special_monthly", valid_from=date(2026, 1, 1),
+            valid_to=date(2026, 12, 31), expected_invoice_day=1, anchor_month=None)
+
+
+def test_special_monthly_with_an_empty_selection_is_rejected_not_treated_as_all():
+    # 空集合不是"全选" —— 那会产出一份一行都没有的排期。
+    with pytest.raises(ValueError, match="active_months is required"):
+        build_period_rows(
+            recurring_type="special_monthly", valid_from=date(2026, 1, 1),
+            valid_to=date(2026, 12, 31), expected_invoice_day=1,
+            anchor_month=None, active_months=[])

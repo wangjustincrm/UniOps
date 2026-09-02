@@ -713,9 +713,18 @@ _AGREEMENT_SCHEMA = EntitySchema(
         FieldSpec("created_by", "reference", True, label="Created By", ref_source="users"),
         # recurring-only block
         FieldSpec("recurring_type", "enum", True,
-                  options=["weekly", "monthly", "quarterly", "yearly"]),
+                  options=["weekly", "monthly", "quarterly", "yearly",
+                           "special_monthly"]),
         FieldSpec("expected_invoice_day", "number", True),
         FieldSpec("anchor_month", "number", True),
+        # Read-only on purpose: this is a JSONB array of ints, and the admin
+        # UI edits every non-reference field through a text input — a typed
+        # "5,6,7" would land in the column as the STRING "5,6,7" and every
+        # month test against it would then silently miss. Shown so an admin
+        # can SEE which months a special_monthly agreement bills in; changing
+        # them is the agreement's own edit form, which re-runs
+        # validate_recurrence.
+        FieldSpec("active_months", "json", False),
         FieldSpec("schedule_start_date", "date", True),
         FieldSpec("expected_amount_per_period", "decimal", True),
         FieldSpec("tolerance_pct", "decimal", True),
