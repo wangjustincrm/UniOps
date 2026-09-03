@@ -10,14 +10,8 @@ import { ChevronRight, ChevronDown, AlertTriangle, RefreshCw, Ban } from 'lucide
 import { StatusBadge } from '@/components/StatusBadge'
 import { cn } from '@/lib/utils'
 import { displayBomType } from './bomType'
+import { formatQty, formatNcBatchQty } from './bomQty'
 import type { ExplodeNode } from './bomApi'
-
-function formatQty(raw: string | null): string {
-  if (raw === null) return '—'
-  const n = Number(raw)
-  if (!Number.isFinite(n)) return raw
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(n)
-}
 
 export function BomTreeRow({
   node, path, ancestorContinues, isLast, expandedPaths, onToggle, topLabel, basis,
@@ -45,6 +39,9 @@ export function BomTreeRow({
   const bomType = displayBomType(node.material_code, node.bom_type, node.name)
   const isRoot = path === '0'
   const accumScaled = node.qty_accumulated === null ? null : String(Number(node.qty_accumulated) * basis)
+  // NC's own numbers for this line, so the row can be checked against the
+  // NC BOM screen without re-deriving the normalized ratio (see bomQty.ts).
+  const ncBatch = formatNcBatchQty(node.qty_per_batch, node.parent_batch_output_qty)
 
   const prefix = ancestorContinues.map((cont, i) => (
     <span key={i} className="inline-block w-4 shrink-0 text-neutral-300">{cont ? '│' : ' '}</span>
@@ -110,6 +107,19 @@ export function BomTreeRow({
           {isRoot ? '—' : `${formatQty(node.qty_per)} ${node.uom ?? ''}`}
         </div>
 
+        {/* NC's own batch-scale numbers for this line — `NITEMNUM / batch
+            size`, exactly as they read on the NC BOM screen. */}
+        <div
+          className="w-44 shrink-0 text-right text-xs tabular-nums text-neutral-500"
+          title={
+            node.parent_batch_output_qty
+              ? `As shown on the NC BOM screen: ${formatQty(node.qty_per_batch)} ${node.uom ?? ''} per one ${formatQty(node.parent_batch_output_qty)} batch of the parent BOM`
+              : undefined
+          }
+        >
+          {ncBatch ?? <span className="text-neutral-300">—</span>}
+        </div>
+
         {/* Accumulated qty — the number planners actually need, scaled to the
             chosen basis (per N units of the top product) */}
         <div className="w-32 shrink-0 text-right text-xs font-semibold tabular-nums text-neutral-900" title={`Per ${basis} units of ${topLabel}`}>
@@ -124,6 +134,13 @@ export function BomTreeRow({
       {versionOpen && node.version && (
         <div className="ml-8 border-b border-neutral-100 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
           <p>Selected version <strong>v{node.version}</strong> for the query date.</p>
+          {node.batch_output_qty !== null && (
+            <p className="mt-0.5">
+              NC batch size for this BOM: <strong>{formatQty(node.batch_output_qty)} {node.uom ?? ''}</strong> — its
+              component lines are stated per this batch on the NC BOM screen, which is the denominator shown in the
+              NC batch qty column of the rows below.
+            </p>
+          )}
           {node.version_candidates_count > 1 ? (
             <p className="mt-0.5">
               {node.version_candidates_count} approved version{node.version_candidates_count === 1 ? '' : 's'} exist for{' '}

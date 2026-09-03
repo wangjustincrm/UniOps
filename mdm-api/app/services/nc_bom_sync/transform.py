@@ -140,6 +140,22 @@ Key decisions baked in here (each justified in the survey, cited by section):
     `_YIELD_RATE_TOLERANCE`) and emits a counted `warnings` entry naming
     the BOM if NC ever starts populating it differently, so a silent
     divergence surfaces immediately instead of quietly mis-planning.
+  - PATCH 7 (2026-09-03): alongside the PATCH 6 quotient, each line also
+    carries `qty_per_batch` — `NITEMNUM` VERBATIM, un-divided and
+    un-quantized (migration 0018). PATCH 6 kept only `qty_per` and threw
+    the numerator away, which makes the NC-native pair unrecoverable at
+    full precision: `qty_per * batch_output_qty` reconstructs `NITEMNUM`
+    only to within the 10dp quotient's own resolution (measured live over
+    2035 canonical lines: max absolute error 1e-7, max RELATIVE error
+    5.3e-6 — CS0081's CR0214 line is 0.00375508 in NC and reconstructs as
+    0.0037551, losing the 8th decimal). Keeping the numerator makes
+    `qty_per_batch / boms.batch_output_qty` an EXACT numerator/denominator
+    pair, which is what the BOM Explorer shows planners so they can
+    reconcile against the NC BOM screen digit for digit. Nothing in the
+    explosion/planning math reads it — `qty_per` stays the value every
+    existing consumer uses; this is a display/traceability field, and
+    adding it must not change a single planning number.
+
   - `bom_lines`/`bom_substitutes` rows carry a synthetic
     `bom_nc_source_pk`/`bom_line_nc_source_pk` key (the parent's CBOMID /
     CBOM_BID) instead of a real `bom_id`/`bom_line_id` FK — this is a pure
@@ -528,6 +544,12 @@ def transform(raw: dict) -> dict:
             "line_no": _line_no(ln.get("vrowno")),
             "component_material_code": code,
             "qty_per": qty_per,
+            # PATCH 7: the un-divided numerator, verbatim — see this
+            # module's docstring. Deliberately NOT quantized: the whole
+            # point is that this is NC's own value, byte for byte, so a
+            # planner can reconcile the BOM Explorer against the NC BOM
+            # screen without re-deriving anything.
+            "qty_per_batch": nitemnum_val,
             "uom": _resolve_uom(ln.get("cmeasureid"), uoms, line_pk, warnings, "uom"),
             "qty_per_secondary": qty_per_secondary,
             "uom_secondary": _resolve_uom(
