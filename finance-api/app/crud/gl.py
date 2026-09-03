@@ -21,6 +21,7 @@ from decimal import Decimal
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud.fiscal import opening_period, opening_window
 from app.models.coa import ChartOfAccount
 from app.models.journal_voucher import POSTED, JournalVoucher, JournalVoucherLine
 from app.models.posting import PostingEvent, PostingLine
@@ -61,7 +62,7 @@ async def trial_balance(db: AsyncSession, period: str) -> dict:
              .group_by(JournalVoucherLine.account_code))
         return {code: (Decimal(d), Decimal(c)) for code, d, c in (await db.execute(q)).all()}
 
-    opening = await sums(JournalVoucher.fiscal_period < period)
+    opening = await sums(await opening_window(db, period))
     movement = await sums(JournalVoucher.fiscal_period == period)
 
     codes = sorted(set(opening) | set(movement), key=lambda c: (c is None, c or ""))
@@ -97,13 +98,13 @@ async def account_ledger(db: AsyncSession, code: str, period: str) -> dict:
     coa = await _coa_map(db)
     acct = coa.get(code)
 
+    since_opening = await opening_window(db, period)
     opening_row = (await db.execute(
         select(func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
                func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
         .where(JournalVoucherLine.account_code == code,
-               JournalVoucher.status == POSTED,
-               JournalVoucher.fiscal_period < period)
+               JournalVoucher.status == POSTED, since_opening)
     )).one()
     running = Decimal(opening_row[0]) - Decimal(opening_row[1])
     opening = running
@@ -224,7 +225,9 @@ async def income_statement(db: AsyncSession, period: str, ytd: bool = True) -> d
 
 async def balance_sheet(db: AsyncSession, period: str) -> dict:
     coa = await _coa_map(db)
-    bals = await _balances_through(db, None, period)  # cumulative
+    # cumulative — but only back to the fiscal-year opening voucher, since NC
+    # re-states carried-forward balances every year (see crud.fiscal)
+    bals = await _balances_through(db, await opening_period(db, period), period)
     assets, liabilities, equity = [], [], []
     a_tot = l_tot = e_tot = ni = _ZERO
     for code, bal in bals.items():

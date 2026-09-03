@@ -10,6 +10,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud.fiscal import opening_window
 from app.models.coa import ChartOfAccount
 from app.models.journal_voucher import POSTED, JournalVoucher, JournalVoucherLine
 
@@ -88,7 +89,7 @@ async def account_balance(db: AsyncSession, period: str) -> dict:
              .group_by(JournalVoucherLine.account_code))
         return {code: (Decimal(d), Decimal(c)) for code, d, c in (await db.execute(q)).all()}
 
-    opening = await sums(JournalVoucher.fiscal_period < period)
+    opening = await sums(await opening_window(db, period))
     movement = await sums(JournalVoucher.fiscal_period == period)
 
     active = set(opening) | set(movement)               # codes with a direct line
@@ -300,7 +301,7 @@ async def expand_by_dims(db: AsyncSession, account_code: str, period: str,
         return {tuple(r[:len(dims)]): (r[len(dims)], r[len(dims) + 1])
                 for r in (await db.execute(q)).all()}
 
-    opening = await grouped(JournalVoucher.fiscal_period < period)
+    opening = await grouped(await opening_window(db, period))
     movement = await grouped(JournalVoucher.fiscal_period == period)
     # Monthly view (user 2026-07-17): only dimensions that MOVED this period. A
     # dimension with just a carried-forward opening and no current-period line is
