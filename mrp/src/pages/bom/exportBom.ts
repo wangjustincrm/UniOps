@@ -34,10 +34,27 @@ interface ExplodeRow {
   'Approved Candidates': number
   'Qty Per (this level)': number | null
   Unit: string
+  // NC's own batch-scale numbers, so an exported sheet can be reconciled
+  // against the NC BOM screen the same way the on-screen tree can (see
+  // bomQty.ts / mdm-api bom_explode.py's "NC batch-scale fields").
+  'NC Batch Qty': number | null
+  'NC Parent Batch Size': number | null
+  'NC Own Batch Size': number | null
   'Accumulated Qty': number | null
   'Missing BOM': string
   'Cycle Detected': string
 }
+
+// Columns holding a BOM ratio, which spans a huge dynamic range (a 3000 kg
+// batch using 0.012 kg of an ingredient normalizes to 0.000004). Excel's
+// General format renders that as `4E-06`; this fixed format shows it as a
+// plain decimal, and trims trailing zeros on ordinary values, so the sheet
+// reads the same way the screen does. Applied by cell below — SheetJS's
+// json_to_sheet writes values only, never a number format.
+const QTY_COLUMNS: ReadonlyArray<keyof ExplodeRow> = [
+  'Qty Per (this level)', 'NC Batch Qty', 'NC Parent Batch Size', 'NC Own Batch Size', 'Accumulated Qty',
+]
+const QTY_NUMBER_FORMAT = '0.##########'
 
 function scaleAccum(raw: string | null, basis: number): number | null {
   const v = n(raw)
@@ -58,6 +75,9 @@ function flatten(node: ExplodeNode, rows: ExplodeRow[], basis: number): void {
     'Approved Candidates': node.version_candidates_count,
     'Qty Per (this level)': node.level === 0 ? null : n(node.qty_per),
     Unit: node.uom ?? '',
+    'NC Batch Qty': n(node.qty_per_batch),
+    'NC Parent Batch Size': n(node.parent_batch_output_qty),
+    'NC Own Batch Size': n(node.batch_output_qty),
     'Accumulated Qty': scaleAccum(node.qty_accumulated, basis),
     'Missing BOM': node.missing_bom ? 'Yes' : '',
     'Cycle Detected': node.cycle_detected ? 'Yes' : '',
@@ -65,11 +85,31 @@ function flatten(node: ExplodeNode, rows: ExplodeRow[], basis: number): void {
   for (const child of node.children) flatten(child, rows, basis)
 }
 
+/** Tag every numeric quantity cell with `QTY_NUMBER_FORMAT`, so Excel shows
+ *  a legitimately tiny ratio as `0.000004` instead of `4E-06`. Header row is
+ *  row 0, so data starts at row 1; a null/absent cell is simply skipped. */
+function applyQtyNumberFormat(
+  XLSX: typeof import('xlsx'), sheet: import('xlsx').WorkSheet,
+  columns: ReadonlyArray<string>, headers: ReadonlyArray<string>, rowCount: number,
+): void {
+  for (const name of columns) {
+    const col = headers.indexOf(name)
+    if (col < 0) continue
+    for (let row = 1; row <= rowCount; row++) {
+      const cell = sheet[XLSX.utils.encode_cell({ c: col, r: row })]
+      if (cell && cell.t === 'n') cell.z = QTY_NUMBER_FORMAT
+    }
+  }
+}
+
 export async function exportExplodeTree(root: ExplodeNode, asOfDate: string, basis: number): Promise<void> {
   const XLSX = await import('xlsx')
   const rows: ExplodeRow[] = []
   flatten(root, rows, basis)
   const sheet = XLSX.utils.json_to_sheet(rows)
+  if (rows.length > 0) {
+    applyQtyNumberFormat(XLSX, sheet, QTY_COLUMNS as string[], Object.keys(rows[0]), rows.length)
+  }
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, sheet, 'BOM Explosion')
   XLSX.writeFile(book, `bom-explode-${root.material_code}-${asOfDate}.xlsx`)
@@ -95,6 +135,11 @@ export async function exportWhereUsed(
     'Cycle Detected': r.cycle_detected ? 'Yes' : '',
   }))
   const sheet = XLSX.utils.json_to_sheet(rows)
+  if (rows.length > 0) {
+    applyQtyNumberFormat(
+      XLSX, sheet, ['Accumulated Qty (per 1 unit top)'], Object.keys(rows[0]), rows.length,
+    )
+  }
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, sheet, 'Where Used')
   XLSX.writeFile(book, `bom-where-used-${component}-${asOfDate}.xlsx`)

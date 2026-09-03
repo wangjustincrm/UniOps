@@ -16,6 +16,7 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { MaterialPicker } from '@/pages/consignment/MaterialPicker'
 import type { MaterialOption } from '@/lib/materials'
 import { bomApi, type ExplodeNode, type WhereUsedResult } from './bomApi'
+import { formatQty } from './bomQty'
 import { BomTreeRow } from './BomTreeNode'
 import { collectFlags, type FlaggedNode } from './bomFlags'
 import { SyncSection } from './SyncSection'
@@ -30,12 +31,6 @@ function errMsg(err: unknown, fallback: string): string {
 function todayIso(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-function formatQty(raw: string): string {
-  const n = Number(raw)
-  if (!Number.isFinite(n)) return raw
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(n)
 }
 
 function allPaths(node: ExplodeNode, path = '0'): string[] {
@@ -268,15 +263,26 @@ export default function BomExplorerPage() {
 
           {explodeQuery.data && (
             <>
-              <div className="flex items-center gap-3 rounded-t-lg border border-b-0 border-neutral-200 bg-neutral-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-                <div className="min-w-[280px] flex-1">Component</div>
-                <div className="w-28">Type</div>
-                <div className="w-40">Version</div>
-                <div className="w-28 text-right">Qty / unit</div>
-                <div className="w-32 text-right">Accum. per {basis} {explodeQuery.data.material_code}</div>
-              </div>
-              <div className="overflow-x-auto rounded-b-lg border border-neutral-200">
-                <div className="min-w-[900px]">
+              {/* Header row lives INSIDE the horizontal scroller, sharing the
+                  same min-width as the rows — otherwise a viewport narrower
+                  than the table scrolls the rows out from under a header
+                  that stays put, and every column label points at the wrong
+                  column. */}
+              <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                <div className="min-w-[1080px]">
+                  <div className="flex items-center gap-3 border-b border-neutral-200 bg-neutral-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+                    <div className="min-w-[280px] flex-1">Component</div>
+                    <div className="w-28">Type</div>
+                    <div className="w-40">Version</div>
+                    <div className="w-28 text-right">Qty / unit</div>
+                    <div
+                      className="w-44 text-right"
+                      title="This component's quantity per one batch of its parent's BOM, over that batch size — the two numbers exactly as the NC BOM screen shows them"
+                    >
+                      NC batch qty / batch
+                    </div>
+                    <div className="w-32 text-right">Accum. per {basis} {explodeQuery.data.material_code}</div>
+                  </div>
                   <BomTreeRow
                     node={explodeQuery.data}
                     path="0"
