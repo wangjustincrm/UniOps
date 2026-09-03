@@ -17,6 +17,11 @@ accumulating real movement over a longer window: still correct, never zero.
 
 A book with no `YYYY-00` voucher at all (synthetic/test data, a cut-over ledger
 posted entirely from UniOps) keeps the plain cumulative behaviour.
+
+This module also owns the other half of "which vouchers does a GL read count" —
+the posted/unposted basis — because the two travel together: a report folding in
+unposted vouchers must fold them into its opening as well, or its opening and
+its movement are measured on different books.
 """
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,19 +29,37 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.journal_voucher import POSTED, JournalVoucher
 
 
-async def opening_period(db: AsyncSession, period: str) -> str | None:
+# NC's 科目余额表 carries a 包含未记账凭证 toggle. NC's ledger counts a voucher
+# only once NC tallies it (记账); the report can optionally fold in the ones that
+# have merely been entered. nc_sync keeps that fact in `status` — a mirrored
+# voucher posts when NC tallies it and stays draft until then — so "include
+# unposted" is every status a voucher holds before it is cancelled. UniOps' own
+# not-yet-posted JVs ride along under the same reading: entered, not in the
+# ledger. `reversed` is cancelled and never counts either way.
+UNPOSTED = ("draft", "reviewed")
+
+
+def status_filter(include_unposted: bool = False):
+    """Which vouchers a GL read counts."""
+    return (JournalVoucher.status.in_((POSTED, *UNPOSTED)) if include_unposted
+            else JournalVoucher.status == POSTED)
+
+
+async def opening_period(db: AsyncSession, period: str,
+                         include_unposted: bool = False) -> str | None:
     """The `YYYY-00` period a balance at `period` accumulates from, or None when
     the book has no opening-balance voucher on or before `period`."""
     return (await db.execute(
         select(func.max(JournalVoucher.fiscal_period))
-        .where(JournalVoucher.status == POSTED,
+        .where(status_filter(include_unposted),
                JournalVoucher.fiscal_period.like("%-00"),
                JournalVoucher.fiscal_period <= period))).scalar()
 
 
-async def opening_window(db: AsyncSession, period: str):
+async def opening_window(db: AsyncSession, period: str,
+                         include_unposted: bool = False):
     """Condition over the vouchers making up `period`'s OPENING balance:
     everything from the opening period up to, but excluding, `period` itself."""
-    lo = await opening_period(db, period)
+    lo = await opening_period(db, period, include_unposted)
     before = JournalVoucher.fiscal_period < period
     return before if lo is None else and_(JournalVoucher.fiscal_period >= lo, before)
