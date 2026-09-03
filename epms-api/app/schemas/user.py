@@ -4,7 +4,10 @@ import uuid
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
-VALID_ROLES = {
+# The roles this service knew about when it was the only one defining any.
+# Kept only as a floor if `role_defs` cannot be read — see `valid_roles()` in
+# app/crud/role.py, which is what the endpoints actually ask.
+FALLBACK_ROLES = {
     "system_admin", "gm", "opm", "finance_manager", "finance_bp",
     "ap_clerk", "requester", "dept_manager",
     "procurement_officer", "procurement_manager",

@@ -319,8 +319,12 @@ async def test_engine():
         ):
             await conn.execute(text(stmt))
         await conn.execute(text(
+            # assignable_as_primary is on the real table (identity 0009) and is
+            # read when validating a primary login role. Omitting it here made
+            # create_all-built tests pass against a shape production does not have.
             "CREATE TABLE role_defs (code varchar(50) PRIMARY KEY, label varchar(100) NOT NULL,"
-            " sort integer NOT NULL DEFAULT 0, is_active boolean NOT NULL DEFAULT true)"))
+            " sort integer NOT NULL DEFAULT 0, is_active boolean NOT NULL DEFAULT true,"
+            " assignable_as_primary boolean NOT NULL DEFAULT true)"))
         await conn.execute(text(
             "CREATE TABLE permission_defs (key varchar(64) PRIMARY KEY, module varchar(20) NOT NULL,"
             " label varchar(120) NOT NULL, sort integer NOT NULL DEFAULT 0)"))

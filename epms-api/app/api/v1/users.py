@@ -19,8 +19,8 @@ from app.crud import department as dept_crud
 from app.crud import user as user_crud
 from app.models.department import Department
 from app.models.user import User
+from app.crud import role as role_crud
 from app.schemas.user import (
-    VALID_ROLES,
     VALID_NOTIFICATION_CHANNELS,
     UserAdminResponse,
     UserBriefListResponse,
@@ -252,6 +252,9 @@ async def import_users(
     file: UploadFile = File(...),
 ):
     """Import users from CSV. Creates new users, updates existing by email."""
+    # One lookup per request, not per row: the set cannot change
+    # part-way through an import.
+    allowed_roles = await role_crud.valid_roles(db)
     content = await file.read()
     try:
         text = content.decode("utf-8-sig")  # handle Excel BOM
@@ -287,7 +290,7 @@ async def import_users(
             teams_account = (row.get("teams_account") or "").strip() or None
             password = (row.get("password") or "").strip() or None
 
-            if role not in VALID_ROLES:
+            if role not in allowed_roles:
                 errors.append(f"Row {i} ({email}): invalid role '{role}'")
                 continue
 
@@ -354,10 +357,11 @@ async def import_users(
 
 @router.post("", response_model=UserAdminResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(body: UserCreate, db: SessionDep, _: AdminDep):
-    if body.role not in VALID_ROLES:
+    allowed_roles = await role_crud.valid_roles(db)
+    if body.role not in allowed_roles:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid role. Must be one of: {sorted(VALID_ROLES)}",
+            detail=f"Invalid role. Must be one of: {sorted(allowed_roles)}",
         )
     conflict = await _post_conflict(db, body.role)
     if conflict is not None:
@@ -433,10 +437,11 @@ async def update_user(user_id: uuid.UUID, body: UserUpdate, db: SessionDep, _: A
     routing_before = _routing_snapshot(user)
 
     if body.role is not None:
-        if body.role not in VALID_ROLES:
+        allowed_roles = await role_crud.valid_roles(db)
+        if body.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Invalid role. Must be one of: {sorted(VALID_ROLES)}",
+                detail=f"Invalid role. Must be one of: {sorted(allowed_roles)}",
             )
         conflict = await _post_conflict(db, body.role, exclude_user_id=user.id)
         if conflict is not None:
@@ -526,6 +531,9 @@ async def import_users_from_erp(
     _: AdminDep,
     authorization: str | None = Header(default=None),
 ):
+    # One lookup per request, not per row: the set cannot change
+    # part-way through an import.
+    allowed_roles = await role_crud.valid_roles(db)
     bearer = _extract_bearer(authorization)
     created: list[ErpImportCreated] = []
     errors: list[ErpImportError] = []
@@ -547,7 +555,7 @@ async def import_users_from_erp(
                 continue
 
             role = item.role or "requester"
-            if role not in VALID_ROLES:
+            if role not in allowed_roles:
                 errors.append(ErpImportError(erp_person_code=item.erp_person_code, reason=f"invalid role: {role}"))
                 continue
 

@@ -46,11 +46,36 @@ async def test_payment_officer_view_pa_locked_when_identity_down(admin_client, m
     assert "view_pa" in r.json()["payment_officer"]
 
 
-def test_payment_officer_is_not_a_primary_login_role():
-    from app.schemas.user import VALID_ROLES
-    assert "payment_officer" not in VALID_ROLES, (
-        "payment_officer 是附加角色。VALID_ROLES 校验的是主登录角色 —— "
-        "加进去会让它可被设为某人的主角色,复制 erp_pa_officer 的处理方式")
+@pytest.mark.asyncio
+async def test_payment_officer_is_not_a_primary_login_role(test_engine):
+    """The rule now lives on the row, so this asserts it where it is read.
+
+    It used to assert against a hardcoded set in this service. That set had
+    drifted eleven roles behind identity's `role_defs`, which is why the list
+    is now read from the table — so the guard has to follow it there, or it
+    would be checking a constant nothing consults any more.
+    """
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.crud.role import valid_roles
+    from app.schemas.user import FALLBACK_ROLES
+
+    assert "payment_officer" not in FALLBACK_ROLES, (
+        "payment_officer 是附加角色。这个集合是 role_defs 读不到时的兜底 —— "
+        "加进去会让它可被设为某人的主角色")
+
+    async with test_engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO role_defs (code, label, sort, is_active, assignable_as_primary)"
+            " VALUES ('payment_officer', 'Payment Officer', 90, true, false)"
+            " ON CONFLICT (code) DO UPDATE SET assignable_as_primary = false"))
+    async with AsyncSession(test_engine) as db:
+        allowed = await valid_roles(db)
+    assert "payment_officer" not in allowed, (
+        "an active role flagged not-assignable-as-primary must not be offered "
+        "as somebody's primary login role")
+    assert "requester" in allowed, "the ordinary roles must still be offered"
 
 
 # ── assignable_as_primary passthrough (2026-08-14) ───────────────────────────
