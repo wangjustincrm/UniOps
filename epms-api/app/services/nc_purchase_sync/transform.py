@@ -16,10 +16,19 @@ _SUPPLIER_CODE_ALIASES = {
 # UniOps payment flow). Every other NC PO type is raw-milk procurement.
 _RAW_MATERIAL_TRANTYPE = "21-Cxx-CRM01"
 
-# NC forderstatus=2: submitted, still working through NC's approval chain.
-# Mirrored so the buyer can print the UniOps PO PDF and collect the off-line
-# signatures that feed that approval — see reader._IN_SCOPE for the scope rules.
-_NC_STATUS_PENDING = 2
+# The NC forderstatus values that mean "the ERP has not issued this order yet":
+# 0 = free state (saved, never submitted) and 2 = submitted, still working
+# through NC's approval chain.
+#
+# 0 is in here because NC's PO approval chain was switched off in 2026-09: a
+# buyer now just saves the order and the officer one-click approves it in NC
+# only after UniOps has signed off, so free state IS the normal pre-approval
+# state. 2 remains for the orders that were mid-chain when that changed.
+#
+# Both are mirrored so the buyer can print the UniOps PO PDF and collect the
+# sign-off that authorises the ERP approval — see reader._IN_SCOPE for the scope
+# rules, including the floor that keeps abandoned 2021-2022 drafts out.
+_NC_PENDING_STATUSES = frozenset({0, 2})
 
 # The mirrored status for those orders. Read-only by construction: it appears in
 # no payment, receiving or invoice-matching allow-list, so it takes no gate of
@@ -76,14 +85,14 @@ def _planned_arrival(raw: str | None) -> date | None:
 
 
 def _is_pending(order: dict) -> bool:
-    """True when NC still has this order in approval.
+    """True when NC has not issued this order yet — free state or in approval.
 
     ``oracledb.defaults.fetch_decimals`` is on, so NUMBER columns arrive as
     ``Decimal`` — an identity or string comparison would quietly answer False
-    for every order and mirror the whole pending set as payable.
+    for every order and mirror the whole unapproved set as payable.
     """
     try:
-        return int(order.get("forderstatus")) == _NC_STATUS_PENDING
+        return int(order.get("forderstatus")) in _NC_PENDING_STATUSES
     except (TypeError, ValueError):
         return False
 
