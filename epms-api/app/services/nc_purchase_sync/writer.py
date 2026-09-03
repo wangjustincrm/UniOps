@@ -147,12 +147,18 @@ _WITHDRAWN_TAG = "[NC Pending Withdrawn]"
 def reconcile_pending(cur, in_scope_pks) -> int:
     """Cancel mirrored in-approval POs that NC no longer lists. Returns the count.
 
-    An order REJECTED in NC drops back to forderstatus=0, or is soft-deleted —
-    either way it stops matching the sync's scope, so no incremental payload
-    ever mentions it again and its ``nc_pending`` mirror row would sit there
-    forever looking like live work. Absence from an incremental payload proves
-    nothing (that is just "unchanged"), which is why the reader hands over the
-    FULL in-scope pk set rather than the batch.
+    An order the buyer ABANDONS is soft-deleted in NC (dr=1), which drops it out
+    of the sync's scope, so no incremental payload ever mentions it again and its
+    ``nc_pending`` mirror row would sit there forever looking like live work.
+    Absence from an incremental payload proves nothing (that is just
+    "unchanged"), which is why the reader hands over the FULL in-scope pk set
+    rather than the batch.
+
+    This carries more weight now that free state is mirrored: 146 of NC's 168
+    free-state orders are soft-deleted, because throwing a draft away is a normal
+    thing for a buyer to do. Dropping back to forderstatus=0 is no longer an exit
+    from scope — free state IS in scope — so deletion is what this pass reacts
+    to.
 
     An order that got APPROVED keeps its pk in that set, so it is deliberately
     NOT cancelled here: the upsert in the same transaction moves it to its real
