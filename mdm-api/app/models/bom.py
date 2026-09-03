@@ -47,6 +47,22 @@ the task-5-brief's guessed field names:
     `Numeric(24,10)` in the same migration — 6 decimal places would badly
     round a real, legitimate small ratio (S0093's CP0132 line normalizes to
     1/420 = 0.0023809523809...).
+  - `bom_lines.qty_per_batch` (migration 0018, 2026-09-03): NC's
+    `BD_BOM_B.NITEMNUM` kept VERBATIM — i.e. `qty_per`'s own un-divided
+    numerator, whose denominator is already stored as
+    `boms.batch_output_qty`. 0015 kept only the quotient, which makes the
+    NC-native pair unrecoverable at full precision: reconstructing
+    `NITEMNUM` as `qty_per * batch_output_qty` is lossy for lines needing
+    more significant digits than a 10dp quotient holds (measured live: max
+    absolute error 1e-7, max RELATIVE error 5.3e-6 across 2035 lines —
+    CS0081's CR0214 line is 0.00375508 in NC and reconstructs as
+    0.0037551). `qty_per` remains the value every explosion/planning
+    consumer reads; `qty_per_batch` exists so the BOM Explorer can show a
+    planner the same numbers the NC BOM screen shows, digit for digit,
+    instead of asking them to multiply a rounded quotient in their head.
+    Nullable: populated by the sync, not by the migration, so rows synced
+    before 0018 read None until the next `POST /boms/sync` (see
+    `bom_explode.py` for the fallback it applies meanwhile).
 """
 from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -88,6 +104,7 @@ class BomLine(Base, UUIDPrimaryKey, TimestampMixin):
     line_no: Mapped[int] = mapped_column(Integer, default=0)  # <- VROWNO, string->int
     component_material_code: Mapped[str] = mapped_column(String(50), index=True)
     qty_per: Mapped[object] = mapped_column(Numeric(24, 10))  # <- NITEMNUM / boms.HNPARENTNUM, normalized per-1-unit-of-parent (PATCH 6, was taken as-is pre-2026-08-04 — a batch-scale bug)
+    qty_per_batch: Mapped[object | None] = mapped_column(Numeric(24, 8))  # <- NITEMNUM VERBATIM (migration 0018) — `qty_per`'s un-divided numerator; see module docstring
     uom: Mapped[str | None] = mapped_column(String(20))  # <- CMEASUREID, resolved to a BD_MEASDOC unit code (e.g. 'KGM'); EA/PIECES normalized to 'EA'
     qty_per_secondary: Mapped[object | None] = mapped_column(Numeric(24, 10))  # <- NASSITEMNUM / boms.HNASSPARENTNUM, normalized (PATCH 6); assistant-unit qty (S* finished goods only; null for single-unit lines)
     uom_secondary: Mapped[str | None] = mapped_column(String(20))  # <- CASSMEASUREID, resolved unit code; same EA/PIECES normalization as `uom`

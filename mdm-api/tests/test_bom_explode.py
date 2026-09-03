@@ -475,3 +475,137 @@ async def test_explode_endpoint_returns_tree(client, db_session, seed_cascade):
     assert Decimal(str(raw["qty_accumulated"])) == pytest.approx(
         Decimal("0.5") * Decimal("2.0") * Decimal("3.0"), rel=1e-9
     )
+
+
+@pytest_asyncio.fixture
+async def seed_nc_batch_scale(db_session):
+    """The real 2026-09-03 report shape: S0147 (438 kg batch) -> CW0010
+    (1000 kg batch) -> CS0147 (3000 kg batch) -> CR0268. Every header
+    carries its NC batch size and every line its raw NITEMNUM, so a row can
+    be checked against the NC BOM screen without re-deriving anything."""
+    s = Bom(product_material_code="S0147", bom_type="packaging", version="1.1",
+            status="approved", nc_source_pk="H-S0147", batch_output_qty=Decimal("438"))
+    db_session.add(s)
+    await db_session.flush()
+    db_session.add(BomLine(bom_id=s.id, line_no=30, component_material_code="CW0010",
+                           qty_per=Decimal("1"), qty_per_batch=Decimal("438"), uom="KGM",
+                           scrap_rate=Decimal("0"), nc_source_pk="L-S0147-30"))
+
+    cw = Bom(product_material_code="CW0010", bom_type="drymix", version="1.0",
+             status="approved", nc_source_pk="H-CW0010", batch_output_qty=Decimal("1000"))
+    db_session.add(cw)
+    await db_session.flush()
+    db_session.add(BomLine(bom_id=cw.id, line_no=10, component_material_code="CS0147",
+                           qty_per=Decimal("0.996176"), qty_per_batch=Decimal("996.176"), uom="KGM",
+                           scrap_rate=Decimal("0"), nc_source_pk="L-CW0010-10"))
+
+    cs = Bom(product_material_code="CS0147", bom_type="milling", version="1.1",
+             status="approved", nc_source_pk="H-CS0147", batch_output_qty=Decimal("3000"))
+    db_session.add(cs)
+    await db_session.flush()
+    # NITEMNUM=610 per a 3000 kg batch -> qty_per = 0.2033333333 (10dp).
+    db_session.add(BomLine(bom_id=cs.id, line_no=20, component_material_code="CR0268",
+                           qty_per=Decimal("0.2033333333"), qty_per_batch=Decimal("610"), uom="KGM",
+                           scrap_rate=Decimal("0"), nc_source_pk="L-CS0147-20"))
+    await db_session.commit()
+
+
+@pytest.mark.anyio
+async def test_explode_reports_nc_batch_scale_numbers(db_session, seed_nc_batch_scale):
+    """Each node reports NC's own pair — the component's whole-batch
+    quantity and the batch size it's stated against — plus its own BOM's
+    batch size, so the tree can be reconciled against the NC BOM screen."""
+    from datetime import date
+
+    from app.services.bom_explode import explode_bom
+
+    root = await explode_bom(db_session, "S0147", date(2026, 9, 3))
+
+    assert root.qty_per_batch is None and root.parent_batch_output_qty is None
+    assert root.batch_output_qty == Decimal("438")
+
+    cw = root.children[0]
+    assert cw.material_code == "CW0010"
+    assert (cw.qty_per_batch, cw.parent_batch_output_qty) == (Decimal("438"), Decimal("438"))
+    assert cw.batch_output_qty == Decimal("1000")
+
+    cs = cw.children[0]
+    assert (cs.qty_per_batch, cs.parent_batch_output_qty) == (Decimal("996.176"), Decimal("1000"))
+    assert cs.batch_output_qty == Decimal("3000")
+
+    cr = cs.children[0]
+    assert cr.material_code == "CR0268"
+    # The exact numbers on NC's own CS0147 BOM screen: 610 per a 3000 batch.
+    assert (cr.qty_per_batch, cr.parent_batch_output_qty) == (Decimal("610"), Decimal("3000"))
+    # A raw material has no BOM of its own, so no batch size of its own.
+    assert cr.batch_output_qty is None
+
+
+@pytest.mark.anyio
+async def test_explode_nc_batch_numbers_do_not_change_accumulated_qty(db_session, seed_nc_batch_scale):
+    """The NC batch-scale fields are reporting only. The accumulated
+    quantity must still come from `qty_per` alone — this pins the number the
+    2026-09-03 report questioned: 3000 kg of S0147 needs 607.66736 kg of
+    CR0268, because the dry-mix layer legitimately consumes 0.996176 kg of
+    CS0147 per kg of CW0010, NOT because anything was truncated."""
+    from datetime import date
+
+    from app.services.bom_explode import explode_bom
+
+    root = await explode_bom(db_session, "S0147", date(2026, 9, 3))
+    cr = root.children[0].children[0].children[0]
+    # Exact Decimal comparison at the 4dp the explorer displays — no float
+    # tolerance, because the claim under test is precisely that this number
+    # is arithmetic, not an approximation.
+    assert (cr.qty_accumulated * Decimal("3000")).quantize(Decimal("0.0001")) == Decimal("607.6674")
+
+
+@pytest.mark.anyio
+async def test_explode_falls_back_to_reconstructed_nc_qty_before_migration_0018(db_session):
+    """Rows synced before migration 0018 have `qty_per_batch` NULL. Rather
+    than blanking the column, the explosion reconstructs it as
+    `qty_per * batch_output_qty` — right to the 10dp quotient's own
+    resolution, which beats showing nothing until the next BOM sync runs."""
+    from datetime import date
+
+    from app.services.bom_explode import explode_bom
+
+    cs = Bom(product_material_code="CS0147", bom_type="milling", version="1.1",
+             status="approved", nc_source_pk="H-OLD", batch_output_qty=Decimal("3000"))
+    db_session.add(cs)
+    await db_session.flush()
+    db_session.add(BomLine(bom_id=cs.id, line_no=20, component_material_code="CR0268",
+                           qty_per=Decimal("0.2033333333"), qty_per_batch=None, uom="KGM",
+                           scrap_rate=Decimal("0"), nc_source_pk="L-OLD"))
+    await db_session.commit()
+
+    root = await explode_bom(db_session, "CS0147", date(2026, 9, 3))
+    cr = root.children[0]
+    # 0.2033333333 * 3000 = 609.9999999900 — right to the quotient's own
+    # resolution, and visibly NOT the exact 610 the stored raw value gives.
+    assert abs(cr.qty_per_batch - Decimal("610")) < Decimal("0.0001")
+    assert cr.qty_per_batch != Decimal("610")
+    assert cr.parent_batch_output_qty == Decimal("3000")
+
+
+@pytest.mark.anyio
+async def test_explode_reports_no_nc_qty_when_batch_size_unknown(db_session):
+    """No stored raw value AND no batch size to reconstruct against -> the
+    field is None, never a silently wrong 0."""
+    from datetime import date
+
+    from app.services.bom_explode import explode_bom
+
+    cs = Bom(product_material_code="CS0999", bom_type="milling", version="1.0",
+             status="approved", nc_source_pk="H-NOBATCH", batch_output_qty=None)
+    db_session.add(cs)
+    await db_session.flush()
+    db_session.add(BomLine(bom_id=cs.id, line_no=10, component_material_code="CR0001",
+                           qty_per=Decimal("0.5"), qty_per_batch=None, uom="KGM",
+                           scrap_rate=Decimal("0"), nc_source_pk="L-NOBATCH"))
+    await db_session.commit()
+
+    root = await explode_bom(db_session, "CS0999", date(2026, 9, 3))
+    assert root.batch_output_qty is None
+    child = root.children[0]
+    assert child.qty_per_batch is None and child.parent_batch_output_qty is None
