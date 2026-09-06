@@ -91,3 +91,118 @@ async def test_po_without_any_invoice_reports_no_unpaid_invoice(admin_client):
     assert resp.status_code == 200
     by_number = {p["number"]: p for p in resp.json()["items"]}
     assert by_number[number]["has_unpaid_invoice"] is False
+
+
+@pytest.mark.asyncio
+async def test_po_whose_only_invoice_is_claimed_reports_nothing_to_pay(admin_client):
+    """一张 PO 的发票已被某张在途 PA 认领 → 它已经无款可付。
+
+    发票状态还不是 paid(占着它的 PA 还没走完付款),只看 status != 'paid'
+    会让这张 PO 继续出现在 PA 创建页的 PO 选择器和 PO 页的 Create PA 按钮上,
+    点进去却一张发票也勾不动 —— 那张发票锁在别人的 PA 上。
+    """
+    from app.models.pa import PaymentApplication
+
+    async with sm.AsyncSessionLocal() as db:
+        u = await _user(db)
+        v = await _vendor(db)
+        po = await _po(db, v, u.id)
+        inv = Invoice(
+            internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number="X",
+            vendor_id=v.id, vendor_name="Acme", amount=Decimal("200"),
+            tax_amount=Decimal("0"), total_amount=Decimal("200"),
+            invoice_date=date(2026, 1, 1), due_date=date(2026, 2, 1),
+            status="matched", line_items=[], po_id=po.id,
+            po_number=po.number, uploaded_by=u.id)
+        db.add(inv)
+        await db.flush()
+        db.add(PaymentApplication(
+            pa_number=f"PA-{uuid.uuid4().hex[:8]}", title="Claiming PA",
+            po_id=po.id, po_number=po.number,
+            vendor_id=v.id, vendor_name="Acme",
+            invoice_ids=[str(inv.id)], gr_ids=[],
+            subtotal=Decimal("200"), payment_amount=Decimal("200"),
+            status="submitted", created_by=u.id))
+        await db.commit()
+        number, po_id = po.number, po.id
+
+    resp = await admin_client.get("/api/v1/po", params={"page_size": 200})
+    by_number = {p["number"]: p for p in resp.json()["items"]}
+    assert by_number[number]["has_unpaid_invoice"] is False, (
+        "发票已被在途 PA 认领,这张 PO 不该再宣称有款可付"
+    )
+
+    # 详情端点必须给出同一个答案 —— PO 页的 Create PA 按钮读的是它,
+    # 两处不一致就等于按钮把人送进一个空的付款页。
+    detail = await admin_client.get(f"/api/v1/po/{po_id}")
+    assert detail.status_code == 200
+    assert detail.json()["has_unpaid_invoice"] is False
+
+
+@pytest.mark.asyncio
+async def test_cancelled_pa_releases_its_invoice(admin_client):
+    """作废的 PA 不再占着发票 —— 否则一次误建就把这张 PO 永久变成不可付。"""
+    from app.models.pa import PaymentApplication
+
+    async with sm.AsyncSessionLocal() as db:
+        u = await _user(db)
+        v = await _vendor(db)
+        po = await _po(db, v, u.id)
+        inv = Invoice(
+            internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number="X",
+            vendor_id=v.id, vendor_name="Acme", amount=Decimal("200"),
+            tax_amount=Decimal("0"), total_amount=Decimal("200"),
+            invoice_date=date(2026, 1, 1), due_date=date(2026, 2, 1),
+            status="matched", line_items=[], po_id=po.id,
+            po_number=po.number, uploaded_by=u.id)
+        db.add(inv)
+        await db.flush()
+        db.add(PaymentApplication(
+            pa_number=f"PA-{uuid.uuid4().hex[:8]}", title="Cancelled PA",
+            po_id=po.id, po_number=po.number,
+            vendor_id=v.id, vendor_name="Acme",
+            invoice_ids=[str(inv.id)], gr_ids=[],
+            subtotal=Decimal("200"), payment_amount=Decimal("200"),
+            status="cancelled", created_by=u.id))
+        await db.commit()
+        number = po.number
+
+    resp = await admin_client.get("/api/v1/po", params={"page_size": 200})
+    by_number = {p["number"]: p for p in resp.json()["items"]}
+    assert by_number[number]["has_unpaid_invoice"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_second_unclaimed_invoice_keeps_the_po_payable(admin_client):
+    """认领是按发票算的,不是按 PO 算的:还有一张没人认领的发票就仍然可付。"""
+    from app.models.pa import PaymentApplication
+
+    async with sm.AsyncSessionLocal() as db:
+        u = await _user(db)
+        v = await _vendor(db)
+        po = await _po(db, v, u.id)
+        invs = []
+        for _ in range(2):
+            inv = Invoice(
+                internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number="X",
+                vendor_id=v.id, vendor_name="Acme", amount=Decimal("100"),
+                tax_amount=Decimal("0"), total_amount=Decimal("100"),
+                invoice_date=date(2026, 1, 1), due_date=date(2026, 2, 1),
+                status="matched", line_items=[], po_id=po.id,
+                po_number=po.number, uploaded_by=u.id)
+            db.add(inv)
+            await db.flush()
+            invs.append(inv)
+        db.add(PaymentApplication(
+            pa_number=f"PA-{uuid.uuid4().hex[:8]}", title="Claims one",
+            po_id=po.id, po_number=po.number,
+            vendor_id=v.id, vendor_name="Acme",
+            invoice_ids=[str(invs[0].id)], gr_ids=[],
+            subtotal=Decimal("100"), payment_amount=Decimal("100"),
+            status="approved", created_by=u.id))
+        await db.commit()
+        number = po.number
+
+    resp = await admin_client.get("/api/v1/po", params={"page_size": 200})
+    by_number = {p["number"]: p for p in resp.json()["items"]}
+    assert by_number[number]["has_unpaid_invoice"] is True

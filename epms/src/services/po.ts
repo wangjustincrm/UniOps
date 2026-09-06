@@ -66,9 +66,14 @@ export interface ApiPo {
   vendor_id: string
   vendor_name: string
   is_prepaid: boolean
+  // This PO has an invoice a NEW payment could settle: unpaid AND not already
+  // claimed by a live payment application. Both the list and the detail
+  // endpoint fill it in, off one definition in the backend — the PA create
+  // page's PO picker and the PO page's Create PA button both gate on it and
+  // must not be able to disagree.
   has_unpaid_invoice: boolean
-  // ANY invoice points at this PO — detail endpoint only. Not the same as
-  // has_unpaid_invoice, which the LIST endpoint alone computes.
+  // ANY invoice points at this PO — detail endpoint only, and regardless of
+  // whether it is paid or claimed. A different question from has_unpaid_invoice.
   has_invoice?: boolean
   budget_code?: string
   expected_delivery?: string
