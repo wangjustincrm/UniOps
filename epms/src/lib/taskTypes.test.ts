@@ -87,3 +87,37 @@ describe('TASK_TYPE_LABELS — PO sign-off', () => {
     expect(TASK_TYPE_LABELS.revise_po_signoff).toBe('Revise PO Sign-off')
   })
 })
+
+describe('taskHref — NC purchase-sync error tasks', () => {
+  // These carry document_type 'nc_sync' and a RUN id, not a document id: their
+  // subject is an NC order that never made it into EPMS. Without a branch of
+  // their own they fall through to the bare "/<uuid>" dead link.
+  const RUN_ID = '7c2f4f0e-1f1b-4a0b-9d0a-0f6a1f2b3c4d'
+
+  it('sends a missing-vendor task to the vendor registry, where the fix is', () => {
+    expect(taskHref({ type: 'import_erp_vendor', document_type: 'nc_sync', document_id: RUN_ID }))
+      .toBe('/vendors')
+  })
+
+  it('sends every other sync error to the Portal NC sync panel', () => {
+    const href = taskHref({
+      type: 'resolve_nc_sync_error', document_type: 'nc_sync', document_id: RUN_ID,
+    })
+    expect(href).toMatch(/^https?:\/\//)          // absolute → full-page handoff
+    expect(href).toContain('/admin?section=nc_sync')
+  })
+
+  it('never produces the bare-uuid dead link', () => {
+    for (const type of ['import_erp_vendor', 'resolve_nc_sync_error']) {
+      expect(taskHref({ type, document_type: 'nc_sync', document_id: RUN_ID }))
+        .not.toBe(`/${RUN_ID}`)
+    }
+  })
+})
+
+describe('TASK_TYPE_LABELS — NC purchase-sync error tasks', () => {
+  it('labels both error task types', () => {
+    expect(TASK_TYPE_LABELS.import_erp_vendor).toBe('Import ERP Vendor')
+    expect(TASK_TYPE_LABELS.resolve_nc_sync_error).toBe('Resolve NC Sync Error')
+  })
+})

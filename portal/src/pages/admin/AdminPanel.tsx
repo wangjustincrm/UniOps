@@ -2244,7 +2244,13 @@ const SECTIONS = [
 
 export default function AdminPanel() {
   const { user } = useAuthStore()
-  const [section, setSection] = useState('company')
+  // ?section=<key> makes each panel deep-linkable — the NC sync error tasks in
+  // the Task Inbox link straight to /admin?section=nc_sync. An unknown or absent
+  // key falls back to the default panel.
+  const [section, setSection] = useState(() => {
+    const wanted = new URLSearchParams(window.location.search).get('section')
+    return wanted && SECTIONS.some((s) => s.key === wanted) ? wanted : 'company'
+  })
 
   if (user?.role !== 'system_admin') return <Navigate to="/" replace />
 

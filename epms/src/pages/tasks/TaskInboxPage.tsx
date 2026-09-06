@@ -117,6 +117,23 @@ function FullTaskCard({ task }: FullTaskCardProps) {
             {task.amount ? ` · ${formatCAD(task.amount)}` : ''}
           </p>
 
+          {/* Reason — NC sync error tasks only. Their whole point is the
+              explanation (which ERP supplier is missing, what to do next), and
+              it lives nowhere else: the subject is an NC order that is not in
+              EPMS, so there is no document page to open and read. Every other
+              task type has a boilerplate description ("Step 5/6: ...") that
+              would only add noise here. */}
+          {task.document_type === 'nc_sync' && task.description && (
+            <p
+              className={cn(
+                'mt-2 whitespace-pre-line text-xs leading-relaxed',
+                isDone ? 'text-neutral-400' : 'text-neutral-500'
+              )}
+            >
+              {task.description}
+            </p>
+          )}
+
           {/* Due date */}
           {!isDone && task.due_date && (
             <div className="mt-1.5 flex items-center gap-1 text-xs text-neutral-400">

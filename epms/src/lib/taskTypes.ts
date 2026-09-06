@@ -68,7 +68,15 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   // PO sign-off (NC imports) — approval-api's posign action key.
   sign_po: 'Sign Purchase Order',
   revise_po_signoff: 'Revise PO Sign-off',
+  // NC purchase sync could not import something (epms-api
+  // services/nc_purchase_sync/error_tasks.py). Admin-only.
+  import_erp_vendor: 'Import ERP Vendor',
+  resolve_nc_sync_error: 'Resolve NC Sync Error',
 }
+
+// Portal origin — NC sync errors that are not a missing vendor are resolved in
+// Portal's Admin Panel (EPMS has no NC sync page of its own).
+const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 
 // ─── Navigation ────────────────────────────────────────────────────────────────
 
@@ -120,6 +128,16 @@ export function taskHref(task: TaskHrefInput): string {
   }
   if (docType.startsWith('vms_')) {
     return vmsHandoffHref(`/${task.document_id}`)
+  }
+
+  // NC purchase-sync errors. Their subject is an NC order that is NOT in EPMS,
+  // so there is no document to open — the destination is where the error gets
+  // FIXED: the vendor registry for a missing ERP supplier, Portal's NC Purchase
+  // Sync panel for everything else. document_id is the sync run, not a document.
+  if (docType === 'nc_sync') {
+    return task.type === 'import_erp_vendor'
+      ? '/vendors'
+      : `${PORTAL_URL}/admin?section=nc_sync`
   }
 
   // Both create_pa and create_prepayment_pa anchor on the PO and open the PA
