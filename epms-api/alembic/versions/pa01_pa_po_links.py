@@ -43,18 +43,6 @@ def upgrade() -> None:
     op.create_index("ix_pa_po_links_pa_id", "pa_po_links", ["pa_id"])
     op.create_index("ix_pa_po_links_po_id", "pa_po_links", ["po_id"])
 
-    # Unrelated to the table above, but needed by the same feature: GET /po and
-    # GET /po/{id} now ask "is any of these invoices already claimed by a live
-    # payment application", which is a `?|` containment test against this JSONB
-    # array. Without an index that is a sequential scan of every PA on a hot
-    # endpoint (measured: 3.8 ms over 6279 rows, growing with every payment
-    # ever made). GIN turns it into an index lookup.
-    op.create_index(
-        "ix_payment_applications_invoice_ids",
-        "payment_applications", ["invoice_ids"],
-        postgresql_using="gin",
-    )
-
     # Backfill: one row per existing PO-based PA. po_number is taken from the PO
     # itself rather than the PA's snapshot — a renumbered PO may have left a
     # stale snapshot behind on an old PA, and this table is meant to be the
@@ -72,7 +60,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_payment_applications_invoice_ids", table_name="payment_applications")
     op.drop_index("ix_pa_po_links_po_id", table_name="pa_po_links")
     op.drop_index("ix_pa_po_links_pa_id", table_name="pa_po_links")
     op.drop_table("pa_po_links")
