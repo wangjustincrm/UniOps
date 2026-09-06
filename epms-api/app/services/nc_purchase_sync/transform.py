@@ -3,6 +3,8 @@ from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 
+from app.services.nc_purchase_sync.reader import changed_at
+
 # NC supplier-code aliases: NC has dirty duplicate supplier records for the same
 # real company. Map the duplicate code to the canonical one so its orders resolve
 # to the canonical company's UniOps vendor. NC data itself is never modified (we
@@ -163,6 +165,12 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
         m["tax"] += _num(ln.get("ntax"))            # line tax amount
 
     orders, order_lines, skipped = [], [], []
+    # Same skips as `skipped`, with the supplier that caused them — what the
+    # Admin error task has to say to be actionable ("import ERP supplier X").
+    # `skipped` stays a plain list of document numbers: it is what the run row's
+    # counter and the sync API report.
+    vendor_gaps: list[dict] = []
+    sup_names = raw.get("supplier_names") or {}
     kept_order_pks = set()
     for o in raw["orders"]:
         code = sup.get(o["pk_supplier"])
@@ -171,6 +179,12 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
         vend = vendor_by_erp.get(code) if code else None
         if not vend:
             skipped.append(o["vbillcode"])
+            vendor_gaps.append({
+                "number": o["vbillcode"],
+                "supplier_code": code,
+                "supplier_name": (sup_names.get(code) or "").strip() or None,
+                "changed_at": changed_at(o),
+            })
             continue
         kept_order_pks.add(o["pk_order"])
         status, notes = _derive_status_and_note(o, pay_by_order.get(o["pk_order"], {}))
@@ -276,4 +290,5 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
                 "sort_order": int(al["crowno"]) if str(al.get("crowno") or "").isdigit() else 0,
             })
     return {"orders": orders, "order_lines": order_lines, "grs": grs,
-            "gr_lines": gr_lines, "skipped_no_vendor": skipped}
+            "gr_lines": gr_lines, "skipped_no_vendor": skipped,
+            "vendor_gaps": vendor_gaps}

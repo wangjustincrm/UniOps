@@ -417,4 +417,7 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
     if collisions:
         print(f"[nc_purchase_sync] skipped {len(collisions)} PO(s): no free document "
               f"number within {_MAX_NUMBER_SUFFIX} suffixes: {collisions[:20]}", flush=True)
+    # The document numbers behind skipped_number_collision, so the run can raise
+    # an Admin task naming them instead of leaving a bare count in a log line.
+    counts["collision_numbers"] = collisions
     return counts
