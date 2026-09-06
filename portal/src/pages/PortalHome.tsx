@@ -259,6 +259,10 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
   gr_damage_report: 'Report Goods Damage',
   approve_budget_plan: 'Approve Budget Plan',
   revise_budget_plan: 'Revise Budget Plan',
+  // Raised by the NC purchase sync for what it could not import (epms-api
+  // services/nc_purchase_sync/error_tasks.py); system_admin only.
+  import_erp_vendor: 'Import ERP Vendor',
+  resolve_nc_sync_error: 'Resolve NC Sync Error',
 }
 
 const VMS_DOC_LABELS: Record<string, string> = {
@@ -524,7 +528,21 @@ export default function PortalHome() {
       let module: UnifiedTask['module'] = 'EPMS'
       let base = EPMS_URL
       let path: string
-      if (isVms) {
+      // Set when the destination is a Portal page rather than a module's.
+      let selfHref: string | null = null
+      if (t.document_type === 'nc_sync') {
+        // NC purchase-sync errors. The subject is an NC order that is NOT in
+        // EPMS, so there is nothing to open — link to where the error is fixed:
+        // the vendor registry for a missing ERP supplier, Portal's own NC
+        // Purchase Sync admin panel for everything else. Without this branch
+        // DOC_PATH's fallback yields EPMS /dashboard/<run-uuid>, a dead card.
+        if (t.type === 'import_erp_vendor') {
+          path = '/vendors'
+        } else {
+          path = ''
+          selfHref = '/admin?section=nc_sync'
+        }
+      } else if (isVms) {
         module = 'VMS'; base = VMS_URL
         path = vmsDeeplinkPath(t.document_type, t.document_id)
       } else if (oaPath) {
@@ -565,7 +583,7 @@ export default function PortalHome() {
         amount: t.amount,
         currency: 'CAD',
         urgent: t.priority === 'urgent',
-        href: withSession(`${base}${path}`),
+        href: selfHref ?? withSession(`${base}${path}`),
         createdAt: t.created_at,
         groupKey,
         groupLabel,

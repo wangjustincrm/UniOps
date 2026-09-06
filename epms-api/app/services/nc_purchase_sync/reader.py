@@ -187,7 +187,13 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
         def lookup(sql):
             cur.execute(sql)
             return {r[0]: r[1] for r in cur.fetchall()}
-        suppliers = lookup("select pk_supplier, code from NCSC.BD_SUPPLIER")
+        # Supplier NAMES are keyed by code, not pk: the only consumer is the
+        # "this ERP supplier has no UniOps vendor" error task, which knows the
+        # code and needs something a human recognises next to it.
+        cur.execute("select pk_supplier, code, name from NCSC.BD_SUPPLIER")
+        _sup_rows = cur.fetchall()
+        suppliers = {r[0]: r[1] for r in _sup_rows}
+        supplier_names = {r[1]: r[2] for r in _sup_rows}
         uoms = lookup("select pk_measdoc, code from NCSC.BD_MEASDOC")
         currencies = lookup("select pk_currtype, code from NCSC.BD_CURRTYPE")
         # Prefer the English material name (ename); fall back to name when a
@@ -211,10 +217,15 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
         # watermark-filtered result set silently, so absence from an incremental
         # payload cannot be told apart from "unchanged". Only membership of this
         # set can. ~1,700 single-column rows.
-        cur.execute(f"select o.pk_order from NCSC.PO_ORDER o "
+        # vbillcode rides along for the error tasks: an order that dropped out of
+        # NC's scope (rejected, deleted, superseded) must not leave a "this order
+        # never arrived" task open forever, and the tasks are keyed by number.
+        cur.execute(f"select o.pk_order, o.vbillcode from NCSC.PO_ORDER o "
                     f"where {_IN_SCOPE} and o.{_LATEST_VERSION} "
                     "and o.dbilldate >= :cut", {"cut": cutover})
-        in_scope_pks = {r[0] for r in cur.fetchall()}
+        _in_scope_rows = cur.fetchall()
+        in_scope_pks = {r[0] for r in _in_scope_rows}
+        in_scope_numbers = {r[1] for r in _in_scope_rows}
 
         if watermark:
             # INCREMENTAL: union of (a) orders whose OWN change time advanced and
@@ -340,7 +351,8 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
             "invoiced_arrivals": invoiced_arrivals,
             "suppliers": suppliers, "materials": materials, "uoms": uoms,
             "currencies": currencies, "max_modifiedtime": maxmt,
-            "in_scope_pks": in_scope_pks,
+            "in_scope_pks": in_scope_pks, "in_scope_numbers": in_scope_numbers,
+            "supplier_names": supplier_names,
         }
     finally:
         con.close()
