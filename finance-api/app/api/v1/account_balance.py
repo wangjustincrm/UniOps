@@ -1,4 +1,6 @@
-"""Account balance report API (科目余额表) — reads posted JV lines."""
+"""Account balance report API (科目余额表) — reads posted JV lines, or
+posted + not-yet-tallied ones when `include_unposted` is set (NC's
+包含未记账凭证 toggle)."""
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -29,9 +31,10 @@ async def _cc_scope(db: AsyncSession, user: dict, requested: uuid.UUID | None) -
 
 @router.get("/account-balance")
 async def account_balance(_: CurrentUser, db: AsyncSession = Depends(get_db),
-                          period: str = Query(...)):
+                          period: str = Query(...),
+                          include_unposted: bool = Query(default=False)):
     """① 科目余额表: opening/period/closing per account (posted JV, local CAD)."""
-    return await crud.account_balance(db, period)
+    return await crud.account_balance(db, period, include_unposted=include_unposted)
 
 
 @router.get("/account-balance/{account_code}/dims")
@@ -43,11 +46,13 @@ async def dims(account_code: str, _: CurrentUser, db: AsyncSession = Depends(get
 @router.get("/account-balance/{account_code}/expand")
 async def expand(account_code: str, _: CurrentUser, db: AsyncSession = Depends(get_db),
                  period: str = Query(...),
-                 dims: str = Query(default="cost_center")):
+                 dims: str = Query(default="cost_center"),
+                 include_unposted: bool = Query(default=False)):
     """② dynamic expansion by a comma-separated dimension subset."""
     try:
         return await crud.expand_by_dims(db, account_code, period,
-                                         [d.strip() for d in dims.split(",") if d.strip()])
+                                         [d.strip() for d in dims.split(",") if d.strip()],
+                                         include_unposted=include_unposted)
     except crud.BadDims as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -55,7 +60,8 @@ async def expand(account_code: str, _: CurrentUser, db: AsyncSession = Depends(g
 @router.get("/account-balance/{account_code}/vouchers")
 async def vouchers(account_code: str, _: CurrentUser, db: AsyncSession = Depends(get_db),
                    period: str = Query(...),
-                   dims_values: str | None = Query(default=None)):
+                   dims_values: str | None = Query(default=None),
+                   include_unposted: bool = Query(default=False)):
     """③ drill-down; dims_values = 'dim:uuid,dim:none' combo filter."""
     parsed: dict = {}
     if dims_values:
@@ -70,7 +76,8 @@ async def vouchers(account_code: str, _: CurrentUser, db: AsyncSession = Depends
             except ValueError:
                 raise HTTPException(status_code=422, detail=f"bad uuid in dims_values: {v!r}")
     try:
-        return await crud.account_vouchers(db, account_code, period, dims_values=parsed)
+        return await crud.account_vouchers(db, account_code, period, dims_values=parsed,
+                                           include_unposted=include_unposted)
     except crud.BadDims as e:
         raise HTTPException(status_code=422, detail=str(e))
 

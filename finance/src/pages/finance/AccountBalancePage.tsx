@@ -49,6 +49,10 @@ export default function AccountBalancePage() {
   const { user } = useAuthStore()
   const qc = useQueryClient()
   const [period, setPeriod] = useState(thisMonth())
+  // NC's 科目余额表 has the same toggle: its ledger counts a voucher once NC
+  // tallies it, and the report can fold in the ones only entered. Off by
+  // default so the page keeps showing the ledger.
+  const [includeUnposted, setIncludeUnposted] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, string[]>>({})
   const [picker, setPicker] = useState<string | null>(null)   // account_code being configured
   const [drill, setDrill] = useState<Drill | null>(null)
@@ -60,8 +64,9 @@ export default function AccountBalancePage() {
   })
 
   const { data, isFetching } = useQuery({
-    queryKey: ['account-balance', period],
-    queryFn: () => financeApi.get<AbResp>(`/gl/account-balance?period=${period}`),
+    queryKey: ['account-balance', period, includeUnposted],
+    queryFn: () => financeApi.get<AbResp>(
+      `/gl/account-balance?period=${period}&include_unposted=${includeUnposted}`),
   })
 
   const onJvActed = () => {
@@ -85,13 +90,21 @@ export default function AccountBalancePage() {
     <PortalChromeLayout
       activeKey="portal:/finance/account-balance"
       title="Account Balance"
-      subtitle="Opening / period movement / closing per account over posted journal vouchers (CAD)"
+      subtitle={includeUnposted
+        ? 'Opening / period movement / closing per account, including vouchers not yet posted (CAD)'
+        : 'Opening / period movement / closing per account over posted journal vouchers (CAD)'}
     >
       <div className="mx-auto max-w-6xl">
         <div className="mb-4 flex items-center gap-2">
           <input type="month" value={period}
                  onChange={(e) => { setPeriod(e.target.value); setExpanded({}) }}
                  className={cn(inputCls, 'w-40')} />
+          <label className="flex items-center gap-1.5 text-sm text-neutral-700"
+                 title="Fold in vouchers NC has not tallied yet, and UniOps JVs not yet posted">
+            <input type="checkbox" checked={includeUnposted}
+                   onChange={(e) => { setIncludeUnposted(e.target.checked); setExpanded({}) }} />
+            Include unposted
+          </label>
           {data && (
             <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
               data.balanced ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
@@ -119,7 +132,8 @@ export default function AccountBalancePage() {
               </thead>
               <tbody>
                 {data.rows.length === 0 && (
-                  <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">No posted activity up to {data.period}.</td></tr>
+                  <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">
+                    No {includeUnposted ? '' : 'posted '}activity up to {data.period}.</td></tr>
                 )}
                 {data.rows.map((r, i) => (
                   <Fragment key={r.account_code}>
@@ -148,7 +162,7 @@ export default function AccountBalancePage() {
                     {expanded[r.account_code] && (
                       <DimExpansion accountCode={r.account_code} accountName={r.account_name}
                                     period={period} dims={expanded[r.account_code]}
-                                    onDrill={setDrill} />
+                                    includeUnposted={includeUnposted} onDrill={setDrill} />
                     )}
                   </Fragment>
                 ))}
@@ -177,6 +191,7 @@ export default function AccountBalancePage() {
       {drill && (
         <AccountVouchersModal accountCode={drill.accountCode} period={period}
                               dimsValues={drill.dimsValues} title={drill.title}
+                              includeUnposted={includeUnposted}
                               onClose={() => setDrill(null)}
                               onOpenJv={(id) => setJvId(id)} />
       )}
@@ -240,15 +255,16 @@ function DimPickerModal({ accountCode, onClose, onApply }: {
   )
 }
 
-function DimExpansion({ accountCode, accountName, period, dims, onDrill }: {
+function DimExpansion({ accountCode, accountName, period, dims, includeUnposted, onDrill }: {
   accountCode: string; accountName: string; period: string; dims: string[]
-  onDrill: (d: Drill) => void
+  includeUnposted: boolean; onDrill: (d: Drill) => void
 }) {
   const dimsParam = dims.join(',')
   const { data, isLoading } = useQuery({
-    queryKey: ['ab-expand', accountCode, period, dimsParam],
+    queryKey: ['ab-expand', accountCode, period, dimsParam, includeUnposted],
     queryFn: () => financeApi.get<ExpandResp>(
-      `/gl/account-balance/${accountCode}/expand?period=${period}&dims=${dimsParam}`),
+      `/gl/account-balance/${accountCode}/expand?period=${period}&dims=${dimsParam}`
+      + `&include_unposted=${includeUnposted}`),
   })
   if (isLoading) {
     return (

@@ -10,6 +10,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud.fiscal import opening_window, status_filter
 from app.models.coa import ChartOfAccount
 from app.models.journal_voucher import POSTED, JournalVoucher, JournalVoucherLine
 
@@ -70,7 +71,8 @@ async def _subtree_codes(db: AsyncSession, account_code: str) -> set:
     return _descendants(_children_index(coa), account_code)
 
 
-async def account_balance(db: AsyncSession, period: str) -> dict:
+async def account_balance(db: AsyncSession, period: str,
+                          include_unposted: bool = False) -> dict:
     """Opening (cumulative posted before `period`) + period movement + closing,
     per account, in local (CAD) amounts. Non-leaf (header) accounts aggregate
     their whole {self ∪ descendants} subtree (NC科目余额表 parity); leaves are
@@ -84,11 +86,11 @@ async def account_balance(db: AsyncSession, period: str) -> dict:
                     func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
                     func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
              .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
-             .where(JournalVoucher.status == POSTED).where(where)
+             .where(status_filter(include_unposted)).where(where)
              .group_by(JournalVoucherLine.account_code))
         return {code: (Decimal(d), Decimal(c)) for code, d, c in (await db.execute(q)).all()}
 
-    opening = await sums(JournalVoucher.fiscal_period < period)
+    opening = await sums(await opening_window(db, period, include_unposted))
     movement = await sums(JournalVoucher.fiscal_period == period)
 
     active = set(opening) | set(movement)               # codes with a direct line
@@ -279,7 +281,7 @@ def _check_dims(dims: list[str]) -> dict:
 
 
 async def expand_by_dims(db: AsyncSession, account_code: str, period: str,
-                         dims: list[str]) -> dict:
+                         dims: list[str], include_unposted: bool = False) -> dict:
     """② dynamic expansion, per NC's aux-item balance report: opening (cumulative
     before `period`) + this-period gross debit/credit + closing, grouped by the
     chosen dimension columns. _net is d-c and linear, so children reconcile with
@@ -293,14 +295,14 @@ async def expand_by_dims(db: AsyncSession, account_code: str, period: str,
                     func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
                     func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
              .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
-             .where(JournalVoucher.status == POSTED,
+             .where(status_filter(include_unposted),
                     JournalVoucherLine.account_code.in_(subtree), where)
              .group_by(*cols))
         # key = the dimension-id tuple; value = (debit, credit)
         return {tuple(r[:len(dims)]): (r[len(dims)], r[len(dims) + 1])
                 for r in (await db.execute(q)).all()}
 
-    opening = await grouped(JournalVoucher.fiscal_period < period)
+    opening = await grouped(await opening_window(db, period, include_unposted))
     movement = await grouped(JournalVoucher.fiscal_period == period)
     # Monthly view (user 2026-07-17): only dimensions that MOVED this period. A
     # dimension with just a carried-forward opening and no current-period line is
@@ -647,16 +649,20 @@ async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_y
 
 
 async def account_vouchers(db: AsyncSession, account_code: str, period: str,
-                           dims_values: dict | None = None) -> dict:
+                           dims_values: dict | None = None,
+                           include_unposted: bool = False) -> dict:
     """③ drill-down: posted JV lines for an account (rolled over its
     {self ∪ descendants} subtree), optionally filtered by a dimension-value
     combo ({dim_code: uuid | None}; None = IS NULL). Each row carries its own
-    account_code/name so a header drill shows which child a line belongs to."""
+    account_code/name so a header drill shows which child a line belongs to.
+    Each row carries `posted` so a drill taken with `include_unposted` shows
+    which lines are only entered — otherwise the extra rows look like the report
+    disagreeing with itself."""
     subtree = await _subtree_codes(db, account_code)
     coa = await _coa_map(db)
     q = (select(JournalVoucherLine, JournalVoucher)
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
-         .where(JournalVoucher.status == POSTED,
+         .where(status_filter(include_unposted),
                 JournalVoucher.fiscal_period == period,
                 JournalVoucherLine.account_code.in_(subtree))
          .order_by(JournalVoucher.voucher_date))
@@ -675,6 +681,7 @@ async def account_vouchers(db: AsyncSession, account_code: str, period: str,
             "account_name": acct.name if acct else None,
             "summary": ln.summary or jv.summary,
             "local_debit": str(ln.local_debit), "local_credit": str(ln.local_credit),
+            "posted": jv.status == POSTED,
             "cost_center_id": str(ln.cost_center_id) if ln.cost_center_id else None,
             "source_doc_type": jv.source_doc_type,
             "source_doc_id": str(jv.source_doc_id) if jv.source_doc_id else None,
