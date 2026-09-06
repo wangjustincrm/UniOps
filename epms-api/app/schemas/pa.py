@@ -47,7 +47,13 @@ class PaLineItemResponse(BaseModel):
 # ── PA ────────────────────────────────────────────────────────────────────────
 
 class PaCreate(BaseModel):
+    # The PRIMARY purchase order. Kept for callers (and stored history) that
+    # know only one PO; `po_ids` is the full set and always wins when given.
     po_id: uuid.UUID | None = None
+    # One PA may settle several POs of the same vendor in one payment — the
+    # ordinary AP case of one cheque covering three orders. Order is meaningful:
+    # the first entry becomes the primary PO mirrored onto the PA header.
+    po_ids: list[uuid.UUID] = Field(default_factory=list)
     # Agreement-sourced PA (no PO, no GR). Exactly one of po_id / agreement_id
     # must be set — a PA with neither is OA's Direct PA, which EPMS does not own.
     agreement_id: uuid.UUID | None = None
@@ -72,15 +78,43 @@ class PaCreate(BaseModel):
     receipt_override: bool = False
     receipt_override_reason: str | None = Field(default=None, max_length=500)
 
+    @property
+    def resolved_po_ids(self) -> list[uuid.UUID]:
+        """The PA's purchase orders, de-duplicated, order preserved.
+
+        `po_ids` wins when present; a caller that only sent `po_id` (the old
+        single-PO body, and everything already in the wild) resolves to a
+        one-element list, so the endpoint below has exactly one shape to reason
+        about. Empty on the agreement route.
+        """
+        raw = self.po_ids or ([self.po_id] if self.po_id is not None else [])
+        seen: set[uuid.UUID] = set()
+        out: list[uuid.UUID] = []
+        for pid in raw:
+            if pid not in seen:
+                seen.add(pid)
+                out.append(pid)
+        return out
+
     @model_validator(mode="after")
     def _exactly_one_source(self):
-        if (self.po_id is None) == (self.agreement_id is None):
-            raise ValueError("Provide exactly one of po_id or agreement_id")
+        # Normalize before the XOR so `po_ids=[x]` alone is as valid as
+        # `po_id=x` alone, and the two agreeing is not an error.
+        pos = self.po_ids or ([self.po_id] if self.po_id is not None else [])
+        if (not pos) == (self.agreement_id is None):
+            raise ValueError("Provide exactly one of po_id/po_ids or agreement_id")
+        if pos and self.po_id is not None and self.po_id not in pos:
+            raise ValueError("po_id must be one of po_ids")
         return self
 
 
 class PaUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
+    # Replaces the PA's whole PO set (draft / returned only, PO route only).
+    # None = leave the POs alone; an empty list is rejected by the endpoint —
+    # a PO-route PA with no PO would become indistinguishable from OA's Direct
+    # PA and drop out of every EPMS list.
+    po_ids: list[uuid.UUID] | None = None
     invoice_ids: list[uuid.UUID] | None = None
     gr_ids: list[uuid.UUID] | None = None
     subtotal: Decimal | None = Field(default=None, ge=0)
@@ -125,6 +159,11 @@ class PaResponse(BaseModel):
     title: str
     po_id: uuid.UUID | None
     po_number: str | None
+    # Every PO this PA pays, primary first. Populated from pa_po_links by
+    # crud.pa (see attach_po_links); [] on the agreement route. po_id/po_number
+    # above stay the primary PO so older clients keep rendering something.
+    po_ids: list[uuid.UUID] = Field(default_factory=list)
+    po_numbers: list[str] = Field(default_factory=list)
     vendor_id: uuid.UUID
     vendor_name: str
     invoice_ids: list

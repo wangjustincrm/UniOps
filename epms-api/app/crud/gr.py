@@ -697,9 +697,9 @@ async def _on_three_way_reached(db: AsyncSession, po_id: uuid.UUID) -> None:
     # 2) 若已 3-way 且无 PA 且无 open create_pa → 建 create_pa
     if not await po_has_three_way_matched_invoice(db, po_id):
         return
-    from app.models.pa import PaymentApplication
-    has_pa = (await db.execute(select(PaymentApplication.id).where(
-        PaymentApplication.po_id == po_id).limit(1))).scalar_one_or_none()
+    from app.crud.pa_links import pa_ids_for_po
+    has_pa = (await db.execute(
+        pa_ids_for_po(po_id).limit(1))).scalar_one_or_none()
     if has_pa is not None:
         return
     has_task = (await db.execute(select(Task.id).where(

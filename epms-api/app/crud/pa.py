@@ -13,6 +13,8 @@ from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
 from app.models.invoice import Invoice
 from app.models.pa import PaLineItem, PaymentApplication
+from app.models.pa_po_link import PaPoLink
+from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.pa_attachment import PaAttachment
@@ -48,6 +50,58 @@ def _build_line_items(pa_id: uuid.UUID, items_in) -> list[PaLineItem]:
         )
         for i, item in enumerate(items_in)
     ]
+
+
+async def set_po_links(
+    db: AsyncSession, pa: PaymentApplication, pos: list[tuple[uuid.UUID, str]]
+) -> None:
+    """Make `pos` (ordered, primary first) the PA's complete PO set.
+
+    Also re-points the PA header's po_id/po_number at the primary PO, so the
+    header and the link table can never disagree about which one is primary.
+    Deletes first, then inserts: the unique (pa_id, po_id) constraint would
+    otherwise reject a re-order that keeps the same POs.
+    """
+    await db.execute(
+        PaPoLink.__table__.delete().where(PaPoLink.pa_id == pa.id)
+    )
+    for i, (po_id, po_number) in enumerate(pos):
+        db.add(PaPoLink(pa_id=pa.id, po_id=po_id, po_number=po_number, sort_order=i))
+    pa.po_id = pos[0][0] if pos else None
+    pa.po_number = pos[0][1] if pos else None
+    await db.flush()
+
+
+async def attach_po_links(db: AsyncSession, pas: list[PaymentApplication]) -> None:
+    """Populate the transient `po_ids` / `po_numbers` PaResponse fields.
+
+    One query for the whole page rather than one per row. A PO-route PA with no
+    link rows (written outside this module) falls back to its header pair, so
+    every renderer can read po_ids/po_numbers alone and never has to keep its
+    own fallback. Agreement PAs and OA Direct PAs have no PO and get [].
+    """
+    pa_ids = [pa.id for pa in pas]
+    if not pa_ids:
+        return
+    rows = (await db.execute(
+        select(PaPoLink.pa_id, PaPoLink.po_id, PaPoLink.po_number)
+        .where(PaPoLink.pa_id.in_(pa_ids))
+        .order_by(PaPoLink.sort_order)
+    )).all()
+    by_pa: dict[uuid.UUID, list] = {}
+    for r in rows:
+        by_pa.setdefault(r.pa_id, []).append(r)
+    for pa in pas:
+        linked = by_pa.get(pa.id, [])
+        if linked:
+            pa.po_ids = [r.po_id for r in linked]
+            pa.po_numbers = [r.po_number for r in linked]
+        elif pa.po_id is not None:
+            pa.po_ids = [pa.po_id]
+            pa.po_numbers = [pa.po_number or ""]
+        else:
+            pa.po_ids = []
+            pa.po_numbers = []
 
 
 def _compute_payment(payload) -> Decimal:
@@ -96,7 +150,10 @@ async def get_all(
         # each branch below is written to stand on its own rather than lean on
         # that coupling, in case the two ever diverge.
         conds = [
-            PaymentApplication.po_id.in_(po_ids_subq) if po_ids_subq is not None
+            # ANY of the PA's POs falling inside the caller's scope admits it —
+            # matching po_id alone would hide a PA from someone who owns its
+            # second PO, and they are paying for it.
+            PaymentApplication.id.in_(pa_ids_for_pos(po_ids_subq)) if po_ids_subq is not None
             else PaymentApplication.po_id.is_not(None),
             PaymentApplication.agreement_id.in_(agr_ids_subq) if agr_ids_subq is not None
             else PaymentApplication.agreement_id.is_not(None),
@@ -109,7 +166,9 @@ async def get_all(
     if status:
         q = q.where(PaymentApplication.status == status)
     if po_id:
-        q = q.where(PaymentApplication.po_id == po_id)
+        # "Payments on this PO" — a PA that pays this PO as its second or third
+        # order belongs in the answer just as much as one where it is primary.
+        q = q.where(PaymentApplication.id.in_(pa_ids_for_po(po_id)))
     if vendor_id:
         q = q.where(PaymentApplication.vendor_id == vendor_id)
     if search:
@@ -121,6 +180,12 @@ async def get_all(
             | PaymentApplication.vendor_name.ilike(term)
             | PaymentApplication.po_number.ilike(term)
             | PaymentApplication.agreement_number.ilike(term)
+            # Searching a PO number must find the PA that pays it even when it
+            # is not that PA's primary PO — the header snapshot only carries
+            # the primary one.
+            | PaymentApplication.id.in_(
+                select(PaPoLink.pa_id).where(PaPoLink.po_number.ilike(term))
+            )
         )
     if department_id:
         # PA has no cost center of its own — resolve department either via
@@ -128,13 +193,13 @@ async def get_all(
         # PaymentApplication.agreement_id → PurchaseAgreement.department_id
         # (agreement route, which carries department_id on the row itself).
         q = q.where(or_(
-            PaymentApplication.po_id.in_(
+            PaymentApplication.id.in_(pa_ids_for_pos(
                 select(PurchaseOrder.id).where(PurchaseOrder.pr_id.in_(
                     select(PurchaseRequest.id).where(PurchaseRequest.cost_center_id.in_(
                         select(CostCenter.id).where(CostCenter.department_id == department_id)
                     ))
                 ))
-            ),
+            )),
             PaymentApplication.agreement_id.in_(
                 select(PurchaseAgreement.id).where(PurchaseAgreement.department_id == department_id)
             ),
@@ -158,6 +223,7 @@ async def get_by_id(db: AsyncSession, pa_id: uuid.UUID) -> PaymentApplication | 
         return None
     pa, creator_name = row
     pa.created_by_name = creator_name  # transient attr consumed by PaResponse
+    await attach_po_links(db, [pa])
     return pa
 
 
@@ -170,6 +236,10 @@ async def create(
     vendor_id: uuid.UUID,
     vendor_name: str,
     created_by: uuid.UUID,
+    # (po_id, po_number) for every PO this PA pays, primary first. The API layer
+    # has already loaded and validated those POs, so it passes them down rather
+    # than making this function re-fetch them. Empty on the agreement route.
+    po_links: list[tuple[uuid.UUID, str]] | None = None,
     receipt_override: bool = False,
     receipt_override_reason: str | None = None,
     receipt_override_by: uuid.UUID | None = None,
@@ -177,12 +247,19 @@ async def create(
 ) -> PaymentApplication:
     number = await _next_number(db)
     payment_amount = _compute_payment(payload)
+    # Primary PO = the first of the set. Callers that still pass only po_id/
+    # po_number resolve to a one-element set, so both shapes land here the same.
+    links = list(po_links) if po_links else (
+        [(payload.po_id, po_number or "")] if payload.po_id is not None else []
+    )
+    primary_po_id = links[0][0] if links else None
+    primary_po_number = links[0][1] if links else None
 
     pa = PaymentApplication(
         pa_number=number,
         title=payload.title,
-        po_id=payload.po_id,
-        po_number=po_number,
+        po_id=primary_po_id,
+        po_number=primary_po_number,
         agreement_id=payload.agreement_id,
         agreement_number=agreement_number,
         vendor_id=vendor_id,
@@ -216,28 +293,49 @@ async def create(
     for item in _build_line_items(pa.id, payload.line_items):
         db.add(item)
 
+    for i, (link_po_id, link_po_number) in enumerate(links):
+        db.add(PaPoLink(pa_id=pa.id, po_id=link_po_id,
+                        po_number=link_po_number, sort_order=i))
+
     # PO-only follow-up: agreement PAs have no PO, so there is no "Create Payment
     # Application" / "Create Prepayment PA" task anchored to a po_id to clear —
     # calling these with po_id=None would wrongly match tasks with a NULL
-    # document_id.
-    if payload.po_id is not None:
+    # document_id. Every PO in the set is now paid, so every one of their
+    # prompts clears — not just the primary's.
+    for link_po_id, _ in links:
         # A PA now exists for this PO — clear any open "Create Payment Application"
         # prompts for it (the task previously lingered because this was never called).
-        await _complete_create_pa_tasks(db, payload.po_id)
+        await _complete_create_pa_tasks(db, link_po_id)
         # A prepayment PA additionally satisfies the "Create Prepayment PA" prompt.
         if pa.pa_type == "prepayment":
-            await _complete_create_prepayment_pa_tasks(db, payload.po_id)
+            await _complete_create_prepayment_pa_tasks(db, link_po_id)
 
     await db.flush()
     await db.refresh(pa)
+    await attach_po_links(db, [pa])
     return pa
 
 
 # ── Update (draft only) ───────────────────────────────────────────────────────
 
 async def update(
-    db: AsyncSession, pa: PaymentApplication, payload: PaUpdate
+    db: AsyncSession,
+    pa: PaymentApplication,
+    payload: PaUpdate,
+    # Same contract as create(): the API layer validated the new PO set and
+    # passes it down. None = the caller is not changing the POs.
+    po_links: list[tuple[uuid.UUID, str]] | None = None,
 ) -> PaymentApplication:
+    if po_links is not None:
+        await set_po_links(db, pa, po_links)
+        # POs may have been ADDED — their "Create Payment Application" prompts
+        # are now satisfied and must clear, exactly as on create. Removed POs
+        # are handled by the caller (it reopens their prompts).
+        for link_po_id, _ in po_links:
+            await _complete_create_pa_tasks(db, link_po_id)
+            if pa.pa_type == "prepayment":
+                await _complete_create_prepayment_pa_tasks(db, link_po_id)
+
     for field in ("title", "notes", "other_charges_note",
                   "prepayment_pct", "expected_settlement_date", "tax_code", "tax_rate"):
         val = getattr(payload, field)
@@ -268,6 +366,7 @@ async def update(
 
     await db.flush()
     await db.refresh(pa)
+    await attach_po_links(db, [pa])
     return pa
 
 
@@ -364,6 +463,9 @@ async def finalize_settlement_reconciliation(
 async def _attach_pa_pdf(db: AsyncSession, pa: PaymentApplication, company_name: str) -> None:
     """Generate an approved-PA PDF and store it as an attachment."""
     import asyncio
+    # The PDF lists every PO on the payment; make sure the transient list is
+    # there even when the caller loaded the PA without it.
+    await attach_po_links(db, [pa])
     loop = asyncio.get_running_loop()
     pdf_bytes = await loop.run_in_executor(None, generate_pa_pdf, pa, company_name)
     db.add(PaAttachment(
@@ -483,6 +585,51 @@ async def _complete_create_pa_tasks(db: AsyncSession, po_id: uuid.UUID) -> None:
     for task in result.scalars().all():
         task.is_completed = True
         task.completed_at = now
+
+
+async def reopen_create_pa_tasks_if_unpaid(
+    db: AsyncSession, po_id: uuid.UUID, exclude_pa_id: uuid.UUID | None = None
+) -> int:
+    """Undo _complete_create_pa_tasks for a PO that no PA covers any more.
+
+    Creating a PA COMPLETES the PO's create_pa prompt, so a PO that later drops
+    out of every PA (removed from a draft's PO set, or its only PA deleted in
+    Data Maintenance) is left with a done prompt and no payment — and a
+    requester, whose only entry point is that prompt, can no longer raise one.
+
+    Returns the number of tasks reopened; 0 when another PA still covers the PO.
+    Shared by Data Maintenance's PA delete and the PATCH PO-set edit so both
+    self-heal identically.
+    """
+    from app.models.gr import GoodsReceipt
+
+    remaining = (
+        select(func.count()).select_from(PaymentApplication)
+        .where(PaymentApplication.id.in_(pa_ids_for_po(po_id)))
+    )
+    if exclude_pa_id is not None:
+        remaining = remaining.where(PaymentApplication.id != exclude_pa_id)
+    if (await db.execute(remaining)).scalar_one() > 0:
+        return 0
+
+    gr_ids_subq = select(GoodsReceipt.id).where(GoodsReceipt.po_id == po_id)
+    result = await db.execute(
+        select(Task).where(
+            Task.type == "create_pa",
+            Task.is_completed.is_(True),
+            or_(
+                and_(Task.document_type == "po", Task.document_id == po_id),
+                and_(Task.document_type == "gr", Task.document_id.in_(gr_ids_subq)),
+            ),
+        )
+    )
+    reopened = 0
+    for task in result.scalars().all():
+        task.is_completed = False
+        task.completed_at = None
+        reopened += 1
+    await db.flush()
+    return reopened
 
 
 async def _complete_create_prepayment_pa_tasks(db: AsyncSession, po_id: uuid.UUID) -> None:

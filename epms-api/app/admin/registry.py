@@ -48,7 +48,10 @@ from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.approval import ApprovalEvent
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
+from app.crud import pa as pa_crud
+from app.crud.pa_links import pa_ids_for_po, po_ids_of_pa
 from app.models.pa import PaymentApplication, PaLineItem
+from app.models.pa_po_link import PaPoLink
 from app.models.po import PurchaseOrder, PoLineItem
 from app.models.pr import PurchaseRequest, PrLineItem
 from app.models.task import Task
@@ -162,22 +165,18 @@ async def _pa_delete(db: AsyncSession, pa) -> dict[str, int]:
     # (whose only path is that task) can no longer create one. Skip when another
     # PA still covers the PO. During a PO cascade delete the reopened task is
     # purged with the PO anyway, so this is harmless there.
-    if pa.po_id is not None:
-        others = (await db.execute(
-            select(func.count()).select_from(PaymentApplication)
-            .where(PaymentApplication.po_id == pa.po_id, PaymentApplication.id != pa.id)
-        )).scalar_one()
-        if others == 0:
-            gr_ids = select(GoodsReceipt.id).where(GoodsReceipt.po_id == pa.po_id)
-            reopened = (await db.execute(
-                update(Task)
-                .where(Task.type == "create_pa", Task.is_completed.is_(True),
-                       or_(and_(Task.document_type == "po", Task.document_id == pa.po_id),
-                           and_(Task.document_type == "gr", Task.document_id.in_(gr_ids))))
-                .values(is_completed=False, completed_at=None)
-            )).rowcount
-            if reopened:
-                summary["create_pa_tasks_reopened"] = reopened
+    # Every PO the PA covers, not just the primary one: a PA settling three POs
+    # completed all three prompts, so deleting it has to consider all three.
+    covered_po_ids = list((await db.execute(
+        select(PurchaseOrder.id).where(PurchaseOrder.id.in_(po_ids_of_pa(pa.id)))
+    )).scalars().all())
+    reopened = 0
+    for covered_po_id in covered_po_ids:
+        reopened += await pa_crud.reopen_create_pa_tasks_if_unpaid(
+            db, covered_po_id, exclude_pa_id=pa.id
+        )
+    if reopened:
+        summary["create_pa_tasks_reopened"] = reopened
     _merge(summary, await purge_workflow_refs(db, pa.id))
     await db.delete(pa)             # pa_line_items + pa_attachment cascade via FK
     await db.flush()
@@ -285,11 +284,47 @@ async def _gr_preview(db: AsyncSession, gr, *, seen_invoices: set | None = None)
 
 # ── PO (blocked by GR/Invoice/PA on po_id) ──────────────────────────────────────
 
+async def _pas_covering_po(db: AsyncSession, po_id) -> tuple[list, list[str]]:
+    """PAs that pay this PO, split into (exclusive, shared_pa_numbers).
+
+    Exclusive = this is the only PO on the payment, so the payment dies with the
+    PO as it always has. Shared = the payment also settles OTHER orders; taking
+    it down with this PO would delete a real payment for orders nobody asked to
+    remove, so the caller refuses instead. Reading pa_po_links rather than
+    payment_applications.po_id is what makes the shared case visible at all —
+    on the header column a PA covering this PO second is invisible, and the
+    RESTRICT FK would then fail the delete with an opaque database error.
+    """
+    pa_ids = list((await db.execute(
+        select(PaymentApplication.id).where(PaymentApplication.id.in_(pa_ids_for_po(po_id)))
+    )).scalars().all())
+    if not pa_ids:
+        return [], []
+    pas = list((await db.execute(
+        select(PaymentApplication).where(PaymentApplication.id.in_(pa_ids))
+    )).scalars().all())
+    # A PA with no link rows at all (written outside crud.pa.create) has exactly
+    # one PO — the header's — so it counts as 1, not 0.
+    counts = dict((await db.execute(
+        select(PaPoLink.pa_id, func.count())
+        .where(PaPoLink.pa_id.in_(pa_ids)).group_by(PaPoLink.pa_id)
+    )).all())
+    exclusive = [pa for pa in pas if counts.get(pa.id, 1) <= 1]
+    shared = sorted(pa.pa_number for pa in pas if counts.get(pa.id, 1) > 1)
+    return exclusive, shared
+
+
 async def _po_delete(db: AsyncSession, po) -> dict[str, int]:
     summary: dict[str, int] = {}
+    exclusive_pas, shared_pas = await _pas_covering_po(db, po.id)
+    if shared_pas:
+        raise ValueError(
+            f"Cannot delete: payment application(s) {', '.join(shared_pas)} also cover "
+            "other purchase orders. Remove this PO from them (or delete them) first."
+        )
     for inv in await _children(db, Invoice, "po_id", po.id):
         _merge(summary, await _invoice_delete(db, inv))
-    for pa in await _children(db, PaymentApplication, "po_id", po.id):
+    for pa in exclusive_pas:
         _merge(summary, await _pa_delete(db, pa))
     for gr in await _children(db, GoodsReceipt, "po_id", po.id):
         # The PO and its lines are going away with this cascade — there is nothing
@@ -311,7 +346,8 @@ async def _po_preview(db: AsyncSession, po, *, seen_grs: set | None = None) -> d
     for inv in await _children(db, Invoice, "po_id", po.id):
         seen_invoices.add(inv.id)
         _merge(summary, await _invoice_preview(db, inv))
-    for pa in await _children(db, PaymentApplication, "po_id", po.id):
+    exclusive_pas, _shared = await _pas_covering_po(db, po.id)
+    for pa in exclusive_pas:
         _merge(summary, await _pa_preview(db, pa))
     for gr in await _children(db, GoodsReceipt, "po_id", po.id):
         if seen_grs is not None:

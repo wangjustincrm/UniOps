@@ -13,7 +13,9 @@ from app.models.config import CompanyConfig
 from app.models.department import Department
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
+from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos
 from app.models.pa import PaymentApplication
+from app.models.pa_po_link import PaPoLink
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -292,7 +294,8 @@ async def _pr_pipeline(db: AsyncSession, user_id: uuid.UUID) -> list[PrPipelineI
 
             # PAs
             pa_result = await db.execute(
-                select(PaymentApplication).where(PaymentApplication.po_id == po.id)
+                select(PaymentApplication)
+                .where(PaymentApplication.id.in_(pa_ids_for_po(po.id)))
             )
             pas = [PipelinePa(
                 id=p.id, pa_number=p.pa_number,
@@ -352,11 +355,21 @@ async def _pa_rows(db: AsyncSession, statuses: list[str], limit: int = 8) -> lis
         .order_by(PaymentApplication.created_at.desc())
         .limit(limit)
     )
+    pas = list(result.scalars())
+    numbers_by_pa: dict[uuid.UUID, list[str]] = {}
+    if pas:
+        for pa_id, po_number in (await db.execute(
+            select(PaPoLink.pa_id, PaPoLink.po_number)
+            .where(PaPoLink.pa_id.in_([p.id for p in pas]))
+            .order_by(PaPoLink.sort_order)
+        )).all():
+            numbers_by_pa.setdefault(pa_id, []).append(po_number)
     return [PaRow(
         id=p.id, pa_number=p.pa_number, vendor_name=p.vendor_name,
-        po_number=p.po_number, pa_type=p.pa_type, payment_amount=p.payment_amount,
+        po_number=p.po_number, po_numbers=numbers_by_pa.get(p.id, []),
+        pa_type=p.pa_type, payment_amount=p.payment_amount,
         currency=p.currency, status=p.status, created_at=p.created_at,
-    ) for p in result.scalars()]
+    ) for p in pas]
 
 
 # ── Role-specific dashboard builders ────────────────────────────────────────
@@ -397,9 +410,15 @@ async def build_requester(db: AsyncSession, user_id: uuid.UUID) -> DashboardResp
 
     # Paid this month — processed PAs in my chain, keyed on paid_at (the real
     # payment date; never bumped by unrelated writes like updated_at was).
+    # A PA settling several POs counts in full for every requester who owns one
+    # of them. There is no per-PO split of payment_amount to divide by, and the
+    # alternative — counting only the primary PO — would make the payment vanish
+    # from the dashboard of everyone else it actually paid. This is a personal
+    # "what happened on my orders" tile, not a company total, so the whole
+    # payment showing up on each owner's tile is the honest reading.
     paid_result = await db.execute(
         select(func.coalesce(func.sum(PaymentApplication.payment_amount), 0)).where(
-            PaymentApplication.po_id.in_(my_po_ids),
+            PaymentApplication.id.in_(pa_ids_for_pos(my_po_ids)),
             PaymentApplication.status == "processed",
             func.date_trunc("month", PaymentApplication.paid_at) ==
             func.date_trunc("month", func.now()),
@@ -410,7 +429,7 @@ async def build_requester(db: AsyncSession, user_id: uuid.UUID) -> DashboardResp
     # Pending payments — PAs in my chain not yet processed.
     pending_result = await db.execute(
         select(func.coalesce(func.sum(PaymentApplication.payment_amount), 0)).where(
-            PaymentApplication.po_id.in_(my_po_ids),
+            PaymentApplication.id.in_(pa_ids_for_pos(my_po_ids)),
             PaymentApplication.status.in_(["draft", "submitted", "in_review", "approved"]),
         )
     )

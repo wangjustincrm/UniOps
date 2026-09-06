@@ -236,6 +236,14 @@ class PoResponse(BaseModel):
     # Computed (detail view): created_by of the linked PR — the requester who may
     # confirm delivery (create GR) on a service/project PO. None for direct POs.
     pr_requester_id: uuid.UUID | None = None
+    # The department the PO's approvals route through (PO → PR.department_id).
+    # Not a column on the PO — resolved per response in api/v1/po.py. NULL for a
+    # PO with no PR (an NC-imported one), which is a distinct value, not
+    # "unknown": approval routing falls back to the submitter's own department
+    # there. The PA create/edit screens read it to keep a payment inside one
+    # department, since a payment routes through its PRIMARY PO's department
+    # only (approval-api engine.py::_routing_department_id).
+    pr_department_id: uuid.UUID | None = None
     # Computed (detail view): ANY invoice points at this PO — not just an unpaid
     # one. Distinct from has_unpaid_invoice above, which the LIST endpoint alone
     # fills in and which is therefore always False here. Drives the imported-PO

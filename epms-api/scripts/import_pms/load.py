@@ -30,6 +30,7 @@ from app.models.gr import GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.pa import PaLineItem, PaymentApplication
+from app.models.pa_po_link import PaPoLink
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PrLineItem, PurchaseRequest
 from app.models.user import User
@@ -781,6 +782,18 @@ async def run_load(
                     )
                     await adder.add(pa)
                     report.inserted["pa"] += 1
+                    # pa_po_links is the canonical answer to "which POs does
+                    # this PA pay" (a PA may settle several). This importer
+                    # writes payment_applications directly rather than through
+                    # crud.pa.create, so it has to write the link itself —
+                    # without it an imported payment is invisible on its PO's
+                    # payment list and the PO keeps prompting "Create Payment
+                    # Application" for an order that was paid years ago.
+                    if po_id is not None:
+                        await adder.add(PaPoLink(
+                            id=uuid.uuid4(), pa_id=auid, po_id=po_id,
+                            po_number=clip(po_no, 40), sort_order=0,
+                        ))
                     for idx, it in enumerate(lines):
                         li = PaLineItem(
                             id=uuid.uuid4(), pa_id=auid,

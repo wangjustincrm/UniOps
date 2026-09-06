@@ -22,6 +22,7 @@ from app.services import finance_client
 from app.crud import agreement as agr_crud
 from app.crud import pa as pa_crud
 from app.crud import po as po_crud
+from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos
 from app.crud.current_step import enrich_current_step
 from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.config import CompanyConfig
@@ -150,6 +151,107 @@ async def _validate_agreement_pa_invoices(
                         "explicitly without receipt evidence, before raising payment."))
 
 
+async def _assert_invoices_belong_to_pos(
+    db: SessionDep, pos: list[PurchaseOrder], invoice_ids: list[uuid.UUID],
+) -> None:
+    """Every listed invoice must belong to one of the PA's purchase orders.
+
+    An invoice "belongs to" the PA if it is header-linked (Invoice.po_id) OR
+    allocated via the multi-PO allocation table — to ANY of the POs the PA
+    covers. The invoice list the user picks from uses the same OR rule
+    (crud.invoice.get_all), so a header-only check would wrongly 422 an invoice
+    whose primary PO differs from this one but is allocated here.
+
+    Shared by create_pa and update_pa's PO-set replacement: dropping a PO from a
+    draft leaves any invoice that belonged only to it stranded on the payment,
+    and nothing else would notice — the payment would go out settling an
+    invoice for an order it no longer covers.
+    """
+    if not invoice_ids:
+        return
+    po_ids = [p.id for p in pos]
+    rows = (await db.execute(
+        select(Invoice.id, Invoice.po_id).where(Invoice.id.in_(invoice_ids))
+    )).all()
+    found_ids = {r.id for r in rows}
+    not_found = len(set(invoice_ids)) - len(found_ids)
+    if not_found:
+        raise HTTPException(status_code=422, detail=f"{not_found} invoice(s) not found")
+
+    direct_ids = {r.id for r in rows if r.po_id in set(po_ids)}
+    need_alloc_check = found_ids - direct_ids
+    if need_alloc_check:
+        alloc_rows = await db.execute(
+            select(InvoicePoAllocation.invoice_id).where(
+                InvoicePoAllocation.invoice_id.in_(need_alloc_check),
+                InvoicePoAllocation.po_id.in_(po_ids),
+            ).distinct()
+        )
+        need_alloc_check -= set(alloc_rows.scalars().all())
+    if need_alloc_check:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invoice(s) do not belong to {', '.join(p.number for p in pos)}: "
+                   f"{', '.join(str(i) for i in need_alloc_check)}",
+        )
+
+
+async def _assert_pos_coherent(
+    db: SessionDep, pos: list[PurchaseOrder], pa_type: str,
+) -> None:
+    """The cross-PO rules for one payment application.
+
+    Shared by create_pa and update_pa's PO-set replacement so a PA can never be
+    edited into a state creation would have refused.
+
+    The PA header carries ONE vendor and ONE currency and authorises ONE
+    transfer, so mixing either is refused outright rather than resolved by
+    quietly taking the primary PO's value — that would pay the wrong party, or
+    add up amounts that are not commensurable.
+    """
+    if len({p.vendor_id for p in pos}) > 1:
+        raise HTTPException(
+            status_code=422,
+            detail="All purchase orders on one payment application must belong to the "
+                   "same vendor. Raise a separate payment per vendor.",
+        )
+    if len({(p.currency or "CAD") for p in pos}) > 1:
+        raise HTTPException(
+            status_code=422,
+            detail="All purchase orders on one payment application must share the same "
+                   "currency. Raise a separate payment per currency.",
+        )
+    # Prepayment / settlement / balance are defined against ONE order: the cap
+    # comes from that PO's vendor, "one open prepayment per PO" is per-PO, and a
+    # settlement reconciles exactly one earlier prepayment against it. None of
+    # them has a coherent multi-PO reading, so multi-PO is regular-only.
+    if len(pos) > 1 and pa_type != "regular":
+        raise HTTPException(
+            status_code=422,
+            detail="Only a regular payment can cover several purchase orders. "
+                   "Prepayment, settlement and balance payments are raised against a "
+                   "single purchase order.",
+        )
+    # One payment routes through ONE department: approval-api resolves a PA's
+    # approvers from its PRIMARY PO's PR (engine.py::_routing_department_id).
+    # Combining departments would therefore hand the whole payment to the
+    # primary PO's approver and route the other department's spend past its own
+    # — quietly weaker than the two separate payments it replaces. NULL (a PO
+    # with no PR, i.e. NC-imported) is its own value: routing falls back to the
+    # submitter's department there, so it may only be combined with others like it.
+    if len(pos) > 1:
+        depts = set()
+        for p in pos:
+            depts.add(await po_crud.pr_department_id(db, p.pr_id))
+        if len(depts) > 1:
+            raise HTTPException(
+                status_code=422,
+                detail="All purchase orders on one payment application must belong to "
+                       "the same department — a payment is approved by one department's "
+                       "reviewers. Raise a separate payment per department.",
+            )
+
+
 @router.get("", response_model=PaListResponse)
 async def list_pas(
     db: SessionDep,
@@ -179,6 +281,7 @@ async def list_pas(
         page=page, page_size=page_size,
     )
     await enrich_current_step(db, "pa", items)
+    await pa_crud.attach_po_links(db, items)
     return {"items": [PaResponse.model_validate(pa) for pa in items], "total": total}
 
 
@@ -286,28 +389,41 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         )
         return created
 
-    # ── PO route below, unchanged ──────────────────────────────────────────────
-    po = await po_crud.get_by_id(db, body.po_id)
-    if po is None:
-        raise HTTPException(status_code=404, detail="Purchase order not found")
+    # ── PO route below ─────────────────────────────────────────────────────────
+    # One PA may settle several POs of the same vendor in a single payment.
+    # `pos` is the whole set, primary first; `po` stays bound to the primary so
+    # the single-PO guards further down read exactly as they always did.
+    po_ids = body.resolved_po_ids
+    pos: list[PurchaseOrder] = []
+    for pid in po_ids:
+        loaded = await po_crud.get_by_id(db, pid)
+        if loaded is None:
+            raise HTTPException(status_code=404, detail="Purchase order not found")
+        pos.append(loaded)
+    po = pos[0]
+
+    await _assert_pos_coherent(db, pos, body.pa_type)
 
     # A plain requester may only pay against POs linked to a PR they raised. The
     # PA write role list includes 'requester', and a requester carrying a special
     # role assignment (e.g. finance_bp) would otherwise have unrestricted PO scope,
     # so enforce ownership here on the JWT base role regardless of that widening.
+    # Checked for EVERY PO on the payment: passing on the primary alone would let
+    # anyone staple someone else's order onto their own PA and pay it.
     if user.get("role") == "requester":
-        pr_requester_id = None
-        if po.pr_id is not None:
-            pr_requester_id = (await db.execute(
-                select(PurchaseRequest.created_by).where(PurchaseRequest.id == po.pr_id)
-            )).scalar_one_or_none()
-        if pr_requester_id != uuid.UUID(user["sub"]):
-            roles = await _effective_role_codes(db, "requester", uuid.UUID(user["sub"]))
-            if not await _may_create_pa_on_behalf(db, roles, po, uuid.UUID(user["sub"])):
-                raise HTTPException(
-                    status_code=403,
-                    detail="You can only create payments for purchase orders linked to your own requisitions.",
-                )
+        roles = await _effective_role_codes(db, "requester", uuid.UUID(user["sub"]))
+        for p in pos:
+            pr_requester_id = None
+            if p.pr_id is not None:
+                pr_requester_id = (await db.execute(
+                    select(PurchaseRequest.created_by).where(PurchaseRequest.id == p.pr_id)
+                )).scalar_one_or_none()
+            if pr_requester_id != uuid.UUID(user["sub"]):
+                if not await _may_create_pa_on_behalf(db, roles, p, uuid.UUID(user["sub"])):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="You can only create payments for purchase orders linked to your own requisitions.",
+                    )
 
     # ── Prepayment-specific guards ─────────────────────────────────────────────
     if body.pa_type == "prepayment":
@@ -346,7 +462,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # PP-004: only one open prepayment PA per PO
         existing = (await db.execute(
             select(PaymentApplication.id).where(
-                PaymentApplication.po_id == body.po_id,
+                PaymentApplication.id.in_(pa_ids_for_po(po.id)),
                 PaymentApplication.pa_type == "prepayment",
                 PaymentApplication.status.notin_(["cancelled", "rejected"]),
             )
@@ -367,7 +483,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         orig = (await db.execute(
             select(PaymentApplication).where(
                 PaymentApplication.id == body.prepayment_pa_id,
-                PaymentApplication.po_id == body.po_id,
+                PaymentApplication.id.in_(pa_ids_for_po(po.id)),
                 PaymentApplication.pa_type == "prepayment",
             )
         )).scalar_one_or_none()
@@ -400,13 +516,16 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
 
     else:
         # PP-008: for regular PAs, block if any open prepayment PA exists on this PO
+        # An open prepayment on ANY of the POs blocks this regular payment —
+        # checking only the primary would let an unsettled advance ride along on
+        # a second PO and be paid for twice.
         blocking = (await db.execute(
             select(PaymentApplication.pa_number).where(
-                PaymentApplication.po_id == body.po_id,
+                PaymentApplication.id.in_(pa_ids_for_pos([p.id for p in pos])),
                 PaymentApplication.pa_type == "prepayment",
                 PaymentApplication.status.notin_(["cancelled", "rejected", "processed"]),
             )
-        )).scalar_one_or_none()
+        )).scalars().first()
         if blocking:
             raise HTTPException(
                 status_code=409,
@@ -414,46 +533,24 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
             )
 
     # ── Invoice validation ─────────────────────────────────────────────────────
-    if body.invoice_ids:
-        result = await db.execute(
-            select(Invoice.id, Invoice.po_id).where(Invoice.id.in_(body.invoice_ids))
-        )
-        rows = result.all()
-        found_ids = {r.id for r in rows}
-        not_found = len(set(body.invoice_ids)) - len(found_ids)
-        if not_found:
-            raise HTTPException(status_code=422, detail=f"{not_found} invoice(s) not found")
-
-        # An invoice "belongs to" this PO if it is header-linked (Invoice.po_id)
-        # OR allocated to it via the multi-PO allocation table. The invoice list
-        # the user picks from uses the same OR rule (crud.invoice.get_all), so the
-        # header-only check below would wrongly 422 any invoice whose primary PO
-        # differs from this one but is allocated here.
-        direct_ids = {r.id for r in rows if r.po_id == body.po_id}
-        need_alloc_check = found_ids - direct_ids
-        if need_alloc_check:
-            alloc_rows = await db.execute(
-                select(InvoicePoAllocation.invoice_id).where(
-                    InvoicePoAllocation.invoice_id.in_(need_alloc_check),
-                    InvoicePoAllocation.po_id == body.po_id,
-                ).distinct()
-            )
-            need_alloc_check -= set(alloc_rows.scalars().all())
-        if need_alloc_check:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Invoice(s) do not belong to PO {po.number}: "
-                       f"{', '.join(str(i) for i in need_alloc_check)}",
-            )
+    await _assert_invoices_belong_to_pos(db, pos, body.invoice_ids)
 
     # ── 收货闸门 —— 预付款先付后收豁免;其余类型须有 3-way matched 发票 ──
+    # 每一张 PO 都要过闸:只查主 PO 会让「搭车」的第二张 PO 在完全没收货的情况下
+    # 被付掉,而这正是闸门要拦的事。override 是整张 PA 一次性的决定,理由里报出
+    # 具体是哪几张 PO 没有凭证。
     scope = await build_scope(db, user)
     if body.pa_type != "prepayment":
-        if not await po_crud.po_has_three_way_matched_invoice(db, body.po_id):
+        ungated = [
+            p for p in pos
+            if not await po_crud.po_has_three_way_matched_invoice(db, p.id)
+        ]
+        if ungated:
+            numbers = ", ".join(p.number for p in ungated)
             if not body.receipt_override:
                 raise HTTPException(
                     status_code=422,
-                    detail="No 3-way matched invoice for this PO (a matched invoice "
+                    detail=f"No 3-way matched invoice for {numbers} (a matched invoice "
                            "with a linked goods receipt). Create a goods receipt "
                            "first, or override with a reason.",
                 )
@@ -471,6 +568,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
     created = await pa_crud.create(
         db, body,
         po_number=po.number,
+        po_links=[(p.id, p.number) for p in pos],
         vendor_id=po.vendor_id,
         vendor_name=po.vendor_name,
         created_by=uuid.UUID(user["sub"]),
@@ -536,6 +634,68 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWr
         if agr is None:
             raise HTTPException(status_code=404, detail="Agreement not found")
         await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
+
+    # ── PO-set replacement ─────────────────────────────────────────────────────
+    # Editing which POs a draft covers runs the same gates creation does. Doing
+    # it here rather than in crud keeps one statement of the rules: a PA must
+    # never be reachable by PATCH in a shape POST would have refused.
+    po_links: list[tuple[uuid.UUID, str]] | None = None
+    if body.po_ids is not None:
+        if pa.agreement_id is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="An agreement-backed payment application has no purchase orders.",
+            )
+        # De-dup, order preserved: the first entry becomes the primary PO.
+        new_ids: list[uuid.UUID] = []
+        for pid in body.po_ids:
+            if pid not in new_ids:
+                new_ids.append(pid)
+        if not new_ids:
+            raise HTTPException(
+                status_code=422,
+                detail="A payment application must cover at least one purchase order.",
+            )
+        pos: list[PurchaseOrder] = []
+        for pid in new_ids:
+            loaded = await po_crud.get_by_id(db, pid)
+            if loaded is None:
+                raise HTTPException(status_code=404, detail="Purchase order not found")
+            pos.append(loaded)
+        await _assert_pos_coherent(db, pos, pa.pa_type)
+        # The invoice list to check against the NEW PO set is the one being
+        # saved, or the PA's existing one when the caller only changed the POs.
+        # Dropping a PO without this leaves that PO's invoice on the payment.
+        invoice_ids_after = (
+            body.invoice_ids if body.invoice_ids is not None
+            else [uuid.UUID(i) for i in (pa.invoice_ids or [])]
+        )
+        await _assert_invoices_belong_to_pos(db, pos, invoice_ids_after)
+        if user.get("role") == "requester":
+            roles = await _effective_role_codes(db, "requester", uuid.UUID(user["sub"]))
+            for p in pos:
+                pr_requester_id = None
+                if p.pr_id is not None:
+                    pr_requester_id = (await db.execute(
+                        select(PurchaseRequest.created_by).where(PurchaseRequest.id == p.pr_id)
+                    )).scalar_one_or_none()
+                if pr_requester_id != uuid.UUID(user["sub"]):
+                    if not await _may_create_pa_on_behalf(db, roles, p, uuid.UUID(user["sub"])):
+                        raise HTTPException(
+                            status_code=403,
+                            detail="You can only create payments for purchase orders linked to your own requisitions.",
+                        )
+        # A PO dropped from the PA is no longer being paid by it. If nothing
+        # else pays it, its "Create Payment Application" prompt has to come
+        # back — otherwise removing a PO here strands it exactly the way a
+        # Data Maintenance delete used to (admin/registry.py does the same).
+        removed = [pid for pid in (pa.po_ids or []) if pid not in set(new_ids)]
+        po_links = [(p.id, p.number) for p in pos]
+        updated = await pa_crud.update(db, pa, body, po_links=po_links)
+        for pid in removed:
+            await pa_crud.reopen_create_pa_tasks_if_unpaid(db, pid)
+        return updated
+
     return await pa_crud.update(db, pa, body)
 
 
