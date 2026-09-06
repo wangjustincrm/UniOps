@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   invoiceService,
   type InvoiceFilters,
@@ -6,6 +6,7 @@ import {
   type UpdateInvoiceBody,
   type MatchInvoiceBody,
   type SetReceiptsBody,
+  type ApiInvoice,
 } from '@/services/invoices'
 import type { ReceiptStatus } from '@/services/agreementReceipts'
 
@@ -91,6 +92,39 @@ export function useInvoices(filters?: InvoiceFilters, enabled = true) {
     enabled,
     staleTime: 30_000,
   })
+}
+
+// One query per PO rather than a widened endpoint: the keys are IDENTICAL to
+// useInvoices({ po_id }) above, so adding a second PO to a payment reuses the
+// first PO's cached list instead of refetching everything, and any mutation
+// that already invalidates ['invoices'] still refreshes these.
+//
+// `items` is de-duplicated by id: an invoice allocated across two of the
+// selected POs is returned by both queries and must appear once — otherwise it
+// is offered twice for ticking and double-counts in the charge breakdown.
+// `isLoading` is undefined-until-resolved, matching the `data === undefined`
+// guard the create page's auto-selection effects use.
+export function useInvoicesForPos(poIds: string[], enabled = true) {
+  const results = useQueries({
+    queries: poIds.map((poId) => ({
+      queryKey: ['invoices', { po_id: poId }],
+      queryFn: () => invoiceService.listAll({ po_id: poId }),
+      enabled,
+      staleTime: 30_000,
+    })),
+  })
+  const settled = poIds.length === 0 || results.every((r) => r.data !== undefined)
+  if (!settled) return { items: undefined as ApiInvoice[] | undefined, isLoading: true }
+  const seen = new Set<string>()
+  const items: ApiInvoice[] = []
+  for (const r of results) {
+    for (const inv of r.data?.items ?? []) {
+      if (seen.has(inv.id)) continue
+      seen.add(inv.id)
+      items.push(inv)
+    }
+  }
+  return { items, isLoading: false }
 }
 
 // Fetched only while the drawer is open (`enabled`): the chain costs a PA

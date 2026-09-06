@@ -226,7 +226,12 @@ export default function PaListPage() {
                   <td className="px-4 py-3 font-medium text-neutral-900">{pa.vendor_name}</td>
                   <td className="px-4 py-3"><TypeBadge type={pa.pa_type} /></td>
                   <td className="px-4 py-3">
-                    <div className="font-mono text-xs text-neutral-600">{pa.po_number}</div>
+                    {/* A payment may settle several POs — list them all rather
+                        than the header's primary one, which on its own reads as
+                        though the other orders were not being paid. */}
+                    {(pa.po_numbers?.length ? pa.po_numbers : (pa.po_number ? [pa.po_number] : [])).map((n) => (
+                      <div key={n} className="font-mono text-xs text-neutral-600">{n}</div>
+                    ))}
                     {pa.invoice_ids.length > 0 && (
                       <div className="text-[10px] text-neutral-400 mt-0.5">{pa.invoice_ids.length} invoice{pa.invoice_ids.length !== 1 ? 's' : ''}</div>
                     )}

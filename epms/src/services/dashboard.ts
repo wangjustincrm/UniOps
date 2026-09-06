@@ -97,6 +97,10 @@ export interface PaRow {
   pa_number: string
   vendor_name: string
   po_number: string
+  // Every PO the payment settles (a PA may cover several); po_number above is
+  // just the primary. Optional so a response cached from before multi-PO
+  // shipped still type-checks.
+  po_numbers?: string[]
   pa_type: string
   payment_amount: number
   currency: string

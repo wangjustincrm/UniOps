@@ -89,7 +89,15 @@ export default function FinanceBpDashboard() {
                     </td>
                     <td className="py-2 pr-3 max-w-[150px] truncate text-neutral-700">{pa.vendor_name}</td>
                     <td className="py-2 pr-3">
-                      <span className="font-mono text-xs text-neutral-600">{pa.po_number}</span>
+                      {/* A payment may settle several POs. The row has space for
+                          one, so it names the primary and counts the rest —
+                          showing the primary alone reads as the whole payment. */}
+                      <span className="font-mono text-xs text-neutral-600">
+                        {pa.po_number}
+                        {(pa.po_numbers?.length ?? 0) > 1 && (
+                          <span className="ml-1 text-neutral-400">+{(pa.po_numbers?.length ?? 1) - 1}</span>
+                        )}
+                      </span>
                     </td>
                     <td className="py-2 pr-3"><PaTypeBadge type={pa.pa_type} /></td>
                     <td className="py-2 pr-3 text-right font-mono text-neutral-900">

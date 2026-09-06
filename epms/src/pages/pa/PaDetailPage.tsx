@@ -13,8 +13,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate, formatDateTime, formatUnitPrice } from '@/lib/utils'
 import { usePa, usePaAction, usePaEvents, useConfirmSettlement, usePaWorkflowSteps } from '@/hooks/usePas'
-import { usePo } from '@/hooks/usePos'
-import { useInvoices } from '@/hooks/useInvoices'
+import { usePosByIds } from '@/hooks/usePos'
+import { useInvoices, useInvoicesForPos } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
 import { useAuthStore } from '@/stores/auth.store'
 import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment, useRegeneratePaPdf } from '@/hooks/usePaAttachments'
@@ -357,7 +357,10 @@ export default function PaDetailPage() {
   const { data: events } = usePaEvents(id ?? '')
   const paAction = usePaAction(id ?? '')
   const confirmSettlement = useConfirmSettlement(id ?? '')
-  const { data: po } = usePo(pa?.po_id ?? '')
+  // Assigned below paPoLinks so it covers EVERY PO on the payment — the line
+  // variance panel matches an invoice line to its PO line by id, and an invoice
+  // that belongs to the second PO would otherwise be compared against the
+  // primary PO's lines (i.e. against nothing) and reported as unmatched.
   // PO 路由按 po_id 取,协议路由按 agreement_id 取。原先只判 pa.po_id,
   // 协议 PA(po_id 为 null)整个跳过 fetch,Linked Documents 永远显示
   // "No invoices linked"。agreement_id 过滤后端早就支持(DocumentChainTree 已在用)。
@@ -365,15 +368,30 @@ export default function PaDetailPage() {
   // 刻意**不传** page/page_size:useInvoices 据此分流 —— 传了就走单页
   // list(),不传才走 listAll()(fetchAllPages 逐页取全)。截断已由 listAll
   // 解决,再传 page_size 反而把「取全部」降级成「封顶一页」。
-  const invoiceFilters = pa?.invoice_ids.length
-    ? (pa.po_id
-        ? { po_id: pa.po_id }
-        : pa.agreement_id
-          ? { agreement_id: pa.agreement_id }
-          : undefined)
+  // Every PO this payment settles. po_ids/po_numbers are the authority; po_id/
+  // po_number is only the primary one, and is the fallback for a PA response
+  // cached from before multi-PO shipped.
+  const paPoLinks: { id: string; number: string }[] =
+    pa?.po_ids?.length
+      ? pa.po_ids.map((poId, i) => ({ id: poId, number: pa.po_numbers?.[i] ?? poId }))
+      : (pa?.po_id ? [{ id: pa.po_id, number: pa.po_number ?? pa.po_id }] : [])
+
+  // Agreement route keeps the single agreement-filtered fetch; the PO route
+  // fans out over every PO on the payment, because an invoice allocated to the
+  // SECOND PO is in pa.invoice_ids but absent from the primary PO's list — it
+  // would silently drop out of Linked Documents.
+  const agreementInvoiceFilter = pa?.invoice_ids.length && !pa.po_id && pa.agreement_id
+    ? { agreement_id: pa.agreement_id }
     : undefined
-  const { data: invoicesData } = useInvoices(invoiceFilters, !!invoiceFilters)
-  const linkedInvoices = (invoicesData?.items ?? []).filter((inv) => pa?.invoice_ids.includes(inv.id))
+  const { data: agreementInvoicesData } = useInvoices(agreementInvoiceFilter, !!agreementInvoiceFilter)
+  const invoicePoIds = pa?.invoice_ids.length ? paPoLinks.map((l) => l.id) : []
+  const poInvoices = useInvoicesForPos(invoicePoIds, invoicePoIds.length > 0)
+  const linkedPos = usePosByIds(paPoLinks.map((l) => l.id))
+  const allPoLines = linkedPos.items?.flatMap((p) => p.line_items)
+  const invoiceCandidates = agreementInvoiceFilter
+    ? (agreementInvoicesData?.items ?? [])
+    : (poInvoices.items ?? [])
+  const linkedInvoices = invoiceCandidates.filter((inv) => pa?.invoice_ids.includes(inv.id))
   const { user } = useAuthStore()
   // Same hook/pattern InvoiceDetailPage.tsx uses for its 3-way-match tolerance.
   const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
@@ -766,17 +784,25 @@ export default function PaDetailPage() {
               <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
                 <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Linked Documents</h3>
                 <div className="flex flex-col gap-2">
-                  {/* PO */}
-                  <div className="flex items-center justify-between rounded-lg border border-neutral-100 bg-neutral-50 px-4 py-2.5">
-                    <span className="text-xs font-medium text-neutral-600">PO</span>
-                    {po ? (
-                      <Link to={`/po/${pa.po_id}`} className="flex items-center gap-1 font-mono text-xs text-primary-700 hover:underline">
-                        {pa.po_number} <ExternalLink className="h-3 w-3" />
-                      </Link>
-                    ) : (
-                      <span className="font-mono text-xs text-neutral-400">{pa.po_number}</span>
-                    )}
-                  </div>
+                  {/* PO(s) — one payment may settle several purchase orders. */}
+                  {paPoLinks.length > 0 && (
+                    <div className="flex items-start justify-between gap-3 rounded-lg border border-neutral-100 bg-neutral-50 px-4 py-2.5">
+                      <span className="text-xs font-medium text-neutral-600 shrink-0">
+                        {paPoLinks.length > 1 ? `POs (${paPoLinks.length})` : 'PO'}
+                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        {paPoLinks.map((link) => (
+                          <Link
+                            key={link.id}
+                            to={`/po/${link.id}`}
+                            className="flex items-center gap-1 font-mono text-xs text-primary-700 hover:underline"
+                          >
+                            {link.number} <ExternalLink className="h-3 w-3" />
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Invoices */}
                   {linkedInvoices.length > 0 ? linkedInvoices.map((inv) => (
@@ -810,7 +836,7 @@ export default function PaDetailPage() {
                     <InvoiceMatchVariancePanel
                       key={inv.id}
                       invoice={inv}
-                      poLines={po?.line_items}
+                      poLines={allPoLines}
                       tolerancePct={matchTolerancePct}
                     />
                   ))}

@@ -83,6 +83,11 @@ export interface ApiPo {
   pr_id?: string
   pr_number?: string
   pr_requester_id?: string | null
+  // Department the PO's approvals route through (PO → PR.department_id); null
+  // for a PO with no PR. A payment is approved by ONE department's reviewers
+  // (its primary PO's), so the PA screens refuse to mix departments on one
+  // payment — mirrors epms-api pa.py::_assert_pos_coherent.
+  pr_department_id?: string | null
   approval_step_idx: number
   line_items: ApiPoLineItem[]
   created_by_name?: string | null

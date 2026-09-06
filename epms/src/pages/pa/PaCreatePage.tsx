@@ -7,12 +7,12 @@ import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDo
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
-import { useCreatePa, usePas, usePa } from '@/hooks/usePas'
+import { useCreatePa, usePas, usePasForPos, usePa } from '@/hooks/usePas'
 import { paService } from '@/services/pa'
 import { usePos } from '@/hooks/usePos'
 import { useAuthStore } from '@/stores/auth.store'
-import { useInvoices } from '@/hooks/useInvoices'
-import { useGrs } from '@/hooks/useGrs'
+import { useInvoices, useInvoicesForPos } from '@/hooks/useInvoices'
+import { useGrsForPos } from '@/hooks/useGrs'
 import { useAgreement } from '@/hooks/useAgreements'
 import { useRolePermissions } from '@/hooks/useConfig'
 import type { ApiPo } from '@/services/po'
@@ -152,11 +152,22 @@ export default function PaCreatePage() {
   // asked to pick it again. Settle mode (?settleFrom=) keeps its own locked PO.
   const poIdFromUrl = searchParams.get('poId') ?? ''
   const [poSearch, setPoSearch]         = useState('')
-  const [selectedPoId, setSelectedPoId] = useState(poIdFromUrl)
+  // One payment may settle several POs of the same vendor. The list is ordered
+  // and its FIRST entry is the primary PO — the one the backend mirrors onto
+  // the PA header, and the one every single-PO affordance below still keys off
+  // (payment type, the Settle deep-link, the "Change PO" card).
+  const [selectedPoIds, setSelectedPoIds] = useState<string[]>(poIdFromUrl ? [poIdFromUrl] : [])
+  const selectedPoId = selectedPoIds[0] ?? ''
+  // A stable identity for the whole selection — effects that must re-run when
+  // the SET changes (and not merely when React hands back a new array) key off
+  // this rather than the array itself.
+  const poSelectionKey = selectedPoIds.join(',')
+  const isMultiPo = selectedPoIds.length > 1
   const [changingPo, setChangingPo]     = useState(false)
   const fromTask = Boolean(poIdFromUrl) && !lockedFromSettle
-  // Tracks the PO we've already applied matched-invoice/GR defaults for, so the
-  // auto-selection runs once per PO and never re-checks boxes the user cleared.
+  // Tracks the PO selection we've already applied matched-invoice/GR defaults
+  // for, so the auto-selection runs once per selection and never re-checks
+  // boxes the user cleared.
   const autoSelectedForPoRef = useRef<string | null>(null)
   // Same idea for agreement mode (no GR side-effect there — there is never a GR).
   const autoSelectedForAgreementRef = useRef<string | null>(null)
@@ -219,21 +230,59 @@ export default function PaCreatePage() {
     p.title.toLowerCase().includes(poSearch.toLowerCase())
   )
 
+
   // Prefer the eligible-list match; fall back to the full PO set so a pre-selected
   // PO (e.g. via Settle deep-link) still resolves even if outside the choosable list.
-  const selectedPo: ApiPo | undefined =
-    eligiblePos.find((p) => p.id === selectedPoId) ?? allPos.find((p) => p.id === selectedPoId)
+  const resolvePo = (id: string): ApiPo | undefined =>
+    eligiblePos.find((p) => p.id === id) ?? allPos.find((p) => p.id === id)
+  // Every PO on this payment, in selection order. Filtered rather than mapped so
+  // an id whose PO has not loaded yet simply is not there (instead of a hole
+  // that every consumer would have to null-check).
+  const selectedPos: ApiPo[] = selectedPoIds
+    .map(resolvePo)
+    .filter((p): p is ApiPo => p !== undefined)
+  const selectedPo: ApiPo | undefined = resolvePo(selectedPoId)
 
-  const { data: invoicesData } = useInvoices(
-    selectedPoId
-      ? { po_id: selectedPoId }
-      : isAgreementMode
-        ? { agreement_id: agreementIdFromUrl }
-        : undefined
+  // Why a PO cannot join the current selection — null means it can. The backend
+  // refuses all three (epms-api pa.py::_assert_pos_coherent); saying so on the
+  // row itself is the difference between "some rows are greyed out" and a 422
+  // after the operator has filled in the whole form.
+  const poJoinBlockedReason = (po: ApiPo): string | null => {
+    const anchor = selectedPos[0]
+    if (!anchor || anchor.id === po.id) return null
+    if (po.vendor_id !== anchor.vendor_id) return 'Different vendor'
+    if ((po.currency ?? 'CAD') !== (anchor.currency ?? 'CAD')) return 'Different currency'
+    // One payment is approved by one department's reviewers — the primary PO's.
+    if ((po.pr_department_id ?? null) !== (anchor.pr_department_id ?? null)) return 'Different department'
+    // Prepayment / settlement / balance are raised against a single order, so
+    // while one of those types is chosen no second PO may join.
+    if (paType !== 'regular') return 'Single PO only for this payment type'
+    return null
+  }
+
+  const togglePo = (id: string) => {
+    setSelectedPoIds((prev) => (
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    ))
+  }
+
+  // The agreement route is single-document by nature; only the PO route fans out.
+  const { data: agreementInvoicesData } = useInvoices(
+    isAgreementMode ? { agreement_id: agreementIdFromUrl } : undefined,
+    isAgreementMode,
   )
+  const poInvoices = useInvoicesForPos(selectedPoIds, !isAgreementMode)
   // GRs never exist on the agreement route — skip the fetch entirely there.
-  const { data: grsData } = useGrs(selectedPoId ? { po_id: selectedPoId } : undefined, !isAgreementMode)
-  const { data: poActivePas } = usePas(selectedPoId ? { po_id: selectedPoId } : undefined, !isAgreementMode)
+  const poGrsQuery = useGrsForPos(selectedPoIds, !isAgreementMode)
+  const poPasQuery = usePasForPos(selectedPoIds, !isAgreementMode)
+  // Kept under the old names so the effects below still read as "wait until the
+  // lists for this selection have resolved" — undefined until every PO's query
+  // has landed, exactly as a single useQuery's `data` behaved.
+  const invoicesData = isAgreementMode
+    ? agreementInvoicesData
+    : (poInvoices.items === undefined ? undefined : { items: poInvoices.items })
+  const grsData = poGrsQuery.items === undefined ? undefined : { items: poGrsQuery.items }
+  const poActivePas = poPasQuery.items === undefined ? undefined : { items: poPasQuery.items }
   // GET /pa has no agreement_id filter — narrow server-side via `search` on the
   // agreement number (matches PaymentApplication.agreement_number ilike), then
   // re-filter client-side on the real agreement_id column below.
@@ -276,8 +325,10 @@ export default function PaCreatePage() {
   )
   const poGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
 
-  // Auto-subtotal from selected PO lines
-  const selectedPoLines = selectedPo ? selectedPo.line_items.filter((l) => selectedLineIds.has(l.id)) : []
+  // Auto-subtotal from selected PO lines — across every PO on the payment.
+  const selectedPoLines = selectedPos.flatMap((p) =>
+    p.line_items.filter((l) => selectedLineIds.has(l.id))
+  )
   const autoSubtotal = selectedPoLines.reduce((s, l) => s + Number(l.line_total), 0)
 
   // Selected-invoice aggregates. The PA pays these invoices, so their real
@@ -323,6 +374,10 @@ export default function PaCreatePage() {
   // Finance Tax Settings (mdm-api) for the PO route; the agreement carries its
   // own tax_code/tax_rate for the agreement route (same mdm-api origin, set at
   // agreement creation). Falls back to 13% only when neither has a rate recorded.
+  // Multi-PO: the primary PO's snapshot is the one used. All POs share a vendor
+  // and a currency, so in practice they share a tax code too; when they do not,
+  // the invoice-driven auto-fill below overrides the rate anyway and the
+  // operator can still edit the tax by hand.
   const paTaxRate = isAgreementMode
     ? (agreement?.tax_rate != null ? Number(agreement.tax_rate) : 0.13)
     : (selectedPo ? Number(selectedPo.tax_rate) : 0.13)
@@ -353,13 +408,16 @@ export default function PaCreatePage() {
     if (lockedFromSettle || isAgreementMode) return
     const po = allPos.find((p) => p.id === selectedPoId)
     if (selectedPoId && !po) return
-    if (resetForPoRef.current === selectedPoId) return
-    resetForPoRef.current = selectedPoId
+    if (resetForPoRef.current === poSelectionKey) return
+    resetForPoRef.current = poSelectionKey
     autoSelectedForPoRef.current = null
     setSelectedInvoiceIds(new Set())
     setSelectedGrIds(new Set())
     setSelectedLineIds(new Set())
-    setPaType(po?.is_prepaid ? 'prepayment' : 'regular')
+    // Payment type follows the PRIMARY PO's prepayment flag — and a payment
+    // covering more than one order can only ever be a regular one (prepayment,
+    // settlement and balance are defined against a single order).
+    setPaType(selectedPoIds.length > 1 ? 'regular' : (po?.is_prepaid ? 'prepayment' : 'regular'))
     setPrepaymentPct('50')
     setExpectedSettlement('')
     setPrepaymentPaId('')
@@ -371,12 +429,13 @@ export default function PaCreatePage() {
     setShipping('')
     setOther('')
     setOtherNote('')
-  }, [selectedPoId, posData]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [poSelectionKey, posData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Settle 模式:来源预付加载后锁定并预填 PO / 类型 / Original Prepayment PA / 抵扣额
   useEffect(() => {
     if (!sourcePrepay) return
-    setSelectedPoId(sourcePrepay.po_id ?? '')
+    // Settling a prepayment is always single-PO — the prepayment itself was.
+    setSelectedPoIds(sourcePrepay.po_id ? [sourcePrepay.po_id] : [])
     setPaType('settlement')
     setPrepaymentPaId(sourcePrepay.id)
     setPrepaymentApplied(String(sourcePrepay.payment_amount ?? ''))
@@ -388,7 +447,7 @@ export default function PaCreatePage() {
   // confirmed. Runs once per PO (guarded by the ref) so manual de-selection sticks.
   useEffect(() => {
     if (!selectedPoId) return
-    if (autoSelectedForPoRef.current === selectedPoId) return
+    if (autoSelectedForPoRef.current === poSelectionKey) return
     // Wait until every list query for this PO has resolved.
     if (invoicesData === undefined || grsData === undefined || poActivePas === undefined) return
 
@@ -396,12 +455,12 @@ export default function PaCreatePage() {
       (inv) => inv.status === 'matched' && !lockedInvoiceIds.has(inv.id)
     )
 
-    autoSelectedForPoRef.current = selectedPoId
+    autoSelectedForPoRef.current = poSelectionKey
     if (matchedInvoices.length > 0) setSelectedInvoiceIds(new Set(matchedInvoices.map((i) => i.id)))
     // The receipts are NOT chosen here — they follow the invoice selection in
     // the effect below, which covers this first fill and every later change
     // with one rule instead of two.
-  }, [selectedPoId, invoicesData, grsData, poActivePas]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [poSelectionKey, invoicesData, grsData, poActivePas]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Goods receipts follow the invoices. An invoice is matched against the
   // receipts it covers before it can be paid, so "which goods did this payment
@@ -454,11 +513,15 @@ export default function PaCreatePage() {
   useEffect(() => {
     if (title) return
     if (!isAgreementMode && selectedPo) {
-      setTitle(`Payment — ${selectedPo.vendor_name} ${selectedPo.number}`)
+      // Name every PO being settled: the title is what the approver, the
+      // remittance advice and the PA list all show, and "one of three POs" is
+      // not what this payment is.
+      const numbers = selectedPos.map((p) => p.number).join(', ')
+      setTitle(`Payment — ${selectedPo.vendor_name} ${numbers || selectedPo.number}`)
     } else if (isAgreementMode && agreement) {
       setTitle(`Payment — ${agreement.vendor_name} ${agreement.number}`)
     }
-  }, [isAgreementMode, selectedPoId, selectedPo?.id, agreement?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAgreementMode, poSelectionKey, selectedPo?.id, selectedPos.length, agreement?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill pre-tax: prefer the linked invoices' real pre-tax; fall back to the
   // selected PO lines when the PA links no invoice (GR-only / manual payment).
@@ -495,7 +558,18 @@ export default function PaCreatePage() {
       if (taxNum < 0) errors.push('Tax amount cannot be negative')
       if (netPayable <= 0) errors.push('Total payment amount must be greater than zero')
     } else {
-      if (!selectedPo)     errors.push('Please select a PO')
+      if (!selectedPo)     errors.push('Please select at least one PO')
+      // Belt and braces for the row-level gating above: a selection can also go
+      // incoherent when the payment type is switched to prepayment after two
+      // POs were ticked.
+      if (isMultiPo && paType !== 'regular')
+        errors.push('Only a regular payment can cover several purchase orders')
+      if (selectedPos.some((p) => p.vendor_id !== selectedPos[0].vendor_id))
+        errors.push('All selected POs must belong to the same vendor')
+      if (selectedPos.some((p) => (p.currency ?? 'CAD') !== (selectedPos[0].currency ?? 'CAD')))
+        errors.push('All selected POs must share the same currency')
+      if (selectedPos.some((p) => (p.pr_department_id ?? null) !== (selectedPos[0].pr_department_id ?? null)))
+        errors.push('All selected POs must belong to the same department')
       // Every invoice is matched to its PO and its GR before it can be paid, so
       // a PA that identifies nothing to settle should not exist. An empty link
       // is exactly what leaves the invoice open in AP after the cash has gone,
@@ -507,7 +581,7 @@ export default function PaCreatePage() {
       if (paType !== 'prepayment' && selectedInvoiceIds.size === 0)
         errors.push(
           docInvoices.length === 0
-            ? 'No invoice on this PO yet — a payment must settle an invoice. Upload and match the invoice first.'
+            ? 'No invoice on the selected PO(s) yet — a payment must settle an invoice. Upload and match the invoice first.'
             : 'Select the invoice(s) this payment settles',
         )
       if (!title.trim())   errors.push('PA Title is required')
@@ -638,6 +712,10 @@ ${submitError}
       return
     }
     if (!selectedPo) return
+    if (isMultiPo && paType !== 'regular') return
+    if (selectedPos.some((p) => p.vendor_id !== selectedPos[0].vendor_id)) return
+    if (selectedPos.some((p) => (p.currency ?? 'CAD') !== (selectedPos[0].currency ?? 'CAD'))) return
+    if (selectedPos.some((p) => (p.pr_department_id ?? null) !== (selectedPos[0].pr_department_id ?? null))) return
     if (!title.trim() || subtotalNum <= 0 || taxNum < 0) return
     if (!isSettlementType && netPayable <= 0) return
     if (isSettlementType && (appliedNum > grossTotal + 0.01)) return
@@ -645,15 +723,19 @@ ${submitError}
     if (isSettlementType && !prepaymentPaId) return
     if (receiptOverrideMissing) return
     try {
-      const paLineItems = selectedPo.line_items
-        .filter((l) => selectedLineIds.has(l.id))
-        .map((l) => ({
-          po_line_id: l.id,
-          description: l.description,
-          qty: Number(l.qty),
-          unit: l.unit,
-          unit_price: Number(l.unit_price),
-        }))
+      // Lines from every PO on the payment, each still carrying its own
+      // po_line_id so the PA's lines stay traceable to the order they came from.
+      const paLineItems = selectedPos.flatMap((p) =>
+        p.line_items
+          .filter((l) => selectedLineIds.has(l.id))
+          .map((l) => ({
+            po_line_id: l.id,
+            description: l.description,
+            qty: Number(l.qty),
+            unit: l.unit,
+            unit_price: Number(l.unit_price),
+          }))
+      )
       const newPa = await createPa.mutateAsync({
         title: title.trim(),
         pa_type: paType,
@@ -672,7 +754,11 @@ ${submitError}
         other_charges_note: otherNum > 0 ? otherChargesNote.trim() || undefined : undefined,
         vendor_id: selectedPo.vendor_id,
         vendor_name: selectedPo.vendor_name,
+        // po_ids is the full set, primary first; po_id is sent too so a backend
+        // that predates multi-PO (or any other reader of the body) still sees
+        // the primary order.
         po_id: selectedPo.id,
+        po_ids: selectedPos.map((p) => p.id),
         invoice_ids: Array.from(selectedInvoiceIds),
         gr_ids: Array.from(selectedGrIds),
         prepayment_pct: paType === 'prepayment' ? parseFloat(prepaymentPct) : undefined,
@@ -766,7 +852,14 @@ ${submitError}
           <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-4">
             <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">1</span>
-              {lockedFromSettle || (fromTask && !changingPo) ? 'Purchase Order' : 'Select Purchase Order'}
+              {lockedFromSettle || (fromTask && !changingPo)
+                ? (isMultiPo ? 'Purchase Orders' : 'Purchase Order')
+                : 'Select Purchase Order(s)'}
+              {selectedPos.length > 1 && (
+                <span className="ml-auto text-[11px] font-normal text-neutral-500">
+                  {selectedPos.length} POs on this payment
+                </span>
+              )}
             </h2>
 
             {lockedFromSettle ? (
@@ -799,7 +892,7 @@ ${submitError}
                       onClick={() => setChangingPo(true)}
                       className="text-[11px] font-medium text-primary-600 hover:text-primary-700 hover:underline"
                     >
-                      Change PO
+                      Change or add POs
                     </button>
                   </div>
                 </div>
@@ -814,30 +907,84 @@ ${submitError}
                   placeholder="Search PO # or vendor…"
                   className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 />
-                <div className="rounded-lg border border-neutral-200 max-h-48 overflow-y-auto">
+                <p className="text-[11px] text-neutral-400">
+                  Tick every purchase order this payment settles. They must share a vendor,
+                  a currency and a department; the first one ticked is the primary PO.
+                </p>
+                <div className="rounded-lg border border-neutral-200 max-h-56 overflow-y-auto">
                   {filteredPos.length === 0 ? (
                     <p className="px-3 py-4 text-xs text-neutral-400 text-center">No eligible POs found</p>
                   ) : (
-                    filteredPos.map((po) => (
-                      <button
-                        key={po.id}
-                        type="button"
-                        onClick={() => setSelectedPoId(po.id)}
-                        className={cn(
-                          'w-full px-4 py-3 text-left border-b border-neutral-100 last:border-0 hover:bg-primary-50 transition-colors',
-                          selectedPoId === po.id && 'bg-primary-50'
-                        )}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-xs font-semibold text-primary-700">{po.number}</span>
-                          <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(po.total, po.currency)}</span>
-                        </div>
-                        <div className="text-sm text-neutral-700 mt-0.5">{po.title}</div>
-                        <div className="text-xs text-neutral-400 mt-0.5">{po.vendor_name}</div>
-                      </button>
-                    ))
+                    filteredPos.map((po) => {
+                      const isChecked = selectedPoIds.includes(po.id)
+                      // A ticked PO is never blocked — the operator must always be
+                      // able to un-tick their way out of a selection.
+                      const blockedReason = isChecked ? null : poJoinBlockedReason(po)
+                      const isPrimary = selectedPoIds[0] === po.id
+                      return (
+                        <label
+                          key={po.id}
+                          className={cn(
+                            'flex items-start gap-3 px-4 py-3 border-b border-neutral-100 last:border-0 transition-colors',
+                            blockedReason
+                              ? 'cursor-not-allowed bg-neutral-50 opacity-60'
+                              : 'cursor-pointer hover:bg-primary-50',
+                            isChecked && 'bg-primary-50',
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            disabled={Boolean(blockedReason)}
+                            onChange={() => !blockedReason && togglePo(po.id)}
+                            className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600 disabled:opacity-50"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="flex items-center gap-2 min-w-0">
+                                <span className="font-mono text-xs font-semibold text-primary-700">{po.number}</span>
+                                {isPrimary && selectedPoIds.length > 1 && (
+                                  <span className="shrink-0 inline-flex items-center rounded-full bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-700">
+                                    Primary
+                                  </span>
+                                )}
+                                {blockedReason && (
+                                  <span className="shrink-0 inline-flex items-center rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
+                                    {blockedReason}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(po.total, po.currency)}</span>
+                            </div>
+                            <div className="text-sm text-neutral-700 mt-0.5">{po.title}</div>
+                            <div className="text-xs text-neutral-400 mt-0.5">{po.vendor_name}</div>
+                          </div>
+                        </label>
+                      )
+                    })
                   )}
                 </div>
+                {selectedPos.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2">
+                    <span className="text-[11px] font-medium text-primary-700">On this payment:</span>
+                    {selectedPos.map((p) => (
+                      <span
+                        key={p.id}
+                        className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 font-mono text-[11px] font-semibold text-primary-700 ring-1 ring-primary-200"
+                      >
+                        {p.number}
+                        <button
+                          type="button"
+                          onClick={() => togglePo(p.id)}
+                          className="text-primary-400 hover:text-danger-600"
+                          aria-label={`Remove ${p.number} from this payment`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -854,7 +1001,7 @@ ${submitError}
               {/* Invoices multi-select */}
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
-                  <FileText className="h-3.5 w-3.5" /> Invoices for this PO
+                  <FileText className="h-3.5 w-3.5" /> Invoices for {isMultiPo ? 'these POs' : 'this PO'}
                   <span className="text-neutral-400 font-normal">(select all that apply)</span>
                 </p>
                 {docInvoices.length === 0 ? (
@@ -865,8 +1012,8 @@ ${submitError}
                       : 'text-neutral-400 border-neutral-200 bg-neutral-50',
                   )}>
                     {invoiceRequiredMissing
-                      ? 'No invoice on this PO yet — a payment must settle an invoice. Upload and match the invoice first.'
-                      : 'No invoices found for this PO yet'}
+                      ? 'No invoice on the selected PO(s) yet — a payment must settle an invoice. Upload and match the invoice first.'
+                      : 'No invoices found for the selected PO(s) yet'}
                   </p>
                 ) : (
                   <div className={cn(invoiceRequiredMissing && 'rounded-lg ring-1 ring-danger-400')}>
@@ -883,12 +1030,12 @@ ${submitError}
               {/* GRs multi-select */}
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
-                  <Package className="h-3.5 w-3.5" /> Goods / Service Receipts for this PO
+                  <Package className="h-3.5 w-3.5" /> Goods / Service Receipts for {isMultiPo ? 'these POs' : 'this PO'}
                   <span className="text-neutral-400 font-normal">(ticked automatically from the invoices above)</span>
                 </p>
                 {poGrs.length === 0 ? (
                   <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
-                    No goods receipts found for this PO yet
+                    No goods receipts found for the selected PO(s) yet
                   </p>
                 ) : (
                   <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
@@ -939,7 +1086,20 @@ ${submitError}
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedPo.line_items.map((line, idx) => {
+                      {selectedPos.flatMap((po) => [
+                        // With more than one PO on the payment the lines have to
+                        // say which order they came from — otherwise two orders'
+                        // items sit in one anonymous list and the operator cannot
+                        // tell what they are ticking.
+                        ...(isMultiPo ? [(
+                          <tr key={`hdr-${po.id}`} className="bg-neutral-100/70">
+                            <td colSpan={5} className="px-3 py-1.5">
+                              <span className="font-mono text-[11px] font-semibold text-primary-700">{po.number}</span>
+                              <span className="ml-2 text-[11px] text-neutral-500">{po.title}</span>
+                            </td>
+                          </tr>
+                        )] : []),
+                        ...po.line_items.map((line, idx) => {
                         const receivedQty = receivedQtyByPoLineId[line.id] ?? 0
                         const isReceived  = receivedQty > 0
                         const isSelected  = selectedLineIds.has(line.id)
@@ -978,11 +1138,12 @@ ${submitError}
                               {receivedQty > 0 ? `${receivedQty} ${line.unit}` : '—'}
                             </td>
                             <td className="px-3 py-2.5 text-right font-mono font-semibold text-neutral-900">
-                              {formatAmount(line.line_total, selectedPo.currency)}
+                              {formatAmount(line.line_total, po.currency)}
                             </td>
                           </tr>
                         )
-                      })}
+                        }),
+                      ])}
                     </tbody>
                   </table>
                   {selectedLineIds.size > 0 && (
@@ -1002,7 +1163,7 @@ ${submitError}
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-neutral-600">Payment Type</p>
                 <div className="grid grid-cols-2 gap-3">
-                  {(selectedPo.is_prepaid
+                  {(selectedPo.is_prepaid && !isMultiPo
                     ? [
                         { value: 'prepayment' as const,  label: 'Prepayment',       desc: 'Advance payment before full GR/invoice' },
                         { value: 'settlement' as const,  label: 'Settlement',       desc: 'Reconcile a prepayment; pays only the remaining balance' },
@@ -1025,6 +1186,12 @@ ${submitError}
                     </button>
                   ))}
                 </div>
+                {isMultiPo && selectedPos.some((p) => p.is_prepaid) && (
+                  <p className="text-[11px] text-neutral-500">
+                    A payment covering several POs is always a regular payment — prepayment and
+                    settlement are raised against a single order. Un-tick the others to prepay one.
+                  </p>
+                )}
 
                 {isSettlementType && !isAgreementMode && (
                   <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 mt-1">
@@ -1422,10 +1589,23 @@ ${submitError}
                       {isAgreementMode ? agreement?.vendor_name : selectedPo?.vendor_name}
                     </span>
                   </div>
+                  {!isAgreementMode && selectedPos.length > 1 && (
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">POs</span>
+                      <span className="font-mono text-[11px] text-neutral-800 text-right max-w-[60%]">
+                        {selectedPos.map((p) => p.number).join(', ')}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-neutral-500">{isAgreementMode ? 'Agreement' : 'PO Total'}</span>
                     <span className="font-mono font-semibold text-neutral-900">
-                      {isAgreementMode ? agreement?.number : formatAmount(selectedPo?.total ?? 0, formCurrency)}
+                      {isAgreementMode
+                        ? agreement?.number
+                        /* Sum across every PO on the payment — showing only the
+                           primary order's total next to a multi-PO payment reads
+                           as though the payment were larger than the orders. */
+                        : formatAmount(selectedPos.reduce((s, p) => s + Number(p.total), 0), formCurrency)}
                     </span>
                   </div>
                   <div className="flex justify-between">
