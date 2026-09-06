@@ -16,6 +16,7 @@ import app.models.expense           # noqa: F401
 import app.models.invoice           # noqa: F401
 import app.models.invoice_attachment  # noqa: F401
 import app.models.pa                # noqa: F401
+import app.models.pa_po_link        # noqa: F401
 import app.models.policy            # noqa: F401
 import app.models.epms_mirrors      # noqa: F401
 import app.models.approval_event_mirror  # noqa: F401

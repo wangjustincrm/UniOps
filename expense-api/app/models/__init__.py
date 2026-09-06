@@ -1,4 +1,5 @@
 from app.models.pa import PaymentApplication  # noqa: F401
+from app.models.pa_po_link import PaPoLink  # noqa: F401
 from app.models.expense import (  # noqa: F401
     ExpenseClaim, ExpenseLineItem, ExpenseTripItem,
     ExpenseAttachment, ExpenseApprovalEvent,

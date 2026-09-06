@@ -61,9 +61,11 @@ def _migrate():
         InvoiceTaxLine, PurchaseRequest, SodRule, Task, User,
     )
     from app.models.pa import PaymentApplication
+    from app.models.pa_po_link import PaPoLink
     eng = sa.create_engine(SYNC_URL)
     Base.metadata.create_all(eng, tables=[
-        PaymentApplication.__table__, Invoice.__table__, InvoiceTaxLine.__table__,
+        PaymentApplication.__table__, PaPoLink.__table__,
+        Invoice.__table__, InvoiceTaxLine.__table__,
         CompanyConfig.__table__, ExpenseClaim.__table__, Task.__table__,
         SodRule.__table__, User.__table__, ExpenseApprovalEvent.__table__,
         ExpenseLineItem.__table__, ExpenseTripItem.__table__,
