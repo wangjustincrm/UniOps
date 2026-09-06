@@ -1,9 +1,10 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   grService,
   type GrFilters,
   type CreateGrBody,
   type GrActionBody,
+  type ApiGr,
 } from '@/services/gr'
 
 // Without explicit page/page_size the caller wants the complete list, so we
@@ -16,6 +17,23 @@ export function useGrs(filters?: GrFilters, enabled = true) {
     enabled,
     staleTime: 30_000,
   })
+}
+
+// Multi-PO payment: one query per PO, keyed identically to useGrs({ po_id })
+// so the caches are shared and existing ['grs'] invalidations still apply.
+// GR ids are unique per PO, so no de-duplication is needed here.
+export function useGrsForPos(poIds: string[], enabled = true) {
+  const results = useQueries({
+    queries: poIds.map((poId) => ({
+      queryKey: ['grs', { po_id: poId }],
+      queryFn: () => grService.listAll({ po_id: poId }),
+      enabled,
+      staleTime: 30_000,
+    })),
+  })
+  const settled = poIds.length === 0 || results.every((r) => r.data !== undefined)
+  if (!settled) return { items: undefined as ApiGr[] | undefined, isLoading: true }
+  return { items: results.flatMap((r) => r.data?.items ?? []), isLoading: false }
 }
 
 export function useGr(id: string) {

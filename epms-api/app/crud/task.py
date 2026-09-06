@@ -9,6 +9,7 @@ from app.models.agreement import PurchaseAgreement
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
+from app.crud.pa_links import po_ids_with_pa
 from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
@@ -54,7 +55,7 @@ async def _complete_stale_create_pa_tasks(db: AsyncSession) -> None:
     Needed both as a safety net and to clear tasks created before PA creation
     started completing them.
     """
-    pos_with_pa = select(PaymentApplication.po_id).where(PaymentApplication.po_id.is_not(None))
+    pos_with_pa = po_ids_with_pa()
     grs_whose_po_has_pa = (
         select(GoodsReceipt.id).where(GoodsReceipt.po_id.in_(pos_with_pa))
     )
@@ -93,9 +94,7 @@ async def _complete_orphan_create_pa_tasks(
     invoice counts whether it links via header po_id OR a line allocation — the
     same reference invoice_crud.list treats as "this PO has an invoice".
     """
-    pos_with_pa = select(PaymentApplication.po_id).where(
-        PaymentApplication.po_id.is_not(None)
-    )
+    pos_with_pa = po_ids_with_pa()
     pos_matched_header = select(Invoice.po_id).where(
         Invoice.status == "matched", Invoice.po_id.is_not(None)
     )
@@ -160,10 +159,7 @@ async def _complete_stale_create_prepayment_pa_tasks(db: AsyncSession) -> None:
     with pa_type="prepayment". Safety net + clears tasks created before PA
     creation started completing them.
     """
-    pos_with_prepayment = select(PaymentApplication.po_id).where(
-        PaymentApplication.po_id.is_not(None),
-        PaymentApplication.pa_type == "prepayment",
-    )
+    pos_with_prepayment = po_ids_with_pa(PaymentApplication.pa_type == "prepayment")
     stale_q = select(Task).where(
         Task.type == "create_prepayment_pa",
         Task.is_completed.is_(False),
@@ -350,7 +346,7 @@ async def _backfill_create_pa_tasks(db: AsyncSession) -> None:
     Assigns to the PR requester (PO->PR->created_by, else PO.created_by), the
     same assignee the live task uses.
     """
-    pos_with_pa = select(PaymentApplication.po_id).where(PaymentApplication.po_id.is_not(None))
+    pos_with_pa = po_ids_with_pa()
     # Skip POs whose create_pa task is still open OR was user-dismissed via
     # Mark Done (see _already_surfaced).
     pos_with_open_task = _already_surfaced("create_pa", "po")

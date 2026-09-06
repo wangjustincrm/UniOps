@@ -23,6 +23,7 @@ from app.models.notification_log import NotificationLog  # noqa: F401
 from app.models.pr_attachment import PrAttachment  # noqa: F401
 from app.models.gr_attachment import GrAttachment  # noqa: F401
 from app.models.pa_attachment import PaAttachment  # noqa: F401
+from app.models.pa_po_link import PaPoLink  # noqa: F401
 from app.models.project import Project  # noqa: F401
 from app.models.task import Task  # noqa: F401
 from app.models.user import User  # noqa: F401

@@ -65,6 +65,7 @@ async def list_pos(
     # frontend can scope actions like PA creation to the requester's own POs.
     # Resolved here in batch because pr_requester_id is not a column on the PO.
     pr_requester_map: dict[uuid.UUID, uuid.UUID] = {}
+    pr_department_map: dict[uuid.UUID, uuid.UUID | None] = {}
     if items:
         listed_ids = [po.id for po in items]
         rows = await db.execute(
@@ -91,16 +92,20 @@ async def list_pos(
         pr_ids = [po.pr_id for po in items if po.pr_id is not None]
         if pr_ids:
             pr_rows = await db.execute(
-                select(PurchaseRequest.id, PurchaseRequest.created_by).where(
+                select(PurchaseRequest.id, PurchaseRequest.created_by,
+                       PurchaseRequest.department_id).where(
                     PurchaseRequest.id.in_(pr_ids)
                 )
             )
-            pr_requester_map = {pid: cby for pid, cby in pr_rows.all()}
+            for pid, cby, dept in pr_rows.all():
+                pr_requester_map[pid] = cby
+                pr_department_map[pid] = dept
     po_responses = []
     for po in items:
         data = PoResponse.model_validate(po).model_dump()
         data["has_unpaid_invoice"] = po.id in unpaid_invoice_po_ids
         data["pr_requester_id"] = pr_requester_map.get(po.pr_id) if po.pr_id else None
+        data["pr_department_id"] = pr_department_map.get(po.pr_id) if po.pr_id else None
         po_responses.append(data)
     return {"items": po_responses, "total": total}
 
@@ -131,6 +136,7 @@ async def get_po(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     # actual requester identity (not the PO creator / not a generic role).
     data = PoResponse.model_validate(po).model_dump()
     data["pr_requester_id"] = await gr_crud.get_pr_requester_id(db, po.pr_id)
+    data["pr_department_id"] = await po_crud.pr_department_id(db, po.pr_id)
     data["has_invoice"] = await po_crud.has_any_invoice(db, po_id)
     return data
 

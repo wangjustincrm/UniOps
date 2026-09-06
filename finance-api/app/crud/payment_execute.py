@@ -29,6 +29,7 @@ from app.models.mirrors import (
 from app.models.ap_invoice import ApInvoice
 from app.models.bank import BankAccount
 from app.models.pa import PaymentApplication
+from app.models.pa_po_link import PaPoLink
 from app.models.payment import PaymentRecord
 from app.crud import vendor_credit as vendor_credit_crud
 from app.services import budget_client
@@ -189,20 +190,33 @@ async def _check_invoice_link(db: AsyncSession, pa: PaymentApplication) -> None:
     if pa.invoice_ids or pa.po_id is None or pa.pa_type == "prepayment":
         return
 
+    # A PA may cover several POs. pa_po_links is the complete set (the primary
+    # po_id is in it too); scanning only pa.po_id would let a forgotten link on
+    # the second PO through — exactly the hole this guard exists to close.
+    po_ids = sorted(set((await db.execute(
+        select(PaPoLink.po_id).where(PaPoLink.pa_id == pa.id)
+    )).scalars().all()) | {pa.po_id})
+
     candidates = (await db.execute(
         select(Invoice.id, Invoice.internal_ref, Invoice.vendor_invoice_number)
-        .where(Invoice.po_id == pa.po_id,
+        .where(Invoice.po_id.in_(po_ids),
                Invoice.status.in_(("matched", "approved", "partially_paid")))
     )).all()
     if not candidates:
         return
 
-    # Whatever any other live PA on this PO already points at is somebody
+    # Whatever any other live PA on these POs already points at is somebody
     # else's payable, not a forgotten link on this one.
     claimed: set[str] = set()
     for (ids,) in (await db.execute(
         select(PaymentApplication.invoice_ids).where(
-            PaymentApplication.po_id == pa.po_id,
+            # Link table OR header column: EPMS writes a link row for every PA
+            # it creates, but a sibling PA written by anything else has only the
+            # header. Missing it here would read as "nobody claims this invoice"
+            # and block a payment that is in fact fine.
+            PaymentApplication.id.in_(
+                select(PaPoLink.pa_id).where(PaPoLink.po_id.in_(po_ids))
+            ) | PaymentApplication.po_id.in_(po_ids),
             PaymentApplication.status.not_in(("cancelled", "rejected")),
             PaymentApplication.id != pa.id,
         )
@@ -218,8 +232,13 @@ async def _check_invoice_link(db: AsyncSession, pa: PaymentApplication) -> None:
         else c.internal_ref
         for c in unclaimed
     )
+    po_label = ", ".join(sorted({
+        n for (n,) in (await db.execute(
+            select(PaPoLink.po_number).where(PaPoLink.pa_id == pa.id)
+        )).all()
+    })) or (pa.po_number or "")
     raise ValueError(
-        f"PA {pa.pa_number} links no invoice, but {pa.po_number} still carries "
+        f"PA {pa.pa_number} links no invoice, but {po_label} still carries "
         f"unclaimed invoice(s): {refs}. Link the invoice before paying — "
         "otherwise it stays open in AP, no remittance advice can be sent, and "
         "nothing prevents a second PA from paying it again."

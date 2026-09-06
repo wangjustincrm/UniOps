@@ -26,6 +26,7 @@ from app.models.agreement import PurchaseAgreement
 from app.models.cost_center import CostCenter
 from app.models.pr import PurchaseRequest
 from app.models.po import PurchaseOrder
+from app.crud.pa_links import po_ids_of_pa, po_ids_of_pas
 from app.models.pa import PaymentApplication
 from app.models.task import Task
 from app.models.user import User
@@ -87,8 +88,8 @@ async def _task_chain_pr_ids(
     chain so document-chain navigation never 404s: a PR task → the PR; a PO task
     → its parent PR; a PA task → PA→PO→parent PR. (You can see a PO you must
     approve, so you can open the PR it came from.)"""
-    po_from_pa = select(PaymentApplication.po_id).where(
-        PaymentApplication.id.in_(await _open_task_doc_ids(db, own_user_id, task_user_ids, "pa")))
+    po_from_pa = po_ids_of_pas(
+        await _open_task_doc_ids(db, own_user_id, task_user_ids, "pa"))
     return (await _open_task_doc_ids(db, own_user_id, task_user_ids, "pr")).union(
         select(PurchaseOrder.pr_id).where(
             PurchaseOrder.id.in_(await _open_task_doc_ids(db, own_user_id, task_user_ids, "po")),
@@ -103,8 +104,8 @@ async def _task_chain_po_ids(
 ) -> Select:
     """PO ids reachable from `task_user_ids`'s open tasks: a PO task → the PO; a
     PA task → its parent PO."""
-    po_from_pa = select(PaymentApplication.po_id).where(
-        PaymentApplication.id.in_(await _open_task_doc_ids(db, own_user_id, task_user_ids, "pa")))
+    po_from_pa = po_ids_of_pas(
+        await _open_task_doc_ids(db, own_user_id, task_user_ids, "pa"))
     return (await _open_task_doc_ids(db, own_user_id, task_user_ids, "po")).union(po_from_pa)
 
 
@@ -795,8 +796,15 @@ async def is_pa_visible(db: AsyncSession, pa, scope: dict) -> bool:
 
     if pa.po_id is None:
         return False
+    # ANY of the PA's POs being in scope makes the PA visible: a PA covering
+    # three orders is one document, and someone who owns the third order is
+    # entitled to see the payment that settles it. Matching only the primary PO
+    # would 404 them out of a payment they are on the hook for.
     row = (await db.execute(
-        select(PurchaseOrder.id).where(PurchaseOrder.id == pa.po_id).where(PurchaseOrder.id.in_(scope["po_subq"]))
+        select(PurchaseOrder.id)
+        .where(PurchaseOrder.id.in_(po_ids_of_pa(pa.id)))
+        .where(PurchaseOrder.id.in_(scope["po_subq"]))
+        .limit(1)
     )).scalar_one_or_none()
     return row is not None
 

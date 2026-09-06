@@ -12,10 +12,11 @@ import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment } from '
 import { paAttachmentService } from '@/services/paAttachments'
 import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { paService } from '@/services/pa'
-import { usePo } from '@/hooks/usePos'
+import { usePos, usePosByIds } from '@/hooks/usePos'
 import { useAgreement } from '@/hooks/useAgreements'
-import { useInvoices } from '@/hooks/useInvoices'
-import { useGrs } from '@/hooks/useGrs'
+import { useInvoices, useInvoicesForPos } from '@/hooks/useInvoices'
+import { useGrsForPos } from '@/hooks/useGrs'
+import type { ApiPo } from '@/services/po'
 
 export default function PaEditPage() {
   const { id } = useParams<{ id: string }>()
@@ -39,8 +40,21 @@ export default function PaEditPage() {
   // does not exist on this route. Saving from it would have sent gr_ids: [] and
   // line_items: [] over a PA that never had either.
   const isAgreementMode = !pa?.po_id && !!pa?.agreement_id
-  const { data: po } = usePo(pa?.po_id ?? '')
+  // A draft may cover several POs and the set is editable here. Initialised
+  // from the PA once it loads (see the pre-fill effect below); `null` means
+  // "not loaded yet", which is distinct from "no POs".
+  const [editPoIds, setEditPoIds] = useState<string[] | null>(null)
+  const poIds = editPoIds ?? (pa?.po_ids?.length ? pa.po_ids : (pa?.po_id ? [pa.po_id] : []))
+  const { items: linkedPos } = usePosByIds(poIds)
+  const pos = linkedPos ?? []
+  // The primary PO — every single-PO rule below (payment type, tax snapshot,
+  // currency) still reads off it, exactly as before.
+  const po = pos[0]
   const { data: agreement } = useAgreement(pa?.agreement_id ?? '')
+  const { data: posData } = usePos(undefined, !isAgreementMode)
+  const allPos = posData?.items ?? []
+  const [addingPo, setAddingPo] = useState(false)
+  const [poSearch, setPoSearch] = useState('')
 
   // ── Step 2 — Link invoices / GRs + type ───────────────────────────────────
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set())
@@ -62,18 +76,23 @@ export default function PaEditPage() {
   const [submitted, setSubmitted]       = useState(false)
   const [initialized, setInitialized]   = useState(false)
 
-  const { data: invoicesData } = useInvoices(
-    pa?.po_id ? { po_id: pa.po_id } : pa?.agreement_id ? { agreement_id: pa.agreement_id } : undefined
+  const { data: agreementInvoicesData } = useInvoices(
+    isAgreementMode && pa?.agreement_id ? { agreement_id: pa.agreement_id } : undefined,
+    isAgreementMode,
   )
   // No goods receipt exists on the agreement route, ever — skip the request
   // rather than fire it with an undefined filter and get every GR in the system.
-  const { data: grsData } = useGrs(pa?.po_id ? { po_id: pa.po_id } : undefined, !isAgreementMode)
-  const poInvoices = invoicesData?.items ?? []
-  const poGrs      = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
+  const invoicesForPos = useInvoicesForPos(isAgreementMode ? [] : poIds, !isAgreementMode)
+  const grsForPos      = useGrsForPos(isAgreementMode ? [] : poIds, !isAgreementMode)
+  const poInvoices = isAgreementMode
+    ? (agreementInvoicesData?.items ?? [])
+    : (invoicesForPos.items ?? [])
+  const poGrs      = (grsForPos.items ?? []).filter((g) => g.status !== 'cancelled')
 
   // Pre-fill form once PA data loads
   useEffect(() => {
     if (!pa || initialized) return
+    setEditPoIds(pa.po_ids?.length ? [...pa.po_ids] : (pa.po_id ? [pa.po_id] : []))
     setSelectedInvoiceIds(new Set(pa.invoice_ids))
     setSelectedLineIds(new Set(pa.line_items.map((l) => l.po_line_id)))
     setPrepaymentPct(pa.prepayment_pct?.toString() ?? '50')
@@ -96,8 +115,56 @@ export default function PaEditPage() {
   }, [po?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const selectedPoLines = po ? po.line_items.filter((l) => selectedLineIds.has(l.id)) : []
+  const isMultiPo = poIds.length > 1
+  const selectedPoLines = pos.flatMap((p) => p.line_items.filter((l) => selectedLineIds.has(l.id)))
   const autoSubtotal    = selectedPoLines.reduce((s, l) => s + l.line_total, 0)
+
+  // Same rules the backend enforces (epms-api pa.py::_assert_pos_coherent), said
+  // on the row rather than as a 422 after Save.
+  const poJoinBlockedReason = (candidate: ApiPo): string | null => {
+    if (!po || po.id === candidate.id) return null
+    if (candidate.vendor_id !== po.vendor_id) return 'Different vendor'
+    if ((candidate.currency ?? 'CAD') !== (po.currency ?? 'CAD')) return 'Different currency'
+    if ((candidate.pr_department_id ?? null) !== (po.pr_department_id ?? null)) return 'Different department'
+    if (paType !== 'regular') return 'Single PO only for this payment type'
+    return null
+  }
+  const addablePos = allPos.filter((p) =>
+    !poIds.includes(p.id) &&
+    ['approved', 'issued', 'partially_received', 'fully_received', 'closed'].includes(p.status) &&
+    (!poSearch ||
+      p.number.toLowerCase().includes(poSearch.toLowerCase()) ||
+      p.vendor_name.toLowerCase().includes(poSearch.toLowerCase()) ||
+      p.title.toLowerCase().includes(poSearch.toLowerCase()))
+  )
+  // Removing a PO must not leave lines or receipts behind that belong to it —
+  // they would be saved onto a payment that no longer covers that order.
+  const removePo = (poId: string) => {
+    const remaining = poIds.filter((p) => p !== poId)
+    setEditPoIds(remaining)
+    const dropped = pos.find((p) => p.id === poId)
+    if (dropped) {
+      const droppedLineIds = new Set(dropped.line_items.map((l) => l.id))
+      setSelectedLineIds((prev) => new Set([...prev].filter((lid) => !droppedLineIds.has(lid))))
+      const droppedGrIds = new Set(poGrs.filter((g) => g.po_id === poId).map((g) => g.id))
+      setSelectedGrIds((prev) => new Set([...prev].filter((gid) => !droppedGrIds.has(gid))))
+    }
+    // Untick any invoice that no longer has a home on this payment. An invoice
+    // belongs to a PO by header link OR by line allocation (a single invoice can
+    // be split across POs), so both are consulted before dropping one — an
+    // invoice header-linked to the removed PO but allocated to one that stays is
+    // still payable here and must survive. The backend rejects the stragglers
+    // this cannot see (epms-api pa.py::_assert_invoices_belong_to_pos); doing it
+    // here keeps the operator from meeting that 422 for something the screen
+    // already knew.
+    const stillCovered = (inv: (typeof poInvoices)[number]) =>
+      (inv.po_id != null && remaining.includes(inv.po_id)) ||
+      (inv.allocations ?? []).some((a) => remaining.includes(a.po_id))
+    const droppedInvoiceIds = new Set(
+      poInvoices.filter((inv) => !stillCovered(inv)).map((inv) => inv.id)
+    )
+    setSelectedInvoiceIds((prev) => new Set([...prev].filter((iid) => !droppedInvoiceIds.has(iid))))
+  }
 
   const receivedQtyByPoLineId: Record<string, number> = {}
   for (const gr of poGrs) {
@@ -167,25 +234,32 @@ export default function PaEditPage() {
     // buttons went through their motions and wrote nothing, with no error.
     if (!pa) return
     if (!isAgreementMode && !po) return
+    if (!isAgreementMode && poIds.length === 0) return
     if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || paymentTotal <= 0) return
     if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement)) return
 
     try {
-      const paLineItems = (po?.line_items ?? [])
-        .filter((l) => selectedLineIds.has(l.id))
-        .map((l) => ({
-          po_line_id: l.id,
-          description: l.description,
-          qty: l.qty,
-          unit: l.unit,
-          unit_price: l.unit_price,
-        }))
+      // Lines from every PO still on the payment.
+      const paLineItems = pos.flatMap((p) =>
+        p.line_items
+          .filter((l) => selectedLineIds.has(l.id))
+          .map((l) => ({
+            po_line_id: l.id,
+            description: l.description,
+            qty: l.qty,
+            unit: l.unit,
+            unit_price: l.unit_price,
+          }))
+      )
 
       await updatePa.mutateAsync({
         id: pa.id,
         body: {
           title: title.trim(),
           // pa_type & currency are derived from the PO — not sent from the client.
+          // The PO set is sent only on the PO route, and only as a complete
+          // replacement (the backend rejects an empty list).
+          po_ids: isAgreementMode ? undefined : poIds,
           subtotal: subtotalNum,
           tax_amount: taxNum,
           tax_code: taxNum > 0 ? paTaxCode ?? undefined : null,
@@ -256,21 +330,114 @@ export default function PaEditPage() {
           <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-3">
             <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">1</span>
-              {isAgreementMode ? 'Purchase Agreement' : 'Purchase Order'}
+              {isAgreementMode ? 'Purchase Agreement' : (isMultiPo ? 'Purchase Orders' : 'Purchase Order')}
             </h2>
-            <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 flex items-center justify-between">
-              <div>
-                <p className="font-mono text-xs font-semibold text-primary-700">
-                  {isAgreementMode ? pa.agreement_number : pa.po_number}
-                </p>
-                <p className="text-xs text-neutral-500 mt-0.5">
-                  {isAgreementMode
-                    ? `${agreement?.vendor_name ?? pa.vendor_name}${agreement?.title ? ` · ${agreement.title}` : ''}`
-                    : `${po?.vendor_name ?? pa.vendor_name} · ${po?.title ?? ''}`}
-                </p>
+            {isAgreementMode ? (
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 flex items-center justify-between">
+                <div>
+                  <p className="font-mono text-xs font-semibold text-primary-700">{pa.agreement_number}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    {`${agreement?.vendor_name ?? pa.vendor_name}${agreement?.title ? ` · ${agreement.title}` : ''}`}
+                  </p>
+                </div>
+                <span className="text-xs text-neutral-400 italic">Locked</span>
               </div>
-              <span className="text-xs text-neutral-400 italic">Locked</span>
-            </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {pos.map((p, i) => (
+                  <div key={p.id} className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs font-semibold text-primary-700">
+                        {p.number}
+                        {i === 0 && isMultiPo && (
+                          <span className="ml-2 inline-flex items-center rounded-full bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-700">
+                            Primary
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-neutral-500 mt-0.5">{p.vendor_name} · {p.title}</p>
+                    </div>
+                    {/* The last PO cannot be removed — a PO-route payment with no
+                        purchase order is not a document this app has a place for
+                        (the backend refuses an empty set for the same reason). */}
+                    {pos.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removePo(p.id)}
+                        className="shrink-0 text-[11px] font-medium text-neutral-500 hover:text-danger-600 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {addingPo ? (
+                  <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={poSearch}
+                        onChange={(e) => setPoSearch(e.target.value)}
+                        placeholder="Search PO # or vendor…"
+                        className="h-9 flex-1 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { setAddingPo(false); setPoSearch('') }}
+                        className="text-[11px] font-medium text-neutral-500 hover:underline"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <div className="rounded-lg border border-neutral-200 max-h-48 overflow-y-auto">
+                      {addablePos.length === 0 ? (
+                        <p className="px-3 py-4 text-xs text-neutral-400 text-center">No other POs found</p>
+                      ) : (
+                        addablePos.map((candidate) => {
+                          const blockedReason = poJoinBlockedReason(candidate)
+                          return (
+                            <button
+                              key={candidate.id}
+                              type="button"
+                              disabled={Boolean(blockedReason)}
+                              onClick={() => {
+                                setEditPoIds([...poIds, candidate.id])
+                                setAddingPo(false)
+                                setPoSearch('')
+                              }}
+                              className={cn(
+                                'w-full px-4 py-2.5 text-left border-b border-neutral-100 last:border-0 transition-colors',
+                                blockedReason ? 'cursor-not-allowed bg-neutral-50 opacity-60' : 'hover:bg-primary-50',
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="flex items-center gap-2 min-w-0">
+                                  <span className="font-mono text-xs font-semibold text-primary-700">{candidate.number}</span>
+                                  {blockedReason && (
+                                    <span className="shrink-0 inline-flex items-center rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
+                                      {blockedReason}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="font-mono text-xs text-neutral-900">{formatAmount(candidate.total, candidate.currency)}</span>
+                              </div>
+                              <div className="text-xs text-neutral-400 mt-0.5">{candidate.vendor_name} · {candidate.title}</div>
+                            </button>
+                          )
+                        })
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setAddingPo(true)}
+                    className="self-start text-[11px] font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                  >
+                    + Add another PO to this payment
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* ── Step 2 — Link Invoices / GRs + PA Type ─────────────────────── */}
@@ -284,12 +451,14 @@ export default function PaEditPage() {
             <div className="flex flex-col gap-2">
               <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5" />
-                {isAgreementMode ? 'Invoices matched to this agreement' : 'Invoices for this PO'}
+                {isAgreementMode
+                  ? 'Invoices matched to this agreement'
+                  : (isMultiPo ? 'Invoices for these POs' : 'Invoices for this PO')}
                 <span className="text-neutral-400 font-normal">(select all that apply)</span>
               </p>
               {poInvoices.length === 0 ? (
                 <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
-                  {isAgreementMode ? 'No invoices matched to this agreement yet' : 'No invoices found for this PO yet'}
+                  {isAgreementMode ? 'No invoices matched to this agreement yet' : 'No invoices found for the selected PO(s) yet'}
                 </p>
               ) : (
                 <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
@@ -390,7 +559,19 @@ export default function PaEditPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {po.line_items.map((line, idx) => {
+                      {pos.flatMap((linePo) => [
+                        // With more than one PO on the payment the lines must say
+                        // which order they belong to, otherwise removing a PO
+                        // gives no clue which rows are about to disappear.
+                        ...(isMultiPo ? [(
+                          <tr key={`hdr-${linePo.id}`} className="bg-neutral-100/70">
+                            <td colSpan={5} className="px-3 py-1.5">
+                              <span className="font-mono text-[11px] font-semibold text-primary-700">{linePo.number}</span>
+                              <span className="ml-2 text-[11px] text-neutral-500">{linePo.title}</span>
+                            </td>
+                          </tr>
+                        )] : []),
+                        ...linePo.line_items.map((line, idx) => {
                         const receivedQty = receivedQtyByPoLineId[line.id] ?? 0
                         const isReceived  = receivedQty > 0
                         const isSelected  = selectedLineIds.has(line.id)
@@ -429,11 +610,12 @@ export default function PaEditPage() {
                               {receivedQty > 0 ? `${receivedQty} ${line.unit}` : '—'}
                             </td>
                             <td className="px-3 py-2.5 text-right font-mono font-semibold text-neutral-900">
-                              {formatAmount(line.line_total, po.currency)}
+                              {formatAmount(line.line_total, linePo.currency)}
                             </td>
                           </tr>
                         )
-                      })}
+                        }),
+                      ])}
                     </tbody>
                   </table>
                   {selectedLineIds.size > 0 && (
@@ -698,10 +880,21 @@ export default function PaEditPage() {
                   <span className="text-neutral-500">Vendor</span>
                   <span className="text-neutral-800 font-medium text-right max-w-[60%]">{pa.vendor_name}</span>
                 </div>
+                {isMultiPo && (
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">POs</span>
+                    <span className="font-mono text-[11px] text-neutral-800 text-right max-w-[60%]">
+                      {pos.map((p) => p.number).join(', ')}
+                    </span>
+                  </div>
+                )}
                 {po && (
                   <div className="flex justify-between">
                     <span className="text-neutral-500">PO Total</span>
-                    <span className="font-mono font-semibold text-neutral-900">{formatAmount(po.total, po.currency)}</span>
+                    {/* Across every PO on the payment — see PaCreatePage. */}
+                    <span className="font-mono font-semibold text-neutral-900">
+                      {formatAmount(pos.reduce((s, p) => s + Number(p.total), 0), po.currency)}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between">

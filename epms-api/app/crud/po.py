@@ -803,6 +803,19 @@ async def po_has_receipt_evidence(db: AsyncSession, po_id: uuid.UUID) -> bool:
     )).scalar_one_or_none() is not None
 
 
+async def pr_department_id(db: AsyncSession, pr_id: uuid.UUID | None) -> uuid.UUID | None:
+    """The department a PO's approvals route through — its PR's department_id.
+
+    NULL for a PO with no PR (NC-imported), which approval-api treats as
+    "fall back to the submitter's own department" rather than as unknown.
+    """
+    if pr_id is None:
+        return None
+    return (await db.execute(
+        select(PurchaseRequest.department_id).where(PurchaseRequest.id == pr_id)
+    )).scalar_one_or_none()
+
+
 async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -> bool:
     """True 当 PO 有任一张 3-way matched 发票:status=='matched' 且已收货。
 
