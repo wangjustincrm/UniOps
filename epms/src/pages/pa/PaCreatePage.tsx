@@ -19,10 +19,10 @@ import type { ApiPo } from '@/services/po'
 import type { ApiInvoice } from '@/services/invoices'
 import type { DocumentStatus } from '@/types'
 
-// Invoice multi-select list — shared by the PO route (all invoices for the PO)
-// and the agreement route (matched-but-unpaid invoices only). A row already
-// claimed by another open PA (`lockedIds`) renders disabled with a tag, same
-// convention on both routes.
+// Invoice multi-select list — shared by the PO route (the PO's invoices) and
+// the agreement route (matched-but-unpaid invoices only). Both routes hand it
+// only the invoices this payment could settle: one already claimed by another
+// live PA is left out entirely, with a line underneath saying which PA has it.
 // Which agreement invoices are safe to tick FOR the operator. A house-account
 // invoice is payable only once it carries evidence — the receipts it covers, or
 // an explicit no-evidence settlement (epms-api pa.py::_assert_agreement_invoices
@@ -65,45 +65,37 @@ function ReceiptEvidenceBadge({ invoice }: { invoice: ApiInvoice }) {
   return <span className={cn(cls, 'bg-danger-50 text-danger-700')}>No receipt evidence</span>
 }
 
+// Only invoices this payment could actually settle reach here — one already
+// claimed by another live PA is filtered out by the caller rather than shown
+// greyed out, so every row in this list is tickable.
 function InvoiceSelectList({
-  invoices, selectedIds, lockedIds, onToggle,
+  invoices, selectedIds, onToggle,
 }: {
   invoices: ApiInvoice[]
   selectedIds: Set<string>
-  lockedIds: Set<string>
   onToggle: (id: string) => void
 }) {
   return (
     <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
       {invoices.map((inv) => {
-        const isLocked = lockedIds.has(inv.id)
         return (
           <label
             key={inv.id}
             className={cn(
-              'flex items-center gap-3 px-4 py-3 transition-colors',
-              isLocked
-                ? 'cursor-not-allowed bg-neutral-50 opacity-60'
-                : 'cursor-pointer hover:bg-primary-50',
-              !isLocked && selectedIds.has(inv.id) && 'bg-primary-50'
+              'flex items-center gap-3 px-4 py-3 transition-colors cursor-pointer hover:bg-primary-50',
+              selectedIds.has(inv.id) && 'bg-primary-50'
             )}
           >
             <input
               type="checkbox"
               checked={selectedIds.has(inv.id)}
-              onChange={() => !isLocked && onToggle(inv.id)}
-              disabled={isLocked}
-              className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600 disabled:opacity-50"
+              onChange={() => onToggle(inv.id)}
+              className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-mono text-xs font-semibold text-primary-700">{inv.internal_ref}</span>
-                  {isLocked && (
-                    <span className="shrink-0 inline-flex items-center rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
-                      Already in PA
-                    </span>
-                  )}
                   <ReceiptEvidenceBadge invoice={inv} />
                 </div>
                 <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(inv.total_amount, inv.currency)}</span>
@@ -318,10 +310,34 @@ export default function PaCreatePage() {
   const agreementPaItems = (agreementActivePas?.items ?? []).filter(
     (pa) => pa.agreement_id === agreementIdFromUrl
   )
-  const lockedInvoiceIds = new Set<string>(
-    (isAgreementMode ? agreementPaItems : (poActivePas?.items ?? []))
-      .filter((pa) => !['cancelled', 'rejected'].includes(pa.status))
-      .flatMap((pa) => pa.invoice_ids)
+  // invoice id → the PA number that already claims it. A map rather than a set
+  // because the invoice is HIDDEN from the picker below rather than shown
+  // greyed out, and an invoice that silently is not there is a hunt: the note
+  // that replaces the row has to be able to say where it went.
+  const claimedByPaNumber = new Map<string, string>()
+  for (const pa of (isAgreementMode ? agreementPaItems : (poActivePas?.items ?? []))) {
+    if (['cancelled', 'rejected'].includes(pa.status)) continue
+    for (const invId of pa.invoice_ids) {
+      if (!claimedByPaNumber.has(invId)) claimedByPaNumber.set(invId, pa.pa_number)
+    }
+  }
+  const lockedInvoiceIds = new Set<string>(claimedByPaNumber.keys())
+
+  // "Claimed" describes a fact about the invoice, not about this form: another
+  // live PA settles it, so this one must not, and offering it — even disabled —
+  // is offering something that can never be ticked.
+  const claimedLabel = (invoices: ApiInvoice[]) => {
+    const claimed = invoices.filter((inv) => lockedInvoiceIds.has(inv.id))
+    if (claimed.length === 0) return null
+    const pas = [...new Set(claimed.map((inv) => claimedByPaNumber.get(inv.id)!))].sort()
+    return `${claimed.length} invoice${claimed.length === 1 ? ' is' : 's are'} already on ${pas.join(', ')} and cannot be paid twice.`
+  }
+  // What the pickers actually offer. hasThreeWay below deliberately still reads
+  // the FULL list: the receipt gate asks what evidence the PO carries, which
+  // does not change because another payment got to the invoice first.
+  const selectablePoInvoices = docInvoices.filter((inv) => !lockedInvoiceIds.has(inv.id))
+  const selectableAgreementInvoices = agreementInvoiceCandidates.filter(
+    (inv) => !lockedInvoiceIds.has(inv.id)
   )
   const poGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
 
@@ -1004,25 +1020,37 @@ ${submitError}
                   <FileText className="h-3.5 w-3.5" /> Invoices for {isMultiPo ? 'these POs' : 'this PO'}
                   <span className="text-neutral-400 font-normal">(select all that apply)</span>
                 </p>
-                {docInvoices.length === 0 ? (
+                {selectablePoInvoices.length === 0 ? (
                   <p className={cn(
                     'text-xs italic px-3 py-2 border rounded-lg',
                     invoiceRequiredMissing
                       ? 'text-danger-700 border-danger-300 bg-danger-50 not-italic'
                       : 'text-neutral-400 border-neutral-200 bg-neutral-50',
                   )}>
-                    {invoiceRequiredMissing
-                      ? 'No invoice on the selected PO(s) yet — a payment must settle an invoice. Upload and match the invoice first.'
-                      : 'No invoices found for the selected PO(s) yet'}
+                    {/* Three different facts, and telling them apart matters:
+                        nothing has been invoiced yet, everything invoiced is
+                        already on another payment, or the first of those while
+                        the form is demanding an invoice. Saying "upload and
+                        match the invoice first" when the invoice exists and is
+                        simply spoken for sends the operator hunting. */}
+                    {docInvoices.length > 0
+                      ? `Nothing left to pay on the selected PO(s) — ${claimedLabel(docInvoices)}`
+                      : invoiceRequiredMissing
+                        ? 'No invoice on the selected PO(s) yet — a payment must settle an invoice. Upload and match the invoice first.'
+                        : 'No invoices found for the selected PO(s) yet'}
                   </p>
                 ) : (
-                  <div className={cn(invoiceRequiredMissing && 'rounded-lg ring-1 ring-danger-400')}>
-                    <InvoiceSelectList
-                      invoices={docInvoices}
-                      selectedIds={selectedInvoiceIds}
-                      lockedIds={lockedInvoiceIds}
-                      onToggle={toggleInvoice}
-                    />
+                  <div className="flex flex-col gap-1.5">
+                    <div className={cn(invoiceRequiredMissing && 'rounded-lg ring-1 ring-danger-400')}>
+                      <InvoiceSelectList
+                        invoices={selectablePoInvoices}
+                        selectedIds={selectedInvoiceIds}
+                        onToggle={toggleInvoice}
+                      />
+                    </div>
+                    {claimedLabel(docInvoices) && (
+                      <p className="text-[11px] text-neutral-400">{claimedLabel(docInvoices)}</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -1301,17 +1329,23 @@ ${submitError}
                     </>
                   )}
                 </p>
-                {agreementInvoiceCandidates.length === 0 ? (
+                {selectableAgreementInvoices.length === 0 ? (
                   <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
-                    No unpaid invoices matched to this agreement yet.
+                    {agreementInvoiceCandidates.length > 0
+                      ? `Nothing left to pay on this agreement — ${claimedLabel(agreementInvoiceCandidates)}`
+                      : 'No unpaid invoices matched to this agreement yet.'}
                   </p>
                 ) : (
-                  <InvoiceSelectList
-                    invoices={agreementInvoiceCandidates}
-                    selectedIds={selectedInvoiceIds}
-                    lockedIds={lockedInvoiceIds}
-                    onToggle={toggleInvoice}
-                  />
+                  <div className="flex flex-col gap-1.5">
+                    <InvoiceSelectList
+                      invoices={selectableAgreementInvoices}
+                      selectedIds={selectedInvoiceIds}
+                      onToggle={toggleInvoice}
+                    />
+                    {claimedLabel(agreementInvoiceCandidates) && (
+                      <p className="text-[11px] text-neutral-400">{claimedLabel(agreementInvoiceCandidates)}</p>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
