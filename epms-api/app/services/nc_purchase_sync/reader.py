@@ -173,9 +173,12 @@ def changed_at(order: dict) -> str | None:
     return max(seen) if seen else None
 
 
-def fetch_nc(cutover: str, watermark: str | None) -> dict:
+def fetch_nc(cutover: str, watermark: str | None, refetch_pks=None) -> dict:
     """cutover: 'YYYY-MM-DD HH24:MI:SS' (only orders with dbilldate >= cutover).
     watermark: last synced NC modifiedtime, or None for full.
+    refetch_pks: PO_ORDER pks to read even though the watermark has passed them
+    (standing requests from ``nc_purchase_refetch_requests`` — see the model).
+    Ignored in full mode, which reads everything in scope anyway.
 
     Superseded order versions are excluded at the source — see
     ``_LATEST_VERSION``. EVERY read of PO_ORDER carries the predicate;
@@ -259,7 +262,17 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
                 {"cut": cutover, "wm": watermark})
             arrival_rows = [dict(zip([c[0].lower() for c in cur.description], r))
                             for r in cur.fetchall()]
-            order_pks = list(select_incremental_order_pks(order_rows, arrival_rows, watermark))
+            wanted = select_incremental_order_pks(order_rows, arrival_rows, watermark)
+            # Standing re-fetch requests join the batch regardless of the
+            # watermark — that is the whole point of them: the order they name
+            # has not changed in NC (nothing there was touched), it is UniOps
+            # that lost its mirror row. Intersected with the in-scope set so a
+            # request can only ever reach an order NC still lists; one naming an
+            # order NC has since deleted is settled by the service as
+            # 'gone_from_nc' rather than retried forever.
+            if refetch_pks:
+                wanted |= (set(refetch_pks) & in_scope_pks)
+            order_pks = list(wanted)
             orders = []
             for chunk in _chunks(order_pks, 900):
                 ph = ",".join(f":p{i}" for i in range(len(chunk)))

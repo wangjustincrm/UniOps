@@ -100,6 +100,45 @@ def clamp_watermark_for_skipped(orders, skipped_numbers, wm_to, prev_wm) -> str 
     return held
 
 
+def pending_refetch_pks(cur) -> list:
+    """NC order pks with a standing re-fetch request (see the
+    NcPurchaseRefetchRequest model). Read on every run; normally empty."""
+    # to_regclass, not try/except: in psycopg2 a failed statement poisons the
+    # WHOLE transaction, so probing for the table by querying it would take the
+    # mirror write down with it on any deployment where the migration has not
+    # run yet (and in the test DB, which is built from create_all).
+    cur.execute("select to_regclass('nc_purchase_refetch_requests')")
+    if cur.fetchone()[0] is None:
+        return []
+    cur.execute("select nc_source_pk from nc_purchase_refetch_requests "
+                "where fulfilled_at is null")
+    return [r[0] for r in cur.fetchall()]
+
+
+def settle_refetch_requests(cur, requested, upserted_pks, in_scope_pks) -> None:
+    """Close the standing requests this run answered.
+
+    'mirrored' — the order was written back, so the delete has healed.
+    'gone_from_nc' — NC no longer lists the order at all, so there is nothing
+    left to re-read and retrying every run forever would be noise.
+    Anything else (the order reached the batch but was skipped for a missing
+    vendor or a taken number) stays PENDING on purpose: the request is the only
+    thing that will bring it back once the cause is fixed.
+    """
+    if not requested:
+        return
+    upserted = [pk for pk in requested if pk in upserted_pks]
+    gone = ([pk for pk in requested if pk not in in_scope_pks]
+            if in_scope_pks is not None else [])
+    for pks, outcome in ((upserted, "mirrored"), (gone, "gone_from_nc")):
+        if not pks:
+            continue
+        cur.execute("update nc_purchase_refetch_requests set fulfilled_at=now(), "
+                    "outcome=%s, updated_at=now() "
+                    "where nc_source_pk = any(%s) and fulfilled_at is null",
+                    (outcome, list(pks)))
+
+
 def latest_watermark(cur) -> str | None:
     """Newest successful watermark_to (NC modifiedtime) — feeds the next
     incremental run's `modifiedtime >= :wm` filter."""
@@ -209,7 +248,12 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
         con = psycopg2.connect(dsn); con.autocommit = False
         cur = con.cursor()
         prev_wm = latest_watermark(cur)
-        raw = fetch(_cutover(cur), prev_wm if mode == "incremental" else None)
+        refetch = pending_refetch_pks(cur) if mode == "incremental" else []
+        if refetch:
+            logger.info("nc purchase sync %s: %d standing re-fetch request(s) join "
+                        "this run regardless of the watermark", run_id, len(refetch))
+        raw = fetch(_cutover(cur), prev_wm if mode == "incremental" else None,
+                    refetch_pks=refetch)
 
         vendor_by_erp = writer.load_vendor_map(cur)
         payload = transform(raw, vendor_by_erp)
@@ -240,6 +284,12 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
         # and a failure in the reporting must not abort the transaction carrying
         # it (in psycopg2 any error poisons the whole transaction, so catching
         # the exception without the savepoint would still lose the run).
+        # Same transaction as the mirror write: a request must not read as
+        # settled unless the rows that settle it committed with it.
+        settle_refetch_requests(cur, refetch,
+                                set(counts.get("upserted_po_pks") or []),
+                                in_scope_pks)
+
         cur.execute("savepoint nc_error_tasks")
         try:
             error_tasks.record_import_errors(

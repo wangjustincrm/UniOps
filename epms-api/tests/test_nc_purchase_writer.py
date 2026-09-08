@@ -276,9 +276,9 @@ def _empty_raw():
 
 
 def _raw_fetch(max_mt="2026-08-01 10:00:00"):
-    """A reader.fetch_nc(cutover, watermark)-shaped fake yielding O1/OL1/A1/AL1
+    """A reader.fetch_nc(cutover, watermark, refetch_pks)-shaped fake yielding O1/OL1/A1/AL1
     for a supplier whose ERP code (0000415) matches seeded_vendor."""
-    def fetch(cutover, watermark):
+    def fetch(cutover, watermark, refetch_pks=None):
         return {
             "orders": [{"pk_order": "O1", "vbillcode": "PO-NC-O1", "pk_supplier": "SUP1",
                         "corigcurrencyid": "C1", "ntotalorigmny": Decimal("100"),
@@ -303,7 +303,7 @@ def _raw_fetch(max_mt="2026-08-01 10:00:00"):
 def _raw_fetch_unknown_supplier():
     """Same shape as _raw_fetch, but the order's ERP supplier has no vendor —
     the exact condition that silently dropped PO-029-2609-01 in production."""
-    def fetch(cutover, watermark):
+    def fetch(cutover, watermark, refetch_pks=None):
         raw = _raw_fetch()(cutover, watermark)
         raw["suppliers"] = {"SUP1": "9999999"}
         raw["supplier_names"] = {"9999999": "Independent Chemical"}

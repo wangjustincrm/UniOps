@@ -32,6 +32,7 @@ from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.cascade import count_polymorphic, purge_workflow_refs
+from app.admin.nc_refetch import previews_nc_refetch, request_nc_refetch
 from app.admin.fields import EntitySchema, FieldSpec, ChildSchema
 from app.crud.gr import resync_po_received_qty
 from app.crud.invoice import (
@@ -335,6 +336,12 @@ async def _po_delete(db: AsyncSession, po) -> dict[str, int]:
         pr.po_id = None
         pr.po_number = None
     _merge(summary, await purge_workflow_refs(db, po.id))
+    # Deleting the mirror of an order NC still lists is not the end of the story:
+    # NC's copy is untouched, so its change time stays behind the sync watermark
+    # and no incremental run ever reads the order again. Leave a standing
+    # re-fetch request so the next run brings it back. Raised BEFORE the delete —
+    # the number and the NC pk live on the row that is about to go.
+    _merge(summary, await request_nc_refetch(db, po, reason="deleted in Data Maintenance"))
     await db.delete(po)             # po_line_items + po_attachment cascade via FK
     await db.flush()
     return _merge(summary, {"purchase_orders": 1})
@@ -353,6 +360,7 @@ async def _po_preview(db: AsyncSession, po, *, seen_grs: set | None = None) -> d
         if seen_grs is not None:
             seen_grs.add(gr.id)
         _merge(summary, await _gr_preview(db, gr, seen_invoices=seen_invoices))
+    _merge(summary, previews_nc_refetch(po))
     return _merge(summary, await _wf_counts(db, po.id))
 
 

@@ -481,4 +481,9 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
     # The document numbers behind skipped_number_collision, so the run can raise
     # an Admin task naming them instead of leaving a bare count in a log line.
     counts["collision_numbers"] = collisions
+    # Which NC orders this run actually WROTE. A standing re-fetch request is
+    # only settled by one of these: an order that reached the batch but was
+    # dropped on the way in (no vendor, no free number) has not come back, and
+    # its request has to survive to the next run.
+    counts["upserted_po_pks"] = list(po_id_by_ncpk)
     return counts
