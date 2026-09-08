@@ -141,7 +141,25 @@ async def get_all(
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(q.order_by(PurchaseRequest.created_at.desc()).offset(offset).limit(page_size))).scalars().all())
+    await _attach_creator_names(db, items)
     return items, total
+
+
+async def _attach_creator_names(db: AsyncSession, items: list[PurchaseRequest]) -> None:
+    """Set the transient `created_by_name` consumed by PrResponse on each row.
+
+    The list view shows the requester, so resolve every creator in one batched
+    query (never per row). get_by_id resolves the same attr via its own join.
+    """
+    creator_ids = {it.created_by for it in items if it.created_by}
+    name_by_user: dict = {}
+    if creator_ids:
+        rows = (await db.execute(
+            select(User.id, User.full_name).where(User.id.in_(creator_ids))
+        )).all()
+        name_by_user = {uid: name for uid, name in rows}
+    for it in items:
+        it.created_by_name = name_by_user.get(it.created_by)
 
 
 async def get_by_id(db: AsyncSession, pr_id: uuid.UUID) -> PurchaseRequest | None:

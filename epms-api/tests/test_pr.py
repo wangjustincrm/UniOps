@@ -52,6 +52,19 @@ async def test_list_prs(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_list_prs_carries_requester_name(admin_client):
+    """The list shows a Requester column, so every row must name its creator.
+
+    get_by_id resolved created_by_name via a join; the list left it null.
+    """
+    created = await _create(admin_client)
+    resp = await admin_client.get(URL)
+    assert resp.status_code == 200
+    row = next(r for r in resp.json()["items"] if r["id"] == created["id"])
+    assert row["created_by_name"] == "Test system_admin"
+
+
+@pytest.mark.asyncio
 async def test_get_pr(admin_client):
     pr = await _create(admin_client)
     resp = await admin_client.get(f"{URL}/{pr['id']}")
