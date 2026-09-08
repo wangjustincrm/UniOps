@@ -196,9 +196,7 @@ async def _assert_invoices_belong_to_pos(
         )
 
 
-async def _assert_pos_coherent(
-    db: SessionDep, pos: list[PurchaseOrder], pa_type: str,
-) -> None:
+async def _assert_pos_coherent(pos: list[PurchaseOrder], pa_type: str) -> None:
     """The cross-PO rules for one payment application.
 
     Shared by create_pa and update_pa's PO-set replacement so a PA can never be
@@ -232,24 +230,20 @@ async def _assert_pos_coherent(
                    "Prepayment, settlement and balance payments are raised against a "
                    "single purchase order.",
         )
-    # One payment routes through ONE department: approval-api resolves a PA's
-    # approvers from its PRIMARY PO's PR (engine.py::_routing_department_id).
-    # Combining departments would therefore hand the whole payment to the
-    # primary PO's approver and route the other department's spend past its own
-    # — quietly weaker than the two separate payments it replaces. NULL (a PO
-    # with no PR, i.e. NC-imported) is its own value: routing falls back to the
-    # submitter's department there, so it may only be combined with others like it.
-    if len(pos) > 1:
-        depts = set()
-        for p in pos:
-            depts.add(await po_crud.pr_department_id(db, p.pr_id))
-        if len(depts) > 1:
-            raise HTTPException(
-                status_code=422,
-                detail="All purchase orders on one payment application must belong to "
-                       "the same department — a payment is approved by one department's "
-                       "reviewers. Raise a separate payment per department.",
-            )
+    # Departments are deliberately NOT constrained. They were, briefly, for a
+    # good reason — approval-api resolves a PA's department-scoped approvers
+    # from its PRIMARY PO alone, so combining departments used to route one
+    # department's spend past its own reviewer. But the constraint could not
+    # survive contact with how vendors actually invoice: one invoice routinely
+    # covers purchase orders from several departments, the vendor has no idea
+    # where those boundaries are, and forcing a payment per department split
+    # exactly the document finance needs to review as a whole.
+    #
+    # The routing problem is now solved where it lives, in approval-api: a PA
+    # spanning departments auto-skips the Department Manager and Director steps
+    # (visibly, with a reason on the timeline) and its GM/OPM step resolves from
+    # an engine-wide setting rather than from a department that cannot be
+    # picked. See engine.py::_should_skip_step / _resolve_gm_or_opm.
 
 
 @router.get("", response_model=PaListResponse)
@@ -402,7 +396,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         pos.append(loaded)
     po = pos[0]
 
-    await _assert_pos_coherent(db, pos, body.pa_type)
+    await _assert_pos_coherent(pos, body.pa_type)
 
     # A plain requester may only pay against POs linked to a PR they raised. The
     # PA write role list includes 'requester', and a requester carrying a special
@@ -662,7 +656,7 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWr
             if loaded is None:
                 raise HTTPException(status_code=404, detail="Purchase order not found")
             pos.append(loaded)
-        await _assert_pos_coherent(db, pos, pa.pa_type)
+        await _assert_pos_coherent(pos, pa.pa_type)
         # The invoice list to check against the NEW PO set is the one being
         # saved, or the PA's existing one when the caller only changed the POs.
         # Dropping a PO without this leaves that PO's invoice on the payment.

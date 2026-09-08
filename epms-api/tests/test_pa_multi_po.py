@@ -407,10 +407,19 @@ async def _attach_pr_in_new_department(test_engine, po_id, user_email_hint):
 
 
 @pytest.mark.asyncio
-async def test_mixed_departments_refused(admin_client, test_engine):
-    """A payment is approved by ONE department's reviewers — the primary PO's.
-    Combining departments would route the other department's spend past its own
-    approver, which is weaker than the two payments it replaces."""
+async def test_mixed_departments_allowed(admin_client, test_engine):
+    """Departments must NOT constrain a payment.
+
+    This was a 422 for one release. It could not survive production: a vendor's
+    single invoice routinely covers purchase orders from several departments,
+    the vendor has no idea where those boundaries are, and refusing the merge
+    forced finance to review one invoice as several payments.
+
+    The approval side of it is handled in approval-api, not here — such a PA
+    auto-skips its Department Manager and Director steps and resolves GM/OPM
+    from an engine-wide setting (engine.py::_should_skip_step /
+    _resolve_gm_or_opm).
+    """
     v = await _make_vendor(admin_client)
     po1, inv1 = await _make_three_way_po(admin_client, test_engine, v["id"])
     po2, inv2 = await _make_three_way_po(admin_client, test_engine, v["id"])
@@ -420,8 +429,8 @@ async def test_mixed_departments_refused(admin_client, test_engine):
 
     r = await admin_client.post(PA_URL, json=_payload(
         [po1["id"], po2["id"]], invoice_ids=[inv1, inv2]))
-    assert r.status_code == 422, r.text
-    assert "same department" in r.json()["detail"]
+    assert r.status_code == 201, r.text
+    assert set(r.json()["po_ids"]) == {po1["id"], po2["id"]}
 
 
 @pytest.mark.asyncio

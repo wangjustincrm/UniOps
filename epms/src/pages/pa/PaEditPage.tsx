@@ -125,7 +125,6 @@ export default function PaEditPage() {
     if (!po || po.id === candidate.id) return null
     if (candidate.vendor_id !== po.vendor_id) return 'Different vendor'
     if ((candidate.currency ?? 'CAD') !== (po.currency ?? 'CAD')) return 'Different currency'
-    if ((candidate.pr_department_id ?? null) !== (po.pr_department_id ?? null)) return 'Different department'
     if (paType !== 'regular') return 'Single PO only for this payment type'
     return null
   }

@@ -91,7 +91,13 @@ function TimelineStep({
             Auto-skipped
           </span>
         )}
-        {note && !isAutoApproved && <p className="text-xs text-neutral-500 mt-1 italic">"{note}"</p>}
+        {/* Quoted for a real comment somebody typed; unquoted for a skip
+            reason, which is the system explaining itself, not a person. */}
+        {note && !isAutoApproved && (
+          <p className="text-xs text-neutral-500 mt-1 italic">
+            {status === 'skipped' ? note : `"${note}"`}
+          </p>
+        )}
         {status === 'active' && !date && (
           <p className="text-xs text-primary-600 mt-0.5 font-medium">Awaiting action</p>
         )}
@@ -500,7 +506,14 @@ export default function PaDetailPage() {
         label: node.label,
         actor: isAutoSkipped ? undefined : evt?.actor_name ?? undefined,
         date: isAutoSkipped ? undefined : evt?.created_at ?? undefined,
-        note: evt?.comment?.includes('Auto-approved') ? 'Auto-approved (same approver)' : undefined,
+        // A skipped step shows WHY it was skipped. The tag alone says a level
+        // was bypassed without saying on what grounds, which for a payment
+        // approval is the one thing a reader actually needs.
+        note: evt?.comment?.includes('Auto-approved')
+          ? 'Auto-approved (same approver)'
+          : isAutoSkipped
+            ? evt?.comment?.replace(/^Auto-skipped\s*/, '').replace(/^\(|\)$/g, '') || undefined
+            : undefined,
         status: isAutoSkipped ? 'skipped' as const : isDone ? 'done' as const : isActive ? 'active' as const : 'pending' as const,
       }
     }),
