@@ -100,6 +100,20 @@ def _flatten(raw: dict) -> tuple[dict, dict, list[str]]:
     return values, confidence, check
 
 
+# Anthropic answers HTTP 400 both for "this file cannot be read" and for
+# account-level refusals (spend limit reached, credit balance too low). Same
+# exception class, opposite remedies — see the BadRequestError handler below.
+_ACCOUNT_LIMIT_MARKERS = (
+    "usage limit",
+    "credit balance",
+    "quota",
+    "billing",
+    "spend limit",
+    "insufficient",
+    "organization",
+)
+
+
 async def extract_from_sds(file_bytes: bytes, mime_type: str) -> dict:
     """Read the label elements off a data sheet.
 
@@ -126,14 +140,33 @@ async def extract_from_sds(file_bytes: bytes, mime_type: str) -> dict:
 
     try:
         response = client.messages.create(
-            # The most capable model, unlike the invoice OCR next door: this
-            # output goes onto a drum, and a wrong pictogram is a violation
-            # somebody acts on rather than a typo somebody catches.
-            model="claude-opus-5",
+            # Same model as the invoice OCR next door. This output goes onto a
+            # drum and a wrong pictogram is a violation somebody acts on, so it
+            # once used the most capable model — but nothing here prints without
+            # a person approving the label record, and that gate, not the model
+            # tier, is what stands between a misread sheet and a bad drum.
+            # Opus on a shared key starves the far more frequent invoice OCR of
+            # the account's usage limit (2026-09: limit hit, EPMS uploads all
+            # failed with "AI parsing failed").
+            model="claude-haiku-4-5-20251001",
             max_tokens=4096,
             messages=[{"role": "user", "content": [block, {"type": "text", "text": _PROMPT}]}],
         )
     except anthropic.BadRequestError as exc:
+        # A 400 means one of two unrelated things, and they must not read alike.
+        # An account-level refusal (usage limit, credit balance) is an outage —
+        # blaming the data sheet for it sends somebody re-scanning a file that
+        # was never the problem. That is exactly what happened to the invoice
+        # OCR next door on 2026-09-08; see expense-api's _raise_for_bad_request.
+        message = str(getattr(exc, "message", "") or exc)
+        if any(m in message.lower() for m in _ACCOUNT_LIMIT_MARKERS):
+            logger.error("SDS extraction blocked by an account-level API limit: %s", message)
+            raise RuntimeError(
+                "Reading data sheets is temporarily unavailable — the AI service "
+                "account has reached a usage or billing limit. Nothing is wrong "
+                "with this sheet; fill the label in by hand and let IT know. "
+                f"(provider said: {message})"
+            ) from exc
         logger.warning("SDS extraction could not read the file: %s", exc)
         raise ValueError(
             "That file could not be read. Fill the label in from the sheet by hand."

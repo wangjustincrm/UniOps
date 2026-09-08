@@ -205,7 +205,7 @@ PDF 走 ReportLab（★`leading` 默认 12，与 fontSize 无关，改字号必�
 
 | | 现有 OCR | E40 GHS 提取 |
 |---|---|---|
-| 模型 | `claude-haiku-4-5-20251001` | ★**`claude-opus-5`** —— 危害分类判断错=WHMIS 违规，不为成本降级 |
+| 模型 | `claude-haiku-4-5-20251001` | ~~`claude-opus-5`~~ → **`claude-haiku-4-5-20251001`**（2026-09-08 改）—— 原按「危害分类判断错=WHMIS 违规」选 Opus；实际把关的是标签记录的人工审批闸门，而 Opus 与发票 OCR 共用一个 API key 的用量上限，2026-09 顶满后 EPMS 发票上传全线报 AI parsing failed |
 | 输出 | prompt 里要 JSON，再手工 `_parse` | ★**structured outputs**（`output_config.format`），schema 强约束 |
 | SDK | `anthropic==0.43.0` | ehs-api 自己的 `requirements.txt` 用 **1.x**（独立服务，与 expense-api 不冲突；★1.x 依赖 `httpx2`） |
 
@@ -216,7 +216,7 @@ import anthropic, base64
 client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 resp = client.messages.create(
-    model="claude-opus-5",
+    model="claude-haiku-4-5-20251001",   # 2026-09-08 起与发票 OCR 同型号
     max_tokens=16000,
     thinking={"type": "adaptive"},           # ★不要 budget_tokens（Opus 5 会 400）
     output_config={
