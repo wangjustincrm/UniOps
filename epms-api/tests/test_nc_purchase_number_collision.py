@@ -295,7 +295,7 @@ def test_renames_are_counted_so_the_run_can_report_them(
 
 def _dup_number_fetch():
     """A reader-shaped fake: two live NC orders, one vbillcode, one arrival each."""
-    def fetch(cutover, watermark):
+    def fetch(cutover, watermark, refetch_pks=None):
         return {
             "orders": [
                 {"pk_order": "D1", "vbillcode": "PO-NC-DUP", "pk_supplier": "SUP1",

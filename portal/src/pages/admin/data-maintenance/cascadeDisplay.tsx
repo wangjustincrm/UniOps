@@ -10,6 +10,10 @@ export const KEPT_LABELS: Record<string, string> = {
   invoice_claims_released: 'Receipt claims released back to their invoice',
   create_pa_tasks_reopened: 'Create-PA tasks reopened',
   po_lines_received_qty_resynced: 'PO lines whose received quantity is recalculated',
+  // Not a deletion at all — the opposite. Deleting an NC-mirrored PO leaves the
+  // ERP's copy untouched, so the order is queued to be pulled back on the next
+  // NC sync. Without a label here it would be listed under "will be deleted".
+  nc_orders_queued_for_resync: 'NC orders queued to be re-imported on the next NC sync',
 }
 
 export const BLOCKED_LABELS: Record<string, string> = {

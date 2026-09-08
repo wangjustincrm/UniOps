@@ -54,17 +54,73 @@ def _po_consumed(cur, po_id) -> bool:
     return cur.fetchone() is not None
 
 
+def _park_withdrawn(cur, po_id, number) -> bool:
+    """Move a WITHDRAWN NC mirror off ``number`` so a live order can have it back.
+
+    ``reconcile_pending`` cancels a mirrored order NC no longer lists, but it
+    leaves the row — and therefore its document number — in place. That is a
+    tombstone: ``purchase_orders.number`` is UNIQUE, so when the buyer DELETES an
+    order in NC and immediately re-creates it under the same ``vbillcode`` (a
+    normal correction — PO-058-2607-02 was rebuilt twice), the replacement finds
+    its own ERP number taken by the corpse of its predecessor and is mirrored as
+    ``…-2``, then ``…-3``. Three documents on screen, only one of them real, and
+    the number a human reads off the ERP matches the cancelled one.
+
+    The tombstone keeps its ``place_order_reference`` (the ERP ``vbillcode``), so
+    parking it renames only the UniOps-side document number — the ERP number it
+    was mirrored from stays on the row and stays searchable.
+
+    Refuses to move a row anything downstream points at. A withdrawn
+    ``nc_pending`` order has no invoice and no GR by construction (that status is
+    in no matchable or receivable allow-list), so this should never fire; it is
+    here because "should never" is not "cannot", and renaming a document a
+    payment was built on would be far worse than leaving a suffix on a new one.
+    """
+    cur.execute("select 1 from invoices where po_id=%s limit 1", (po_id,))
+    if cur.fetchone():
+        return False
+    cur.execute("select 1 from goods_receipts where po_id=%s limit 1", (po_id,))
+    if cur.fetchone():
+        return False
+    for n in range(1, _MAX_NUMBER_SUFFIX + 1):
+        parked = f"{number}-{_VOID_SUFFIX}{n}"
+        cur.execute("select 1 from purchase_orders where number=%s limit 1", (parked,))
+        if cur.fetchone():
+            continue
+        cur.execute("update purchase_orders set number=%s, updated_at=now() where id=%s",
+                    (parked, po_id))
+        print(f"[nc_purchase_sync] parked withdrawn PO {number} as {parked} so the "
+              f"number returns to the pool", flush=True)
+        return True
+    return False
+
+
 def _number_conflict(cur, number, nc_source_pk) -> bool:
     """True if purchase_orders already holds this document number on a row that is
     NOT this NC order — e.g. a PMS-imported PO, or another NC order that genuinely
     carries the same ``vbillcode``. purchase_orders.number is UNIQUE, so inserting
-    a colliding order would abort the whole run."""
+    a colliding order would abort the whole run.
+
+    NOT a pure predicate: a holder that is a WITHDRAWN NC mirror is parked out of
+    the way (see ``_park_withdrawn``) and reported as no conflict, so an order NC
+    deleted and rebuilt gets its real ERP number rather than a ``-2`` suffix. The
+    side effect lives here rather than in ``_free_number`` because every caller
+    that asks "is this number taken?" wants the same answer, including the UPDATE
+    branch — an already-mirrored order stuck on a suffix reclaims its ERP number
+    on the next run once the tombstone in front of it moves.
+    """
     cur.execute(
-        "select 1 from purchase_orders where number=%s "
+        "select id, status, source from purchase_orders where number=%s "
         "and (source is distinct from 'nc' or nc_source_pk is distinct from %s) limit 1",
         (number, nc_source_pk),
     )
-    return cur.fetchone() is not None
+    row = cur.fetchone()
+    if row is None:
+        return False
+    holder_id, status, source = row
+    if source == "nc" and status == "cancelled" and _park_withdrawn(cur, holder_id, number):
+        return False
+    return True
 
 
 #: How far the suffix search will walk before giving up. The worst real group is
@@ -72,6 +128,11 @@ def _number_conflict(cur, number, nc_source_pk) -> bool:
 #: has produced while still bounding the loop, so a pathological input degrades
 #: to the old skip-and-log instead of hanging the run.
 _MAX_NUMBER_SUFFIX = 50
+
+#: Marks the parking slot a withdrawn NC mirror is renamed into. Deliberately not
+#: a bare ``-N``: that shape is a real NC ``vbillcode`` (PO-022-2302-01-2) and is
+#: also what ``_free_number`` hands out, so a tombstone must never land on one.
+_VOID_SUFFIX = "VOID"
 
 
 def _erp_number_held_by_another(cur, number, nc_source_pk) -> bool:
@@ -420,4 +481,9 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
     # The document numbers behind skipped_number_collision, so the run can raise
     # an Admin task naming them instead of leaving a bare count in a log line.
     counts["collision_numbers"] = collisions
+    # Which NC orders this run actually WROTE. A standing re-fetch request is
+    # only settled by one of these: an order that reached the batch but was
+    # dropped on the way in (no vendor, no free number) has not come back, and
+    # its request has to survive to the next run.
+    counts["upserted_po_pks"] = list(po_id_by_ncpk)
     return counts
