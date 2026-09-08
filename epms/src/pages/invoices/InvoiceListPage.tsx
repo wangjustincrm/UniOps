@@ -6,7 +6,7 @@ import {
   X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2, UserPlus,
   ArrowDown, ArrowUp, ArrowUpDown,
 } from 'lucide-react'
-import { parseInvoiceFile } from '@/lib/invoice-parser'
+import { parseInvoiceFile, type ParseFailureKind } from '@/lib/invoice-parser'
 import { EXPENSE_BASE } from '@/lib/api'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
@@ -160,6 +160,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   // AI parsing state
   const [parsing,       setParsing]       = useState(false)
   const [parseError,    setParseError]    = useState<string | null>(null)
+  const [parseErrKind,  setParseErrKind]  = useState<ParseFailureKind>('file')
   const [aiFields,      setAiFields]      = useState<Set<string>>(new Set())
   const [vendorHint,    setVendorHint]    = useState<string | null>(null)
   const [netTermsHint,  setNetTermsHint]  = useState<string | null>(null)
@@ -167,6 +168,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const handleFile = async (f: File) => {
     setFile({ name: f.name, size: fmtSize(f.size), raw: f })
     setParseError(null)
+    setParseErrKind('file')
     setAiFields(new Set())
     setVendorHint(null)
     setNetTermsHint(null)
@@ -179,7 +181,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
     setParsing(true)
     try {
       const result = await parseInvoiceFile(f)
-      if (!result.ok) { setParseError(result.error); return }
+      if (!result.ok) { setParseError(result.error); setParseErrKind(result.kind); return }
 
       const { fields } = result
       const filled = new Set<string>()
@@ -632,9 +634,14 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
           {/* AI parse error */}
           {parseError && (
-            <div className="flex shrink-0 items-center gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              AI parsing failed — please fill fields manually.{parseError && ` (${parseError})`}
+            <div className="flex shrink-0 items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                {parseErrKind === 'service'
+                  ? 'AI extraction is unavailable right now — this is not a problem with your file, and re-uploading will not help. Fill the fields in manually and let IT know.'
+                  : 'AI could not read this document — please fill the fields in manually.'}
+                {` (${parseError})`}
+              </span>
             </div>
           )}
 

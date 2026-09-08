@@ -25,9 +25,21 @@ export interface ParsedInvoiceFields {
   documentType:        'invoice' | 'credit_note'
 }
 
+/**
+ * A failed parse is one of two very different things, and the banner says so:
+ *   'file'    — the model could not read THIS document (422). Manual entry is
+ *               the fix, and re-uploading the same file will not help.
+ *   'service' — extraction is down or the AI account hit a usage/billing limit
+ *               (503, or the request never reached the server). Nothing is
+ *               wrong with the file; IT has to act. Calling this one "AI
+ *               parsing failed" sent people hunting a fault in a blameless
+ *               invoice for a whole afternoon (2026-09-08).
+ */
+export type ParseFailureKind = 'file' | 'service'
+
 export type ParseResult =
   | { ok: true;  fields: ParsedInvoiceFields }
-  | { ok: false; error: string }
+  | { ok: false; error: string; kind: ParseFailureKind }
 
 // Shape returned by expense-api POST /api/v1/ocr/invoice (see ocr_service.extract_invoice).
 interface OcrLineItem {
@@ -84,7 +96,9 @@ export async function parseInvoiceFile(file: File): Promise<ParseResult> {
         const err = await res.json()
         if (typeof err.detail === 'string') detail = err.detail
       } catch { /* ignore parse error */ }
-      return { ok: false, error: detail }
+      // 503 = service unavailable / account limit (see ocr.py's RuntimeError
+      // branch). Anything else is about the document itself.
+      return { ok: false, error: detail, kind: res.status === 503 ? 'service' : 'file' }
     }
 
     const r = await res.json() as OcrInvoiceResponse
@@ -115,6 +129,11 @@ export async function parseInvoiceFile(file: File): Promise<ParseResult> {
     }
     return { ok: true, fields }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' }
+    // Never reached the server (network, CORS, expense-api down) — not the file.
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+      kind: 'service',
+    }
   }
 }

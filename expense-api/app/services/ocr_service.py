@@ -9,13 +9,55 @@ Supports three modes:
 import base64
 import json
 import logging
-from typing import Literal
+from typing import Literal, NoReturn
 
 from app.core.config import settings
 
 log = logging.getLogger(__name__)
 
 CONFIDENCE_THRESHOLD = 0.75  # fields below this are flagged for user review
+
+# Anthropic answers HTTP 400 for two unrelated things: "this document cannot be
+# read" AND account-level refusals (spend limit reached, credit balance too
+# low). Both arrive as BadRequestError, and treating them alike told a finance
+# clerk their invoice was unreadable when the real cause was a billing ceiling
+# — 2026-09-08: the account hit its usage limit, EVERY EPMS upload failed with
+# "AI parsing failed", and the blameless file got the blame. The user re-scans,
+# re-exports, tries another invoice, and never learns it is not about the file.
+#
+# So split them. An account problem is an outage: RuntimeError → HTTP 503, with
+# a message that says out loud "not your file" and names who can fix it. Only a
+# genuine decode failure keeps the old ValueError → HTTP 422 "enter it manually".
+#
+# Matched on the message text because the payload carries no machine-readable
+# distinction — both are type "invalid_request_error". Unmatched 400s keep the
+# old document-failure reading: that is the far more common case, and a file
+# error mislabelled as an outage would send people to IT for a bad scan.
+_ACCOUNT_LIMIT_MARKERS = (
+    "usage limit",
+    "credit balance",
+    "quota",
+    "billing",
+    "spend limit",
+    "insufficient",
+    "organization",
+)
+
+
+def _raise_for_bad_request(exc: Exception, mode: str) -> NoReturn:
+    """Translate a Claude 400 into either an outage or a document failure."""
+    message = str(getattr(exc, "message", "") or exc)
+    if any(marker in message.lower() for marker in _ACCOUNT_LIMIT_MARKERS):
+        log.error("%s OCR blocked by an account-level API limit: %s", mode, message)
+        raise RuntimeError(
+            "AI extraction is temporarily unavailable — the AI service account has "
+            "reached a usage or billing limit. This is NOT a problem with your file; "
+            "enter the details manually and let IT know. "
+            f"(provider said: {message})"
+        ) from exc
+    log.warning("%s OCR could not process the file: %s", mode, exc)
+    raise ValueError("Could not read this document. Please enter the details manually.") from exc
+
 
 _INVOICE_PROMPT = """\
 You are an invoice data extraction assistant. Extract all available information from this invoice image or PDF.
@@ -298,8 +340,7 @@ async def extract_invoice(file_bytes: bytes, mime_type: str) -> dict:
             }],
         )
     except anthropic.BadRequestError as exc:
-        log.warning("Invoice OCR could not process the file: %s", exc)
-        raise ValueError("Could not read this document. Please enter the details manually.")
+        _raise_for_bad_request(exc, "Invoice")
     except anthropic.APIStatusError as exc:
         log.error("Claude API error %d: %s", exc.status_code, exc.message)
         raise RuntimeError(f"OCR service error: {exc.message}")
@@ -357,10 +398,10 @@ async def extract_receipt(file_bytes: bytes, mime_type: str) -> dict:
             messages=[{"role": "user", "content": [content_block, {"type": "text", "text": _RECEIPT_PROMPT}]}],
         )
     except anthropic.BadRequestError as exc:
-        # Unreadable / unsupported file (e.g. HEIC, corrupt) — degrade to manual entry
-        # (caller maps ValueError → HTTP 422) rather than a service-outage 503.
-        log.warning("Receipt OCR could not process the file: %s", exc)
-        raise ValueError("Could not read this document. Please enter the details manually.")
+        # Unreadable / unsupported file (e.g. HEIC, corrupt) — degrade to manual
+        # entry (caller maps ValueError → HTTP 422); an account-level limit is an
+        # outage instead. See _raise_for_bad_request.
+        _raise_for_bad_request(exc, "Receipt")
     except (anthropic.APIStatusError, anthropic.APIConnectionError) as exc:
         raise RuntimeError(f"OCR service error: {exc}")
 
@@ -448,10 +489,10 @@ async def extract_slip(file_bytes: bytes, mime_type: str) -> dict:
             messages=[{"role": "user", "content": [content_block, {"type": "text", "text": _SLIP_PROMPT}]}],
         )
     except anthropic.BadRequestError as exc:
-        # Unreadable / unsupported file (e.g. HEIC, corrupt) — degrade to manual entry
-        # (caller maps ValueError → HTTP 422) rather than a service-outage 503.
-        log.warning("Slip OCR could not process the file: %s", exc)
-        raise ValueError("Could not read this document. Please enter the details manually.")
+        # Unreadable / unsupported file (e.g. HEIC, corrupt) — degrade to manual
+        # entry (caller maps ValueError → HTTP 422); an account-level limit is an
+        # outage instead. See _raise_for_bad_request.
+        _raise_for_bad_request(exc, "Slip")
     except (anthropic.APIStatusError, anthropic.APIConnectionError) as exc:
         raise RuntimeError(f"OCR service error: {exc}")
 
