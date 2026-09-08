@@ -194,3 +194,46 @@ def actor_holds_role(
     }
     assigned = role_map.get(role)
     return assigned is not None and assigned == actor_str
+
+
+async def get_approval_setting(db: AsyncSession, key: str, default: str) -> str:
+    """One engine-wide switch from `approval_settings` (app/models/routing.py).
+
+    Falls back to `default` when the row is missing so the engine's behaviour is
+    defined before an admin has ever opened the settings screen — and so a
+    failure to read configuration can never be the reason a payment cannot be
+    approved.
+    """
+    row = (await db.execute(sa.text(
+        "SELECT value FROM approval_settings WHERE key = :k"), {"k": key})).scalar_one_or_none()
+    return row or default
+
+
+async def pa_department_ids(db: AsyncSession, pa_id: uuid.UUID) -> set:
+    """Departments a payment application spends against.
+
+    A PA may settle several purchase orders (epms `pa_po_links`), and those POs
+    need not belong to one department — a vendor's single invoice covers
+    whatever it covers, and the vendor has no idea where the department
+    boundaries are. Each PO's department is its PR's, the same resolution
+    `engine._routing_department_id` uses for the single-PO case.
+
+    Unions the link table with the header `po_id`: the link table is complete
+    for everything epms-api writes, but a PA inserted by anything else has only
+    the header, and reading one source alone would report such a PA as spanning
+    NO departments — which would then silently take the cross-department path.
+
+    NULL (a PO with no PR — NC-imported) is a real element of the set, not a
+    gap: those route to the submitter's own department, so a PA mixing one with
+    a PR-backed PO genuinely spans two different routings.
+    """
+    rows = (await db.execute(sa.text(
+        "SELECT DISTINCT pr.department_id::text AS dept "
+        "FROM purchase_orders po "
+        "LEFT JOIN purchase_requests pr ON pr.id = po.pr_id "
+        "WHERE po.id IN ("
+        "    SELECT po_id FROM pa_po_links WHERE pa_id = :pa "
+        "    UNION "
+        "    SELECT po_id FROM payment_applications WHERE id = :pa AND po_id IS NOT NULL"
+        ")"), {"pa": str(pa_id)})).scalars().all()
+    return set(rows)

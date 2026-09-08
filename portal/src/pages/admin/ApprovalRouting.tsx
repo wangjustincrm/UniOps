@@ -27,6 +27,12 @@ interface Backups {
 interface RoutingResponse {
   departments: DeptRoutingRow[]
   backups: Backups
+  // Which post approves a payment application that covers purchase orders from
+  // SEVERAL departments. The per-department mapping above cannot answer that —
+  // one of them may route to GM and another to OPM — so this one setting
+  // decides for all such payments. Their Department Manager and Director steps
+  // are skipped (visibly, with a reason) and this post approves instead.
+  cross_department_gm_or_opm: Post
 }
 
 interface ApiUser {
@@ -111,7 +117,8 @@ export default function ApprovalRouting() {
           <h1 className="text-lg font-semibold">Approval Routing</h1>
           <p className="text-sm text-neutral-500">
             Configure which post (GM or OPM) approves each department, that department's director,
-            whether its supervisor layer is on, and the GM/OPM backup approvers.
+            whether its supervisor layer is on, who approves payments spanning several departments,
+            and the GM/OPM backup approvers.
           </p>
         </div>
 
@@ -134,6 +141,7 @@ function ApprovalRoutingBody() {
 
   const [deptEdits, setDeptEdits] = useState<Record<string, Partial<DeptRoutingRow>>>({})
   const [backupEdits, setBackupEdits] = useState<Partial<Backups>>({})
+  const [crossDeptEdit, setCrossDeptEdit] = useState<Post | null>(null)
   const [error, setError] = useState('')
 
   const save = useMutation<RoutingResponse, ApiError, RoutingResponse>({
@@ -160,6 +168,8 @@ function ApprovalRoutingBody() {
 
   const departments = routingQ.data?.departments ?? []
   const backups = routingQ.data?.backups ?? { gm: null, opm: null }
+  const crossDept: Post = routingQ.data?.cross_department_gm_or_opm ?? 'gm'
+  const effectiveCrossDept: Post = crossDeptEdit ?? crossDept
 
   const effectiveRow = (dept: DeptRoutingRow): DeptRoutingRow => ({
     ...dept,
@@ -193,6 +203,7 @@ function ApprovalRoutingBody() {
   }
 
   const dirtyCount = Object.keys(deptEdits).length + Object.keys(backupEdits).length
+    + (crossDeptEdit !== null && crossDeptEdit !== crossDept ? 1 : 0)
 
   const handleSave = () => {
     const body: RoutingResponse = {
@@ -208,6 +219,7 @@ function ApprovalRoutingBody() {
         }
       }),
       backups: effectiveBackups,
+      cross_department_gm_or_opm: effectiveCrossDept,
     }
     save.mutate(body)
   }
@@ -215,6 +227,7 @@ function ApprovalRoutingBody() {
   const handleDiscard = () => {
     setDeptEdits({})
     setBackupEdits({})
+    setCrossDeptEdit(null)
     setError('')
   }
 
@@ -293,6 +306,30 @@ function ApprovalRoutingBody() {
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-neutral-700">Cross-Department Payments</h2>
+        <p className="text-xs text-neutral-500">
+          A vendor invoice often covers purchase orders from several departments, and such a
+          payment is raised as one document. The table above cannot say who approves it — its
+          departments may point at different posts — so this setting decides. Those payments
+          skip the Department Manager and Director steps (shown struck through on the approval
+          timeline, with the reason) and are approved here instead.
+        </p>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+            Approved by
+          </label>
+          <select
+            value={effectiveCrossDept}
+            onChange={(e) => setCrossDeptEdit(e.target.value as Post)}
+            className="min-w-[240px] max-w-[240px] rounded-lg border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+          >
+            <option value="gm">GM</option>
+            <option value="opm">OPM</option>
+          </select>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4">

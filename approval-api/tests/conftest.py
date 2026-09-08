@@ -18,7 +18,7 @@ from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.posting import PostingEvent, PostingLine
 from app.models.pr import PurchaseRequest
-from app.models.routing import ApprovalBackup, DeptRouting
+from app.models.routing import ApprovalBackup, ApprovalSetting, DeptRouting
 from app.models.agreement import PurchaseAgreement
 from app.models.task import Task
 from app.models.user import User
@@ -79,6 +79,7 @@ _ENGINE_TABLES = [
     ApprovalEvent.__table__,
     DeptRouting.__table__,
     ApprovalBackup.__table__,
+    ApprovalSetting.__table__,
     ApprovalDelegation.__table__,
 ]
 
@@ -113,6 +114,15 @@ def _build_engine_schema():
         conn.execute(sa.text(
             "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
             " PRIMARY KEY (user_id, role_code))"))
+        # `pa_po_links` is epms-owned (same shadow-table idiom as user_roles
+        # above). The engine reads it on EVERY pa action — a payment covering
+        # purchase orders from several departments skips its department-scoped
+        # steps — so it has to exist even for tests that never populate it.
+        conn.execute(sa.text("DROP TABLE IF EXISTS pa_po_links CASCADE"))
+        conn.execute(sa.text(
+            "CREATE TABLE pa_po_links (id uuid PRIMARY KEY, pa_id uuid NOT NULL,"
+            " po_id uuid NOT NULL, po_number varchar(40) NOT NULL,"
+            " sort_order integer NOT NULL DEFAULT 0)"))
     eng.dispose()
 
 

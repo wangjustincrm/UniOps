@@ -244,13 +244,17 @@ export default function PaCreatePage() {
     if (!anchor || anchor.id === po.id) return null
     if (po.vendor_id !== anchor.vendor_id) return 'Different vendor'
     if ((po.currency ?? 'CAD') !== (anchor.currency ?? 'CAD')) return 'Different currency'
-    // One payment is approved by one department's reviewers — the primary PO's.
-    if ((po.pr_department_id ?? null) !== (anchor.pr_department_id ?? null)) return 'Different department'
     // Prepayment / settlement / balance are raised against a single order, so
     // while one of those types is chosen no second PO may join.
     if (paType !== 'regular') return 'Single PO only for this payment type'
     return null
   }
+
+  // A payment spanning departments is allowed — a vendor's one invoice covers
+  // whatever it covers — but it is approved differently, and the operator has
+  // to be told before they submit rather than discover it on the timeline.
+  const spannedDepartments = new Set(selectedPos.map((p) => p.pr_department_id ?? 'none'))
+  const isCrossDepartment = spannedDepartments.size > 1
 
   const togglePo = (id: string) => {
     setSelectedPoIds((prev) => (
@@ -584,8 +588,7 @@ export default function PaCreatePage() {
         errors.push('All selected POs must belong to the same vendor')
       if (selectedPos.some((p) => (p.currency ?? 'CAD') !== (selectedPos[0].currency ?? 'CAD')))
         errors.push('All selected POs must share the same currency')
-      if (selectedPos.some((p) => (p.pr_department_id ?? null) !== (selectedPos[0].pr_department_id ?? null)))
-        errors.push('All selected POs must belong to the same department')
+
       // Every invoice is matched to its PO and its GR before it can be paid, so
       // a PA that identifies nothing to settle should not exist. An empty link
       // is exactly what leaves the invoice open in AP after the cash has gone,
@@ -731,7 +734,7 @@ ${submitError}
     if (isMultiPo && paType !== 'regular') return
     if (selectedPos.some((p) => p.vendor_id !== selectedPos[0].vendor_id)) return
     if (selectedPos.some((p) => (p.currency ?? 'CAD') !== (selectedPos[0].currency ?? 'CAD'))) return
-    if (selectedPos.some((p) => (p.pr_department_id ?? null) !== (selectedPos[0].pr_department_id ?? null))) return
+
     if (!title.trim() || subtotalNum <= 0 || taxNum < 0) return
     if (!isSettlementType && netPayable <= 0) return
     if (isSettlementType && (appliedNum > grossTotal + 0.01)) return
@@ -924,8 +927,8 @@ ${submitError}
                   className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 />
                 <p className="text-[11px] text-neutral-400">
-                  Tick every purchase order this payment settles. They must share a vendor,
-                  a currency and a department; the first one ticked is the primary PO.
+                  Tick every purchase order this payment settles. They must share a vendor
+                  and a currency; the first one ticked is the primary PO.
                 </p>
                 <div className="rounded-lg border border-neutral-200 max-h-56 overflow-y-auto">
                   {filteredPos.length === 0 ? (
@@ -980,6 +983,18 @@ ${submitError}
                     })
                   )}
                 </div>
+                {isCrossDepartment && (
+                  <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2">
+                    <AlertTriangle className="h-4 w-4 text-warning-600 mt-0.5 shrink-0" />
+                    <p className="text-[11px] text-warning-800">
+                      These purchase orders belong to {spannedDepartments.size} different departments.
+                      No single Department Manager or Director covers all of them, so those two steps
+                      are skipped (shown struck through on the approval timeline with the reason) and
+                      the payment is approved at GM/OPM level instead — by whichever post is set for
+                      cross-department payments in Approval Routing.
+                    </p>
+                  </div>
+                )}
                 {selectedPos.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2">
                     <span className="text-[11px] font-medium text-primary-700">On this payment:</span>

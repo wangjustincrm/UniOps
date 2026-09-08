@@ -38,3 +38,28 @@ class ApprovalBackup(Base):
     updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class ApprovalSetting(Base):
+    """Engine-wide switches that are not per-department.
+
+    `DeptRouting` answers "who approves THIS department's gm_or_opm step". A
+    payment application covering purchase orders from several departments has
+    no such answer — one department may route to GM and another to OPM — so
+    the post that approves those lives here instead.
+
+    Key/value rather than a column per switch: this is admin configuration read
+    once per approval action, and a new switch should not need a migration in
+    three services' mirrors.
+    """
+    __tablename__ = "approval_settings"
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[str] = mapped_column(String(50), nullable=False)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+# Which post approves a payment application that spans several departments.
+CROSS_DEPT_GM_OR_OPM = "cross_department_gm_or_opm"
