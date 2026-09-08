@@ -283,3 +283,99 @@ def test_document_type_falls_back_on_an_unexpected_value():
     result = ocr_service._assemble_invoice_result(
         {"document_type": {"value": "receipt", "confidence": 0.4}, "line_items": []})
     assert result["document_type"] == "invoice"
+
+
+# ── 400 triage: account limit vs unreadable document ───────────────────────────
+# Regression: 2026-09-08. The Anthropic account hit its usage limit; the API
+# answered 400 "You have reached your specified API usage limits". That is a
+# BadRequestError, same class as "this PDF cannot be decoded", so every EPMS
+# upload told the user "AI parsing failed — please fill fields manually" and the
+# perfectly good invoice (Abell Pest Control A8239014) took the blame. The two
+# must not read alike: an account limit is an outage nobody at a desk can fix.
+
+def _bad_request(message: str):
+    import anthropic
+    import httpx
+
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return anthropic.BadRequestError(
+        message,
+        response=httpx.Response(400, request=request),
+        body={"type": "error", "error": {"type": "invalid_request_error", "message": message}},
+    )
+
+
+class _RaisingMessages:
+    def __init__(self, exc):
+        self._exc = exc
+
+    def create(self, **kwargs):
+        raise self._exc
+
+
+@pytest.fixture
+def anthropic_raises(monkeypatch):
+    """Patch anthropic.Anthropic so .messages.create raises the exception given."""
+    import anthropic
+
+    def _install(exc):
+        client = SimpleNamespace(messages=_RaisingMessages(exc))
+        monkeypatch.setattr(anthropic, "Anthropic", lambda api_key: client)
+        monkeypatch.setattr(ocr_service.settings, "anthropic_api_key", "test-key")
+
+    return _install
+
+
+_USAGE_LIMIT = (
+    "You have reached your specified API usage limits. "
+    "You will regain access on 2026-10-01 at 00:00 UTC."
+)
+
+
+async def test_usage_limit_is_an_outage_not_an_unreadable_file(anthropic_raises):
+    """RuntimeError -> HTTP 503, and the wording must clear the file of blame."""
+    anthropic_raises(_bad_request(_USAGE_LIMIT))
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await ocr_service.extract_invoice(b"%PDF-fake", "application/pdf")
+
+    text = str(excinfo.value)
+    assert "NOT a problem with your file" in text
+    assert "usage limit" in text.lower()          # the provider's own reason is carried through
+    assert "manually" in text.lower()             # ...and the user still knows what to do next
+
+
+async def test_low_credit_balance_is_also_an_outage(anthropic_raises):
+    anthropic_raises(_bad_request("Your credit balance is too low to access the Anthropic API"))
+
+    with pytest.raises(RuntimeError):
+        await ocr_service.extract_invoice(b"%PDF-fake", "application/pdf")
+
+
+async def test_unreadable_document_still_sends_the_user_to_manual_entry(anthropic_raises):
+    """The pre-existing behaviour for a genuine file problem must not change."""
+    anthropic_raises(_bad_request("Could not process image: unsupported or corrupt file"))
+
+    with pytest.raises(ValueError, match="Could not read this document"):
+        await ocr_service.extract_invoice(b"%PDF-fake", "application/pdf")
+
+
+async def test_receipt_mode_triages_the_same_way(anthropic_raises):
+    anthropic_raises(_bad_request(_USAGE_LIMIT))
+
+    with pytest.raises(RuntimeError, match="NOT a problem with your file"):
+        await ocr_service.extract_receipt(b"%PDF-fake", "application/pdf")
+
+
+async def test_slip_mode_triages_the_same_way(anthropic_raises):
+    anthropic_raises(_bad_request(_USAGE_LIMIT))
+
+    with pytest.raises(RuntimeError, match="NOT a problem with your file"):
+        await ocr_service.extract_slip(b"%PDF-fake", "application/pdf")
+
+
+async def test_slip_unreadable_document_keeps_the_manual_entry_message(anthropic_raises):
+    anthropic_raises(_bad_request("Could not process image: unsupported or corrupt file"))
+
+    with pytest.raises(ValueError, match="Could not read this document"):
+        await ocr_service.extract_slip(b"%PDF-fake", "application/pdf")
