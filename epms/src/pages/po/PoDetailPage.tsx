@@ -25,7 +25,9 @@ import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useGrs } from '@/hooks/useGrs'
 
 import { useTasks } from '@/hooks/useTasks'
+import { poService } from '@/services/po'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
+import { useApprovalReminder } from '@/hooks/useApprovalReminder'
 import type { ApiEvent } from '@/services/pr'
 import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
@@ -519,6 +521,7 @@ export default function PoDetailPage() {
   const { data: grsData, isLoading: grsLoading } = useGrs({ po_id: id ?? '' }, Boolean(id))
   const linkedGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
   const poAction = usePoAction(id ?? '')
+  const { reminder, sendReminder } = useApprovalReminder(() => poService.remind(id ?? ''))
   const { user } = useAuthStore()
   const { data: config } = useConfig()
   const { data: workflowSteps } = usePoWorkflowSteps(id ?? '')
@@ -1088,7 +1091,9 @@ export default function PoDetailPage() {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Approval Timeline</h2>
             <ApprovalTimeline
               steps={approvalSteps}
-              onSendReminder={(id) => console.log('remind', id)}
+              // See PrDetailPage: a draft's step 0 also renders as "current".
+              onSendReminder={APPROVABLE_STATUSES.includes(po.status) ? sendReminder : undefined}
+              reminder={reminder}
             />
 
             {/* Place Order panel for procurement officer */}

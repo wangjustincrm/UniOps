@@ -1,6 +1,7 @@
 import { api, fetchAllPages } from '@/lib/api'
 import type { ApiEvent } from './pr'
 import type { WorkflowNodeDef, CurrentStep } from '@/types'
+import type { ReminderResponse } from './reminder'
 
 export type PoStatus =
   | 'draft'
@@ -233,6 +234,10 @@ export const poService = {
 
   workflowSteps: (id: string) =>
     api.get<WorkflowNodeDef[]>(`/po/${id}/workflow-steps`),
+
+  /** Nudge whoever holds the open approval task (Approval Timeline button). */
+  remind: (id: string) =>
+    api.post<ReminderResponse>(`/po/${id}/remind`),
 
   // ── Sign-off (NC-imported POs) ────────────────────────────────────────────
   signoff: (id: string) =>

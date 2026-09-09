@@ -1,5 +1,6 @@
 import { api, fetchAllPages } from '@/lib/api'
 import type { WorkflowNodeDef, CurrentStep } from '@/types'
+import type { ReminderResponse } from './reminder'
 
 export type PrStatus =
   | 'draft'
@@ -154,4 +155,8 @@ export const prService = {
 
   workflowSteps: (id: string) =>
     api.get<WorkflowNodeDef[]>(`/pr/${id}/workflow-steps`),
+
+  /** Nudge whoever holds the open approval task (Approval Timeline button). */
+  remind: (id: string) =>
+    api.post<ReminderResponse>(`/pr/${id}/remind`),
 }

@@ -21,8 +21,10 @@ from app.schemas.pr import (
     PrResponse,
     PrUpdate,
 )
+from app.schemas.reminder import ReminderResponse
 from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
+from app.services.manual_reminder import remind_document
 from app.services.notification import fire_and_forget_notify
 
 router = APIRouter(prefix="/pr", tags=["purchase-requests"])
@@ -266,6 +268,23 @@ async def pr_action(
     for task in new_tasks_result.scalars().all():
         fire_and_forget_notify(task, db)
     return pr
+
+
+@router.post("/{pr_id}/remind", response_model=ReminderResponse)
+async def remind_pr_approver(pr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """Nudge whoever holds this PR's open approval task.
+
+    Backs the "Send reminder" link under the current step of the Approval
+    Timeline. Any user who can open the PR may nudge — the 24h cooldown in
+    app/services/manual_reminder.py is what protects the approver's inbox, not a
+    role gate, so the link never 403s on someone who can see it.
+    """
+    pr = await pr_crud.get_by_id(db, pr_id)
+    if pr is None:
+        raise HTTPException(status_code=404, detail="PR not found")
+    return await remind_document(
+        db, document_type="pr", document_id=pr_id, actor_id=uuid.UUID(user["sub"]),
+    )
 
 
 @router.get("/{pr_id}/events", response_model=list[ApprovalEventResponse])

@@ -21,6 +21,8 @@ from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.schemas.po import PlaceOrderRequest, PoActionRequest, PoCreate, PoImportedDetailsUpdate, PoListResponse, PoResponse, PoUpdate
 from app.schemas.pr import ApprovalEventResponse
+from app.schemas.reminder import ReminderResponse
+from app.services.manual_reminder import remind_document
 from app.services.notification import fire_and_forget_notify
 
 router = APIRouter(prefix="/po", tags=["purchase-orders"])
@@ -431,6 +433,21 @@ async def place_order(
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/{po_id}/remind", response_model=ReminderResponse)
+async def remind_po_approver(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """Nudge whoever holds this PO's open approval task.
+
+    Backs the "Send reminder" link under the current step of the Approval
+    Timeline — see remind_pr_approver in pr.py for why there is no role gate.
+    """
+    po = await po_crud.get_by_id(db, po_id)
+    if po is None:
+        raise HTTPException(status_code=404, detail="PO not found")
+    return await remind_document(
+        db, document_type="po", document_id=po_id, actor_id=uuid.UUID(user["sub"]),
+    )
 
 
 @router.get("/{po_id}/events", response_model=list[ApprovalEventResponse])

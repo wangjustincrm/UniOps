@@ -11,6 +11,8 @@ import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
 import { usePr, usePrAction, usePrEvents, usePrWorkflowSteps } from '@/hooks/usePrs'
+import { useApprovalReminder } from '@/hooks/useApprovalReminder'
+import { prService } from '@/services/pr'
 import type { ApiEvent } from '@/services/pr'
 import { useTasks } from '@/hooks/useTasks'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
@@ -207,6 +209,7 @@ export default function PrDetailPage() {
   useDocTabTitle(pr?.number)
   const { data: events } = usePrEvents(id ?? '')
   const prAction = usePrAction(id ?? '')
+  const { reminder, sendReminder } = useApprovalReminder(() => prService.remind(id ?? ''))
   const { data: attachments = [] } = usePrAttachments(id ?? '')
   const uploadAttachment = useUploadAttachment(id ?? '')
   const deleteAttachment = useDeleteAttachment(id ?? '')
@@ -595,7 +598,13 @@ export default function PrDetailPage() {
             </h2>
             <ApprovalTimeline
               steps={approvalSteps}
-              onSendReminder={(id) => console.log('send reminder', id)}
+              // Only offered while the PR is genuinely sitting on an approver.
+              // The timeline marks step 0 "current" for a draft too, so without
+              // this the link would appear on drafts and always answer 409.
+              onSendReminder={
+                APPROVABLE_STATUSES.includes(pr.status as DocumentStatus) ? sendReminder : undefined
+              }
+              reminder={reminder}
             />
 
             {/* Approver actions moved to fixed bottom bar */}

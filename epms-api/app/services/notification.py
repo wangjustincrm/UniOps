@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -153,6 +154,84 @@ async def dispatch_task_notification(
         logger.error("Unhandled error in dispatch_task_notification for task %s: %s", task.id, exc)
 
 
+@dataclass(frozen=True)
+class TaskRecipients:
+    """Who a task notification would actually reach.
+
+    ``shared_mailbox`` set → the whole notification goes to that one address and
+    to nobody else (a role-pool task whose role has a shared mailbox configured).
+    ``requester_unassigned`` → the task is addressed to the 'requester' role with
+    no concrete assignee: the role-wide fan-out must be suppressed and admins
+    alerted instead (see the 59-recipient incident documented in _dispatch).
+    """
+
+    shared_mailbox: str | None = None
+    users: tuple[User, ...] = ()
+    requester_unassigned: bool = False
+
+
+async def resolve_task_recipients(
+    db: AsyncSession, task: Task, notif_settings: dict,
+) -> TaskRecipients:
+    """Resolve a task's recipients — the single source of truth for "who gets it".
+
+    Extracted out of _dispatch so the manual "Send reminder" endpoint can tell
+    the clicker WHO the nudge reaches (and refuse when it would reach nobody)
+    using the exact rules the dispatcher applies a moment later, instead of a
+    second copy that drifts away from this one.
+    """
+    # 角色池任务(无具体指派人)若为该角色配了共享邮箱,则整封只发共享邮箱:
+    # 不再逐人发邮件、不发 Teams、也不看个人 notification_channel。
+    shared_mailbox = (
+        _shared_mailbox_for(notif_settings, task.assigned_role)
+        if task.assigned_user_id is None
+        else None
+    )
+    if shared_mailbox:
+        return TaskRecipients(shared_mailbox=shared_mailbox)
+
+    if task.assigned_user_id:
+        recipient_id = task.assigned_user_id
+        # Substitution, not widening: the delegator is away, so mailing
+        # them is noise. active_delegate_id already returns None when the
+        # stand-in is deactivated, which falls back to the delegator.
+        if (task.type or "").startswith("approve"):
+            from app.core.delegation import active_delegate_id
+            stand_in = await active_delegate_id(db, task.assigned_user_id)
+            if stand_in is not None:
+                recipient_id = stand_in
+        user = await db.get(User, recipient_id)
+        if user and user.is_active:
+            return TaskRecipients(users=(user,))
+        return TaskRecipients()
+
+    if task.assigned_role == "requester":
+        # 'requester' 不是角色池:requester 任务没有具体受理人 = 单据丢了 PR
+        # 链(导入 PO)。走池群发会给全公司每个 requester 发邮件(2026-08-05:
+        # PMS 导入 PO 的 GR ack 群发 59 人×2 轮)。抑制群发,改为报警 admin。
+        return TaskRecipients(requester_unassigned=True)
+
+    # All active holders of the role — PRIMARY (users.role) ∪ ADDITIONAL
+    # (identity's user_roles, same physical DB). Mirrors the Task Inbox's
+    # get_for_role role union (access_scope._effective_role_codes): a
+    # broadcast task (a singleton post like gm/opm, or a role pool) is
+    # visible in-app to every holder, INCLUDING those who hold the role as
+    # a SECONDARY role — so the email fan-out must reach the same set, or a
+    # GM/OPM holding the post as an additional role sees it in-app but gets
+    # no email.
+    secondary_ids = (await db.execute(
+        text("SELECT user_id FROM user_roles WHERE role_code = :rc"),
+        {"rc": task.assigned_role},
+    )).scalars().all()
+    result = await db.execute(
+        select(User).where(
+            User.is_active.is_(True),
+            or_(User.role == task.assigned_role, User.id.in_(secondary_ids)),
+        )
+    )
+    return TaskRecipients(users=tuple(result.scalars().all()))
+
+
 async def _dispatch(
     task: Task,
     db: AsyncSession,
@@ -190,13 +269,8 @@ async def _dispatch(
     tpl: dict | None = email_templates.get(tpl_key)
 
     # ── Resolve recipients ──────────────────────────────────────────────────
-    # 角色池任务(无具体指派人)若为该角色配了共享邮箱,则整封只发共享邮箱:
-    # 不再逐人发邮件、不发 Teams、也不看个人 notification_channel。
-    shared_mailbox = (
-        _shared_mailbox_for(notif_settings, task.assigned_role)
-        if task.assigned_user_id is None
-        else None
-    )
+    resolved = await resolve_task_recipients(db, task, notif_settings)
+    shared_mailbox = resolved.shared_mailbox
 
     # 共享邮箱路径只发邮件(不发 Teams),因此显式配成 teams_only 时整条通知不发。
     # 注意这里是“只在 teams_only 时抑制”,而不是“只在 email_only/both 时发送”:
@@ -210,25 +284,9 @@ async def _dispatch(
         )
         return
 
-    recipients: list[User] = []
+    recipients: list[User] = list(resolved.users)
     if shared_mailbox is None:
-        if task.assigned_user_id:
-            recipient_id = task.assigned_user_id
-            # Substitution, not widening: the delegator is away, so mailing
-            # them is noise. active_delegate_id already returns None when the
-            # stand-in is deactivated, which falls back to the delegator.
-            if (task.type or "").startswith("approve"):
-                from app.core.delegation import active_delegate_id
-                stand_in = await active_delegate_id(db, task.assigned_user_id)
-                if stand_in is not None:
-                    recipient_id = stand_in
-            user = await db.get(User, recipient_id)
-            if user and user.is_active:
-                recipients.append(user)
-        elif task.assigned_role == "requester":
-            # 'requester' 不是角色池:requester 任务没有具体受理人 = 单据丢了 PR
-            # 链(导入 PO)。走池群发会给全公司每个 requester 发邮件(2026-08-05:
-            # PMS 导入 PO 的 GR ack 群发 59 人×2 轮)。抑制群发,改为报警 admin。
+        if resolved.requester_unassigned:
             logger.warning(
                 "Requester task %s (%s %s) has no assignee — suppressing role-wide "
                 "fan-out, alerting admins instead",
@@ -253,26 +311,6 @@ async def _dispatch(
                     max_retries=max_retries,
                 )
             return
-        else:
-            # All active holders of the role — PRIMARY (users.role) ∪ ADDITIONAL
-            # (identity's user_roles, same physical DB). Mirrors the Task Inbox's
-            # get_for_role role union (access_scope._effective_role_codes): a
-            # broadcast task (a singleton post like gm/opm, or a role pool) is
-            # visible in-app to every holder, INCLUDING those who hold the role as
-            # a SECONDARY role — so the email fan-out must reach the same set, or a
-            # GM/OPM holding the post as an additional role sees it in-app but gets
-            # no email.
-            secondary_ids = (await db.execute(
-                text("SELECT user_id FROM user_roles WHERE role_code = :rc"),
-                {"rc": task.assigned_role},
-            )).scalars().all()
-            result = await db.execute(
-                select(User).where(
-                    User.is_active.is_(True),
-                    or_(User.role == task.assigned_role, User.id.in_(secondary_ids)),
-                )
-            )
-            recipients = list(result.scalars().all())
 
         if not recipients:
             logger.debug("No recipients for task %s (role=%s)", task.id, task.assigned_role)
