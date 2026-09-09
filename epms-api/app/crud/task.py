@@ -200,6 +200,10 @@ async def _complete_stale_approve_tasks(db: AsyncSession) -> None:
         # else has: expiry. Omitting them here reproduces exactly the Task
         # Inbox / Dashboard split this function was written to end.
         ("agr", "approve_agr", PurchaseAgreement),
+        # Direct (OA) PAs: same table, same task type, different document_type.
+        # Omitted here they were the one approval family in EPMS's own tables
+        # with no reconciliation at all.
+        ("pa_dir", "approve_pa", PaymentApplication),
     )
     now = datetime.now(timezone.utc)
     for doc_type, task_type, Model in doc_specs:
@@ -217,6 +221,128 @@ async def _complete_stale_approve_tasks(db: AsyncSession) -> None:
             task.is_completed = True
             task.completed_at = now
     await db.flush()
+
+
+# Invoice-anchored tasks are the one task family with NO self-heal at all, and
+# the only one prod actually accumulated zombies in (2026-09-09 audit: 4 open
+# match_invoice + 1 open review_match, oldest from 2026-07-24). Each of the
+# three types is actionable in exactly ONE set of invoice statuses — its own
+# endpoint refuses every other status with a 409 — so an open task outside that
+# set is, by definition, work nobody can perform.
+#
+# They drift because the endpoints that CLOSE these tasks are not the only
+# things that move an invoice's status:
+#   * POST /invoices/{id}/exception (resolution="accepted") pushes the invoice
+#     to "matched" but closes only its own resolve_exception task. assign_match
+#     is allowed while an invoice sits in "exception", so an AP who assigns
+#     someone to re-match and then accepts the variance themselves strands that
+#     assignee's match_invoice task forever — that is exactly all 4 of the prod
+#     rows, INV-2026-0342 among them.
+#   * PUT /invoices/{id} → crud.invoice.rematch_from_existing → match() can push
+#     match_review → matched entirely inside crud, where no task code runs.
+# Closing the loop here rather than at each of those sites means the NEXT such
+# path cannot reintroduce the bug.
+_INVOICE_TASK_LIVE_STATUSES: dict[str, tuple[str, ...]] = {
+    "match_invoice": ("unmatched", "exception"),  # POST /match's own status gate
+    "review_match": ("match_review",),            # crud.review_match raises otherwise
+    "resolve_exception": ("exception",),          # crud.resolve_exception raises otherwise
+}
+
+# The same shape for goods receipts. crud.gr.action() closes every open task on
+# a GR whenever it runs (_complete_tasks), so these only drift when a GR's
+# status changes WITHOUT action() — and Data Maintenance is exactly that door:
+# registry.py declares goods_receipts.status an editable enum and admin/service
+# applies it with a bare setattr, no hooks. Prod GR-20260903-0015 was edited
+# collection_pending → confirmed that way on 2026-09-03; its collect_goods task
+# stayed open for six days (and the GR still shows the tell-tale signature of
+# that door: status='confirmed' with collected_at NULL, a combination action()
+# cannot produce). gr_damage_report is deliberately absent — it is a "someone
+# look at this" prompt, not a step in the receipt's own state machine.
+_GR_TASK_LIVE_STATUSES: dict[str, tuple[str, ...]] = {
+    "acknowledge_gr": ("pending_ack",),           # action('acknowledge') raises otherwise
+    "collect_goods": ("collection_pending",),     # action('collect') raises otherwise
+    "confirm_service_gr": ("collection_pending",),  # the service branch of action('confirm')
+}
+
+
+async def _complete_stale_doc_tasks(db: AsyncSession, Model, document_type: str,
+                                    live_statuses_by_type: dict[str, tuple[str, ...]]) -> None:
+    """Close tasks whose document has left the status they act on.
+
+    completed_by is deliberately left NULL: this is a system completion, not a
+    user dismissal (see _already_surfaced for why that distinction matters).
+    """
+    now = datetime.now(timezone.utc)
+    for task_type, live_statuses in live_statuses_by_type.items():
+        stale_q = (
+            select(Task)
+            .join(Model, Model.id == Task.document_id)
+            .where(
+                Task.type == task_type,
+                Task.document_type == document_type,
+                Task.is_completed.is_(False),
+                Model.status.notin_(live_statuses),
+            )
+        )
+        for task in (await db.execute(stale_q)).scalars().all():
+            task.is_completed = True
+            task.completed_at = now
+    await db.flush()
+
+
+# revise_* is actionable in exactly the states the approval engine will accept a
+# (re)submission from — _DOC_META's valid_submit, identical for every doc type.
+# The engine's `submit` branch is the ONE action branch that does not call
+# _complete_tasks (approve / return / reject all do), so resubmitting a returned
+# document leaves its revise task open on a document the requester can no longer
+# edit. Prod PA-20260831-0002: returned 2026-09-08 13:52 → revise_pa raised →
+# resubmitted 2026-09-09 19:55 (a fresh approve_pa was created in the same
+# transaction) → the revise_pa task was still open when this was written.
+_REVISE_LIVE_STATUSES: tuple[str, ...] = ("draft", "returned")
+
+# Every document-status sweep, as (model, document_type, {task_type: live statuses}).
+#
+# ★ This can only ever cover the documents EPMS itself owns. OA expense claims,
+# Finance budget plans and VMS visits write approve_*/revise_* rows into this
+# same shared `tasks` table, but epms-api has no model for those tables, so
+# their tasks have no read-side net here — they depend entirely on their own
+# service closing them. Prod had zero stale ones on 2026-09-09, but that is the
+# current state of those queues, not coverage. Same for confirm_receipt
+# (its invariant is "the PO has receipt evidence", which needs a per-PO
+# subquery rather than a status compare — it is enforced at both creation sites
+# and on GR creation instead) and confirm_period (closed on acceptance and on
+# evidence release, both sides covered).
+_STALE_TASK_SPECS = (
+    (Invoice, "invoice", _INVOICE_TASK_LIVE_STATUSES),
+    (GoodsReceipt, "gr", _GR_TASK_LIVE_STATUSES),
+    (PurchaseRequest, "pr", {"revise_pr": _REVISE_LIVE_STATUSES}),
+    (PurchaseOrder, "po", {"revise_po": _REVISE_LIVE_STATUSES}),
+    (PurchaseAgreement, "agr", {"revise_agr": _REVISE_LIVE_STATUSES}),
+    # process_pa is raised when a PA becomes fully approved and closed by
+    # finance-api's payment executor, which sets status="processed" in the same
+    # transaction (crud/payment_execute.py). Any other status on an open
+    # process_pa — cancelled, returned, or a status edit through Data
+    # Maintenance — means the payment it asks for cannot happen.
+    (PaymentApplication, "pa",
+     {"revise_pa": _REVISE_LIVE_STATUSES, "process_pa": ("approved",)}),
+    # Direct (OA) PAs live in the same table under a different document_type.
+    (PaymentApplication, "pa_dir",
+     {"revise_pa": _REVISE_LIVE_STATUSES, "process_pa": ("approved",)}),
+)
+
+
+async def _complete_stale_status_tasks(db: AsyncSession) -> None:
+    """Every "task outlived the status it acts on" sweep, in one pass."""
+    for Model, document_type, live_statuses_by_type in _STALE_TASK_SPECS:
+        await _complete_stale_doc_tasks(db, Model, document_type, live_statuses_by_type)
+
+
+async def _complete_stale_invoice_tasks(db: AsyncSession) -> None:
+    await _complete_stale_doc_tasks(db, Invoice, "invoice", _INVOICE_TASK_LIVE_STATUSES)
+
+
+async def _complete_stale_gr_tasks(db: AsyncSession) -> None:
+    await _complete_stale_doc_tasks(db, GoodsReceipt, "gr", _GR_TASK_LIVE_STATUSES)
 
 
 async def _complete_stale_create_po_tasks(db: AsyncSession) -> None:
@@ -527,6 +653,7 @@ async def get_for_role(
     await db.execute(text("SELECT pg_advisory_xact_lock(hashtext('epms:task_backfill'))"))
 
     await _complete_stale_approve_tasks(db)
+    await _complete_stale_status_tasks(db)
     await _complete_stale_create_po_tasks(db)
     await _complete_stale_create_pa_tasks(db)
     await _complete_orphan_create_pa_tasks(db)
