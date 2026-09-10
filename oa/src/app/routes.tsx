@@ -22,9 +22,23 @@ import TraCreatePage from '@/pages/travel/TraCreatePage'
 // Short, distinguishable title for an id-keyed detail tab (UUIDs are too long).
 const short = (id: string) => (id.length > 8 ? id.slice(0, 8) : id)
 
+// Roles allowed into the two OA admin pages. Kept in step with the backend
+// gates: PATCH /policy and the /expenses/custom-forms writes both accept
+// finance_manager as well as system_admin, but this guard only tested for
+// system_admin — so a Finance Manager was refused the page whose contents the
+// API would have let them save.
+//
+// Only the PRIMARY role is available here: the JWT carries `role`, and
+// additional-role assignments live server-side in user_roles. Someone holding
+// finance_manager as an ADDITIONAL role still gets the refusal below even
+// though the API would accept their write. Closing that needs the server to
+// tell the client what it may do (a /permissions-style endpoint), not a wider
+// guess in the browser.
+const ADMIN_PAGE_ROLES = ['system_admin', 'finance_manager']
+
 function RequireAdmin({ children }: { children: ReactNode }) {
   const role = useOaAuth((s) => s.user?.role)
-  if (role !== 'system_admin') {
+  if (!role || !ADMIN_PAGE_ROLES.includes(role)) {
     return <div className="p-8 text-sm text-neutral-500">You don't have access to this page.</div>
   }
   return <>{children}</>

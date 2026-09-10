@@ -190,11 +190,33 @@ async def update_claim(
     if claim.status not in ("draft", "returned"):
         raise ValueError("Only draft or returned claims can be edited")
 
+    # Every scalar field ExpenseClaimUpdate accepts is applied here. The list
+    # used to stop after vehicle_owned_by, so the travel fields — which the
+    # schema takes and the client sends — were parsed, validated, and silently
+    # dropped: a returned TRV or TRA could not have its dates, destination or
+    # transport corrected, and the save reported success.
     for field in ("submission_date", "currency", "project_id", "notes", "purpose",
-                  "vehicle_description", "vehicle_owned_by"):
+                  "vehicle_description", "vehicle_owned_by",
+                  "travel_from_date", "travel_to_date", "travel_destination",
+                  "transport_modes", "leave_from_date", "leave_to_date",
+                  "travel_application_id"):
         val = getattr(data, field, None)
         if val is not None:
             setattr(claim, field, val)
+
+    # Traveller roster (TRA). Replace wholesale, like the line/trip collections:
+    # an empty list is a legitimate edit ("I removed everyone"), which is why
+    # this tests `is not None` rather than truthiness.
+    if data.travelers is not None:
+        for existing in list(claim.travelers):
+            await db.delete(existing)
+        await db.flush()
+        for i, tr in enumerate(data.travelers):
+            db.add(ExpenseTraveler(
+                claim_id=claim.id, user_id=tr.user_id, user_name=tr.user_name,
+                seq=tr.seq if tr.seq is not None else i))
+        await db.flush()
+        await db.refresh(claim, ["travelers"])
 
     if data.line_items is not None:
         for existing in list(claim.line_items):
