@@ -863,6 +863,29 @@ async def _create_revise_task(db: AsyncSession, doc_type: str, doc: Any, meta: d
 
 # ── Post-approve side effects ─────────────────────────────────────────────────
 
+async def _po_requester_id(db: AsyncSession, po: PurchaseOrder) -> uuid.UUID:
+    """Resolve the ONE person who owns a PO's requester-side task.
+
+    Never returns None. 'requester' is not a role pool: epms-api's notifier
+    treats assigned_user_id=None + assigned_role="requester" as nobody to
+    notify, suppresses the email fan-out and alerts the admins instead — while
+    the Task Inbox still shows the task to every Requester in the company. So a
+    NULL here costs an admin alert AND a company-wide broadcast, not just a
+    missing email.
+    PR creator → PO sign-off submitter → PO creator.
+    """
+    if po.pr_id:
+        requester_id = (await db.execute(
+            select(PurchaseRequest.created_by).where(PurchaseRequest.id == po.pr_id)
+        )).scalar_one_or_none()
+        if requester_id:
+            return requester_id
+    # An NC-imported PO's created_by is the nc-sync service account, whose inbox
+    # nobody opens — prefer whoever actually submitted it for sign-off (the same
+    # reasoning _create_revise_task's revise_assignee_attr already applies).
+    return po.signoff_submitted_by or po.created_by
+
+
 async def _post_approve_pr(db: AsyncSession, pr: PurchaseRequest) -> None:
     db.add(Task(
         type="create_po",
@@ -893,7 +916,6 @@ async def _post_approve_po(db: AsyncSession, po: PurchaseOrder) -> None:
     ))
 
     if po.is_prepaid:
-        # Broadcast to all requesters — any requester can create the Prepayment PA.
         db.add(Task(
             type="create_prepayment_pa",
             priority="normal",
@@ -901,7 +923,7 @@ async def _post_approve_po(db: AsyncSession, po: PurchaseOrder) -> None:
             document_id=po.id,
             document_number=po.number,
             assigned_role="requester",
-            assigned_user_id=None,
+            assigned_user_id=await _po_requester_id(db, po),
             title=f"Create Prepayment PA: {po.number} — {po.title}",
             description=(
                 f"PO {po.number} has been approved and requires an advance payment. "

@@ -206,9 +206,12 @@ async def resolve_task_recipients(
         return TaskRecipients()
 
     if task.assigned_role == "requester":
-        # 'requester' 不是角色池:requester 任务没有具体受理人 = 单据丢了 PR
-        # 链(导入 PO)。走池群发会给全公司每个 requester 发邮件(2026-08-05:
-        # PMS 导入 PO 的 GR ack 群发 59 人×2 轮)。抑制群发,改为报警 admin。
+        # 'requester' 不是角色池:没有具体受理人就是没人可通知。走池群发会给全公司
+        # 每个 requester 发邮件(2026-08-05: PMS 导入 PO 的 GR ack 群发 59 人×2 轮)。
+        # 抑制群发,改为报警 admin。
+        # ★ 别在这里断言成因:NULL 至少有两种来路 —— 单据丢了 PR 链(导入 PO),
+        #   或建任务的代码压根没解析受理人(approval-api 的 create_prepayment_pa
+        #   就这么干过)。告警只陈述观测到的现象,成因留给收件人看单据判断。
         return TaskRecipients(requester_unassigned=True)
 
     # All active holders of the role — PRIMARY (users.role) ∪ ADDITIONAL
@@ -297,10 +300,12 @@ async def _dispatch(
             body = (
                 f"Task <b>{task.title}</b> for {task.document_type.upper()} "
                 f"<b>{task.document_number}</b> is addressed to the requester role but has "
-                f"no concrete assignee — the document has no linked PR (typically an "
-                f"imported PO), so there is no requester to notify.\n\n"
-                f"The role-wide email fan-out was suppressed. Please review the document "
-                f"and either link its PR or reassign the task.\n\n"
+                f"no concrete assignee, so there is nobody to notify.\n\n"
+                f"'requester' is not a role pool, so the role-wide email fan-out was "
+                f"suppressed. Two things produce this: the task was created without "
+                f"resolving an owner, or the document really has no linked PR (typically "
+                f"an imported PO). Open the document to see which — if it does have a PR, "
+                f"the task was mis-created and needs reassigning, not re-linking.\n\n"
                 f'<a href="{doc_link}">Open document</a>'
             )
             for admin in await _admin_recipients(db):

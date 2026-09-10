@@ -136,10 +136,14 @@ async def test_default_channel_email_still_sends(captured_emails):
 
 
 async def test_requester_task_without_assignee_never_broadcasts(captured_emails):
-    """'requester' is not a role pool. A requester-addressed task with no concrete
-    assignee means the document lost its PR link (imported PO) — fanning out
-    would email every requester in the company (2026-08-05: a GR ack on a
-    PMS-imported PO mailed 59 people). Suppress the fan-out and alert admins."""
+    """'requester' is not a role pool, so a requester-addressed task with no
+    concrete assignee has nobody to notify — fanning out would email every
+    requester in the company (2026-08-05: a GR ack on a PMS-imported PO mailed
+    59 people). Suppress the fan-out and alert admins.
+
+    The NULL has more than one cause: the document really lost its PR link
+    (imported PO), or the code that created the task never resolved an owner
+    (approval-api's create_prepayment_pa). The alert must not pick one."""
     async with session_module.AsyncSessionLocal() as db:
         requester = await _make_user(db)                      # role=requester
         admin = await _make_user_with_role(db, "system_admin", "Alert Admin")
