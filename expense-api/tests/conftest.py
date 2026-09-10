@@ -56,6 +56,19 @@ IDENTITY_SHADOW_DDL = (
     " permission_key varchar(100) NOT NULL, PRIMARY KEY (role_code, permission_key))",
     "CREATE TABLE role_permission_locks (role_code varchar(50) NOT NULL,"
     " permission_key varchar(100) NOT NULL, PRIMARY KEY (role_code, permission_key))",
+    # approval-api's, not identity's, but same problem: it lives in the shared
+    # physical DB in production and invoice_list.py's gm/opm + director branches
+    # read it on every call. It used to be created by a fixture inside
+    # test_invoice_list_gm_opm_scope.py, which meant test_invoice_list_dept_scope
+    # — earlier in alphabetical order — hit UndefinedTable on a FRESH database
+    # and only passed on reruns, once some earlier run had left the table
+    # behind. That is why a clean `expense_test` scored 237/4 on its first
+    # pytest and 241/0 on its second. Schema copied from
+    # approval-api/alembic/versions/0001_approval_routing.py.
+    "CREATE TABLE approval_dept_routing (dept_id uuid PRIMARY KEY,"
+    " gm_or_opm varchar(3) NOT NULL DEFAULT 'gm', director_user_id uuid NULL,"
+    " supervisor_enabled boolean NOT NULL DEFAULT false, updated_by uuid NULL,"
+    " updated_at timestamptz NOT NULL DEFAULT now())",
 )
 
 
