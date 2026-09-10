@@ -1,8 +1,8 @@
 import { useLocation, Link, useNavigate } from 'react-router-dom'
 import { Bell, Globe, ChevronDown, User, Settings, LogOut, KeyRound, Eye, EyeOff, X, Mail, ShieldCheck, ShieldOff, AlertTriangle, Menu } from 'lucide-react'
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { taskService } from '@/services/tasks'
+import { useQueryClient } from '@tanstack/react-query'
+import { useTasks } from '@/hooks/useTasks'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
@@ -392,11 +392,9 @@ export function Header({ onMobileMenuToggle }: HeaderProps) {
   const breadcrumbs = useBreadcrumbs()
   const [menuOpen, setMenuOpen] = useState(false)
   const [showChangePwd, setShowChangePwd] = useState(false)
-  const { data: taskData } = useQuery({
-    queryKey: ['tasks', { is_completed: false }],
-    queryFn: () => taskService.list({ is_completed: false }),
-    refetchInterval: 60_000,
-  })
+  // Same hook as the Task Inbox and every detail page — see useTasks for why
+  // this must not be a hand-rolled useQuery on the same key.
+  const { data: taskData } = useTasks({ is_completed: false }, { refetchInterval: 60_000 })
   const notificationCount = taskData?.total ?? 0
 
   return (

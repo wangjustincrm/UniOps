@@ -18,7 +18,7 @@ POST /match 会 409,受理人连"做掉它"这条路都没有。
 两层修法各自独立可用,这里分开测:
   A. 事件层 —— resolve_exception 接受异常时一并关掉 match 任务并跑
      _on_invoice_matched(下游 create_pa / confirm_receipt 本来也没人建)。
-  B. 读端层 —— crud.task._complete_stale_invoice_tasks 按发票状态兜底,
+  B. 读端层 —— crud.task._complete_stale_status_tasks 按单据状态兜底(声明表 TASK_LIVENESS),
      覆盖 rematch_from_existing 这类"在 crud 里改状态、根本不经过端点"的路径。
 
 外加一条独立的 NULL 盲区:decline_match 会把任务弹回 ap_clerk 角色池
@@ -156,9 +156,9 @@ async def test_sweep_closes_only_tasks_whose_invoice_moved_on(
     """三种任务各自只在一种发票状态下可做;发票离开那个状态,任务就是死的。
 
     直接建任务行再改发票状态,是为了覆盖"根本不经过端点"的漂移
-    (PUT /invoices/{id} → rematch_from_existing → match() 就是这种)。
+    (PATCH /invoices/{id} → rematch_from_existing → match() 就是这种)。
     """
-    from app.crud.task import _complete_stale_invoice_tasks
+    from app.crud.task import _complete_stale_status_tasks
     from app.models.invoice import Invoice
 
     v = await _make_vendor(admin_client, f"VND-SWEEP-{task_type[:6]}")
@@ -175,7 +175,7 @@ async def test_sweep_closes_only_tasks_whose_invoice_moved_on(
 
     # 还在可做状态 → 一个都不能关
     async with session_module.AsyncSessionLocal() as db:
-        await _complete_stale_invoice_tasks(db)
+        await _complete_stale_status_tasks(db)
         await db.commit()
     assert len(await _tasks(inv_id, task_type)) == 1, (
         f"发票还在 {live_status},这条任务是真实待办")
@@ -185,7 +185,7 @@ async def test_sweep_closes_only_tasks_whose_invoice_moved_on(
         (await db.get(Invoice, inv_id)).status = dead_status
         await db.commit()
     async with session_module.AsyncSessionLocal() as db:
-        await _complete_stale_invoice_tasks(db)
+        await _complete_stale_status_tasks(db)
         await db.commit()
 
     assert await _tasks(inv_id, task_type) == []
@@ -279,7 +279,7 @@ async def test_sweep_closes_gr_tasks_after_a_status_edit(
     那次编辑还留下了 action() 根本产生不出来的指纹:status='confirmed' 而
     collected_at 为 NULL。
     """
-    from app.crud.task import _complete_stale_gr_tasks
+    from app.crud.task import _complete_stale_status_tasks
     from app.models.gr import GoodsReceipt
 
     v = await _make_vendor(admin_client, f"VND-GRSWP-{task_type[:5]}")
@@ -301,7 +301,7 @@ async def test_sweep_closes_gr_tasks_after_a_status_edit(
 
     # 还在可做状态 → 不许动
     async with session_module.AsyncSessionLocal() as db:
-        await _complete_stale_gr_tasks(db)
+        await _complete_stale_status_tasks(db)
         await db.commit()
     async with session_module.AsyncSessionLocal() as db:
         open_now = (await db.execute(select(Task).where(
@@ -313,7 +313,7 @@ async def test_sweep_closes_gr_tasks_after_a_status_edit(
         (await db.get(GoodsReceipt, gr_id)).status = "confirmed"
         await db.commit()
     async with session_module.AsyncSessionLocal() as db:
-        await _complete_stale_gr_tasks(db)
+        await _complete_stale_status_tasks(db)
         await db.commit()
 
     async with session_module.AsyncSessionLocal() as db:
@@ -430,7 +430,7 @@ async def test_stale_approve_sweep_now_covers_direct_pas(admin_client):
     """approve_pa 的清扫原来只 join document_type='pa'。Direct(OA)PA 用
     document_type='pa_dir' 写同一张表,是 EPMS 自己表里唯一一个完全没有
     对账的审批族。"""
-    from app.crud.task import _complete_stale_approve_tasks
+    from app.crud.task import _complete_stale_status_tasks
     from app.models.pa import PaymentApplication
 
     v = await _make_vendor(admin_client, f"VND-DIRPA-{uuid.uuid4().hex[:5]}")
@@ -448,8 +448,87 @@ async def test_stale_approve_sweep_now_covers_direct_pas(admin_client):
         await db.commit()
 
     async with session_module.AsyncSessionLocal() as db:
-        await _complete_stale_approve_tasks(db)
+        await _complete_stale_status_tasks(db)
         await db.commit()
     async with session_module.AsyncSessionLocal() as db:
         rows = (await db.execute(select(Task).where(Task.document_id == pa_id))).scalars().all()
     assert rows[0].is_completed is True, "已取消的 Direct PA 不该还挂着审批任务"
+
+
+# ── F. PATCH /invoices/{id}:编辑也能让发票 matched ───────────────────────────
+
+@pytest.mark.asyncio
+async def test_editing_an_invoice_into_matched_raises_the_downstream_prompt(admin_client):
+    """rematch_from_existing 直接调 crud.match(),而"发票刚变 matched"的全部后续
+    处理都写在 API 层(match / match-review 两个端点)—— 编辑这条路一样都没跑到。
+
+    可达性说明:PATCH 改不了分摊行,所以光改金额只会把发票打回 unmatched
+    (分摊不平),推不到 matched。真正可达的跃迁是**容差被调宽**之后再编辑一次:
+    rematch_from_existing 会用**新**容差重跑 match,原来超差的那张就落回 matched。
+    这是一次配置改动 + 一次编辑,不是理论路径。
+    """
+    from app.models.config import CompanyConfig
+
+    inv, po = await _over_tolerance_invoice(admin_client, "EDIT1")
+
+    # 容差从默认放宽到 200% —— 200 对 100 的变差现在在容差内
+    async with session_module.AsyncSessionLocal() as db:
+        cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+        assert cfg is not None, "前提:测试库里有一行 company_config"
+        cfg.invoice_match_tolerance_pct = Decimal("200")
+        await db.commit()
+
+    r = await admin_client.patch(f"{INV_URL}/{inv['id']}", json={"notes": "re-checked"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "matched", r.json()["status"]
+
+    async with session_module.AsyncSessionLocal() as db:
+        rows = (await db.execute(select(Task).where(
+            Task.document_type == "po", Task.document_id == uuid.UUID(po["id"]),
+            Task.is_completed.is_(False)))).scalars().all()
+    assert {t.type for t in rows} & {"create_pa", "confirm_receipt"}, (
+        f"编辑成 matched 之后下游应有落点,实际只有 {[t.type for t in rows]}")
+
+    async with session_module.AsyncSessionLocal() as db:
+        cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+        cfg.invoice_match_tolerance_pct = Decimal("0")
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_editing_an_already_matched_invoice_does_not_renotify(admin_client):
+    """反向不变量:门禁挂在**状态跃迁**上,不是状态本身。
+
+    _create_or_renotify_create_pa 只要发现已有开放任务就**重发**那封"请建付款
+    申请"的邮件。挂在状态上的话,一张 matched 发票每改一个字都会再骚扰申请人一次。
+    断言第二次编辑不新增、不重开任何 PO 任务。
+
+    用一张容差内的干净 matched 发票,而不是"accept 过异常"的那种 —— 后者一编辑
+    就会被 rematch_from_existing 用当前容差重算、打回 exception(accept 的决定
+    被编辑抹掉,这是另一个独立问题,不在本测试范围)。
+    """
+    v = await _make_vendor(admin_client, "VND-EDIT2")
+    po = await _make_issued_po(admin_client, v["id"], [
+        {"description": "A", "qty": "1", "unit": "EA", "unit_price": "100.00"}])
+    inv = await _make_invoice(admin_client, v["id"], number="EDIT2-0001", amount="100.00",
+                              lines=[{"description": "L", "quantity": "1",
+                                      "unit_price": "100.00", "line_total": "100.00"}])
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
+        {"invoice_line_id": inv["line_items"][0]["id"], "po_id": po["id"],
+         "po_line_id": po["line_items"][0]["id"],
+         "allocated_amount": "100.00", "allocated_tax": "0.00"}]})
+    assert r.status_code == 200 and r.json()["status"] == "matched", r.text
+
+    async def _po_task_ids():
+        async with session_module.AsyncSessionLocal() as db:
+            return sorted(str(t.id) for t in (await db.execute(select(Task).where(
+                Task.document_type == "po", Task.document_id == uuid.UUID(po["id"]),
+                Task.is_completed.is_(False)))).scalars().all())
+
+    before = await _po_task_ids()
+    assert before, "前提:第一次 match 已经签出了下游任务"
+
+    r = await admin_client.patch(f"{INV_URL}/{inv['id']}", json={"notes": "typo fix"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "matched"
+    assert await _po_task_ids() == before, "已经是 matched 的发票,编辑不该再动下游任务"

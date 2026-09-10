@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, Clock, ArrowRight, Check, Inbox } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { AlertCircle, Clock, ArrowRight, Check, Inbox, RefreshCw } from 'lucide-react'
 import { cn, formatCAD, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useTasks } from '@/hooks/useTasks'
@@ -189,6 +190,25 @@ function EmptyState({ tab }: { tab: TabValue }) {
 
 export default function TaskInboxPage() {
   const [activeTab, setActiveTab] = useState<TabValue>('all')
+  const queryClient = useQueryClient()
+  const [refreshing, setRefreshing] = useState(false)
+
+  // This page lives in a keep-alive tab (routes.tsx: keyStrategy 'static'), so
+  // it is mounted once and never remounts — and refetchOnWindowFocus is off
+  // app-wide. In-app actions invalidate ['tasks'] and the Header's 60s poll
+  // refreshes the shared entry, but an action taken in ANOTHER app cannot:
+  // Data Maintenance lives in Portal, a separate SPA with its own query cache,
+  // so a task deleted there still shows here until the next poll. That is the
+  // whole reason this button exists — "I deleted it and it's still there" was
+  // a real support question.
+  const refresh = async () => {
+    setRefreshing(true)
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   // Today's date prefix (YYYY-MM-DD)
   const todayPrefix = new Date().toISOString().slice(0, 10)
@@ -225,9 +245,22 @@ export default function TaskInboxPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       {/* ── Header ── */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-neutral-900">Task Inbox</h1>
-        <p className="mt-1 text-sm text-neutral-500">Your pending actions</p>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-neutral-900">Task Inbox</h1>
+          <p className="mt-1 text-sm text-neutral-500">Your pending actions</p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={refresh}
+          disabled={refreshing}
+          aria-label="Refresh task list"
+          className="shrink-0 gap-1.5 text-neutral-500"
+        >
+          <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+          Refresh
+        </Button>
       </div>
 
       {/* ── Stats bar ── */}

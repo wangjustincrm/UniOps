@@ -687,11 +687,30 @@ async def update_invoice(
     elif inv.gr_id:
         prev_gr_ids = [inv.gr_id]
 
+    prev_status = inv.status
+    caller_id = uuid.UUID(user["sub"])
+
     result = await invoice_crud.update(db, inv, body)
 
     # Re-run match against current allocations so variance/status reflect edits.
     if prev_po_id is not None or inv.gr_ids:
-        result = await invoice_crud.rematch_from_existing(db, result, matched_by=uuid.UUID(user["sub"]))
+        result = await invoice_crud.rematch_from_existing(db, result, matched_by=caller_id)
+
+    # An edit can MATCH the invoice: rematch_from_existing calls crud.match()
+    # directly, and match() is where the status is set — every piece of
+    # "the invoice just became matched" bookkeeping lives in the API layer
+    # instead (the match and match-review endpoints), so this route ran none
+    # of it. Same fix as resolve_exception above.
+    #
+    # Gated on the TRANSITION, not on the state. An already-matched invoice
+    # stays matched across an edit, and _create_or_renotify_create_pa re-fires
+    # the "please raise a Payment Application" email whenever it finds an open
+    # task — running that on every edit of a matched invoice would mail the
+    # requester again for each keystroke-level correction. Only a genuine
+    # unmatched/exception -> matched crossing is news.
+    if result.status == "matched" and prev_status != "matched":
+        await _close_open_match_tasks(db, result.id, caller_id)
+        await _on_invoice_matched(db, result)
 
     # Sync the (possibly rematched) invoice to finance once: draft if still
     # unmatched/exception, posted if matched. Fail-open.
