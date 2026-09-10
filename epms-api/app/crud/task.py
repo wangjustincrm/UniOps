@@ -1,6 +1,8 @@
 """CRUD for Task inbox."""
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -174,51 +176,177 @@ async def _complete_stale_create_prepayment_pa_tasks(db: AsyncSession) -> None:
     await db.flush()
 
 
-async def _complete_stale_approve_tasks(db: AsyncSession) -> None:
-    """Auto-complete open approve_* tasks whose document already left the
-    approvable state (status not in submitted/in_review).
+# ── When is a task still actionable? ─────────────────────────────────────────
+#
+# The `tasks` table is MATERIALIZED, not derived: nothing recomputes whether a
+# row still represents work, so every status transition has to remember to close
+# its own tasks by hand. The 2026-09-09 prod audit found three that don't —
+# POST /invoices/{id}/exception (accept), approval-api's `submit` branch (the
+# one action branch with no _complete_tasks call), and Data Maintenance's
+# bare-setattr status edit — leaving six rows of work nobody could perform, the
+# oldest open since 2026-07-22.
+#
+# This table fixes the CLASS rather than those three instances: one declaration
+# per task type of the document statuses in which it is still actionable —
+# almost always exactly the states its own endpoint accepts, so a task outside
+# them is one the holder would get a 409 on. _complete_stale_status_tasks closes
+# anything outside its set on every inbox read, which is also what clears the
+# existing rows without a data script.
+#
+# EVERY task type the codebase can emit must be classified here or in
+# _TASK_DEDICATED_HANDLING / _TASK_NO_STATUS_INVARIANT below.
+# tests/test_task_liveness_registry.py scans app/ for emitted task types and
+# fails when one is in none of the three, so the next task type cannot arrive
+# without someone deciding what keeps it alive.
 
-    When a PR/PO/PA is approved, returned, cancelled or (for a PO) issued, the
-    approval engine completes its approve task in the same transaction. Drift
-    still happens — config re-syncs, imports, or status flips that bypass the
-    engine (e.g. a PO reaching 'issued', a PA paid via finance-api) — leaving an
-    OPEN approve task on a terminal document. That is a phantom "pending
-    approval" that 409s on click: it shows in the Task Inbox (which gates only on
-    is_completed) but NOT on the Dashboard (which additionally gates on doc
-    status), so the two surfaces disagree. This mirrors the on-demand cleanup in
-    approval-api engine._resync_document so they reconcile without a manual
-    re-sync. Only approve_* tasks are touched — never legitimate next-step work
-    (place_order / create_pa) on an already-done document.
+
+@dataclass(frozen=True)
+class _Liveness:
+    model: Any                       # ORM model carrying the .status column
+    document_types: tuple[str, ...]  # Task.document_type values that anchor here
+    live_statuses: tuple[str, ...]   # statuses in which the task is still work
+    why: str
+
+
+_APPROVABLE = ("submitted", "in_review")
+# The approval engine's _DOC_META valid_submit — identical for every doc type.
+_RESUBMITTABLE = ("draft", "returned")
+
+TASK_LIVENESS: dict[str, _Liveness] = {
+    # ── Invoice ──────────────────────────────────────────────────────────────
+    "match_invoice": _Liveness(
+        Invoice, ("invoice",), ("unmatched", "exception"),
+        "POST /invoices/{id}/match 自己的状态闸门。accept 异常会把发票推到 matched "
+        "而只关 resolve_exception —— 生产 INV-2026-0031/0342/0348/0379 就是这么僵的。"),
+    "review_match": _Liveness(
+        Invoice, ("invoice",), ("match_review",),
+        "crud.review_match 对其它状态直接 raise。"),
+    "resolve_exception": _Liveness(
+        Invoice, ("invoice",), ("exception",),
+        "crud.resolve_exception 对其它状态直接 raise。"),
+
+    # ── Goods receipt ────────────────────────────────────────────────────────
+    # crud.gr.action() 每次跑都关掉该 GR 上所有开放任务,所以这三类只在"状态变了
+    # 却没走 action()"时漂 —— Data Maintenance 的 status 编辑正是那道门。生产
+    # GR-20260903-0015 被那样改成 confirmed,collect_goods 挂了 6 天,至今带着
+    # action() 产生不出来的指纹:confirmed 而 collected_at 为 NULL。
+    "acknowledge_gr": _Liveness(
+        GoodsReceipt, ("gr",), ("pending_ack",), "action('acknowledge') 的状态闸门。"),
+    "collect_goods": _Liveness(
+        GoodsReceipt, ("gr",), ("collection_pending",), "action('collect') 的状态闸门。"),
+    "confirm_service_gr": _Liveness(
+        GoodsReceipt, ("gr",), ("collection_pending",), "action('confirm') 的服务分支。"),
+
+    # ── Approvals ────────────────────────────────────────────────────────────
+    # 引擎在同一事务里关审批任务,但配置重同步 / 导入 / 绕过引擎的状态翻转会漂,
+    # 留下点开就 409 的"幽灵待审"—— 它在 Task Inbox 里(只看 is_completed)却不在
+    # Dashboard 上(还看单据状态),两个界面互相打架。与 approval-api 的
+    # engine._resync_document 同口径。只动 approve_*,绝不碰已完成单据上合法的
+    # 后续工作(place_order / create_pa)。
+    "approve_pr": _Liveness(PurchaseRequest, ("pr",), _APPROVABLE, "引擎 valid_approve。"),
+    "approve_po": _Liveness(PurchaseOrder, ("po",), _APPROVABLE, "引擎 valid_approve。"),
+    "approve_pa": _Liveness(
+        PaymentApplication, ("pa", "pa_dir"), _APPROVABLE,
+        "引擎 valid_approve。★pa_dir(OA Direct PA)与 pa 同表不同 document_type;"
+        "漏掉它时它是 EPMS 自有表里唯一完全没有对账的审批族。"),
+    "approve_agr": _Liveness(
+        PurchaseAgreement, ("agr",), _APPROVABLE,
+        "协议离开可审集的路子比 PO 多一条:到期。漏掉它就重现 Inbox/Dashboard 打架。"),
+
+    # ── Returned for revision ────────────────────────────────────────────────
+    # ★引擎的 submit 分支是唯一不调 _complete_tasks 的动作分支(approve / return /
+    # reject 都调),所以"退回 → 改完重交"之后 revise 任务还挂在申请人手里,而
+    # submitted 状态的单据他根本编辑不了。生产 PA-20260831-0002。
+    "revise_pr": _Liveness(PurchaseRequest, ("pr",), _RESUBMITTABLE, "引擎 valid_submit。"),
+    "revise_po": _Liveness(PurchaseOrder, ("po",), _RESUBMITTABLE, "引擎 valid_submit。"),
+    "revise_pa": _Liveness(
+        PaymentApplication, ("pa", "pa_dir"), _RESUBMITTABLE, "引擎 valid_submit。"),
+    "revise_agr": _Liveness(
+        PurchaseAgreement, ("agr",), _RESUBMITTABLE, "引擎 valid_submit。"),
+
+    # ── Payment execution ────────────────────────────────────────────────────
+    "process_pa": _Liveness(
+        PaymentApplication, ("pa", "pa_dir"), ("approved",),
+        "PA 走完审批时签出,由 finance-api 的付款执行在同一事务里置 processed 并关掉"
+        "(crud/payment_execute.py 的 _complete_open_tasks,pa 与 pa_dir 都覆盖)。"
+        "其它状态还开着 —— cancelled / returned / DM 手改 —— 这笔付款就不可能发生了。"),
+}
+
+# 有专属收口逻辑,不变量不是"比一下状态"这么简单,所以不进上表。
+_TASK_DEDICATED_HANDLING: dict[str, str] = {
+    "create_po": "_complete_stale_create_po_tasks:看 PR 是否已有 PO,两个方向的外键都要看。",
+    "place_order": "_complete_stale_place_order_tasks:PO 不再是 approved 即失效。",
+    "create_pa": "_complete_stale_create_pa_tasks + _complete_orphan_create_pa_tasks:"
+                 "既看 PA 在不在,也看 matched 发票还在不在,还跨 po/gr 两种锚点。",
+    "create_prepayment_pa": "_complete_stale_create_prepayment_pa_tasks:只有 prepayment 型 PA 算数。",
+    "confirm_receipt": "不变量是「PO 有收货证据」(crud.po.po_has_receipt_evidence:有活 GR "
+                       "单据 或 任一行 received_qty>0),要 per-PO 子查询而不是比状态;"
+                       "两个建单点与 GR 创建路径都已强制。★它由两条完全不同的路签出:"
+                       "发票匹配(未收货)和服务 PO 完成日催办(tasks/service_gr_due.py,"
+                       "与发票无关)—— 同 type 不同不变量,2026-09-09 审计时拿前者去套后者,"
+                       "误判过 8 条。",
+    "confirm_period": "接受期次时关(crud.agreement_schedule),释放协议证据时也关"
+                      "(crud.invoice._release_agreement_evidence),两侧都有。",
+    "chase_agreement_invoice": "tasks/agreement_overdue.py 的 _close_settled_chase_tasks:"
+                               "协议不再有 overdue 期次即收口。★跑在定时循环里,"
+                               "agreement_overdue_enabled 关掉时只出不进。",
+}
+
+# 本服务兜不住的,连同原因。
+_TASK_NO_STATUS_INVARIANT: dict[str, str] = {
+    "gr_damage_report": "「找人看一眼」的提示,不是收货状态机里的一步 —— 没有能判死的状态。",
+    "confirm_settlement": "预付冲销确认,由 crud.pa 的结算流程关。",
+    "sign_po": "posign 走自己的 step_attr,PO 的 status 不是它的闸门。",
+    "revise_po_signoff": "同 sign_po。",
+    "process_expense": "expense_claims 归 expense-api,epms-api 没有该 model。",
+    "approve_budget_plan": "budget_plans 归 finance-api,epms-api 没有该 model。",
+    "revise_budget_plan": "同 approve_budget_plan。",
+    "approve_vms_visit": "vms_visits 归 vms-api,epms-api 没有该 model。",
+    "revise_vms_visit": "同 approve_vms_visit。",
+    "check_out_visitor": "vms-api 自己的 close_settled_visit_tasks 收口。",
+    "prepare_ppe": "同 check_out_visitor。",
+    "vms_confirm_training": "vms-api 的 services/compliance.py 收口。",
+    "vms_confirm_ppe": "同 vms_confirm_training。",
+    "import_erp_vendor": "NC 同步每趟自己对账(services/nc_purchase_sync/error_tasks.py)。",
+    "resolve_nc_sync_error": "同 import_erp_vendor。",
+}
+
+# ★覆盖边界:上表只能覆盖 EPMS 自己有 model 的表(pr/po/pa/agr/invoice/gr)。
+# OA 报销、Finance 预算计划、VMS 访客也往这张共享 tasks 表写 approve_*/revise_*,
+# 它们的任务在这里没有任何网,完全依赖各自服务自己关。2026-09-09 生产是 0 僵尸,
+# 那是那些队列的现状,不是覆盖。
+
+
+async def _complete_stale_doc_tasks(db: AsyncSession, Model, document_type: str,
+                                    task_type: str, live_statuses: tuple[str, ...]) -> None:
+    """Close one task type whose document has left the status it acts on.
+
+    completed_by is deliberately left NULL: this is a system completion, not a
+    user dismissal (see _already_surfaced for why that distinction matters).
     """
-    approvable = ("submitted", "in_review")
-    doc_specs = (
-        ("pr", "approve_pr", PurchaseRequest),
-        ("po", "approve_po", PurchaseOrder),
-        ("pa", "approve_pa", PaymentApplication),
-        # Purchase Agreements leave the approvable set the same ways a PO does
-        # (approved -> "active", returned, cancelled) plus one route nothing
-        # else has: expiry. Omitting them here reproduces exactly the Task
-        # Inbox / Dashboard split this function was written to end.
-        ("agr", "approve_agr", PurchaseAgreement),
+    stale_q = (
+        select(Task)
+        .join(Model, Model.id == Task.document_id)
+        .where(
+            Task.type == task_type,
+            Task.document_type == document_type,
+            Task.is_completed.is_(False),
+            Model.status.notin_(live_statuses),
+        )
     )
     now = datetime.now(timezone.utc)
-    for doc_type, task_type, Model in doc_specs:
-        stale_q = (
-            select(Task)
-            .join(Model, Model.id == Task.document_id)
-            .where(
-                Task.type == task_type,
-                Task.document_type == doc_type,
-                Task.is_completed.is_(False),
-                Model.status.notin_(approvable),
-            )
-        )
-        for task in (await db.execute(stale_q)).scalars().all():
-            task.is_completed = True
-            task.completed_at = now
+    for task in (await db.execute(stale_q)).scalars().all():
+        task.is_completed = True
+        task.completed_at = now
+
+
+async def _complete_stale_status_tasks(db: AsyncSession) -> None:
+    """Drive TASK_LIVENESS: close every task that outlived its document's status."""
+    for task_type, live in TASK_LIVENESS.items():
+        for document_type in live.document_types:
+            await _complete_stale_doc_tasks(
+                db, live.model, document_type, task_type, live.live_statuses)
     await db.flush()
-
-
 async def _complete_stale_create_po_tasks(db: AsyncSession) -> None:
     """Auto-complete any open create_po tasks where the linked PR already has a PO."""
     stale_q = (
@@ -526,7 +654,7 @@ async def get_for_role(
     # the request's transaction commits.
     await db.execute(text("SELECT pg_advisory_xact_lock(hashtext('epms:task_backfill'))"))
 
-    await _complete_stale_approve_tasks(db)
+    await _complete_stale_status_tasks(db)
     await _complete_stale_create_po_tasks(db)
     await _complete_stale_create_pa_tasks(db)
     await _complete_orphan_create_pa_tasks(db)

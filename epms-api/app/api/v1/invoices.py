@@ -171,6 +171,29 @@ async def _sync_exception_task(db, inv, result, actor_id: uuid.UUID) -> None:
         existing_exc_task.completed_by = actor_id
 
 
+async def _close_open_match_tasks(db, invoice_id, actor_id: uuid.UUID,
+                                  *, exclude_task_id=None) -> None:
+    """Close every open match_invoice task on an invoice that no longer needs one.
+
+    Deliberately NOT filtered on `assigned_user_id != actor_id`: SQL's `<>` is
+    NULL-blind, so a task decline_match bounced back to the ap_clerk POOL
+    (assigned_user_id NULL, see that endpoint) matched neither the "mine" query
+    nor the "everyone else's" one, and survived the match forever. Callers that
+    already closed their own task pass its id as exclude_task_id instead.
+    """
+    conds = [
+        Task.type == "match_invoice", Task.document_type == "invoice",
+        Task.document_id == invoice_id, Task.is_completed.is_(False),
+    ]
+    if exclude_task_id is not None:
+        conds.append(Task.id != exclude_task_id)
+    now_ts = datetime.now(timezone.utc)
+    for t in (await db.execute(select(Task).where(*conds))).scalars().all():
+        t.is_completed = True
+        t.completed_at = now_ts
+        t.completed_by = actor_id
+
+
 async def _on_invoice_matched(db, invoice) -> None:
     """发票 match 后,对**每一个**被这张发票买单的 PO 按是否达成 3-way 分流:
     - 已收货 → create_pa 任务(Requester)
@@ -664,11 +687,47 @@ async def update_invoice(
     elif inv.gr_id:
         prev_gr_ids = [inv.gr_id]
 
+    prev_status = inv.status
+    caller_id = uuid.UUID(user["sub"])
+    # Snapshot BEFORE the edit lands: crud.update mutates this same row, so
+    # rematch_from_existing cannot tell "the figures moved" from "only a note
+    # changed" unless it is handed the earlier pair. Only meaningful when there
+    # is an accepted exception to preserve — see rematch_from_existing.
+    accepted_numbers = (
+        (inv.total_amount, inv.variance)
+        if inv.status == "matched" and inv.exception_resolution == "accepted"
+        else None
+    )
+
     result = await invoice_crud.update(db, inv, body)
 
     # Re-run match against current allocations so variance/status reflect edits.
     if prev_po_id is not None or inv.gr_ids:
-        result = await invoice_crud.rematch_from_existing(db, result, matched_by=uuid.UUID(user["sub"]))
+        result = await invoice_crud.rematch_from_existing(
+            db, result, matched_by=caller_id, accepted_numbers=accepted_numbers)
+
+    # An edit can MATCH the invoice: rematch_from_existing calls crud.match()
+    # directly, and match() is where the status is set — every piece of
+    # "the invoice just became matched" bookkeeping lives in the API layer
+    # instead (the match and match-review endpoints), so this route ran none
+    # of it. Same fix as resolve_exception above.
+    #
+    # Gated on the TRANSITION, not on the state. An already-matched invoice
+    # stays matched across an edit, and _create_or_renotify_create_pa re-fires
+    # the "please raise a Payment Application" email whenever it finds an open
+    # task — running that on every edit of a matched invoice would mail the
+    # requester again for each keystroke-level correction. Only a genuine
+    # unmatched/exception -> matched crossing is news.
+    if result.status == "matched" and prev_status != "matched":
+        await _close_open_match_tasks(db, result.id, caller_id)
+        await _on_invoice_matched(db, result)
+
+    # Same call the match and match-review endpoints make, for the same reason:
+    # an edit can land the invoice in "exception" (rematch_from_existing revokes
+    # an acceptance whose numbers moved), and an invoice sitting in exception
+    # with nobody told is the worst of the three outcomes. Also closes a stale
+    # exception task when the edit takes the invoice back OUT of exception.
+    await _sync_exception_task(db, result, result, caller_id)
 
     # Sync the (possibly rematched) invoice to finance once: draft if still
     # unmatched/exception, posted if matched. Fail-open.
@@ -724,15 +783,9 @@ async def match_invoice(
 
         # Complete any OTHER open match_invoice tasks for this invoice (e.g. AP matched
         # directly while an assignee still had an open task — no orphans left behind).
-        other_open_tasks = (await db.execute(select(Task).where(
-            Task.type == "match_invoice", Task.document_type == "invoice",
-            Task.document_id == inv.id, Task.assigned_user_id != caller_id,
-            Task.is_completed.is_(False),
-        ))).scalars().all()
-        for other in other_open_tasks:
-            other.is_completed = True
-            other.completed_at = now_ts
-            other.completed_by = caller_id
+        await _close_open_match_tasks(
+            db, inv.id, caller_id,
+            exclude_task_id=my_task.id if my_task is not None else None)
 
         if result.status == "match_review" and my_task is not None:
             # Route-aware description: an agreement match's variance is always
@@ -1348,8 +1401,9 @@ async def resolve_exception(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    caller_id = uuid.UUID(user["sub"])
     try:
-        result = await invoice_crud.resolve_exception(db, inv, body, resolved_by=uuid.UUID(user["sub"]))
+        result = await invoice_crud.resolve_exception(db, inv, body, resolved_by=caller_id)
         exc_task = (await db.execute(select(Task).where(
             Task.type == "resolve_exception", Task.document_type == "invoice",
             Task.document_id == inv.id, Task.is_completed.is_(False),
@@ -1357,7 +1411,32 @@ async def resolve_exception(
         if exc_task is not None:
             exc_task.is_completed = True
             exc_task.completed_at = datetime.now(timezone.utc)
-            exc_task.completed_by = uuid.UUID(user["sub"])
+            exc_task.completed_by = caller_id
+        # Accepting an exception IS a match decision — it lands the invoice in
+        # "matched" exactly as review_match() approve does. Everything that hangs
+        # off "this invoice is now matched" therefore has to run here too, or for
+        # this route it never runs at all:
+        #
+        #  * the assignee's match_invoice task. assign_match is allowed while an
+        #    invoice sits in "exception", so the sequence "AP matches → variance
+        #    → exception → AP assigns someone to re-match → AP accepts the
+        #    variance themselves" leaves that assignee holding a task for work
+        #    that no longer exists, on an invoice POST /match now 409s on. Four
+        #    such rows were open in prod on 2026-09-09 (INV-2026-0031 / 0342 /
+        #    0348 / 0379), the oldest since 2026-08-13, and nothing in the
+        #    codebase would ever have closed them.
+        #  * the downstream create_pa / confirm_receipt prompts, which only
+        #    _on_invoice_matched raises. In prod the GR-creation path
+        #    (crud.gr._on_three_way_reached) happened to cover all four, but it
+        #    only does so for POs that get a GR *after* the acceptance — an
+        #    already-received PO accepted here would raise neither.
+        #
+        # crud.resolve_exception only reaches "matched" for resolution="accepted";
+        # every other resolution leaves the invoice in "exception", where all
+        # three task types are still legitimately open.
+        if result.status == "matched":
+            await _close_open_match_tasks(db, result.id, caller_id)
+            await _on_invoice_matched(db, result)
         # Sync to finance: posted if matched, draft otherwise. Fail-open.
         await finance_sync.sync_ap_invoice(db, result, token)
         return result
