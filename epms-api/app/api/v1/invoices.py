@@ -689,12 +689,22 @@ async def update_invoice(
 
     prev_status = inv.status
     caller_id = uuid.UUID(user["sub"])
+    # Snapshot BEFORE the edit lands: crud.update mutates this same row, so
+    # rematch_from_existing cannot tell "the figures moved" from "only a note
+    # changed" unless it is handed the earlier pair. Only meaningful when there
+    # is an accepted exception to preserve — see rematch_from_existing.
+    accepted_numbers = (
+        (inv.total_amount, inv.variance)
+        if inv.status == "matched" and inv.exception_resolution == "accepted"
+        else None
+    )
 
     result = await invoice_crud.update(db, inv, body)
 
     # Re-run match against current allocations so variance/status reflect edits.
     if prev_po_id is not None or inv.gr_ids:
-        result = await invoice_crud.rematch_from_existing(db, result, matched_by=caller_id)
+        result = await invoice_crud.rematch_from_existing(
+            db, result, matched_by=caller_id, accepted_numbers=accepted_numbers)
 
     # An edit can MATCH the invoice: rematch_from_existing calls crud.match()
     # directly, and match() is where the status is set — every piece of
@@ -711,6 +721,13 @@ async def update_invoice(
     if result.status == "matched" and prev_status != "matched":
         await _close_open_match_tasks(db, result.id, caller_id)
         await _on_invoice_matched(db, result)
+
+    # Same call the match and match-review endpoints make, for the same reason:
+    # an edit can land the invoice in "exception" (rematch_from_existing revokes
+    # an acceptance whose numbers moved), and an invoice sitting in exception
+    # with nobody told is the worst of the three outcomes. Also closes a stale
+    # exception task when the edit takes the invoice back OUT of exception.
+    await _sync_exception_task(db, result, result, caller_id)
 
     # Sync the (possibly rematched) invoice to finance once: draft if still
     # unmatched/exception, posted if matched. Fail-open.

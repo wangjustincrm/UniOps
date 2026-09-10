@@ -532,3 +532,90 @@ async def test_editing_an_already_matched_invoice_does_not_renotify(admin_client
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "matched"
     assert await _po_task_ids() == before, "已经是 matched 的发票,编辑不该再动下游任务"
+
+
+# ── G. 编辑抹掉 AP "接受变差"的决定 ───────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_editing_an_accepted_invoice_keeps_the_acceptance(admin_client):
+    """AP 在异常面板点 Accept 是一个**针对这组数字的人工决定**。
+
+    之后任何一次编辑都会走 rematch_from_existing → match(),match() 用当前容差
+    重算,发现还是超差就把发票打回 exception —— 而 accept 时写下的
+    exception_resolution / exception_resolved_by 从来没有任何地方清过。三重后果:
+      1. 决定被无声抹掉(改个备注就够);
+      2. PATCH 这条路不调 _sync_exception_task,所以**没人被告知**,
+         发票躺在 exception 里而 AP 收件箱是空的;
+      3. 单据自相矛盾:status=exception 却写着 "resolved by 某某"。
+
+    数字没变时,那个决定依然成立,不该被推翻。
+    """
+    inv, _po = await _over_tolerance_invoice(admin_client, "ACC1")
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/exception",
+                                json={"resolution": "accepted", "note": "variance ok"})
+    assert r.status_code == 200 and r.json()["status"] == "matched", r.text
+
+    r = await admin_client.patch(f"{INV_URL}/{inv['id']}", json={"notes": "typo fix"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "matched", (
+        "只改了备注,金额一分没动 —— AP 接受变差的决定不该被一次编辑推翻")
+    assert await _tasks(inv["id"], "resolve_exception") == [], "没有新的异常要解决"
+
+
+@pytest.mark.asyncio
+async def test_editing_the_numbers_revokes_the_acceptance_loudly(admin_client):
+    """反过来:金额真的动了,原来那个"接受"针对的就不是这组数字了。
+
+    这时必须**大声**回到 exception —— 清掉 accept 的痕迹,并且重新签出一条
+    resolve_exception 任务,而不是让发票无声地躺在 exception 里。
+    """
+    from app.models.invoice import Invoice
+
+    inv, _po = await _over_tolerance_invoice(admin_client, "ACC2")
+    await admin_client.post(f"{INV_URL}/{inv['id']}/exception",
+                            json={"resolution": "accepted", "note": "variance ok"})
+
+    # 改金额 → 分摊不再平衡 → match() 重算
+    r = await admin_client.patch(f"{INV_URL}/{inv['id']}", json={
+        "amount": "300.00", "tax_amount": "0.00",
+        "line_items": [{"id": inv["line_items"][0]["id"], "description": "L",
+                        "quantity": "1", "unit_price": "300.00", "line_total": "300.00"}]})
+    assert r.status_code == 200, r.text
+
+    async with session_module.AsyncSessionLocal() as db:
+        row = await db.get(Invoice, uuid.UUID(inv["id"]))
+        assert row.status != "matched", "数字变了,原来的接受不再适用"
+        assert row.exception_resolution is None, (
+            f"接受的痕迹必须清掉,否则单据自相矛盾(status={row.status} 却写着已解决)")
+        assert row.exception_resolved_at is None
+        assert row.exception_resolved_by is None
+
+
+@pytest.mark.asyncio
+async def test_an_edit_that_lands_in_exception_tells_somebody(admin_client):
+    """PATCH 这条路原来从不调 _sync_exception_task。
+
+    结果是发票可以无声地躺进 exception:AP 收件箱里什么都没有,而这张票已经
+    没人在管了。改税额是最干净的复现 —— 分摊行是**税前**的,所以它们仍然平衡
+    (走 match() 而不是回落 unmatched),但 total_amount 变了,原来的接受不再
+    适用。
+    """
+    from app.models.invoice import Invoice
+
+    inv, _po = await _over_tolerance_invoice(admin_client, "ACC3")
+    await admin_client.post(f"{INV_URL}/{inv['id']}/exception",
+                            json={"resolution": "accepted", "note": "variance ok"})
+    assert await _tasks(inv["id"], "resolve_exception") == [], "前提:接受之后异常任务已关"
+
+    r = await admin_client.patch(f"{INV_URL}/{inv['id']}", json={"tax_amount": "50.00"})
+    assert r.status_code == 200, r.text
+
+    async with session_module.AsyncSessionLocal() as db:
+        row = await db.get(Invoice, uuid.UUID(inv["id"]))
+        assert row.status == "exception", f"税额变了,变差重回超差 —— 实际 {row.status}"
+        assert row.exception_resolution is None, "接受的痕迹必须清掉"
+
+    open_tasks = await _tasks(inv["id"], "resolve_exception")
+    assert len(open_tasks) == 1, "落回 exception 必须有人被告知,不能无声躺着"
+    assert open_tasks[0].assigned_role == "ap_clerk"
+    assert open_tasks[0].assigned_user_id is None, "走角色池才能命中 AP 共享邮箱"

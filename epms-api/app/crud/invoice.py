@@ -1478,14 +1478,48 @@ async def review_match(
     return invoice
 
 
-async def rematch_from_existing(db: AsyncSession, invoice: Invoice, matched_by: uuid.UUID) -> Invoice:
+async def rematch_from_existing(
+    db: AsyncSession, invoice: Invoice, matched_by: uuid.UUID,
+    *, accepted_numbers: tuple[Decimal, Decimal | None] | None = None,
+) -> Invoice:
     """Re-run match using the invoice's CURRENT allocations. If they no longer sum
-    to the (possibly edited) total, clear them and reset to unmatched."""
+    to the (possibly edited) total, clear them and reset to unmatched.
+
+    accepted_numbers — (total_amount, variance) as they stood BEFORE the caller
+    applied its edit, and only when the invoice was a "matched" invoice whose
+    exception had been ACCEPTED. The caller has to capture it, because by the
+    time this runs crud.update() has already written the new figures onto the
+    same row: read from here, "before" and "after" are the same object and the
+    comparison can only ever say "unchanged". None means there is no acceptance
+    to preserve.
+    """
     rows = (await db.execute(
         select(InvoicePoAllocation).where(InvoicePoAllocation.invoice_id == invoice.id)
     )).scalars().all()
     if not rows:
         return invoice
+
+    # An accepted exception is a HUMAN decision about a specific set of numbers
+    # (POST /invoices/{id}/exception, resolution="accepted"). Re-matching derives
+    # the status from scratch, so it can undo that decision — and nothing has
+    # ever cleared exception_resolution / exception_resolved_by, leaving the row
+    # claiming "resolved by <name>" while it sits in exception or unmatched. The
+    # edit that triggers it need not touch a single figure: a typo fix in `notes`
+    # was enough, silently, with no task raised because this route never called
+    # _sync_exception_task either.
+    #
+    # The rule: the acceptance covers THESE numbers. Unchanged, it still stands.
+    # Changed, it no longer describes what the invoice now says — revoke it, and
+    # let the caller raise the exception task so somebody is actually told.
+    accepted_before = accepted_numbers is not None
+    total_before, variance_before = accepted_numbers or (None, None)
+
+    def _revoke_acceptance(inv: Invoice) -> None:
+        inv.exception_resolution = None
+        inv.exception_resolved_at = None
+        inv.exception_resolved_by = None
+        inv.exception_resolved_by_name = None
+
     # Allocations are PRE-TAX (tax stays at the invoice header), so balance them
     # against the pre-tax amount — mirroring match()'s integrity check. Comparing
     # against total_amount here wrongly reset taxed invoices to unmatched on edit.
@@ -1506,6 +1540,11 @@ async def rematch_from_existing(db: AsyncSession, invoice: Invoice, matched_by: 
         if former_po_id is not None:
             from app.crud.task import _complete_orphan_create_pa_tasks
             await _complete_orphan_create_pa_tasks(db, former_po_id)
+        # Fell all the way back to unmatched — there is certainly no standing
+        # acceptance of a variance against a PO this invoice no longer has.
+        if accepted_before:
+            _revoke_acceptance(invoice)
+            await db.flush()
         await db.refresh(invoice, ["allocations"])
         return invoice
     req = InvoiceMatchRequest(allocations=[
@@ -1514,7 +1553,25 @@ async def rematch_from_existing(db: AsyncSession, invoice: Invoice, matched_by: 
             allocated_amount=r.allocated_amount, allocated_tax=r.allocated_tax, note=r.note,
         ) for r in rows
     ], gr_ids=[uuid.UUID(g) for g in invoice.gr_ids] if invoice.gr_ids else None)
-    return await match(db, invoice, req, matched_by)
+
+    result = await match(db, invoice, req, matched_by)
+
+    if accepted_before and result.status != "matched":
+        unchanged = (result.status == "exception"
+                     and result.total_amount == total_before
+                     and result.variance == variance_before)
+        if unchanged:
+            result.status = "matched"
+            result.exception_reason = (
+                f"Variance accepted by {result.exception_resolved_by_name or 'AP'} "
+                f"(variance: {result.variance:+.2f})"
+                if result.variance is not None else None
+            )
+        else:
+            _revoke_acceptance(result)
+        await db.flush()
+        await db.refresh(result)
+    return result
 
 
 # ── Update ─────────────────────────────────────────────────────────────────────
