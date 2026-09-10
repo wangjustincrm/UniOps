@@ -200,6 +200,15 @@ async def update_invoice(
     inv = await db.get(ExpenseInvoice, invoice_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    # Object-level authz. The 2026-08 OA IDOR sweep gated every invoice READ
+    # (get_invoice, vendor_suggestions) and left this WRITE on nothing but
+    # "is logged in" — so any employee could rewrite any invoice's vendor,
+    # number and amounts. It is not even contained to this service: the tail of
+    # this function pushes the result straight into finance's ap_invoices via
+    # sync_ap_invoice. Same rule as the read endpoints: uploader, admin, or a
+    # payment-stage role.
+    if not _can_view_invoice(inv, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to edit this invoice")
     if inv.status == "used":
         raise HTTPException(status_code=409, detail="Invoice already used in a PA")
 
