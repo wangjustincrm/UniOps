@@ -1855,6 +1855,7 @@ const EMAIL_TEMPLATE_LABELS: Record<string, string> = {
   pa_approval_request: 'PA — Approval Request',
   pa_approved: 'PA — Approved',
   prepayment_settlement_overdue: 'PA — Prepayment Settlement Overdue',
+  manual_reminder: 'Manual Reminder (Approval Timeline button)',
   daily_pending_reminder: 'Daily Pending Tasks Reminder',
   sla_escalation: 'SLA Escalation Alert',
   match_invoice_assigned: 'Invoice — Matching Assigned to You',

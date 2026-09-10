@@ -261,6 +261,16 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "<a href=\"{link}\">View PA</a>\n\n{company_name}",
     ),
     # ── Reminders ─────────────────────────────────────────────────────────────
+    # 手动催办:PR/PO 详情页 Approval Timeline 上「Send reminder」按钮发出的信。
+    # 与 daily_pending_reminder 的区别是这封信有个具体的催办人({sender_name}),
+    # 收件人应当知道是谁在等 —— 所以模板里点名,而不是写成系统自动提醒。
+    "manual_reminder": _DEFAULT_EMAIL_TEMPLATE(
+        "Reminder: {document_type} {document_number} is waiting for your approval",
+        "Hi {recipient_name},\n\n<b>{sender_name}</b> has sent you a reminder: "
+        "{document_type} <b>{document_number}</b> has been waiting {days_waiting} day(s) "
+        "for your approval.\n\n"
+        "<a href=\"{link}\">Review &amp; Approve</a>\n\n{company_name}",
+    ),
     "daily_pending_reminder": _DEFAULT_EMAIL_TEMPLATE(
         "Reminder: {document_number} is still awaiting your action",
         "Hi {recipient_name},\n\n<b>{document_number}</b> is still pending and requires your attention.\n\n"
