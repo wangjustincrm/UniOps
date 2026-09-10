@@ -156,11 +156,20 @@ def _isolate_finance_sync():
 
 # ── Token helper ──────────────────────────────────────────────────────────────
 
-def _make_token(role: str, user_id: str | None = None) -> str:
+def _make_token(role: str, user_id: str | None = None, *, token_type: str = "access") -> str:
+    """Mint a token shaped like identity-api's.
+
+    `type` is not decoration: identity signs access and refresh tokens with the
+    SAME secret and tells them apart by this claim alone, and deps._decode_token
+    rejects anything that is not "access". The fixture omitted it, so every test
+    ran on a token production would never issue. `token_type` is a parameter so
+    the rejection itself can be tested.
+    """
     return jwt.encode(
         {
             "sub": user_id or str(uuid.uuid4()),
             "role": role,
+            "type": token_type,
             "exp": datetime.utcnow() + timedelta(hours=8),
         },
         _JWT_SECRET,

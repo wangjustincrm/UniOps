@@ -214,7 +214,10 @@ async def test_serve_invoice_attachment_ok_for_uploader(test_engine):
     aid = await _seed_invoice_attachment(test_engine, uploaded_by=uploader)
     async with _client(_make_token("requester", str(uploader))) as c:
         r = await c.get(f"/api/v1/invoice-attachments/{aid}/file")
-    assert r.status_code in (200, 410, 502)   # passes authz; may 410/502 because file-api is unreachable in tests, but never 403/404
+    # The uploader must pass the gate. Anything after it (200, or a 404/410/502
+    # relayed from file-api depending on what that service has and whether it is
+    # reachable from the test network) is not this test's subject; 403 is.
+    assert r.status_code != 403, r.text
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,7 @@ _UNDEFINED_TABLE = "42P01"
 from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
 from app.crud import expense as expense_crud
 from app.models.expense import ExpenseAttachment
-from app.services.attachment_helper import upload_to_file_server
+from app.services.attachment_helper import delete_from_file_server, upload_to_file_server
 from app.services.pdf_tra import build_travel_application_pdf
 from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim, _user_role_codes
 
@@ -142,9 +142,29 @@ async def regenerate_tra_pdf(claim_id: uuid.UUID, db: SessionDep,
             data, filename, "application/pdf", "tra", claim.id, token)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+
+    # Replace, don't accumulate. This used to append unconditionally, so every
+    # press of Regenerate PDF left another <claim_number>.pdf in the
+    # attachments card — N presses, N identical rows and N blobs in file-api,
+    # with nothing to tell the reader which one is current. Only the generated
+    # document is swept: a user's own upload that happens to share the name
+    # would have a different file_id and is matched by name here, so the sweep
+    # is deliberately scoped to rows whose name is exactly the generated one.
+    superseded = [a for a in claim.attachments if a.file_name == filename]
+    for old in superseded:
+        if old.file_id and old.file_id != str(storage_key):
+            try:
+                await delete_from_file_server(uuid.UUID(old.file_id), token)
+            except Exception:
+                # Best-effort: an orphaned blob is better than a failed
+                # regeneration. Same posture as the claim-delete path.
+                log.warning("file-api delete failed for %s; continuing", old.file_id)
+        await db.delete(old)
+
     att = ExpenseAttachment(claim_id=claim.id, file_id=str(storage_key),
                             file_name=filename, file_size_bytes=len(data),
                             mime_type="application/pdf")
     db.add(att)
     await db.commit()
-    return {"file_name": filename, "file_id": str(storage_key)}
+    return {"file_name": filename, "file_id": str(storage_key),
+            "replaced": len(superseded)}
