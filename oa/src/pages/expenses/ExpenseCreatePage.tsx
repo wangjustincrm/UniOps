@@ -2,9 +2,11 @@ import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useReplaceTab, Button } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle, ChevronRight, ChevronLeft } from 'lucide-react'
-import { cn, formatAmount } from '@/lib/utils'
+import { cn, currentYearLocal, formatAmount, todayLocal } from '@/lib/utils'
+import { useEditableClaim, useSaveClaim, type EditableFormProps } from '@/lib/editableClaim'
+import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { api, budgetApi, mdmApi } from '@/lib/api'
 import { ReceiptScanButton, type ReceiptFields } from '@/components/ReceiptScanButton'
 
@@ -231,9 +233,8 @@ function AccountPicker({
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function today() {
-  return new Date().toISOString().slice(0, 10)
-}
+// Local calendar date, not UTC — see todayLocal in lib/utils.
+const today = todayLocal
 
 function calcTax(total: string, rate: number): string {
   const a = parseFloat(total)
@@ -279,8 +280,9 @@ function emptyLine(n: number): LineItem {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function ExpenseCreatePage() {
+export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {}) {
   const replaceTab = useReplaceTab(oaRoutes)
+  const { claim: editing, isLoading: loadingClaim, error: loadError } = useEditableClaim(editClaimId)
 
   const { data: taxCodes = [] } = useQuery<TaxCode[]>({
     queryKey: ['tax-codes'],
@@ -295,7 +297,7 @@ export default function ExpenseCreatePage() {
   // Budget catalog + per-account figures now live in budget-api (:8007); the old
   // expense-api /budget/accounts route was removed. /actuals/summary returns every
   // active account with annual_budget/committed/actual_spent/available for the year.
-  const fiscalYear = new Date().getUTCFullYear()
+  const fiscalYear = currentYearLocal()
   const { data: accounts = [] } = useQuery<BudgetAccount[]>({
     queryKey: ['budget-accounts', fiscalYear],
     queryFn: async () => {
@@ -343,6 +345,35 @@ export default function ExpenseCreatePage() {
   const [currency, setCurrency] = useState('CAD')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<LineItem[]>([emptyLine(1)])
+
+  // Fill the form from the claim being edited. Keyed on the claim id, not on
+  // the object: react-query hands back a new object on every refetch, and
+  // re-running this on each one would wipe out whatever the user had typed.
+  useEffect(() => {
+    if (!editing) return
+    setSubmissionDate(editing.submission_date)
+    setCurrency(editing.currency)
+    setNotes(editing.notes ?? '')
+    setLines(
+      editing.line_items.length
+        ? editing.line_items.map((li, i) => ({
+            line_number: i + 1,
+            expense_date: li.expense_date,
+            description: li.description,
+            budget_account_id: li.budget_account_id,
+            budget_account_code: li.budget_account_code,
+            budget_account_name: li.budget_account_name,
+            cost_center_id: li.cost_center_id,
+            cost_center_name: li.cost_center_name,
+            total_amount: String(li.total_amount),
+            tax_amount: String(li.tax_amount),
+            net_amount: String(li.net_amount),
+            tax_code: li.tax_code,
+          }))
+        : [emptyLine(1)],
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id])
 
   const updateLine = (idx: number, patch: Partial<LineItem>) => {
     setLines((prev) => {
@@ -408,10 +439,7 @@ export default function ExpenseCreatePage() {
     return acc && acc.available - (accountDeltas[acc.id] ?? 0) < 0
   })
 
-  const createMutation = useMutation({
-    mutationFn: (body: object) => api.post('/api/v1/expenses', body),
-    onSuccess: (data: any) => replaceTab(`/expenses/${data.id}`),
-  })
+  const createMutation = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`))
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -443,20 +471,30 @@ export default function ExpenseCreatePage() {
     })
   }
 
+  if (loadingClaim) {
+    return <div className="p-8 text-sm text-neutral-500">Loading claim…</div>
+  }
+  if (loadError) {
+    return <ErrorBanner message={loadError.message} />
+  }
+
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-6xl">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">New General Expense Claim</h1>
+          <h1 className="text-2xl font-bold text-neutral-900">
+            {editing ? `Edit ${editing.claim_number}` : 'New General Expense Claim'}
+          </h1>
           <p className="mt-0.5 text-sm text-neutral-500">Receipt-based employee reimbursement</p>
         </div>
         <div className="flex gap-2">
-          <Button type="button" variant="secondary" size="sm" onClick={() => replaceTab('/expenses')}>
+          <Button type="button" variant="secondary" size="sm"
+                  onClick={() => replaceTab(editing ? `/expenses/${editing.id}` : '/expenses')}>
             Cancel
           </Button>
           <Button type="submit" size="sm" disabled={createMutation.isPending}>
-            {createMutation.isPending ? 'Saving…' : 'Save as Draft'}
+            {createMutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Save as Draft'}
           </Button>
         </div>
       </div>

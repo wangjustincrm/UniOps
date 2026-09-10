@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BackLink } from '@/components/BackLink'
 import { useReplaceTab, Button } from '@uniops/shell'
-import { useMutation } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
 import { oaRoutes } from '@/app/routes'
-import { api } from '@/lib/api'
+import { todayLocal } from '@/lib/utils'
+import { useEditableClaim, useSaveClaim, type EditableFormProps } from '@/lib/editableClaim'
 import { TravelerPicker, type Traveler } from '@/components/TravelerPicker'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
@@ -13,9 +13,10 @@ const TRANSPORT = [
   ['accommodation', 'Accommodation'], ['meal', 'Meal'], ['other', 'Other'],
 ] as const
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = todayLocal
 
-export default function TraCreatePage() {
+export default function TraCreatePage({ editClaimId }: EditableFormProps = {}) {
+  const { claim: editing, isLoading: loadingClaim, error: loadError } = useEditableClaim(editClaimId)
   const replaceTab = useReplaceTab(oaRoutes)
   const [appDate, setAppDate] = useState(today())
   const [travelers, setTravelers] = useState<Traveler[]>([])
@@ -29,28 +30,52 @@ export default function TraCreatePage() {
   const [remarks, setRemarks] = useState('')
   const [error, setError] = useState('')
 
+  // Prefill from the application being edited, keyed on its id so a background
+  // refetch cannot wipe out work in progress.
+  useEffect(() => {
+    if (!editing) return
+    setAppDate(editing.submission_date)
+    setTravelers(editing.travelers.map(t => ({ user_id: t.user_id, user_name: t.user_name })))
+    setDestination(editing.travel_destination ?? '')
+    setFromDate(editing.travel_from_date ?? today())
+    setToDate(editing.travel_to_date ?? today())
+    setReason(editing.purpose ?? '')
+    setLeaveFrom(editing.leave_from_date ?? '')
+    setLeaveTo(editing.leave_to_date ?? '')
+    setModes(editing.transport_modes ?? [])
+    setRemarks(editing.notes ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id])
+
   const toggleMode = (k: string) =>
     setModes(prev => prev.includes(k) ? prev.filter(m => m !== k) : [...prev, k])
 
-  const mutation = useMutation({
-    mutationFn: () => api.post<{ id: string }>('/api/v1/expenses', {
-      claim_type: 'TRA', submission_date: appDate, currency: 'CAD',
-      purpose: reason, notes: remarks || null,
-      travel_destination: destination, travel_from_date: fromDate, travel_to_date: toDate,
-      transport_modes: modes,
-      leave_from_date: leaveFrom || null, leave_to_date: leaveTo || null,
-      travelers: travelers.map((t, i) => ({ user_id: t.user_id, user_name: t.user_name, seq: i })),
-    }),
-    onSuccess: (d) => replaceTab(`/travel/${d.id}`),
-    onError: (e: any) => setError(e.message || 'Failed to create travel application'),
-  })
+  const mutation = useSaveClaim(editClaimId, (id) => replaceTab(`/travel/${id}`))
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (travelers.length === 0) { setError('Add at least one traveler'); return }
     if (!destination.trim()) { setError('Destination is required'); return }
     if (!reason.trim()) { setError('Reason is required'); return }
-    mutation.mutate()
+    setError('')
+    mutation.mutate({
+      claim_type: 'TRA', submission_date: appDate, currency: 'CAD',
+      purpose: reason, notes: remarks || null,
+      travel_destination: destination, travel_from_date: fromDate, travel_to_date: toDate,
+      transport_modes: modes,
+      leave_from_date: leaveFrom || null, leave_to_date: leaveTo || null,
+      travelers: travelers.map((t, i) => ({ user_id: t.user_id, user_name: t.user_name, seq: i })),
+    }, {
+      onError: (e: any) => setError(e.message || (editClaimId
+        ? 'Failed to save changes' : 'Failed to create travel application')),
+    })
+  }
+
+  if (loadingClaim) {
+    return <div className="p-8 text-sm text-neutral-500">Loading application…</div>
+  }
+  if (loadError) {
+    return <ErrorBanner message={loadError.message} />
   }
 
   return (
@@ -59,7 +84,9 @@ export default function TraCreatePage() {
         <BackLink to="/travel" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
           <ArrowLeft className="h-4 w-4" />Back to Travel Applications
         </BackLink>
-        <h1 className="text-2xl font-bold text-neutral-900">Travel Application</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">
+          {editing ? `Edit ${editing.claim_number}` : 'Travel Application'}
+        </h1>
         <p className="mt-0.5 text-sm text-neutral-500">Apply for a business trip before claiming expenses</p>
       </div>
 
@@ -133,7 +160,7 @@ export default function TraCreatePage() {
 
       {error && <ErrorBanner message={error} />}
       <Button type="submit" size="sm" disabled={mutation.isPending} className="self-start">
-        {mutation.isPending ? 'Saving…' : 'Save Draft'}
+        {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Save Draft'}
       </Button>
     </form>
   )

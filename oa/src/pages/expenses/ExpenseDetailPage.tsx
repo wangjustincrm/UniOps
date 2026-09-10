@@ -445,7 +445,7 @@ export default function ExpenseDetailPage() {
             )}
             {claim.status === STATUS.RETURNED && isOwner && (
               <button
-                onClick={() => navigate(`/expenses/edit/${claim.id}`)}
+                onClick={() => navigate(`/expenses/${claim.id}/edit`)}
                 className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
               >
                 Edit

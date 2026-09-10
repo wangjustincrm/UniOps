@@ -12,6 +12,7 @@ import MilCreatePage from '@/pages/expenses/MilCreatePage'
 import TrvCreatePage from '@/pages/expenses/TrvCreatePage'
 import CfmCreatePage from '@/pages/expenses/CfmCreatePage'
 import ExpenseDetailPage from '@/pages/expenses/ExpenseDetailPage'
+import ExpenseEditPage from '@/pages/expenses/ExpenseEditPage'
 import InvoicesPage from '@/pages/invoices/InvoicesPage'
 import InvoiceDetailPage from '@/pages/invoices/InvoiceDetailPage'
 import ExpenseConfigPage from '@/pages/admin/ExpenseConfigPage'
@@ -57,6 +58,9 @@ export const oaRoutes: RouteDef[] = [
   { path: '/expenses/new/mil', element: <MilCreatePage />, tab: { title: 'New Mileage', icon: 'Plus', keyStrategy: 'static' } },
   { path: '/expenses/new/trv', element: <TrvCreatePage />, tab: { title: 'New Travel', icon: 'Plus', keyStrategy: 'static' } },
   { path: '/expenses/new/cfm/:formCode', element: <CfmCreatePage />, tab: { title: (p) => `New ${p.formCode}`, icon: 'Plus', keyStrategy: 'param', paramName: 'formCode' } },
+  // MUST stay above /expenses/:id — react-router picks the more specific of
+  // the two, but keeping them adjacent and ordered makes that obvious.
+  { path: '/expenses/:id/edit', element: <ExpenseEditPage />, tab: { title: (p) => `Edit ${short(p.id)}`, icon: 'Pencil', keyStrategy: 'param', paramName: 'id' } },
   { path: '/expenses/:id', element: <ExpenseDetailPage />, tab: { title: (p) => `Expense ${short(p.id)}`, icon: 'Receipt', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/invoices', element: <InvoicesPage />, tab: { title: 'Invoices', icon: 'FileText', keyStrategy: 'static' } },
