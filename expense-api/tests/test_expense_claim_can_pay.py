@@ -53,6 +53,9 @@ async def _make_approved_exp(db_session) -> ExpenseClaim:
 
 async def _grant_additional_role(db_session, user_id: str, role_code: str) -> None:
     await db_session.execute(text(
+        "INSERT INTO role_defs (code, is_active) VALUES (:r, true) "
+        "ON CONFLICT (code) DO NOTHING"), {"r": role_code})
+    await db_session.execute(text(
         "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :r)"),
         {"u": user_id, "r": role_code})
     await db_session.commit()

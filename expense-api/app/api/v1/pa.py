@@ -18,13 +18,17 @@ router = APIRouter(prefix="/pa", tags=["payment-applications"])
 
 
 async def _user_role_codes(db: AsyncSession, user_id: uuid.UUID, base_role: str) -> set[str]:
-    """Primary role + additional roles (identity user_roles, same DB). Replaces
-    the retired company_config.role_management assignments (phase 3) for can_pay."""
-    codes = {base_role} if base_role else set()
-    rows = (await db.execute(sa.text(
-        "SELECT role_code FROM user_roles WHERE user_id = :u"), {"u": str(user_id)})).scalars().all()
-    codes.update(rows)
-    return codes
+    """PRIMARY role + ADDITIONAL roles from identity's user_roles.
+
+    Delegates to core.authz_matrix so there is ONE definition of "which roles
+    does this user hold" in the service. The three local copies this replaced
+    all read user_roles bare, without joining role_defs — so a role an admin
+    had DEACTIVATED still granted OA approval rights and visibility to everyone
+    holding it, while the matrix helper (used by invoice_attachments) correctly
+    ignored it. Same table, two answers.
+    """
+    from app.core.authz_matrix import user_role_codes
+    return await user_role_codes(db, user_id, base_role)
 
 
 class ApprovalEventOut(BaseModel):

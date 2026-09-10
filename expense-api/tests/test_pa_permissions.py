@@ -91,6 +91,9 @@ async def _grant_additional_role(user_id: str, role_code: str) -> None:
     """Insert an identity user_roles row (ADDITIONAL role, phase 3)."""
     async with db_module.AsyncSessionLocal() as db:
         await db.execute(text(
+            "INSERT INTO role_defs (code, is_active) VALUES (:r, true) "
+            "ON CONFLICT (code) DO NOTHING"), {"r": role_code})
+        await db.execute(text(
             "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :r)"),
             {"u": user_id, "r": role_code})
         await db.commit()

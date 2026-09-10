@@ -83,6 +83,11 @@ async def _task(doc_id, *, doc_type="exp", role=None, user_id=None, completed=Fa
 
 async def _grant_role(test_engine, user_id: str, role_code: str):
     async with _factory(test_engine)() as db:
+        # role_defs is identity's register of roles; a role absent from it (or
+        # marked inactive there) is not held at all — see core/authz_matrix.
+        await db.execute(text(
+            "INSERT INTO role_defs (code, is_active) VALUES (:c, true) "
+            "ON CONFLICT (code) DO NOTHING"), {"c": role_code})
         await db.execute(
             text("INSERT INTO user_roles (user_id, role_code) VALUES (:u, :r)"),
             {"u": user_id, "r": role_code})
