@@ -4,7 +4,12 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
+
+# Rounding slack when checking that a line's three amounts agree. The clients
+# emit toFixed(2) strings so they reconcile exactly; OCR-filled lines derive
+# net as total - tax and can land a cent out.
+_TOTALS_TOLERANCE = Decimal("0.01")
 
 
 # ── Line item (EXP) ───────────────────────────────────────────────────────────
@@ -22,6 +27,31 @@ class LineItemCreate(BaseModel):
     tax_amount: Decimal
     net_amount: Decimal
     tax_code: Optional[str] = None  # mdm tax_codes code (Phase 0-B2, ITC groundwork)
+
+    @model_validator(mode="after")
+    def _amounts_must_reconcile(self):
+        """total = net + tax, server-side.
+
+        The server took all three numbers on trust and summed each column
+        independently (`_compute_totals_exp`), so a client that sent
+        net=10 / tax=1 / total=1000 produced a claim that DISPLAYS as ten
+        dollars of expense and PAYS a thousand — payment reads total_amount.
+        The MIL path never had this hole: `_compute_totals_mil` recomputes each
+        trip from distance x rate and explains in its docstring why it will not
+        trust a client figure.
+
+        Deliberately NOT a non-negative check. Negative lines are allowed on
+        purpose across this codebase — 0/negative unit prices on PR/PO, credit
+        and discount lines on GR/invoices — and refusing them here would break
+        a refund line on an otherwise ordinary claim.
+        """
+        expected = self.net_amount + self.tax_amount
+        if abs(self.total_amount - expected) > _TOTALS_TOLERANCE:
+            raise ValueError(
+                f"line {self.line_number}: total_amount {self.total_amount} does not equal "
+                f"net_amount {self.net_amount} + tax_amount {self.tax_amount} ({expected})"
+            )
+        return self
 
 
 class LineItemResponse(LineItemCreate):
