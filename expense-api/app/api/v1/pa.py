@@ -142,26 +142,43 @@ async def create_direct_pa(
     """
     from datetime import datetime, timezone
     from decimal import Decimal
+    from sqlalchemy import select
+    from app.crud._numbering import next_number
     from app.models.invoice import ExpenseInvoice
     from app.models.pa import PaymentApplication
 
-    # Validate invoice
-    inv = await db.get(ExpenseInvoice, body.invoice_id)
+    # Validate invoice. Row-locked for the length of this transaction: the
+    # status check and the "mark used" write below are one decision, and two
+    # concurrent callers reading `reviewed` would each mint a PA against the
+    # same invoice — one vendor bill, paid twice.
+    inv = (await db.execute(
+        select(ExpenseInvoice)
+        .where(ExpenseInvoice.id == body.invoice_id)
+        .with_for_update()
+    )).scalar_one_or_none()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    # Order matters: "used" is a specific, likelier-than-not reason to be here,
+    # and it is also a state that is NOT "reviewed" — checking reviewed first
+    # (as this did) made the used branch unreachable dead code and told anyone
+    # hitting an already-spent invoice to go review it, which they cannot do.
+    if inv.status == "used":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Invoice already linked to {inv.pa_number or 'another PA'}",
+        )
     if inv.status != "reviewed":
         raise HTTPException(status_code=409, detail="Invoice must be reviewed (all OCR fields confirmed) before creating a PA")
-    if inv.status == "used":
-        raise HTTPException(status_code=409, detail="Invoice already linked to a PA")
 
-    # Generate PA number
-    from sqlalchemy import func, select
+    # Number allocation. MUST go through next_number (max tail + 1 under a
+    # prefix-scoped advisory lock), not count(*)+1: `payment_applications` is
+    # shared with epms-api, which mints EPMS PAs from the SAME `PA-YYYYMMDD-`
+    # prefix via that helper. count(*) trails the real max the moment either
+    # side deletes a row or two allocations overlap, and pa_number is UNIQUE —
+    # so the old code handed out an already-taken number and 500'd, which is
+    # exactly the defect _numbering.py's docstring was written about.
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
-    prefix = f"PA-{today}-"
-    count = (await db.execute(
-        select(func.count()).where(PaymentApplication.pa_number.like(f"{prefix}%"))
-    )).scalar_one()
-    pa_number = f"{prefix}{count + 1:04d}"
+    pa_number = await next_number(db, PaymentApplication.pa_number, f"PA-{today}-", width=4)
 
     title = body.title or f"Direct Payment — {inv.vendor_name or 'Vendor'} {inv.invoice_number or ''}"
     user_id = uuid.UUID(user["sub"])
@@ -345,12 +362,23 @@ async def pa_action(
     pa_id: uuid.UUID,
     body: PaActionRequest,
     db: SessionDep,
-    _: CurrentUserDep,
+    user: CurrentUserDep,
     token: BearerTokenDep,
 ):
     pa = await pa_crud.get_by_id(db, pa_id)
     if not pa:
         raise HTTPException(status_code=404, detail="PA not found")
+
+    # Only the creator may submit their own PA — see the matching guard in
+    # expenses.py::expense_action for why this test lives in the calling
+    # service rather than in approval-api's submit branch. Every other action
+    # (approve / return / reject / cancel / recall) is gated by the engine.
+    if body.action.lower() == "submit" and user.get("role") != "system_admin":
+        if uuid.UUID(user["sub"]) != pa.created_by:
+            raise HTTPException(
+                status_code=403,
+                detail="Only the creator can submit this payment application",
+            )
     # PA-DIR uses its own configurable workflow; everything else uses "pa".
     # NOT `po_id is None` — an EPMS Purchase Agreement PA also has no PO, and
     # approving it through workflow_defs["pa_dir"] would run it down the wrong

@@ -735,6 +735,24 @@ async def expense_action(
         raise HTTPException(status_code=404, detail="Expense claim not found")
 
     action = body.action.lower()
+    user_id = uuid.UUID(user["sub"])
+
+    # Only the claimant may submit their own claim. approval-api's submit branch
+    # validates the STATUS and nothing else, and it cannot take a blanket
+    # created_by gate of its own: an NC-imported PO's created_by is the nc-sync
+    # service account, so the same rule there would lock a real person out of
+    # the sign-off flow. The owner test is unambiguous per-service, so it lives
+    # here. Without it, anyone who knew a claim id could push someone else's
+    # half-finished draft into approval — after which the owner cannot edit it
+    # (only draft/returned are editable) and has to get an approver to send it
+    # back. `employee_id` is OA's owner of record; created_by is checked too so
+    # an on-behalf-of draft stays submittable by whoever raised it.
+    if action == "submit" and user.get("role") != "system_admin":
+        if user_id not in (claim.employee_id, claim.created_by):
+            raise HTTPException(
+                status_code=403,
+                detail="Only the claimant can submit this expense claim",
+            )
 
     # EXP-007 / TRV-008: receipt-based claims require ≥1 attachment before submission.
     if action == "submit" and claim.claim_type in ("EXP", "TRV"):
