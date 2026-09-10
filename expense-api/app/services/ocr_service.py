@@ -6,12 +6,29 @@ Supports three modes:
   slip     — pickup-slip extraction for house_account agreement purchases
              (slip_ref, date, amount, tax_amount, total_amount, currency)
 """
+import asyncio
 import base64
 import json
 import logging
 from typing import Literal, NoReturn
 
 from app.core.config import settings
+
+# ── Why every client.messages.create below goes through asyncio.to_thread ─────
+#
+# `anthropic.Anthropic` is the SYNCHRONOUS client: .messages.create() blocks the
+# calling thread until the model answers. These three functions are `async def`
+# and are awaited straight from the /ocr/{mode} handler, so calling it inline
+# blocked the whole asyncio event loop — for the 5-20 seconds a haiku vision
+# read of a multi-page PDF takes, expense-api served NOBODY. Not the task list,
+# not an approval, not an attachment download; a couple of people scanning
+# receipts at once read as "OA is down".
+#
+# to_thread hands the blocking call to the default executor and yields the loop
+# back. Exceptions propagate unchanged, so the BadRequestError / APIStatusError
+# handling below still works exactly as written. (AsyncAnthropic would also do,
+# but it changes the client's construction and error surface; this keeps the
+# diff to the call sites.)
 
 log = logging.getLogger(__name__)
 
@@ -331,7 +348,8 @@ async def extract_invoice(file_bytes: bytes, mime_type: str) -> dict:
     try:
         # 8192 covers ~100 minified line items; 2048 truncated invoices with
         # many lines (46-line lab invoice → JSON cut mid-array, 2026-07).
-        response = client.messages.create(
+        response = await asyncio.to_thread(
+            client.messages.create,
             model="claude-haiku-4-5-20251001",
             max_tokens=8192,
             messages=[{
@@ -392,7 +410,8 @@ async def extract_receipt(file_bytes: bytes, mime_type: str) -> dict:
         }
 
     try:
-        response = client.messages.create(
+        response = await asyncio.to_thread(
+            client.messages.create,
             model="claude-haiku-4-5-20251001",
             max_tokens=512,
             messages=[{"role": "user", "content": [content_block, {"type": "text", "text": _RECEIPT_PROMPT}]}],
@@ -483,7 +502,8 @@ async def extract_slip(file_bytes: bytes, mime_type: str) -> dict:
         }
 
     try:
-        response = client.messages.create(
+        response = await asyncio.to_thread(
+            client.messages.create,
             model="claude-haiku-4-5-20251001",
             max_tokens=512,
             messages=[{"role": "user", "content": [content_block, {"type": "text", "text": _SLIP_PROMPT}]}],
