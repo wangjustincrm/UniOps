@@ -115,50 +115,22 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     - Their own submissions in-flight or returned
     - Approved items waiting for payment (finance / AP roles)
     """
-    from sqlalchemy import and_, func, or_, select
-    from app.api.v1.expenses import _CAN_PAY, _user_role_codes
-    from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
+    from sqlalchemy import or_, select
+    from app.api.v1.expenses import (
+        _CAN_PAY, _user_role_codes, approvable_document_ids,
+    )
     from app.models.expense import ExpenseClaim as EC
-    from app.models.pa import PaymentApplication as PA
-    from app.models.task_mirror import TaskMirror as TM
 
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
     roles = await _user_role_codes(db, user_id, role)      # primary ∪ additional
     can_pay = any(r in _CAN_PAY for r in roles)
 
-    # `gm_or_opm` is a synthetic assigned_role, not a real role code: approval-api
-    # broadcasts singleton-post steps under it so the CURRENT holder resolves live.
-    # Mirrors _can_act_on_claim / my_actions.
-    assigned_roles = {r.lower() for r in roles}
-    if "gm" in assigned_roles or "opm" in assigned_roles:
-        assigned_roles.add("gm_or_opm")
-
-    # Delegation: fold in live delegators' pinned tasks and the role-pool tasks
-    # for roles they hold. Widens which TASKS match — never the caller's own scope.
-    delegator_ids = await active_delegator_ids(db, user_id)
-    deleg_roles = {r.lower() for r in await delegated_broadcast_roles(db, delegator_ids)}
-    if "gm" in deleg_roles or "opm" in deleg_roles:
-        deleg_roles.add("gm_or_opm")
-
-    arms = [
-        TM.assigned_user_id == user_id,
-        and_(TM.assigned_user_id.is_(None), func.lower(TM.assigned_role).in_(assigned_roles)),
-    ]
-    if delegator_ids:
-        arms.append(TM.assigned_user_id.in_(delegator_ids))
-        if deleg_roles:
-            arms.append(and_(TM.assigned_user_id.is_(None),
-                             func.lower(TM.assigned_role).in_(deleg_roles)))
-
-    # One read for both halves — documents with an OPEN approve task for me.
-    approvable_ids: set[uuid.UUID] = set((await db.execute(
-        select(TM.document_id).where(
-            TM.is_completed.is_(False),
-            TM.type.like("approve_%"),
-            or_(*arms),
-        )
-    )).scalars().all())
+    # One definition of "is this mine to approve", shared with my_actions and
+    # the list endpoints — see approvable_document_ids. The inline copy that
+    # used to live here is what drifted: no department scope, no role union, no
+    # delegation, long after my_actions had all three.
+    approvable_ids = await approvable_document_ids(db, user_id, role)
 
     tasks: list[OaTaskItem] = []
 
@@ -219,55 +191,17 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
         ))
 
     # ── Payment applications ──────────────────────────────────────────────────
-
-    pa_conditions = [
-        (PA.created_by == user_id) & (PA.status.in_(["submitted", "in_review", "returned"])),
-    ]
-    if approvable_ids:
-        pa_conditions.append(
-            PA.id.in_(approvable_ids) & PA.status.in_(["submitted", "in_review"])
-        )
-    if can_pay:
-        pa_conditions.append(PA.status == "approved")
-
-    pa_rows = list(
-        (await db.execute(
-            select(PA)
-            .where(or_(*pa_conditions))
-            .order_by(PA.created_at.desc())
-            .limit(200)
-        )).scalars().unique().all()
-    )
-
-    seen_pa: set[uuid.UUID] = set()
-    for pa in pa_rows:
-        if pa.id in seen_pa:
-            continue
-        is_own = pa.created_by == user_id
-        tt = _pa_task_type(pa.status, is_own, pa.id in approvable_ids, can_pay)
-        if tt is None:
-            continue
-        seen_pa.add(pa.id)
-
-        # Not `po_id is None`: an EPMS agreement PA has no PO either, and
-        # labelling it pa_dir sends the deep link to OA's Direct-PA detail page.
-        doc_type = "pa_dir" if pa.is_direct else "pa"
-
-        tasks.append(OaTaskItem(
-            id=f"pa-{pa.id}",
-            task_type=tt,
-            doc_type=doc_type,
-            doc_id=str(pa.id),
-            doc_number=pa.pa_number,
-            title=pa.title or pa.vendor_name,
-            submitter_name=pa.vendor_name,
-            amount=float(pa.payment_amount),
-            currency=pa.currency,
-            status=pa.status,
-            submitted_at=pa.submitted_at.isoformat() if pa.submitted_at else None,
-            created_at=pa.created_at.isoformat(),
-            is_own=is_own,
-        ))
+    #
+    # Deliberately absent. OA's own PA — the Direct PA — is retired (see
+    # DIRECT_PA_RETIRED in api/v1/pa.py), so there is no OA payment application
+    # left for this inbox to be about.
+    #
+    # EPMS's PAs used to appear here too, deep-linking into OA's /pa/:id. They
+    # are EPMS documents: epms-api's own task list covers approve_pa (its
+    # liveness map names both `pa` and `pa_dir`), and the Portal home inbox
+    # merges that feed, so nothing is lost by leaving them out of OA's. What
+    # WOULD be lost by keeping them is the link: OA no longer has a /pa route
+    # for the card to open.
 
     tasks.sort(key=lambda t: t.created_at, reverse=True)
     return OaTaskListResponse(items=tasks, total=len(tasks))

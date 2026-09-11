@@ -19,8 +19,15 @@ import { matchRoutes } from 'react-router-dom'
 const SRC = fileURLToPath(new URL('../src', import.meta.url))
 const SAMPLE_ID = '11111111-2222-3333-4444-555555555555'
 
+// Retired features keep their pages in src/pages/_retired (see the README
+// there). They are not in the route table by definition, so their navigate()
+// targets point at routes that no longer exist — the correct state for retired
+// code, and not something to report as broken every run.
+const SKIP = ['_retired']
+
 function walk(dir) {
   return readdirSync(dir).flatMap((name) => {
+    if (SKIP.includes(name)) return []
     const p = join(dir, name)
     return statSync(p).isDirectory() ? walk(p) : p.endsWith('.tsx') || p.endsWith('.ts') ? [p] : []
   })

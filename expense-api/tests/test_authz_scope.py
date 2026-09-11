@@ -460,9 +460,15 @@ async def test_tasks_expense_approver_from_workflow_defs(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_tasks_pa_approver_from_workflow_defs(test_engine):
-    # Custom: PA-DIR step 0 approver = gm (old hardcoded table's step 0 was
-    # {dept_manager, finance_bp}).
+async def test_the_oa_task_list_no_longer_carries_payment_applications(test_engine):
+    """OA's Direct PA is retired, so its task list has no PA section at all.
+
+    This used to assert that a PA approver saw the PA here. EPMS's PAs surfaced
+    through the same section and deep-linked into OA's /pa/:id, which no longer
+    exists — and they are EPMS documents anyway: epms-api's task list covers
+    approve_pa (its liveness map names both `pa` and `pa_dir`) and the Portal
+    home inbox merges that feed. See DIRECT_PA_RETIRED in api/v1/pa.py.
+    """
     previous = await _set_workflow_defs(test_engine, {"pa_dir": [
         {"id": "s0", "role": "gm", "label": "GM"},
     ]})
@@ -471,11 +477,7 @@ async def test_tasks_pa_approver_from_workflow_defs(test_engine):
         await _seed_open_task(pa_id, role="gm", doc_type="pa_dir")
         async with _client(_make_token("gm", str(uuid.uuid4()))) as c:
             r = await c.get("/api/v1/tasks")
-        items = r.json()["items"]
-        assert any(i["doc_id"] == str(pa_id) and i["task_type"] == "approve_pa" for i in items)
-        # dept_manager holds no task on it, so it must not appear for them
-        async with _client(_make_token("dept_manager", str(uuid.uuid4()))) as c2:
-            r2 = await c2.get("/api/v1/tasks")
-        assert not any(i["doc_id"] == str(pa_id) for i in r2.json()["items"])
+        assert r.status_code == 200
+        assert not any(i["doc_id"] == str(pa_id) for i in r.json()["items"])
     finally:
         await _restore_workflow_defs(test_engine, previous)

@@ -220,13 +220,17 @@ async def test_payment_officer_sees_claims_waiting_to_be_paid(test_engine):
     assert row["task_type"] == "pay_expense"
 
 
-async def test_payment_officer_sees_pas_waiting_to_be_paid(test_engine):
-    pa = await _pa(test_engine, status="approved")
+async def test_payment_applications_do_not_appear_at_all(test_engine):
+    """OA's Direct PA is retired, so this list has no PA section — not for
+    payment, not for approval. EPMS's PAs live in EPMS's own task list and in
+    the Portal home inbox; OA no longer has a /pa route to send a card to.
+    See DIRECT_PA_RETIRED in api/v1/pa.py."""
+    approved = await _pa(test_engine, status="approved")
+    in_review = await _pa(test_engine, status="in_review")
 
-    items = await _inbox("payment_officer", str(uuid.uuid4()))
-    row = next((i for i in items if i["doc_id"] == str(pa)), None)
-    assert row is not None
-    assert row["task_type"] == "pay_pa"
+    ids = _ids(await _inbox("payment_officer", str(uuid.uuid4())))
+    assert str(approved) not in ids
+    assert str(in_review) not in ids
 
 
 async def test_an_approved_travel_application_is_not_a_payment_task(test_engine):

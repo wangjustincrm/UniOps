@@ -16,6 +16,18 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/pa", tags=["payment-applications"])
 
+# OA's Direct PA is retired (product decision 2026-08-07, confirmed 2026-09-11).
+# The feature is hidden from the UI — no nav entry, no routes, no task cards —
+# and creation is refused here so that hiding the buttons is not the only thing
+# standing between a caller and a new PA-DIR.
+#
+# Everything else stays: read, approve, pay and the by-po lookup all still work,
+# so any record that already exists remains serviceable, and the code is intact
+# if the decision is reversed. It is a flag rather than a deletion for the same
+# reason — flipping it back is a one-line change, and keeping the creation path
+# exercised by tests means it will still work when it is flipped.
+DIRECT_PA_RETIRED = True
+
 
 async def _user_role_codes(db: AsyncSession, user_id: uuid.UUID, base_role: str) -> set[str]:
     """PRIMARY role + ADDITIONAL roles from identity's user_roles.
@@ -84,19 +96,23 @@ async def list_pas(
     # workflow_defs["pa_dir"], for all non-draft PAs (not just while it sits at their
     # step), and (c) anyone who personally acted on it (covers role-assignment
     # approvers like Finance BP and any workflow drift) via shared approval_events.
+    # Same rule as the expense list: raised by me, waiting for me to approve, or
+    # already acted on by me. The role-appears-in-workflow_defs test that used
+    # to be here showed every non-draft PA to every holder of every step role.
+    from app.api.v1.expenses import acted_on_document_ids, approvable_document_ids
+
+    approvable = await approvable_document_ids(db, user_id, role)
+    acted = await acted_on_document_ids(db, user_id)
+
     conditions = [PA.created_by == user_id]
+    if approvable:
+        conditions.append(PA.id.in_(approvable))
+    if acted:
+        conditions.append(PA.id.in_(acted))
 
-    wf = await _get_workflow_defs(db)
-    pa_dir_roles = {s.get("role") for s in (wf.get("pa_dir") or [])}
-    if role in pa_dir_roles:
-        conditions.append(PA.status != "draft")
-
-    # Pay roles also see approved PAs (payment stage) even when not an approver step.
+    # Payment stage — a role pool, not an approval step.
     if role in _CAN_PAY:
         conditions.append(PA.status == "approved")
-
-    acted_doc_ids = sa_select(AEM.document_id).where(AEM.actor_id == user_id)
-    conditions.append(PA.id.in_(acted_doc_ids))
 
     q = sa_select(PA).where(PA.pa_type == "PA-DIR").where(or_(*conditions))
     if status_filter:
@@ -143,7 +159,17 @@ async def create_direct_pa(
 ):
     """Create a PA-DIR (direct payment) linked to a reviewed expense invoice.
     Always requires Finance Manager approval (no dept_manager step).
+
+    Retired — see DIRECT_PA_RETIRED above. The body below is kept working and
+    under test so the feature can be switched back on rather than rebuilt.
     """
+    if DIRECT_PA_RETIRED:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Direct Payment Applications have been discontinued. "
+                   "Raise the payment against a purchase order instead.",
+        )
+
     from datetime import datetime, timezone
     from decimal import Decimal
     from sqlalchemy import select
@@ -262,12 +288,8 @@ async def _can_view_pa(db: AsyncSession, pa, user_id: uuid.UUID, role: str) -> b
     (tasks-table check, same as get_pa_permissions/_can_act_on_claim)."""
     if pa.created_by == user_id or role == "system_admin":
         return True
-    from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim, _get_workflow_defs
+    from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim
     if role in _CAN_PAY:
-        return True
-    wf = await _get_workflow_defs(db)
-    pa_dir_roles = {s.get("role") for s in (wf.get("pa_dir") or [])}
-    if role in pa_dir_roles and pa.status != "draft":
         return True
     from sqlalchemy import select as sa_select, func as sa_func
     from app.models.approval_event_mirror import ApprovalEventMirror as AEM

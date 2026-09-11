@@ -19,6 +19,21 @@ from app.models.approval_event_mirror import ApprovalEventMirror
 from app.models.pa import PaymentApplication
 
 
+@pytest.fixture(autouse=True)
+def _direct_pa_switched_on(monkeypatch):
+    """Exercise the retired Direct PA path on purpose.
+
+    OA's Direct PA is hidden and creation answers 410 (see DIRECT_PA_RETIRED in
+    api/v1/pa.py). The code behind the flag is kept rather than deleted, and
+    kept means kept WORKING — so these tests flip it on. If the product
+    decision is reversed, this file is what says whether the feature still
+    functions; without it the code would rot silently behind the flag.
+
+    The flag itself is covered by test_direct_pa_retired.py.
+    """
+    monkeypatch.setattr("app.api.v1.pa.DIRECT_PA_RETIRED", False)
+
+
 def _client_for(role: str, user_id: str) -> AsyncClient:
     token = jwt.encode(
         {"sub": user_id, "role": role, "type": "access", "exp": datetime.utcnow() + timedelta(hours=8)},

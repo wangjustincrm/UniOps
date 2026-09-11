@@ -2,10 +2,6 @@ import type { RouteDef } from '@uniops/shell'
 import type { ReactNode } from 'react'
 import { useOaAuth } from '@/store/auth'
 import TaskListPage from '@/pages/tasks/TaskListPage'
-import PaListPage from '@/pages/pa/PaListPage'
-import PaDetailPage from '@/pages/pa/PaDetailPage'
-import PaDirectCreatePage from '@/pages/pa/PaDirectCreatePage'
-import PaDirectEditPage from '@/pages/pa/PaDirectEditPage'
 import ExpenseListPage from '@/pages/expenses/ExpenseListPage'
 import ExpenseCreatePage from '@/pages/expenses/ExpenseCreatePage'
 import MilCreatePage from '@/pages/expenses/MilCreatePage'
@@ -48,10 +44,12 @@ function RequireAdmin({ children }: { children: ReactNode }) {
 export const oaRoutes: RouteDef[] = [
   { path: '/tasks', element: <TaskListPage />, tab: { title: 'Task Inbox', icon: 'CheckSquare', keyStrategy: 'static', pinned: true } },
 
-  { path: '/pa', element: <PaListPage />, tab: { title: 'Payment Applications', icon: 'CreditCard', keyStrategy: 'static' } },
-  { path: '/pa/new/direct', element: <PaDirectCreatePage />, tab: { title: 'New Direct PA', icon: 'Plus', keyStrategy: 'static' } },
-  { path: '/pa/:id/edit', element: <PaDirectEditPage />, tab: { title: (p) => `Edit PA ${short(p.id)}`, icon: 'CreditCard', keyStrategy: 'param', paramName: 'id' } },
-  { path: '/pa/:id', element: <PaDetailPage />, tab: { title: (p) => `PA ${short(p.id)}`, icon: 'CreditCard', keyStrategy: 'param', paramName: 'id' } },
+  // OA's Direct PA is retired (product decision 2026-08-07, confirmed
+  // 2026-09-11). The /pa routes, the sidebar entry and the task cards are all
+  // gone; api/v1/pa.py refuses creation with a 410 so the absence of a button
+  // is not the only thing enforcing it. The page components are left in the
+  // tree, unreferenced, so the feature can be restored rather than rewritten —
+  // they are simply not reachable.
 
   { path: '/expenses', element: <ExpenseListPage />, tab: { title: 'Expense Claims', icon: 'Receipt', keyStrategy: 'static' } },
   { path: '/expenses/new/exp', element: <ExpenseCreatePage />, tab: { title: 'New Expense', icon: 'Plus', keyStrategy: 'static' } },
