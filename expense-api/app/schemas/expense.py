@@ -2,7 +2,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -171,7 +171,12 @@ class ExpenseClaimUpdate(BaseModel):
 # ── Action ────────────────────────────────────────────────────────────────────
 
 class ExpenseActionRequest(BaseModel):
-    action: str  # submit | approve | reject | return | pay
+    # Literal, like PaActionRequest. A free-form string let any value through to
+    # approval-api, which answered 409 for the unknown ones — a confusing way to
+    # spell "that is not an action". `pay` is accepted here and rejected in the
+    # handler with a pointer to POST /expenses/{id}/pay, which is a clearer
+    # answer than a validation error for a verb that does exist.
+    action: Literal["submit", "approve", "reject", "return", "recall", "cancel", "pay"]
     comment: Optional[str] = None
 
 
