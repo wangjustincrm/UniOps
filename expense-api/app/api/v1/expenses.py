@@ -149,18 +149,40 @@ async def approvable_document_ids(db, user_id: uuid.UUID, role: str) -> set[uuid
     )).scalars().all())
 
 
-async def acted_on_document_ids(db, user_id: uuid.UUID) -> set[uuid.UUID]:
-    """Documents this user has personally acted on, from shared approval_events.
+async def holds_payment_role(db, user_id: uuid.UUID, role: str) -> bool:
+    """Does this user hold ANY payment-stage role, primary or assigned?
 
-    The other half of "an approver sees what they approve": once they have
-    approved something the task closes, and without this the document would
-    drop out of their list the moment they touched it.
+    `_CAN_PAY` used to be tested against the JWT's primary role alone in the
+    list and detail gates, while the task list tested the full union. Payment
+    roles here are usually assignments rather than primary roles, so the two
+    disagreed for exactly the people who do the paying: a "Record Payment" card
+    appeared in their inbox and the claim behind it answered 403. Seeing a row
+    you cannot open is the failure the task-list fix was meant to end — this is
+    the same failure one click further on.
+    """
+    if role in _CAN_PAY:
+        return True
+    return bool(await _user_role_codes(db, user_id, role) & _CAN_PAY)
+
+
+def acted_on_documents(user_id: uuid.UUID):
+    """Documents this user has personally acted on — as a SUBQUERY, not a set.
+
+    The other half of "an approver sees what they approve": once they approve
+    something the task closes, and without this the document would drop out of
+    their list the moment they touched it.
+
+    Deliberately NOT materialised. approval_events is one of the largest tables
+    here — ~82k rows, and a long-serving department manager already accounts
+    for over 15k of them. Pulling those ids into Python and passing them to
+    `.in_()` sends one bind parameter per row: needless work on every list
+    render today, and a hard failure later, since the wire protocol caps a
+    statement at 32,767 parameters. Postgres evaluates this as a semi-join and
+    sends nothing over the wire.
     """
     from sqlalchemy import select
     from app.models.approval_event_mirror import ApprovalEventMirror as AEM
-    return set((await db.execute(
-        select(AEM.document_id).where(AEM.actor_id == user_id)
-    )).scalars().all())
+    return select(AEM.document_id).where(AEM.actor_id == user_id)
 
 
 async def _can_act_on_claim(db, claim, user_id: uuid.UUID, role: str | None = None) -> bool:
@@ -328,20 +350,21 @@ async def list_expenses(
     # Both halves of "the documents they approve" are needed — the open task
     # covers what is waiting for them now, approval_events covers what they have
     # already dealt with.
+    # Open approve tasks are few (they close when acted on), so a set is fine
+    # and lets tasks.py reuse the same answer in Python. approval_events is not
+    # — see acted_on_documents.
     approvable = await approvable_document_ids(db, user_id, role)
-    acted = await acted_on_document_ids(db, user_id)
 
-    conditions = [EC.employee_id == user_id]          # raised by me, any status
+    conditions = [EC.employee_id == user_id]                    # raised by me
     if approvable:
-        conditions.append(EC.id.in_(approvable))      # waiting for me to approve
-    if acted:
-        conditions.append(EC.id.in_(acted))           # I have acted on it
+        conditions.append(EC.id.in_(approvable))                # waiting for me
+    conditions.append(EC.id.in_(acted_on_documents(user_id)))   # acted on by me
 
     # Payment is a stage of the document's life, not an approval step, and it is
     # keyed on a role pool rather than a per-document task — so the finance
     # roles that settle claims need to see approved ones to do it. TRA excluded:
     # total_amount is 0 and it never enters the payment path.
-    if role in _CAN_PAY:
+    if await holds_payment_role(db, user_id, role):
         conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
 
     q = sa_select(EC).where(or_(*conditions))
@@ -458,55 +481,29 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
     The payment half (approved claims for _CAN_PAY roles) is a role pool with no
     per-document task, so it stays role-based.
     """
-    from sqlalchemy import and_, func, or_, select
-    from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
+    from sqlalchemy import or_, select
     from app.models.expense import ExpenseClaim as EC
-    from app.models.task_mirror import TaskMirror as TM
 
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
-    roles = await _user_role_codes(db, user_id, role)   # multi-role union
 
-    # `gm_or_opm` is a synthetic assigned_role (not a real role code): approval-api
-    # broadcasts singleton-post steps under it so the CURRENT holder resolves live.
-    # Mirrors _can_act_on_claim.
-    assigned_roles = {r.lower() for r in roles}
-    if "gm" in assigned_roles or "opm" in assigned_roles:
-        assigned_roles.add("gm_or_opm")
-
-    # Delegation (task-11): fold in any live delegators' pinned tasks and the
-    # role-pool tasks for roles they hold. Only widens which TASKS are
-    # matched here — never the caller's own role/visibility scope above.
-    delegator_ids = await active_delegator_ids(db, user_id)
-    deleg_roles = {r.lower() for r in await delegated_broadcast_roles(db, delegator_ids)}
-    if "gm" in deleg_roles or "opm" in deleg_roles:
-        deleg_roles.add("gm_or_opm")
-
-    arms = [
-        TM.assigned_user_id == user_id,
-        and_(TM.assigned_user_id.is_(None),
-             func.lower(TM.assigned_role).in_(assigned_roles)),
-    ]
-    if delegator_ids:
-        arms.append(TM.assigned_user_id.in_(delegator_ids))
-        if deleg_roles:
-            arms.append(and_(TM.assigned_user_id.is_(None),
-                              func.lower(TM.assigned_role).in_(deleg_roles)))
-
-    open_task_for_me = select(TM.document_id).where(
-        TM.is_completed.is_(False),
-        TM.type.like("approve_%"),
-        or_(*arms),
-    )
+    # Shared with the OA task list and the expense list — see
+    # approvable_document_ids. This function used to carry its own copy of the
+    # task matching (role union, gm_or_opm expansion, delegation); that copy was
+    # the original, and the copies made from it are what drifted.
+    approvable = await approvable_document_ids(db, user_id, role)
 
     conditions = [
-        EC.status.in_(["submitted", "in_review"]) & EC.id.in_(open_task_for_me)
-    ]
+        EC.status.in_(["submitted", "in_review"]) & EC.id.in_(approvable)
+    ] if approvable else []
 
     # TRA excluded — an approved Travel Application has total_amount 0 and never
     # enters the payment path, so it must not surface as a pay-action inbox item.
-    if any(r in _CAN_PAY for r in roles):
+    if await holds_payment_role(db, user_id, role):
         conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
+
+    if not conditions:
+        return ExpenseClaimListResponse(items=[], total=0)
 
     q = select(EC).where(or_(*conditions)).order_by(EC.created_at.desc()).limit(50)
     result = await db.execute(q)
@@ -530,7 +527,8 @@ async def _can_view_claim(db, claim, user_id: uuid.UUID, role: str) -> bool:
     if claim.employee_id == user_id or role == "system_admin":
         return True
     # Finance/AP settle claims they never approved; they need to read them.
-    if role in _CAN_PAY:
+    # Role UNION, not the JWT role: these are usually assignments here.
+    if await holds_payment_role(db, user_id, role):
         return True
     from sqlalchemy import select as sa_select, func as sa_func
     from app.models.approval_event_mirror import ApprovalEventMirror as AEM

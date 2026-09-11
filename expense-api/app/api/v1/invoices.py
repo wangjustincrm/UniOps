@@ -173,9 +173,17 @@ async def check_duplicate(
     return {"duplicate": dup}
 
 
-def _can_view_invoice(inv, user_id: uuid.UUID, role: str) -> bool:
-    from app.api.v1.expenses import _CAN_PAY
-    return inv.created_by == user_id or role == "system_admin" or role in _CAN_PAY
+async def _can_view_invoice(db, inv, user_id: uuid.UUID, role: str) -> bool:
+    """Uploader, admin, or anyone holding a payment-stage role.
+
+    Async and db-taking because the payment-role test consults the role UNION —
+    these roles are usually assignments, and the primary-role-only version
+    refused the finance staff who process the invoices.
+    """
+    from app.api.v1.expenses import holds_payment_role
+    if inv.created_by == user_id or role == "system_admin":
+        return True
+    return await holds_payment_role(db, user_id, role)
 
 
 @router.get("/{invoice_id}", response_model=InvoiceResponse)
@@ -183,7 +191,7 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserDe
     inv = await db.get(ExpenseInvoice, invoice_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    if not _can_view_invoice(inv, uuid.UUID(user["sub"]), user.get("role", "")):
+    if not await _can_view_invoice(db, inv, uuid.UUID(user["sub"]), user.get("role", "")):
         raise HTTPException(status_code=403, detail="Not authorized to view this invoice")
     await db.refresh(inv, ["lines"])
     return InvoiceResponse.model_validate(inv)
@@ -207,7 +215,7 @@ async def update_invoice(
     # this function pushes the result straight into finance's ap_invoices via
     # sync_ap_invoice. Same rule as the read endpoints: uploader, admin, or a
     # payment-stage role.
-    if not _can_view_invoice(inv, uuid.UUID(user["sub"]), user.get("role", "")):
+    if not await _can_view_invoice(db, inv, uuid.UUID(user["sub"]), user.get("role", "")):
         raise HTTPException(status_code=403, detail="Not authorized to edit this invoice")
     if inv.status == "used":
         raise HTTPException(status_code=409, detail="Invoice already used in a PA")
@@ -245,7 +253,7 @@ async def vendor_suggestions(invoice_id: uuid.UUID, q: str, db: SessionDep, user
     inv = await db.get(ExpenseInvoice, invoice_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    if not _can_view_invoice(inv, uuid.UUID(user["sub"]), user.get("role", "")):
+    if not await _can_view_invoice(db, inv, uuid.UUID(user["sub"]), user.get("role", "")):
         raise HTTPException(status_code=403, detail="Not authorized")
     result = await db.execute(
         select(EpmsVendor).where(EpmsVendor.name.ilike(f"%{q}%")).limit(8)

@@ -72,7 +72,7 @@ async def list_pas(
     went empty the moment they acted. system_admin / ap_clerk see all.
     """
     from sqlalchemy import func, or_, select as sa_select
-    from app.api.v1.expenses import _CAN_PAY, _get_workflow_defs
+    from app.api.v1.expenses import holds_payment_role
     from app.models.approval_event_mirror import ApprovalEventMirror as AEM
     from app.models.pa import PaymentApplication as PA
 
@@ -99,19 +99,18 @@ async def list_pas(
     # Same rule as the expense list: raised by me, waiting for me to approve, or
     # already acted on by me. The role-appears-in-workflow_defs test that used
     # to be here showed every non-draft PA to every holder of every step role.
-    from app.api.v1.expenses import acted_on_document_ids, approvable_document_ids
+    from app.api.v1.expenses import acted_on_documents, approvable_document_ids
 
     approvable = await approvable_document_ids(db, user_id, role)
-    acted = await acted_on_document_ids(db, user_id)
 
     conditions = [PA.created_by == user_id]
     if approvable:
         conditions.append(PA.id.in_(approvable))
-    if acted:
-        conditions.append(PA.id.in_(acted))
+    conditions.append(PA.id.in_(acted_on_documents(user_id)))
 
-    # Payment stage — a role pool, not an approval step.
-    if role in _CAN_PAY:
+    # Payment stage — a role pool, not an approval step. Role union: these
+    # roles are usually assignments here (see holds_payment_role).
+    if await holds_payment_role(db, user_id, role):
         conditions.append(PA.status == "approved")
 
     q = sa_select(PA).where(PA.pa_type == "PA-DIR").where(or_(*conditions))
@@ -288,8 +287,8 @@ async def _can_view_pa(db: AsyncSession, pa, user_id: uuid.UUID, role: str) -> b
     (tasks-table check, same as get_pa_permissions/_can_act_on_claim)."""
     if pa.created_by == user_id or role == "system_admin":
         return True
-    from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim
-    if role in _CAN_PAY:
+    from app.api.v1.expenses import _can_act_on_claim, holds_payment_role
+    if await holds_payment_role(db, user_id, role):
         return True
     from sqlalchemy import select as sa_select, func as sa_func
     from app.models.approval_event_mirror import ApprovalEventMirror as AEM

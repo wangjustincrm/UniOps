@@ -97,9 +97,8 @@ async def regenerate_tra_pdf(claim_id: uuid.UUID, db: SessionDep,
     authorized = (
         user_id == claim.employee_id
         or role == "system_admin"
-        or role in _CAN_PAY
-        or "finance_bp" in codes
-        or "finance_manager" in codes
+        # Role union — payment roles are usually assignments here.
+        or bool(codes & _CAN_PAY)
         or await _can_act_on_claim(db, claim, user_id, role)
     )
     if not authorized:
