@@ -100,6 +100,69 @@ async def _user_role_codes(db, user_id: uuid.UUID, base_role: str) -> set[str]:
     return await user_role_codes(db, user_id, base_role)
 
 
+async def approvable_document_ids(db, user_id: uuid.UUID, role: str) -> set[uuid.UUID]:
+    """Documents this user currently has an OPEN approve task on.
+
+    The one definition of "is this mine to approve", used by the task inbox
+    (my_actions), the OA task list (tasks.py) and the list endpoints below.
+    It had been reimplemented three times, and the copies drifted — which is
+    how the OA task list ended up with no department scope, no role union and
+    no delegation months after my_actions had all three.
+
+    Resolves the same way `_can_act_on_claim` does, so "it is in my list" and
+    "the Approve button works" cannot disagree:
+      * a task pinned to me;
+      * a broadcast task (no assignee) whose role is in my role union, with
+        `gm_or_opm` satisfied by holding either post;
+      * the same two for anyone who has named me their stand-in today.
+    """
+    from sqlalchemy import and_, func, or_, select
+    from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
+    from app.models.task_mirror import TaskMirror as TM
+
+    roles = await _user_role_codes(db, user_id, role)
+    assigned_roles = {r.lower() for r in roles}
+    if "gm" in assigned_roles or "opm" in assigned_roles:
+        assigned_roles.add("gm_or_opm")
+
+    delegator_ids = await active_delegator_ids(db, user_id)
+    deleg_roles = {r.lower() for r in await delegated_broadcast_roles(db, delegator_ids)}
+    if "gm" in deleg_roles or "opm" in deleg_roles:
+        deleg_roles.add("gm_or_opm")
+
+    arms = [
+        TM.assigned_user_id == user_id,
+        and_(TM.assigned_user_id.is_(None), func.lower(TM.assigned_role).in_(assigned_roles)),
+    ]
+    if delegator_ids:
+        arms.append(TM.assigned_user_id.in_(delegator_ids))
+        if deleg_roles:
+            arms.append(and_(TM.assigned_user_id.is_(None),
+                             func.lower(TM.assigned_role).in_(deleg_roles)))
+
+    return set((await db.execute(
+        select(TM.document_id).where(
+            TM.is_completed.is_(False),
+            TM.type.like("approve_%"),
+            or_(*arms),
+        )
+    )).scalars().all())
+
+
+async def acted_on_document_ids(db, user_id: uuid.UUID) -> set[uuid.UUID]:
+    """Documents this user has personally acted on, from shared approval_events.
+
+    The other half of "an approver sees what they approve": once they have
+    approved something the task closes, and without this the document would
+    drop out of their list the moment they touched it.
+    """
+    from sqlalchemy import select
+    from app.models.approval_event_mirror import ApprovalEventMirror as AEM
+    return set((await db.execute(
+        select(AEM.document_id).where(AEM.actor_id == user_id)
+    )).scalars().all())
+
+
 async def _can_act_on_claim(db, claim, user_id: uuid.UUID, role: str | None = None) -> bool:
     """Authoritative check: is the user the assigned approver for the claim's current
     open step? Reads the shared `tasks` table (written by approval-api) and resolves
@@ -250,38 +313,36 @@ async def list_expenses(
             total=total,
         )
 
-    # Req 1: visible to (a) the submitter and (b) everyone who participates in the
-    # claim's approval workflow — i.e. any user whose role appears as a step in that
-    # claim type's workflow_defs, for ALL non-draft claims (not just while it sits at
-    # their step). This replaces the old "only while at my step" rule that made a claim
-    # vanish from an approver's list the moment they approved it.
-    wf = await _get_workflow_defs(db)
+    # An employee sees the documents they raised; an approver sees the documents
+    # they approve. Nothing else. (Business rule, 2026-09-11.)
+    #
+    # The previous rule was far wider: if the caller's role appeared ANYWHERE in
+    # a claim type's workflow_defs, they saw every non-draft claim of that type,
+    # company-wide. dept_manager is a populous role, so in practice every
+    # department manager could read every expense claim in the business —
+    # requester name, purpose and amount. It was written to fix something real
+    # (a claim vanished from an approver's list the moment they approved it),
+    # but the fix was much broader than the problem, and the narrow answer was
+    # already sitting in the same function: approval_events.
+    #
+    # Both halves of "the documents they approve" are needed — the open task
+    # covers what is waiting for them now, approval_events covers what they have
+    # already dealt with.
+    approvable = await approvable_document_ids(db, user_id, role)
+    acted = await acted_on_document_ids(db, user_id)
 
-    def _roles_for(key: str) -> set[str]:
-        return {s.get("role") for s in (wf.get(key) or [])}
+    conditions = [EC.employee_id == user_id]          # raised by me, any status
+    if approvable:
+        conditions.append(EC.id.in_(approvable))      # waiting for me to approve
+    if acted:
+        conditions.append(EC.id.in_(acted))           # I have acted on it
 
-    conditions = [EC.employee_id == user_id]  # own submissions (any status)
-
-    type_conds = []
-    for ct, key in (("EXP", "exp"), ("MIL", "mil"), ("TRV", "trv"), ("TRA", "tra")):
-        if role in _roles_for(key):
-            type_conds.append(EC.claim_type == ct)
-    if role in _roles_for("cfm"):
-        type_conds.append(EC.claim_type.like("CFM%"))
-    if type_conds:
-        conditions.append(or_(*type_conds) & (EC.status != "draft"))
-
-    # Pay roles also see approved claims (payment stage) even when not an approver step.
-    # TRA is excluded — an approved Travel Application has total_amount 0 and never
-    # enters the payment path, so it must not surface in pay-role visibility.
+    # Payment is a stage of the document's life, not an approval step, and it is
+    # keyed on a role pool rather than a per-document task — so the finance
+    # roles that settle claims need to see approved ones to do it. TRA excluded:
+    # total_amount is 0 and it never enters the payment path.
     if role in _CAN_PAY:
         conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
-
-    # Fallback: any claim the user personally acted on (covers cfm_<code> overrides and
-    # workflow drift) — actor_id is recorded by approval-api in shared approval_events.
-    from app.models.approval_event_mirror import ApprovalEventMirror as AEM
-    acted_doc_ids = sa_select(AEM.document_id).where(AEM.actor_id == user_id)
-    conditions.append(EC.id.in_(acted_doc_ids))
 
     q = sa_select(EC).where(or_(*conditions))
     if claim_type:
@@ -458,13 +519,18 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
 
 
 async def _can_view_claim(db, claim, user_id: uuid.UUID, role: str) -> bool:
+    """Object-level read gate — the same rule list_expenses filters on.
+
+    It has to be the same rule, or the list is decoration: a claim the list
+    withholds but the detail endpoint serves is still readable by anyone who
+    can guess a URL. The role-appears-in-workflow_defs test that used to sit
+    here was exactly that hole — it let any holder of any step role read any
+    claim of that type, company-wide.
+    """
     if claim.employee_id == user_id or role == "system_admin":
         return True
+    # Finance/AP settle claims they never approved; they need to read them.
     if role in _CAN_PAY:
-        return True
-    wf = await _get_workflow_defs(db)
-    wf_roles = {s.get("role") for s in (wf.get(_workflow_key(claim.claim_type)) or [])}
-    if role in wf_roles:
         return True
     from sqlalchemy import select as sa_select, func as sa_func
     from app.models.approval_event_mirror import ApprovalEventMirror as AEM
