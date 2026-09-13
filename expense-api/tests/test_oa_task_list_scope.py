@@ -21,6 +21,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -264,3 +265,77 @@ async def test_my_own_in_flight_and_returned_claims_still_show(test_engine):
     by_id = {i["doc_id"]: i for i in items}
     assert by_id[str(inflight)]["task_type"] == "submitted_expense"
     assert by_id[str(returned)]["task_type"] == "revise_expense"
+
+
+# ── Only OA's own work belongs in OA's inbox ──────────────────────────────────
+#
+# `tasks` is shared by every service in the platform. On production data the
+# approve-tasks in it are overwhelmingly EPMS's: ~1,378 pa, 534 po, 353 pr, 27
+# agr against 4 exp. Two things follow, and both were wrong here:
+#   * EPMS Payment Applications were listed in OA's task inbox outright (the
+#     endpoint queried payment_applications directly);
+#   * even after that section went, the approve-task lookup was unscoped, so
+#     every one of an approver's EPMS tasks was read into Python and then
+#     discarded against a table of expense claims.
+
+
+async def _foreign_task(doc_type: str, *, user_id: str) -> uuid.UUID:
+    """An approve task for another service's document, pinned to this user."""
+    doc_id = uuid.uuid4()
+    async with db_module.AsyncSessionLocal() as db:
+        db.add(TaskMirror(
+            id=uuid.uuid4(), document_id=doc_id, document_type=doc_type,
+            type=f"approve_{doc_type}", assigned_user_id=uuid.UUID(user_id),
+            assigned_role=None, is_completed=False,
+            created_at=datetime.now(timezone.utc),
+        ))
+        await db.commit()
+    return doc_id
+
+
+@pytest.mark.parametrize("doc_type", ["pr", "po", "pa", "pa_dir", "agr",
+                                      "vms_visit", "budget_plan", "posign"])
+async def test_another_services_task_never_appears(test_engine, doc_type):
+    me = str(uuid.uuid4())
+    foreign = await _foreign_task(doc_type, user_id=me)
+    # Something of OA's own, so the inbox is not trivially empty.
+    mine = await _claim(test_engine, employee_id=uuid.UUID(me))
+
+    ids = _ids(await _inbox("dept_manager", me))
+
+    assert str(mine) in ids, "precondition: the caller's own OA work is listed"
+    assert str(foreign) not in ids, f"an EPMS/{doc_type} task leaked into OA's inbox"
+
+
+@pytest.mark.parametrize("doc_type", ["pr", "po", "pa", "agr"])
+async def test_another_services_task_is_not_even_read(test_engine, doc_type):
+    """Scoped at the query, not filtered afterwards.
+
+    Filtering in Python would give the same list and still drag every EPMS task
+    an approver holds across the wire — the thing that makes this worth doing.
+    """
+    from app.api.v1.expenses import OA_CLAIM_DOC_TYPES, approvable_document_ids
+
+    me = uuid.uuid4()
+    foreign = await _foreign_task(doc_type, user_id=str(me))
+
+    async with db_module.AsyncSessionLocal() as db:
+        ids = await approvable_document_ids(
+            db, me, "dept_manager", doc_types=OA_CLAIM_DOC_TYPES)
+
+    assert foreign not in ids
+
+
+async def test_a_custom_form_task_is_still_in_scope(test_engine):
+    """OA's custom forms are typed `cfm_<code>`, one per form — matched by
+    prefix, so a new form does not have to be added to a list anywhere."""
+    from app.api.v1.expenses import OA_CLAIM_DOC_TYPES, approvable_document_ids
+
+    me = uuid.uuid4()
+    cfm = await _foreign_task("cfm_travel", user_id=str(me))
+
+    async with db_module.AsyncSessionLocal() as db:
+        ids = await approvable_document_ids(
+            db, me, "requester", doc_types=OA_CLAIM_DOC_TYPES)
+
+    assert cfm in ids

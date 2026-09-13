@@ -24,3 +24,16 @@ retirement is of OA's own entry point, not of the PA tables.
 
 To restore: set `DIRECT_PA_RETIRED = False`, move this directory back to
 `src/pages/pa`, and re-add the four `/pa` routes and the sidebar entry.
+
+## invoices/ — the OA invoice list and detail
+
+These existed to feed the Direct PA: upload a vendor invoice, OCR it, confirm
+the extracted fields, raise a payment against it. With creation refused there
+is nothing downstream for an OA invoice to become, so the pages go with it.
+
+The SERVER side stays, and must: EPMS reads `/api/v1/invoices/all`,
+`/api/v1/invoice-attachments` and `/api/v1/ocr/*` from expense-api. Those
+endpoints are shared infrastructure, not OA's to retire.
+
+To restore: move this directory back to `src/pages/invoices` and re-add the two
+`/invoices` routes and the sidebar entry.

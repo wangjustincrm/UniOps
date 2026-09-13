@@ -34,7 +34,6 @@ const NAV = [
   { label: 'Task Inbox',            href: '/tasks',    icon: CheckSquare },
   { label: 'Expense Claims',        href: '/expenses', icon: Receipt     },
   { label: 'Travel Applications',   href: '/travel',   icon: Plane       },
-  { label: 'Invoices',              href: '/invoices', icon: FileText    },
 ]
 
 const ADMIN_NAV = [

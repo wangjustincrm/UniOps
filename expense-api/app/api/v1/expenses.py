@@ -100,7 +100,21 @@ async def _user_role_codes(db, user_id: uuid.UUID, base_role: str) -> set[str]:
     return await user_role_codes(db, user_id, base_role)
 
 
-async def approvable_document_ids(db, user_id: uuid.UUID, role: str) -> set[uuid.UUID]:
+# `tasks` is shared by every service in the platform, keyed by document_type.
+# These are the ones OA owns: the expense claim types, plus the per-form custom
+# ones, which approval-api names `cfm_<code>`.
+# A trailing % is matched with LIKE — approval-api names a custom form's
+# document_type `cfm_<code>`, one per form.
+OA_CLAIM_DOC_TYPES = ("exp", "mil", "trv", "tra", "cfm%")
+
+# What OA's own Payment Application used, kept for the retired Direct PA's
+# read paths (pa.py). `pa` is EPMS's; `pa_dir` was OA's.
+PA_DOC_TYPES = ("pa", "pa_dir")
+
+
+async def approvable_document_ids(
+    db, user_id: uuid.UUID, role: str, doc_types: tuple[str, ...] | None = None,
+) -> set[uuid.UUID]:
     """Documents this user currently has an OPEN approve task on.
 
     The one definition of "is this mine to approve", used by the task inbox
@@ -115,6 +129,13 @@ async def approvable_document_ids(db, user_id: uuid.UUID, role: str) -> set[uuid
       * a broadcast task (no assignee) whose role is in my role union, with
         `gm_or_opm` satisfied by holding either post;
       * the same two for anyone who has named me their stand-in today.
+
+    `doc_types` scopes the answer to one service's documents. Callers should
+    always pass it: `tasks` holds every service's work — on this data, PR, PO,
+    PA and agreement tasks outnumber OA's by roughly two hundred to one — and
+    an unscoped call drags all of an approver's EPMS work into Python only to
+    discard it against a table of expense claims. A prefix entry (OA's
+    `cfm_<code>` forms) is matched with LIKE.
     """
     from sqlalchemy import and_, func, or_, select
     from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
@@ -140,13 +161,18 @@ async def approvable_document_ids(db, user_id: uuid.UUID, role: str) -> set[uuid
             arms.append(and_(TM.assigned_user_id.is_(None),
                              func.lower(TM.assigned_role).in_(deleg_roles)))
 
-    return set((await db.execute(
-        select(TM.document_id).where(
-            TM.is_completed.is_(False),
-            TM.type.like("approve_%"),
-            or_(*arms),
-        )
-    )).scalars().all())
+    q = select(TM.document_id).where(
+        TM.is_completed.is_(False),
+        TM.type.like("approve_%"),
+        or_(*arms),
+    )
+    if doc_types:
+        exact = [d for d in doc_types if not d.endswith("%")]
+        scope = [TM.document_type.like(d) for d in doc_types if d.endswith("%")]
+        if exact:
+            scope.append(TM.document_type.in_(exact))
+        q = q.where(or_(*scope))
+    return set((await db.execute(q)).scalars().all())
 
 
 async def holds_payment_role(db, user_id: uuid.UUID, role: str) -> bool:
@@ -353,7 +379,8 @@ async def list_expenses(
     # Open approve tasks are few (they close when acted on), so a set is fine
     # and lets tasks.py reuse the same answer in Python. approval_events is not
     # — see acted_on_documents.
-    approvable = await approvable_document_ids(db, user_id, role)
+    approvable = await approvable_document_ids(
+        db, user_id, role, doc_types=OA_CLAIM_DOC_TYPES)
 
     conditions = [EC.employee_id == user_id]                    # raised by me
     if approvable:
@@ -491,7 +518,8 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
     # approvable_document_ids. This function used to carry its own copy of the
     # task matching (role union, gm_or_opm expansion, delegation); that copy was
     # the original, and the copies made from it are what drifted.
-    approvable = await approvable_document_ids(db, user_id, role)
+    approvable = await approvable_document_ids(
+        db, user_id, role, doc_types=OA_CLAIM_DOC_TYPES)
 
     conditions = [
         EC.status.in_(["submitted", "in_review"]) & EC.id.in_(approvable)

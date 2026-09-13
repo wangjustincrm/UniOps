@@ -99,9 +99,12 @@ async def list_pas(
     # Same rule as the expense list: raised by me, waiting for me to approve, or
     # already acted on by me. The role-appears-in-workflow_defs test that used
     # to be here showed every non-draft PA to every holder of every step role.
-    from app.api.v1.expenses import acted_on_documents, approvable_document_ids
+    from app.api.v1.expenses import (
+        PA_DOC_TYPES, acted_on_documents, approvable_document_ids,
+    )
 
-    approvable = await approvable_document_ids(db, user_id, role)
+    approvable = await approvable_document_ids(
+        db, user_id, role, doc_types=PA_DOC_TYPES)
 
     conditions = [PA.created_by == user_id]
     if approvable:

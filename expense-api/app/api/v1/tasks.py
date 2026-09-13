@@ -117,7 +117,7 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     """
     from sqlalchemy import or_, select
     from app.api.v1.expenses import (
-        _CAN_PAY, _user_role_codes, approvable_document_ids,
+        _CAN_PAY, OA_CLAIM_DOC_TYPES, _user_role_codes, approvable_document_ids,
     )
     from app.models.expense import ExpenseClaim as EC
 
@@ -130,7 +130,13 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     # the list endpoints — see approvable_document_ids. The inline copy that
     # used to live here is what drifted: no department scope, no role union, no
     # delegation, long after my_actions had all three.
-    approvable_ids = await approvable_document_ids(db, user_id, role)
+    # Scoped to OA's own document types. `tasks` is shared by every service:
+    # on production data EPMS's PR/PO/PA/agreement tasks outnumber OA's by
+    # roughly two hundred to one, and an unscoped read pulled all of them into
+    # Python to be discarded against a table of expense claims. It is also what
+    # let EPMS's Payment Applications surface in this list at all.
+    approvable_ids = await approvable_document_ids(
+        db, user_id, role, doc_types=OA_CLAIM_DOC_TYPES)
 
     tasks: list[OaTaskItem] = []
 

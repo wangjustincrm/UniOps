@@ -9,8 +9,6 @@ import TrvCreatePage from '@/pages/expenses/TrvCreatePage'
 import CfmCreatePage from '@/pages/expenses/CfmCreatePage'
 import ExpenseDetailPage from '@/pages/expenses/ExpenseDetailPage'
 import ExpenseEditPage from '@/pages/expenses/ExpenseEditPage'
-import InvoicesPage from '@/pages/invoices/InvoicesPage'
-import InvoiceDetailPage from '@/pages/invoices/InvoiceDetailPage'
 import ExpenseConfigPage from '@/pages/admin/ExpenseConfigPage'
 import CfmAdminPage from '@/pages/admin/CfmAdminPage'
 import TravelApplicationsListPage from '@/pages/travel/TravelApplicationsListPage'
@@ -61,8 +59,12 @@ export const oaRoutes: RouteDef[] = [
   { path: '/expenses/:id/edit', element: <ExpenseEditPage />, tab: { title: (p) => `Edit ${short(p.id)}`, icon: 'Pencil', keyStrategy: 'param', paramName: 'id' } },
   { path: '/expenses/:id', element: <ExpenseDetailPage />, tab: { title: (p) => `Expense ${short(p.id)}`, icon: 'Receipt', keyStrategy: 'param', paramName: 'id' } },
 
-  { path: '/invoices', element: <InvoicesPage />, tab: { title: 'Invoices', icon: 'FileText', keyStrategy: 'static' } },
-  { path: '/invoices/:source/:id', element: <InvoiceDetailPage />, tab: { title: (p) => `Invoice ${short(p.id)}`, icon: 'FileText', keyStrategy: 'param', paramName: 'id' } },
+  // The Invoices pages went with the Direct PA (see _retired/README.md). OA's
+  // invoice list and detail existed to feed that flow — upload a vendor
+  // invoice, OCR it, raise a payment against it — and with creation refused
+  // there is nothing downstream for an OA invoice to become. The endpoints
+  // stay: EPMS reads /invoices/all, /invoice-attachments and /ocr/* from this
+  // service, and those are not OA's to retire.
 
   { path: '/admin/expense-config', element: <RequireAdmin><ExpenseConfigPage /></RequireAdmin>, tab: { title: 'Expense Config', icon: 'Settings', keyStrategy: 'static' } },
   { path: '/admin/custom-forms', element: <RequireAdmin><CfmAdminPage /></RequireAdmin>, tab: { title: 'Custom Forms', icon: 'FileText', keyStrategy: 'static' } },
