@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Navigate, Routes, Route } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Routes, Route } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync } from '@uniops/shell'
 import type { TabMeta } from '@uniops/shell'
 import { Sidebar } from './Sidebar'
@@ -22,6 +22,8 @@ function detectIframeEmbed(): boolean {
 
 const IS_EMBEDDED = detectIframeEmbed()
 
+const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
+
 const EPMS_INITIAL_TABS: TabMeta[] = [
   { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', icon: 'LayoutDashboard', pinned: true, closable: false },
 ]
@@ -29,17 +31,37 @@ const EPMS_INITIAL_TABS: TabMeta[] = [
 export function AppLayout() {
   useIdleTimeout()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const mfaVerifiedAt   = useAuthStore((s) => s.mfaVerifiedAt)
   const mustChangePassword = useAuthStore((s) => s.mustChangePassword)
   const clearMustChangePassword = useAuthStore((s) => s.clearMustChangePassword)
   const userId = useAuthStore((s) => s.user?.id)
-  const isMfaValid = mfaVerifiedAt !== null && Date.now() - mfaVerifiedAt < 8 * 60 * 60 * 1000
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const isEmbedded = IS_EMBEDDED
 
-  if (!isAuthenticated) return <Navigate to="/login" replace />
-  if (!isMfaValid) return <Navigate to="/mfa" replace />
+  // Portal owns sign-in for the whole suite (OA/VMS/Finance do the same). Going
+  // to EPMS's own /login instead would strand the user on a second login page
+  // that Portal knows nothing about. The ?returnUrl= brings them back here.
+  //
+  // There is deliberately NO local MFA re-check here. EPMS used to gate on a
+  // hard-coded 8h `mfaVerifiedAt` window, which ignored Admin → Security: with
+  // company MFA switched off, a stale timestamp still pushed the user to /mfa —
+  // and MfaPage had no challenge token to work with. Whether MFA is required is
+  // the login endpoint's call (company_config.mfa_enabled OR user.mfa_enabled),
+  // and LoginPage/MfaPage already honour the mfa_required response.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      const returnUrl = encodeURIComponent(window.location.href)
+      window.location.href = `${PORTAL_URL}?returnUrl=${returnUrl}`
+    }
+  }, [isAuthenticated])
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex h-screen items-center justify-center text-sm text-neutral-500">
+        Redirecting to the UniOps Portal to sign in…
+      </div>
+    )
+  }
 
   // Embedded (iframe): single page, no chrome, no tabs — Portal owns navigation.
   if (isEmbedded) {
