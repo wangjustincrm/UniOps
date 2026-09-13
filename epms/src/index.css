@@ -1,2 +1,11 @@
 @import "tailwindcss";
+/* Tailwind does not scan node_modules, and @uniops/shell resolves there through
+   the workspace symlink — so classes used ONLY in shell components never get
+   generated. Utilities that happen to also appear in this app's own code work by
+   accident, which is what makes the gap so easy to miss: the Assistant panel
+   rendered with its colours intact and its max-w-[26rem] silently dropped, so it
+   filled the screen instead of being a side panel.
+   The path resolves the same in the container (/app/src -> /packages/shell/src)
+   and on the host. */
+@source "../../packages/shell/src";
 @import "@uniops/shell/tokens.css";

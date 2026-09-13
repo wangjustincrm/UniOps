@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { AssistantMount } from '@/components/AssistantMount'
 import LoginPage from '@/pages/auth/LoginPage'
 import MfaPage from '@/pages/auth/MfaPage'
 
@@ -35,6 +36,9 @@ export default function App() {
               (route table lives in src/app/routes.tsx). */}
           <Route path="/*" element={<AppLayout />} />
         </Routes>
+        {/* Global overlay, outside the route tree so it survives tab switches.
+            It renders nothing until the user is signed in. */}
+        <AssistantMount />
       </BrowserRouter>
     </QueryClientProvider>
   )
