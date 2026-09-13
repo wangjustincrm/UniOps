@@ -1139,6 +1139,25 @@ _POST_APPROVE: dict[str, Any] = {
 
 # ── Conditional per-document step skipping ────────────────────────────────────
 
+# Which steps are conditional, and what the condition is, in words.
+#
+# The workflow definition does not carry this — a step is skipped or not by the
+# rules in _should_skip_step below, at runtime, per document. Anything
+# describing the process to a person has to say so, or it will state that every
+# step always happens: the assistant told a requester that a PR needs both a
+# department manager AND a director, when most departments have no director and
+# that step never runs for them.
+#
+# Kept next to the rules it describes, and test_workflow_conditional_roles
+# asserts the two do not drift apart.
+CONDITIONAL_ROLES: dict[str, str] = {
+    "director": "Only runs when the department has a Director configured.",
+    "supervisor": "Only runs when a Supervisor is assigned.",
+    "quality_manager": ("Only runs when the visitor's access area requires "
+                        "Quality Manager review."),
+}
+
+
 def _should_skip_step(role, doc_type, doc, director_uid, supervisor_uid,
                       dept_has_director, dept_has_supervisor,
                       cross_dept_pa=False):

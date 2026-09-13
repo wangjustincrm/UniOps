@@ -91,6 +91,12 @@ Rules:
 - If the question cannot be answered from this schema — it is about something
   not modelled, or it needs data that is not here — call cannot_answer. Saying
   so is a correct answer. Guessing is not.
+- If they are asking what THEY should do — what is waiting for them, what is in
+  their inbox, what they owe — call whats_next.
+- If they are asking how a process works in general, rather than about one
+  document, call explain_process. Many people here were never trained on this
+  system, so "how does this work" is a real question and deserves the configured
+  answer, not a guess.
 - If the question is about a document's APPROVAL PROGRESS — which step it is on,
   who it is waiting on, who approved it already, what the chain is — call
   explain_workflow. The chain, its history and the current assignee ARE
@@ -249,6 +255,33 @@ _WORKFLOW_TOOL = {
     },
 }
 
+_NEXT_TOOL = {
+    "name": "whats_next",
+    "description": (
+        "Use when someone asks what they should be doing, what is waiting for "
+        "them, what is in their inbox, or what they owe. Returns their own open "
+        "tasks. Takes no arguments — it is always about the person asking."
+    ),
+    "input_schema": {"type": "object", "properties": {}},
+}
+
+_PROCESS_TOOL = {
+    "name": "explain_process",
+    "description": (
+        "Use when someone asks how a process works in general — 'how does "
+        "purchasing work', 'what happens after I submit a PR', 'who approves a "
+        "payment'. This reads the approval chain as it is actually configured. "
+        "For a SPECIFIC document's progress use explain_workflow instead."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "doc_type": {"type": "string", "enum": ["pr", "po", "pa", "vms_visit"]},
+        },
+        "required": ["doc_type"],
+    },
+}
+
 _CANNOT_TOOL = {
     "name": "cannot_answer",
     "description": (
@@ -359,7 +392,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             model=MODEL,
             max_tokens=_PLAN_MAX_TOKENS,
             system=system,
-            tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _CANNOT_TOOL],
+            tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _NEXT_TOOL,
+                   _PROCESS_TOOL, _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -380,6 +414,10 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             continue
         if block.name == "run_query":
             return {"kind": "query", "query": dict(block.input), "usage": _usage(resp)}
+        if block.name == "whats_next":
+            return {"kind": "next", "usage": _usage(resp)}
+        if block.name == "explain_process":
+            return {"kind": "process", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_workflow":
             return {"kind": "workflow", **dict(block.input), "usage": _usage(resp)}
         if block.name == "check_document":
@@ -532,6 +570,53 @@ async def narrate_workflow(message: str, view: dict) -> dict:
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_workflow", resp)
+    return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
+            "usage": _usage(resp)}
+
+
+_GUIDE_SYSTEM = """\
+You are helping a colleague who may never have been trained on this system.
+
+- Answer in the language the question was asked in.
+- Write for someone who does not know the jargon. Say "the person who approves
+  for your department", not "the dept_manager node".
+- For a task list: lead with how many things are waiting and what the most
+  urgent one is. Group by what they have to DO, not by document type. Mention
+  the document number so they can find it.
+- A task marked assigned_to_me_personally false reached them through a role they
+  hold — worth saying, because "why is this mine?" is the next question.
+- For a process: walk the steps in order, in plain sentences. A step with
+  `conditional` true does NOT always run — give its `condition` verbatim in your
+  own words, because someone told a step is mandatory will wait for an approval
+  that is never coming. A step without that flag always runs.
+- If steps_available is false the engine could not be reached; say the chain
+  could not be read rather than describing one from memory. You do not know
+  this process except from what you were given.
+- Never invent a step, a role, a rule, or a task.
+"""
+
+
+async def narrate_guide(message: str, payload: dict) -> dict:
+    """Explain tasks or a process. Same no-new-facts rule as the others."""
+    import anthropic
+
+    try:
+        resp = await _client().messages.create(
+            model=MODEL,
+            max_tokens=_NARRATE_MAX_TOKENS,
+            system=_GUIDE_SYSTEM,
+            messages=[{"role": "user",
+                       "content": json.dumps(payload, ensure_ascii=False, default=str)}],
+        )
+    except anthropic.APIConnectionError as exc:
+        raise LlmUnavailable(f"Could not reach the model: {exc}") from exc
+    except anthropic.RateLimitError as exc:
+        raise LlmUnavailable("The shared API quota is exhausted right now") from exc
+    except anthropic.APIStatusError as exc:
+        log.error("guide narration failed %s: %s", exc.status_code, exc.message)
+        raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
+
+    _log_usage("narrate_guide", resp)
     return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
             "usage": _usage(resp)}
 

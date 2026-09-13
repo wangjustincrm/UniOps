@@ -30,6 +30,7 @@ from app.core.access_scope import build_scope, is_pr_visible
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
+from app.services import guide_view
 from app.services import workflow_view
 from app.services import controlled_query as cq
 
@@ -79,13 +80,12 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
 
     context = body.context.model_dump(exclude_none=True) if body.context else None
     scope = await build_scope(db, user)
+    actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
     history = [
         {"role": t.role, "content": t.text}
         for t in (body.history or [])[-_MAX_HISTORY_TURNS:]
         if t.text.strip()
     ]
-
-    actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
 
     try:
         planned = await assistant_llm.plan(schema, body.message, context,
@@ -93,6 +93,12 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "plan", planned.get("usage") or {})
+
+    if planned["kind"] == "next":
+        return await _answer_whats_next(db, user, body, actor)
+
+    if planned["kind"] == "process":
+        return await _answer_process(db, user, token, body, planned, actor)
 
     if planned["kind"] == "workflow":
         return await _answer_workflow_question(db, user, token, scope, body, planned)
@@ -287,4 +293,49 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
             "events": len(view["history"]),
             "complete": view["steps_available"],
         },
+    }
+
+
+async def _answer_whats_next(db, user, body, actor) -> dict:
+    """Their own inbox, explained. No arguments — it is always about the asker."""
+    tasks = await guide_view.my_tasks(user.get("role", ""), actor) if actor else []
+    payload = {"question": body.message, "kind": "tasks",
+               "open_task_count": len(tasks), "tasks": tasks}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+
+    return {
+        "answer": told["text"], "kind": "tasks", "query": None,
+        "tasks": tasks,
+        "sources": {"open_tasks": len(tasks)},
+    }
+
+
+async def _answer_process(db, user, token, body, planned, actor) -> dict:
+    """How a kind of document flows, read from the engine's configuration."""
+    doc_type = (planned.get("doc_type") or "").lower()
+    if doc_type not in guide_view.SUPPORTED_PROCESSES:
+        return {
+            "answer": "I can describe the purchase request, purchase order, "
+                      "payment application and visitor request processes.",
+            "kind": "cannot_answer", "reason": "not_supported",
+            "query": None, "sources": None,
+        }
+
+    process = await guide_view.process_steps(doc_type, token)
+    payload = {"question": body.message, "kind": "process", **process}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+
+    return {
+        "answer": told["text"], "kind": "process", "query": None,
+        "process": process,
+        "sources": {"process": process["label"], "steps": len(process["steps"]),
+                    "complete": process["steps_available"]},
     }

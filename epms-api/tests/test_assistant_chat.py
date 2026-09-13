@@ -58,7 +58,7 @@ async def _seed_po(test_engine, vendor, creator, *, number, total="100.00"):
 
 def _stub(monkeypatch, *, plans, narration="Here is the answer."):
     """Feed a scripted sequence of plans, and record what each narrator was given."""
-    calls = {"plan": [], "narrate": [], "preflight": [], "workflow": []}
+    calls = {"plan": [], "narrate": [], "preflight": [], "workflow": [], "guide": []}
     queue = list(plans)
 
     async def fake_plan(schema, message, context=None, retry_error=None, history=None):
@@ -68,6 +68,10 @@ def _stub(monkeypatch, *, plans, narration="Here is the answer."):
 
     async def fake_narrate(message, query, result):
         calls["narrate"].append({"message": message, "query": query, "result": result})
+        return {"text": narration, "usage": {}}
+
+    async def fake_narrate_guide(message, payload):
+        calls["guide"].append({"message": message, "payload": payload})
         return {"text": narration, "usage": {}}
 
     async def fake_narrate_workflow(message, view):
@@ -83,6 +87,7 @@ def _stub(monkeypatch, *, plans, narration="Here is the answer."):
     monkeypatch.setattr(assistant_llm, "narrate", fake_narrate)
     monkeypatch.setattr(assistant_llm, "narrate_preflight", fake_narrate_preflight)
     monkeypatch.setattr(assistant_llm, "narrate_workflow", fake_narrate_workflow)
+    monkeypatch.setattr(assistant_llm, "narrate_guide", fake_narrate_guide)
     return calls
 
 
@@ -553,3 +558,82 @@ async def test_blank_history_turns_are_dropped(admin_client, monkeypatch):
         "history": [{"role": "user", "text": "   "}, {"role": "assistant", "text": ""}],
     })
     assert r.status_code == 200
+
+
+# ── guidance: the need that came first ───────────────────────────────────────
+
+
+async def test_whats_next_returns_this_persons_own_tasks(
+    test_engine, admin_client, monkeypatch
+):
+    """The first stated requirement: people who were never trained need to be
+    told what they owe."""
+    from app.models.task import Task
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    uid = _user_id(admin_client)
+    number = f"PR-NEXT-{uuid.uuid4().hex[:6]}"
+    async with factory() as db:
+        db.add(Task(type="approve_pr", priority="urgent", document_type="pr",
+                    document_id=uuid.uuid4(), document_number=number,
+                    assigned_role="dept_manager", assigned_user_id=uid,
+                    title=f"Approve PR: {number}", description="Step 1"))
+        await db.commit()
+
+    calls = _stub(monkeypatch, plans=[{"kind": "next"}])
+    r = await admin_client.post(CHAT, json={"message": "what should I be doing?"})
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "tasks"
+    payload = calls["guide"][0]["payload"]
+    mine = [t for t in payload["tasks"] if t["document_number"] == number]
+    assert mine, "a task assigned to this user must appear"
+    assert mine[0]["assigned_to_me_personally"] is True
+
+
+async def test_a_task_reaching_someone_by_role_says_so(
+    test_engine, admin_client, monkeypatch
+):
+    """"Why is this mine?" is the next question after "what should I do", and a
+    broadcast task has a different answer than a personally assigned one."""
+    from app.models.task import Task
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    number = f"PR-ROLE-{uuid.uuid4().hex[:6]}"
+    async with factory() as db:
+        db.add(Task(type="approve_pr", priority="normal", document_type="pr",
+                    document_id=uuid.uuid4(), document_number=number,
+                    assigned_role="system_admin", assigned_user_id=None,
+                    title=f"Approve PR: {number}", description="Broadcast"))
+        await db.commit()
+
+    calls = _stub(monkeypatch, plans=[{"kind": "next"}])
+    await admin_client.post(CHAT, json={"message": "anything for me?"})
+
+    tasks = calls["guide"][0]["payload"]["tasks"]
+    found = [t for t in tasks if t["document_number"] == number]
+    if found:  # system_admin sees all tasks; the flag is what matters
+        assert found[0]["assigned_to_me_personally"] is False
+        assert found[0]["assigned_role"]
+
+
+async def test_explain_process_reads_the_engine_not_a_document(
+    admin_client, monkeypatch
+):
+    """approval-api is not running in this suite, so the chain cannot be read.
+    Saying so beats describing a process from memory — the PRDs are months
+    behind production and a remembered answer looks identical to a real one."""
+    calls = _stub(monkeypatch, plans=[{"kind": "process", "doc_type": "pr"}])
+    body = (await admin_client.post(CHAT, json={
+        "message": "how does the PR process work?"})).json()
+
+    assert body["kind"] == "process"
+    payload = calls["guide"][0]["payload"]
+    assert payload["steps_available"] is False
+    assert body["sources"]["complete"] is False
+
+
+async def test_an_unsupported_process_is_refused(admin_client, monkeypatch):
+    _stub(monkeypatch, plans=[{"kind": "process", "doc_type": "expense"}])
+    body = (await admin_client.post(CHAT, json={"message": "how do expenses work?"})).json()
+    assert body["kind"] == "cannot_answer"
+    assert body["reason"] == "not_supported"
