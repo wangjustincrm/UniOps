@@ -203,27 +203,11 @@ async def get_all(
     q = select(Invoice)
 
     if po_ids_subq is not None or own_uploads_user_id is not None or task_user_id is not None:
-        scope_conds = []
-        if po_ids_subq is not None:
-            alloc_scope = select(InvoicePoAllocation.invoice_id).where(
-                InvoicePoAllocation.po_id.in_(po_ids_subq)
-            )
-            scope_conds.append(Invoice.po_id.in_(po_ids_subq))
-            scope_conds.append(Invoice.id.in_(alloc_scope))
-        if own_uploads_user_id is not None:
-            scope_conds.append(Invoice.uploaded_by == own_uploads_user_id)
-        if task_user_id is not None:
-            from app.core.access_scope import _open_task_doc_ids
-            from app.core.delegation import active_delegator_ids
-            # Widen with anyone currently delegating their approvals to this
-            # user: a delegate who can approve a PA must be able to open its
-            # invoice — same open-approval-task rationale as access_scope's
-            # _open_task_doc_ids callers.
-            task_user_ids = {task_user_id} | await active_delegator_ids(db, task_user_id)
-            scope_conds.append(Invoice.id.in_(
-                await _open_task_doc_ids(db, task_user_id, task_user_ids, "invoice")))
-            # Matcher retention: invoices this user matched remain visible in the list
-            scope_conds.append(Invoice.matched_by == task_user_id)
+        # Conditions live in core/ontology.invoice_scope_conditions so this list
+        # and the assistant's controlled query admit exactly the same rows.
+        from app.core.ontology import invoice_scope_conditions
+        scope_conds = await invoice_scope_conditions(
+            db, po_ids_subq, own_uploads_user_id, task_user_id)
         q = q.where(or_(*scope_conds))
 
     if status:

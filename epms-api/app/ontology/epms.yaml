@@ -149,3 +149,83 @@ entities:
         local: pr_id
         remote: id
         label: "The requisition upstream of this receipt"
+
+  invoice:
+    model: Invoice
+    label: "Invoice — what the vendor billed, matched against the PO and receipt"
+    perm_key: view_invoice
+    # The widest scope of the five: an invoice reaches people through its PO, its
+    # allocation lines (one invoice can be split across several POs), whoever
+    # uploaded it, whoever has an open task on it, and whoever matched it.
+    scope: invoice
+    date_field: invoice_date
+    fields:
+      internal_ref: {kind: text, label: "Internal reference"}
+      vendor_invoice_number: {kind: text, label: "Vendor's own invoice number"}
+      vendor_name: {kind: text, label: "Vendor name"}
+      status:
+        kind: enum
+        label: "Matching status"
+        values: [unmatched, matched, exception, paid, cancelled]
+      amount: {kind: money, label: "Amount before tax"}
+      tax_amount: {kind: money, label: "Tax amount"}
+      total_amount: {kind: money, label: "Total including tax"}
+      currency: {kind: text, label: "Currency"}
+      invoice_date: {kind: date, label: "Invoice date"}
+      due_date: {kind: date, label: "Payment due date"}
+      po_number: {kind: text, label: "PO number this invoice bills against"}
+      gr_number: {kind: text, label: "Goods receipt number"}
+      agreement_number: {kind: text, label: "Agreement number, for agreement billing"}
+      uploaded_by_name: {kind: text, label: "Who uploaded it"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      total: {fn: sum, field: total_amount, label: "Total invoiced including tax"}
+      pre_tax: {fn: sum, field: amount, label: "Total invoiced before tax"}
+      count: {fn: count, field: "*", label: "Number of invoices"}
+      avg_total: {fn: avg, field: total_amount, label: "Average invoice value"}
+    links:
+      order:
+        target: purchase_order
+        cardinality: many_to_one
+        local: po_id
+        remote: id
+        label: "The order this invoice bills against (its primary one — an invoice may be allocated across several)"
+
+  payment_application:
+    model: PaymentApplication
+    label: "Payment Application (PA) — the request to actually pay a vendor"
+    perm_key: view_pa
+    # Also carries an ownership filter, not just visibility: OA's Direct PAs have
+    # both po_id and agreement_id NULL and are not EPMS's rows at all.
+    scope: pa
+    date_field: created_at
+    fields:
+      pa_number: {kind: text, label: "PA number"}
+      title: {kind: text, label: "Title"}
+      status:
+        kind: enum
+        label: "Status"
+        values: [draft, submitted, approved, rejected, cancelled, paid]
+      pa_type:
+        kind: enum
+        label: "Payment type"
+        values: [regular, prepayment, settlement, balance]
+      vendor_name: {kind: text, label: "Vendor name"}
+      po_number: {kind: text, label: "PO number being paid"}
+      agreement_number: {kind: text, label: "Agreement number, for agreement payments"}
+      subtotal: {kind: money, label: "Amount before tax"}
+      tax_amount: {kind: money, label: "Tax amount"}
+      payment_amount: {kind: money, label: "Amount to be paid"}
+      currency: {kind: text, label: "Currency"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      amount: {fn: sum, field: payment_amount, label: "Total requested for payment"}
+      count: {fn: count, field: "*", label: "Number of payment applications"}
+      avg_amount: {fn: avg, field: payment_amount, label: "Average payment value"}
+    links:
+      order:
+        target: purchase_order
+        cardinality: many_to_one
+        local: po_id
+        remote: id
+        label: "The order being paid (its primary one — a PA can settle several)"

@@ -126,7 +126,27 @@ def test_empty_fragment_is_refused(tmp_path):
 
 
 def test_shipped_ontology_covers_the_purchasing_chain():
-    assert set(REGISTRY) == {"purchase_request", "purchase_order", "goods_receipt"}
+    assert set(REGISTRY) == {"purchase_request", "purchase_order", "goods_receipt",
+                             "invoice", "payment_application"}
+
+
+def test_money_ends_up_somewhere_countable():
+    """Invoice and PA are where the chain turns into money, so both need a
+    summable amount — a report about spend that cannot add anything up is not a
+    report."""
+    for name, metric in (("invoice", "total"), ("payment_application", "amount")):
+        entity = REGISTRY[name]
+        assert metric in entity.metrics, f"{name} has no {metric} metric"
+        assert entity.metrics[metric].fn == "sum"
+
+
+def test_the_two_wide_scopes_are_wired_to_their_own_callables():
+    """Invoice and PA do not share PO's simple subquery filter: an invoice
+    reaches people through five routes and a PA carries an ownership filter on
+    top of visibility. Falling back to a simpler scope would silently widen
+    both."""
+    assert REGISTRY["invoice"].apply_scope.__name__ == "scope_invoice"
+    assert REGISTRY["payment_application"].apply_scope.__name__ == "scope_pa"
 
 
 def test_the_chain_is_navigable_in_both_directions():

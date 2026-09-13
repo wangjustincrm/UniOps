@@ -109,7 +109,7 @@ async def get_all(
     q = select(PurchaseRequest)
     # Row scope lives in ontology.scope_pr so the assistant's controlled
     # query layer and this list endpoint share one implementation.
-    q = scope_pr(q, {"pr_subq": pr_ids_subq})
+    q = await scope_pr(q, {"pr_subq": pr_ids_subq}, db)
     if status:
         q = q.where(PurchaseRequest.status == status)
     if pr_type:

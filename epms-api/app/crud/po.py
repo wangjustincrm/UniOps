@@ -80,7 +80,7 @@ async def get_all(
 ) -> tuple[list[PurchaseOrder], int]:
     q = select(PurchaseOrder)
     # Row scope lives in ontology.scope_po — see the note in crud/pr.py.
-    q = scope_po(q, {"po_subq": po_ids_subq})
+    q = await scope_po(q, {"po_subq": po_ids_subq}, db)
     if status:
         q = q.where(PurchaseOrder.status == status)
     if vendor_id:

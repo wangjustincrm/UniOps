@@ -83,7 +83,7 @@ async def get_all(
 ) -> tuple[list[GoodsReceipt], int]:
     q = select(GoodsReceipt)
     # Row scope lives in ontology.scope_gr — see the note in crud/pr.py.
-    q = scope_gr(q, {"po_subq": po_ids_subq})
+    q = await scope_gr(q, {"po_subq": po_ids_subq}, db)
     if status:
         q = q.where(GoodsReceipt.status == status)
     if po_id:

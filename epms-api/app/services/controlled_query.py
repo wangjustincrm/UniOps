@@ -249,15 +249,21 @@ async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
             target = sa.literal_column("*") if metric.field == "*" else _column(entity, metric.field)
             selected.append(agg(target).label(key))
             labels.append(key)
-        stmt = select(*selected)
+        # select_from is not optional here. count(*) uses a literal_column, which
+        # is bound to no table, so a request for count ALONE leaves SQLAlchemy
+        # with nothing to infer a FROM from — it emits a table-less SELECT
+        # count(*), which returns 1 no matter how many rows exist. Asking for
+        # count alongside any real column hid this; asking for it by itself did
+        # not.
+        stmt = select(*selected).select_from(entity.model)
     else:
         fields = request.get("select") or list(entity.fields)
         labels = list(fields)
-        stmt = select(*[_column(entity, f) for f in fields])
+        stmt = select(*[_column(entity, f) for f in fields]).select_from(entity.model)
 
     # Gate 2 — the row filter. Unconditional, and applied before any caller
     # supplied predicate so nothing can be OR-ed around it.
-    stmt = entity.apply_scope(stmt, scope)
+    stmt = await entity.apply_scope(stmt, scope, db)
     stmt = _apply_where(stmt, entity, request.get("where") or [])
     stmt = _apply_period(stmt, entity, request.get("period"))
 

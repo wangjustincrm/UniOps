@@ -15,10 +15,17 @@ from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 from typing import Callable
 
+import uuid
+
 import yaml
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from app.models.gr import GoodsReceipt
+from app.models.invoice import Invoice
+from app.models.invoice_allocation import InvoicePoAllocation
+from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 
@@ -44,6 +51,8 @@ _MODELS: dict[str, type] = {
     "PurchaseRequest": PurchaseRequest,
     "PurchaseOrder": PurchaseOrder,
     "GoodsReceipt": GoodsReceipt,
+    "Invoice": Invoice,
+    "PaymentApplication": PaymentApplication,
 }
 
 
@@ -53,26 +62,118 @@ _MODELS: dict[str, type] = {
 # line that used to live inline in the matching crud.get_all().
 
 
-def scope_pr(q: Select, scope: dict) -> Select:
+# All five are async and take a session even though three of them need neither:
+# invoice and pa genuinely have to await, and one uniform signature is worth more
+# than saving an await on the simple ones.
+
+
+async def scope_pr(q: Select, scope: dict, db: AsyncSession) -> Select:
     subq = scope.get("pr_subq")
     return q if subq is None else q.where(PurchaseRequest.id.in_(subq))
 
 
-def scope_po(q: Select, scope: dict) -> Select:
+async def scope_po(q: Select, scope: dict, db: AsyncSession) -> Select:
     subq = scope.get("po_subq")
     return q if subq is None else q.where(PurchaseOrder.id.in_(subq))
 
 
-def scope_gr(q: Select, scope: dict) -> Select:
+async def scope_gr(q: Select, scope: dict, db: AsyncSession) -> Select:
     # Scoped through the PO, not by a GR subquery of its own.
     subq = scope.get("po_subq")
     return q if subq is None else q.where(GoodsReceipt.po_id.in_(subq))
 
 
-_SCOPES: dict[str, Callable[[Select, dict], Select]] = {
+async def invoice_scope_conditions(db: AsyncSession, po_ids_subq,
+                                   own_uploads_user_id: uuid.UUID | None,
+                                   task_user_id: uuid.UUID | None) -> list:
+    """The OR-ed reasons a restricted caller may see an invoice.
+
+    Five of them, and the breadth is the point: an invoice reaches people
+    through more routes than the PO it hangs off. Shared with
+    crud/invoice.get_all so the list endpoint and the assistant admit exactly
+    the same rows.
+    """
+    from app.core.access_scope import _open_task_doc_ids
+    from app.core.delegation import active_delegator_ids
+
+    conds: list = []
+    if po_ids_subq is not None:
+        # Both routes: the invoice's own po_id, and any allocation line pointing
+        # at a visible PO — one invoice can be split across several POs, and
+        # matching po_id alone would hide it from the owner of the second one.
+        conds.append(Invoice.po_id.in_(po_ids_subq))
+        conds.append(Invoice.id.in_(select(InvoicePoAllocation.invoice_id).where(
+            InvoicePoAllocation.po_id.in_(po_ids_subq))))
+    if own_uploads_user_id is not None:
+        conds.append(Invoice.uploaded_by == own_uploads_user_id)
+    if task_user_id is not None:
+        # Widen with anyone currently delegating approvals to this user: a
+        # delegate who can approve a PA must be able to open its invoice.
+        task_user_ids = {task_user_id} | await active_delegator_ids(db, task_user_id)
+        conds.append(Invoice.id.in_(
+            await _open_task_doc_ids(db, task_user_id, task_user_ids, "invoice")))
+        # Matcher retention: invoices this user matched stay visible.
+        conds.append(Invoice.matched_by == task_user_id)
+    return conds
+
+
+async def scope_invoice(q: Select, scope: dict, db: AsyncSession) -> Select:
+    po_subq = scope.get("po_subq")
+    restricted = bool(scope.get("restrict"))
+    # These two derivations used to live in the list endpoint. They belong with
+    # the conditions they feed, or the assistant and the list would each decide
+    # for themselves who counts as an uploader.
+    own_uploads = scope.get("user_id") if (restricted and scope.get("role") == "requester") else None
+    task_uid = scope.get("user_id") if restricted else None
+    if po_subq is None and own_uploads is None and task_uid is None:
+        return q  # unrestricted
+    conds = await invoice_scope_conditions(db, po_subq, own_uploads, task_uid)
+    return q.where(or_(*conds)) if conds else q
+
+
+def pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by) -> list:
+    """The OR-ed reasons a restricted caller may see a payment application.
+
+    Each branch stands on its own rather than leaning on po/agr subqueries being
+    set together, in case that coupling ever changes.
+    """
+    from app.crud.pa_links import pa_ids_for_pos
+
+    conds = [
+        # ANY of the PA's POs inside the caller's scope admits it — matching
+        # po_id alone would hide a multi-PO PA from the owner of its second PO,
+        # and they are paying for it.
+        PaymentApplication.id.in_(pa_ids_for_pos(po_ids_subq))
+        if po_ids_subq is not None else PaymentApplication.po_id.is_not(None),
+        PaymentApplication.agreement_id.in_(agr_ids_subq)
+        if agr_ids_subq is not None else PaymentApplication.agreement_id.is_not(None),
+    ]
+    if created_by:
+        conds.append(PaymentApplication.created_by == created_by)
+    return conds
+
+
+async def scope_pa(q: Select, scope: dict, db: AsyncSession) -> Select:
+    # Ownership filter first: OA's Direct PAs have both columns NULL and are not
+    # EPMS's rows at all. This is separate from visibility and applies to
+    # everyone, unrestricted callers included.
+    q = q.where(or_(PaymentApplication.po_id.is_not(None),
+                    PaymentApplication.agreement_id.is_not(None)))
+
+    po_subq, agr_subq = scope.get("po_subq"), scope.get("agr_subq")
+    restricted = bool(scope.get("restrict"))
+    created_by = scope.get("user_id") if (restricted and scope.get("role") == "requester") else None
+    if po_subq is None and agr_subq is None:
+        return q.where(PaymentApplication.created_by == created_by) if created_by else q
+    return q.where(or_(*pa_scope_conditions(po_subq, agr_subq, created_by)))
+
+
+_SCOPES: dict[str, Callable] = {
     "pr": scope_pr,
     "po": scope_po,
     "gr": scope_gr,
+    "invoice": scope_invoice,
+    "pa": scope_pa,
 }
 
 
@@ -115,7 +216,7 @@ class Entity:
     model: type
     label: str
     perm_key: str
-    apply_scope: Callable[[Select, dict], Select]
+    apply_scope: Callable  # async (Select, scope, AsyncSession) -> Select
     date_field: str
     fields: dict[str, Field] = dc_field(default_factory=dict)
     metrics: dict[str, Metric] = dc_field(default_factory=dict)

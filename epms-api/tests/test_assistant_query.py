@@ -207,6 +207,48 @@ async def test_aggregate_groups_and_sums(test_engine, admin_client):
     assert rows[0]["count"] == 2
 
 
+async def test_count_alone_counts_rows(test_engine, admin_client):
+    """Regression: count(*) with no other metric and no group_by.
+
+    count uses a literal_column, which binds to no table. Without an explicit
+    select_from, SQLAlchemy had nothing to infer a FROM clause from and emitted
+    a table-less SELECT count(*) — which returns 1 regardless of how many rows
+    exist. Every earlier test asked for count alongside a real column or a
+    group_by, either of which supplies the FROM and hides this completely.
+    """
+    vendor = await _seed_vendor(test_engine)
+    uid = _user_id(admin_client)
+    tag = uuid.uuid4().hex[:6]
+    for i in range(3):
+        await _seed_po(test_engine, vendor, uid, number=f"PO-CNT-{tag}-{i}")
+
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "purchase_order", "metrics": ["count"],
+        "where": [{"field": "number", "op": "like", "value": f"PO-CNT-{tag}"}],
+    })
+    assert r.status_code == 200
+    assert r.json()["rows"][0]["count"] == 3
+
+
+async def test_count_alone_respects_the_row_scope(test_engine, admin_client,
+                                                  requester_client):
+    """And the bare count must still be scoped — a table-less count(*) would
+    have sailed past the row filter entirely."""
+    vendor = await _seed_vendor(test_engine)
+    tag = uuid.uuid4().hex[:6]
+    await _seed_po(test_engine, vendor, _user_id(admin_client), number=f"PO-SC-{tag}-a")
+    await _seed_po(test_engine, vendor, _user_id(admin_client), number=f"PO-SC-{tag}-b")
+
+    body = {"entity": "purchase_order", "metrics": ["count"],
+            "where": [{"field": "number", "op": "like", "value": f"PO-SC-{tag}"}]}
+
+    admin = await admin_client.post("/api/v1/assistant/query", json=body)
+    assert admin.json()["rows"][0]["count"] == 2
+
+    req = await requester_client.post("/api/v1/assistant/query", json=body)
+    assert req.json()["rows"][0]["count"] == 0, "scope must apply to a bare count"
+
+
 async def test_unknown_metric_is_rejected(admin_client):
     r = await admin_client.post("/api/v1/assistant/query", json={
         "entity": "purchase_order", "group_by": ["vendor_name"],

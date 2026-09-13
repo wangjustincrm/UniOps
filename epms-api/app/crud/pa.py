@@ -149,18 +149,8 @@ async def get_all(
         # keyed off the same "any unrestricted role" check) or both set — but
         # each branch below is written to stand on its own rather than lean on
         # that coupling, in case the two ever diverge.
-        conds = [
-            # ANY of the PA's POs falling inside the caller's scope admits it —
-            # matching po_id alone would hide a PA from someone who owns its
-            # second PO, and they are paying for it.
-            PaymentApplication.id.in_(pa_ids_for_pos(po_ids_subq)) if po_ids_subq is not None
-            else PaymentApplication.po_id.is_not(None),
-            PaymentApplication.agreement_id.in_(agr_ids_subq) if agr_ids_subq is not None
-            else PaymentApplication.agreement_id.is_not(None),
-        ]
-        if created_by:
-            conds.append(PaymentApplication.created_by == created_by)
-        q = q.where(or_(*conds))
+        from app.core.ontology import pa_scope_conditions
+        q = q.where(or_(*pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by)))
     elif created_by:
         q = q.where(PaymentApplication.created_by == created_by)
     if status:
