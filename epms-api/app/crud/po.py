@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import array as sa_array
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.query_registry import scope_po
 from app.crud._numbering import next_number
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
@@ -78,8 +79,8 @@ async def get_all(
     page_size: int = 20,
 ) -> tuple[list[PurchaseOrder], int]:
     q = select(PurchaseOrder)
-    if po_ids_subq is not None:
-        q = q.where(PurchaseOrder.id.in_(po_ids_subq))
+    # Row scope lives in query_registry.scope_po — see the note in crud/pr.py.
+    q = scope_po(q, {"po_subq": po_ids_subq})
     if status:
         q = q.where(PurchaseOrder.status == status)
     if vendor_id:
