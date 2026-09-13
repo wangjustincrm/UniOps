@@ -2,7 +2,7 @@
 
 The planner (an LLM) never writes SQL. It emits a structured description naming
 an entity, some whitelisted fields, and a handful of operators; this module
-checks every one of those names against app/core/query_registry.py and then
+checks every one of those names against app/ontology/epms.yaml and then
 builds the statement itself. A name the registry does not know is rejected, so
 the planner cannot reach a column we did not deliberately expose.
 
@@ -27,7 +27,7 @@ import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.query_registry import (
+from app.core.ontology import (
     BOOL, DATE, DATETIME, ENUM, INT, MONEY, REGISTRY, TEXT, Entity, get_entity,
 )
 

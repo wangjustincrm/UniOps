@@ -1,0 +1,151 @@
+# EPMS ontology fragment — the purchasing chain.
+#
+# This service owns these definitions because it owns the data. Other services
+# will bring their own fragment; concepts that genuinely cross services (vendor,
+# material, department) belong in a shared upper vocabulary, which does not
+# exist yet and should stay small when it does.
+#
+# What a definition here buys you, and what it costs:
+#
+#   * `fields` is a whitelist. A column absent from it cannot be selected,
+#     filtered on, grouped by, or even discovered — /assistant/schema does not
+#     mention it. Adding one makes that column readable by anyone who can reach
+#     the assistant, subject only to the row scope. That is a deliberate act.
+#   * `label` is written for the planner, not for us. It is what an LLM reads
+#     when deciding whether this field answers the question it was asked.
+#   * `perm_key` + `scope` are the two access gates. They are names here and
+#     resolve to real callables in app/core/ontology.py; a typo in either is a
+#     startup error, not a silent hole.
+#
+# Every name in this file is validated against the ORM at import time — fields
+# must exist on the model, metrics must reference a declared field, links must
+# point at a declared entity through columns that are really there. A mistake
+# here fails the process rather than surfacing as a confusing 422 later.
+
+version: 1
+
+entities:
+
+  purchase_request:
+    model: PurchaseRequest
+    label: "Purchase Request (PR) — the requisition that starts a purchase"
+    perm_key: view_pr
+    scope: pr
+    date_field: created_at
+    fields:
+      number: {kind: text, label: "PR number"}
+      title: {kind: text, label: "Title"}
+      status:
+        kind: enum
+        label: "Status"
+        values: [draft, submitted, approved, rejected, cancelled]
+      amount: {kind: money, label: "Amount"}
+      currency: {kind: text, label: "Currency"}
+      vendor_name: {kind: text, label: "Vendor name"}
+      department_name: {kind: text, label: "Requesting department"}
+      cost_center_name: {kind: text, label: "Cost centre"}
+      budget_code: {kind: text, label: "Budget account code"}
+      project_code: {kind: text, label: "Project code"}
+      required_by: {kind: date, label: "Date the requester needs it by"}
+      is_prepaid: {kind: bool, label: "Prepaid purchase"}
+      over_budget: {kind: bool, label: "Exceeds its budget account"}
+      submitted_at: {kind: datetime, label: "Submitted at"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      amount: {fn: sum, field: amount, label: "Total requested amount"}
+      count: {fn: count, field: "*", label: "Number of PRs"}
+      avg_amount: {fn: avg, field: amount, label: "Average PR amount"}
+    links:
+      orders:
+        target: purchase_order
+        cardinality: one_to_many
+        local: id
+        remote: pr_id
+        label: "Purchase orders raised from this requisition"
+
+  purchase_order:
+    model: PurchaseOrder
+    label: "Purchase Order (PO) — the order placed with a vendor"
+    perm_key: view_po
+    scope: po
+    # placed_at is when the order actually went to the vendor, which is what "POs
+    # in the last three months" means to a buyer. created_at would count drafts
+    # that were never placed.
+    date_field: placed_at
+    fields:
+      number: {kind: text, label: "PO number"}
+      title: {kind: text, label: "Title"}
+      status:
+        kind: enum
+        label: "Status"
+        values: [draft, submitted, approved, rejected, cancelled, closed]
+      total: {kind: money, label: "Total including tax"}
+      subtotal: {kind: money, label: "Total before tax"}
+      tax_amount: {kind: money, label: "Tax amount"}
+      currency: {kind: text, label: "Currency"}
+      vendor_name: {kind: text, label: "Vendor name"}
+      budget_code: {kind: text, label: "Budget account code"}
+      pr_number: {kind: text, label: "Originating PR number"}
+      expected_delivery: {kind: date, label: "Expected delivery date"}
+      placed_at: {kind: datetime, label: "Date the order was placed with the vendor"}
+      is_prepaid: {kind: bool, label: "Prepaid order"}
+      source: {kind: text, label: "Origin system (NC mirror or created here)"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      amount: {fn: sum, field: total, label: "Total ordered amount including tax"}
+      subtotal: {fn: sum, field: subtotal, label: "Total ordered amount before tax"}
+      count: {fn: count, field: "*", label: "Number of POs"}
+      avg_amount: {fn: avg, field: total, label: "Average PO value"}
+    links:
+      originating_pr:
+        target: purchase_request
+        cardinality: many_to_one
+        local: pr_id
+        remote: id
+        label: "The requisition this order came from"
+      receipts:
+        target: goods_receipt
+        cardinality: one_to_many
+        local: id
+        remote: po_id
+        label: "Goods receipts recorded against this order"
+
+  goods_receipt:
+    model: GoodsReceipt
+    label: "Goods Receipt (GR) — proof that goods or services were received"
+    perm_key: view_gr
+    # GRs are scoped through their PO, not by a subquery of their own: if you can
+    # see the order you can see what arrived against it.
+    scope: gr
+    date_field: received_at
+    fields:
+      number: {kind: text, label: "GR number"}
+      title: {kind: text, label: "Title"}
+      status:
+        kind: enum
+        label: "Status"
+        values: [pending_ack, acknowledged, cancelled]
+      po_number: {kind: text, label: "PO number"}
+      pr_number: {kind: text, label: "PR number"}
+      vendor_name: {kind: text, label: "Vendor name"}
+      gr_type: {kind: text, label: "Receipt type"}
+      currency: {kind: text, label: "Currency"}
+      storage_location: {kind: text, label: "Storage location"}
+      received_by: {kind: text, label: "Received by"}
+      received_at: {kind: datetime, label: "Received at"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of goods receipts"}
+    links:
+      order:
+        target: purchase_order
+        cardinality: many_to_one
+        local: po_id
+        remote: id
+        label: "The order these goods were received against"
+      requisition:
+        target: purchase_request
+        cardinality: many_to_one
+        local: pr_id
+        remote: id
+        label: "The requisition upstream of this receipt"

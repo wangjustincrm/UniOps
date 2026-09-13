@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from app.core.access_scope import build_scope
 from app.core.deps import CurrentUserPayload, SessionDep
-from app.core.query_registry import REGISTRY
+from app.core.ontology import REGISTRY
 from app.services import controlled_query as cq
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -73,6 +73,17 @@ async def assistant_schema(db: SessionDep, user: CurrentUserPayload):
             },
             "metrics": {
                 key: {"label": m.label} for key, m in entity.metrics.items()
+            },
+            # Declared relationships. The query layer is still single-entity, so
+            # these cannot be traversed yet — they are published because the
+            # planner reasoning about "which PO did this GR come from" needs to
+            # know the chain exists before it can ask a sensible next question.
+            "links": {
+                key: {"target": ln.target, "cardinality": ln.cardinality,
+                      "label": ln.label, "traversable": False}
+                for key, ln in entity.links.items()
+                # Do not advertise a hop into something this caller cannot see.
+                if perms.get(REGISTRY[ln.target].perm_key, False)
             },
         })
     return {"entities": entities}

@@ -19,3 +19,5 @@ reportlab==4.2.5
 aiosmtplib==3.0.2
 oracledb==2.5.1
 openpyxl==3.1.5
+# Ontology fragment (app/ontology/*.yaml) is loaded at import time.
+pyyaml==6.0.3

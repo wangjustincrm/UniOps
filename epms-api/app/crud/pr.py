@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.query_registry import scope_pr
+from app.core.ontology import scope_pr
 from app.crud._numbering import next_number
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
@@ -107,7 +107,7 @@ async def get_all(
     page_size: int = 50,
 ) -> tuple[list[PurchaseRequest], int]:
     q = select(PurchaseRequest)
-    # Row scope lives in query_registry.scope_pr so the assistant's controlled
+    # Row scope lives in ontology.scope_pr so the assistant's controlled
     # query layer and this list endpoint share one implementation.
     q = scope_pr(q, {"pr_subq": pr_ids_subq})
     if status:

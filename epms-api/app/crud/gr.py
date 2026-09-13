@@ -8,7 +8,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.query_registry import scope_gr
+from app.core.ontology import scope_gr
 from app.crud._numbering import next_number
 from app.crud.signatories import gr_signatories, resolve_user_names
 from app.models.config import CompanyConfig
@@ -82,7 +82,7 @@ async def get_all(
     page_size: int = 20,
 ) -> tuple[list[GoodsReceipt], int]:
     q = select(GoodsReceipt)
-    # Row scope lives in query_registry.scope_gr — see the note in crud/pr.py.
+    # Row scope lives in ontology.scope_gr — see the note in crud/pr.py.
     q = scope_gr(q, {"po_subq": po_ids_subq})
     if status:
         q = q.where(GoodsReceipt.status == status)
