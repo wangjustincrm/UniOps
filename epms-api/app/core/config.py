@@ -4,6 +4,11 @@ from urllib.parse import quote
 
 
 class Settings(BaseSettings):
+    # Claude API for the assistant. Same key name expense-api uses; give the
+    # assistant its OWN key in production — an unbounded chat surface sharing
+    # a quota with invoice OCR is how OCR goes down silently.
+    anthropic_api_key: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
