@@ -185,6 +185,12 @@ class Field:
     kind: str
     label: str
     values: tuple[str, ...] = ()
+    # Ask the schema endpoint to list this column's actual values. For a field
+    # with few distinct values — departments, cost centres — the names matter as
+    # much as the column does: someone asking in Chinese about 工程部 means the
+    # row recorded as "Engineering", and a planner that has only seen the field
+    # name will filter on the words it was given and find nothing.
+    enumerate_values: bool = False
 
 
 @dataclass(frozen=True)
@@ -260,7 +266,8 @@ def _build_entity(name: str, spec: dict) -> Entity:
             _require(bool(fspec.get("values")),
                      f"{where}.{fname}: enum needs values")
         fields[fname] = Field(kind=kind, label=fspec["label"],
-                              values=tuple(fspec.get("values") or ()))
+                              values=tuple(fspec.get("values") or ()),
+                              enumerate_values=bool(fspec.get("enumerate")))
     _require(bool(fields), f"{where}: needs at least one field")
 
     date_field = spec.get("date_field")

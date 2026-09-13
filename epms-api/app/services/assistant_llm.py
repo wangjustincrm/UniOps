@@ -46,6 +46,11 @@ You are working inside UniOps, a purchasing system. The schema you are given is
 already filtered to what this person is allowed to see — if an entity is not
 listed, do not mention it and do not guess at it.
 
+Answer in the language the question was asked in. This applies to
+cannot_answer's explanation as well — that text is shown verbatim and is the
+whole reply, so a Chinese question must not come back in English just because
+the schema and these instructions are in English.
+
 Rules:
 - Use ONLY entity names, field names and metric names that appear in the schema.
 - Prefer metrics + group_by when the question is about totals, counts or
@@ -55,6 +60,13 @@ Rules:
 - For a NAMED month or an explicit range ("September", "Q2", "since June"), use
   period with from/to, and take the year from today's date given below. Getting
   the year wrong returns zero rows and reads exactly like "there were none".
+- When a field lists `values`, those are the ONLY values in the data. Match the
+  question to one of them and filter on that — never on the words the question
+  used. Someone asking about 工程部 or "the eng department" means the value
+  recorded as "Engineering"; filtering on their phrasing returns nothing, and
+  nothing is indistinguishable from "that department made no purchases". If
+  nothing in the list plausibly matches, say which values exist rather than
+  querying for one that does not.
 - People name things loosely. Someone asking about "Cintas" means the vendor
   recorded as "Cintas Canada Limited"; someone asking about "the Camfil order"
   is not quoting a title. For name-like text fields — vendor_name, title,
@@ -103,6 +115,10 @@ results are the only facts you have.
 
 - Answer in the language the question was asked in.
 - Be direct. Lead with the answer, not with a description of what you did.
+- If a filter value in query_that_ran differs from how the question phrased it —
+  they asked about 工程部 and it ran against "Engineering" — name the value that
+  was actually used, once, in passing. They are the only one who can tell you
+  the mapping was wrong, and they cannot if it is not shown.
 - Money arrives as a string to preserve precision. Write it as a plain number in
   your reply — never wrapped in quotation marks. Include the currency if the rows
   carry one.
@@ -532,11 +548,45 @@ def _usage(resp: Any) -> dict:
 
 
 def _log_usage(stage: str, resp: Any) -> None:
-    """One line per call. This is the only visibility into spend until a real
-    quota lands, and it is also how we find out whether prompt caching is
-    actually working — a cache_read of zero across repeated questions means the
-    schema block is being invalidated by something."""
+    """Best-effort log line. Do NOT rely on it.
+
+    This used to be the whole accounting story, and it recorded nothing: the
+    application logger has no handler on the request path in the dev deployment,
+    so every one of these went to a logger with nowhere to write. Spend is
+    persisted by record_usage() instead; this line is only convenient when
+    logging happens to be configured.
+    """
     u = _usage(resp)
     log.info("assistant | stage=%s | model=%s | in=%s | out=%s | cache_read=%s",
              stage, MODEL, u.get("input_tokens"), u.get("output_tokens"),
              u.get("cache_read_input_tokens"))
+
+
+async def record_usage(db, user_id, stage: str, usage: dict) -> None:
+    """Persist what one call cost, on a session of its own.
+
+    Not the request's session, and not for tidiness: controlled_query runs its
+    statement inside `SET LOCAL TRANSACTION READ ONLY`, so an INSERT afterwards
+    fails for the rest of that transaction. That is exactly what happened —
+    plan's usage was recorded, narrate's silently was not, and the failure went
+    to log.exception, which in this deployment writes nowhere. Bookkeeping that
+    can be disabled by the thing it is measuring is not bookkeeping.
+
+    Never raises: losing a row here must not lose an answer the user waited for
+    and the key was already billed for.
+    """
+    if not usage:
+        return
+    try:
+        from app.db.session import AsyncSessionLocal
+        from app.models.assistant_usage import AssistantUsage
+        async with AsyncSessionLocal() as own:
+            own.add(AssistantUsage(
+                user_id=user_id, stage=stage, model=MODEL,
+                input_tokens=usage.get("input_tokens", 0) or 0,
+                output_tokens=usage.get("output_tokens", 0) or 0,
+                cache_read_tokens=usage.get("cache_read_input_tokens", 0) or 0,
+            ))
+            await own.commit()
+    except Exception:  # noqa: BLE001 — bookkeeping must never break the reply
+        log.exception("assistant: could not record usage for stage=%s", stage)

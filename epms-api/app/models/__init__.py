@@ -1,4 +1,5 @@
 # Import all model modules here so that Alembic env.py can discover them.
+from app.models.assistant_usage import AssistantUsage  # noqa: F401
 from app.models.agreement import PurchaseAgreement  # noqa: F401
 from app.models.agreement_attachment import AgreementAttachment  # noqa: F401
 from app.models.agreement_schedule import AgreementPaymentSchedule  # noqa: F401

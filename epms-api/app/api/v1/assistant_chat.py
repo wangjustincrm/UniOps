@@ -85,14 +85,17 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
         if t.text.strip()
     ]
 
+    actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
+
     try:
         planned = await assistant_llm.plan(schema, body.message, context,
                                            history=history)
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "plan", planned.get("usage") or {})
 
     if planned["kind"] == "workflow":
-        return await _answer_workflow_question(db, token, scope, body, planned)
+        return await _answer_workflow_question(db, user, token, scope, body, planned)
 
     if planned["kind"] == "check":
         return await _answer_gate_question(db, user, token, scope, body, planned)
@@ -152,6 +155,7 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
         told = await assistant_llm.narrate(body.message, query, result)
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate", told.get("usage") or {})
 
     return {
         "answer": told["text"],
@@ -221,6 +225,9 @@ async def _answer_gate_question(db, user, token, scope, body, planned) -> dict:
         told = await assistant_llm.narrate_preflight(body.message, pr.number, result)
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(
+        db, _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None,
+        "narrate_preflight", told.get("usage") or {})
 
     return {
         "answer": told["text"],
@@ -233,7 +240,7 @@ async def _answer_gate_question(db, user, token, scope, body, planned) -> dict:
     }
 
 
-async def _answer_workflow_question(db, token, scope, body, planned) -> dict:
+async def _answer_workflow_question(db, user, token, scope, body, planned) -> dict:
     """Where the document stands, from the engine's chain and its own history."""
     doc_type = (planned.get("doc_type") or "").lower()
     context = body.context.model_dump(exclude_none=True) if body.context else None
@@ -264,6 +271,9 @@ async def _answer_workflow_question(db, token, scope, body, planned) -> dict:
         told = await assistant_llm.narrate_workflow(body.message, view)
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(
+        db, _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None,
+        "narrate_workflow", told.get("usage") or {})
 
     return {
         "answer": told["text"],

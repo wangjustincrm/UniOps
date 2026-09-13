@@ -40,10 +40,10 @@ entities:
         label: "Status"
         values: [draft, submitted, approved, rejected, cancelled]
       amount: {kind: money, label: "Amount"}
-      currency: {kind: text, label: "Currency"}
+      currency: {kind: text, label: "Currency", enumerate: true}
       vendor_name: {kind: text, label: "Vendor name"}
-      department_name: {kind: text, label: "Requesting department"}
-      cost_center_name: {kind: text, label: "Cost centre"}
+      department_name: {kind: text, label: "Requesting department", enumerate: true}
+      cost_center_name: {kind: text, label: "Cost centre", enumerate: true}
       budget_code: {kind: text, label: "Budget account code"}
       project_code: {kind: text, label: "Project code"}
       required_by: {kind: date, label: "Date the requester needs it by"}
@@ -99,14 +99,14 @@ entities:
       total: {kind: money, label: "Total including tax"}
       subtotal: {kind: money, label: "Total before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
-      currency: {kind: text, label: "Currency"}
+      currency: {kind: text, label: "Currency", enumerate: true}
       vendor_name: {kind: text, label: "Vendor name"}
       budget_code: {kind: text, label: "Budget account code"}
       pr_number: {kind: text, label: "Originating PR number"}
       expected_delivery: {kind: date, label: "Expected delivery date"}
       placed_at: {kind: datetime, label: "Date the order was placed with the vendor"}
       is_prepaid: {kind: bool, label: "Prepaid order"}
-      source: {kind: text, label: "Origin system (NC mirror or created here)"}
+      source: {kind: text, label: "Origin system (NC mirror or created here)", enumerate: true}
       created_at: {kind: datetime, label: "Created at"}
     metrics:
       amount: {fn: sum, field: total, label: "Total ordered amount including tax"}
@@ -163,8 +163,8 @@ entities:
       po_number: {kind: text, label: "PO number"}
       pr_number: {kind: text, label: "PR number"}
       vendor_name: {kind: text, label: "Vendor name"}
-      gr_type: {kind: text, label: "Receipt type"}
-      currency: {kind: text, label: "Currency"}
+      gr_type: {kind: text, label: "Receipt type", enumerate: true}
+      currency: {kind: text, label: "Currency", enumerate: true}
       storage_location: {kind: text, label: "Storage location"}
       received_by: {kind: text, label: "Received by"}
       received_at: {kind: datetime, label: "Received at"}
@@ -211,7 +211,7 @@ entities:
       amount: {kind: money, label: "Amount before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
       total_amount: {kind: money, label: "Total including tax"}
-      currency: {kind: text, label: "Currency"}
+      currency: {kind: text, label: "Currency", enumerate: true}
       invoice_date: {kind: date, label: "Invoice date"}
       due_date: {kind: date, label: "Payment due date"}
       po_number: {kind: text, label: "PO number this invoice bills against"}
@@ -263,7 +263,7 @@ entities:
       subtotal: {kind: money, label: "Amount before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
       payment_amount: {kind: money, label: "Amount to be paid"}
-      currency: {kind: text, label: "Currency"}
+      currency: {kind: text, label: "Currency", enumerate: true}
       created_at: {kind: datetime, label: "Created at"}
     metrics:
       amount: {fn: sum, field: payment_amount, label: "Total requested for payment"}

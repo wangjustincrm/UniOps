@@ -9,6 +9,7 @@ that list being hardcoded on the assistant side. It is filtered by the caller's
 permissions: an entity the user may not view is not merely refused later, it is
 never named, so the planner cannot propose a query the user would be denied.
 """
+import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -53,6 +54,28 @@ class QueryRequest(BaseModel):
     limit: int | None = None
 
 
+# A field marked `enumerate` is listed with its real values, but only if there
+# are few enough to be a vocabulary rather than a data dump. Past this, the
+# planner is better off filtering with `like`.
+_MAX_ENUMERATED = 60
+
+
+async def _distinct_values(db, entity, field_name: str, scope: dict) -> list[str] | None:
+    """The values this caller could actually encounter in a column.
+
+    Scoped like any other read: the list of departments someone can see should
+    not be wider than the documents they can see. Returns None when there are
+    too many to be useful as a vocabulary.
+    """
+    col = getattr(entity.model, field_name)
+    stmt = sa.select(col).where(col.is_not(None)).distinct().limit(_MAX_ENUMERATED + 1)
+    stmt = await entity.apply_scope(stmt, scope, db)
+    rows = (await db.execute(stmt)).scalars().all()
+    if len(rows) > _MAX_ENUMERATED:
+        return None
+    return sorted(str(r) for r in rows if str(r).strip())
+
+
 @router.get("/schema")
 async def assistant_schema(db: SessionDep, user: CurrentUserPayload):
     """Describe the queryable entities this caller may actually reach."""
@@ -67,8 +90,7 @@ async def assistant_schema(db: SessionDep, user: CurrentUserPayload):
             "label": entity.label,
             "date_field": entity.date_field,
             "fields": {
-                name: {"kind": f.kind, "label": f.label,
-                       **({"values": list(f.values)} if f.values else {})}
+                name: await _describe_field(db, entity, name, f, scope)
                 for name, f in entity.fields.items()
             },
             "metrics": {
@@ -89,6 +111,20 @@ async def assistant_schema(db: SessionDep, user: CurrentUserPayload):
             },
         })
     return {"entities": entities}
+
+
+async def _describe_field(db, entity, name, f, scope) -> dict:
+    out: dict = {"kind": f.kind, "label": f.label}
+    if f.values:
+        out["values"] = list(f.values)
+    elif f.enumerate_values:
+        values = await _distinct_values(db, entity, name, scope)
+        if values:
+            # Named explicitly so the planner filters on a value that exists
+            # rather than on the words the question happened to use.
+            out["values"] = values
+            out["values_are_complete"] = True
+    return out
 
 
 @router.post("/query")
