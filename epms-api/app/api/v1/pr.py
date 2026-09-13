@@ -10,7 +10,6 @@ from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_r
 from app.crud import pr as pr_crud
 from app.crud.current_step import enrich_current_step
 from app.models.task import Task
-from app.schemas.gr import is_service
 from app.schemas.pr import (
     ApprovalEventResponse,
     BudgetCheckRequest,
@@ -24,6 +23,7 @@ from app.schemas.pr import (
 from app.schemas.reminder import ReminderResponse
 from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
+from app.services.doc_preflight import field_checks_for
 from app.services.manual_reminder import remind_document
 from app.services.notification import fire_and_forget_notify
 
@@ -207,41 +207,18 @@ async def pr_action(
     pr = await pr_crud.get_by_id(db, pr_id)
     if pr is None:
         raise HTTPException(status_code=404, detail="PR not found")
-    # Vendor is required to submit. Guard here (before delegation): epms-api owns
-    # PR field-level rules, whereas approval-api only owns the state machine and
-    # never validates document fields. Mirrors the Create PR form's client guard.
-    if body.action.lower() == "submit" and pr.vendor_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail="A vendor is required before submitting this PR",
-        )
-    # A budget account (cost center + budget code) is required to submit any
-    # budget-bearing PR. Type 1 carries no budget — the Create PR form hides the
-    # Budget Account block for it. Without BOTH fields compute_budget_check
-    # short-circuits to over_budget=False, so an unbudgeted PR silently bypasses
-    # the entire budget check, `hard_block` included. Only submit is gated:
-    # legacy PRs with no budget code must stay approvable / cancellable.
-    if body.action.lower() == "submit" and pr.type != 1 and (
-        not pr.budget_code or pr.cost_center_id is None
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="A cost center and budget code are required before submitting this PR",
-        )
-    # Same reasoning for the service/project completion date: it is the only
-    # signal app/tasks/service_gr_due.py has for "this should be finished by
-    # now, go create a GR", so a service PR without one silently opts out of
-    # the reminder. The create form has shown this field with a required
-    # asterisk since it was written, but its zod rule was .optional() and
-    # neither payload carried the value — hence the server-side guard.
-    if (body.action.lower() == "submit"
-            and is_service(pr.type)
-            and pr.service_completion_date is None):
-        raise HTTPException(
-            status_code=409,
-            detail=("A Service/Project Expected Completion Date is required "
-                    "before submitting this PR"),
-        )
+    # Field-level gates (vendor, budget account, service completion date) run
+    # here, before delegation: epms-api owns PR field rules, whereas approval-api
+    # owns the state machine and never validates document fields. Why each gate
+    # exists is documented next to it in services/doc_preflight.
+    #
+    # They live there rather than inline so the preflight endpoint reports
+    # exactly what this path enforces. Submission still stops at the first
+    # failure — that is right here; preflight is the one that collects them all.
+    if body.action.lower() == "submit":
+        for check in field_checks_for("pr", pr):
+            if not check.passed:
+                raise HTTPException(status_code=409, detail=check.message)
     try:
         await delegate_action("pr", str(pr_id), body.action, body.comment, token)
     except LookupError as exc:
