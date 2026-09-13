@@ -74,13 +74,15 @@ async def assistant_schema(db: SessionDep, user: CurrentUserPayload):
             "metrics": {
                 key: {"label": m.label} for key, m in entity.metrics.items()
             },
-            # Declared relationships. The query layer is still single-entity, so
-            # these cannot be traversed yet — they are published because the
-            # planner reasoning about "which PO did this GR come from" needs to
-            # know the chain exists before it can ask a sensible next question.
+            # Declared relationships, and they can be walked: a field on the far
+            # side is addressed as "<link>.<field>", up to three hops. This is
+            # the only way to reach facts the entity does not carry itself —
+            # purchase_orders has no department column, so grouping orders by
+            # department means going through originating_pr.
             "links": {
                 key: {"target": ln.target, "cardinality": ln.cardinality,
-                      "label": ln.label, "traversable": False}
+                      "label": ln.label, "traversable": True,
+                      "example": f"{key}.<field of {ln.target}>"}
                 for key, ln in entity.links.items()
                 # Do not advertise a hop into something this caller cannot see.
                 if perms.get(REGISTRY[ln.target].perm_key, False)

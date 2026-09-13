@@ -70,6 +70,67 @@ def _reject(msg: str) -> None:
     raise QueryRejected(msg)
 
 
+MAX_HOPS = 3
+
+def _resolve(entity: Entity, name: str):
+    """Resolve a field reference to (column, path).
+
+    Accepts `field` on this entity, or a dotted path along declared links —
+    `originating_pr.department_name`, or two hops for an invoice:
+    `order.originating_pr.department_name`. purchase_orders has no department
+    column at all; it lives on the requisition, so the only honest way to group
+    orders by department is to walk there.
+
+    Only declared links, and at most MAX_HOPS of them. Without this the planner
+    reached for whatever column looked close enough — it grouped POs by
+    budget_code and headed the column "department", which is not an
+    approximation, it is a different fact.
+
+    Returns `path` as the list of (link, target_entity) hops, empty for a local
+    field.
+    """
+    parts = name.split(".")
+    if len(parts) == 1:
+        return _column(entity, name), []
+    if len(parts) - 1 > MAX_HOPS:
+        _reject(f"'{name}' crosses more than {MAX_HOPS} relationships")
+
+    path = []
+    current = entity
+    for i, step in enumerate(parts[:-1]):
+        link = current.links.get(step)
+        if link is None:
+            _reject(
+                f"Unknown link '{step}' on {current.name}. "
+                f"Available: {', '.join(sorted(current.links)) or '(none)'}"
+            )
+        target = REGISTRY.get(link.target)
+        if target is None:  # pragma: no cover — validated at ontology load
+            _reject(f"Link '{step}' points at unknown entity '{link.target}'")
+        path.append((current, link, target))
+        current = target
+
+    field_name = parts[-1]
+    if field_name not in current.fields:
+        _reject(
+            f"Unknown field '{field_name}' on {current.name} (via "
+            f"{'.'.join(parts[:-1])}). Available: {', '.join(sorted(current.fields))}"
+        )
+    return getattr(current.model, field_name), path
+
+
+def _kind_of(entity: Entity, name: str) -> str:
+    """Field kind, following the same path _resolve does."""
+    parts = name.split(".")
+    current = entity
+    for step in parts[:-1]:
+        link = current.links.get(step)
+        if link is None:
+            _reject(f"Unknown link '{step}' on {current.name}")
+        current = REGISTRY[link.target]
+    return current.fields[parts[-1]].kind
+
+
 def _column(entity: Entity, name: str):
     if name not in entity.fields:
         _reject(
@@ -115,14 +176,15 @@ def _coerce(kind: str, raw: Any) -> Any:
         _reject(f"Value {raw!r} is not a valid {kind}")
 
 
-def _apply_where(stmt, entity: Entity, clauses: list[dict]):
+def _apply_where(stmt, entity: Entity, clauses: list[dict], hops: list):
     for clause in clauses:
         name = clause.get("field")
         op = (clause.get("op") or "eq").lower()
         value = clause.get("value")
 
-        col = _column(entity, name)
-        kind = entity.fields[name].kind
+        col, path = _resolve(entity, name)
+        hops.extend(path)
+        kind = _kind_of(entity, name)
         allowed = _OPS_BY_KIND.get(kind, frozenset())
         if op not in allowed:
             _reject(
@@ -161,7 +223,7 @@ def _apply_where(stmt, entity: Entity, clauses: list[dict]):
     return stmt
 
 
-def _apply_period(stmt, entity: Entity, period: dict | None):
+def _apply_period(stmt, entity: Entity, period: dict | None, hops: list):
     """Relative time windows, resolved server-side.
 
     The planner says "the last three months"; it does not get to say what today
@@ -171,7 +233,8 @@ def _apply_period(stmt, entity: Entity, period: dict | None):
     if not period:
         return stmt
     name = period.get("field") or entity.date_field
-    col = _column(entity, name)
+    col, path = _resolve(entity, name)
+    hops.extend(path)
 
     months = period.get("last_n_months")
     days = period.get("last_n_days")
@@ -187,14 +250,14 @@ def _apply_period(stmt, entity: Entity, period: dict | None):
         start = datetime.now(timezone.utc) - timedelta(days=days)
     else:
         frm, to = period.get("from"), period.get("to")
-        kind = entity.fields[name].kind
+        kind = _kind_of(entity, name)
         if frm:
             stmt = stmt.where(col >= _coerce(kind, frm))
         if to:
             stmt = stmt.where(col <= _coerce(kind, to))
         return stmt
 
-    if entity.fields[name].kind == DATE:
+    if _kind_of(entity, name) == DATE:
         return stmt.where(col >= start.date())
     return stmt.where(col >= start)
 
@@ -213,6 +276,36 @@ def _serialise(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     return str(value)
+
+
+async def _apply_hops(db: AsyncSession, stmt, hops: list, scope: dict):
+    """LEFT JOIN each relationship, and scope the far side as its own entity.
+
+    The scope matters more than it looks. A purchase order can be visible for
+    reasons that have nothing to do with its requisition — you created it, or a
+    task was assigned to you — so "can see the PO" does not imply "can see the
+    PR". Joining without the target's own filter would hand over fields from a
+    requisition this person cannot open.
+
+    LEFT rather than INNER so a row whose far side is out of scope still counts:
+    dropping it would quietly change every total, which is the failure this
+    layer exists to avoid. Such a row reports the linked field as null — unknown,
+    not absent.
+    """
+    seen: set[tuple[str, str]] = set()
+    for source, link, target in hops:
+        key = (source.name, link.name)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        visible = await target.apply_scope(select(target.model.id), scope, db)
+        onclause = sa.and_(
+            getattr(source.model, link.local) == getattr(target.model, link.remote),
+            target.model.id.in_(visible),
+        )
+        stmt = stmt.join(target.model, onclause, isouter=True)
+    return stmt
 
 
 async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
@@ -237,10 +330,16 @@ async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
     metrics = request.get("metrics") or []
     grouped = bool(group_by or metrics)
 
+    # Hops needed by any part of the request, collected before the statement is
+    # built so each relationship is joined exactly once.
+    hops: list = []
+
     if grouped:
         selected, labels = [], []
         for name in group_by:
-            selected.append(_column(entity, name))
+            col, path = _resolve(entity, name)
+            hops.extend(path)
+            selected.append(col)
             labels.append(name)
         for key in metrics:
             metric = entity.metrics.get(key)
@@ -250,7 +349,11 @@ async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
                     f"Available: {', '.join(sorted(entity.metrics))}"
                 )
             agg = _AGG_FN[metric.fn]
-            target = sa.literal_column("*") if metric.field == "*" else _column(entity, metric.field)
+            if metric.field == "*":
+                target = sa.literal_column("*")
+            else:
+                target, path = _resolve(entity, metric.field)
+                hops.extend(path)
             selected.append(agg(target).label(key))
             labels.append(key)
         # select_from is not optional here. count(*) uses a literal_column, which
@@ -272,16 +375,23 @@ async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
     else:
         fields = request.get("select") or list(entity.fields)
         labels = list(fields)
-        stmt = select(*[_column(entity, f) for f in fields]).select_from(entity.model)
+        cols = []
+        for f in fields:
+            col, path = _resolve(entity, f)
+            hops.extend(path)
+            cols.append(col)
+        stmt = select(*cols).select_from(entity.model)
 
     # Gate 2 — the row filter. Unconditional, and applied before any caller
     # supplied predicate so nothing can be OR-ed around it.
     stmt = await entity.apply_scope(stmt, scope, db)
-    stmt = _apply_where(stmt, entity, request.get("where") or [])
-    stmt = _apply_period(stmt, entity, request.get("period"))
+    stmt = _apply_where(stmt, entity, request.get("where") or [], hops)
+    stmt = _apply_period(stmt, entity, request.get("period"), hops)
+
+    stmt = await _apply_hops(db, stmt, hops, scope)
 
     if grouped and group_by:
-        stmt = stmt.group_by(*[_column(entity, n) for n in group_by])
+        stmt = stmt.group_by(*[_resolve(entity, n)[0] for n in group_by])
 
     order = request.get("order_by")
     if order:
@@ -291,6 +401,37 @@ async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
         else:
             col = _column(entity, name)
         stmt = stmt.order_by(col.desc() if order.get("desc") else col.asc())
+
+    # Totals for a grouped query, computed in SQL.
+    #
+    # Not a nicety. Given nine department subtotals and asked for the total, the
+    # model added them itself and came out 2,000 over — every subtotal correct,
+    # the sum wrong, and nothing in the reply to show it. Telling it not to do
+    # arithmetic does not stop it; having the answer already there does. Run over
+    # the whole result, not the returned page, or a capped list would total only
+    # what happened to fit.
+    totals: dict | None = None
+    if grouped and group_by:
+        total_cols = []
+        total_labels = []
+        for key in metrics:
+            metric = entity.metrics[key]
+            agg = _AGG_FN[metric.fn]
+            if metric.field == "*":
+                target = sa.literal_column("*")
+            else:
+                target = _resolve(entity, metric.field)[0]
+            total_cols.append(agg(target).label(key))
+            total_labels.append(key)
+        if total_cols:
+            t_stmt = select(*total_cols).select_from(entity.model)
+            t_stmt = await entity.apply_scope(t_stmt, scope, db)
+            t_stmt = _apply_where(t_stmt, entity, request.get("where") or [], [])
+            t_stmt = _apply_period(t_stmt, entity, request.get("period"), [])
+            t_stmt = await _apply_hops(db, t_stmt, hops, scope)
+            t_row = (await db.execute(t_stmt)).first()
+            if t_row is not None:
+                totals = {k: _serialise(v) for k, v in zip(total_labels, t_row)}
 
     cap = MAX_ROWS_GROUPED if grouped else MAX_ROWS_DETAIL
     limit = int(request.get("limit") or cap)
@@ -316,4 +457,6 @@ async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
            "truncated": truncated, "denied": False}
     if matched is not None:
         out["matched_rows"] = matched
+    if totals is not None:
+        out["totals"] = totals
     return out

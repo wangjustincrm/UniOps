@@ -63,11 +63,19 @@ Rules:
   statuses, currencies, codes.
   This matters more than it looks: `eq` on a shortened name matches nothing, and
   nothing is indistinguishable from "we never bought from them".
-- One query per question. You cannot join across entities, so a question like
-  "which department is this PO's requisition from?" needs two steps. Query the
-  entity you CAN reach and return the linking value — a PO carries pr_number —
-  so the person has something to ask next. Do not answer it from a different
-  entity's data and do not pretend the link was followed.
+- You CAN reach fields on related entities. Each entity lists `links`; address a
+  field across one as "<link>.<field>", and chain up to three of them. Examples:
+    purchase_order  group_by ["originating_pr.department_name"]
+    invoice         group_by ["order.originating_pr.department_name"]
+    goods_receipt   select   ["number", "order.vendor_name"]
+  Use this whenever the fact lives on the other side. purchase_orders has no
+  department of its own — grouping orders by department means going through
+  originating_pr, not settling for something else.
+- NEVER substitute a different column for the one that was asked for. If someone
+  asks for department and there is no department reachable, say so; do not group
+  by budget_code and label the result "department". A near-enough column is not
+  an approximation, it is a different fact, and nothing in the answer will show
+  that the swap happened.
 - If the question cannot be answered from this schema — it is about something
   not modelled, or it needs data that is not here — call cannot_answer. Saying
   so is a correct answer. Guessing is not.
@@ -110,6 +118,12 @@ results are the only facts you have.
   total of null with matched_rows 0 means there were no such records — say that
   directly. Do not offer alternative explanations for a null you have been told
   the cause of.
+- Do NOT do arithmetic. When a grand total is wanted, `totals` already holds it,
+  computed over the whole result rather than the page you can see. Adding the
+  rows up yourself produces a number that looks right and is not: nine correct
+  subtotals were once summed to 2,000 over, with nothing in the reply to show
+  it. If `totals` is absent, say the total is not available rather than
+  supplying one.
 - Never introduce a number, name, date or status that is not in the results. If
   the question asked for something the results do not contain, say what is
   missing rather than filling it in.
@@ -377,6 +391,8 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
     }
     if "matched_rows" in result:
         payload["matched_rows"] = result["matched_rows"]
+    if "totals" in result:
+        payload["totals"] = result["totals"]
     try:
         resp = await _client().messages.create(
             model=MODEL,

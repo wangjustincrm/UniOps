@@ -62,6 +62,12 @@ entities:
         local: id
         remote: pr_id
         label: "Purchase orders raised from this requisition"
+      receipts:
+        target: goods_receipt
+        cardinality: one_to_many
+        local: id
+        remote: pr_id
+        label: "Goods receipts recorded against this requisition"
 
   purchase_order:
     model: PurchaseOrder
@@ -120,6 +126,18 @@ entities:
         local: id
         remote: po_id
         label: "Goods receipts recorded against this order"
+      invoices:
+        target: invoice
+        cardinality: one_to_many
+        local: id
+        remote: po_id
+        label: "Invoices billed against this order"
+      payments:
+        target: payment_application
+        cardinality: one_to_many
+        local: id
+        remote: po_id
+        label: "Payment applications raised against this order"
 
   goods_receipt:
     model: GoodsReceipt
@@ -166,6 +184,12 @@ entities:
         local: pr_id
         remote: id
         label: "The requisition upstream of this receipt"
+      invoices:
+        target: invoice
+        cardinality: one_to_many
+        local: id
+        remote: gr_id
+        label: "Invoices matched to this receipt"
 
   invoice:
     model: Invoice
@@ -207,6 +231,12 @@ entities:
         local: po_id
         remote: id
         label: "The order this invoice bills against (its primary one — an invoice may be allocated across several)"
+      receipt:
+        target: goods_receipt
+        cardinality: many_to_one
+        local: gr_id
+        remote: id
+        label: "The goods receipt this invoice was matched to"
 
   payment_application:
     model: PaymentApplication
