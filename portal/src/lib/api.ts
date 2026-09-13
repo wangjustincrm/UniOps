@@ -147,6 +147,41 @@ export async function epmsDownload(path: string, filename: string): Promise<void
   URL.revokeObjectURL(url)
 }
 
+/**
+ * POST a body to EPMS API and save the response as a file.
+ *
+ * Separate from epmsDownload because that one is a GET; an export sends the
+ * query it should run. Both share authHeaders and the 401 sign-out so there is
+ * only one definition of "signed in" in this file.
+ *
+ * The filename comes from the response when it offers one — the server names
+ * the sheet after the entity and the day, which is more useful than anything
+ * the caller could guess.
+ */
+export async function epmsPostDownload(
+  path: string, body: unknown, fallbackName: string,
+): Promise<void> {
+  const res = await fetch(`${EPMS_API}/api/v1${path}`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (res.status === 401) { globalSignOut(); return }
+  if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`)
+
+  const blob = await res.blob()
+  const named = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = named?.[1] ?? fallbackName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // Revoking immediately can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
 /** POST a File as multipart/form-data to EPMS API. */
 export async function epmsUpload<T>(path: string, file: File, fieldName = 'file'): Promise<T> {
   const form = new FormData()

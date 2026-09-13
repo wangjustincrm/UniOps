@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth'
+import { AssistantMount } from '@/components/AssistantMount'
 import PortalHome from '@/pages/PortalHome'
 import LoginPage from '@/pages/LoginPage'
 import AdminPanel from '@/pages/admin/AdminPanel'
@@ -61,6 +62,9 @@ export default function App() {
           <Route path="/logout" element={<LogoutPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        {/* Inside the Router: it reads the location. Outside Routes so it
+            survives navigation rather than remounting per page. */}
+        <AssistantMount />
       </BrowserRouter>
     </QueryClientProvider>
   )
