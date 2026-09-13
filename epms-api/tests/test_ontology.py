@@ -22,9 +22,10 @@ entities:
     label: "PO"
     perm_key: view_po
     scope: po
-    date_field: placed_at
+    date_field: created_at
     fields:
       number: {kind: text, label: "PO number"}
+      created_at: {kind: datetime, label: "Created at"}
       placed_at: {kind: datetime, label: "Placed at"}
       total: {kind: money, label: "Total"}
     metrics:
@@ -42,7 +43,7 @@ def test_the_baseline_fragment_loads(tmp_path):
     """Guards the rest: if GOOD were broken, every rejection below proves nothing."""
     entities = _load(tmp_path, GOOD)
     assert set(entities) == {"purchase_order"}
-    assert entities["purchase_order"].date_field == "placed_at"
+    assert entities["purchase_order"].date_field == "created_at"
 
 
 @pytest.mark.parametrize("broken,expect", [
@@ -53,7 +54,7 @@ def test_the_baseline_fragment_loads(tmp_path):
      "no such column"),
     (GOOD.replace("model: PurchaseOrder", "model: NotAModel"), "unknown model"),
     (GOOD.replace("scope: po", "scope: nonexistent"), "unknown scope"),
-    (GOOD.replace("date_field: placed_at", "date_field: created_at"),
+    (GOOD.replace("date_field: created_at", "date_field: not_a_field"),
      "is not a declared field"),
     (GOOD.replace("field: total", "field: undeclared"), "is not declared"),
     (GOOD.replace("fn: sum", "fn: median"), "unknown fn"),
@@ -65,6 +66,43 @@ def test_broken_fragments_are_refused(tmp_path, broken, expect):
     with pytest.raises(OntologyError) as exc:
         _load(tmp_path, broken)
     assert expect in str(exc.value)
+
+
+def test_a_nullable_date_field_is_refused(tmp_path):
+    """Regression for a real, silent wrong answer.
+
+    PO originally declared date_field: placed_at, which reads like the correct
+    choice — it is when the order went to the vendor. But it is only set for
+    orders issued from EPMS; the ones mirrored in from NC have it NULL, which on
+    the production snapshot was 6569 of 6755 rows. Every "last three months"
+    question quietly answered from 3% of the data, and the replies looked
+    entirely reasonable. A nullable default axis is now a startup error.
+    """
+    bad = GOOD.replace("date_field: created_at", "date_field: placed_at")
+    with pytest.raises(OntologyError, match="nullable"):
+        _load(tmp_path, bad)
+
+
+def test_a_nullable_date_field_is_allowed_when_acknowledged(tmp_path):
+    """The rule is "say so", not "never" — a receipt date beats a row-creation
+    date even though the column allows NULL."""
+    ok = GOOD.replace("date_field: created_at",
+                      "date_field: placed_at\n    date_field_nullable_ok: true")
+    entities = _load(tmp_path, ok)
+    assert entities["purchase_order"].date_field == "placed_at"
+
+
+def test_shipped_date_fields_are_non_nullable_or_acknowledged():
+    """Belt and braces on the real fragment. A nullable axis is allowed only
+    where the yaml opts in, which forces whoever adds one to look at the
+    coverage first."""
+    acknowledged = {"goods_receipt"}  # received_at: 0 of 948 null, see the yaml
+    for entity in REGISTRY.values():
+        nullable = getattr(entity.model, entity.date_field).property.columns[0].nullable
+        if nullable:
+            assert entity.name in acknowledged, (
+                f"{entity.name}.{entity.date_field} is nullable and not acknowledged"
+            )
 
 
 def test_enum_without_values_is_refused(tmp_path):

@@ -37,6 +37,10 @@ MAX_ROWS_DETAIL = 100
 MAX_ROWS_GROUPED = 200
 STATEMENT_TIMEOUT_MS = 5_000
 
+# Internal label for the row count attached to a bare aggregate; never a field
+# name, so it cannot collide with anything the ontology declares.
+_MATCHED = "__matched_rows"
+
 # Operators permitted per field kind. Restricting by kind keeps the planner from
 # building queries that are technically valid SQL but meaningless (LIKE against
 # a money column) or expensive (LIKE against an unindexed date).
@@ -256,6 +260,15 @@ async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
         # count alongside any real column hid this; asking for it by itself did
         # not.
         stmt = select(*selected).select_from(entity.model)
+        if not group_by:
+            # A bare aggregate over zero rows returns NULL, which reads exactly
+            # like "there were rows but the value was empty" — the caller cannot
+            # tell "no draft PAs exist" from "drafts exist with no amount", and a
+            # model asked to narrate that will hedge across both. Count the rows
+            # alongside so the difference is a fact rather than a guess. Stripped
+            # out of the row before it is returned; surfaced as matched_rows.
+            stmt = stmt.add_columns(func.count().label(_MATCHED))
+            labels.append(_MATCHED)
     else:
         fields = request.get("select") or list(entity.fields)
         labels = list(fields)
@@ -293,5 +306,14 @@ async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
 
     truncated = len(raw) > limit
     rows = [dict(zip(labels, (_serialise(v) for v in row))) for row in raw[:limit]]
-    return {"entity": entity.name, "rows": rows, "row_count": len(rows),
-            "truncated": truncated, "denied": False}
+
+    matched = None
+    if grouped and not group_by:
+        matched = rows[0].pop(_MATCHED, None) if rows else 0
+        matched = int(matched) if matched is not None else 0
+
+    out = {"entity": entity.name, "rows": rows, "row_count": len(rows),
+           "truncated": truncated, "denied": False}
+    if matched is not None:
+        out["matched_rows"] = matched
+    return out

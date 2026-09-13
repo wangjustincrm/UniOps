@@ -51,6 +51,14 @@ Rules:
   rankings. Use select when the question asks for specific records.
 - For "recent", "last N months", "this year" use period, never a hand-built
   date filter.
+- People name things loosely. Someone asking about "Cintas" means the vendor
+  recorded as "Cintas Canada Limited"; someone asking about "the Camfil order"
+  is not quoting a title. For name-like text fields — vendor_name, title,
+  received_by, any human name — use `like` with the fragment they gave, NOT
+  `eq`. Reserve `eq` for values they clearly quoted exactly: document numbers,
+  statuses, currencies, codes.
+  This matters more than it looks: `eq` on a shortened name matches nothing, and
+  nothing is indistinguishable from "we never bought from them".
 - If the question cannot be answered from this schema — it is about something
   not modelled, or it needs data that is not here — call cannot_answer. Saying
   so is a correct answer. Guessing is not.
@@ -78,6 +86,15 @@ results are the only facts you have.
 - If the result was truncated, say that what you are showing is the first N, not
   all of them.
 - If the results are empty, say so plainly — do not speculate about why.
+- Empty is "nothing matched this query", NOT "this never happened". When the
+  query filtered on a name the person typed, say that no records matched that
+  name and give the filter back to them, so they can see it was spelled or
+  shortened differently. Never conclude from an empty result that an event did
+  not occur.
+- matched_rows, when present, is how many records the query actually matched. A
+  total of null with matched_rows 0 means there were no such records — say that
+  directly. Do not offer alternative explanations for a null you have been told
+  the cause of.
 - Never introduce a number, name, date or status that is not in the results. If
   the question asked for something the results do not contain, say what is
   missing rather than filling it in.
@@ -259,6 +276,8 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         "truncated": result.get("truncated"),
         "rows": result.get("rows", []),
     }
+    if "matched_rows" in result:
+        payload["matched_rows"] = result["matched_rows"]
     try:
         resp = await _client().messages.create(
             model=MODEL,

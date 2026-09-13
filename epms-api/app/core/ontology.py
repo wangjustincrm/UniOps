@@ -266,6 +266,25 @@ def _build_entity(name: str, spec: dict) -> Entity:
     date_field = spec.get("date_field")
     _require(date_field in fields,
              f"{where}: date_field {date_field!r} is not a declared field")
+    # The default time axis must be a column every row actually has. A nullable
+    # one silently drops rows from every "last N months" question, and the
+    # answer still looks plausible — PO shipped with date_field: placed_at,
+    # which is NULL on 97% of rows because orders mirrored from NC were never
+    # placed through EPMS. Nobody would have noticed from the replies.
+    _col = getattr(model, date_field)
+    _column_obj = getattr(getattr(_col, "property", None), "columns", [None])[0]
+    if _column_obj is not None and _column_obj.nullable:
+        # Not forbidden outright — sometimes the nullable column is genuinely the
+        # better axis (a receipt date beats a row-creation date) and is populated
+        # in practice. But it has to be acknowledged in writing, with the numbers
+        # that justify it, rather than chosen by accident.
+        _require(
+            spec.get("date_field_nullable_ok") is True,
+            f"{where}: date_field {date_field!r} is nullable, so rows without it "
+            f"vanish from every period query. If it is populated in practice, set "
+            f"date_field_nullable_ok: true and record the coverage next to it; "
+            f"otherwise pick a column that is always set."
+        )
 
     metrics: dict[str, Metric] = {}
     for mname, mspec in (spec.get("metrics") or {}).items():

@@ -68,10 +68,21 @@ entities:
     label: "Purchase Order (PO) — the order placed with a vendor"
     perm_key: view_po
     scope: po
-    # placed_at is when the order actually went to the vendor, which is what "POs
-    # in the last three months" means to a buyer. created_at would count drafts
-    # that were never placed.
-    date_field: placed_at
+    # placed_at reads like the right answer — it is when the order actually went
+    # to the vendor — and it is wrong here. It is only set when the order was
+    # sent FROM EPMS; orders mirrored in from NC were placed in NC and have it
+    # NULL. On the production snapshot that is 6569 of 6755 rows, so using it as
+    # the default axis silently drops 97% of purchasing from every "last N
+    # months" question. Measured 2026-09-13: last 3 months returns 650 orders by
+    # created_at against 186 by placed_at.
+    #
+    # created_at is populated for every row, and NC's import preserves the
+    # original dates (its rows span 2024-01 to 2026-08, not the sync window), so
+    # it is a real business date rather than a mirroring timestamp.
+    #
+    # placed_at stays available as a field — ask for it explicitly when the
+    # question really is about EPMS-issued orders.
+    date_field: created_at
     fields:
       number: {kind: text, label: "PO number"}
       title: {kind: text, label: "Title"}
@@ -117,7 +128,13 @@ entities:
     # GRs are scoped through their PO, not by a subquery of their own: if you can
     # see the order you can see what arrived against it.
     scope: gr
+    # received_at is the honest axis for a receipt — when the goods arrived beats
+    # when the row was written. The column is nullable in the schema but set on
+    # every row in practice (0 of 948 null on the production snapshot,
+    # 2026-09-13), so the exemption is taken knowingly rather than by default.
+    # Re-check this if receipts ever start being created without a date.
     date_field: received_at
+    date_field_nullable_ok: true
     fields:
       number: {kind: text, label: "GR number"}
       title: {kind: text, label: "Title"}

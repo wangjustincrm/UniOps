@@ -42,7 +42,7 @@ async def _seed_vendor(test_engine) -> Vendor:
 
 
 async def _seed_po(test_engine, vendor, creator, *, number, total="100.00",
-                   status="approved", placed_days_ago=1):
+                   status="approved", placed_days_ago=1, created_days_ago=None):
     """Commit a PO the API can actually read.
 
     Deliberately NOT the psycopg2 `pg_cur` fixture: that connection is rolled
@@ -56,6 +56,10 @@ async def _seed_po(test_engine, vendor, creator, *, number, total="100.00",
             vendor_id=vendor.id, vendor_name=vendor.name, created_by=creator,
             placed_at=datetime.now(timezone.utc) - timedelta(days=placed_days_ago),
         )
+        if created_days_ago is not None:
+            # created_at is the default period axis, so age it explicitly rather
+            # than relying on the server default of "now".
+            po.created_at = datetime.now(timezone.utc) - timedelta(days=created_days_ago)
         db.add(po)
         await db.commit()
         return po.id
@@ -75,7 +79,8 @@ async def test_schema_describes_queryable_entities(admin_client):
     assert po["fields"]["status"]["kind"] == "enum"
     assert "approved" in po["fields"]["status"]["values"]
     assert "amount" in po["metrics"]
-    assert po["date_field"] == "placed_at"
+    # created_at, not placed_at: the latter is NULL on NC-mirrored orders.
+    assert po["date_field"] == "created_at"
 
 
 async def test_schema_omits_columns_outside_the_whitelist(admin_client):
@@ -249,6 +254,56 @@ async def test_count_alone_respects_the_row_scope(test_engine, admin_client,
     assert req.json()["rows"][0]["count"] == 0, "scope must apply to a bare count"
 
 
+async def test_a_bare_aggregate_reports_how_many_rows_it_matched(
+    test_engine, admin_client
+):
+    """sum() over zero rows returns NULL, which is indistinguishable from "rows
+    existed but the value was empty" unless the count comes with it. Without
+    this, anything narrating the result has to hedge across both readings."""
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "purchase_order", "metrics": ["amount"],
+        "where": [{"field": "number", "op": "eq", "value": "PO-DOES-NOT-EXIST-XYZ"}],
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["matched_rows"] == 0
+    assert body["rows"][0]["amount"] is None
+    # The bookkeeping column must not leak into the answer.
+    assert "__matched_rows" not in body["rows"][0]
+
+
+async def test_matched_rows_counts_real_matches(test_engine, admin_client):
+    vendor = await _seed_vendor(test_engine)
+    uid = _user_id(admin_client)
+    tag = uuid.uuid4().hex[:6]
+    await _seed_po(test_engine, vendor, uid, number=f"PO-MR-{tag}-1", total="10.00")
+    await _seed_po(test_engine, vendor, uid, number=f"PO-MR-{tag}-2", total="15.00")
+
+    body = (await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "purchase_order", "metrics": ["amount"],
+        "where": [{"field": "number", "op": "like", "value": f"PO-MR-{tag}"}],
+    })).json()
+
+    assert body["matched_rows"] == 2
+    assert body["rows"][0]["amount"] == "25.00"
+
+
+async def test_grouped_aggregates_do_not_carry_matched_rows(test_engine, admin_client):
+    """Per-group counts are what the count metric is for; a single number across
+    all groups would be misleading, so it is only attached to bare aggregates."""
+    vendor = await _seed_vendor(test_engine)
+    tag = uuid.uuid4().hex[:6]
+    await _seed_po(test_engine, vendor, _user_id(admin_client), number=f"PO-GA-{tag}")
+
+    body = (await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "purchase_order", "group_by": ["vendor_name"], "metrics": ["count"],
+        "where": [{"field": "number", "op": "like", "value": f"PO-GA-{tag}"}],
+    })).json()
+
+    assert "matched_rows" not in body
+    assert body["rows"][0]["count"] == 1
+
+
 async def test_unknown_metric_is_rejected(admin_client):
     r = await admin_client.post("/api/v1/assistant/query", json={
         "entity": "purchase_order", "group_by": ["vendor_name"],
@@ -298,9 +353,9 @@ async def test_relative_period_is_resolved_server_side(test_engine, admin_client
     uid = _user_id(admin_client)
     tag = uuid.uuid4().hex[:6]
     await _seed_po(test_engine, vendor, uid, number=f"PO-PER-{tag}-new",
-                   placed_days_ago=1)
+                   created_days_ago=1)
     old = f"PO-PER-{tag}-old"
-    await _seed_po(test_engine, vendor, uid, number=old, placed_days_ago=200)
+    await _seed_po(test_engine, vendor, uid, number=old, created_days_ago=200)
 
     r = await admin_client.post("/api/v1/assistant/query", json={
         "entity": "purchase_order", "select": ["number"],
