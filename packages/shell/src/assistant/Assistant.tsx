@@ -25,7 +25,7 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import {
-  AlertTriangle, Check, ChevronDown, Loader2, MessageSquare, Send, X,
+  AlertTriangle, Check, ChevronDown, Download, Loader2, MessageSquare, Send, X,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
 import type {
@@ -55,6 +55,15 @@ export interface AssistantProps {
    * than let someone discover it one refused question at a time.
    */
   describeScope?: () => Promise<string[]>
+  /**
+   * Downloads the answer's query as a workbook. Shown only on answers that ran
+   * one, and only when supplied — an app without it simply has no button.
+   *
+   * Deliberately a user action rather than something the model can trigger:
+   * nothing gets written to a file until a person has read the answer and
+   * decided it is right.
+   */
+  exportQuery?: (query: Record<string, unknown>, question: string) => Promise<void>
   /** Where the user currently is. Re-read on every send, so keep it current. */
   context?: AssistantContext
   /** Shown once, above the first message. */
@@ -71,7 +80,7 @@ const SUGGESTIONS = [
 let seq = 0
 const nextId = () => `m${++seq}`
 
-export function Assistant({ ask, describeScope, context, greeting, className }: AssistantProps) {
+export function Assistant({ ask, describeScope, exportQuery, context, greeting, className }: AssistantProps) {
   const [open, setOpen] = React.useState(false)
   const [messages, setMessages] = React.useState<AssistantMessage[]>([])
   const [draft, setDraft] = React.useState('')
@@ -203,8 +212,15 @@ export function Assistant({ ask, describeScope, context, greeting, className }: 
             </div>
           )}
 
-          {messages.map((m) => (
-            <MessageRow key={m.id} message={m} />
+          {messages.map((m, i) => (
+            <MessageRow
+              key={m.id}
+              message={m}
+              exportQuery={exportQuery}
+              // The question this answer came from, so the sheet can be headed
+              // with it rather than with the entity name.
+              question={i > 0 ? messages[i - 1].text : ''}
+            />
           ))}
 
           {busy && (
@@ -270,7 +286,13 @@ export function Assistant({ ask, describeScope, context, greeting, className }: 
   )
 }
 
-function MessageRow({ message }: { message: AssistantMessage }) {
+function MessageRow({
+  message, exportQuery, question,
+}: {
+  message: AssistantMessage
+  exportQuery?: AssistantProps['exportQuery']
+  question?: string
+}) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -296,7 +318,52 @@ function MessageRow({ message }: { message: AssistantMessage }) {
       </div>
       {reply?.preflight && <GateList preflight={reply.preflight} />}
       {reply?.workflow && <Chain workflow={reply.workflow} />}
+      {reply?.query && exportQuery && (
+        <ExportButton query={reply.query} question={question ?? ''} run={exportQuery} />
+      )}
       {reply && <Evidence reply={reply} />}
+    </div>
+  )
+}
+
+function ExportButton({
+  query, question, run,
+}: {
+  query: Record<string, unknown>
+  question: string
+  run: NonNullable<AssistantProps['exportQuery']>
+}) {
+  const [busy, setBusy] = React.useState(false)
+  const [failed, setFailed] = React.useState(false)
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true)
+          setFailed(false)
+          try {
+            await run(query, question)
+          } catch {
+            setFailed(true)
+          } finally {
+            setBusy(false)
+          }
+        }}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs text-neutral-700 transition-colors hover:border-primary-600 hover:text-primary-600 disabled:opacity-50"
+      >
+        {busy ? (
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+        ) : (
+          <Download className="h-3 w-3" aria-hidden />
+        )}
+        {busy ? 'Preparing…' : 'Export to Excel'}
+      </button>
+      {failed && (
+        <span className="text-xs text-danger-600">Export failed — try again.</span>
+      )}
     </div>
   )
 }

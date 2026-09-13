@@ -13,6 +13,9 @@
 import { useLocation } from 'react-router-dom'
 import { Assistant, type AssistantContext, type AssistantReply } from '@uniops/shell'
 import { api } from '@/lib/api'
+
+const API_BASE =
+  (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1'
 import { useAuthStore } from '@/stores/auth.store'
 
 /** URL → what document the person is looking at, if any. */
@@ -38,6 +41,41 @@ async function ask(
   return api.post<AssistantReply>('/assistant/chat', { message, context, history })
 }
 
+/**
+ * Download an answer's query as a workbook.
+ *
+ * Goes through api.download rather than a plain link so the request carries the
+ * auth header; the sandbox a plain <a download> would need is not available
+ * cross-origin, and the filename comes from the response.
+ */
+async function exportQuery(
+  query: Record<string, unknown>,
+  question: string
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/assistant/export`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${useAuthStore.getState().token ?? ''}`,
+    },
+    body: JSON.stringify({ ...query, question }),
+  })
+  if (!res.ok) throw new Error(`Export failed (${res.status})`)
+
+  const blob = await res.blob()
+  const disposition = res.headers.get('Content-Disposition') ?? ''
+  const named = /filename="([^"]+)"/.exec(disposition)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = named?.[1] ?? 'report.xlsx'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // Revoking immediately can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
 /** What this person can actually be answered about, straight from the ontology. */
 async function describeScope(): Promise<string[]> {
   const res = await api.get<{ entities: { label: string }[] }>('/assistant/schema')
@@ -56,5 +94,12 @@ export function AssistantMount() {
   // it could make would 401.
   if (!isAuthenticated) return null
 
-  return <Assistant ask={ask} describeScope={describeScope} context={deriveContext(pathname)} />
+  return (
+    <Assistant
+      ask={ask}
+      describeScope={describeScope}
+      exportQuery={exportQuery}
+      context={deriveContext(pathname)}
+    />
+  )
 }

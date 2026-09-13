@@ -10,12 +10,13 @@ permissions: an entity the user may not view is not merely refused later, it is
 never named, so the planner cannot propose a query the user would be denied.
 """
 import sqlalchemy as sa
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.core.access_scope import build_scope
 from app.core.deps import CurrentUserPayload, SessionDep
-from app.core.ontology import REGISTRY
+from app.core.ontology import REGISTRY, get_entity
+from app.services import assistant_export
 from app.services import controlled_query as cq
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -45,6 +46,8 @@ class OrderBy(BaseModel):
 
 class QueryRequest(BaseModel):
     entity: str
+    # Only used by /export, to head the sheet with what was asked.
+    question: str | None = None
     select: list[str] | None = None
     where: list[WhereClause] | None = None
     group_by: list[str] | None = None
@@ -137,3 +140,86 @@ async def assistant_query(body: QueryRequest, db: SessionDep, user: CurrentUserP
         # 422 with the reason intact: the planner reads this and retries, so a
         # generic "bad request" would cost a round trip and teach it nothing.
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+def _column_headings(entity, labels: list[str]) -> dict[str, str]:
+    """Field key -> the label a person would recognise, following links.
+
+    A heading of "order.originating_pr.department_name" is accurate and
+    unreadable; the ontology already carries a human label for every field, and
+    for a hop the useful heading names both ends.
+    """
+    out: dict[str, str] = {}
+    for key in labels:
+        parts = key.split(".")
+        current = entity
+        try:
+            for step in parts[:-1]:
+                current = REGISTRY[current.links[step].target]
+            field = current.fields.get(parts[-1])
+        except (KeyError, AttributeError):
+            field = None
+        if field is None:
+            # A metric, or something the registry does not describe. The key
+            # itself beats a wrong guess.
+            metric = entity.metrics.get(key)
+            out[key] = metric.label if metric else key
+            continue
+        out[key] = field.label if current is entity else f"{current.label.split('—')[0].strip()}: {field.label}"
+    return out
+
+
+@router.post("/export")
+async def assistant_export_xlsx(body: QueryRequest, db: SessionDep,
+                                user: CurrentUserPayload) -> Response:
+    """Run a query again, in full, and return it as a workbook.
+
+    Deliberately not a tool the model can call. The person saw the answer,
+    decided it was right, and asked for it as a file — so nothing gets written
+    that was not already checked on screen.
+
+    Re-run rather than serialise what the chat returned: that was capped for a
+    reply. And re-run under THIS caller's scope, not the scope of whoever
+    produced the answer — a spreadsheet is the easiest thing in the world to
+    forward, and the rows in it have to be the rows the person downloading is
+    allowed to see.
+    """
+    entity = get_entity(body.entity)
+    if entity is None:
+        raise HTTPException(status_code=422, detail=f"Unknown entity '{body.entity}'")
+
+    scope = await build_scope(db, user)
+    request = body.model_dump(by_alias=True, exclude_none=True)
+    try:
+        result = await cq.execute(db, request, scope, for_export=True)
+    except cq.QueryRejected as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    if result.get("denied"):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to view that kind of document.")
+
+    labels = result.get("labels") or []
+    content = assistant_export.build_workbook(
+        question=body.question or "",
+        entity_label=entity.label.split("—")[0].strip(),
+        query={k: v for k, v in request.items() if k != "question"},
+        rows=result["rows"],
+        labels=labels,
+        headers=_column_headings(entity, labels),
+        totals=result.get("totals"),
+        truncated=result.get("truncated", False),
+        row_cap=result.get("row_cap", 0),
+        generated_for=user.get("email") or None,
+    )
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="{assistant_export.filename_for(entity.name)}"',
+            # Without this a cross-origin download cannot read the name above.
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
