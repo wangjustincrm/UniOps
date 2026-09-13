@@ -58,16 +58,20 @@ async def _seed_po(test_engine, vendor, creator, *, number, total="100.00"):
 
 def _stub(monkeypatch, *, plans, narration="Here is the answer."):
     """Feed a scripted sequence of plans, and record what each narrator was given."""
-    calls = {"plan": [], "narrate": [], "preflight": []}
+    calls = {"plan": [], "narrate": [], "preflight": [], "workflow": []}
     queue = list(plans)
 
-    async def fake_plan(schema, message, context=None, retry_error=None):
-        calls["plan"].append({"schema": schema, "message": message,
-                              "context": context, "retry_error": retry_error})
+    async def fake_plan(schema, message, context=None, retry_error=None, history=None):
+        calls["plan"].append({"schema": schema, "message": message, "context": context,
+                              "retry_error": retry_error, "history": history})
         return queue.pop(0)
 
     async def fake_narrate(message, query, result):
         calls["narrate"].append({"message": message, "query": query, "result": result})
+        return {"text": narration, "usage": {}}
+
+    async def fake_narrate_workflow(message, view):
+        calls["workflow"].append({"message": message, "view": view})
         return {"text": narration, "usage": {}}
 
     async def fake_narrate_preflight(message, doc_number, preflight):
@@ -78,6 +82,7 @@ def _stub(monkeypatch, *, plans, narration="Here is the answer."):
     monkeypatch.setattr(assistant_llm, "plan", fake_plan)
     monkeypatch.setattr(assistant_llm, "narrate", fake_narrate)
     monkeypatch.setattr(assistant_llm, "narrate_preflight", fake_narrate_preflight)
+    monkeypatch.setattr(assistant_llm, "narrate_workflow", fake_narrate_workflow)
     return calls
 
 
@@ -370,3 +375,181 @@ async def test_an_unsupported_doc_type_says_so_plainly(admin_client, monkeypatch
 
     assert body["kind"] == "cannot_answer"
     assert body["reason"] == "not_supported"
+
+
+# ── approval progress: the data was always there ─────────────────────────────
+
+
+async def _seed_po_in_review(test_engine, vendor, creator, *, number, approver_id=None):
+    """A PO sitting in review with an open approve task — the shape the question
+    "who is it with?" is actually asked about."""
+    from app.models.task import Task
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        po = PurchaseOrder(number=number, title=number, type=1, status="in_review",
+                           subtotal=Decimal("100"), total=Decimal("100"),
+                           vendor_id=vendor.id, vendor_name=vendor.name,
+                           created_by=creator)
+        db.add(po)
+        await db.flush()
+        db.add(Task(type="approve_po", priority="normal", document_type="po",
+                    document_id=po.id, document_number=number,
+                    assigned_role="dept_manager", assigned_user_id=approver_id,
+                    title=f"Approve PO: {number}", description="Step 1"))
+        await db.commit()
+        return po.id
+
+
+async def test_who_is_it_with_is_answered_from_the_open_task(
+    test_engine, admin_client, monkeypatch
+):
+    """Regression for a confidently wrong answer.
+
+    Asked "who is it stuck with?", the assistant replied that the system does not
+    record approvers. It does: the chain is in the engine, the history is in
+    approval_events, and the holder is on the open task.
+    """
+    vendor = await _seed_vendor(test_engine)
+    uid = _user_id(admin_client)
+    number = f"PO-WF-{uuid.uuid4().hex[:6]}"
+    await _seed_po_in_review(test_engine, vendor, uid, number=number, approver_id=uid)
+
+    calls = _stub(monkeypatch, plans=[{
+        "kind": "workflow", "doc_type": "po", "doc_number": number}])
+
+    r = await admin_client.post(CHAT, json={"message": f"who is {number} waiting on?"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "workflow"
+
+    view = calls["workflow"][0]["view"]
+    assert view["document_number"] == number
+    assert view["status"] == "in_review"
+    assert view["current_step"] is not None, "an in-review doc must report where it sits"
+    assert view["current_step"]["role"] == "dept_manager"
+    assert view["current_step"]["approver_name"], "the holder's name should resolve"
+
+
+async def test_a_broadcast_step_reports_the_role_not_a_blank(
+    test_engine, admin_client, monkeypatch
+):
+    """Singleton posts are broadcast with no assigned user. "Nobody" would be the
+    wrong reading — it is with whoever currently holds the role."""
+    vendor = await _seed_vendor(test_engine)
+    number = f"PO-BC-{uuid.uuid4().hex[:6]}"
+    await _seed_po_in_review(test_engine, vendor, _user_id(admin_client),
+                             number=number, approver_id=None)
+
+    calls = _stub(monkeypatch, plans=[{
+        "kind": "workflow", "doc_type": "po", "doc_number": number}])
+    await admin_client.post(CHAT, json={"message": f"who has {number}?"})
+
+    step = calls["workflow"][0]["view"]["current_step"]
+    assert step["approver_name"] is None
+    assert step["role"] == "dept_manager"
+    assert step["label"], "the role still needs a human-readable label"
+
+
+async def test_an_unreachable_engine_still_returns_the_history(
+    test_engine, admin_client, monkeypatch
+):
+    """approval-api is not running in this suite. The chain definition is lost,
+    but what already happened is local — returning nothing would be worse."""
+    vendor = await _seed_vendor(test_engine)
+    number = f"PO-NOENG-{uuid.uuid4().hex[:6]}"
+    await _seed_po_in_review(test_engine, vendor, _user_id(admin_client), number=number)
+
+    calls = _stub(monkeypatch, plans=[{
+        "kind": "workflow", "doc_type": "po", "doc_number": number}])
+    body = (await admin_client.post(CHAT, json={"message": "where is it"})).json()
+
+    view = calls["workflow"][0]["view"]
+    assert view["steps_available"] is False
+    assert body["sources"]["complete"] is False, "partial answers must say so"
+    assert view["current_step"] is not None, "local data still works"
+
+
+async def test_a_document_the_caller_cannot_see_gives_nothing_away(
+    test_engine, admin_client, requester_client, monkeypatch
+):
+    vendor = await _seed_vendor(test_engine)
+    number = f"PO-HIDDEN-{uuid.uuid4().hex[:6]}"
+    await _seed_po_in_review(test_engine, vendor, _user_id(admin_client), number=number)
+
+    _stub(monkeypatch, plans=[{"kind": "workflow", "doc_type": "po", "doc_number": number}])
+    body = (await requester_client.post(CHAT, json={"message": f"who has {number}?"})).json()
+
+    assert body["kind"] == "cannot_answer"
+    assert body["reason"] == "document_not_found"
+
+
+async def test_page_context_only_resolves_a_matching_doc_type(
+    test_engine, admin_client, monkeypatch
+):
+    """On a PO page, "who is this with?" must not resolve to some PR id."""
+    _stub(monkeypatch, plans=[{"kind": "workflow", "doc_type": "po"}])  # no number
+    body = (await admin_client.post(CHAT, json={
+        "message": "who is this with?",
+        "context": {"doc_type": "pr", "doc_id": str(uuid.uuid4())},
+    })).json()
+
+    assert body["kind"] == "cannot_answer"
+    assert body["reason"] == "document_not_found"
+
+
+# ── the model must not date things from memory ───────────────────────────────
+
+
+async def test_the_planner_is_told_what_day_it_is(admin_client, monkeypatch):
+    """Regression for a silently wrong answer.
+
+    Asked in September 2026 for "the September orders", the planner produced
+    2024-09-01..2024-09-30 — a year out of its own training data — and the reply
+    said there were none. The query was valid, the result was genuinely empty,
+    and nothing in the answer hinted the year had been invented. The only fix is
+    to tell it the date; it cannot know otherwise.
+    """
+    from datetime import datetime, timezone
+    from app.services.assistant_llm import _today_note
+
+    note = _today_note()
+    today = datetime.now(timezone.utc)
+    assert f"{today:%Y-%m-%d}" in note
+    assert str(today.year) in note
+    # And it must say what to do with it, not just state it.
+    assert "without a year" in note
+
+
+async def test_conversation_history_reaches_the_planner(admin_client, monkeypatch):
+    """"Who is it with?" after naming a document has to resolve. Without the
+    prior turns the only honest reply is "which document?" — correct, and
+    useless in a conversation."""
+    calls = _stub(monkeypatch, plans=[{"kind": "cannot", "reason": "too_ambiguous",
+                                       "explanation": "n/a"}])
+    await admin_client.post(CHAT, json={
+        "message": "who is it with?",
+        "history": [
+            {"role": "user", "text": "what is the status of PO-400-2608-10?"},
+            {"role": "assistant", "text": "It is in review."},
+        ],
+    })
+    history = calls["plan"][0]["history"]
+    assert history and len(history) == 2
+    assert "PO-400-2608-10" in history[0]["content"]
+    assert history[0]["role"] == "user" and history[1]["role"] == "assistant"
+
+
+async def test_history_is_capped(admin_client, monkeypatch):
+    """A long session must not be re-sent in full on every question."""
+    from app.api.v1.assistant_chat import _MAX_HISTORY_TURNS
+    assert _MAX_HISTORY_TURNS <= 10, "history should stay small enough to be cheap"
+
+
+async def test_blank_history_turns_are_dropped(admin_client, monkeypatch):
+    _stub(monkeypatch, plans=[{"kind": "cannot", "reason": "too_ambiguous",
+                               "explanation": "n/a"}])
+    r = await admin_client.post(CHAT, json={
+        "message": "anything",
+        "history": [{"role": "user", "text": "   "}, {"role": "assistant", "text": ""}],
+    })
+    assert r.status_code == 200

@@ -25,6 +25,7 @@ exhaust the shared quota and take invoice OCR down with it.
 """
 import json
 import logging
+from datetime import date, datetime, timezone
 from typing import Any
 
 from app.core.config import settings
@@ -49,8 +50,11 @@ Rules:
 - Use ONLY entity names, field names and metric names that appear in the schema.
 - Prefer metrics + group_by when the question is about totals, counts or
   rankings. Use select when the question asks for specific records.
-- For "recent", "last N months", "this year" use period, never a hand-built
-  date filter.
+- For "recent", "last N months", "this year" use period with last_n_months or
+  last_n_days — never a hand-built date filter.
+- For a NAMED month or an explicit range ("September", "Q2", "since June"), use
+  period with from/to, and take the year from today's date given below. Getting
+  the year wrong returns zero rows and reads exactly like "there were none".
 - People name things loosely. Someone asking about "Cintas" means the vendor
   recorded as "Cintas Canada Limited"; someone asking about "the Camfil order"
   is not quoting a title. For name-like text fields — vendor_name, title,
@@ -59,9 +63,20 @@ Rules:
   statuses, currencies, codes.
   This matters more than it looks: `eq` on a shortened name matches nothing, and
   nothing is indistinguishable from "we never bought from them".
+- One query per question. You cannot join across entities, so a question like
+  "which department is this PO's requisition from?" needs two steps. Query the
+  entity you CAN reach and return the linking value — a PO carries pr_number —
+  so the person has something to ask next. Do not answer it from a different
+  entity's data and do not pretend the link was followed.
 - If the question cannot be answered from this schema — it is about something
   not modelled, or it needs data that is not here — call cannot_answer. Saying
   so is a correct answer. Guessing is not.
+- If the question is about a document's APPROVAL PROGRESS — which step it is on,
+  who it is waiting on, who approved it already, what the chain is — call
+  explain_workflow. The chain, its history and the current assignee ARE
+  recorded; answering that the system does not track approvers is wrong.
+- Status alone (is it approved? what state is it in?) is a data question: query
+  it. Anything about WHO or WHICH STEP is explain_workflow.
 - If the question is about whether a specific document can be submitted, or why
   it cannot, call check_document. Do not try to answer it by querying — the
   gates are not visible in the data, and a guess at the reason sends someone to
@@ -180,6 +195,30 @@ _CHECK_TOOL = {
     },
 }
 
+_WORKFLOW_TOOL = {
+    "name": "explain_workflow",
+    "description": (
+        "Use for questions about a specific document's APPROVAL PROGRESS: which "
+        "step it is on, who it is waiting on, who has already approved it, or "
+        "what the chain looks like. The approval chain, its history and the "
+        "current assignee are all recorded — never say they are not."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "doc_type": {"type": "string", "enum": ["pr", "po", "pa"]},
+            "doc_number": {
+                "type": "string",
+                "description": (
+                    "The document number as written, e.g. PO-400-2608-10. Omit "
+                    "only when they clearly mean the document on screen."
+                ),
+            },
+        },
+        "required": ["doc_type"],
+    },
+}
+
 _CANNOT_TOOL = {
     "name": "cannot_answer",
     "description": (
@@ -221,6 +260,27 @@ def _client():
     return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 
+def _today_note() -> str:
+    """Tell the model what day it is.
+
+    Without this it dates things from its own training data: asked for "the
+    September orders" it produced 2024-09-01..2024-09-30 and reported, quite
+    confidently, that there were none. The query was valid, the answer was
+    empty, and nothing about the reply suggested the year had been invented.
+
+    Deliberately in the user turn rather than the cached system block, so the
+    schema prefix keeps its cache across the day boundary.
+    """
+    now = datetime.now(timezone.utc)
+    return (
+        f"\n\nToday is {now:%Y-%m-%d} ({now:%A}). Resolve every date against "
+        f"this, never against anything you remember. A month or day given "
+        f"without a year means the most recent one that has already started — "
+        f"normally {now.year}, or {now.year - 1} if {now.year} would put it in "
+        f"the future."
+    )
+
+
 def _context_note(context: dict | None) -> str:
     """What the user is looking at, so "this PO" has a referent."""
     if not context:
@@ -231,17 +291,25 @@ def _context_note(context: dict | None) -> str:
 
 
 async def plan(schema: list[dict], message: str, context: dict | None = None,
-               retry_error: str | None = None) -> dict:
+               retry_error: str | None = None,
+               history: list[dict] | None = None) -> dict:
     """Ask for a query description.
 
     Returns {"kind": "query", "query": {...}} or
             {"kind": "cannot", "reason": ..., "explanation": ...}.
     `retry_error` feeds a validator rejection back for one more attempt — the
     rejection names what is available, so the second try is usually right.
+
+    `history` is the conversation so far, which is what lets "it" and "that one"
+    resolve. Someone who has just asked about PO-400-2608-10 and then asks "who
+    is it with?" is not going to repeat the number, and without the prior turns
+    the only honest answer is to ask which document they mean — correct, and
+    useless. The history only shapes what the model UNDERSTANDS; it never widens
+    what the query may reach, which is settled downstream by the row scope.
     """
     import anthropic
 
-    user_text = message + _context_note(context)
+    user_text = message + _today_note() + _context_note(context)
     if retry_error:
         user_text += (
             f"\n\nYour previous query was rejected: {retry_error}\n"
@@ -261,11 +329,11 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             model=MODEL,
             max_tokens=_PLAN_MAX_TOKENS,
             system=system,
-            tools=[_QUERY_TOOL, _CHECK_TOOL, _CANNOT_TOOL],
+            tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
-            messages=[{"role": "user", "content": user_text}],
+            messages=(history or []) + [{"role": "user", "content": user_text}],
         )
     except anthropic.APIConnectionError as exc:
         raise LlmUnavailable(f"Could not reach the model: {exc}") from exc
@@ -282,6 +350,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             continue
         if block.name == "run_query":
             return {"kind": "query", "query": dict(block.input), "usage": _usage(resp)}
+        if block.name == "explain_workflow":
+            return {"kind": "workflow", **dict(block.input), "usage": _usage(resp)}
         if block.name == "check_document":
             return {"kind": "check", **dict(block.input), "usage": _usage(resp)}
         if block.name == "cannot_answer":
@@ -378,6 +448,58 @@ async def narrate_preflight(message: str, doc_number: str | None,
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_preflight", resp)
+    return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
+            "usage": _usage(resp)}
+
+
+_WORKFLOW_SYSTEM = """\
+You are telling a colleague where a document stands in its approval chain.
+
+You are given the chain's steps, everything already done to it, and where it is
+sitting right now.
+
+- Answer in the language the question was asked in.
+- Lead with the answer to what they asked. If they asked who it is with, name
+  that first; do not open with a recap of the whole chain.
+- current_step.approver_name is the person holding it. When that is null the
+  step is broadcast to everyone holding the role — say it is with whoever holds
+  that role (current_step.label), not with nobody.
+- An approver_name containing "standing in for" means someone is covering a
+  delegation. Say so; it matters to whoever is chasing it.
+- history is what has already happened, most useful as "approved by X on DATE".
+  Include comments when they are there — a returned document's comment is
+  usually the reason.
+- current_step is null when the document is not awaiting approval. Then say what
+  its status is instead of inventing a waiting party.
+- If steps_available is false the engine could not be reached, so you have the
+  history but not the full chain — say that rather than implying the chain is
+  short.
+- Never invent a name, a step, a date or a role that is not in what you were
+  given.
+"""
+
+
+async def narrate_workflow(message: str, view: dict) -> dict:
+    """Explain an approval chain. Same no-new-facts rule as the other narrators."""
+    import anthropic
+
+    try:
+        resp = await _client().messages.create(
+            model=MODEL,
+            max_tokens=_NARRATE_MAX_TOKENS,
+            system=_WORKFLOW_SYSTEM,
+            messages=[{"role": "user",
+                       "content": json.dumps(view, ensure_ascii=False, default=str)}],
+        )
+    except anthropic.APIConnectionError as exc:
+        raise LlmUnavailable(f"Could not reach the model: {exc}") from exc
+    except anthropic.RateLimitError as exc:
+        raise LlmUnavailable("The shared API quota is exhausted right now") from exc
+    except anthropic.APIStatusError as exc:
+        log.error("workflow narration failed %s: %s", exc.status_code, exc.message)
+        raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
+
+    _log_usage("narrate_workflow", resp)
     return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
             "usage": _usage(resp)}
 

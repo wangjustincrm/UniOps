@@ -30,8 +30,20 @@ export function deriveContext(pathname: string): AssistantContext {
   return ctx
 }
 
-async function ask(message: string, context: AssistantContext): Promise<AssistantReply> {
-  return api.post<AssistantReply>('/assistant/chat', { message, context })
+async function ask(
+  message: string,
+  context: AssistantContext,
+  history: { role: 'user' | 'assistant'; text: string }[]
+): Promise<AssistantReply> {
+  return api.post<AssistantReply>('/assistant/chat', { message, context, history })
+}
+
+/** What this person can actually be answered about, straight from the ontology. */
+async function describeScope(): Promise<string[]> {
+  const res = await api.get<{ entities: { label: string }[] }>('/assistant/schema')
+  // Labels read "Purchase Order (PO) — the order placed with a vendor"; the part
+  // before the dash is the name, which is all that belongs in a one-line summary.
+  return res.entities.map((e) => e.label.split('—')[0].trim())
 }
 
 export function AssistantMount() {
@@ -44,5 +56,5 @@ export function AssistantMount() {
   // it could make would 401.
   if (!isAuthenticated) return null
 
-  return <Assistant ask={ask} context={deriveContext(pathname)} />
+  return <Assistant ask={ask} describeScope={describeScope} context={deriveContext(pathname)} />
 }

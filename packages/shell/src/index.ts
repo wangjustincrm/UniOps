@@ -21,6 +21,7 @@ export type { AssistantProps } from './assistant/Assistant'
 export type {
   AssistantCheck, AssistantContext, AssistantKind, AssistantMessage,
   AssistantPreflight, AssistantReply, AssistantSources,
+  AssistantWorkflow, AssistantWorkflowEvent, AssistantWorkflowStep,
 } from './assistant/types'
 
 // Shared UI primitives (generic; domain wrappers like StatusBadge stay in apps).

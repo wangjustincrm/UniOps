@@ -30,6 +30,7 @@ from app.core.access_scope import build_scope, is_pr_visible
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
+from app.services import workflow_view
 from app.services import controlled_query as cq
 
 log = logging.getLogger(__name__)
@@ -44,9 +45,23 @@ class ChatContext(BaseModel):
     doc_id: str | None = None
 
 
+class ChatTurn(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    text: str = Field(max_length=4000)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     context: ChatContext | None = None
+    # Prior turns, oldest first. Only used to resolve what the person is
+    # referring to; it cannot widen what a query reaches, which the row scope
+    # settles regardless of what the model was told.
+    history: list[ChatTurn] | None = None
+
+
+# Enough for "it" to have an antecedent without paying for the whole session on
+# every question. Six turns is roughly three exchanges.
+_MAX_HISTORY_TURNS = 6
 
 
 @router.post("/chat")
@@ -64,11 +79,20 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
 
     context = body.context.model_dump(exclude_none=True) if body.context else None
     scope = await build_scope(db, user)
+    history = [
+        {"role": t.role, "content": t.text}
+        for t in (body.history or [])[-_MAX_HISTORY_TURNS:]
+        if t.text.strip()
+    ]
 
     try:
-        planned = await assistant_llm.plan(schema, body.message, context)
+        planned = await assistant_llm.plan(schema, body.message, context,
+                                           history=history)
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+
+    if planned["kind"] == "workflow":
+        return await _answer_workflow_question(db, token, scope, body, planned)
 
     if planned["kind"] == "check":
         return await _answer_gate_question(db, user, token, scope, body, planned)
@@ -94,7 +118,7 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
         log.info("assistant | plan rejected, retrying once | %s", exc)
         try:
             planned = await assistant_llm.plan(
-                schema, body.message, context, retry_error=str(exc))
+                schema, body.message, context, retry_error=str(exc), history=history)
         except assistant_llm.LlmUnavailable as exc2:
             raise HTTPException(status_code=503, detail=str(exc2))
         if planned["kind"] == "cannot":
@@ -206,4 +230,51 @@ async def _answer_gate_question(db, user, token, scope, body, planned) -> dict:
         "preflight": result,
         "sources": {"document": pr.number, "allowed": result["allowed"],
                     "complete": result["complete"]},
+    }
+
+
+async def _answer_workflow_question(db, token, scope, body, planned) -> dict:
+    """Where the document stands, from the engine's chain and its own history."""
+    doc_type = (planned.get("doc_type") or "").lower()
+    context = body.context.model_dump(exclude_none=True) if body.context else None
+
+    if doc_type not in workflow_view.SUPPORTED:
+        return {
+            "answer": f"I can only trace approvals for "
+                      f"{', '.join(t.upper() for t in workflow_view.SUPPORTED)}.",
+            "kind": "cannot_answer", "reason": "not_supported",
+            "query": None, "sources": None,
+        }
+
+    # Fall back to the document on screen only when it is the same type, so
+    # "who is this with?" on a PO page cannot resolve to an unrelated PR.
+    ctx_id = (context or {}).get("doc_id") if (context or {}).get("doc_type") == doc_type else None
+    doc = await workflow_view.resolve(db, scope, doc_type, planned.get("doc_number"), ctx_id)
+    if doc is None:
+        asked = planned.get("doc_number")
+        return {
+            "answer": (f"I could not find {asked}." if asked else
+                       "Tell me which document you mean — its number works best."),
+            "kind": "cannot_answer", "reason": "document_not_found",
+            "query": None, "sources": None,
+        }
+
+    view = await workflow_view.build(db, doc_type, doc, token)
+    try:
+        told = await assistant_llm.narrate_workflow(body.message, view)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    return {
+        "answer": told["text"],
+        "kind": "workflow",
+        "query": None,
+        "workflow": view,
+        "sources": {
+            "document": view["document_number"],
+            "status": view["status"],
+            "steps": len(view["steps"]),
+            "events": len(view["history"]),
+            "complete": view["steps_available"],
+        },
     }

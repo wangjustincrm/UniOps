@@ -33,8 +33,28 @@ import type {
 } from './types'
 
 export interface AssistantProps {
-  /** Sends one question. Throw to signal a transport/HTTP failure. */
-  ask: (message: string, context: AssistantContext) => Promise<AssistantReply>
+  /**
+   * Sends one question. Throw to signal a transport/HTTP failure.
+   *
+   * `history` is the conversation so far, oldest first. It is what lets "it" and
+   * "that one" resolve — someone who just asked about a PO and then asks who it
+   * is with will not repeat the number.
+   */
+  ask: (
+    message: string,
+    context: AssistantContext,
+    history: { role: 'user' | 'assistant'; text: string }[]
+  ) => Promise<AssistantReply>
+  /**
+   * Lists what this person can actually be answered about. Called once when the
+   * panel first opens; failures are swallowed, since not knowing the coverage is
+   * no reason to block the conversation.
+   *
+   * Worth wiring up: the ontology covers purchasing and nothing else yet, so in
+   * an app about something else the honest thing is to say so up front rather
+   * than let someone discover it one refused question at a time.
+   */
+  describeScope?: () => Promise<string[]>
   /** Where the user currently is. Re-read on every send, so keep it current. */
   context?: AssistantContext
   /** Shown once, above the first message. */
@@ -51,17 +71,27 @@ const SUGGESTIONS = [
 let seq = 0
 const nextId = () => `m${++seq}`
 
-export function Assistant({ ask, context, greeting, className }: AssistantProps) {
+export function Assistant({ ask, describeScope, context, greeting, className }: AssistantProps) {
   const [open, setOpen] = React.useState(false)
   const [messages, setMessages] = React.useState<AssistantMessage[]>([])
   const [draft, setDraft] = React.useState('')
   const [busy, setBusy] = React.useState(false)
+  const [scope, setScope] = React.useState<string[] | null>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
   const inputRef = React.useRef<HTMLTextAreaElement>(null)
 
   React.useEffect(() => {
     if (open) inputRef.current?.focus()
   }, [open])
+
+  React.useEffect(() => {
+    if (!open || !describeScope || scope) return
+    let live = true
+    describeScope()
+      .then((s) => { if (live) setScope(s) })
+      .catch(() => { /* coverage is a nicety; never block on it */ })
+    return () => { live = false }
+  }, [open, describeScope, scope])
 
   React.useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
@@ -83,10 +113,15 @@ export function Assistant({ ask, context, greeting, className }: AssistantProps)
       const question = text.trim()
       if (!question || busy) return
       setDraft('')
+      // Snapshot before appending: the new question goes in `message`, not in
+      // the history, or the model sees it twice.
+      const priorTurns = messages
+        .filter((m) => !m.error)
+        .map((m) => ({ role: m.role, text: m.text }))
       setMessages((m) => [...m, { id: nextId(), role: 'user', text: question }])
       setBusy(true)
       try {
-        const reply = await ask(question, context ?? {})
+        const reply = await ask(question, context ?? {}, priorTurns)
         setMessages((m) => [
           ...m,
           { id: nextId(), role: 'assistant', text: reply.answer, reply },
@@ -108,7 +143,7 @@ export function Assistant({ ask, context, greeting, className }: AssistantProps)
         setBusy(false)
       }
     },
-    [ask, context, busy]
+    [ask, context, busy, messages]
   )
 
   const panel = (
@@ -148,6 +183,11 @@ export function Assistant({ ask, context, greeting, className }: AssistantProps)
                 {greeting ??
                   'Ask about purchasing data, or why a document is blocked. Answers come with the query or the checks behind them.'}
               </p>
+              {scope && scope.length > 0 && (
+                <p className="text-xs text-neutral-500">
+                  I can currently answer about {scope.join(', ')}.
+                </p>
+              )}
               <div className="space-y-1.5">
                 {SUGGESTIONS.map((s) => (
                   <button
@@ -255,6 +295,7 @@ function MessageRow({ message }: { message: AssistantMessage }) {
         {message.text}
       </div>
       {reply?.preflight && <GateList preflight={reply.preflight} />}
+      {reply?.workflow && <Chain workflow={reply.workflow} />}
       {reply && <Evidence reply={reply} />}
     </div>
   )
@@ -335,18 +376,89 @@ function GateGroup({
   )
 }
 
+/**
+ * Where the document sits and how it got there.
+ *
+ * Shown inline rather than behind the evidence toggle: "who is it with" is the
+ * answer to the question, not the working behind it.
+ */
+function Chain({ workflow }: { workflow: NonNullable<AssistantReply['workflow']> }) {
+  const { current_step: current, history, steps_available: complete } = workflow
+  if (!current && history.length === 0) return null
+
+  return (
+    <div className="space-y-2 rounded-lg border border-neutral-200 p-3 text-xs">
+      {!complete && (
+        <p className="flex items-start gap-1.5 text-warning-700">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+          The approval engine could not be reached, so the full chain is unknown —
+          this is the recorded history only.
+        </p>
+      )}
+      {current && (
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-600">
+            Waiting on
+          </p>
+          <p className="mt-0.5 text-neutral-800">
+            {/* A broadcast step has no named holder; it sits with the role. */}
+            {current.approver_name ?? `whoever holds ${current.label}`}
+            <span className="ml-1 text-neutral-500">({current.label})</span>
+          </p>
+        </div>
+      )}
+      {history.length > 0 && (
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+            History
+          </p>
+          <ul className="mt-0.5 space-y-1">
+            {history.map((e, i) => (
+              <li key={i} className="text-neutral-700">
+                <span className="font-medium">{e.action ?? '—'}</span>
+                {e.actor_name && <span> by {e.actor_name}</span>}
+                {e.actor_role && <span className="text-neutral-500"> ({e.actor_role})</span>}
+                {e.at && <span className="text-neutral-500"> · {String(e.at).slice(0, 10)}</span>}
+                {e.comment && (
+                  <span className="block pl-3 text-neutral-500">“{e.comment}”</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Collapsed by default: available when someone wants to check, never in the way. */
 function Evidence({ reply }: { reply: AssistantReply }) {
   const [open, setOpen] = React.useState(false)
   const s = reply.sources
   if (!reply.query && !s) return null
+  // A workflow answer renders its chain inline; the toggle would only repeat it.
+  if (reply.kind === 'workflow' && !reply.query) {
+    return (
+      <p className="text-xs text-neutral-500">
+        {s?.document} · {s?.steps ?? 0} steps, {s?.events ?? 0} events
+        {s?.complete === false && ' · chain incomplete'}
+      </p>
+    )
+  }
 
+  // Each kind of answer has different working behind it. Describing a workflow
+  // reply as "query — 0 rows" was not just unhelpful, it was untrue: no query
+  // ran, and zero rows implied a search that had found nothing.
   const summary =
     reply.kind === 'preflight'
       ? `${s?.document ?? 'document'} — ${reply.preflight?.checks.length ?? 0} checks`
-      : `${s?.entity ?? 'query'} — ${s?.row_count ?? 0} row${s?.row_count === 1 ? '' : 's'}${
-          s?.truncated ? ' (first page)' : ''
-        }`
+      : reply.kind === 'workflow'
+        ? `${s?.document ?? 'document'} — ${s?.steps ?? 0} step${s?.steps === 1 ? '' : 's'}, ${
+            s?.events ?? 0
+          } event${s?.events === 1 ? '' : 's'}`
+        : `${s?.entity ?? 'query'} — ${s?.row_count ?? 0} row${s?.row_count === 1 ? '' : 's'}${
+            s?.truncated ? ' (first page)' : ''
+          }`
 
   return (
     <div className="text-xs">
