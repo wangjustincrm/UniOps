@@ -62,14 +62,14 @@ Rules:
 - If the question cannot be answered from this schema — it is about something
   not modelled, or it needs data that is not here — call cannot_answer. Saying
   so is a correct answer. Guessing is not.
-- If the question is about WHY something is blocked or what someone should do
-  next, call cannot_answer with reason "not_a_data_question".
-
-  In that explanation, do NOT guess who they should ask or what the cause might
-  be. You cannot see the gates, and naming the wrong person costs them a trip.
-  Say only that you cannot answer why-questions yet and that the document's own
-  page shows what is blocking it. There is a preflight check in the system that
-  knows the real reason; it is simply not wired into this conversation yet.
+- If the question is about whether a specific document can be submitted, or why
+  it cannot, call check_document. Do not try to answer it by querying — the
+  gates are not visible in the data, and a guess at the reason sends someone to
+  fix the wrong thing.
+- check_document currently covers purchase requests and the submit action only.
+  For a why-is-this-blocked question about anything else, call cannot_answer
+  with reason "not_a_data_question" and say plainly that that document type is
+  not covered yet. Do not guess at the cause or at who to ask.
 """
 
 _NARRATE_SYSTEM = """\
@@ -150,6 +150,33 @@ _QUERY_TOOL = {
             "limit": {"type": "integer"},
         },
         "required": ["entity"],
+    },
+}
+
+_CHECK_TOOL = {
+    "name": "check_document",
+    "description": (
+        "Use when someone asks whether a specific document can be submitted, or "
+        "why it cannot. This runs the real gates against that document — it does "
+        "not query data, and it is the ONLY correct way to answer a "
+        "why-is-this-blocked question. Never guess at the reason yourself."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "doc_type": {"type": "string", "enum": ["pr"],
+                         "description": "Only purchase requests are wired up so far."},
+            "doc_number": {
+                "type": "string",
+                "description": (
+                    "The document number as the person wrote it, e.g. "
+                    "PR-20260823-0001. Omit only when they are clearly referring "
+                    "to the document they are currently looking at."
+                ),
+            },
+            "action": {"type": "string", "enum": ["submit"]},
+        },
+        "required": ["doc_type", "action"],
     },
 }
 
@@ -234,7 +261,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             model=MODEL,
             max_tokens=_PLAN_MAX_TOKENS,
             system=system,
-            tools=[_QUERY_TOOL, _CANNOT_TOOL],
+            tools=[_QUERY_TOOL, _CHECK_TOOL, _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -255,6 +282,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             continue
         if block.name == "run_query":
             return {"kind": "query", "query": dict(block.input), "usage": _usage(resp)}
+        if block.name == "check_document":
+            return {"kind": "check", **dict(block.input), "usage": _usage(resp)}
         if block.name == "cannot_answer":
             return {"kind": "cannot", **dict(block.input), "usage": _usage(resp)}
 
@@ -297,6 +326,60 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
     _log_usage("narrate", resp)
     text = "".join(b.text for b in resp.content if b.type == "text").strip()
     return {"text": text, "usage": _usage(resp)}
+
+
+_PREFLIGHT_SYSTEM = """\
+You are explaining to a colleague why a document can or cannot be submitted.
+
+You are given the document number and the result of running the real gates
+against it. Each check says whether it passed, what it says when it fails, and
+crucially whether it is something THIS PERSON can fix.
+
+- Answer in the language the question was asked in.
+- Lead with the verdict: can it be submitted, or not.
+- List only the checks that FAILED. Passing ones are noise.
+- Separate what they can fix themselves from what they cannot. For anything with
+  fixable_by_user false, say plainly that it is not theirs to fix and name the
+  owner if one is given. Getting this wrong sends someone to change a setting
+  they have no access to.
+- If a failed check has a fix_route, mention where to go.
+- If complete is false, the approval engine could not be reached, so the list is
+  partial — say so rather than implying it is the whole picture.
+- Do not invent reasons, next steps, or people. The checks are all you know.
+"""
+
+
+async def narrate_preflight(message: str, doc_number: str | None,
+                            preflight: dict) -> dict:
+    """Turn a gate result into a reply. Same no-new-facts rule as narrate()."""
+    import anthropic
+
+    payload = {
+        "question": message,
+        "document": doc_number,
+        "allowed": preflight.get("allowed"),
+        "complete": preflight.get("complete"),
+        "checks": preflight.get("checks", []),
+    }
+    try:
+        resp = await _client().messages.create(
+            model=MODEL,
+            max_tokens=_NARRATE_MAX_TOKENS,
+            system=_PREFLIGHT_SYSTEM,
+            messages=[{"role": "user",
+                       "content": json.dumps(payload, ensure_ascii=False, default=str)}],
+        )
+    except anthropic.APIConnectionError as exc:
+        raise LlmUnavailable(f"Could not reach the model: {exc}") from exc
+    except anthropic.RateLimitError as exc:
+        raise LlmUnavailable("The shared API quota is exhausted right now") from exc
+    except anthropic.APIStatusError as exc:
+        log.error("preflight narration failed %s: %s", exc.status_code, exc.message)
+        raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
+
+    _log_usage("narrate_preflight", resp)
+    return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
+            "usage": _usage(resp)}
 
 
 def _usage(resp: Any) -> dict:

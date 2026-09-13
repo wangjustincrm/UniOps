@@ -57,8 +57,8 @@ async def _seed_po(test_engine, vendor, creator, *, number, total="100.00"):
 
 
 def _stub(monkeypatch, *, plans, narration="Here is the answer."):
-    """Feed a scripted sequence of plans, and record what narrate was given."""
-    calls = {"plan": [], "narrate": []}
+    """Feed a scripted sequence of plans, and record what each narrator was given."""
+    calls = {"plan": [], "narrate": [], "preflight": []}
     queue = list(plans)
 
     async def fake_plan(schema, message, context=None, retry_error=None):
@@ -70,8 +70,14 @@ def _stub(monkeypatch, *, plans, narration="Here is the answer."):
         calls["narrate"].append({"message": message, "query": query, "result": result})
         return {"text": narration, "usage": {}}
 
+    async def fake_narrate_preflight(message, doc_number, preflight):
+        calls["preflight"].append({"message": message, "doc_number": doc_number,
+                                   "preflight": preflight})
+        return {"text": narration, "usage": {}}
+
     monkeypatch.setattr(assistant_llm, "plan", fake_plan)
     monkeypatch.setattr(assistant_llm, "narrate", fake_narrate)
+    monkeypatch.setattr(assistant_llm, "narrate_preflight", fake_narrate_preflight)
     return calls
 
 
@@ -248,3 +254,119 @@ async def test_empty_message_is_refused_before_any_model_call(admin_client, monk
 
     assert r.status_code == 422
     assert called["n"] == 0, "do not spend a call on an empty question"
+
+
+# ── gate questions route to the real gates, never to a guess ──────────────────
+
+
+async def _seed_pr(test_engine, creator, *, number, pr_type=2):
+    from app.models.pr import PurchaseRequest
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        pr = PurchaseRequest(number=number, title="Gate question test", type=pr_type,
+                             status="draft", amount=Decimal("100.00"), created_by=creator)
+        db.add(pr)
+        await db.commit()
+        return pr.id
+
+
+async def test_a_why_blocked_question_runs_the_real_gates(
+    test_engine, admin_client, monkeypatch
+):
+    """The whole point: the reason comes from the gates, not from the model.
+
+    Before this, the planner refused these questions — correctly, since guessing
+    a cause sends someone to fix the wrong thing. Now it routes them.
+    """
+    number = f"PR-GATE-{uuid.uuid4().hex[:6]}"
+    await _seed_pr(test_engine, _user_id(admin_client), number=number)
+
+    calls = _stub(monkeypatch, plans=[{
+        "kind": "check", "doc_type": "pr", "doc_number": number, "action": "submit"}])
+
+    r = await admin_client.post(CHAT, json={"message": f"why can't I submit {number}?"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "preflight"
+
+    # The narrator was handed real check results, not a free-form prompt.
+    handed = calls["preflight"][0]["preflight"]
+    ids = {c["id"] for c in handed["checks"]}
+    assert "vendor_required" in ids, "field gates should be there"
+    assert handed["allowed"] is False
+    # And the response carries them, so the answer can be checked.
+    assert body["preflight"]["checks"]
+    assert body["sources"]["document"] == number
+
+
+async def test_the_gate_result_distinguishes_fixable_from_not(
+    test_engine, admin_client, monkeypatch
+):
+    """fixable_by_user is the field the reply is built from — it decides between
+    "go add a vendor" and "this isn't yours to fix"."""
+    number = f"PR-FIX-{uuid.uuid4().hex[:6]}"
+    await _seed_pr(test_engine, _user_id(admin_client), number=number)
+    calls = _stub(monkeypatch, plans=[{
+        "kind": "check", "doc_type": "pr", "doc_number": number, "action": "submit"}])
+
+    await admin_client.post(CHAT, json={"message": f"why is {number} stuck?"})
+
+    checks = calls["preflight"][0]["preflight"]["checks"]
+    failed = [c for c in checks if not c["passed"]]
+    assert failed, "a draft PR with no vendor should fail something"
+    assert all("fixable_by_user" in c for c in failed)
+
+
+async def test_a_document_the_caller_cannot_see_is_not_found(
+    test_engine, admin_client, requester_client, monkeypatch
+):
+    """Same answer as a document that does not exist. Saying "it's blocked on a
+    missing vendor" would leak that it exists and what state it is in."""
+    number = f"PR-HID-{uuid.uuid4().hex[:6]}"
+    await _seed_pr(test_engine, _user_id(admin_client), number=number)
+
+    _stub(monkeypatch, plans=[{
+        "kind": "check", "doc_type": "pr", "doc_number": number, "action": "submit"}])
+
+    r = await requester_client.post(CHAT, json={"message": f"why can't I submit {number}?"})
+    body = r.json()
+    assert body["kind"] == "cannot_answer"
+    assert body["reason"] == "document_not_found"
+
+
+async def test_the_document_being_viewed_is_used_when_no_number_is_given(
+    test_engine, admin_client, monkeypatch
+):
+    """"why can't I submit this?" has to resolve against the page context."""
+    number = f"PR-CTX-{uuid.uuid4().hex[:6]}"
+    pr_id = await _seed_pr(test_engine, _user_id(admin_client), number=number)
+
+    calls = _stub(monkeypatch, plans=[{
+        "kind": "check", "doc_type": "pr", "action": "submit"}])  # no doc_number
+
+    r = await admin_client.post(CHAT, json={
+        "message": "why can't I submit this?",
+        "context": {"app": "epms", "doc_type": "pr", "doc_id": str(pr_id)},
+    })
+    assert r.json()["kind"] == "preflight"
+    assert calls["preflight"][0]["doc_number"] == number
+
+
+async def test_no_number_and_no_context_asks_instead_of_guessing(
+    admin_client, monkeypatch
+):
+    _stub(monkeypatch, plans=[{"kind": "check", "doc_type": "pr", "action": "submit"}])
+    body = (await admin_client.post(CHAT, json={"message": "why is it blocked?"})).json()
+
+    assert body["kind"] == "cannot_answer"
+    assert body["reason"] == "document_not_found"
+    assert "which document" in body["answer"].lower()
+
+
+async def test_an_unsupported_doc_type_says_so_plainly(admin_client, monkeypatch):
+    _stub(monkeypatch, plans=[{
+        "kind": "check", "doc_type": "po", "doc_number": "PO-1", "action": "submit"}])
+    body = (await admin_client.post(CHAT, json={"message": "why can't I submit PO-1?"})).json()
+
+    assert body["kind"] == "cannot_answer"
+    assert body["reason"] == "not_supported"

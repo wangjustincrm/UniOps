@@ -20,9 +20,15 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+import uuid as _uuid
+
+from sqlalchemy import select
+
+from app.api.v1.assistant_preflight import preflight as run_preflight
 from app.api.v1.assistant_query import assistant_schema
-from app.core.access_scope import build_scope
-from app.core.deps import CurrentUserPayload, SessionDep
+from app.core.access_scope import build_scope, is_pr_visible
+from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
+from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
 from app.services import controlled_query as cq
 
@@ -44,7 +50,8 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/chat")
-async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload) -> dict:
+async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
+               token: BearerToken) -> dict:
     schema = (await assistant_schema(db, user))["entities"]
     if not schema:
         # No visible entities at all. Say so rather than letting the planner
@@ -62,6 +69,9 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload) -> d
         planned = await assistant_llm.plan(schema, body.message, context)
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+
+    if planned["kind"] == "check":
+        return await _answer_gate_question(db, user, token, scope, body, planned)
 
     if planned["kind"] == "cannot":
         # A refusal is a real answer, and worth returning as one — "I can't
@@ -129,4 +139,71 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload) -> d
             "row_count": result.get("row_count"),
             "truncated": result.get("truncated"),
         },
+    }
+
+
+async def _resolve_pr(db, scope, number: str | None, context: dict | None):
+    """Find the PR the question is about, honouring visibility.
+
+    A document this caller cannot see resolves to nothing — the same answer as a
+    document that does not exist. Telling someone their colleague's PR is
+    blocked on a missing vendor leaks both its existence and its state.
+    """
+    if number:
+        pr = (await db.execute(select(PurchaseRequest).where(
+            PurchaseRequest.number == number.strip()))).scalar_one_or_none()
+    elif context and context.get("doc_type") == "pr" and context.get("doc_id"):
+        try:
+            pr_id = _uuid.UUID(context["doc_id"])
+        except ValueError:
+            return None
+        pr = (await db.execute(select(PurchaseRequest).where(
+            PurchaseRequest.id == pr_id))).scalar_one_or_none()
+    else:
+        return None
+
+    if pr is None or not await is_pr_visible(db, pr.id, scope):
+        return None
+    return pr
+
+
+async def _answer_gate_question(db, user, token, scope, body, planned) -> dict:
+    """Run the real gates and explain them. No guessing at the reason."""
+    doc_type = planned.get("doc_type", "pr")
+    context = body.context.model_dump(exclude_none=True) if body.context else None
+
+    if doc_type != "pr":
+        return {
+            "answer": f"I can only check purchase requests so far, not {doc_type.upper()}s.",
+            "kind": "cannot_answer", "reason": "not_supported",
+            "query": None, "sources": None,
+        }
+
+    pr = await _resolve_pr(db, scope, planned.get("doc_number"), context)
+    if pr is None:
+        asked = planned.get("doc_number")
+        return {
+            "answer": (f"I could not find {asked}." if asked else
+                       "Tell me which document you mean — a PR number works best."),
+            "kind": "cannot_answer", "reason": "document_not_found",
+            "query": None, "sources": None,
+        }
+
+    # The same endpoint the UI would call: both halves of the gates, all of them
+    # evaluated rather than stopping at the first.
+    result = await run_preflight(doc_type="pr", doc_id=str(pr.id), db=db, user=user,
+                                 token=token, action="submit")
+    try:
+        told = await assistant_llm.narrate_preflight(body.message, pr.number, result)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    return {
+        "answer": told["text"],
+        "kind": "preflight",
+        "query": None,
+        # The receipt for a gate question is the gate list itself.
+        "preflight": result,
+        "sources": {"document": pr.number, "allowed": result["allowed"],
+                    "complete": result["complete"]},
     }
