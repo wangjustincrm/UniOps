@@ -118,6 +118,10 @@ async def assistant_schema(db: SessionDep, user: CurrentUserPayload):
 
 async def _describe_field(db, entity, name, f, scope) -> dict:
     out: dict = {"kind": f.kind, "label": f.label}
+    if f.value_labels:
+        # Both directions: the planner filters on the code, and whatever reports
+        # the result needs to say what the code means.
+        out["value_labels"] = {k: v for k, v in f.value_labels}
     if f.values:
         out["values"] = list(f.values)
     elif f.enumerate_values:

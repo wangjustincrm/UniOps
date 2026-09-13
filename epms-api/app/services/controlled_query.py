@@ -35,6 +35,10 @@ from app.core.ontology import (
 # says so — silent truncation would read as a complete answer when it is not.
 MAX_ROWS_DETAIL = 100
 MAX_ROWS_GROUPED = 200
+# An export is a file someone will work from, so the on-screen caps would make
+# it quietly incomplete. Still bounded — a request for everything should not be
+# able to exhaust memory — and the result says when the bound bit.
+MAX_ROWS_EXPORT = 50_000
 STATEMENT_TIMEOUT_MS = 5_000
 
 # Internal label for the row count attached to a bare aggregate; never a field
@@ -129,6 +133,18 @@ def _kind_of(entity: Entity, name: str) -> str:
             _reject(f"Unknown link '{step}' on {current.name}")
         current = REGISTRY[link.target]
     return current.fields[parts[-1]].kind
+
+
+def _field_of(entity: Entity, name: str):
+    """The Field behind a result column, or None if the column is a metric."""
+    parts = name.split(".")
+    current = entity
+    for step in parts[:-1]:
+        link = current.links.get(step)
+        if link is None:
+            return None
+        current = REGISTRY[link.target]
+    return current.fields.get(parts[-1])
 
 
 def _column(entity: Entity, name: str):
@@ -308,7 +324,8 @@ async def _apply_hops(db: AsyncSession, stmt, hops: list, scope: dict):
     return stmt
 
 
-async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
+async def execute(db: AsyncSession, request: dict, scope: dict,
+                  for_export: bool = False) -> dict:
     """Run one controlled query. Raises QueryRejected on anything unrecognised.
 
     `scope` is build_scope()'s output; both gates are read from it and neither is
@@ -433,9 +450,15 @@ async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
             if t_row is not None:
                 totals = {k: _serialise(v) for k, v in zip(total_labels, t_row)}
 
-    cap = MAX_ROWS_GROUPED if grouped else MAX_ROWS_DETAIL
-    limit = int(request.get("limit") or cap)
-    limit = max(1, min(limit, cap))
+    if for_export:
+        # The planner's own limit is ignored here: it was chosen for a chat
+        # reply ("top 5 vendors"), and exporting the top 5 of a report someone
+        # asked to have in full is the wrong file.
+        cap = limit = MAX_ROWS_EXPORT
+    else:
+        cap = MAX_ROWS_GROUPED if grouped else MAX_ROWS_DETAIL
+        limit = int(request.get("limit") or cap)
+        limit = max(1, min(limit, cap))
     # One extra row tells us whether the cap actually bit, so the caller can say
     # "showing the first N" instead of implying it saw everything.
     stmt = stmt.limit(limit + 1)
@@ -454,7 +477,22 @@ async def execute(db: AsyncSession, request: dict, scope: dict) -> dict:
         matched = int(matched) if matched is not None else 0
 
     out = {"entity": entity.name, "rows": rows, "row_count": len(rows),
-           "truncated": truncated, "denied": False}
+           "truncated": truncated, "denied": False,
+           # What the columns are called and what they mean, so an export can
+           # head them with something a person recognises.
+           "labels": labels, "row_cap": limit}
+
+    # Codes that stand for something, for the columns actually returned. The
+    # schema block carries these too, but only the planner sees that; whatever
+    # writes the reply sees this result and nothing else, and without the
+    # mapping it reports "type 2" — a number the reader cannot act on.
+    coded = {}
+    for label in labels:
+        f = _field_of(entity, label)
+        if f is not None and f.value_labels:
+            coded[label] = {k: v for k, v in f.value_labels}
+    if coded:
+        out["value_labels"] = coded
     if matched is not None:
         out["matched_rows"] = matched
     if totals is not None:

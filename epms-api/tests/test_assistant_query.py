@@ -156,7 +156,12 @@ async def test_scope_filters_rather_than_denies(
     await _seed_po(test_engine, vendor, _user_id(requester_client), number=mine)
     await _seed_po(test_engine, vendor, _user_id(admin_client), number=theirs)
 
-    body = {"entity": "purchase_order", "select": ["number"], "limit": 100}
+    # Narrowed to this test's own two rows. Asking for the first 100 POs made
+    # the assertion depend on how much data every other test in the session had
+    # left behind: the export tests seed a batch, the batch fills the cap, and a
+    # test about row visibility starts failing for reasons of row count.
+    body = {"entity": "purchase_order", "select": ["number"], "limit": 100,
+            "where": [{"field": "number", "op": "like", "value": "PO-ASST-"}]}
 
     admin = await admin_client.post("/api/v1/assistant/query", json=body)
     assert admin.status_code == 200
@@ -610,3 +615,41 @@ async def test_a_detail_query_has_no_totals(test_engine, admin_client):
         "entity": "purchase_order", "select": ["number"], "limit": 2,
     })).json()
     assert "totals" not in body
+
+
+# ── coded values ──────────────────────────────────────────────────────────────
+
+
+async def test_a_result_carries_the_meaning_of_its_codes(test_engine, admin_client):
+    """Whatever writes the reply sees the result and nothing else.
+
+    The schema endpoint already describes `type`, but only the planner reads
+    that; the narrating call is handed the rows. The mapping was built, put in
+    the ontology, and threaded through — and the answer still came back as
+    "type 2", because the result itself did not carry it.
+    """
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "purchase_request", "group_by": ["type"], "metrics": ["count"],
+    })
+    assert r.status_code == 200
+    assert r.json()["value_labels"]["type"]["4"] == "Service"
+
+
+async def test_an_uncoded_result_carries_no_mapping(test_engine, admin_client):
+    """Absent rather than empty, so the narrating prompt stays small on the
+    overwhelming majority of queries that have no coded column at all."""
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "purchase_request", "select": ["number"], "limit": 1,
+    })
+    assert r.status_code == 200
+    assert "value_labels" not in r.json()
+
+
+async def test_the_schema_tells_the_planner_what_a_code_means(admin_client):
+    """Without this the planner cannot turn "service purchases" into type=4,
+    and answers a question about a real column by saying it does not exist."""
+    r = await admin_client.get("/api/v1/assistant/schema")
+    assert r.status_code == 200
+    entities = {e["name"]: e for e in r.json()["entities"]}
+    labels = entities["purchase_request"]["fields"]["type"]["value_labels"]
+    assert labels["4"] == "Service"

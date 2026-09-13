@@ -208,3 +208,32 @@ def test_every_scope_callable_is_wired():
     for entity in REGISTRY.values():
         assert callable(entity.apply_scope), entity.name
         assert entity.perm_key, entity.name
+
+
+# ── coded values ──────────────────────────────────────────────────────────────
+
+
+def test_a_coded_field_carries_what_its_codes_mean():
+    """The assistant told someone purchase requests have no type classification.
+
+    They do — `type` is an integer column with six defined values — but the
+    ontology described it as a bare number, so nothing downstream could turn a
+    question about services into type=4 or read a stored 4 back as "Service".
+    An unlabelled code is unanswerable in both directions.
+    """
+    field = REGISTRY["purchase_request"].fields["type"]
+    labels = dict(field.value_labels)
+    assert labels["4"] == "Service"
+    assert set(labels) == {"1", "2", "3", "4", "5", "6"}
+
+
+def test_pr_and_po_agree_on_what_a_code_means():
+    """Same codes, same column, copied into both entities.
+
+    The front end already keeps two copies of this table and they have drifted
+    apart — PrEditPage says "Raw Mat./Pack.", GrCreatePage says "Raw Materials /
+    Packaging". Two more copies that disagree would let the assistant answer the
+    same question differently depending on which entity it queried.
+    """
+    assert (dict(REGISTRY["purchase_request"].fields["type"].value_labels)
+            == dict(REGISTRY["purchase_order"].fields["type"].value_labels))

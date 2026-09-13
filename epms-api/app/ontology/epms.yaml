@@ -35,6 +35,21 @@ entities:
     fields:
       number: {kind: text, label: "PR number"}
       title: {kind: text, label: "Title"}
+      # The stored code and what it means. Duplicated today in two front-end
+      # tables that have already drifted (PrEditPage says "Raw Mat./Pack.",
+      # GrCreatePage says "Raw Materials / Packaging"); this is the backend's
+      # copy and the one the assistant answers from.
+      type:
+        kind: int
+        label: "Procurement type"
+        value_labels:
+          1: "Raw Materials / Packaging"
+          2: "Consumables"
+          3: "Spare Parts"
+          4: "Service"
+          5: "Fixed Asset"
+          6: "Project"
+
       status:
         kind: enum
         label: "Status"
@@ -92,6 +107,26 @@ entities:
     fields:
       number: {kind: text, label: "PO number"}
       title: {kind: text, label: "Title"}
+      # The stored code and what it means. Duplicated today in two front-end
+      # tables that have already drifted (PrEditPage says "Raw Mat./Pack.",
+      # GrCreatePage says "Raw Materials / Packaging"); this is the backend's
+      # copy and the one the assistant answers from.
+      #
+      # Type 1 shows up here and never on a PR: raw material and packaging is
+      # bought in NC and mirrored in, so it has no EPMS requisition behind it.
+      # A count of type 1 requests is legitimately zero — which is a fact about
+      # how buying works, not a gap in the data.
+      type:
+        kind: int
+        label: "Procurement type"
+        value_labels:
+          1: "Raw Materials / Packaging"
+          2: "Consumables"
+          3: "Spare Parts"
+          4: "Service"
+          5: "Fixed Asset"
+          6: "Project"
+
       status:
         kind: enum
         label: "Status"

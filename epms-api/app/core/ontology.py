@@ -191,6 +191,12 @@ class Field:
     # row recorded as "Engineering", and a planner that has only seen the field
     # name will filter on the words it was given and find nothing.
     enumerate_values: bool = False
+    # What a coded value MEANS. A stored 4 is "Service"; without the mapping the
+    # column is unanswerable in both directions — the planner cannot turn a
+    # question about services into type=4, and nothing can report a 4 back as
+    # anything but 4. Asked what procurement types exist, the assistant said the
+    # system has none, because all it could see was an integer column.
+    value_labels: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -265,9 +271,15 @@ def _build_entity(name: str, spec: dict) -> Entity:
         if kind == ENUM:
             _require(bool(fspec.get("values")),
                      f"{where}.{fname}: enum needs values")
-        fields[fname] = Field(kind=kind, label=fspec["label"],
-                              values=tuple(fspec.get("values") or ()),
-                              enumerate_values=bool(fspec.get("enumerate")))
+        raw_labels = fspec.get("value_labels") or {}
+        _require(isinstance(raw_labels, dict),
+                 f"{where}.{fname}: value_labels must be a mapping")
+        fields[fname] = Field(
+            kind=kind, label=fspec["label"],
+            values=tuple(fspec.get("values") or ()),
+            enumerate_values=bool(fspec.get("enumerate")),
+            value_labels=tuple((str(k), str(v)) for k, v in raw_labels.items()),
+        )
     _require(bool(fields), f"{where}: needs at least one field")
 
     date_field = spec.get("date_field")

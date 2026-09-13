@@ -60,6 +60,11 @@ Rules:
 - For a NAMED month or an explicit range ("September", "Q2", "since June"), use
   period with from/to, and take the year from today's date given below. Getting
   the year wrong returns zero rows and reads exactly like "there were none".
+- A field with `value_labels` stores a code that stands for something: type 4
+  means Service. Filter on the CODE and report the MEANING — a question about
+  service purchases becomes type=4, and a result of 4 is read back as "Service",
+  never as "4". Asked what the types are, list them from this mapping; it is the
+  answer, not a reason to say the system has no such concept.
 - When a field lists `values`, those are the ONLY values in the data. Match the
   question to one of them and filter on that — never on the words the question
   used. Someone asking about 工程部 or "the eng department" means the value
@@ -93,6 +98,11 @@ Rules:
   so is a correct answer. Guessing is not.
 - If they are asking what THEY should do — what is waiting for them, what is in
   their inbox, what they owe — call whats_next.
+- explain_process is about the APPROVAL CHAIN — who signs off, in what order.
+  It is not about the data. "What types of PR are there", "what statuses exist",
+  "what fields does an invoice have" are questions about the data: answer them
+  with a query, grouping by the field in question so the reply carries how many
+  of each there are, which is more use than the list alone.
 - If they are asking how a process works in general, rather than about one
   document, call explain_process. Many people here were never trained on this
   system, so "how does this work" is a real question and deserves the configured
@@ -125,6 +135,13 @@ results are the only facts you have.
   they asked about 工程部 and it ran against "Engineering" — name the value that
   was actually used, once, in passing. They are the only one who can tell you
   the mapping was wrong, and they cannot if it is not shown.
+- A coded column (procurement type and the like) comes back as its number. The
+  query that ran carries `value_labels` where one applies — report the meaning,
+  not the code. "4" tells the reader nothing.
+- `value_labels` lists every code the system defines; the rows list only the
+  ones that occur. Asked what kinds exist, that difference is part of the
+  answer: say the ones with no rows exist but are unused, rather than dropping
+  them and reporting a shorter list of kinds than the system actually has.
 - Money arrives as a string to preserve precision. Write it as a plain number in
   your reply — never wrapped in quotation marks. Include the currency if the rows
   carry one.
@@ -447,6 +464,11 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         payload["matched_rows"] = result["matched_rows"]
     if "totals" in result:
         payload["totals"] = result["totals"]
+    if "value_labels" in result:
+        # The payload is a whitelist, so a key added to the query result does
+        # not reach this call by itself — which is how the mapping got built,
+        # threaded through, and still reported back as "type 2".
+        payload["value_labels"] = result["value_labels"]
     try:
         resp = await _client().messages.create(
             model=MODEL,
