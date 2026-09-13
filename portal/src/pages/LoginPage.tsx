@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { epmsApi } from '@/lib/api'
+import { epmsApi, encodeSession, safeReturnUrl, goToReturnUrl } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useBranding } from '@/hooks/useBranding'
 
@@ -21,6 +21,25 @@ async function fetchMe(token: string): Promise<UserResp> {
   })
   if (!res.ok) throw new Error('Could not fetch user profile')
   return res.json()
+}
+
+/**
+ * Where to go once the sign-in completes.
+ *
+ * A sub-app that found itself without a session sent the user here as
+ * `?returnUrl=<its own href>` (EPMS/OA/VMS/Finance all do). Honour it by
+ * handing the fresh session to that origin the same way the nav links do —
+ * cross-origin localStorage is not shared, so without the `#__session=` hash
+ * the module would just bounce the user straight back here. Anything that
+ * fails safeReturnUrl()'s allow-list falls through to the Portal home.
+ *
+ * Returns true when it navigated away, so the caller skips its own navigate().
+ */
+function leaveForReturnUrl(user: UserResp, token: string, refreshToken: string): boolean {
+  const target = safeReturnUrl(new URLSearchParams(window.location.search).get('returnUrl'))
+  if (!target) return false
+  goToReturnUrl(target, encodeSession(token, refreshToken, user))
+  return true
 }
 
 // ── Shared field component ────────────────────────────────────────────────────
@@ -80,6 +99,7 @@ function LoginForm({ onMfaRequired }: { onMfaRequired: (token: string) => void }
       if ('mfa_required' in resp) { onMfaRequired(resp.mfa_token); return }
       const user = await fetchMe(resp.access_token)
       setUser(user, resp.access_token, resp.refresh_token)
+      if (leaveForReturnUrl(user, resp.access_token, resp.refresh_token)) return
       navigate('/')
     } catch (err: any) {
       setError(err.message || 'Login failed')
@@ -180,6 +200,7 @@ function MfaForm({ mfaToken, onBack }: { mfaToken: string; onBack: () => void })
       const user = await fetchMe(resp.access_token)
       setUser(user, resp.access_token, resp.refresh_token)
       setMfaVerified()
+      if (leaveForReturnUrl(user, resp.access_token, resp.refresh_token)) return
       navigate('/')
     } catch (err: any) {
       setError(err.message || 'Invalid code')
