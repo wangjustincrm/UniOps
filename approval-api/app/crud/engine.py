@@ -4,6 +4,7 @@ Supports action keys: pr, po, agr, pa, pa_dir, exp, mil, trv, tra, cfm, cfm_<cod
 Each action key binds to a configurable workflow stored in CompanyConfig.workflow_defs.
 """
 import uuid
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -736,20 +737,71 @@ async def _cc_label_for_plan(db: AsyncSession, doc: Any, fallback: str | None) -
     return f"{code} — {name}" if name else (code or fallback)
 
 
-async def _create_approve_task(
+MSG_BUDGET_HARD_BLOCK = (
+    "This PR exceeds the available budget for its account. "
+    "Submission is blocked by Budget Config (hard_block mode). "
+    "Reduce the budget code's commitment or split the PR into smaller items."
+)
+
+
+def msg_cannot_submit(doc_type: str, status: str) -> str:
+    return f"Cannot submit {doc_type.upper()} in status '{status}'"
+
+
+def first_actionable_step(
+    doc_type: str,
+    doc: Any,
+    workflow: list[dict],
+    director_uid: uuid.UUID | None,
+    supervisor_uid: uuid.UUID | None,
+    dept_has_director: bool,
+    dept_has_supervisor: bool,
+    cross_dept_pa: bool,
+) -> tuple[int, list[tuple[int, str, str]]]:
+    """Walk the auto-skipped prefix and return where the document actually lands.
+
+    Returns (start, skipped) where skipped is [(step_idx, role, reason)] — the
+    caller decides what to do with those (execution records an ApprovalEvent per
+    skip; a dry run just reports them). Pure: no writes, so both can share it.
+    """
+    skipped: list[tuple[int, str, str]] = []
+    start = 0
+    while start < len(workflow):
+        role = workflow[start]["role"]
+        skip, reason = _should_skip_step(role, doc_type, doc, director_uid,
+                                         supervisor_uid, dept_has_director,
+                                         dept_has_supervisor, cross_dept_pa)
+        if not skip:
+            break
+        skipped.append((start, role, reason))
+        start += 1
+    return start, skipped
+
+
+async def resolve_step_assignment(
     db: AsyncSession,
     doc_type: str,
     doc: Any,
     step: int,
     workflow: list[dict],
-    meta: dict,
     rm: dict,
     dept_gm_opm: dict,
     routing_dept_id: uuid.UUID | None = None,
     director_uid: uuid.UUID | None = None,
     supervisor_uid: uuid.UUID | None = None,
     cross_dept_pa: bool = False,
-) -> None:
+) -> tuple[uuid.UUID | None, str]:
+    """Who this step goes to: (assigned_user_id, assigned_role).
+
+    A None user id means the task is BROADCAST to holders of assigned_role —
+    that is deliberate for singleton posts, not a missing value. Raises
+    ValueError when the step cannot be routed at all.
+
+    Split out of _create_approve_task so a dry run can ask "would this route?"
+    without creating anything. Both callers share this one implementation on
+    purpose: a preflight that answered from its own copy of these rules would
+    start disagreeing with what submission actually does.
+    """
     wf = workflow[step]
     role = wf["role"]
     assigned_user_id: uuid.UUID | None = None
@@ -791,6 +843,29 @@ async def _create_approve_task(
         # VMS-local: vms-api pre-selected the QM and stored on the visit.
         # See S2_ARCHITECTURE_REVIEW.md F2.
         assigned_user_id = getattr(doc, "quality_approver_id", None)
+
+    return assigned_user_id, assigned_role
+
+
+async def _create_approve_task(
+    db: AsyncSession,
+    doc_type: str,
+    doc: Any,
+    step: int,
+    workflow: list[dict],
+    meta: dict,
+    rm: dict,
+    dept_gm_opm: dict,
+    routing_dept_id: uuid.UUID | None = None,
+    director_uid: uuid.UUID | None = None,
+    supervisor_uid: uuid.UUID | None = None,
+    cross_dept_pa: bool = False,
+) -> None:
+    wf = workflow[step]
+    assigned_user_id, assigned_role = await resolve_step_assignment(
+        db, doc_type, doc, step, workflow, rm, dept_gm_opm,
+        routing_dept_id=routing_dept_id, director_uid=director_uid,
+        supervisor_uid=supervisor_uid, cross_dept_pa=cross_dept_pa)
 
     doc_number = getattr(doc, meta["number_attr"])
     amount = getattr(doc, meta["amount_attr"], None) if meta.get("amount_attr") else None
@@ -1096,16 +1171,35 @@ def _should_skip_step(role, doc_type, doc, director_uid, supervisor_uid,
 
 # ── Main execution entry point ────────────────────────────────────────────────
 
-async def execute_action(
-    db: AsyncSession,
-    doc_type: str,
-    doc_id: uuid.UUID,
-    action: str,
-    actor_id: uuid.UUID,
-    actor_role: str,
-    comment: str | None = None,
-    today: date | None = None,
-) -> ActionResult:
+@dataclass
+class ActionContext:
+    """Everything an action needs to know about a document before deciding.
+
+    Assembled by read-only queries, so a dry run can build the same context an
+    execution would and reach the same conclusions without writing anything.
+    That is the whole point: `preflight` and `execute_action` must not answer
+    "can this be submitted" from two different pictures of the world.
+    """
+    meta: dict
+    doc: Any
+    step: int
+    cfg: Any
+    rm: dict
+    dept_gm_opm: dict
+    routing_uid: uuid.UUID | None
+    routing_dept_id: uuid.UUID | None
+    cross_dept_pa: bool
+    director_uid: uuid.UUID | None
+    supervisor_uid: uuid.UUID | None
+    dept_has_director: bool
+    dept_has_supervisor: bool
+    workflow: list[dict]
+    over_budget_mode: str
+
+
+async def load_action_context(db: AsyncSession, doc_type: str,
+                              doc_id: uuid.UUID) -> ActionContext:
+    """Read-only. Raises LookupError when the document does not exist."""
     meta = _resolve_meta(doc_type)
     Model = meta["model"]
 
@@ -1114,9 +1208,6 @@ async def execute_action(
     if doc is None:
         raise LookupError(f"{doc_type.upper()} {doc_id} not found")
 
-    act = action.lower()
-    now = datetime.now(timezone.utc)
-    step = _step_of(meta, doc)
     cfg = await _get_config(db)
     rm = await get_role_management(db)
     dept_gm_opm = await get_dept_gm_opm_mapping(db)
@@ -1148,6 +1239,123 @@ async def execute_action(
         over_budget_mode = ((cfg.budget_admin_config if cfg else None) or {}).get(
             "over_budget_mode", "fm_gm_opm")
 
+    return ActionContext(
+        meta=meta, doc=doc, step=_step_of(meta, doc), cfg=cfg, rm=rm,
+        dept_gm_opm=dept_gm_opm, routing_uid=routing_uid,
+        routing_dept_id=routing_dept_id, cross_dept_pa=cross_dept_pa,
+        director_uid=director_uid, supervisor_uid=supervisor_uid,
+        dept_has_director=dept_has_director, dept_has_supervisor=dept_has_supervisor,
+        workflow=workflow, over_budget_mode=over_budget_mode,
+    )
+
+
+@dataclass
+class Check:
+    """One gate, and what the person on the other end can do about it.
+
+    `fixable_by_user` is the field the assistant actually speaks from: it decides
+    between "go add a vendor" and "this isn't yours to fix — ask an admin".
+    `owner` names who it belongs to when it isn't the user.
+    """
+    id: str
+    layer: str            # rule | config   (field-level gates live in epms-api)
+    passed: bool
+    message: str | None = None
+    fixable_by_user: bool = True
+    owner: str | None = None
+
+
+async def preflight_submit(db: AsyncSession, doc_type: str,
+                           doc_id: uuid.UUID) -> list[Check]:
+    """Every gate `submit` would hit, evaluated without writing anything.
+
+    Execution stops at the first failure — that is right for execution, wrong
+    here. Someone who adds the missing vendor only to hit an unconfigured
+    approver, then a budget block, has been sent around three times for what
+    could have been one message. So this runs them all.
+
+    Each gate calls the same helper execution calls, and reports the same
+    string, so the two cannot drift apart.
+    """
+    ctx = await load_action_context(db, doc_type, doc_id)
+    checks: list[Check] = []
+
+    status = _status_of(ctx.meta, ctx.doc)
+    status_ok = status in ctx.meta["valid_submit"]
+    checks.append(Check(
+        id="status_allows_submit", layer="rule", passed=status_ok,
+        message=None if status_ok else msg_cannot_submit(doc_type, status),
+        # Already-submitted is the common case here; there is nothing to "fix",
+        # the document has simply moved on.
+        fixable_by_user=False,
+    ))
+
+    if doc_type == "pr":
+        blocked = ctx.over_budget_mode == "hard_block"
+        checks.append(Check(
+            id="budget_hard_block", layer="rule", passed=not blocked,
+            message=MSG_BUDGET_HARD_BLOCK if blocked else None,
+            fixable_by_user=True,
+        ))
+
+    # Routing is evaluated even when an earlier gate already failed — an
+    # unconfigured department manager is exactly the kind of thing worth knowing
+    # about before you go fix something else and come back.
+    start, _skipped = first_actionable_step(
+        doc_type, ctx.doc, ctx.workflow, ctx.director_uid, ctx.supervisor_uid,
+        ctx.dept_has_director, ctx.dept_has_supervisor, ctx.cross_dept_pa)
+    if start >= len(ctx.workflow):
+        # Whole workflow auto-skips: submission goes straight to approved.
+        checks.append(Check(id="approver_routing", layer="config", passed=True))
+    else:
+        try:
+            await resolve_step_assignment(
+                db, doc_type, ctx.doc, start, ctx.workflow, ctx.rm, ctx.dept_gm_opm,
+                routing_dept_id=ctx.routing_dept_id, director_uid=ctx.director_uid,
+                supervisor_uid=ctx.supervisor_uid, cross_dept_pa=ctx.cross_dept_pa)
+            checks.append(Check(id="approver_routing", layer="config", passed=True))
+        except ValueError as exc:
+            checks.append(Check(
+                id="approver_routing", layer="config", passed=False,
+                message=str(exc),
+                # Nobody can self-serve their way out of a department with no
+                # manager assigned.
+                fixable_by_user=False, owner="admin",
+            ))
+
+    return checks
+
+
+async def execute_action(
+    db: AsyncSession,
+    doc_type: str,
+    doc_id: uuid.UUID,
+    action: str,
+    actor_id: uuid.UUID,
+    actor_role: str,
+    comment: str | None = None,
+    today: date | None = None,
+) -> ActionResult:
+    ctx = await load_action_context(db, doc_type, doc_id)
+    meta = ctx.meta
+    doc = ctx.doc
+    step = ctx.step
+    cfg = ctx.cfg
+    rm = ctx.rm
+    dept_gm_opm = ctx.dept_gm_opm
+    routing_uid = ctx.routing_uid
+    routing_dept_id = ctx.routing_dept_id
+    cross_dept_pa = ctx.cross_dept_pa
+    director_uid = ctx.director_uid
+    supervisor_uid = ctx.supervisor_uid
+    dept_has_director = ctx.dept_has_director
+    dept_has_supervisor = ctx.dept_has_supervisor
+    workflow = ctx.workflow
+    over_budget_mode = ctx.over_budget_mode
+
+    act = action.lower()
+    now = datetime.now(timezone.utc)
+
     doc_number = getattr(doc, meta["number_attr"])
     recorded_role = actor_role
     auto_skipped: list[int] = []
@@ -1160,32 +1368,23 @@ async def execute_action(
 
     if act == "submit":
         if _status_of(meta, doc) not in meta["valid_submit"]:
-            raise ValueError(f"Cannot submit {doc_type.upper()} in status '{_status_of(meta, doc)}'")
+            raise ValueError(msg_cannot_submit(doc_type, _status_of(meta, doc)))
         # hard_block: refuse over-budget PR submission outright (PRD OBG / Budget Config)
         if doc_type == "pr" and over_budget_mode == "hard_block":
-            raise ValueError(
-                "This PR exceeds the available budget for its account. "
-                "Submission is blocked by Budget Config (hard_block mode). "
-                "Reduce the budget code's commitment or split the PR into smaller items."
-            )
+            raise ValueError(MSG_BUDGET_HARD_BLOCK)
         _set_status(meta, doc, "submitted")
         if hasattr(doc, "submitted_at"):
             doc.submitted_at = now
-        start = 0
-        while start < len(workflow):
-            role = workflow[start]["role"]
-            skip, reason = _should_skip_step(role, doc_type, doc, director_uid,
-                                             supervisor_uid, dept_has_director, dept_has_supervisor,
-                                             cross_dept_pa)
-            if not skip:
-                break
+        start, skipped_prefix = first_actionable_step(
+            doc_type, doc, workflow, director_uid, supervisor_uid,
+            dept_has_director, dept_has_supervisor, cross_dept_pa)
+        for idx, skipped_role, reason in skipped_prefix:
             db.add(ApprovalEvent(
                 document_type=doc_type, document_id=doc.id, document_number=doc_number,
-                step_idx=start, action="approve", actor_id=actor_id,
-                actor_role=role, comment=reason,
+                step_idx=idx, action="approve", actor_id=actor_id,
+                actor_role=skipped_role, comment=reason,
             ))
-            auto_skipped.append(start)
-            start += 1
+            auto_skipped.append(idx)
         _set_step(meta, doc, start)
         if start < len(workflow):
             await _create_approve_task(db, doc_type, doc, step=start, workflow=workflow,
