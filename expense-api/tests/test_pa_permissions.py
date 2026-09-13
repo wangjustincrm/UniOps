@@ -20,11 +20,26 @@ from app.models.pa import PaymentApplication
 from app.models.task_mirror import TaskMirror
 
 
+@pytest.fixture(autouse=True)
+def _direct_pa_switched_on(monkeypatch):
+    """Exercise the retired Direct PA path on purpose.
+
+    OA's Direct PA is hidden and creation answers 410 (see DIRECT_PA_RETIRED in
+    api/v1/pa.py). The code behind the flag is kept rather than deleted, and
+    kept means kept WORKING — so these tests flip it on. If the product
+    decision is reversed, this file is what says whether the feature still
+    functions; without it the code would rot silently behind the flag.
+
+    The flag itself is covered by test_direct_pa_retired.py.
+    """
+    monkeypatch.setattr("app.api.v1.pa.DIRECT_PA_RETIRED", False)
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _client_for(role: str, user_id: str) -> AsyncClient:
     token = jwt.encode(
-        {"sub": user_id, "role": role, "exp": datetime.utcnow() + timedelta(hours=8)},
+        {"sub": user_id, "role": role, "type": "access", "exp": datetime.utcnow() + timedelta(hours=8)},
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
     )
@@ -90,6 +105,9 @@ async def _add_open_task(pa_id: str, *, user_id: str | None = None, role: str | 
 async def _grant_additional_role(user_id: str, role_code: str) -> None:
     """Insert an identity user_roles row (ADDITIONAL role, phase 3)."""
     async with db_module.AsyncSessionLocal() as db:
+        await db.execute(text(
+            "INSERT INTO role_defs (code, is_active) VALUES (:r, true) "
+            "ON CONFLICT (code) DO NOTHING"), {"r": role_code})
         await db.execute(text(
             "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :r)"),
             {"u": user_id, "r": role_code})
