@@ -166,11 +166,11 @@ async def budget_actual_partner_export(
     fiscal_year: int = Query(...),
     cost_center_id: uuid.UUID | None = Query(default=None),
 ):
-    """Budget Dashboard export: one .xlsx with every predreal budget account
-    expanded by vendor (客商). Plan (budget-api) + NC-posted actual, monthly + year.
-    cost_center_id omitted => aggregated across all cost centers (or, for a
-    non-full-access caller, their department — see `_cc_scope`). Fail-open to
-    plan=0 if budget-api is unreachable (mirrors /budget-actual-grid)."""
+    """Budget Dashboard export: one .xlsx with a row per predreal budget account
+    and two columns per month — Plan (budget-api) and NC-posted actual — plus a
+    Year pair. cost_center_id omitted => aggregated across all cost centers (or,
+    for a non-full-access caller, their department — see `_cc_scope`). Fail-open
+    to plan=0 if budget-api is unreachable (mirrors /budget-actual-grid)."""
     import logging
 
     from fastapi.responses import Response
@@ -178,7 +178,7 @@ async def budget_actual_partner_export(
 
     from app.models.mirrors import CostCenter
     from app.services import budget_client
-    from app.services.predreal_export import build_partner_export_xlsx
+    from app.services.predreal_export import build_budget_actual_xlsx
 
     auth = request.headers.get("authorization") or ""
     token = auth[7:] if auth.lower().startswith("bearer ") else None
@@ -203,7 +203,6 @@ async def budget_actual_partner_export(
                         or str(a.get("account_code", "")).startswith("CRM007"))]
 
     nc = (await crud.nc_actuals_monthly(db, fiscal_year, **kw))["accounts"]
-    partners = await crud.nc_partner_monthly_all(db, fiscal_year=fiscal_year, **kw)
 
     if cost_center_id is not None:
         cc_name = (await db.execute(
@@ -212,8 +211,8 @@ async def budget_actual_partner_export(
     else:
         cc_label = "All Cost Centers"
 
-    data = build_partner_export_xlsx(
-        accounts=accounts, nc_monthly=nc, partners_by_account=partners,
+    data = build_budget_actual_xlsx(
+        accounts=accounts, nc_monthly=nc,
         fiscal_year=fiscal_year, cost_center_label=cc_label)
     fname = f"budget-actual-FY{fiscal_year}.xlsx"
     return Response(
