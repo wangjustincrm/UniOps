@@ -207,6 +207,65 @@ async def test_submit_is_refused_on_a_locally_raised_po(
     assert "imported from NC" in resp.json()["detail"]
 
 
+async def test_submit_is_accepted_on_a_milk_po(
+    test_engine, stub_engine, admin_client,
+):
+    """A non raw-material NC order takes the same two signatures.
+
+    ``nc_milk`` is what an approved order of any trade type other than
+    21-Cxx-CRM01 mirrors as. It is out of the invoice/payment flow because those
+    receipts are booked in NC — which is a fact about money, not about who
+    authorises the purchase. This is the admission half of the refusal below:
+    without it, "refused" would also be satisfied by refusing everything.
+    """
+    officer = await _make_user(test_engine, "erp_pa_officer")
+    await _make_user(test_engine, "procurement_manager", signature=_PNG)
+    await _make_user(test_engine, "opm", signature=_PNG)
+    po_id = await _make_po(test_engine, officer, status="nc_milk")
+
+    resp = await admin_client.post(f"/api/v1/po/{po_id}/signoff/submit",
+                                   json={"justification": "September milk run."})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "submitted"
+
+
+async def test_submit_is_refused_on_a_closed_nc_po_and_says_why(
+    test_engine, stub_engine, admin_client,
+):
+    """The refusal names the status, not the source.
+
+    An NC order that is closed IS imported from NC, so the old single sentence
+    ("only available on POs imported from NC") contradicted what the user was
+    looking at.
+    """
+    officer = await _make_user(test_engine, "erp_pa_officer")
+    await _make_user(test_engine, "procurement_manager", signature=_PNG)
+    await _make_user(test_engine, "opm", signature=_PNG)
+    po_id = await _make_po(test_engine, officer, status="closed")
+
+    resp = await admin_client.post(f"/api/v1/po/{po_id}/signoff/submit",
+                                   json={"justification": "Too late."})
+    assert resp.status_code == 409, resp.text
+    assert "'closed'" in resp.json()["detail"]
+
+
+async def test_every_signable_status_can_produce_a_pdf():
+    """The signatures are stamped onto the PO PDF, so each one needs a page.
+
+    Nothing else generates a PDF for an imported PO — ``po_action`` never runs
+    on one — so a status that may be signed but may not be rendered would end
+    the sign-off with the signatures nowhere.
+
+    Async only because this module marks every test ``asyncio``: a plain def
+    under that mark gets its own event loop and detaches the session-scoped
+    engine from the one the tests after it use.
+    """
+    from app.api.v1.po_attachments import _PDF_STATUSES
+    from app.crud.po_signoff import _SUBMITTABLE_PO_STATUSES
+
+    assert set(_SUBMITTABLE_PO_STATUSES) <= _PDF_STATUSES
+
+
 async def test_submit_records_the_raiser_and_opens_the_thread(
     test_engine, stub_engine, admin_client,
 ):

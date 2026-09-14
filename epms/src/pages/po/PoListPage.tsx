@@ -36,6 +36,7 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'rejected', label: 'Rejected' },
   { value: 'issued', label: 'Issued' },
   { value: 'nc_pending', label: 'NC Pending Approval' },
+  { value: 'nc_milk', label: 'Milk / NC' },
   { value: 'partially_received', label: 'Partial Receipt' },
   { value: 'fully_received', label: 'Fully Received' },
   { value: 'closed', label: 'Closed' },

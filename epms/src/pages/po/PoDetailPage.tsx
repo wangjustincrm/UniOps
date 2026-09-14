@@ -1023,7 +1023,7 @@ export default function PoDetailPage() {
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Attachments</h2>
-                {['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_pending'].includes(po.status) && (
+                {['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_pending', 'nc_milk'].includes(po.status) && (
                   <button
                     type="button"
                     onClick={() => regeneratePdf.mutate()}
