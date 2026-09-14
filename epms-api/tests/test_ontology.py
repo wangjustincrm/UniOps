@@ -384,9 +384,18 @@ async def test_ontology_matches_the_database():
                 spans = (await conn.execute(sa.text(
                     f"SELECT count(DISTINCT date_trunc('year', {column})) "
                     f"FROM {table}"))).scalar_one()
-                has_real_date = any(
-                    f.kind in ("date", "datetime") and n != "created_at"
-                    for n, f in REGISTRY[name].fields.items())
+                # A candidate only counts if it is populated. boms.effective_from
+                # is a date column that is NULL on all 286 rows — offering it as
+                # the alternative would be trading one useless axis for another.
+                has_real_date = False
+                for n, f in REGISTRY[name].fields.items():
+                    if f.kind not in ("date", "datetime") or n == "created_at":
+                        continue
+                    filled = (await conn.execute(sa.text(
+                        f"SELECT count({n}) FROM {table}"))).scalar_one()
+                    if filled:
+                        has_real_date = True
+                        break
                 if spans <= 1 and has_real_date:
                     problems.append(
                         f"{name}.{column}: every row falls in one year, so this "
@@ -451,3 +460,69 @@ async def test_no_entity_maps_an_empty_table():
     assert not empty, (
         "these entities map empty tables and would answer 'none' to everything: "
         + ", ".join(empty))
+
+
+async def test_no_entity_offers_a_column_that_is_always_null():
+    """A field that is NULL on every row is a filter that matches nothing.
+
+    Same failure as an entity over an empty table: the reply says "none found"
+    where the truth is "this was never filled in". boms.effective_from is the
+    live example — a date column, NULL on all 286 rows — and it is kept out of
+    the ontology for this reason rather than left in as harmless.
+    """
+    import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.core.config import settings
+    from app.core.ontology import _TABLE_MODELS
+
+    external = [e for e in REGISTRY.values()
+                if e.model.__tablename__ in _TABLE_MODELS]
+    empty: list[str] = []
+    engine = create_async_engine(str(settings.DATABASE_URL))
+    try:
+        async with engine.connect() as conn:
+            for entity in external:
+                table = entity.model.__tablename__
+                total = (await conn.execute(
+                    sa.text(f"SELECT count(*) FROM {table}"))).scalar_one()
+                if not total:
+                    continue
+                for fname in entity.fields:
+                    filled = (await conn.execute(sa.text(
+                        f"SELECT count({fname}) FROM {table}"))).scalar_one()
+                    if not filled:
+                        empty.append(f"{entity.name}.{fname}")
+    finally:
+        await engine.dispose()
+
+    assert not empty, (
+        "these fields are NULL on every row, so any filter on them matches "
+        "nothing: " + ", ".join(empty))
+
+
+def test_bom_entities_are_scoped_to_the_default_recipe():
+    """A product has several BOMs and only one is the default.
+
+    CF0063 has six packaging BOMs, versions 1.0 to 1.5, five of them approved —
+    and they are not variants of one quantity: v1.2 builds in batches of 1000 and
+    v1.4 in batches of 660. Adding their lines produces a number with no meaning.
+    "Which products use CS0059" is 2 against the default recipes and 4 across all
+    of them; the second is not a more complete answer, it is a wrong one.
+
+    Asserted here because the marker lives on the NC mirror rather than on
+    `boms`, so this is reached through nc_source_pk and would be easy to lose in
+    a later refactor of either side.
+    """
+    from app.core.ontology import scope_bom_default, scope_bom_line_default
+
+    assert REGISTRY["bom"].apply_scope is scope_bom_default
+    assert REGISTRY["bom_line"].apply_scope is scope_bom_line_default
+
+
+def test_no_metric_sums_a_per_batch_quantity():
+    """qty_per is measured against each recipe's own batch size and in each
+    line's own unit. A sum over it adds kilograms to pieces at three different
+    scales — a number that looks like an answer and is not one."""
+    assert not any(m.field == "qty_per" and m.fn == "sum"
+                   for m in REGISTRY["bom_line"].metrics.values())

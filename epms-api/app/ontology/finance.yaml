@@ -57,7 +57,6 @@ entities:
       is_postable: {kind: bool, label: "Accepts postings directly"}
       parent_code: {kind: text, label: "Parent account code"}
       is_active: {kind: bool, label: "Active"}
-      cash_flow_category: {kind: text, label: "Cash-flow category"}
       created_at: {kind: datetime, label: "Created"}
     metrics:
       count: {fn: count, field: "*", label: "Accounts"}
@@ -98,7 +97,9 @@ entities:
       total_credit: {kind: money, label: "Total credit (document currency)"}
       total_local_debit: {kind: money, label: "Total debit (reporting currency)"}
       total_local_credit: {kind: money, label: "Total credit (reporting currency)"}
-      posted_at: {kind: datetime, label: "Posted at"}
+      # No posted_at: the column is NULL on all 42,400 rows even though 40,425
+      # of them are posted, so the moment of posting simply is not recorded.
+      # Offering it would answer "when was this posted" with silence.
       created_at: {kind: datetime, label: "Created"}
     metrics:
       count: {fn: count, field: "*", label: "Vouchers"}
@@ -136,8 +137,6 @@ entities:
       currency: {kind: text, label: "Currency"}
       partner_name: {kind: text, label: "Partner"}
       tax_code: {kind: text, label: "Tax code"}
-      quantity: {kind: money, label: "Quantity"}
-      unit: {kind: text, label: "Unit"}
       created_at: {kind: datetime, label: "Row created"}
     metrics:
       count: {fn: count, field: "*", label: "Lines"}
@@ -181,7 +180,6 @@ entities:
         label: "Status"
         values: [draft, posted, paid, void]
       po_number: {kind: text, label: "PO number"}
-      posted_at: {kind: datetime, label: "Posted at"}
       created_at: {kind: datetime, label: "Created"}
     metrics:
       count: {fn: count, field: "*", label: "Invoices"}
@@ -201,7 +199,6 @@ entities:
       # something the assistant can reach.
       account_masked: {kind: text, label: "Account number (masked)"}
       currency: {kind: text, label: "Currency"}
-      ledger_account_code: {kind: text, label: "Ledger account code"}
       kind: {kind: text, label: "Kind"}
       is_active: {kind: bool, label: "Active"}
       created_at: {kind: datetime, label: "Created"}
@@ -222,8 +219,6 @@ entities:
       is_customer: {kind: bool, label: "Is a customer"}
       payment_terms: {kind: text, label: "Payment terms"}
       currency: {kind: text, label: "Currency"}
-      province: {kind: text, label: "Province"}
-      credit_limit: {kind: money, label: "Credit limit"}
       is_active: {kind: bool, label: "Active"}
       created_at: {kind: datetime, label: "Created"}
     metrics:

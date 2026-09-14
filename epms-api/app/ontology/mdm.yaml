@@ -1,0 +1,125 @@
+# Master data — materials, and the recipes that turn some of them into others.
+#
+# Owned by mdm-api; reached by `table:` for the reasons in finance.yaml. Gated on
+# mrp.report.view, the same permission mdm-api's own /mdm/v1/boms endpoints
+# require, so the assistant cannot show a recipe to anyone the BOM screens would
+# not.
+#
+# ── Two things about BOM quantities that are wrong by default ────────────────
+#
+#   1. A product has SEVERAL BOMs and only one is the default. CF0063 has six
+#      packaging BOMs, versions 1.0 to 1.5, five of them approved. They are not
+#      variants of one quantity — v1.2 is built in batches of 1000 and v1.4 in
+#      batches of 660 — so their lines cannot be compared, let alone added. The
+#      `bom` and `bom_line` entities are scoped to the default, which is a NC
+#      flag reached through nc_source_pk because the sync never carried it into
+#      `boms`.
+#
+#   2. `qty_per` is NOT per unit of product. It is the amount consumed when the
+#      BOM is built once, producing `batch_output_qty` — 1000 for most, and never
+#      1 anywhere in this data. Reading it as a unit quantity overstates by three
+#      orders of magnitude. Per-unit is qty_per / batch_output_qty, which is
+#      arithmetic, so the assistant reports both numbers and says what they mean
+#      rather than dividing them itself.
+#
+# There is no metric that sums qty_per, deliberately: a total of quantities
+# measured against different batch sizes, in different units, is not a number
+# anybody wants.
+version: 1
+
+entities:
+
+  material:
+    table: materials
+    label: "Material — a product, ingredient or packaging item"
+    perm_key: mrp.report.view
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Material code"}
+      name: {kind: text, label: "Name"}
+      spec: {kind: text, label: "Specification"}
+      base_uom: {kind: text, label: "Base unit"}
+      # How it is obtained — bought in, or made here. This is what decides
+      # whether a shortage is a purchasing problem or a production one.
+      procurement_type: {kind: text, label: "Procurement type", enumerate: true}
+      shelf_life_months: {kind: int, label: "Shelf life (months)"}
+      erp_class_name: {kind: text, label: "ERP class"}
+      is_active: {kind: bool, label: "Active"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Materials"}
+
+  bom:
+    table: boms
+    label: "BOM header — the default recipe's batch size, version and stage. What
+      goes INTO the product is on bom_line, not here; for \"what does X need\",
+      query bom_line and filter it by bom.product_material_code"
+    perm_key: mrp.report.view
+    scope: bom_default
+    date_field: created_at
+    fields:
+      nc_source_pk: {kind: text, internal: true}
+      product_material_code: {kind: text, label: "Product material code"}
+      # Which stage of manufacture this recipe covers. A product usually has one
+      # BOM per stage rather than a single recipe end to end, so "the BOM" for a
+      # finished good may legitimately be several rows.
+      bom_type: {kind: text, label: "Manufacturing stage", enumerate: true}
+      version: {kind: text, label: "Version"}
+      status: {kind: text, label: "Status", enumerate: true}
+      # The batch this recipe makes. Every line's qty_per is the amount needed to
+      # produce THIS much, not one unit. Never 1 anywhere in this data.
+      batch_output_qty: {kind: money, label: "Output per batch"}
+      yield_rate: {kind: money, label: "Yield rate"}
+      factory_code: {kind: text, label: "Factory code"}
+      # No effective_from here: the column exists and is NULL on all 286 rows,
+      # so offering it would let a filter be built that silently matches nothing.
+      # The dates that are real live on the lines.
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "BOMs"}
+    links:
+      components:
+        target: bom_line
+        cardinality: one_to_many
+        local: id
+        remote: bom_id
+        label: "What goes into it"
+
+  bom_line:
+    table: bom_lines
+    label: "BOM line — one component that goes into a product, and how much. This
+      is the entity for \"what is X made of\"; filter by bom.product_material_code
+      and read the batch size from bom.batch_output_qty"
+    perm_key: mrp.report.view
+    scope: bom_line_default
+    # The date the component actually applies from — 0 of 2,035 null, spanning
+    # 2020 to 2026. created_at is when the row was synced and is all one year.
+    date_field: effective_from
+    fields:
+      bom_id: {kind: uuid, internal: true}
+      line_no: {kind: int, label: "Line number"}
+      component_material_code: {kind: text, label: "Component material code"}
+      # Per BATCH — see the note at the top of this file. The batch size is on
+      # the parent BOM as batch_output_qty; both numbers are needed before this
+      # one means anything.
+      qty_per:
+        kind: money
+        label: "Quantity consumed per BATCH, not per unit of product. Meaningless
+          on its own — always select bom.batch_output_qty alongside it, which is
+          how much the batch produces (never 1; usually 1000)"
+      uom: {kind: text, label: "Unit"}
+      scrap_rate: {kind: money, label: "Scrap rate"}
+      qty_per_secondary: {kind: money, label: "Quantity per batch (secondary unit)"}
+      uom_secondary: {kind: text, label: "Secondary unit"}
+      effective_from: {kind: date, label: "Effective from"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Components"}
+    links:
+      bom:
+        target: bom
+        cardinality: many_to_one
+        local: bom_id
+        remote: id
+        label: "The recipe this line belongs to"

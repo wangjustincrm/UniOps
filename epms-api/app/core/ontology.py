@@ -43,6 +43,7 @@ ONTOLOGY_FILES = (
     ONTOLOGY_PATH,
     _ONTOLOGY_DIR / "finance.yaml",
     _ONTOLOGY_DIR / "mrp.yaml",
+    _ONTOLOGY_DIR / "mdm.yaml",
 )
 
 # Field kinds drive both output formatting and which operators the validator
@@ -295,6 +296,43 @@ async def scope_forecast_current(q: Select, scope: dict, db: AsyncSession) -> Se
         _latest("mrp_forecast_versions", "WHERE status = 'confirmed'")))
 
 
+async def scope_bom_default(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """Only the default BOM for each product.
+
+    A product carries several BOMs — six for CF0063, versions 1.0 to 1.5, five of
+    them approved — and exactly one is marked default in NC. They are not
+    variants of a common quantity: v1.2 is built in batches of 1000 and v1.4 in
+    batches of 660, so adding their lines together produces a number with no
+    meaning at all.
+
+    The marker lives on the NC mirror as hbdefault, not on `boms` — the sync
+    never carried the column across — so this reaches back through nc_source_pk,
+    which is populated on all 286 rows. If `boms` ever gains its own flag, this
+    is the one place that has to change.
+
+    Not universally unique: 159 of 164 (product, bom_type) pairs have exactly one
+    default, five have more. Those return more than one BOM rather than an
+    arbitrary pick, because choosing silently is how the wrong recipe gets
+    reported as the recipe.
+    """
+    model = _TABLE_MODELS["boms"]
+    return q.where(model.nc_source_pk.in_(
+        sa.text("SELECT nc_source_pk FROM nc_bom WHERE hbdefault = 'Y'")))
+
+
+async def scope_bom_line_default(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """Lines of the default BOMs only — same reasoning, one level down.
+
+    Without this, "what goes into CF0063" answers with all six versions' lines
+    interleaved: the same component appearing repeatedly at quantities that
+    belong to different batch sizes.
+    """
+    model = _TABLE_MODELS["bom_lines"]
+    return q.where(model.bom_id.in_(sa.text(
+        "SELECT b.id FROM boms b JOIN nc_bom n ON n.nc_source_pk = b.nc_source_pk "
+        "WHERE n.hbdefault = 'Y'")))
+
+
 async def scope_purchase_latest_run(q: Select, scope: dict, db: AsyncSession) -> Select:
     """Only the newest purchase-suggestion run.
 
@@ -317,6 +355,8 @@ _SCOPES: dict[str, Callable] = {
     "mps_in_force": scope_mps_in_force,
     "forecast_current": scope_forecast_current,
     "purchase_latest_run": scope_purchase_latest_run,
+    "bom_default": scope_bom_default,
+    "bom_line_default": scope_bom_line_default,
 }
 
 
