@@ -140,8 +140,8 @@ export const api = {
   getBlobWithFilename,
 }
 
-async function epmsRequest<T>(path: string): Promise<T> {
-  const res = await authFetch(`${EPMS_BASE}${path}`, {})
+async function epmsRequest<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  const res = await authFetch(`${EPMS_BASE}${path}`, { method, body })
   if (!res.ok) throw await toApiError(res)
   return res.json()
 }
@@ -149,6 +149,33 @@ async function epmsRequest<T>(path: string): Promise<T> {
 /** epms-api client (used for public branding — see hooks/useBranding.ts). */
 export const epmsApi = {
   get: <T>(path: string) => epmsRequest<T>(path),
+  post: <T>(path: string, body: unknown) => epmsRequest<T>(path, 'POST', body),
+}
+
+/**
+ * POST a body to EPMS API and save the response as a file.
+ *
+ * Through authFetch like everything else here, so there is one auth header and
+ * one 401 path. Paths passed to epms* include /api/v1 — this base, unlike the
+ * others in this file, does not add it.
+ */
+export async function epmsPostDownload(
+  path: string, body: unknown, fallbackName: string,
+): Promise<void> {
+  const res = await authFetch(`${EPMS_BASE}${path}`, { method: 'POST', body })
+  if (!res.ok) throw await toApiError(res)
+
+  const blob = await res.blob()
+  const named = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = named?.[1] ?? fallbackName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // Revoking immediately can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 async function mdmRequest<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
