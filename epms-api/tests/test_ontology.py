@@ -361,6 +361,12 @@ async def test_ontology_matches_the_database():
                     problems.append(f"{name}: table {table!r} does not exist")
                     continue
                 for fname, field in entity.fields.items():
+                    if field.is_expression:
+                        # Computed here, so there is no column to compare it to.
+                        # Its correctness is covered by the behavioural tests
+                        # instead — a wrong expression shows up as the wrong
+                        # rows, not as a schema mismatch.
+                        continue
                     dtype = cols.get(fname)
                     if dtype is None:
                         problems.append(
@@ -389,7 +395,8 @@ async def test_ontology_matches_the_database():
                 # the alternative would be trading one useless axis for another.
                 has_real_date = False
                 for n, f in REGISTRY[name].fields.items():
-                    if f.kind not in ("date", "datetime") or n == "created_at":
+                    if (f.kind not in ("date", "datetime") or n == "created_at"
+                            or f.is_expression):
                         continue
                     filled = (await conn.execute(sa.text(
                         f"SELECT count({n}) FROM {table}"))).scalar_one()
@@ -488,7 +495,9 @@ async def test_no_entity_offers_a_column_that_is_always_null():
                     sa.text(f"SELECT count(*) FROM {table}"))).scalar_one()
                 if not total:
                     continue
-                for fname in entity.fields:
+                for fname, field in entity.fields.items():
+                    if field.is_expression:
+                        continue
                     filled = (await conn.execute(sa.text(
                         f"SELECT count({fname}) FROM {table}"))).scalar_one()
                     if not filled:
@@ -501,7 +510,7 @@ async def test_no_entity_offers_a_column_that_is_always_null():
         "nothing: " + ", ".join(empty))
 
 
-def test_bom_entities_are_scoped_to_the_default_recipe():
+def test_bom_entities_default_to_the_default_recipe():
     """A product has several BOMs and only one is the default.
 
     CF0063 has six packaging BOMs, versions 1.0 to 1.5, five of them approved —
@@ -514,10 +523,12 @@ def test_bom_entities_are_scoped_to_the_default_recipe():
     `boms`, so this is reached through nc_source_pk and would be easy to lose in
     a later refactor of either side.
     """
-    from app.core.ontology import scope_bom_default, scope_bom_line_default
-
-    assert REGISTRY["bom"].apply_scope is scope_bom_default
-    assert REGISTRY["bom_line"].apply_scope is scope_bom_line_default
+    assert REGISTRY["bom"].default_filter == ("is_default", True)
+    assert REGISTRY["bom_line"].default_filter == ("bom.is_default", True)
+    # And it must be a default, not a scope: asking about versions has to switch
+    # it off, or "how many versions does CS0026 have" answers 1 against 7.
+    assert "version" in REGISTRY["bom"].default_filter_stand_down
+    assert "bom.version" in REGISTRY["bom_line"].default_filter_stand_down
 
 
 def test_no_metric_sums_a_per_batch_quantity():
@@ -526,3 +537,14 @@ def test_no_metric_sums_a_per_batch_quantity():
     scales — a number that looks like an answer and is not one."""
     assert not any(m.field == "qty_per" and m.fn == "sum"
                    for m in REGISTRY["bom_line"].metrics.values())
+
+
+def test_a_default_filter_must_explain_itself():
+    """It changes what a query means, so the reply has to be able to say so."""
+    for entity in REGISTRY.values():
+        if entity.default_filter:
+            assert entity.default_filter_note, (
+                f"{entity.name} narrows queries silently")
+            assert entity.default_filter_stand_down, (
+                f"{entity.name} has no way to ask about the dimension it "
+                f"filters on, which makes it a scope wearing a default's name")

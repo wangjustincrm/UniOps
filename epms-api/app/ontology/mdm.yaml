@@ -56,10 +56,28 @@ entities:
       goes INTO the product is on bom_line, not here; for \"what does X need\",
       query bom_line and filter it by bom.product_material_code"
     perm_key: mrp.report.view
-    scope: bom_default
+    # NOT scoped to the default. A scope cannot be opted out of, and that turned
+    # "how many BOM versions does CS0026 have" into "1" when the answer is 7 —
+    # every other version was invisible. The default is applied as a default
+    # instead: assumed when the question is about the recipe, dropped when the
+    # question is about versions.
+    scope: permission_only
+    default_filter:
+      field: is_default
+      value: true
+      stand_down_on: [version, status, batch_output_qty, created_at]
+      note: "Showing the default version of each recipe. Ask about versions to see all of them."
     date_field: created_at
     fields:
       nc_source_pk: {kind: text, internal: true}
+      # Which version is the one in force. The flag lives on the NC mirror and
+      # the sync never carried it into `boms`, so it is computed here — reached
+      # through nc_source_pk, which is populated on all 286 rows. If `boms` ever
+      # gains a real column, this expression is the single place to change.
+      is_default:
+        kind: bool
+        label: "Is the default version (the one actually in force)"
+        expr: "nc_source_pk IN (SELECT nc_source_pk FROM nc_bom WHERE hbdefault = 'Y')"
       product_material_code: {kind: text, label: "Product material code"}
       # Which stage of manufacture this recipe covers. A product usually has one
       # BOM per stage rather than a single recipe end to end, so "the BOM" for a
@@ -92,7 +110,15 @@ entities:
       is the entity for \"what is X made of\"; filter by bom.product_material_code
       and read the batch size from bom.batch_output_qty"
     perm_key: mrp.report.view
-    scope: bom_line_default
+    # Same reasoning as `bom`: assumed, not enforced. Comparing what changed
+    # between two versions is a real question and a scope would make it
+    # unanswerable.
+    scope: permission_only
+    default_filter:
+      field: bom.is_default
+      value: true
+      stand_down_on: [bom.version, bom.is_default, bom.status, bom.batch_output_qty]
+      note: "Showing components of the default version. Name a version to compare."
     # The date the component actually applies from — 0 of 2,035 null, spanning
     # 2020 to 2026. created_at is when the row was synced and is all one year.
     date_field: effective_from

@@ -192,6 +192,43 @@ def _coerce(kind: str, raw: Any) -> Any:
         _reject(f"Value {raw!r} is not a valid {kind}")
 
 
+def _apply_default_filter(stmt, entity: Entity, clauses: list[dict], hops: list,
+                          request: dict) -> tuple:
+    """Apply the entity's safe default, unless the caller is asking about it.
+
+    The BOM case is the one this exists for, and it has a failure on each side.
+    With no default, "what is CF0063 made of" merges six versions of the recipe
+    into one list of components. With the default forced — which is what a scope
+    would do — "how many BOM versions does CS0026 have" answers 1 where the
+    answer is 7, and that is the worse of the two: a confident wrong number
+    rather than a muddled right one.
+
+    So it assumes the default version and steps aside as soon as the question is
+    about versions. What counts as "about versions" is declared in the ontology
+    (`stand_down_on`) rather than guessed from the shape of the field name —
+    asking for `version` is plainly such a question and shares no prefix with
+    `is_default`, so no amount of string matching would have found it.
+    """
+    df = entity.default_filter
+    if not df:
+        return stmt, False
+    field, value = df
+
+    referenced = {c.get("field") for c in clauses if c.get("field")}
+    referenced |= set(request.get("group_by") or [])
+    referenced |= set(request.get("select") or [])
+    order = request.get("order_by") or {}
+    if order.get("field"):
+        referenced.add(order["field"])
+
+    if referenced & ({field} | set(entity.default_filter_stand_down)):
+        return stmt, False
+
+    col, path = _resolve(entity, field)
+    hops.extend(path)
+    return stmt.where(col.is_(True) if value is True else col == value), True
+
+
 def _apply_where(stmt, entity: Entity, clauses: list[dict], hops: list):
     for clause in clauses:
         name = clause.get("field")
@@ -402,22 +439,44 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
     # Gate 2 — the row filter. Unconditional, and applied before any caller
     # supplied predicate so nothing can be OR-ed around it.
     stmt = await entity.apply_scope(stmt, scope, db)
-    stmt = _apply_where(stmt, entity, request.get("where") or [], hops)
+    clauses = list(request.get("where") or [])
+    stmt, applied_default = _apply_default_filter(
+        stmt, entity, clauses, hops, request)
+    stmt = _apply_where(stmt, entity, clauses, hops)
     stmt = _apply_period(stmt, entity, request.get("period"), hops)
 
-    stmt = await _apply_hops(db, stmt, hops, scope)
-
+    # Resolve grouping and ordering BEFORE the joins are built, because
+    # resolving is what discovers which joins are needed. Ordering used to go
+    # through _column, which cannot cross a link at all — "compare versions 1.5
+    # and 1.6, ordered by version" was rejected with "Unknown field
+    # 'bom.version'" while the identical name worked in select and where, and
+    # the planner was told its query was invalid when it was not. Grouping did
+    # use _resolve but dropped the path it returned, so a group_by across a link
+    # only worked when select happened to mention the same side.
+    group_cols = []
     if grouped and group_by:
-        stmt = stmt.group_by(*[_resolve(entity, n)[0] for n in group_by])
+        for n in group_by:
+            col, path = _resolve(entity, n)
+            hops.extend(path)
+            group_cols.append(col)
 
     order = request.get("order_by")
+    order_col = None
     if order:
         name = order.get("field")
         if name in entity.metrics and grouped:
-            col = sa.literal_column(f'"{name}"')
+            order_col = sa.literal_column(f'"{name}"')
         else:
-            col = _column(entity, name)
-        stmt = stmt.order_by(col.desc() if order.get("desc") else col.asc())
+            order_col, path = _resolve(entity, name)
+            hops.extend(path)
+
+    stmt = await _apply_hops(db, stmt, hops, scope)
+
+    if group_cols:
+        stmt = stmt.group_by(*group_cols)
+    if order_col is not None:
+        stmt = stmt.order_by(
+            order_col.desc() if order.get("desc") else order_col.asc())
 
     # Totals for a grouped query, computed in SQL.
     #
@@ -481,6 +540,11 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
            # What the columns are called and what they mean, so an export can
            # head them with something a person recognises.
            "labels": labels, "row_cap": limit}
+
+    # Say so when a default narrowed the question. A result that quietly shows
+    # one version of six is not wrong, but a reply that does not mention it is.
+    if applied_default and entity.default_filter_note:
+        out["assumption"] = entity.default_filter_note
 
     # Codes that stand for something, for the columns actually returned. The
     # schema block carries these too, but only the planner sees that; whatever

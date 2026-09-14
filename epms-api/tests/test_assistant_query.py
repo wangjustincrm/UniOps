@@ -658,7 +658,9 @@ async def test_the_schema_tells_the_planner_what_a_code_means(admin_client):
 # ── finance and MRP ───────────────────────────────────────────────────────────
 
 
-async def test_the_ledger_is_invisible_without_view_finance(requester_client):
+async def test_the_ledger_is_invisible_without_view_finance(
+    requester_client, admin_client
+):
     """The access decision for finance is the permission and nothing else.
 
     These entities carry no row filter — a voucher is not "yours" the way a
@@ -666,8 +668,9 @@ async def test_the_ledger_is_invisible_without_view_finance(requester_client):
     company's books. It is worth a test of its own rather than trusting that the
     generic gate covers it.
     """
-    for entity in ("journal_voucher", "journal_voucher_line", "chart_of_account",
-                   "ap_invoice", "bank_account", "business_partner"):
+    entities = ("journal_voucher", "journal_voucher_line", "chart_of_account",
+                "ap_invoice", "bank_account", "business_partner")
+    for entity in entities:
         r = await requester_client.post("/api/v1/assistant/query",
                                         json={"entity": entity, "metrics": ["count"]})
         assert r.status_code == 200, entity
@@ -675,14 +678,40 @@ async def test_the_ledger_is_invisible_without_view_finance(requester_client):
         assert body["denied"] is True, f"{entity} answered a requester"
         assert not body["rows"], f"{entity} returned rows to a requester"
 
+    # The matching admission, so a wholly broken gate cannot satisfy this test.
+    for entity in entities:
+        r = await admin_client.post("/api/v1/assistant/query",
+                                    json={"entity": entity, "metrics": ["count"]})
+        assert r.json()["denied"] is False, (
+            f"{entity} denied a holder of view_finance")
 
-async def test_mrp_is_invisible_without_its_report_permission(requester_client):
-    for entity in ("mrp_mps_line", "mrp_forecast_line",
-                   "mrp_purchase_suggestion", "wms_inventory_lot"):
+
+async def test_mrp_is_invisible_without_its_report_permission(
+    requester_client, admin_client
+):
+    """Both halves, because the denial half alone proves nothing.
+
+    mrp.report.view was missing from the test permission matrix while the
+    entities already gated on it, so EVERY caller was denied and this test
+    passed for the wrong reason. A denial assertion is satisfied by the feature
+    being entirely broken; it needs an admission assertion beside it.
+    """
+    entities = ("mrp_mps_line", "mrp_forecast_line",
+                "mrp_purchase_suggestion", "wms_inventory_lot",
+                "bom", "bom_line", "material")
+    for entity in entities:
         r = await requester_client.post("/api/v1/assistant/query",
                                         json={"entity": entity, "metrics": ["count"]})
         assert r.status_code == 200, entity
         assert r.json()["denied"] is True, f"{entity} answered a requester"
+
+    for entity in entities:
+        r = await admin_client.post("/api/v1/assistant/query",
+                                    json={"entity": entity, "metrics": ["count"]})
+        assert r.status_code == 200, entity
+        assert r.json()["denied"] is False, (
+            f"{entity} denied a holder of mrp.report.view — the gate is not "
+            f"discriminating, it is just closed")
 
 
 async def test_the_schema_hides_what_the_caller_cannot_ask_about(requester_client):
@@ -696,3 +725,60 @@ async def test_the_schema_hides_what_the_caller_cannot_ask_about(requester_clien
                          "mrp_mps_line", "wms_inventory_lot"})
     # ...and still shows what they CAN ask about, or the test proves nothing.
     assert "purchase_request" in names
+
+
+# ── defaults that step aside ──────────────────────────────────────────────────
+
+
+async def test_a_recipe_question_gets_one_version(admin_client):
+    """Without this, "what is X made of" lists six versions of the recipe
+    interleaved — the same component several times at quantities belonging to
+    different batch sizes."""
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        # Deliberately not selecting `version` — that is a question ABOUT
+        # versions and correctly switches the default off.
+        "entity": "bom", "select": ["product_material_code", "bom_type"],
+    })
+    assert r.status_code == 200
+    body = r.json()
+    # And it says so, because a narrowed result the reply does not mention is
+    # indistinguishable from a complete one.
+    assert body.get("assumption"), "narrowed the query without saying so"
+
+
+async def test_a_version_question_sees_every_version(admin_client):
+    """The failure this default is shaped around.
+
+    As a scope it could not be opted out of, and "how many BOM versions does
+    CS0026 have" answered 1 where the answer is 7 — a confident wrong number,
+    which is worse than the muddle it was protecting against. Mentioning a field
+    that is about versions has to switch it off.
+    """
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "bom", "select": ["version", "is_default"],
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert "assumption" not in body, "still narrowed despite asking about versions"
+
+
+async def test_ordering_can_cross_a_link(admin_client):
+    """Ordering went through a helper that cannot cross a link, so a query was
+    rejected as invalid for a field name that select and where both accepted."""
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "bom_line",
+        "select": ["bom.version", "component_material_code"],
+        "order_by": {"field": "bom.version"},
+        "limit": 5,
+    })
+    assert r.status_code == 200, r.text
+
+
+async def test_grouping_across_a_link_brings_its_join(admin_client):
+    """group_by resolved the field but dropped the path that resolution
+    returned, so the join was only built when select happened to name the same
+    side. It worked by coincidence in every case anyone had tried."""
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "bom_line", "group_by": ["bom.version"], "metrics": ["count"],
+    })
+    assert r.status_code == 200, r.text

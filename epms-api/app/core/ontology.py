@@ -20,7 +20,7 @@ import uuid
 import sqlalchemy as sa
 import yaml
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import column_property, declarative_base
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
@@ -121,7 +121,21 @@ def _model_for_table(table: str, fields: dict, where: str) -> type:
             continue
         kind = fspec.get("kind")
         _require(kind in _SA_TYPES, f"{where}.{fname}: unknown kind {kind!r}")
-        cols[fname] = sa.Column(_SA_TYPES[kind], nullable=True)
+        expr = fspec.get("expr")
+        if expr:
+            # A column the owning service should have but does not. The BOM
+            # default flag is the case this exists for: it lives on the NC
+            # mirror and the sync never carried it into `boms`, so without this
+            # there is no way to ask which version is the real one — and no way
+            # to ask about the others either, which is worse.
+            #
+            # The SQL comes from the ontology file, never from a request. A
+            # request cannot reach this: the planner chooses field NAMES from a
+            # fixed list and never writes SQL.
+            cols[fname] = column_property(
+                sa.literal_column(f"({expr})", type_=_SA_TYPES[kind]))
+        else:
+            cols[fname] = sa.Column(_SA_TYPES[kind], nullable=True)
 
     model = type(f"Ext_{table}", (_ExternalBase,), cols)
     _TABLE_MODELS[table] = model
@@ -374,6 +388,9 @@ class Field:
     # row recorded as "Engineering", and a planner that has only seen the field
     # name will filter on the words it was given and find nothing.
     enumerate_values: bool = False
+    # Computed here rather than stored by the owning service — so it has no row
+    # in information_schema and the drift checks must skip it.
+    is_expression: bool = False
     # What a coded value MEANS. A stored 4 is "Service"; without the mapping the
     # column is unanswerable in both directions — the planner cannot turn a
     # question about services into type=4, and nothing can report a 4 back as
@@ -420,6 +437,21 @@ class Entity:
     # the check against real data can tell "we looked and accepted this" from
     # "nobody has looked yet".
     nullable_axis_ok: bool = False
+    # A condition applied only when the caller said nothing about this field.
+    #
+    # Different from a scope, and the difference is the whole point. A scope is a
+    # boundary and cannot be opted out of. This is a safe DEFAULT: without it,
+    # "what is CF0063 made of" silently merges six versions of the recipe; with
+    # it as a scope, "how many versions does CS0026 have" answers 1 when the
+    # truth is 7. Neither is acceptable, so the rule is: assume the default
+    # version unless the question is about versions, in which case get out of
+    # the way.
+    default_filter: tuple[str, object] | None = None
+    default_filter_note: str = ""
+    # Fields whose mention means the question is ABOUT this dimension, so the
+    # default must not be applied. Declared rather than inferred: "version" is
+    # such a field and shares no prefix with "is_default".
+    default_filter_stand_down: tuple[str, ...] = ()
 
 
 # Filled during _build_entity, drained by load() once every entity exists: a
@@ -489,6 +521,7 @@ def _build_entity(name: str, spec: dict) -> Entity:
             values=tuple(fspec.get("values") or ()),
             enumerate_values=bool(fspec.get("enumerate")),
             value_labels=tuple((str(k), str(v)) for k, v in raw_labels.items()),
+            is_expression=bool(fspec.get("expr")),
         )
     _require(bool(fields), f"{where}: needs at least one field")
 
@@ -543,6 +576,20 @@ def _build_entity(name: str, spec: dict) -> Entity:
             f"otherwise pick a column that is always set."
         )
 
+    df = spec.get("default_filter")
+    _default_filter: tuple[str, object] | None = None
+    _df_note = ""
+    _df_stand_down: tuple[str, ...] = ()
+    if df:
+        _require(isinstance(df, dict) and "field" in df and "value" in df,
+                 f"{where}.default_filter: needs field and value")
+        _require(bool(df.get("note")),
+                 f"{where}.default_filter: needs a note — it changes what a "
+                 f"query means, so the reply has to be able to say so")
+        _default_filter = (df["field"], df["value"])
+        _df_note = df["note"]
+        _df_stand_down = tuple(df.get("stand_down_on") or ())
+
     metrics: dict[str, Metric] = {}
     for mname, mspec in (spec.get("metrics") or {}).items():
         fn = mspec.get("fn")
@@ -569,6 +616,8 @@ def _build_entity(name: str, spec: dict) -> Entity:
         apply_scope=_SCOPES[scope_name], date_field=date_field,
         fields=fields, metrics=metrics, links=links,
         nullable_axis_ok=spec.get("date_field_nullable_ok") is True,
+        default_filter=_default_filter, default_filter_note=_df_note,
+        default_filter_stand_down=_df_stand_down,
     )
 
 

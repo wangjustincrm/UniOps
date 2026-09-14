@@ -60,6 +60,11 @@ Rules:
 - For a NAMED month or an explicit range ("September", "Q2", "since June"), use
   period with from/to, and take the year from today's date given below. Getting
   the year wrong returns zero rows and reads exactly like "there were none".
+- To COMPARE two things — two versions, two months, two vendors — fetch both in
+  ONE query and select the column that tells them apart. Filter with `in` on
+  that column and put it in `select`; the comparison is then done from the rows.
+  Asking for one side and then the other is not possible: one question runs one
+  query.
 - Detail lives on its own entity. "What goes into this product", "which items
   are on this order" are questions about the CHILD entity — filter it by the
   parent through the link, as `bom.product_material_code`, and select the parent
@@ -143,6 +148,9 @@ results are the only facts you have.
 - A coded column (procurement type and the like) comes back as its number. The
   query that ran carries `value_labels` where one applies — report the meaning,
   not the code. "4" tells the reader nothing.
+- An `assumption` means the query was narrowed on the reader's behalf because
+  they did not say which one they meant. Say so in the reply, in one clause —
+  they are looking at a subset and have no way to tell from the numbers alone.
 - `value_labels` lists every code the system defines; the rows list only the
   ones that occur. Asked what kinds exist, that difference is part of the
   answer: say the ones with no rows exist but are unused, rather than dropping
@@ -474,6 +482,8 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         payload["matched_rows"] = result["matched_rows"]
     if "totals" in result:
         payload["totals"] = result["totals"]
+    if "assumption" in result:
+        payload["assumption"] = result["assumption"]
     if "value_labels" in result:
         # The payload is a whitelist, so a key added to the query result does
         # not reach this call by itself — which is how the mapping got built,
