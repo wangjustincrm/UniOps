@@ -866,3 +866,69 @@ async def test_counting_per_group_counts_the_right_thing(test_engine, admin_clie
     assert total == int(n_users), (
         f"grouped counts total {total} but there are {n_users} users — the "
         f"count is counting the wrong side of the link")
+
+
+# ── budget: the one entity whose row scope is not all-or-nothing ──────────────
+
+
+async def test_budget_is_reachable_through_either_key(admin_client):
+    """finance.budget.view_all and finance.budget.view_dept are alternative
+    routes to the same data, held by disjoint sets of roles.
+
+    Gating on one key locked out whoever held the other — the budget entities
+    first shipped invisible to a system_admin asking about them, because
+    system_admin holds view_all and the entity named view_dept.
+    """
+    from app.core.ontology import REGISTRY, may_view
+
+    entity = REGISTRY["budget_plan"]
+    assert set(entity.perm_key) == {"finance.budget.view_all",
+                                    "finance.budget.view_dept"}
+    assert may_view(entity, {"finance.budget.view_all": True})
+    assert may_view(entity, {"finance.budget.view_dept": True})
+    assert not may_view(entity, {})
+
+    r = await admin_client.post("/api/v1/assistant/query",
+                                json={"entity": "budget_plan", "metrics": ["count"]})
+    assert r.status_code == 200
+    assert r.json()["denied"] is False
+
+
+async def test_department_scope_shows_your_own_budget_and_not_the_companys(
+    test_engine, admin_client, requester_client
+):
+    """The distinction those two keys exist to make, asserted on real rows.
+
+    A holder of view_all sees every cost centre; a holder of view_dept sees only
+    the cost centres of their own department. Both halves matter: asserting only
+    the second would also pass if the scope returned nothing at all.
+    """
+    wide = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "budget_plan", "metrics": ["count"]})
+    narrow = await requester_client.post("/api/v1/assistant/query", json={
+        "entity": "budget_plan", "metrics": ["count"]})
+    assert wide.status_code == 200 and narrow.status_code == 200
+    # The requester holds view_dept, so this is a row filter and not a refusal.
+    assert narrow.json()["denied"] is False, "view_dept should admit, then narrow"
+
+    n_wide = int(wide.json()["rows"][0]["count"])
+    n_narrow = int(narrow.json()["rows"][0]["count"])
+    assert n_narrow <= n_wide, "department scope returned more than the whole company"
+
+
+async def test_a_user_with_no_department_sees_no_budget(test_engine, requester_client):
+    """20 of 112 users have no department. Empty is the correct reading of that;
+    the other one would hand them the whole company's budget."""
+    import sqlalchemy as sa
+    from app.models.user import User
+
+    uid = _user_id(requester_client)
+    async with _factory(test_engine)() as db:
+        await db.execute(sa.update(User).where(User.id == uid)
+                         .values(department_id=None))
+        await db.commit()
+
+    r = await requester_client.post("/api/v1/assistant/query", json={
+        "entity": "budget_plan", "metrics": ["count"]})
+    assert r.status_code == 200
+    assert int(r.json()["rows"][0]["count"]) == 0

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.core.access_scope import build_scope
 from app.core.deps import CurrentUserPayload, SessionDep
-from app.core.ontology import REGISTRY, get_entity
+from app.core.ontology import REGISTRY, get_entity, may_view
 from app.services import assistant_export
 from app.services import controlled_query as cq
 
@@ -86,7 +86,7 @@ async def assistant_schema(db: SessionDep, user: CurrentUserPayload):
     perms = scope.get("perms", {})
     entities = []
     for entity in REGISTRY.values():
-        if not perms.get(entity.perm_key, False):
+        if not may_view(entity, perms):
             continue
         entities.append({
             "name": entity.name,
@@ -110,7 +110,7 @@ async def assistant_schema(db: SessionDep, user: CurrentUserPayload):
                       "example": f"{key}.<field of {ln.target}>"}
                 for key, ln in entity.links.items()
                 # Do not advertise a hop into something this caller cannot see.
-                if perms.get(REGISTRY[ln.target].perm_key, False)
+                if may_view(REGISTRY[ln.target], perms)
             },
         })
     return {"entities": entities}

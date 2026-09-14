@@ -40,6 +40,11 @@ _MODULE_BY_KEY = {
     "pa_override_receipt": "epms",
     "view_budget_dashboard": "finance", "view_budget_plans": "finance",
     "view_finance": "finance",
+    # The two halves of budget visibility. view_dept is the floor the assistant
+    # gates on; view_all widens the row scope to the whole company. Both were
+    # already in the production matrix and neither was in this seed, so a test
+    # of the distinction would have had nothing to distinguish.
+    "finance.budget.view_all": "finance", "finance.budget.view_dept": "finance",
     "view_booking": "booking", "manage_meeting_rooms": "booking",
     # The assistant's MRP and BOM entities gate on this. It was missing here
     # while the entities already used it, so every caller was denied — and the
@@ -80,9 +85,13 @@ _LOCKED = {
 }
 
 _VIEW_ALL = {k: True for k in ("view_pr", "view_po", "view_gr", "view_invoice", "view_pa")}
-_FINANCE_ALL = {"view_budget_dashboard": True, "view_budget_plans": True, "view_finance": True}
+_FINANCE_ALL = {"view_budget_dashboard": True, "view_budget_plans": True,
+                "view_finance": True, "finance.budget.view_all": True}
 _BOOKING = {"view_booking": True}
 _BUDGET_VIEW = {"view_budget_dashboard": True, "view_budget_plans": True}
+# Mirrors production: nearly every non-finance role holds the department-scoped
+# half — requester, dept_manager, procurement, warehouse and so on.
+_BUDGET_DEPT = {"finance.budget.view_dept": True}
 # Mirrors production: erp_pa_officer, finance_manager, gm, opm,
 # procurement_manager and system_admin hold it. erp_pa_officer is not one of the
 # 17 built-ins seeded here.
@@ -99,9 +108,9 @@ def _p(**kw):
 
 
 _DEFAULTS = {
-    "requester":           _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING),
+    "requester":           _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING, **_BUDGET_DEPT),
     "dept_admin":          _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING),
-    "dept_manager":        _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BUDGET_VIEW, **_BOOKING),
+    "dept_manager":        _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BUDGET_VIEW, **_BOOKING, **_BUDGET_DEPT),
     "supervisor":          _p(view_pr=True, **_BOOKING),
     "director":            _p(view_pr=True, view_pa=True, **_BOOKING),
     "gm":                  _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING, **_MRP_REPORT),

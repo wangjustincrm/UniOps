@@ -48,6 +48,7 @@ ONTOLOGY_FILES = (
     _ONTOLOGY_DIR / "mrp.yaml",
     _ONTOLOGY_DIR / "mdm.yaml",
     _ONTOLOGY_DIR / "settings.yaml",
+    _ONTOLOGY_DIR / "budget.yaml",
 )
 
 # Field kinds drive both output formatting and which operators the validator
@@ -317,6 +318,59 @@ async def scope_forecast_current(q: Select, scope: dict, db: AsyncSession) -> Se
         _latest("mrp_forecast_versions", "WHERE status = 'confirmed'")))
 
 
+async def _own_department_cost_centres(scope: dict):
+    """Cost centres of the asker's own department, as a subquery.
+
+    Their department comes off the users row rather than the token: a token is
+    minted at sign-in and a transfer since then would leave it stale, and this
+    decides what someone may see. 20 of 112 users have no department at all —
+    for them this is empty, which correctly shows them nothing rather than
+    everything.
+    """
+    dept = (sa.select(User.department_id)
+            .where(User.id == scope.get("user_id")).scalar_subquery())
+    return sa.select(CostCenter.id).where(CostCenter.department_id == dept)
+
+
+async def scope_budget_by_cost_centre(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """Whole company, or just your own department's cost centres.
+
+    The matrix already draws this line and nothing was reading it:
+    finance.budget.view_all goes to finance and the GM; finance.budget.view_dept
+    goes to nearly everyone else — requesters, department managers, procurement.
+    A department manager may see their own department's budget and not the
+    company's, which is the distinction those two keys exist to make.
+    """
+    if (scope.get("perms") or {}).get("finance.budget.view_all"):
+        return q
+    model = _TABLE_MODELS["budget_plans"]
+    return q.where(model.cost_center_id.in_(await _own_department_cost_centres(scope)))
+
+
+async def scope_budget_ledger_by_cost_centre(
+        q: Select, scope: dict, db: AsyncSession) -> Select:
+    """Same rule, on the ledger's own cost-centre column."""
+    if (scope.get("perms") or {}).get("finance.budget.view_all"):
+        return q
+    model = _TABLE_MODELS["budget_ledger"]
+    return q.where(model.cost_center_id.in_(await _own_department_cost_centres(scope)))
+
+
+async def scope_budget_line_by_plan(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """Budget lines carry no cost centre; they inherit their plan's.
+
+    Reached through plan_id rather than by joining, so the restriction holds
+    whatever else the query does with its joins.
+    """
+    if (scope.get("perms") or {}).get("finance.budget.view_all"):
+        return q
+    model = _TABLE_MODELS["budget_plan_lines"]
+    plans = _TABLE_MODELS["budget_plans"]
+    visible = sa.select(plans.id).where(
+        plans.cost_center_id.in_(await _own_department_cost_centres(scope)))
+    return q.where(model.plan_id.in_(visible))
+
+
 async def scope_bom_default(q: Select, scope: dict, db: AsyncSession) -> Select:
     """Only the default BOM for each product.
 
@@ -378,6 +432,9 @@ _SCOPES: dict[str, Callable] = {
     "purchase_latest_run": scope_purchase_latest_run,
     "bom_default": scope_bom_default,
     "bom_line_default": scope_bom_line_default,
+    "budget_by_cost_centre": scope_budget_by_cost_centre,
+    "budget_ledger_by_cost_centre": scope_budget_ledger_by_cost_centre,
+    "budget_line_by_plan": scope_budget_line_by_plan,
 }
 
 
@@ -434,7 +491,13 @@ class Entity:
     name: str
     model: type
     label: str
-    perm_key: str
+    # One key, or several of which ANY grants access. Budget is the reason for
+    # the plural: the matrix splits it into finance.budget.view_all and
+    # finance.budget.view_dept, held by disjoint sets of roles — finance holds
+    # the first, everyone else the second, and system_admin neither. A single
+    # key would have locked out whichever half it did not name, which is how
+    # the budget entities first shipped invisible to the admin asking about them.
+    perm_key: tuple[str, ...]
     apply_scope: Callable  # async (Select, scope, AsyncSession) -> Select
     date_field: str
     fields: dict[str, Field] = dc_field(default_factory=dict)
@@ -467,6 +530,15 @@ class Entity:
 _deferred_axis_checks: list[tuple[str, str, str, str]] = []
 
 
+def may_view(entity: "Entity", perms: dict) -> bool:
+    """Does this caller hold any of the entity's keys?
+
+    ANY rather than ALL: the keys on an entity are alternative routes to the
+    same data, not a set of requirements.
+    """
+    return any(perms.get(k, False) for k in entity.perm_key)
+
+
 class OntologyError(Exception):
     """The ontology file disagrees with the code. Raised at import time."""
 
@@ -496,7 +568,11 @@ def _build_entity(name: str, spec: dict) -> Entity:
     _require(scope_name in _SCOPES,
              f"{where}: unknown scope {scope_name!r}; known: {sorted(_SCOPES)}")
 
-    _require(bool(spec.get("perm_key")), f"{where}: perm_key is required")
+    raw_perm = spec.get("perm_key")
+    _require(bool(raw_perm), f"{where}: perm_key is required")
+    perm_keys = ((raw_perm,) if isinstance(raw_perm, str) else tuple(raw_perm))
+    _require(all(isinstance(k, str) and k for k in perm_keys),
+             f"{where}: perm_key must be a name or a list of names")
     _require(bool(spec.get("label")), f"{where}: label is required")
 
     fields: dict[str, Field] = {}
@@ -619,7 +695,7 @@ def _build_entity(name: str, spec: dict) -> Entity:
                             label=lspec.get("label", lname))
 
     return Entity(
-        name=name, model=model, label=spec["label"], perm_key=spec["perm_key"],
+        name=name, model=model, label=spec["label"], perm_key=perm_keys,
         apply_scope=_SCOPES[scope_name], date_field=date_field,
         fields=fields, metrics=metrics, links=links,
         nullable_axis_ok=spec.get("date_field_nullable_ok") is True,

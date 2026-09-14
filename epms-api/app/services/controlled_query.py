@@ -8,7 +8,7 @@ the planner cannot reach a column we did not deliberately expose.
 
 Two gates run on every query, in this order:
 
-  1. ``perms[entity.perm_key]`` — the Access Control Matrix gate. Cheap, decided
+  1. ``may_view(entity, perms)`` — the Access Control Matrix gate. Cheap, decided
      before any row is touched, and the same key the list endpoints check.
   2. ``entity.apply_scope(stmt, scope)`` — the row filter. Applied
      unconditionally: there is no request field that can switch it off, and an
@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ontology import (
     BOOL, DATE, DATETIME, ENUM, INT, MONEY, REGISTRY, TEXT, Entity, get_entity,
+    may_view,
 )
 
 # Row caps. A planner asking for "all of them" gets this many, and the response
@@ -373,7 +374,7 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
         _reject(f"Unknown entity. Available: {', '.join(sorted(REGISTRY))}")
 
     # Gate 1 — may this user see this kind of document at all.
-    if not scope.get("perms", {}).get(entity.perm_key, False):
+    if not may_view(entity, scope.get("perms") or {}):
         return {"entity": entity.name, "rows": [], "row_count": 0,
                 "truncated": False, "denied": True}
 

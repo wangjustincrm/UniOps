@@ -189,11 +189,13 @@ def test_every_entity_gates_on_a_permission_that_exists_in_the_matrix():
     known = {
         "view_pr", "view_po", "view_gr", "view_invoice", "view_pa",
         "view_finance", "mrp.report.view", "view_system_settings",
+        "finance.budget.view_dept", "finance.budget.view_all",
     }
     for entity in REGISTRY.values():
-        assert entity.perm_key in known, (
-            f"{entity.name} gates on {entity.perm_key!r}, which is not a matrix "
-            f"key this ontology has been checked against")
+        for key in entity.perm_key:
+            assert key in known, (
+                f"{entity.name} gates on {key!r}, which is not a matrix key "
+                f"this ontology has been checked against")
 
 
 def test_finance_and_mrp_entities_carry_no_row_filter_on_purpose():
