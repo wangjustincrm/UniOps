@@ -29,8 +29,14 @@ MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 # feed NC's approval. Requiring approval first would make the document
 # unobtainable exactly when it is needed. The PO stays read-only in every other
 # respect; nothing about holding a PDF makes it payable or receivable.
+#
+# ``nc_milk`` — an NC order of a non raw-material trade type — is here for the
+# same reason ``issued`` is: NC approved it, and it is the document the sign-off
+# stamps its signatures onto. Nothing else regenerates a PDF for an imported PO
+# (po_action never runs on one), so without this entry a signed milk order has
+# no page to carry the signatures and no one can print it.
 _PDF_STATUSES = {"approved", "issued", "partially_received", "fully_received",
-                 "closed", "nc_pending"}
+                 "closed", "nc_pending", "nc_milk"}
 
 
 class AttachmentMeta(BaseModel):
