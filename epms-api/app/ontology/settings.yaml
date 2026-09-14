@@ -1,0 +1,130 @@
+# System settings — who is in the system, how it is organised, how it is configured.
+#
+# Added because the assistant, asked how many users there are and how many are
+# active, said the system holds no user information. It holds 112, of which 81
+# are active. The data was never missing; there was no permission to gate it
+# behind, so there was no entity, so there was nothing to find — the same shape
+# as the approvers, the PR types and the plan reasoning before them.
+#
+# ── Who can see this ─────────────────────────────────────────────────────────
+# `view_system_settings`, a key added for this and granted to system_admin
+# (identity-api migration 0013). Deliberately NOT `admin_panel`, which would
+# have been the convenient choice: finance_manager and vendor_manager hold that
+# too, while the users endpoint this stands in for is require_roles(
+# "system_admin"). Reusing it would have widened who can enumerate staff and
+# roles as a side effect of saving a migration.
+#
+# An admin can widen it in Portal -> Access Control, which is the point of
+# putting it in the matrix rather than hard-coding a role.
+#
+# ── What is deliberately absent ──────────────────────────────────────────────
+# The ontology is a whitelist: a column that is not declared cannot be selected,
+# filtered, grouped or ordered by, and never appears in the schema the planner
+# sees. That matters more here than anywhere else, because these tables hold:
+#
+#   users.hashed_password, users.mfa_secret, users.signature_image
+#   company_config.smtp_password, company_config.po_smtp_password
+#
+# None are declared below and none can be reached. The SMTP passwords in
+# particular are real production credentials in plain text.
+version: 1
+
+entities:
+
+  user:
+    model: User
+    label: "User — a person with an account"
+    perm_key: view_system_settings
+    scope: permission_only
+    date_field: created_at
+    fields:
+      email: {kind: text, label: "Email"}
+      full_name: {kind: text, label: "Name"}
+      # Their primary role. Additional roles are held separately in user_roles
+      # and are NOT reflected here — someone can act in a role this column does
+      # not show, so this is "their main role", not "everything they can do".
+      role: {kind: text, label: "Primary role", enumerate: true}
+      is_active: {kind: bool, label: "Active"}
+      mfa_enabled: {kind: bool, label: "MFA enabled"}
+      must_change_password: {kind: bool, label: "Must change password at next sign-in"}
+      password_changed_at: {kind: datetime, label: "Password last changed"}
+      notification_channel: {kind: text, label: "Notification channel", enumerate: true}
+      # Set when the person came from the ERP's HR records rather than being
+      # created by hand here.
+      erp_imported: {kind: bool, label: "Imported from ERP"}
+      erp_person_code: {kind: text, label: "ERP person code"}
+      teams_account: {kind: text, label: "Teams account"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Users"}
+    links:
+      department:
+        target: department
+        cardinality: many_to_one
+        local: department_id
+        remote: id
+        label: "Their department"
+
+  department:
+    model: Department
+    label: "Department — the org unit itself. For how many PEOPLE a department
+      has, query `user` grouped by department.name; counting this entity counts
+      departments, not their members"
+    perm_key: view_system_settings
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Department code"}
+      name: {kind: text, label: "Department name", enumerate: true}
+      is_active: {kind: bool, label: "Active"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Departments"}
+    links:
+      members:
+        target: user
+        cardinality: one_to_many
+        local: id
+        remote: department_id
+        label: "People in it"
+      cost_centres:
+        target: cost_center
+        cardinality: one_to_many
+        local: id
+        remote: department_id
+        label: "Its cost centres"
+
+  cost_center:
+    model: CostCenter
+    label: "Cost centre — what spending is charged to"
+    perm_key: view_system_settings
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Cost centre code"}
+      name: {kind: text, label: "Cost centre name", enumerate: true}
+      is_active: {kind: bool, label: "Active"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Cost centres"}
+    links:
+      department:
+        target: department
+        cardinality: many_to_one
+        local: department_id
+        remote: id
+        label: "The department it belongs to"
+
+  role_permission:
+    table: role_permissions
+    label: "Role permission — one grant in the access control matrix"
+    perm_key: view_system_settings
+    scope: permission_only
+    date_field: updated_at
+    date_field_nullable_ok: true   # set only on rows an admin has since edited
+    fields:
+      role_code: {kind: text, label: "Role", enumerate: true}
+      permission_key: {kind: text, label: "Permission", enumerate: true}
+      updated_at: {kind: datetime, label: "Last changed"}
+    metrics:
+      count: {fn: count, field: "*", label: "Grants"}

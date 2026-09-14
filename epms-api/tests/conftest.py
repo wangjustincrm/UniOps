@@ -47,6 +47,12 @@ _MODULE_BY_KEY = {
     # reason, proving nothing. A denial test needs a matching admission test, or
     # it is satisfied by everything being broken.
     "mrp.report.view": "mrp",
+    # Gates the assistant's settings entities (users, departments, cost
+    # centres, the access matrix). Added by identity-api migration 0013 and
+    # granted to system_admin there — explicitly, because the assistant reads
+    # effective_permissions(), which does not short-circuit system_admin the
+    # way require_permission() does.
+    "view_system_settings": "portal",
 }
 _PERMISSION_KEYS = list(_MODULE_BY_KEY)
 
@@ -81,6 +87,9 @@ _BUDGET_VIEW = {"view_budget_dashboard": True, "view_budget_plans": True}
 # procurement_manager and system_admin hold it. erp_pa_officer is not one of the
 # 17 built-ins seeded here.
 _MRP_REPORT = {"mrp.report.view": True}
+# Production grants this to system_admin only; an admin can widen it in
+# Portal -> Access Control.
+_SYSTEM_SETTINGS = {"view_system_settings": True}
 
 
 def _p(**kw):

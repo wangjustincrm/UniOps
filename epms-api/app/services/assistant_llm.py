@@ -65,6 +65,13 @@ Rules:
   that column and put it in `select`; the comparison is then done from the rows.
   Asking for one side and then the other is not possible: one question runs one
   query.
+- In a counting question, WHAT IS BEING COUNTED picks the entity. "How many
+  people per department" counts people: query `user`, group by
+  `department.name`. Querying `department` and counting it returns one per
+  department — twelve departments, one each — which reads as a perfectly
+  reasonable answer and is not one. Same for orders per vendor, components per
+  product, invoices per PO: the thing after "how many" is the entity, the thing
+  after "per" is the grouping, reached through a link.
 - Detail lives on its own entity. "What goes into this product", "which items
   are on this order" are questions about the CHILD entity — filter it by the
   parent through the link, as `bom.product_material_code`, and select the parent

@@ -29,6 +29,9 @@ from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.pa import PaymentApplication
+from app.models.user import User
+from app.models.department import Department
+from app.models.cost_center import CostCenter
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 
@@ -44,6 +47,7 @@ ONTOLOGY_FILES = (
     _ONTOLOGY_DIR / "finance.yaml",
     _ONTOLOGY_DIR / "mrp.yaml",
     _ONTOLOGY_DIR / "mdm.yaml",
+    _ONTOLOGY_DIR / "settings.yaml",
 )
 
 # Field kinds drive both output formatting and which operators the validator
@@ -81,6 +85,9 @@ _MODELS: dict[str, type] = {
     "GoodsReceipt": GoodsReceipt,
     "Invoice": Invoice,
     "PaymentApplication": PaymentApplication,
+    "User": User,
+    "Department": Department,
+    "CostCenter": CostCenter,
 }
 
 

@@ -782,3 +782,87 @@ async def test_grouping_across_a_link_brings_its_join(admin_client):
         "entity": "bom_line", "group_by": ["bom.version"], "metrics": ["count"],
     })
     assert r.status_code == 200, r.text
+
+
+async def test_settings_need_their_own_permission(requester_client, admin_client):
+    """Staff, departments and the access matrix are gated on
+    view_system_settings — a key added for this rather than borrowed.
+
+    admin_panel was the convenient alternative and is held by finance_manager
+    and vendor_manager too, while the users endpoint this stands in for is
+    require_roles("system_admin"). Borrowing it would have widened who can
+    enumerate staff as a side effect of saving a migration.
+    """
+    entities = ("user", "department", "cost_center", "role_permission")
+    for entity in entities:
+        r = await requester_client.post("/api/v1/assistant/query",
+                                        json={"entity": entity, "metrics": ["count"]})
+        assert r.status_code == 200, entity
+        assert r.json()["denied"] is True, f"{entity} answered a requester"
+
+    for entity in entities:
+        r = await admin_client.post("/api/v1/assistant/query",
+                                    json={"entity": entity, "metrics": ["count"]})
+        assert r.status_code == 200, entity
+        assert r.json()["denied"] is False, (
+            f"{entity} denied a holder of view_system_settings")
+
+
+async def test_a_password_hash_is_not_reachable_by_any_route(admin_client):
+    """The ontology is a whitelist, and this is where that matters most.
+
+    users holds hashed_password, mfa_secret and signature_image; company_config
+    holds two plain-text SMTP passwords that are real production credentials.
+    None are declared, so none can be selected, filtered, grouped or ordered by
+    — tried here through every route into a query rather than trusting the
+    absence.
+    """
+    for field in ("hashed_password", "mfa_secret", "signature_image"):
+        for body in (
+            {"entity": "user", "select": [field]},
+            {"entity": "user", "where": [{"field": field, "op": "eq", "value": "x"}]},
+            {"entity": "user", "group_by": [field], "metrics": ["count"]},
+            {"entity": "user", "select": ["email"], "order_by": {"field": field}},
+        ):
+            r = await admin_client.post("/api/v1/assistant/query", json=body)
+            assert r.status_code == 422, f"{field} was reachable via {list(body)}"
+
+
+async def test_the_schema_never_mentions_a_secret(admin_client):
+    """Even to an admin. A field the planner can see is a field it will try to
+    use, and the reason to keep these out is not that the caller is untrusted —
+    it is that the value has no business leaving the database at all."""
+    r = await admin_client.get("/api/v1/assistant/schema")
+    assert r.status_code == 200
+    blob = r.text.lower()
+    for secret in ("hashed_password", "mfa_secret", "smtp_password",
+                   "signature_image"):
+        assert secret not in blob, f"schema mentions {secret}"
+
+
+async def test_counting_per_group_counts_the_right_thing(test_engine, admin_client):
+    """"How many people per department" counts people, not departments.
+
+    The planner reached for `department` and counted it — twelve departments,
+    one each, totalling twelve. The real answer is 112 across 12 departments
+    with 20 unassigned. Nothing about "12 departments, 1 person each" looks
+    wrong, which is what makes it worth a test: the grouping is right, the
+    entity is not, and the output is plausible either way.
+
+    Asserted at the layer that can actually be pinned — a count grouped through
+    a link has to come back per group, not per row of the far side.
+    """
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "user", "group_by": ["department.name"], "metrics": ["count"],
+    })
+    assert r.status_code == 200, r.text
+    rows = r.json()["rows"]
+    # One row per department present, and the counts are of users — so the
+    # totals must add up to the number of users, not the number of departments.
+    assert rows, "no groups came back"
+    total = sum(int(row["count"]) for row in rows)
+    n_users = (await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "user", "metrics": ["count"]})).json()["rows"][0]["count"]
+    assert total == int(n_users), (
+        f"grouped counts total {total} but there are {n_users} users — the "
+        f"count is counting the wrong side of the link")

@@ -188,7 +188,7 @@ def test_every_entity_gates_on_a_permission_that_exists_in_the_matrix():
     """
     known = {
         "view_pr", "view_po", "view_gr", "view_invoice", "view_pa",
-        "view_finance", "mrp.report.view",
+        "view_finance", "mrp.report.view", "view_system_settings",
     }
     for entity in REGISTRY.values():
         assert entity.perm_key in known, (
