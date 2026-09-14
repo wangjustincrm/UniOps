@@ -1,0 +1,230 @@
+# Finance — the general ledger and accounts payable.
+#
+# These tables live in this same database but belong to finance-api, which owns
+# their migrations. They are reached by `table:` rather than `model:`: the field
+# list below IS the mapping, and test_ontology_matches_the_database compares it
+# to information_schema so a column renamed on the owning side fails a test
+# rather than a user's question.
+#
+# ── Who can see this ─────────────────────────────────────────────────────────
+# Every entity here gates on `view_finance` and then applies NO row filter. That
+# is deliberate and it is the whole of the access decision: the ledger has no
+# per-person dimension to filter on — a voucher is not "yours" the way a
+# requisition is — so the question is whether someone may see the books at all.
+# Today that is ap_clerk, cfo, finance_bp, finance_manager, payment_officer and
+# system_admin, from the Access Control Matrix. Widening view_finance widens
+# this, with nothing else in the way; that is the thing to be careful about.
+#
+# ── Three traps in this data ─────────────────────────────────────────────────
+# Recorded here because they are invisible from the column names and each one
+# produces a confident wrong number:
+#
+#   1. draft vouchers are not the books. 1,975 of 42,400 are draft. Anything
+#      described as an amount, a balance, or a total means posted only.
+#   2. period -00 is opening carry-forward, not activity. 582 vouchers sit in
+#      2020-00, 2021-00 and so on; summing a year without excluding them counts
+#      the opening balance as if it were a transaction. This is exactly how the
+#      account-balance report once read 31.7M against NC's 4.25M.
+#   3. every amount exists twice — orig_* in the document's currency and local_*
+#      in the reporting currency. Summing across currencies is only meaningful
+#      on the local_* pair.
+version: 1
+
+entities:
+
+  chart_of_account:
+    table: chart_of_accounts
+    label: "Chart of Accounts (COA) — the account a posting lands in"
+    perm_key: view_finance
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Account code"}
+      name: {kind: text, label: "Account name"}
+      account_type:
+        kind: enum
+        label: "Account type"
+        values: [asset, liability, equity, revenue, expense]
+      subtype: {kind: text, label: "Subtype"}
+      normal_balance:
+        kind: enum
+        label: "Normal balance"
+        values: [debit, credit]
+      # An account that is not postable is a rollup — it exists to total its
+      # children and never carries a posting of its own. Asked for "the balance
+      # of 1002", someone usually means the rollup; asked where something was
+      # booked, they mean a postable one.
+      is_postable: {kind: bool, label: "Accepts postings directly"}
+      parent_code: {kind: text, label: "Parent account code"}
+      is_active: {kind: bool, label: "Active"}
+      cash_flow_category: {kind: text, label: "Cash-flow category"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Accounts"}
+    links:
+      postings:
+        target: journal_voucher_line
+        cardinality: one_to_many
+        local: code
+        remote: account_code
+        label: "Postings to this account"
+
+  journal_voucher:
+    table: journal_vouchers
+    label: "Journal Voucher (JV) — one accounting entry"
+    perm_key: view_finance
+    scope: permission_only
+    # voucher_date, not created_at: the date the entry belongs to accounting-wise,
+    # which is what any question about a period means. Populated on all 42,400.
+    date_field: voucher_date
+    fields:
+      jv_number: {kind: text, label: "Voucher number"}
+      voucher_word: {kind: text, label: "Voucher word"}
+      voucher_date: {kind: date, label: "Voucher date"}
+      # "2026-09" style. The -00 period is opening carry-forward — see the note
+      # at the top of this file before summing anything across a year.
+      fiscal_period: {kind: text, label: "Fiscal period"}
+      summary: {kind: text, label: "Summary"}
+      status:
+        kind: enum
+        label: "Status"
+        values: [draft, posted]
+      # Which subsystem produced it. AP is payables, GL is manual/other, IA and
+      # FA are inventory and fixed assets, AR is receivables.
+      source_subsystem: {kind: text, label: "Source subsystem"}
+      source_doc_type: {kind: text, label: "Source document type"}
+      source_doc_number: {kind: text, label: "Source document number"}
+      total_debit: {kind: money, label: "Total debit (document currency)"}
+      total_credit: {kind: money, label: "Total credit (document currency)"}
+      total_local_debit: {kind: money, label: "Total debit (reporting currency)"}
+      total_local_credit: {kind: money, label: "Total credit (reporting currency)"}
+      posted_at: {kind: datetime, label: "Posted at"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Vouchers"}
+      total_debit: {fn: sum, field: total_local_debit, label: "Debit total"}
+      total_credit: {fn: sum, field: total_local_credit, label: "Credit total"}
+    links:
+      lines:
+        target: journal_voucher_line
+        cardinality: one_to_many
+        local: id
+        remote: jv_id
+        label: "Voucher lines"
+
+  journal_voucher_line:
+    table: journal_voucher_lines
+    label: "Journal Voucher line — one debit or credit against one account"
+    perm_key: view_finance
+    scope: permission_only
+    # Through the voucher, because the line has no date of its own that means
+    # anything. created_at is the row-insert stamp and reads 2026 on all 323,431
+    # rows — it is when the ledger was migrated in. Pointing the axis at it made
+    # every question about 2020-2025 return nothing, and the assistant reported
+    # that there were no postings in 2025 when there were 438 million dollars of
+    # them.
+    date_field: voucher.voucher_date
+    fields:
+      jv_id: {kind: uuid, internal: true}
+      line_no: {kind: int, label: "Line number"}
+      account_code: {kind: text, label: "Account code"}
+      summary: {kind: text, label: "Line description"}
+      orig_debit: {kind: money, label: "Debit (document currency)"}
+      orig_credit: {kind: money, label: "Credit (document currency)"}
+      local_debit: {kind: money, label: "Debit (reporting currency)"}
+      local_credit: {kind: money, label: "Credit (reporting currency)"}
+      currency: {kind: text, label: "Currency"}
+      partner_name: {kind: text, label: "Partner"}
+      tax_code: {kind: text, label: "Tax code"}
+      quantity: {kind: money, label: "Quantity"}
+      unit: {kind: text, label: "Unit"}
+      created_at: {kind: datetime, label: "Row created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Lines"}
+      debit: {fn: sum, field: local_debit, label: "Debit"}
+      credit: {fn: sum, field: local_credit, label: "Credit"}
+    links:
+      voucher:
+        target: journal_voucher
+        cardinality: many_to_one
+        local: jv_id
+        remote: id
+        label: "The voucher this line belongs to"
+      account:
+        target: chart_of_account
+        cardinality: many_to_one
+        local: account_code
+        remote: code
+        label: "The account posted to"
+
+  ap_invoice:
+    table: ap_invoices
+    label: "AP Invoice — a payable as finance records it"
+    perm_key: view_finance
+    scope: permission_only
+    date_field: invoice_date
+    fields:
+      ap_invoice_number: {kind: text, label: "AP invoice number"}
+      vendor_name: {kind: text, label: "Vendor", enumerate: false}
+      vendor_invoice_number: {kind: text, label: "Vendor's invoice number"}
+      amount: {kind: money, label: "Net amount"}
+      tax_amount: {kind: money, label: "Tax"}
+      total_amount: {kind: money, label: "Total"}
+      paid_amount: {kind: money, label: "Paid so far"}
+      currency: {kind: text, label: "Currency"}
+      invoice_date: {kind: date, label: "Invoice date"}
+      due_date: {kind: date, label: "Due date"}
+      # draft outnumbers posted here (1,388 to 1,380). A draft payable is not
+      # yet a liability in the books.
+      status:
+        kind: enum
+        label: "Status"
+        values: [draft, posted, paid, void]
+      po_number: {kind: text, label: "PO number"}
+      posted_at: {kind: datetime, label: "Posted at"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Invoices"}
+      total: {fn: sum, field: total_amount, label: "Total"}
+      paid: {fn: sum, field: paid_amount, label: "Paid"}
+
+  bank_account:
+    table: bank_accounts
+    label: "Bank account — an account the company pays from"
+    perm_key: view_finance
+    scope: permission_only
+    date_field: created_at
+    fields:
+      name: {kind: text, label: "Account name"}
+      bank_name: {kind: text, label: "Bank"}
+      # Masked at rest. The full number is not in this table and is not
+      # something the assistant can reach.
+      account_masked: {kind: text, label: "Account number (masked)"}
+      currency: {kind: text, label: "Currency"}
+      ledger_account_code: {kind: text, label: "Ledger account code"}
+      kind: {kind: text, label: "Kind"}
+      is_active: {kind: bool, label: "Active"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Accounts"}
+
+  business_partner:
+    table: business_partners
+    label: "Business partner — a vendor or customer as finance holds it"
+    perm_key: view_finance
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Partner code"}
+      name: {kind: text, label: "Name"}
+      category: {kind: text, label: "Category"}
+      is_supplier: {kind: bool, label: "Is a supplier"}
+      is_customer: {kind: bool, label: "Is a customer"}
+      payment_terms: {kind: text, label: "Payment terms"}
+      currency: {kind: text, label: "Currency"}
+      province: {kind: text, label: "Province"}
+      credit_limit: {kind: money, label: "Credit limit"}
+      is_active: {kind: bool, label: "Active"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Partners"}

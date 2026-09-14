@@ -17,7 +17,10 @@ from typing import Callable
 
 import uuid
 
+import sqlalchemy as sa
 import yaml
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.orm import declarative_base
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
@@ -29,7 +32,18 @@ from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 
-ONTOLOGY_PATH = Path(__file__).resolve().parent.parent / "ontology" / "epms.yaml"
+_ONTOLOGY_DIR = Path(__file__).resolve().parent.parent / "ontology"
+ONTOLOGY_PATH = _ONTOLOGY_DIR / "epms.yaml"
+
+# One file per owning service rather than one big file. The ontology is meant to
+# grow past this codebase — the same registry will eventually carry WMS and MES —
+# and a fragment per service keeps each one reviewable by the people who know
+# that data, with its own traps documented next to its own tables.
+ONTOLOGY_FILES = (
+    ONTOLOGY_PATH,
+    _ONTOLOGY_DIR / "finance.yaml",
+    _ONTOLOGY_DIR / "mrp.yaml",
+)
 
 # Field kinds drive both output formatting and which operators the validator
 # accepts (see controlled_query._OPS_BY_KIND).
@@ -42,11 +56,24 @@ BOOL = "bool"
 INT = "int"
 
 _KINDS = frozenset({TEXT, ENUM, MONEY, DATE, DATETIME, BOOL, INT})
+
+# Tables owned by other services are mapped here, on their own metadata — see
+# _model_for_table. Never the application Base.
+_ExternalBase = declarative_base()
 _AGG_FNS = frozenset({"sum", "count", "avg", "min", "max"})
 _CARDINALITIES = frozenset({"one_to_many", "many_to_one"})
 
 # YAML names a model; only these are addressable. Adding an entity means adding
 # its class here as well, which keeps "what the ontology can reach" explicit.
+#
+# An entity may instead name a `table`. Finance and MRP keep their tables in this
+# same database but their ORM classes live in other services' code, and copying
+# 76 model definitions over here would be a second description of those tables
+# that starts drifting the moment either side changes — a mistake this codebase
+# has made three times already. For those, the YAML field list IS the model: the
+# columns declared there are built into a read-only mapped class below, and
+# test_ontology_matches_the_database checks every one against information_schema
+# so a drift fails a test instead of a user's question.
 _MODELS: dict[str, type] = {
     "PurchaseRequest": PurchaseRequest,
     "PurchaseOrder": PurchaseOrder,
@@ -54,6 +81,50 @@ _MODELS: dict[str, type] = {
     "Invoice": Invoice,
     "PaymentApplication": PaymentApplication,
 }
+
+
+_SA_TYPES = {
+    TEXT: sa.String, ENUM: sa.String, MONEY: sa.Numeric, DATE: sa.Date,
+    DATETIME: sa.DateTime(timezone=True), BOOL: sa.Boolean, INT: sa.Integer,
+    # Only reachable from an `internal: true` field — deliberately absent from
+    # _KINDS, so a planner-visible column can never be one. A join key mapped as
+    # text would compare a str against a Postgres uuid and fail in the database
+    # rather than here.
+    "uuid": PGUUID(as_uuid=True),
+}
+
+# Built classes are cached: load() runs once at import, but the tests call it
+# again with other files, and re-declaring a table on the same metadata raises.
+_TABLE_MODELS: dict[str, type] = {}
+
+
+def _model_for_table(table: str, fields: dict, where: str) -> type:
+    """Map a table this service does not own, from the ontology's own field list.
+
+    Deliberately on a metadata of its own rather than the application Base: these
+    tables belong to finance-api and mrp-api, who own their migrations. Putting
+    them on the shared Base would put them in create_all, and this service would
+    start creating another service's tables in any fresh database.
+    """
+    if table in _TABLE_MODELS:
+        return _TABLE_MODELS[table]
+
+    cols: dict = {
+        "__tablename__": table,
+        # Every table reached this way is keyed on id. SQLAlchemy needs a primary
+        # key to map at all, and the row scopes all filter on it.
+        "id": sa.Column(PGUUID(as_uuid=True), primary_key=True),
+    }
+    for fname, fspec in fields.items():
+        if fname == "id":
+            continue
+        kind = fspec.get("kind")
+        _require(kind in _SA_TYPES, f"{where}.{fname}: unknown kind {kind!r}")
+        cols[fname] = sa.Column(_SA_TYPES[kind], nullable=True)
+
+    model = type(f"Ext_{table}", (_ExternalBase,), cols)
+    _TABLE_MODELS[table] = model
+    return model
 
 
 # ── Row scope ─────────────────────────────────────────────────────────────────
@@ -168,12 +239,84 @@ async def scope_pa(q: Select, scope: dict, db: AsyncSession) -> Select:
     return q.where(or_(*pa_scope_conditions(po_subq, agr_subq, created_by)))
 
 
+# ── Scopes for tables this service reads but does not own ─────────────────────
+
+
+async def scope_permission_only(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """No row filter: perm_key is the whole access decision for this entity.
+
+    Used by the finance and MRP entities. Their rows have no per-person
+    dimension to filter on — a voucher is not "yours" the way a requisition is —
+    so the question is whether someone may see the books, or the plan, at all.
+
+    Named for what it means rather than "unrestricted", because the thing to
+    notice when reading it is that widening the permission widens the data with
+    nothing else in the way.
+    """
+    return q
+
+
+# The three below are not access control. They are correctness: these tables
+# accumulate one set of rows per planning run, and a query that does not pick a
+# run sums every run that ever happened. Two released MPS runs hold 96 and 92
+# lines; asked for planned quantity, the honest answer comes from one of them
+# and the arithmetic mean of that mistake is a near-exact doubling — the kind of
+# wrong number that looks entirely reasonable.
+#
+# They live in the scope slot deliberately: a scope is stapled into the WHERE
+# and cannot be switched off by a planner that did not think to filter.
+
+
+def _latest(table: str, where: str = "", order: str = "created_at DESC"):
+    return sa.text(f"SELECT id FROM {table} {where} ORDER BY {order} LIMIT 1")
+
+
+async def scope_mps_in_force(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """Only the plan in force.
+
+    is_default is mrp-api's own marker for THE plan currently in force (see its
+    mps.py and purchase.py, which select on exactly this); following it keeps the
+    assistant's answer and the MRP screens describing the same plan.
+    """
+    model = _TABLE_MODELS["mrp_mps_lines"]
+    return q.where(model.run_id.in_(
+        _latest("mrp_mps_runs", "WHERE is_default IS TRUE")))
+
+
+async def scope_forecast_current(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """Only the newest confirmed forecast version.
+
+    Four versions exist and they are not increments of each other — the newest
+    holds 100 lines where an older one holds 1. There is no is_default here, so
+    newest-confirmed is the closest thing to "the forecast" this table offers.
+    """
+    model = _TABLE_MODELS["mrp_forecast_lines"]
+    return q.where(model.version_id.in_(
+        _latest("mrp_forecast_versions", "WHERE status = 'confirmed'")))
+
+
+async def scope_purchase_latest_run(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """Only the newest purchase-suggestion run.
+
+    This table has neither a status nor an is_default, so newest is all there is
+    to go on. A run does carry source_plan_run_id back to the MPS run it came
+    from; if suggestions ever need to track the plan in force rather than the
+    latest run, that is the column to follow.
+    """
+    model = _TABLE_MODELS["mrp_purchase_lines"]
+    return q.where(model.run_id.in_(_latest("mrp_purchase_runs")))
+
+
 _SCOPES: dict[str, Callable] = {
     "pr": scope_pr,
     "po": scope_po,
     "gr": scope_gr,
     "invoice": scope_invoice,
     "pa": scope_pa,
+    "permission_only": scope_permission_only,
+    "mps_in_force": scope_mps_in_force,
+    "forecast_current": scope_forecast_current,
+    "purchase_latest_run": scope_purchase_latest_run,
 }
 
 
@@ -233,6 +376,16 @@ class Entity:
     fields: dict[str, Field] = dc_field(default_factory=dict)
     metrics: dict[str, Metric] = dc_field(default_factory=dict)
     links: dict[str, Link] = dc_field(default_factory=dict)
+    # The yaml acknowledged that date_field can be NULL. Kept on the entity so
+    # the check against real data can tell "we looked and accepted this" from
+    # "nobody has looked yet".
+    nullable_axis_ok: bool = False
+
+
+# Filled during _build_entity, drained by load() once every entity exists: a
+# date_field that reaches through a link cannot be checked until its target has
+# been built.
+_deferred_axis_checks: list[tuple[str, str, str, str]] = []
 
 
 class OntologyError(Exception):
@@ -248,9 +401,17 @@ def _build_entity(name: str, spec: dict) -> Entity:
     where = f"entity '{name}'"
 
     model_name = spec.get("model")
-    _require(model_name in _MODELS,
-             f"{where}: unknown model {model_name!r}; known: {sorted(_MODELS)}")
-    model = _MODELS[model_name]
+    table_name = spec.get("table")
+    _require(bool(model_name) != bool(table_name),
+             f"{where}: name exactly one of model (a class this service owns) "
+             f"or table (one it reads but does not own)")
+    if model_name:
+        _require(model_name in _MODELS,
+                 f"{where}: unknown model {model_name!r}; known: {sorted(_MODELS)}")
+        model = _MODELS[model_name]
+    else:
+        model = _model_for_table(table_name, spec.get("fields") or {}, where)
+        model_name = table_name
 
     scope_name = spec.get("scope")
     _require(scope_name in _SCOPES,
@@ -261,11 +422,20 @@ def _build_entity(name: str, spec: dict) -> Entity:
 
     fields: dict[str, Field] = {}
     for fname, fspec in (spec.get("fields") or {}).items():
+        # Built into the mapped class (a scope needs the column) but never
+        # offered to the planner and never returned. These are join keys —
+        # `run_id` on a planning table — which mean nothing to whoever is asking
+        # and would only spend tokens in the schema block.
+        if fspec.get("internal"):
+            continue
         kind = fspec.get("kind")
         _require(kind in _KINDS, f"{where}.{fname}: unknown kind {kind!r}")
         _require(bool(fspec.get("label")), f"{where}.{fname}: label is required")
         # The check that matters: a registered column the model does not have
         # would otherwise fail at query time, for whoever happened to ask first.
+        # For a `table` entity this is trivially true — the class was built from
+        # this very list — so the equivalent guarantee comes from
+        # test_ontology_matches_the_database, which compares it to the real one.
         _require(hasattr(model, fname),
                  f"{where}.{fname}: {model_name} has no such column")
         if kind == ENUM:
@@ -282,16 +452,44 @@ def _build_entity(name: str, spec: dict) -> Entity:
         )
     _require(bool(fields), f"{where}: needs at least one field")
 
+    links_spec = spec.get("links") or {}
+
     date_field = spec.get("date_field")
-    _require(date_field in fields,
-             f"{where}: date_field {date_field!r} is not a declared field")
+    # May reach through one link: "voucher.voucher_date". A line item usually
+    # carries no date of its own that means anything — journal_voucher_lines has
+    # only its row-insert stamp, which on migrated data is the day of the
+    # migration and nothing else. Every row of it reads 2026, so every question
+    # about 2020-2025 came back empty, and the reply said there were no postings.
+    # _apply_period already resolves dotted names and joins; this only had to
+    # stop refusing them.
+    if date_field and "." in str(date_field):
+        link_name, _, far_field = str(date_field).partition(".")
+        _require(link_name in links_spec,
+                 f"{where}: date_field {date_field!r} goes through link "
+                 f"{link_name!r}, which is not declared")
+        _require(links_spec[link_name].get("cardinality") == "many_to_one",
+                 f"{where}: date_field {date_field!r} goes through a "
+                 f"one_to_many link, which would multiply rows")
+        _deferred_axis_checks.append((name, links_spec[link_name]["target"],
+                                      far_field, date_field))
+    else:
+        _require(date_field in fields,
+                 f"{where}: date_field {date_field!r} is not a declared field")
     # The default time axis must be a column every row actually has. A nullable
     # one silently drops rows from every "last N months" question, and the
     # answer still looks plausible — PO shipped with date_field: placed_at,
     # which is NULL on 97% of rows because orders mirrored from NC were never
     # placed through EPMS. Nobody would have noticed from the replies.
-    _col = getattr(model, date_field)
-    _column_obj = getattr(getattr(_col, "property", None), "columns", [None])[0]
+    _col = getattr(model, date_field) if "." not in str(date_field) else None
+    _column_obj = (getattr(getattr(_col, "property", None), "columns", [None])[0]
+                   if _col is not None else None)
+    # Only meaningful for a class this service owns. A `table` entity's columns
+    # are all declared nullable because the ontology does not know the real
+    # constraint — asking for an acknowledgement on every one of them would turn
+    # a real warning into boilerplate. test_ontology_matches_the_database reads
+    # the actual is_nullable instead.
+    if spec.get("table"):
+        _column_obj = None
     if _column_obj is not None and _column_obj.nullable:
         # Not forbidden outright — sometimes the nullable column is genuinely the
         # better axis (a receipt date beats a row-creation date) and is populated
@@ -330,19 +528,43 @@ def _build_entity(name: str, spec: dict) -> Entity:
         name=name, model=model, label=spec["label"], perm_key=spec["perm_key"],
         apply_scope=_SCOPES[scope_name], date_field=date_field,
         fields=fields, metrics=metrics, links=links,
+        nullable_axis_ok=spec.get("date_field_nullable_ok") is True,
     )
 
 
-def load(path: Path = ONTOLOGY_PATH) -> dict[str, Entity]:
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    _require(raw.get("version") == 1,
-             f"ontology: unsupported version {raw.get('version')!r}")
-    specs = raw.get("entities") or {}
-    _require(bool(specs), "ontology: no entities declared")
+def load(paths: Path | tuple[Path, ...] = ONTOLOGY_FILES) -> dict[str, Entity]:
+    if isinstance(paths, Path):
+        paths = (paths,)
+
+    specs: dict[str, dict] = {}
+    for path in paths:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        _require(raw.get("version") == 1,
+                 f"{path.name}: unsupported version {raw.get('version')!r}")
+        part = raw.get("entities") or {}
+        _require(bool(part), f"{path.name}: no entities declared")
+        # A name defined twice would have one silently win depending on file
+        # order, and the loser's traps would go with it.
+        clash = set(part) & set(specs)
+        _require(not clash, f"{path.name}: redefines {sorted(clash)}")
+        specs.update(part)
 
     entities = {name: _build_entity(name, spec) for name, spec in specs.items()}
 
     # Cross-entity checks, once every entity exists.
+    while _deferred_axis_checks:
+        owner, target, far_field, spelled = _deferred_axis_checks.pop()
+        _require(target in entities,
+                 f"entity '{owner}': date_field {spelled!r} targets unknown "
+                 f"entity {target!r}")
+        far = entities[target].fields.get(far_field)
+        _require(far is not None,
+                 f"entity '{owner}': date_field {spelled!r} — {target} has no "
+                 f"field {far_field!r}")
+        _require(far.kind in (DATE, DATETIME),
+                 f"entity '{owner}': date_field {spelled!r} is {far.kind!r}, "
+                 f"not a date")
+
     for entity in entities.values():
         for link in entity.links.values():
             _require(link.target in entities,

@@ -96,8 +96,16 @@ def test_shipped_date_fields_are_non_nullable_or_acknowledged():
     """Belt and braces on the real fragment. A nullable axis is allowed only
     where the yaml opts in, which forces whoever adds one to look at the
     coverage first."""
+    from app.core.ontology import _TABLE_MODELS
+
     acknowledged = {"goods_receipt"}  # received_at: 0 of 948 null, see the yaml
     for entity in REGISTRY.values():
+        # A table-backed entity's columns are all declared nullable because the
+        # ontology does not know the real constraint. Their axes are checked
+        # against the actual is_nullable, and the actual NULL rate, in
+        # test_ontology_matches_the_database.
+        if entity.model.__tablename__ in _TABLE_MODELS:
+            continue
         nullable = getattr(entity.model, entity.date_field).property.columns[0].nullable
         if nullable:
             assert entity.name in acknowledged, (
@@ -164,8 +172,61 @@ def test_empty_fragment_is_refused(tmp_path):
 
 
 def test_shipped_ontology_covers_the_purchasing_chain():
-    assert set(REGISTRY) == {"purchase_request", "purchase_order", "goods_receipt",
-                             "invoice", "payment_application"}
+    """The chain has to be complete end to end — a gap in the middle turns
+    "where did this go?" into an answer that stops halfway."""
+    assert {"purchase_request", "purchase_order", "goods_receipt",
+            "invoice", "payment_application"} <= set(REGISTRY)
+
+
+def test_every_entity_gates_on_a_permission_that_exists_in_the_matrix():
+    """perm_key is looked up in the caller's effective permissions, and a key no
+    role can hold reads False for everyone — the entity would be invisible to
+    every user including admins, with nothing to indicate why.
+
+    The keys here are the ones the Access Control Matrix defines; this test says
+    the ontology may not invent its own.
+    """
+    known = {
+        "view_pr", "view_po", "view_gr", "view_invoice", "view_pa",
+        "view_finance", "mrp.report.view",
+    }
+    for entity in REGISTRY.values():
+        assert entity.perm_key in known, (
+            f"{entity.name} gates on {entity.perm_key!r}, which is not a matrix "
+            f"key this ontology has been checked against")
+
+
+def test_finance_and_mrp_entities_carry_no_row_filter_on_purpose():
+    """Their scope is the permission and nothing else, which is worth stating
+    once in a test rather than leaving as an absence.
+
+    If either of these ever needs a row filter — a department manager seeing
+    their own cost centre's postings, say — this test is where that decision
+    gets recorded, not somewhere it can happen by accident.
+    """
+    from app.core.ontology import scope_permission_only
+
+    for name in ("chart_of_account", "journal_voucher", "journal_voucher_line",
+                 "ap_invoice", "bank_account", "business_partner",
+                 "wms_inventory_lot"):
+        assert REGISTRY[name].apply_scope is scope_permission_only
+
+
+def test_every_planning_table_picks_one_run():
+    """The correctness guard, asserted rather than assumed.
+
+    mrp_mps_lines, mrp_forecast_lines and mrp_purchase_lines each hold one set of
+    rows per run, and they are not increments of each other: two released MPS
+    runs carry 96 and 92 lines for the same materials. A query with no run filter
+    sums them — a near-exact doubling, and nothing about the number looks wrong.
+    It is a scope rather than a prompt rule precisely so a planner cannot omit it.
+    """
+    from app.core.ontology import (scope_forecast_current, scope_mps_in_force,
+                                   scope_purchase_latest_run)
+
+    assert REGISTRY["mrp_mps_line"].apply_scope is scope_mps_in_force
+    assert REGISTRY["mrp_forecast_line"].apply_scope is scope_forecast_current
+    assert REGISTRY["mrp_purchase_suggestion"].apply_scope is scope_purchase_latest_run
 
 
 def test_money_ends_up_somewhere_countable():
@@ -237,3 +298,156 @@ def test_pr_and_po_agree_on_what_a_code_means():
     """
     assert (dict(REGISTRY["purchase_request"].fields["type"].value_labels)
             == dict(REGISTRY["purchase_order"].fields["type"].value_labels))
+
+
+# ── tables this service reads but does not own ────────────────────────────────
+
+
+async def test_ontology_matches_the_database():
+    """Every `table` entity must match the real table it claims to map.
+
+    This is the whole safety net for reaching finance-api's and mrp-api's tables
+    without copying their models. The field list in the YAML *is* the mapping, so
+    nothing else would notice if the owning service renamed a column — the query
+    would simply fail at runtime, for whoever happened to ask first.
+
+    Checked against the real database, never the test one: the test database is
+    built by create_all from these same declarations, so comparing to it would be
+    comparing the ontology to itself and passing every time.
+
+    Two things are checked, and the second is the one that has actually caught a
+    bug. Types must be compatible; and the entity's time axis must really be
+    populated. purchase_order shipped with `placed_at` as its axis, NULL on 97%
+    of rows, and every "last N months" answer quietly omitted them.
+    """
+    import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.core.config import settings
+    from app.core.ontology import _TABLE_MODELS
+
+    external = {e.name: e for e in REGISTRY.values()
+                if e.model.__tablename__ in _TABLE_MODELS}
+    assert external, "no table-backed entities — has the loader changed?"
+
+    # ontology kind -> information_schema data_type values that can carry it
+    ok_types = {
+        "text": {"character varying", "text", "character", "uuid"},
+        "enum": {"character varying", "text", "character"},
+        "money": {"numeric", "double precision", "real"},
+        "int": {"integer", "bigint", "smallint"},
+        "bool": {"boolean"},
+        "date": {"date"},
+        "datetime": {"timestamp with time zone", "timestamp without time zone"},
+    }
+
+    problems: list[str] = []
+    engine = create_async_engine(str(settings.DATABASE_URL))
+    try:
+        async with engine.connect() as conn:
+            rows = (await conn.execute(sa.text(
+                "SELECT table_name, column_name, data_type "
+                "FROM information_schema.columns WHERE table_schema = 'public'"
+            ))).all()
+            actual: dict[str, dict[str, str]] = {}
+            for table, column, dtype in rows:
+                actual.setdefault(table, {})[column] = dtype
+
+            axis_checks: list[tuple[str, str, str]] = []
+            for name, entity in external.items():
+                table = entity.model.__tablename__
+                cols = actual.get(table)
+                if cols is None:
+                    problems.append(f"{name}: table {table!r} does not exist")
+                    continue
+                for fname, field in entity.fields.items():
+                    dtype = cols.get(fname)
+                    if dtype is None:
+                        problems.append(
+                            f"{name}.{fname}: no such column in {table}")
+                    elif dtype not in ok_types.get(field.kind, set()):
+                        problems.append(
+                            f"{name}.{fname}: declared {field.kind!r} but the "
+                            f"column is {dtype!r}")
+                if entity.date_field in cols:
+                    axis_checks.append((name, table, entity.date_field))
+
+            # A row-insert stamp is almost never the date a question means, and
+            # on anything migrated in it is the day of the migration. The ledger
+            # lines shipped with created_at as their axis: 323,431 rows, all of
+            # them 2026, so every question about an earlier year came back empty
+            # and the reply said there were no postings. NULL-rate does not catch
+            # this — the column is 100% populated and 100% wrong.
+            for name, table, column in list(axis_checks):
+                if column != "created_at":
+                    continue
+                spans = (await conn.execute(sa.text(
+                    f"SELECT count(DISTINCT date_trunc('year', {column})) "
+                    f"FROM {table}"))).scalar_one()
+                has_real_date = any(
+                    f.kind in ("date", "datetime") and n != "created_at"
+                    for n, f in REGISTRY[name].fields.items())
+                if spans <= 1 and has_real_date:
+                    problems.append(
+                        f"{name}.{column}: every row falls in one year, so this "
+                        f"is a row-insert stamp rather than a date the data is "
+                        f"about — period questions will return nothing for every "
+                        f"other year. Point date_field at a real date, reaching "
+                        f"through a link if the date lives on the parent.")
+
+            for name, table, column in axis_checks:
+                total, missing = (await conn.execute(sa.text(
+                    f"SELECT count(*), count(*) FILTER (WHERE {column} IS NULL) "
+                    f"FROM {table}"))).one()
+                if not total:
+                    # An empty table says nothing about coverage. Worth knowing
+                    # for another reason — see test_no_entity_maps_an_empty_table.
+                    continue
+                share = missing / total
+                if share > 0.02 and not REGISTRY[name].nullable_axis_ok:
+                    problems.append(
+                        f"{name}.{column}: the time axis is NULL on {missing} of "
+                        f"{total} rows ({share:.0%}), so every period question "
+                        f"silently drops them. Either pick a column that is "
+                        f"always set, or set date_field_nullable_ok and record "
+                        f"the coverage next to it.")
+    finally:
+        await engine.dispose()
+
+    assert not problems, "ontology disagrees with the database:\n  " + \
+        "\n  ".join(problems)
+
+
+async def test_no_entity_maps_an_empty_table():
+    """An entity over a table with no rows answers every question with "none".
+
+    That reads as "this never happened" when the truth is "this is not in use" —
+    ar_invoices, bank_transactions, fiscal_periods and exchange_rates are all
+    empty today, and none of them are in the ontology for exactly this reason.
+    If one gains rows later it should be added deliberately, not by an entity
+    that has been quietly answering "nothing" the whole time.
+    """
+    import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.core.config import settings
+    from app.core.ontology import _TABLE_MODELS
+
+    external = [e for e in REGISTRY.values()
+                if e.model.__tablename__ in _TABLE_MODELS]
+    empty: list[str] = []
+    engine = create_async_engine(str(settings.DATABASE_URL))
+    try:
+        async with engine.connect() as conn:
+            for entity in external:
+                table = entity.model.__tablename__
+                n = (await conn.execute(
+                    sa.text(f"SELECT count(*) FROM {table}"))).scalar_one()
+                if not n:
+                    empty.append(f"{entity.name} ({table})")
+    finally:
+        await engine.dispose()
+
+    assert not empty, (
+        "these entities map empty tables and would answer 'none' to everything: "
+        + ", ".join(empty))

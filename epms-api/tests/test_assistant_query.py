@@ -653,3 +653,46 @@ async def test_the_schema_tells_the_planner_what_a_code_means(admin_client):
     entities = {e["name"]: e for e in r.json()["entities"]}
     labels = entities["purchase_request"]["fields"]["type"]["value_labels"]
     assert labels["4"] == "Service"
+
+
+# ── finance and MRP ───────────────────────────────────────────────────────────
+
+
+async def test_the_ledger_is_invisible_without_view_finance(requester_client):
+    """The access decision for finance is the permission and nothing else.
+
+    These entities carry no row filter — a voucher is not "yours" the way a
+    requisition is — so this gate is the only thing between a requester and the
+    company's books. It is worth a test of its own rather than trusting that the
+    generic gate covers it.
+    """
+    for entity in ("journal_voucher", "journal_voucher_line", "chart_of_account",
+                   "ap_invoice", "bank_account", "business_partner"):
+        r = await requester_client.post("/api/v1/assistant/query",
+                                        json={"entity": entity, "metrics": ["count"]})
+        assert r.status_code == 200, entity
+        body = r.json()
+        assert body["denied"] is True, f"{entity} answered a requester"
+        assert not body["rows"], f"{entity} returned rows to a requester"
+
+
+async def test_mrp_is_invisible_without_its_report_permission(requester_client):
+    for entity in ("mrp_mps_line", "mrp_forecast_line",
+                   "mrp_purchase_suggestion", "wms_inventory_lot"):
+        r = await requester_client.post("/api/v1/assistant/query",
+                                        json={"entity": entity, "metrics": ["count"]})
+        assert r.status_code == 200, entity
+        assert r.json()["denied"] is True, f"{entity} answered a requester"
+
+
+async def test_the_schema_hides_what_the_caller_cannot_ask_about(requester_client):
+    """A planner shown an entity it may not query will keep choosing it and keep
+    being refused, and the person gets "I cannot answer that" for something that
+    reads like a reasonable question. Better that it never appears."""
+    r = await requester_client.get("/api/v1/assistant/schema")
+    assert r.status_code == 200
+    names = {e["name"] for e in r.json()["entities"]}
+    assert not (names & {"journal_voucher", "ap_invoice", "bank_account",
+                         "mrp_mps_line", "wms_inventory_lot"})
+    # ...and still shows what they CAN ask about, or the test proves nothing.
+    assert "purchase_request" in names
