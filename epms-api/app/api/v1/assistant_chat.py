@@ -30,7 +30,7 @@ from app.core.access_scope import build_scope, is_pr_visible
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
-from app.services import guide_view
+from app.services import guide_view, plan_view
 from app.services import workflow_view
 from app.services import controlled_query as cq
 
@@ -99,6 +99,9 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
 
     if planned["kind"] == "process":
         return await _answer_process(db, user, token, body, planned, actor)
+
+    if planned["kind"] == "plan":
+        return await _answer_plan_question(db, scope, body, planned, actor)
 
     if planned["kind"] == "workflow":
         return await _answer_workflow_question(db, user, token, scope, body, planned)
@@ -311,6 +314,53 @@ async def _answer_whats_next(db, user, body, actor) -> dict:
         "answer": told["text"], "kind": "tasks", "query": None,
         "tasks": tasks,
         "sources": {"open_tasks": len(tasks)},
+    }
+
+
+async def _answer_plan_question(db, scope, body, planned, actor) -> dict:
+    """Why the production plan says what it says.
+
+    Gated on the same permission as every other MRP entity — this reads plan
+    rows, and reaching them through an explanation rather than a query does not
+    make them less restricted. The gate is checked here rather than inside
+    plan_view so the refusal reads like every other refusal.
+    """
+    if not (scope.get("perms") or {}).get("mrp.report.view", False):
+        return {
+            "answer": "I cannot see the production plan.",
+            "kind": "denied", "reason": "no_permission",
+            "query": None, "sources": None,
+        }
+
+    lines = await plan_view.find_lines(
+        db,
+        material=planned.get("material_code"),
+        month=planned.get("month"),
+        week=planned.get("week_start"),
+    )
+    if not lines:
+        return {
+            "answer": "There is no line in the plan currently in force for "
+                      "that. Note that only the plan in force is readable — a "
+                      "superseded run is not.",
+            "kind": "cannot_answer", "reason": "no_such_line",
+            "query": None, "sources": None,
+        }
+
+    explained = [plan_view.explain(row) for row in lines]
+    try:
+        told = await assistant_llm.narrate_plan(body.message, explained)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_plan",
+                                     told.get("usage") or {})
+
+    return {
+        "answer": told["text"], "kind": "plan", "query": None,
+        "plan_lines": explained,
+        "sources": {"entity": "mrp_mps_line", "row_count": len(explained),
+                    "complete": all(e["arithmetic_accounts_for_it"]
+                                    or e["reasons"] for e in explained)},
     }
 
 

@@ -108,6 +108,9 @@ Rules:
   so is a correct answer. Guessing is not.
 - If they are asking what THEY should do — what is waiting for them, what is in
   their inbox, what they owe — call whats_next.
+- "Why does the plan say X" is explain_plan, not a query. The reasoning is
+  recorded — forecast, opening stock, carry-in and the engine's flags are all on
+  the line — so answering that the system does not record it is wrong.
 - explain_process is about the APPROVAL CHAIN — who signs off, in what order.
   It is not about the data. "What types of PR are there", "what statuses exist",
   "what fields does an invoice have" are questions about the data: answer them
@@ -317,6 +320,41 @@ _PROCESS_TOOL = {
     },
 }
 
+_EXPLAIN_PLAN_TOOL = {
+    "name": "explain_plan",
+    "description": (
+        "Use when someone asks WHY the production plan says what it says — "
+        "'why are we making 20 tonnes of X in the second week of October', "
+        "'where does this quantity come from', 'why is this scheduled so "
+        "late'. Reads the derivation off the plan line: forecast, opening "
+        "stock, carry-in, and the flags the engine set. For the plan's numbers "
+        "themselves, query mrp_mps_line instead."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "material_code": {
+                "type": "string",
+                "description": "The material, e.g. 'S0102'. Give it whenever "
+                               "the question names one.",
+            },
+            "month": {
+                "type": "string",
+                "description": "Demand month as YYYY-MM, e.g. '2026-10'.",
+            },
+            "week_start": {
+                "type": "string",
+                "description": "Monday of the plan week as YYYY-MM-DD. Only "
+                               "when the question names a specific week AND "
+                               "you know the date; do not guess which Monday "
+                               "'the second week' is — pass the month and let "
+                               "the weeks come back.",
+            },
+        },
+        "required": [],
+    },
+}
+
 _CANNOT_TOOL = {
     "name": "cannot_answer",
     "description": (
@@ -428,7 +466,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             max_tokens=_PLAN_MAX_TOKENS,
             system=system,
             tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _NEXT_TOOL,
-                   _PROCESS_TOOL, _CANNOT_TOOL],
+                   _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -453,6 +491,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             return {"kind": "next", "usage": _usage(resp)}
         if block.name == "explain_process":
             return {"kind": "process", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "explain_plan":
+            return {"kind": "plan", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_workflow":
             return {"kind": "workflow", **dict(block.input), "usage": _usage(resp)}
         if block.name == "check_document":
@@ -589,6 +629,47 @@ sitting right now.
 - Never invent a name, a step, a date or a role that is not in what you were
   given.
 """
+
+
+_NARRATE_PLAN_SYSTEM = """\
+You explain why a production plan schedules what it does, to a planner who
+knows the product and not the algorithm.
+
+The derivation arrives as ordered steps read off the plan line, plus any flags
+the planning engine set. Walk the steps in order — demand, what was already
+available, what is left to make — and then give the flags, which are the reasons
+a line departs from that plain subtraction.
+
+Rules:
+- Every figure is already in the data. Do not compute new ones, and do not
+  round: a planner reconciles these against their own spreadsheet.
+- The flag meanings given are the engine's own descriptions. Use them; do not
+  soften or reinterpret them.
+- If `arithmetic_accounts_for_it` is false and no flag explains the difference,
+  say plainly that the quantity does not follow from the recorded figures and
+  that something outside them moved it. Do not invent a reason to close the gap.
+- If several lines come back, the question did not identify one. Show them and
+  ask which — a plan can carry several lines for one material and month.
+- Answer in the language the question was asked in.
+"""
+
+
+async def narrate_plan(question: str, explained: list[dict],
+                       history=None) -> dict:
+    """Turn one or more derivations into an explanation."""
+    payload = {"question": question, "lines": explained}
+    client = _client()
+    resp = await client.messages.create(
+        model=MODEL, max_tokens=1200,
+        system=[{"type": "text", "text": _NARRATE_PLAN_SYSTEM,
+                 "cache_control": {"type": "ephemeral"}}],
+        messages=(history or []) + [{
+            "role": "user",
+            "content": json.dumps(payload, ensure_ascii=False, default=str),
+        }],
+    )
+    return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
+            "usage": _usage(resp)}
 
 
 async def narrate_workflow(message: str, view: dict) -> dict:
