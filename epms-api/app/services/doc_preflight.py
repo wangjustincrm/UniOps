@@ -16,7 +16,7 @@ preflight collects them all.
 """
 from dataclasses import dataclass
 
-from app.schemas.gr import is_service
+from app.schemas.gr import TYPE_FIXED_ASSET, TYPE_PROJECT, is_service
 
 MSG_PR_VENDOR_REQUIRED = "A vendor is required before submitting this PR"
 MSG_PR_BUDGET_REQUIRED = (
@@ -24,6 +24,12 @@ MSG_PR_BUDGET_REQUIRED = (
 )
 MSG_PR_COMPLETION_DATE_REQUIRED = (
     "A Service/Project Expected Completion Date is required before submitting this PR"
+)
+MSG_PR_FIXED_ASSET_REQUIRED = (
+    "A Fixed Asset ID is required before submitting this PR"
+)
+MSG_PR_PROJECT_CODE_REQUIRED = (
+    "A Project No. is required before submitting this PR"
 )
 
 
@@ -88,6 +94,28 @@ def pr_submit_checks(pr) -> list[Check]:
             id="service_completion_date_required", layer="field", passed=has_date,
             message=None if has_date else MSG_PR_COMPLETION_DATE_REQUIRED,
             fix_route=None if has_date else f"{edit}#completion-date",
+        ))
+
+    # Type 5 and type 6 each have one identifier of their own, and both were in
+    # the same state the completion date used to be in: the create form rendered
+    # them with a required asterisk, the zod rule was .optional(), and nothing
+    # server-side checked. The fixed asset id had it worse — it was never in the
+    # payload at all, so every value typed into that box was discarded. PRD §2
+    # has listed both as requirements since the types were defined.
+    if pr.type == TYPE_FIXED_ASSET:
+        has_asset = bool((pr.fixed_asset_id or "").strip())
+        checks.append(Check(
+            id="fixed_asset_id_required", layer="field", passed=has_asset,
+            message=None if has_asset else MSG_PR_FIXED_ASSET_REQUIRED,
+            fix_route=None if has_asset else f"{edit}#fixed-asset-id",
+        ))
+
+    if pr.type == TYPE_PROJECT:
+        has_project = bool((pr.project_code or "").strip())
+        checks.append(Check(
+            id="project_code_required", layer="field", passed=has_project,
+            message=None if has_project else MSG_PR_PROJECT_CODE_REQUIRED,
+            fix_route=None if has_project else f"{edit}#project-code",
         ))
 
     return checks

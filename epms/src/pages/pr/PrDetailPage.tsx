@@ -403,6 +403,7 @@ export default function PrDetailPage() {
                     ['Department', pr.department_name || '—'],
                     ['Cost Center', pr.cost_center_name || '—'],
                     ['Budget Code', pr.budget_code ? (budgetAccount ? `${pr.budget_code} — ${budgetAccount.name}` : pr.budget_code) : '—'],
+                    ...(pr.type === 5 ? [['Fixed Asset ID', pr.fixed_asset_id || '—'] as [string, string]] : []),
                     ...(pr.type === 6 ? [['Project No.', pr.project_code || '—'] as [string, string]] : []),
                     ['Currency', pr.currency ?? 'CAD'],
                     [`Total Amount (${pr.currency ?? 'CAD'})`, formatAmount(pr.amount, pr.currency ?? 'CAD')],

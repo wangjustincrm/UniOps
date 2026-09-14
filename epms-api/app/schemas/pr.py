@@ -96,6 +96,7 @@ class PrCreate(BaseModel):
     budget_code: str | None = Field(default=None, max_length=100)
     factor_combo: dict[str, str] | None = None
     project_code: str | None = Field(default=None, max_length=100)
+    fixed_asset_id: str | None = Field(default=None, max_length=100)
     required_by: date | None = None
     service_completion_date: date | None = None
     delivery_address: str | None = None
@@ -120,6 +121,7 @@ class PrUpdate(BaseModel):
     budget_code: str | None = Field(default=None, max_length=100)
     factor_combo: dict[str, str] | None = None
     project_code: str | None = Field(default=None, max_length=100)
+    fixed_asset_id: str | None = Field(default=None, max_length=100)
     required_by: date | None = None
     service_completion_date: date | None = None
     delivery_address: str | None = None
@@ -178,6 +180,7 @@ class PrResponse(BaseModel):
     budget_code: str | None
     factor_combo: dict[str, str] | None = None
     project_code: str | None
+    fixed_asset_id: str | None = None
     required_by: date | None
     service_completion_date: date | None = None
     delivery_address: str | None

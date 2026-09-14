@@ -5,6 +5,12 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
+# Procurement types that carry an identifier of their own. Named because two
+# separate gates read them and "pr.type == 5" at a call site says nothing about
+# why 5 is special.
+TYPE_FIXED_ASSET = 5
+TYPE_PROJECT = 6
+
 PHYSICAL_TYPES = {1, 2, 3, 5}   # Raw Materials, Consumables, Spare Parts, Fixed Assets
 # Service (4) and Project-Related (6) follow the service GR flow: the requester
 # confirms completion instead of the warehouse receiving goods. Everything that

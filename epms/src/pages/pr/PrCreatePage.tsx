@@ -56,6 +56,25 @@ const prSchema = z.object({
       message: 'Expected completion date is required',
     })
   }
+  // Type 5's Fixed Asset ID and type 6's Project Code were in the same state
+  // the completion date was: rendered with a required asterisk, .optional()
+  // here, unchecked server-side. The asset id had it worse — it was never in
+  // the submit payload at all, so the value was collected and discarded. The
+  // server enforces both on submit (doc_preflight.pr_submit_checks).
+  if (v.procurementType === 5 && !v.fixedAssetId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['fixedAssetId'],
+      message: 'Fixed Asset ID is required',
+    })
+  }
+  if (v.procurementType === 6 && !v.projectCode?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['projectCode'],
+      message: 'Project No. is required',
+    })
+  }
 })
 
 type PrForm = z.infer<typeof prSchema>
@@ -161,6 +180,7 @@ export default function PrCreatePage() {
     setValue('deliveryAddress', sourcePr.delivery_address ?? config?.delivery_address ?? '')
     setValue('prepaymentRequired', sourcePr.is_prepaid)
     if (sourcePr.project_code) setValue('projectCode', sourcePr.project_code)
+    if (sourcePr.fixed_asset_id) setValue('fixedAssetId', sourcePr.fixed_asset_id)
     setCurrency(sourcePr.currency as Currency)
 
     if (sourcePr.line_items.length > 0) {
@@ -337,6 +357,7 @@ export default function PrCreatePage() {
         vendor_id: selectedVendor?.id,
         is_prepaid: formData.prepaymentRequired ?? false,
         project_code: formData.projectCode || undefined,
+        fixed_asset_id: formData.fixedAssetId || undefined,
         cost_center_id: selectedCostCenterId,
         department_id: selectedDepartmentId,
         budget_code: selectedL2 || undefined,
@@ -379,6 +400,9 @@ export default function PrCreatePage() {
         cost_center_id: selectedCostCenterId,
         department_id: selectedDepartmentId,
         budget_code: selectedL2 || undefined,
+        is_prepaid: values.prepaymentRequired ?? false,
+        project_code: values.projectCode || undefined,
+        fixed_asset_id: values.fixedAssetId || undefined,
         // Drafts may have a partial combo; only send when all factors are picked
         // to satisfy the server-side shape check (drop empty values otherwise).
         factor_combo:

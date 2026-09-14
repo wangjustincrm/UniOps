@@ -74,6 +74,7 @@ export default function PrEditPage() {
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [notes, setNotes] = useState('')
   const [projectCode, setProjectCode] = useState('')
+  const [fixedAssetId, setFixedAssetId] = useState('')
   const [isPrepaid, setIsPrepaid] = useState(false)
   const [justification, setJustification] = useState('')
   const [justificationError, setJustificationError] = useState<string | null>(null)
@@ -124,6 +125,7 @@ export default function PrEditPage() {
     setDeliveryAddress(pr.delivery_address ?? '')
     setNotes(pr.notes ?? '')
     setProjectCode(pr.project_code ?? '')
+    setFixedAssetId(pr.fixed_asset_id ?? '')
     setIsPrepaid(pr.is_prepaid ?? false)
     setJustification(pr.over_budget_justification ?? '')
     setFactorCombo(pr.factor_combo ?? {})
@@ -213,6 +215,7 @@ export default function PrEditPage() {
     department_id: selectedDepartmentId,
     budget_code: selectedL2 || undefined,
     project_code: projectCode || undefined,
+    fixed_asset_id: fixedAssetId || undefined,
     // Only send the combo when every factor is picked (satisfies the server-side
     // shape check); lets a decomposition combo be corrected via Edit.
     factor_combo:
@@ -254,6 +257,8 @@ export default function PrEditPage() {
     e.preventDefault()
     if (!id || !title.trim() || !requiredBy) return
     if ((procurementType === 4 || procurementType === 6) && !serviceCompletionDate) return
+    if (procurementType === 5 && !fixedAssetId.trim()) return
+    if (procurementType === 6 && !projectCode.trim()) return
     const errs = validateLineItems(lineItems)
     if (Object.keys(errs).length > 0) { setLineErrors(errs); return }
     if (estimatedAmount === 0) { setLineErrors({ '0': { unitPrice: 'At least one line must have a price' } }); return }
@@ -593,6 +598,7 @@ export default function PrEditPage() {
                 Feeds app/tasks/service_gr_due.py, which nudges the requester to
                 create a GR once this date passes. Required on submit server-side. */}
             {(procurementType === 4 || procurementType === 6) && (
+              <div id="completion-date">
               <FormField label="Service/Project Expected Completion Date" required htmlFor="serviceCompletionDate">
                 <div className="relative">
                   <Input
@@ -604,20 +610,42 @@ export default function PrEditPage() {
                   <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                 </div>
               </FormField>
+              </div>
+            )}
+
+            {/* Fixed Asset ID — Type 5 only. The edit form is where a PR
+                blocked by the submit gate gets unblocked, so the field has to
+                exist here; it was only ever on the create form, where its value
+                was discarded. */}
+            {procurementType === 5 && (
+              <div id="fixed-asset-id">
+                <FormField label="Fixed Asset ID" required htmlFor="fixedAssetId">
+                  <input
+                    id="fixedAssetId"
+                    type="text"
+                    value={fixedAssetId}
+                    onChange={(e) => setFixedAssetId(e.target.value)}
+                    placeholder="e.g. FA-2026-0001"
+                    className="h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  />
+                </FormField>
+              </div>
             )}
 
             {/* Project Code — Type 6 only */}
             {procurementType === 6 && (
-              <FormField label="Project No." required htmlFor="projectCode">
-                <input
-                  id="projectCode"
-                  type="text"
-                  value={projectCode}
-                  onChange={(e) => setProjectCode(e.target.value)}
-                  placeholder="e.g. PROJ-2026-001"
-                  className="h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-                />
-              </FormField>
+              <div id="project-code">
+                <FormField label="Project No." required htmlFor="projectCode">
+                  <input
+                    id="projectCode"
+                    type="text"
+                    value={projectCode}
+                    onChange={(e) => setProjectCode(e.target.value)}
+                    placeholder="e.g. PROJ-2026-001"
+                    className="h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  />
+                </FormField>
+              </div>
             )}
 
             {/* Notes */}

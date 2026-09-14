@@ -43,6 +43,7 @@ export interface ApiPr {
   budget_code?: string
   factor_combo?: Record<string, string> | null
   project_code?: string | null
+  fixed_asset_id?: string | null
   required_by?: string
   service_completion_date?: string
   delivery_address?: string
@@ -67,6 +68,7 @@ export interface CreatePrBody {
   vendor_id?: string
   is_prepaid?: boolean
   project_code?: string
+  fixed_asset_id?: string
   cost_center_id?: string
   department_id?: string
   budget_code?: string
@@ -85,6 +87,11 @@ export interface UpdatePrBody {
   type?: number
   currency?: string
   vendor_id?: string
+  // project_code was already being sent by the edit form's buildPayload() and
+  // was simply missing here — an object built in a variable skips the excess
+  // property check, so nothing complained.
+  project_code?: string
+  fixed_asset_id?: string
   cost_center_id?: string
   department_id?: string
   budget_code?: string

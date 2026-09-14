@@ -43,6 +43,11 @@ class PurchaseRequest(UUIDPrimaryKey, TimestampMixin, Base):
     # Mirrors budget-api `budget_plan_breakdowns.factor_combo` for cross-system joins.
     factor_combo: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     project_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Collected only for type 5 (Fixed Asset), and required at submit time for
+    # it. Nullable at the DB level because every type 5 PR created before this
+    # column existed has none — the form asked for the value and then dropped
+    # it, so there is nothing to backfill from.
+    fixed_asset_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     required_by: Mapped[date | None] = mapped_column(Date, nullable=True)
     # When the service / project is expected to be finished. Collected only for
