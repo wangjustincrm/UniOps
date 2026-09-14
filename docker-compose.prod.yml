@@ -42,6 +42,12 @@ services:
     image: ${REGISTRY}/uniops-epms-api:${TAG:-latest}
     build: { context: ., dockerfile: epms-api/Dockerfile }
     environment:
+      # The AI assistant (ask in words, answered from the ontology). Falls back
+      # to the shared key, but should have its own in production: they draw on
+      # the same account quota, and an assistant busy enough to exhaust it would
+      # take expense-api's receipt OCR down with it — which fails as "AI parsing
+      # failed" against the document, blaming the file rather than the quota.
+      ANTHROPIC_API_KEY: ${ASSISTANT_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}
       <<: *db-env
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: "6379"
