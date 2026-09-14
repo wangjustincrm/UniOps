@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackLink } from '@/components/BackLink'
 import { useReplaceTab, Button } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { todayLocal } from '@/lib/utils'
+import { useEditableClaim, useSaveClaim, type EditableFormProps } from '@/lib/editableClaim'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -57,9 +59,14 @@ function DynamicField({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function CfmCreatePage() {
-  const { formCode } = useParams<{ formCode: string }>()
+export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
+  const { formCode: routeFormCode } = useParams<{ formCode: string }>()
   const replaceTab = useReplaceTab(oaRoutes)
+  const { claim: editing, isLoading: loadingClaim, error: loadError } = useEditableClaim(editClaimId)
+
+  // On the create route the form code is in the path; when editing, it is
+  // whatever the claim was raised against (claim_type is "CFM_<CODE>").
+  const formCode = editing ? editing.claim_type.replace(/^CFM_/i, '') : routeFormCode
 
   const { data: forms, isLoading } = useQuery<CustomForm[]>({
     queryKey: ['custom-forms-active'],
@@ -74,13 +81,28 @@ export default function CfmCreatePage() {
   const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
 
+  // Answers are stored as a JSON blob in `notes` (see handleSubmit), with the
+  // free-text remark under _user_notes. Unpack it back into the form. A claim
+  // whose notes are not JSON — hand-edited, or from before this encoding —
+  // keeps its text as the remark rather than being dropped.
+  useEffect(() => {
+    if (!editing) return
+    try {
+      const parsed = JSON.parse(editing.notes ?? '{}')
+      const { _user_notes, ...fields } = parsed
+      setValues(Object.fromEntries(
+        Object.entries(fields).map(([k, v]) => [k, v == null ? '' : String(v)])))
+      setNotes(typeof _user_notes === 'string' ? _user_notes : '')
+    } catch {
+      setValues({})
+      setNotes(editing.notes ?? '')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id])
+
   const setValue = (name: string, v: string) => setValues(p => ({ ...p, [name]: v }))
 
-  const mutation = useMutation({
-    mutationFn: (body: object) => api.post('/api/v1/expenses', body),
-    onSuccess: (data: any) => replaceTab(`/expenses/${data.id}`),
-    onError: (e: any) => setError(e.message || 'Failed to create claim'),
-  })
+  const mutation = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`))
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -94,17 +116,23 @@ export default function CfmCreatePage() {
 
     mutation.mutate({
       claim_type: `CFM_${form.code}`,
-      submission_date: new Date().toISOString().slice(0, 10),
+      // Keep the date the claim was raised on when editing one.
+      submission_date: editing?.submission_date ?? todayLocal(),
       notes: JSON.stringify({ ...fieldData, _user_notes: notes }),
       line_items: [],
+    }, {
+      onError: (err: any) => setError(err.message || (editClaimId
+        ? 'Failed to save changes' : 'Failed to create claim')),
     })
   }
 
-  if (isLoading) return (
+  if (isLoading || loadingClaim) return (
     <div className="flex items-center justify-center py-16">
       <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
     </div>
   )
+
+  if (loadError) return <ErrorBanner message={loadError.message} />
 
   if (!form) return (
     <div className="py-16 text-center text-sm text-danger-500">
@@ -118,7 +146,9 @@ export default function CfmCreatePage() {
         <BackLink to="/expenses" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
           <ArrowLeft className="h-4 w-4" />Back to Expenses
         </BackLink>
-        <h1 className="text-2xl font-bold text-neutral-900">{form.name}</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">
+          {editing ? `Edit ${editing.claim_number}` : form.name}
+        </h1>
         <p className="mt-0.5 text-sm text-neutral-500 font-mono">CFM_{form.code}</p>
       </div>
 
@@ -151,7 +181,7 @@ export default function CfmCreatePage() {
       {error && <ErrorBanner message={error} />}
 
       <Button type="submit" size="sm" disabled={mutation.isPending} className="self-start">
-        {mutation.isPending ? 'Saving…' : 'Save Draft'}
+        {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Save Draft'}
       </Button>
     </form>
   )

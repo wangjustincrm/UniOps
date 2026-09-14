@@ -44,63 +44,63 @@ class OaTaskListResponse(BaseModel):
     total: int
 
 
-# ── Role→step mappings ──────────────────────────────────────────────────────
-# Derived at request time from company_config.workflow_defs (see _steps_from_wf
-# / list_tasks below) instead of hardcoded step→role maps, so a customised
-# approval flow stays consistent with the OA Task List.
+# ── Who is an approver here ─────────────────────────────────────────────────
+#
+# The approval half of this list reads the shared `tasks` table (written by
+# approval-api) — the SAME source `_can_act_on_claim` gates the Approve button
+# on, and the same source `expenses.py::my_actions` (the Portal inbox) was
+# moved to. It used to select every document parked at a workflow step whose
+# role the caller's JWT carried, which meant:
+#
+#   * no department scope — `dept_manager` is a populous role, so every
+#     department manager saw every company claim at that step, requester name
+#     and amount included. approval-api PINS a dept_manager task to the one
+#     manager who routes for that document's department, so reading tasks
+#     restores the scope without re-deriving any routing rules here;
+#   * no role union — a user whose finance_bp is an ADDITIONAL role (they are
+#     assignments, not JWT claims) saw none of the documents they had to act on;
+#   * no delegation — a stand-in's inbox was empty for the documents they were
+#     covering;
+#   * and rows the caller could see but not act on, because the detail page's
+#     Approve button asks `_can_act_on_claim`, i.e. the tasks table.
+#
+# Same deliberate trade-off my_actions made: a document whose approval task was
+# closed while the document stayed open (the Mark Done incident) no longer
+# appears. Nobody can approve it — it needs the heal script, not an inbox row.
+# system_admin gets no bypass here either, for the same reason: the inbox is
+# "what I must act on", and the admin's whole-company view is the list page.
+#
+# The payment half is a role pool with no per-document task, so it stays
+# role-based — but off `expenses.py::_CAN_PAY`, imported rather than copied.
+# The copy that used to live here had drifted: it was missing `payment_officer`,
+# the role that actually executes payments now, so the person responsible for
+# paying saw nothing to pay.
 
-_CAN_PAY = {"finance_bp", "finance_manager", "ap_clerk", "system_admin"}
 
-
-def _steps_from_wf(wf: dict, *keys: str) -> dict[int, set[str]]:
-    """{step_idx: {roles}} unioned across the given workflow_defs chains.
-    Replaces hardcoded step→role maps so a customised approval flow stays consistent."""
-    out: dict[int, set[str]] = {}
-    for key in keys:
-        for idx, step in enumerate(wf.get(key) or []):
-            r = step.get("role")
-            if r:
-                out.setdefault(idx, set()).add(r)
-    return out
-
-
-def _exp_task_type(
-    status: str,
-    step_idx: int,
-    is_own: bool,
-    role: str,
-    step_roles: dict[int, set[str]],
-) -> str | None:
+def _exp_task_type(status: str, is_own: bool, is_approvable: bool, can_pay: bool,
+                   claim_type: str) -> str | None:
     if status == "returned" and is_own:
         return "revise_expense"
-    if status == "approved" and role in _CAN_PAY:
+    # A Travel Application carries no money and never enters the payment path;
+    # its total is 0.00, so a "Record Payment" card for one is pure noise.
+    if status == "approved" and can_pay and claim_type.upper() != "TRA":
         return "pay_expense"
-    if status in ("submitted", "in_review") and not is_own:
-        if role in step_roles.get(step_idx, set()) or role == "system_admin":
-            return "approve_expense"
-        return None
-    if status in ("submitted", "in_review") and is_own:
-        return "submitted_expense"
+    if status in ("submitted", "in_review"):
+        if is_own:
+            return "submitted_expense"
+        return "approve_expense" if is_approvable else None
     return None
 
 
-def _pa_task_type(
-    status: str,
-    step_idx: int,
-    is_own: bool,
-    role: str,
-    step_roles: dict[int, set[str]],
-) -> str | None:
+def _pa_task_type(status: str, is_own: bool, is_approvable: bool, can_pay: bool) -> str | None:
     if status == "returned" and is_own:
         return "revise_pa"
-    if status == "approved" and role in _CAN_PAY:
+    if status == "approved" and can_pay:
         return "pay_pa"
-    if status in ("submitted", "in_review") and not is_own:
-        if role in step_roles.get(step_idx, set()) or role == "system_admin":
-            return "approve_pa"
-        return None
-    if status in ("submitted", "in_review") and is_own:
-        return "submitted_pa"
+    if status in ("submitted", "in_review"):
+        if is_own:
+            return "submitted_pa"
+        return "approve_pa" if is_approvable else None
     return None
 
 
@@ -116,15 +116,28 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     - Approved items waiting for payment (finance / AP roles)
     """
     from sqlalchemy import or_, select
+    from app.api.v1.expenses import (
+        _CAN_PAY, OA_CLAIM_DOC_TYPES, _user_role_codes, approvable_document_ids,
+    )
     from app.models.expense import ExpenseClaim as EC
-    from app.models.pa import PaymentApplication as PA
-    from app.api.v1.expenses import _get_workflow_defs
 
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
-    wf = await _get_workflow_defs(db)
-    exp_step_roles = _steps_from_wf(wf, "exp", "mil", "trv", "cfm")
-    pa_step_roles = _steps_from_wf(wf, "pa", "pa_dir")
+    roles = await _user_role_codes(db, user_id, role)      # primary ∪ additional
+    can_pay = any(r in _CAN_PAY for r in roles)
+
+    # One definition of "is this mine to approve", shared with my_actions and
+    # the list endpoints — see approvable_document_ids. The inline copy that
+    # used to live here is what drifted: no department scope, no role union, no
+    # delegation, long after my_actions had all three.
+    # Scoped to OA's own document types. `tasks` is shared by every service:
+    # on production data EPMS's PR/PO/PA/agreement tasks outnumber OA's by
+    # roughly two hundred to one, and an unscoped read pulled all of them into
+    # Python to be discarded against a table of expense claims. It is also what
+    # let EPMS's Payment Applications surface in this list at all.
+    approvable_ids = await approvable_document_ids(
+        db, user_id, role, doc_types=OA_CLAIM_DOC_TYPES)
+
     tasks: list[OaTaskItem] = []
 
     # ── Expense claims ────────────────────────────────────────────────────────
@@ -132,13 +145,14 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     exp_conditions = [
         (EC.employee_id == user_id) & (EC.status.in_(["submitted", "in_review", "returned"])),
     ]
-    for step, roles in exp_step_roles.items():
-        if role in roles or role == "system_admin":
-            exp_conditions.append(
-                (EC.status.in_(["submitted", "in_review"])) & (EC.approval_step_idx == step)
-            )
-    if role in _CAN_PAY:
-        exp_conditions.append(EC.status == "approved")
+    if approvable_ids:
+        exp_conditions.append(
+            EC.id.in_(approvable_ids) & EC.status.in_(["submitted", "in_review"])
+        )
+    if can_pay:
+        # TRA excluded: an approved Travel Application has total_amount 0 and
+        # never enters the payment path (same rule as my_actions / list_expenses).
+        exp_conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
 
     exp_rows = list(
         (await db.execute(
@@ -154,13 +168,17 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
         if claim.id in seen_exp:
             continue
         is_own = claim.employee_id == user_id
-        tt = _exp_task_type(claim.status, claim.approval_step_idx, is_own, role, exp_step_roles)
+        tt = _exp_task_type(claim.status, is_own, claim.id in approvable_ids,
+                            can_pay, claim.claim_type)
         if tt is None:
             continue
         seen_exp.add(claim.id)
 
+        # TRA was falling through `.get(ct, "cfm")` into the Custom Form bucket:
+        # a Travel Application showed up labelled "Custom Form" and deep-linked
+        # to /expenses/{id} instead of /travel/{id}.
         ct = claim.claim_type.upper()
-        doc_type = {"EXP": "exp", "MIL": "mil", "TRV": "trv"}.get(ct, "cfm")
+        doc_type = {"EXP": "exp", "MIL": "mil", "TRV": "trv", "TRA": "tra"}.get(ct, "cfm")
 
         tasks.append(OaTaskItem(
             id=f"exp-{claim.id}",
@@ -179,56 +197,17 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
         ))
 
     # ── Payment applications ──────────────────────────────────────────────────
-
-    pa_conditions = [
-        (PA.created_by == user_id) & (PA.status.in_(["submitted", "in_review", "returned"])),
-    ]
-    for step, roles in pa_step_roles.items():
-        if role in roles or role == "system_admin":
-            pa_conditions.append(
-                (PA.status.in_(["submitted", "in_review"])) & (PA.approval_step_idx == step)
-            )
-    if role in _CAN_PAY:
-        pa_conditions.append(PA.status == "approved")
-
-    pa_rows = list(
-        (await db.execute(
-            select(PA)
-            .where(or_(*pa_conditions))
-            .order_by(PA.created_at.desc())
-            .limit(200)
-        )).scalars().unique().all()
-    )
-
-    seen_pa: set[uuid.UUID] = set()
-    for pa in pa_rows:
-        if pa.id in seen_pa:
-            continue
-        is_own = pa.created_by == user_id
-        tt = _pa_task_type(pa.status, pa.approval_step_idx, is_own, role, pa_step_roles)
-        if tt is None:
-            continue
-        seen_pa.add(pa.id)
-
-        # Not `po_id is None`: an EPMS agreement PA has no PO either, and
-        # labelling it pa_dir sends the deep link to OA's Direct-PA detail page.
-        doc_type = "pa_dir" if pa.is_direct else "pa"
-
-        tasks.append(OaTaskItem(
-            id=f"pa-{pa.id}",
-            task_type=tt,
-            doc_type=doc_type,
-            doc_id=str(pa.id),
-            doc_number=pa.pa_number,
-            title=pa.title or pa.vendor_name,
-            submitter_name=pa.vendor_name,
-            amount=float(pa.payment_amount),
-            currency=pa.currency,
-            status=pa.status,
-            submitted_at=pa.submitted_at.isoformat() if pa.submitted_at else None,
-            created_at=pa.created_at.isoformat(),
-            is_own=is_own,
-        ))
+    #
+    # Deliberately absent. OA's own PA — the Direct PA — is retired (see
+    # DIRECT_PA_RETIRED in api/v1/pa.py), so there is no OA payment application
+    # left for this inbox to be about.
+    #
+    # EPMS's PAs used to appear here too, deep-linking into OA's /pa/:id. They
+    # are EPMS documents: epms-api's own task list covers approve_pa (its
+    # liveness map names both `pa` and `pa_dir`), and the Portal home inbox
+    # merges that feed, so nothing is lost by leaving them out of OA's. What
+    # WOULD be lost by keeping them is the link: OA no longer has a /pa route
+    # for the card to open.
 
     tasks.sort(key=lambda t: t.created_at, reverse=True)
     return OaTaskListResponse(items=tasks, total=len(tasks))

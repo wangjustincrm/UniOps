@@ -18,11 +18,13 @@ import {
 
 // MRP has no single landing tile like the other modules — Portal links
 // directly into three of its routes (Task 8 scaffold: Forecast, Consignment
-// Stock, BOM Explorer), each permission-gated on its own. Resolved with
-// import.meta.env directly (rather than via HrefContext, whose oa/vms/etc.
-// fields are populated by PortalSidebar/PortalPageLayout/PortalHome) so this
-// file is the single place that needs to change to wire the new module in.
-export const MRP_URL = (import.meta.env.VITE_MRP_URL as string | undefined) || 'http://localhost:5179'
+// Stock, BOM Explorer), each permission-gated on its own. Taken from lib/api
+// (rather than via HrefContext, whose oa/vms/etc. fields are populated by
+// PortalSidebar/PortalPageLayout/PortalHome) and re-exported here so existing
+// importers keep working; lib/api is where every module origin now lives, so
+// the returnUrl allow-list sees this one too.
+import { MRP_URL } from '@/lib/api'
+export { MRP_URL }
 
 export interface NavItemDef {
   label: string

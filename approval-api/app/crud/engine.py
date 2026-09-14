@@ -1494,6 +1494,25 @@ async def execute_action(
     elif act == "return":
         if _status_of(meta, doc) not in meta["valid_return"]:
             raise ValueError(f"Cannot return {doc_type.upper()} in status '{_status_of(meta, doc)}'")
+
+        # Authorization: sending a document back is an approval-step decision, so
+        # it requires the SAME authority as approve/reject. This gate used to be
+        # missing while reject's was present — any user who could merely SEE a
+        # broadcast approve task (or simply knew the document id) could bounce
+        # anyone's in-flight document back to its submitter. The calling services
+        # do not cover for it either: epms-api's pr/po/pa action endpoints and
+        # expense-api's expense_action/pa_action forward to this engine with no
+        # authorization of their own.
+        authorized = await _actor_can_approve(
+            db, current_step_role, actor_id, actor_role,
+            routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
+            doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
+            today=today, cross_dept_pa=cross_dept_pa,
+        )
+        if not authorized:
+            raise ValueError(
+                f"Not authorized to return this step (requires role: {current_step_role})"
+            )
         await _complete_tasks(db, doc_type, doc.id)
         _set_status(meta, doc, "returned")
         _set_step(meta, doc, 0)
@@ -1534,6 +1553,37 @@ async def execute_action(
     elif act == "cancel":
         if _status_of(meta, doc) not in meta["valid_cancel"]:
             raise ValueError(f"Cannot cancel {doc_type.upper()} in status '{_status_of(meta, doc)}'")
+
+        # Authorization: cancel is terminal — the document is dead afterwards and
+        # its number is spent. It used to have no gate at all, so any logged-in
+        # user could kill anyone's draft (and, for PR/PO/AGR/posign, anything
+        # merely `submitted`). Three parties may legitimately do it: the person
+        # whose document it is, an admin, and the approver currently holding it
+        # (for whom cancel is the same call reject already lets them make).
+        #
+        # KNOWN NARROWING — VMS: vms-api lets a dept_manager cancel a visit in
+        # their own department (api/v1/visits.py::cancel), which is broader than
+        # the three parties above. It runs that check itself BEFORE forwarding
+        # here and wraps this call in `except Exception: pass`, so a manager who
+        # is not the current step's approver still cancels the visit locally —
+        # the engine-side task is what goes stale. That is a degradation, not a
+        # break, and it is preferable to leaving the gate open for every service.
+        # If VMS needs the wider rule honoured end to end, the fix belongs there
+        # (complete the task directly) or in an explicit per-doc_type cancel
+        # policy here — not in reopening this.
+        if actor_role != "system_admin" and actor_id != doc.created_by:
+            authorized = await _actor_can_approve(
+                db, current_step_role, actor_id, actor_role,
+                routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
+                doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
+                today=today, cross_dept_pa=cross_dept_pa,
+            )
+            if not authorized:
+                raise ValueError(
+                    f"Not authorized to cancel this {doc_type.upper()} — "
+                    "only its owner, an approver currently holding it, or an "
+                    "administrator can."
+                )
         await _complete_tasks(db, doc_type, doc.id)
         _set_status(meta, doc, "cancelled")
 

@@ -134,7 +134,10 @@ const VMS_DOC_TYPES = new Set(['vms_visit', 'vms_train', 'vms_ppe'])
 function oaPathFor(docType: string): string | null {
   const dt = docType.toLowerCase()
   if (['exp', 'mil', 'trv', 'cfm'].includes(dt) || dt.startsWith('cfm')) return '/expenses'
-  if (dt === 'pa_dir') return '/pa'
+  if (dt === 'tra') return '/travel'
+  // 'pa_dir' deliberately absent: OA's Direct PA is retired and its /pa routes
+  // are gone, so a link there would land on the shell's "No route matched".
+  // Returning null leaves the row unlinked rather than sending someone nowhere.
   return null
 }
 

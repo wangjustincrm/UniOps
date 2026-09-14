@@ -138,6 +138,9 @@ async def test_broadcast_roles_union_minus_personal(test_engine):
         d1 = await _insert_user(db, role="finance_bp")
         d2 = await _insert_user(db, role="director")  # personal role — must be excluded
         await db.execute(text(
+            "INSERT INTO role_defs (code, is_active) VALUES (:r, true) "
+            "ON CONFLICT (code) DO NOTHING"), {"r": "procurement_manager"})
+        await db.execute(text(
             "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :r)"),
             {"u": d1, "r": "procurement_manager"})
         await db.commit()
@@ -161,6 +164,9 @@ async def test_broadcast_roles_excludes_inactive_delegator_additional_role(test_
     sf = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with sf() as db:
         delegator_id = await _insert_user(db, role="dept_manager", is_active=False)
+        await db.execute(text(
+            "INSERT INTO role_defs (code, is_active) VALUES (:r, true) "
+            "ON CONFLICT (code) DO NOTHING"), {"r": "procurement_manager"})
         await db.execute(text(
             "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :r)"),
             {"u": delegator_id, "r": "procurement_manager"})

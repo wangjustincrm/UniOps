@@ -27,7 +27,7 @@ from app.models.epms_mirrors import EpmsCostCenter, EpmsInvoice, EpmsPurchaseOrd
 
 def _client_for(role: str, user_id: str) -> AsyncClient:
     token = jwt.encode(
-        {"sub": user_id, "role": role, "exp": datetime.utcnow() + timedelta(hours=8)},
+        {"sub": user_id, "role": role, "type": "access", "exp": datetime.utcnow() + timedelta(hours=8)},
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
     )
@@ -179,6 +179,9 @@ async def test_multi_role_dept_manager_plus_gm_sees_gm_dept_invoice(routing_db):
 
     # Give the (dept_manager) user an ADDITIONAL gm role via user_roles.
     mgr_id = uuid.uuid4()
+    await routing_db.execute(text(
+        "INSERT INTO role_defs (code, is_active) VALUES ('gm', true) "
+        "ON CONFLICT (code) DO NOTHING"))
     await routing_db.execute(text(
         "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'gm')"), {"u": str(mgr_id)})
     await routing_db.commit()

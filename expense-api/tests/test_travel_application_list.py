@@ -4,11 +4,15 @@ Applications list page.
 Gap 1: ExpenseClaimListItem dropped `travel_destination`, so the list page's
 Destination column was always blank even though the ORM row has the value.
 
-Gap 2: the approver-visibility loop in list_expenses() (the tuple mapping
-claim_type -> workflow_defs action key) omitted ("TRA", "tra"), so an approver
-role configured on workflow_defs["tra"] (e.g. dept_manager) could not see a
-co-worker's submitted TRA claim in the list — only their own + ones they
-personally acted on.
+Gap 2 (as originally written): TRA was missing from list_expenses()'s
+approver-visibility loop, so an approver could not see a co-worker's submitted
+TRA at all.
+
+That loop is gone. Visibility is no longer "my role appears in this type's
+workflow_defs" — it is "I raised it, or it is waiting for me, or I have acted
+on it" (business rule, 2026-09-11). The test below tracks the same concern
+through the new rule: the approver the task is assigned to sees it, a manager
+holding the same role but no task does not.
 
 NOTE: like test_travel_application_create.py / test_trv_travel_application_gate.py,
 this repo's tests/conftest.py has no `client` + `auth_headers` fixtures — uses
@@ -19,7 +23,7 @@ EpmsCompanyConfig row, restoring workflow_defs afterwards since the row is
 shared session-scoped state across test modules).
 """
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -31,11 +35,12 @@ from app.core.config import settings
 from app.main import create_app
 from app.models.company_config_mirror import EpmsCompanyConfig
 from app.models.expense import ExpenseClaim
+from app.models.task_mirror import TaskMirror
 
 
 def _client_for(role: str, user_id: str) -> AsyncClient:
     token = jwt.encode(
-        {"sub": user_id, "role": role, "exp": datetime.utcnow() + timedelta(hours=8)},
+        {"sub": user_id, "role": role, "type": "access", "exp": datetime.utcnow() + timedelta(hours=8)},
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
     )
@@ -109,14 +114,22 @@ async def test_list_item_includes_travel_destination(admin_client, db_session):
 # ── Gap 2: approver visibility for TRA ──────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_dept_manager_sees_others_submitted_tra():
-    """A dept_manager configured on workflow_defs["tra"] must see a co-worker's
-    submitted TRA in the list, mirroring EXP/MIL/TRV — even though they never
-    acted on it and it isn't their own submission."""
+async def test_the_assigned_approver_sees_a_co_workers_tra():
+    """An approver sees a TRA that is waiting for them — and only then.
+
+    This used to assert that ANY dept_manager on workflow_defs["tra"] saw it.
+    Business rule (2026-09-11): an employee sees what they raised, an approver
+    sees what they approve. Holding a role that appears somewhere in the chain
+    is not the same as having the document — dept_manager is a populous role,
+    and the old reading handed every manager every travel application in the
+    company. approval-api pins the task to the one manager who routes for that
+    submitter's department; that task is the thing that confers visibility.
+    """
     previous = await _set_workflow_defs([{"id": 0, "role": "dept_manager", "label": "Manager"}])
     try:
         submitter_id = str(uuid.uuid4())
         approver_id = str(uuid.uuid4())
+        bystander_id = str(uuid.uuid4())
 
         async with db_module.AsyncSessionLocal() as db:
             tra = ExpenseClaim(
@@ -128,13 +141,26 @@ async def test_dept_manager_sees_others_submitted_tra():
             db.add(tra)
             await db.commit()
             tra_id = str(tra.id)
+            db.add(TaskMirror(
+                id=uuid.uuid4(), document_id=tra.id, document_type="tra",
+                type="approve_tra", assigned_user_id=uuid.UUID(approver_id),
+                assigned_role=None, is_completed=False,
+                created_at=datetime.now(timezone.utc),
+            ))
+            await db.commit()
 
         async with _client_for("dept_manager", approver_id) as approver:
             resp = await approver.get("/api/v1/expenses", params={"type": "TRA"})
         assert resp.status_code == 200
-        assert tra_id in _ids(resp.json()), (
-            "dept_manager did not see a co-worker's submitted TRA — the "
-            "approver-visibility loop is missing (\"TRA\", \"tra\")"
+        assert tra_id in _ids(resp.json()), "the assigned approver must see it"
+
+        # A second manager, same role, no task on this document.
+        async with _client_for("dept_manager", bystander_id) as bystander:
+            resp2 = await bystander.get("/api/v1/expenses", params={"type": "TRA"})
+        assert resp2.status_code == 200
+        assert tra_id not in _ids(resp2.json()), (
+            "a manager with no task on this TRA must not see it — holding the "
+            "role is not the same as holding the document"
         )
     finally:
         await _restore_workflow_defs(previous)

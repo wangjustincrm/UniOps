@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BackLink } from '@/components/BackLink'
 import { useReplaceTab, Button } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle, ChevronDown, ChevronRight, ArrowLeft, Paperclip, Upload, X } from 'lucide-react'
-import { cn, formatAmount } from '@/lib/utils'
+import { cn, formatAmount, todayLocal } from '@/lib/utils'
+import { useEditableClaim, useSaveClaim, type EditableFormProps } from '@/lib/editableClaim'
 import { api, budgetApi } from '@/lib/api'
 import { ReceiptScanButton } from '@/components/ReceiptScanButton'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
@@ -59,7 +60,7 @@ const TRV_CATEGORIES = [
   { key: 'Other',          label: 'Other',             mealKey: null },
 ]
 
-function today() { return new Date().toISOString().slice(0, 10) }
+const today = todayLocal
 
 function emptyLine(n: number, category: string): TrvLineItem {
   return {
@@ -267,7 +268,8 @@ function CategorySection({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function TrvCreatePage() {
+export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
+  const { claim: editing, isLoading: loadingClaim, error: loadError } = useEditableClaim(editClaimId)
   const replaceTab = useReplaceTab(oaRoutes)
   const [fromDate, setFromDate] = useState(today())
   const [toDate, setToDate] = useState(today())
@@ -280,7 +282,48 @@ export default function TrvCreatePage() {
   const [travelApplicationId, setTravelApplicationId] = useState('')
 
   // flat counter for unique line_numbers
+  // The submission date used to be re-read from the clock at submit time; it
+  // has to be state so an edit preserves the date the claim was raised on.
+  const [submissionDate, setSubmissionDate] = useState(today())
   const [counter, setCounter] = useState(1)
+
+  // Prefill from the claim being edited. Lines are stored with the category
+  // folded into the description as a "[Category] " prefix (see handleSubmit);
+  // split it back out so the category dropdown shows what the user picked
+  // instead of leaving it in the text. Anything that does not carry a known
+  // category prefix falls back to Other with its text intact.
+  useEffect(() => {
+    if (!editing) return
+    setSubmissionDate(editing.submission_date)
+    setFromDate(editing.travel_from_date ?? today())
+    setToDate(editing.travel_to_date ?? today())
+    setDestination(editing.travel_destination ?? '')
+    setPurpose(editing.purpose ?? '')
+    setNotes(editing.notes ?? '')
+    setCurrency(editing.currency)
+    setTravelApplicationId(editing.travel_application_id ?? '')
+    setLines(editing.line_items.map((li, i) => {
+      const m = /^\[([^\]]+)\]\s*(.*)$/.exec(li.description)
+      const known = m && TRV_CATEGORIES.some(c => c.key === m[1])
+      return {
+        line_number: i + 1,
+        expense_date: li.expense_date,
+        category: known ? m![1] : 'Other',
+        description: known ? m![2] : li.description,
+        budget_account_id: li.budget_account_id,
+        budget_account_code: li.budget_account_code,
+        budget_account_name: li.budget_account_name,
+        cost_center_id: li.cost_center_id,
+        cost_center_name: li.cost_center_name,
+        total_amount: String(li.total_amount),
+        tax_amount: String(li.tax_amount),
+        net_amount: String(li.net_amount),
+        _file: null,
+      }
+    }))
+    setCounter(editing.line_items.length + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id])
 
   const { data: eligibleApps = [] } = useQuery<EligibleApp[]>({
     queryKey: ['eligible-travel-apps'],
@@ -332,9 +375,11 @@ export default function TrvCreatePage() {
     return (parseFloat(l.net_amount) || 0) > (policy[mealKey] as number)
   })
 
+  const save = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`))
+
   const mutation = useMutation({
     mutationFn: async (body: object) => {
-      const claim = await api.post<{ id: string }>('/api/v1/expenses', body)
+      const claim = await save.mutateAsync(body as Record<string, unknown>)
       // Upload per-row receipts to the freshly-created draft. Claim-level storage;
       // filename is prefixed with the category so the line association is readable.
       // Non-fatal: an upload failure must not lose the created claim.
@@ -350,8 +395,10 @@ export default function TrvCreatePage() {
       }
       return claim
     },
-    onSuccess: (data: any) => replaceTab(`/expenses/${data.id}`),
-    onError: (e: any) => setError(e.message || 'Failed to create TRV claim'),
+    // useSaveClaim already navigates and refreshes the caches; this wrapper
+    // exists only to attach the per-row receipt uploads to the same click.
+    onError: (e: any) => setError(e.message || (editClaimId
+      ? 'Failed to save changes' : 'Failed to create TRV claim')),
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -365,7 +412,7 @@ export default function TrvCreatePage() {
     mutation.mutate({
       claim_type: 'TRV',
       travel_application_id: travelApplicationId,
-      submission_date: today(),
+      submission_date: submissionDate,
       currency,
       purpose,
       notes: notes || null,
@@ -388,13 +435,22 @@ export default function TrvCreatePage() {
     })
   }
 
+  if (loadingClaim) {
+    return <div className="p-8 text-sm text-neutral-500">Loading claim…</div>
+  }
+  if (loadError) {
+    return <ErrorBanner message={loadError.message} />
+  }
+
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-3xl">
       <div>
         <BackLink to="/expenses" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
           <ArrowLeft className="h-4 w-4" />Back to Expenses
         </BackLink>
-        <h1 className="text-2xl font-bold text-neutral-900">Travel Expense Claim</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">
+          {editing ? `Edit ${editing.claim_number}` : 'Travel Expense Claim'}
+        </h1>
         <p className="mt-0.5 text-sm text-neutral-500">TRV — reimbursement for business travel</p>
       </div>
 
@@ -516,7 +572,7 @@ export default function TrvCreatePage() {
       {error && <ErrorBanner message={error} />}
 
       <Button type="submit" size="sm" disabled={mutation.isPending} className="self-start">
-        {mutation.isPending ? 'Saving…' : 'Save Draft'}
+        {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Save Draft'}
       </Button>
     </form>
   )
