@@ -15,7 +15,8 @@ class PurchaseRequest(UUIDPrimaryKey, TimestampMixin, Base):
 
     number: Mapped[str] = mapped_column(String(30), unique=True, index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    # 1=Raw Materials, 2=Consumables, 3=Spare Parts, 4=Service, 5=Fixed Assets, 6=Software
+    # 1=Raw Materials, 2=Consumables, 3=Spare Parts, 4=Service, 5=Fixed Assets,
+    # 6=Project-Related (the UI's own label; this comment used to say "Software")
     type: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="draft", index=True)
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="CAD")

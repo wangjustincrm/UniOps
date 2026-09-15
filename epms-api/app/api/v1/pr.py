@@ -94,6 +94,26 @@ async def _check_owner(db, owner_id: uuid.UUID | None) -> None:
         raise HTTPException(status_code=422, detail="Owner is not an active user")
 
 
+async def _owner_display_name(db, pr, requester_name: str | None) -> str | None:
+    """The service owner's name for the PDF's Service Owner row.
+
+    Resolves through crud.pr_owner, so a NULL owner_id prints the requester
+    rather than a dash. When the owner IS the requester — the common case —
+    `requester_name` is already in hand and no second query is made; that name
+    comes from approval_signatories, which is what the rest of the PDF uses,
+    so the two rows cannot disagree about spelling.
+    """
+    from app.crud.pr_owner import owner_id_of
+    from app.models.user import User
+
+    owner_id = owner_id_of(pr)
+    if owner_id == pr.created_by:
+        return requester_name
+    return (await db.execute(
+        select(User.full_name).where(User.id == owner_id)
+    )).scalar_one_or_none()
+
+
 @router.post("", response_model=PrResponse, status_code=status.HTTP_201_CREATED)
 async def create_pr(
     body: PrCreate, db: SessionDep, user: CurrentUserPayload, token: BearerToken,
@@ -197,6 +217,7 @@ async def _generate_pr_pdf_background(pr_id: uuid.UUID, pr_number: str, token: s
             requester_name, approvals = await approval_signatories(
                 fresh_db, "pr", pr_id, pr_row.created_by
             )
+            owner_name = await _owner_display_name(fresh_db, pr_row, requester_name)
 
             budget_account_name = await budget_client.get_account_name(
                 token, pr_row.budget_code
@@ -207,7 +228,7 @@ async def _generate_pr_pdf_background(pr_id: uuid.UUID, pr_number: str, token: s
                 None, generate_pr_pdf, pr_row, company_name,
                 cfg.pdf_templates if cfg else None,
                 cfg.logo_data_url if cfg else None,
-                requester_name, approvals, budget_account_name,
+                requester_name, approvals, budget_account_name, owner_name,
             )
             storage_key = await upload_to_file_server(
                 pdf_bytes, f"{pr_number}.pdf", "application/pdf", "pr", pr_id, token,

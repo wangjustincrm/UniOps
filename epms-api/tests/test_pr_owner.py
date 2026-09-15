@@ -186,6 +186,23 @@ async def test_create_with_an_owner_stores_and_returns_it(test_engine):
     assert body["created_by_name"] == "Ryan Requester", "requester label unchanged"
 
 
+async def test_naming_the_requester_explicitly_is_stored_as_such(test_engine):
+    """The Create form is a populated combo box: for types 4/6 it ALWAYS sends
+    owner_id, including when it still shows the requester. That has to land as
+    a real id, not be normalised back to NULL — otherwise "I looked at this
+    field and left it on me" and "this field did not exist" become the same
+    row, and the DM screen would show the Service Owner as empty."""
+    async with _factory(test_engine)() as db:
+        requester = await _user(db, name="Ryan Requester")
+        await db.commit()
+
+    async with _client_for(requester) as c:
+        code, body = await _create_pr(c, owner_id=str(requester.id))
+    assert code == 201, body
+    assert body["owner_id"] == str(requester.id)
+    assert body["owner_name"] == "Ryan Requester"
+
+
 async def test_create_rejects_an_owner_who_does_not_exist(test_engine):
     async with _factory(test_engine)() as db:
         requester = await _user(db)
