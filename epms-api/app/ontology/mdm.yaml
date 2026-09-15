@@ -15,12 +15,23 @@
 #      flag reached through nc_source_pk because the sync never carried it into
 #      `boms`.
 #
-#   2. `qty_per` is NOT per unit of product. It is the amount consumed when the
-#      BOM is built once, producing `batch_output_qty` — 1000 for most, and never
-#      1 anywhere in this data. Reading it as a unit quantity overstates by three
-#      orders of magnitude. Per-unit is qty_per / batch_output_qty, which is
-#      arithmetic, so the assistant reports both numbers and says what they mean
-#      rather than dividing them itself.
+#   2. `qty_per` IS per unit of product, and this file said the opposite until
+#      2026-09-15. The claim was that it is a whole-batch quantity needing
+#      division by `batch_output_qty`; that division has already happened. The
+#      sync does it on the way in — mdm-api nc_bom_sync/transform.py, "PATCH 6":
+#      "NITEMNUM ... are whole-BATCH quantities, not per-unit ones — normalize
+#      against this line's parent header's HNPARENTNUM". Verified three ways:
+#      the arithmetic (nitemnum 550 / hnparentnum 486 = the stored 1.1316872428);
+#      coverage (all 286 BOMs carry a real batch_output_qty, minimum 4.8, so no
+#      row escaped the division); and mass balance (BOMs whose lines are all in
+#      KGM sum to exactly 1.0000 — one kilo of inputs per kilo of output. Under
+#      the old reading they would sum to 0.001, i.e. a kilo of ingredients
+#      yielding a tonne of product).
+#
+#      Dividing by batch_output_qty a second time, which the old note instructed
+#      the planner to do, understates every requirement by the batch size —
+#      three orders of magnitude for a 1000-unit batch, and in the direction
+#      that makes a shortage look like a surplus.
 #
 # There is no metric that sums qty_per, deliberately: a total of quantities
 # measured against different batch sizes, in different units, is not a number
@@ -85,8 +96,8 @@ entities:
       bom_type: {kind: text, label: "Manufacturing stage", enumerate: true}
       version: {kind: text, label: "Version"}
       status: {kind: text, label: "Status", enumerate: true}
-      # The batch this recipe makes. Every line's qty_per is the amount needed to
-      # produce THIS much, not one unit. Never 1 anywhere in this data.
+      # How much one run of this recipe makes. NOT a divisor for qty_per, which
+      # is already per unit — useful for "how big is a batch", nothing else.
       batch_output_qty: {kind: money, label: "Output per batch"}
       yield_rate: {kind: money, label: "Yield rate"}
       factory_code: {kind: text, label: "Factory code"}
@@ -126,14 +137,14 @@ entities:
       bom_id: {kind: uuid, internal: true}
       line_no: {kind: int, label: "Line number"}
       component_material_code: {kind: text, label: "Component material code"}
-      # Per BATCH — see the note at the top of this file. The batch size is on
-      # the parent BOM as batch_output_qty; both numbers are needed before this
-      # one means anything.
+      # Per UNIT of product — see the note at the top of this file, and do not
+      # "correct" it back to per-batch without re-running the mass-balance check
+      # described there.
       qty_per:
         kind: money
-        label: "Quantity consumed per BATCH, not per unit of product. Meaningless
-          on its own — always select bom.batch_output_qty alongside it, which is
-          how much the batch produces (never 1; usually 1000)"
+        label: "Quantity of this component consumed per ONE unit of the product.
+          Already normalised against the batch size by the sync — do NOT divide
+          it by bom.batch_output_qty, that division has happened"
       uom: {kind: text, label: "Unit"}
       scrap_rate: {kind: money, label: "Scrap rate"}
       qty_per_secondary: {kind: money, label: "Quantity per batch (secondary unit)"}

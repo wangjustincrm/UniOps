@@ -36,6 +36,8 @@ export interface AssistantSources {
   types?: number
   /** How many modules a system-overview answer covered. */
   modules?: number
+  /** Recipe levels walked for a "how many can we make" answer. */
+  levels_deep?: number
   row_count?: number
   truncated?: boolean
   document?: string
@@ -52,6 +54,7 @@ export type AssistantKind =
   | 'workflow'
   | 'document_types'
   | 'modules'
+  | 'producible'
   | 'cannot_answer'
   | 'denied'
 

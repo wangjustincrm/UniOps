@@ -115,6 +115,13 @@ Rules:
   so is a correct answer. Guessing is not.
 - If they are asking what THEY should do — what is waiting for them, what is in
   their inbox, what they owe — call whats_next.
+- "How many X can we make from what we have", "which material runs out first",
+  "what is stopping us making more X" is how_many_can_we_make, never a query.
+  It needs the recipe and the stock and arithmetic over both; a query returns
+  one table and cannot do it. Listing the stock of a few components and adding
+  it up is not an answer — the components that constrain production are usually
+  several recipe levels below the ones a single query would reach, and a total
+  across different materials is not a quantity of anything.
 - "Why does the plan say X" is explain_plan, not a query. The reasoning is
   recorded — forecast, opening stock, carry-in and the engine's flags are all on
   the line — so answering that the system does not record it is wrong.
@@ -347,6 +354,40 @@ _PROCESS_TOOL = {
     },
 }
 
+_PRODUCIBLE_TOOL = {
+    "name": "how_many_can_we_make",
+    "description": (
+        "Use when someone asks how many of a product could be produced from "
+        "the material currently in stock — '现存的原料能生产多少S0102', 'how "
+        "many X can we make', 'what is stopping us making more X', 'which "
+        "material runs out first'. Explodes the product's recipe through every "
+        "sub-recipe to the raw materials, reads what the warehouse actually "
+        "has available, and does the division in code. Never attempt this with "
+        "a query: it needs the recipe AND the stock AND arithmetic across "
+        "both, and a query returns one table."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "product": {
+                "type": "string",
+                "description": "The product's material code, e.g. 'S0102'.",
+            },
+            "exclude": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Material codes to leave out of the calculation, when the "
+                    "question says to ignore one — '不考虑CR0059'. A material "
+                    "excluded here takes everything below it in the recipe "
+                    "with it."
+                ),
+            },
+        },
+        "required": ["product"],
+    },
+}
+
 _MODULES_TOOL = {
     "name": "explain_modules",
     "description": (
@@ -542,7 +583,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             system=system,
             tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _NEXT_TOOL,
                    _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
-                   _MODULES_TOOL, _CANNOT_TOOL],
+                   _MODULES_TOOL, _PRODUCIBLE_TOOL, _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -567,6 +608,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             return {"kind": "next", "usage": _usage(resp)}
         if block.name == "explain_process":
             return {"kind": "process", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "how_many_can_we_make":
+            return {"kind": "producible", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_modules":
             return {"kind": "modules", "usage": _usage(resp)}
         if block.name == "explain_document_types":
@@ -780,7 +823,10 @@ async def narrate_workflow(message: str, view: dict) -> dict:
 _GUIDE_SYSTEM = """\
 You are helping a colleague who may never have been trained on this system.
 
-- Answer in the language the question was asked in.
+- Answer in the language the question was asked in. Match it exactly: a
+  question in Chinese is answered in Chinese, not in another CJK language —
+  one run of this prompt answered a Chinese question in Korean, which reads as
+  a broken system even when every number in it is right.
 - Write for someone who does not know the jargon. Say "the person who approves
   for your department", not "the dept_manager node".
 - For a task list: lead with how many things are waiting and what the most
@@ -814,6 +860,16 @@ You are helping a colleague who may never have been trained on this system.
   If a type carries `notes`, work them in; they are there because they matter.
   End with the one line a requester most needs: which type their case sounds
   like, if the question named one.
+- For "how many can we make": the number in `can_make` is the answer and it was
+  computed for you — never recompute it, never adjust it, and never add a
+  material's quantity to another's. Lead with the number, then name what is
+  limiting it (`limited_by`) and what that material's situation is, because
+  "what do I do about it" is the next question. A material whose problem says
+  stock exists but none is usable is a different problem from one with no stock
+  at all — say which. Mention anything in `excluded` and `could_not_compute`;
+  a figure computed with a material left out is only honest if the omission is
+  stated. Pass on `basis` in your own words — this is a rough reference, and
+  presenting it as a production commitment would be the wrong reading.
 - For modules: answer what they asked and no more. Someone asking where to
   claim an expense wants OA named and a sentence on why, not a tour of eight
   modules. Give the full list only when they asked for the full list.
