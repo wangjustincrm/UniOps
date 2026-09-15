@@ -1,5 +1,5 @@
 """
-Service/Project PO 完成日到期扫描 —— 催 PR requester 去建 GR。
+Service/Project PO 完成日到期扫描 —— 催 PR 的 **Owner** 去建 GR。
 
 PRD §3.13.3 Path B-2 / GR-S-001(a) 一直写着「PO 的预计完成日到达时为 Requester
 建任务」,但实现从来只有 Path B-1(纯手工)和发票驱动的 confirm_receipt
@@ -14,7 +14,10 @@ confirm_receipt 特判成 `/gr/new?poId=`)。这样 Task Inbox 里不会因为�
 调度形状镜像 `agreement_overdue`(它又镜像 `daily_followup`):同一个
 followup_time、**独立开关**、先 commit 再发信。
 
-阶梯是**有序**的:部门经理的升级信只在 requester 已经真的收到过一封催办信之后
+受理人是 PR 的 **Owner**(`crud.pr_owner.owner_id_of`:owner_id,空则回落
+requester)—— 服务单常由行政代提,真正知道活儿干完没干完的是 Owner。
+
+阶梯是**有序**的:部门经理的升级信只在 Owner 已经真的收到过一封催办信之后
 才可能发出,光是天数到了不算。存量单据回填后完成日往往已经过去几个月,少了这
 个前置条件,第一轮扫描就会对着几十个从没被催过的人「催一封、同时告状一封」。
 
@@ -31,6 +34,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.config import get_or_create as get_config
+from app.crud.pr_owner import owner_id_of
 from app.db import session as session_module
 from app.models.gr import GoodsReceipt
 from app.models.notification_log import NotificationLog
@@ -151,8 +155,15 @@ async def _ensure_task(db: AsyncSession, due: DueService) -> tuple[Task, bool]:
         document_type="po",
         document_id=due.po.id,
         document_number=due.po.number,
+        # Routed to the PR's OWNER (crud.pr_owner: owner_id, else the
+        # requester). The requester of a service PR is often an admin raising
+        # it on someone's behalf; the owner is the person who was there when
+        # the work finished and is the only one who can answer this.
+        # assigned_role stays "requester" — it is the pool label the Task Inbox
+        # and the delegation broadcast read, and the owner acts in the
+        # requester's seat on this document; the assignee is what routes.
         assigned_role="requester",
-        assigned_user_id=due.pr.created_by,
+        assigned_user_id=owner_id_of(due.pr),
         title=f"Confirm service completion for {due.po.number}",
         description=(
             f"The expected completion date for {due.po.number} "
@@ -186,14 +197,20 @@ async def _has_been_sent(db: AsyncSession, task_id, template_key: str) -> bool:
 async def _escalate_to_manager(
     db: AsyncSession, cfg, due: DueService, task: Task,
 ) -> bool:
-    """抄送 requester 的部门经理。发过就不再发。返回是否本次发出。"""
+    """抄送**被催的那个人**(即 Owner)的部门经理。发过就不再发。
+
+    跟着 Owner 而不是 requester:升级的语义是「我催了他,他没动」,要找的是**他**
+    的经理。Owner 常常和 requester 不在一个部门(行政代提的服务单),按 requester
+    找就会把状告到一个管不着这件事的经理那里,而真正压得动的人一无所知。
+    """
     if await _has_been_sent(db, task.id, ESCALATION_TEMPLATE):
         return False
 
     from app.crud.pr import _get_dept_manager_id
     from app.services.email import send_email
 
-    manager_id = await _get_dept_manager_id(db, due.pr.created_by, "dept_manager")
+    owner_id = owner_id_of(due.pr)
+    manager_id = await _get_dept_manager_id(db, owner_id, "dept_manager")
     if manager_id is None:
         return False
     manager = await db.get(User, manager_id)
@@ -203,10 +220,17 @@ async def _escalate_to_manager(
     tpl = (cfg.email_templates or {}).get(ESCALATION_TEMPLATE)
     if not tpl:
         return False
-    requester = await db.get(User, due.pr.created_by)
+    owner = await db.get(User, owner_id)
+    owner_label = (owner.full_name or owner.email) if owner else "—"
     variables = {
         "recipient_name": manager.full_name or manager.email,
-        "requester_name": (requester.full_name or requester.email) if requester else "—",
+        # ★ `requester_name` 是生产库里那份 service_gr_escalation 模板已经在用的
+        # 占位符(cfg.email_templates 是数据行,不是代码),改名等于让线上模板渲染
+        # 出一个空洞。所以键不动,填的是**收到催办的那个人**——正是模板里那句
+        # "<b>{requester_name}</b> has not yet confirmed" 想指的人。
+        # `owner_name` 是同一个值的新名字,留给以后改模板文案用。
+        "requester_name": owner_label,
+        "owner_name": owner_label,
         "po_number": due.po.number,
         "days_overdue": due.days_over,
         "completion_date": str(due.pr.service_completion_date),
