@@ -89,6 +89,10 @@ export interface ApiPo {
   pr_id?: string
   pr_number?: string
   pr_requester_id?: string | null
+  // The linked PR's service owner (owner_id, else its requester) — the identity
+  // epms-api admits to create the GR on a service/project PO. Gate Create GR on
+  // THIS, not on pr_requester_id.
+  pr_owner_id?: string | null
   // Department the PO's approvals route through (PO → PR.department_id); null
   // for a PO with no PR. A payment is approved by ONE department's reviewers
   // (its primary PO's), so the PA screens refuse to mix departments on one

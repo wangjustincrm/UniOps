@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
@@ -7,6 +8,7 @@ import { ArrowLeft, X, Calendar, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
+import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
 import { budgetAccountError } from '@/lib/prBudget'
 import { OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
@@ -20,6 +22,7 @@ import { prAttachmentService } from '@/services/prAttachments'
 import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useVendors } from '@/hooks/useVendors'
 import { useAuthStore } from '@/stores/auth.store'
+import { userService, type ApiUserBrief } from '@/services/users'
 import type { ApiVendor } from '@/services/vendors'
 import type { ApiBudgetL1 } from '@/services/budget'
 import type { PrLineItem, Currency, ProcurementType } from '@/types'
@@ -88,6 +91,36 @@ export default function PrEditPage() {
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
   const [selectedVendor, setSelectedVendor] = useState<ApiVendor | null>(null)
+
+  // service/project owner — mirrors PrCreatePage's picker
+  const ownerAnchorRef = useRef<HTMLDivElement>(null)
+  const [ownerOpen, setOwnerOpen] = useState(false)
+  const ownerRect = useAnchorRect(ownerOpen, ownerAnchorRef)
+  const [ownerQuery, setOwnerQuery] = useState('')
+  const [selectedOwner, setSelectedOwner] = useState<ApiUserBrief | null>(null)
+  const { data: ownersData } = useQuery({
+    queryKey: ['users', 'directory', ownerQuery],
+    queryFn: () => userService.directory({ search: ownerQuery || undefined }),
+    enabled: ownerOpen,
+    staleTime: 30_000,
+  })
+  const owners = ownersData?.items ?? []
+  // The saved owner is a bare id; owner_name off the PR response already
+  // resolves it (INCLUDING the NULL-means-requester fallback), so the picker is
+  // seeded from the two together and no extra lookup is needed.
+  useEffect(() => {
+    if (!pr || selectedOwner) return
+    const ownerId = pr.owner_id ?? pr.created_by
+    if (!ownerId) return
+    setSelectedOwner({
+      id: ownerId,
+      full_name: pr.owner_name ?? pr.created_by_name ?? '—',
+      email: '',
+      role: '',
+      department_id: null,
+      department_name: null,
+    })
+  }, [pr, selectedOwner])
 
   // cost center + budget
   const [selectedCostCenter, setSelectedCostCenter] = useState('')
@@ -221,6 +254,11 @@ export default function PrEditPage() {
         : undefined,
     required_by: requiredBy || undefined,
     service_completion_date: serviceCompletionDate || undefined,
+    // Only for the service/project pair — the picker is not rendered otherwise,
+    // and PATCH treats undefined as "leave alone".
+    owner_id: (procurementType === 4 || procurementType === 6)
+      ? selectedOwner?.id
+      : undefined,
     delivery_address: deliveryAddress || undefined,
     notes: notes || undefined,
     is_prepaid: isPrepaid,
@@ -604,6 +642,60 @@ export default function PrEditPage() {
                   <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                 </div>
               </FormField>
+            )}
+
+            {/* Service/Project Owner — Types 4 and 6. Whoever is named here
+                receives the confirm-service-delivery task and email once the
+                completion date passes, instead of the requester. */}
+            {(procurementType === 4 || procurementType === 6) && (
+              <div ref={ownerAnchorRef} className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-neutral-700" htmlFor="serviceOwner">
+                  Service/Project Owner
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                  <input
+                    id="serviceOwner"
+                    type="text"
+                    placeholder="Search people by name…"
+                    value={selectedOwner ? selectedOwner.full_name : ownerQuery}
+                    onFocus={() => { setOwnerOpen(true); if (selectedOwner) setOwnerQuery('') }}
+                    onChange={(e) => { setOwnerQuery(e.target.value); setSelectedOwner(null); setOwnerOpen(true) }}
+                    className="h-10 w-full rounded-md border border-neutral-300 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  />
+                  {selectedOwner && (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedOwner(null); setOwnerQuery('') }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                {ownerOpen && !selectedOwner && ownerRect && (
+                  <DropdownPortal anchorRect={ownerRect} onClose={() => setOwnerOpen(false)}>
+                    {owners.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-primary-50 text-left"
+                        onClick={() => { setSelectedOwner(u); setOwnerOpen(false); setOwnerQuery('') }}
+                      >
+                        <span>{u.full_name}</span>
+                        {u.department_name && <span className="text-xs text-neutral-400">{u.department_name}</span>}
+                      </button>
+                    ))}
+                    {owners.length === 0 && (
+                      <p className="px-3 py-2 text-sm text-neutral-400">No people found</p>
+                    )}
+                  </DropdownPortal>
+                )}
+                <p className="text-xs text-neutral-400">
+                  Receives the task and email to confirm the service was delivered.
+                  Leave blank to keep it with the requester.
+                </p>
+              </div>
             )}
 
             {/* Project Code — Type 6 only */}

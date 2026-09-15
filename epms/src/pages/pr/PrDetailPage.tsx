@@ -409,7 +409,12 @@ export default function PrDetailPage() {
                     ['Required By Date', formatDate(pr.required_by ?? '')],
                     ...(pr.type === 4 || pr.type === 6
                       ? [['Service/Project Expected Completion Date',
-                          formatDate(pr.service_completion_date ?? '')] as [string, string]]
+                          formatDate(pr.service_completion_date ?? '')] as [string, string],
+                         // owner_name already resolves the NULL-means-requester
+                         // fallback server-side, so this row never reads blank
+                         // on a PR raised before the field existed.
+                         ['Service/Project Owner',
+                          pr.owner_name || '—'] as [string, string]]
                       : []),
                     ['Delivery Address', pr.delivery_address || '—'],
                     ['Notes', pr.notes || '—'],
