@@ -562,4 +562,124 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
         out["matched_rows"] = matched
     if totals is not None:
         out["totals"] = totals
+
+    if not rows and not grouped:
+        near = await _near_misses(db, entity, scope, clauses, hops)
+        if near:
+            out["near_misses"] = near
     return out
+
+
+# Long enough that a fragment is worth searching on. Two-letter words ("of",
+# "co") match most of the table and suggest nothing.
+_MIN_FRAGMENT = 4
+_MAX_SUGGESTIONS = 6
+
+# Words that identify a company as a company rather than as itself. Searching on
+# one finds every other firm carrying the same suffix: "Zzzyx Holdings" matched
+# "Belzona Great Lakes Holdings Ltd." and offered it as a suggestion, which is
+# worse than offering nothing — a confident pointer at an unrelated vendor.
+# Only consulted when choosing which fragment to search ON; nothing is ever
+# stripped from what the caller actually asked for.
+_GENERIC_NAME_WORDS = frozenset({
+    "holdings", "limited", "ltd", "inc", "incorporated", "corp", "corporation",
+    "company", "compagnie", "group", "groupe", "services", "service",
+    "solutions", "systems", "industries", "international", "enterprises",
+    "canada", "canadian", "north", "america", "american", "national",
+    "supply", "supplies", "products", "technologies", "technology",
+})
+
+
+async def _near_misses(db: AsyncSession, entity, scope: dict,
+                       clauses: list, hops: list) -> dict[str, list[str]]:
+    """What values DO exist, when a name search found nothing.
+
+    A name filter that matches nothing is indistinguishable from "we never dealt
+    with them" — and the second reading is the one people take. Someone asking
+    for "Canadian Bearing" when the record says "Canadian Bearing Ltd" gets told
+    there are no orders, which is false and gives them nothing to correct.
+
+    So an empty result over a `like` filter goes looking for what is close, on
+    the longest word of what they typed. Nothing here widens what the caller may
+    see: the suggestion query is built from the same scoped statement, through
+    the same apply_scope gate, so the names offered are only ever names on rows
+    this person could already have listed.
+
+    Best effort throughout — a failure here must not turn an honest empty
+    result into an error.
+    """
+    suggestions: dict[str, list[str]] = {}
+    for clause in clauses:
+        if clause.get("op") != "like":
+            continue
+        name = clause.get("field")
+        term = str(clause.get("value") or "").strip()
+        if not name or not term:
+            continue
+        words = [w for w in re.split(r"[\s,./()-]+", term) if len(w) >= _MIN_FRAGMENT]
+        # Distinctive words first, generic ones last: "Canadian Bearing" has to
+        # be searched on "Bearing". Searching on "Canadian" returns six
+        # unrelated firms and none of them is the one they meant.
+        words.sort(key=lambda w: (w.lower() in _GENERIC_NAME_WORDS, -len(w)))
+        if not words or words[0].lower() in _GENERIC_NAME_WORDS:
+            # Nothing distinctive to go on. Offering every company whose name
+            # ends in "Ltd" is noise dressed as help.
+            continue
+        try:
+            col, path = _resolve(entity, name)
+        except QueryRejected:
+            continue
+
+        # The same scope gate, on a fresh statement. Never the caller's `where`:
+        # those are what matched nothing, and re-applying them would find
+        # nothing again.
+        stmt = select(col).select_from(entity.model).distinct()
+        stmt = await entity.apply_scope(stmt, scope, db)
+        # _apply_hops scopes the far side of every join as its own entity, so a
+        # name that lives on a linked row is only suggested when that row is
+        # visible too.
+        stmt = await _apply_hops(db, stmt, list(path), scope)
+        # Try each distinctive word until one finds something. Stopping at the
+        # longest missed "Canadan Bearing" entirely — the typo IS the longest
+        # word, so the one fragment that would have worked was never tried.
+        # Two passes, and the order between them is the whole point.
+        #
+        # Pass 1 tries every distinctive word whole. Pass 2 shortens each from
+        # the end, which is what catches a plural or a last-letter slip —
+        # "Canadian Bearings Inc" against a vendor recorded as "Canadian
+        # Bearing Ltd".
+        #
+        # Truncation must not run before the other words have had their turn.
+        # Interleaving them made "Canadan Bearing" suggest six unrelated firms:
+        # the typo shortens to "Canada", which matches half the vendor list, and
+        # it won before "Bearing" was ever tried. A shortened fragment is also
+        # re-checked against the generic list for the same reason — "Canada" is
+        # no more useful for having arrived by truncation.
+        async def hits(fragment: str) -> list[str]:
+            if fragment.lower() in _GENERIC_NAME_WORDS:
+                return []
+            safe = re.sub(r"[%_\\]", lambda m: "\\" + m.group(0), fragment)
+            try:
+                return [r[0] for r in (await db.execute(
+                    stmt.where(col.ilike(f"%{safe}%")).limit(_MAX_SUGGESTIONS)
+                )).all() if r[0]]
+            except Exception:  # noqa: BLE001
+                return []
+
+        distinctive = [w for w in words if w.lower() not in _GENERIC_NAME_WORDS]
+        found: list[str] = []
+        for word in distinctive:
+            found = await hits(word)
+            if found:
+                break
+        if not found:
+            for word in distinctive:
+                for end_at in range(len(word) - 1, _MIN_FRAGMENT - 1, -1):
+                    found = await hits(word[:end_at])
+                    if found:
+                        break
+                if found:
+                    break
+        if found:
+            suggestions[name] = found
+    return suggestions
