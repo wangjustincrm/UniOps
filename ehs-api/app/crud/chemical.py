@@ -20,6 +20,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.label import ChemicalLabel
 from app.models.chemical import Chemical, SafetyDataSheet
 from app.models.mirrors import Department, Location, User
 from app.models.statutory import StatutoryDeadline
@@ -113,13 +114,46 @@ async def create_chemical(db: AsyncSession, payload: dict) -> Chemical:
 
 
 async def update_chemical(db: AsyncSession, chemical: Chemical, fields: dict) -> Chemical:
+    was_called = chemical.name
     if "location_id" in fields:
         (chemical.location_path, chemical.department_id,
          chemical.department_name) = await _place(db, fields["location_id"])
     for key, value in fields.items():
         setattr(chemical, key, value)
     await db.flush()
+    if fields.get("name") and fields["name"] != was_called:
+        await _rename_labels(db, chemical, was_called)
     return chemical
+
+
+async def _rename_labels(db: AsyncSession, chemical: Chemical, was_called: str) -> None:
+    """Correcting the name has to reach the label, including an approved one.
+
+    The label keeps its own copy of the product identifier, which is right —
+    it is the record of what was printed. But WHMIS requires that identifier to
+    match the product and its data sheet, so once the name is corrected an
+    approved label is printing something that no longer matches, and it would
+    go on doing so with nothing on screen to say it had gone stale.
+
+    The approval is therefore withdrawn rather than the label left alone or
+    silently reprinted under the new name: somebody approved the old wording,
+    not this one, and approval before printing is the whole of the control on
+    these. It goes back to draft carrying the corrected name, for whoever
+    approves it to check against the sheet.
+    """
+    labels = (await db.execute(
+        select(ChemicalLabel).where(ChemicalLabel.chemical_id == chemical.id)
+    )).scalars().all()
+    for label in labels:
+        if label.product_identifier != was_called:
+            continue  # already says something else — a hand correction; leave it
+        label.product_identifier = chemical.name
+        if label.status == "approved":
+            label.status = "draft"
+            label.approved_at = None
+            label.approved_by = None
+            label.approved_by_name = None
+    await db.flush()
 
 
 async def retire(db: AsyncSession, chemical: Chemical) -> Chemical:

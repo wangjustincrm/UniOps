@@ -226,7 +226,7 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
         )}
       </div>
 
-      {creating && <NewChemicalForm onClose={() => setCreating(false)} />}
+      {creating && <ChemicalForm onClose={() => setCreating(false)} />}
 
       {chemicals.data?.length === 0 && !creating ? (
         <Empty>
@@ -303,13 +303,29 @@ function SheetPill({ sheet }: { sheet: Sheet | null }) {
 }
 
 function Detail({ chemical, mayManage }: { chemical: Chemical; mayManage: boolean }) {
+  const [editing, setEditing] = useState(false)
   const sheets = useQuery({
     queryKey: ['chemical-sds', chemical.id],
     queryFn: () => api.get<Sheet[]>(`/api/v1/chemicals/${chemical.id}/sds`),
   })
 
+  if (editing) {
+    return (
+      <div className="border-t border-neutral-100 p-3.5">
+        <ChemicalForm existing={chemical} onClose={() => setEditing(false)} />
+      </div>
+    )
+  }
+
   return (
     <div className="border-t border-neutral-100 p-3.5">
+      {mayManage && (
+        <div className="mb-3 flex justify-end">
+          <button type="button" className={secondaryButton} onClick={() => setEditing(true)}>
+            Correct this product
+          </button>
+        </div>
+      )}
       <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
         <Row label="Container">
           {chemical.container_size ?? '—'}
@@ -656,31 +672,48 @@ function NewSheetForm({ chemicalId }: { chemicalId: string }) {
   )
 }
 
-function NewChemicalForm({ onClose }: { onClose: () => void }) {
+/**
+ * Adding a product and correcting one are the same form.
+ *
+ * Correcting was missing: the endpoint had been there all along and nothing on
+ * screen reached it, so a product entered with a typo in its name stayed that
+ * way — and the name is the product identifier printed on the label, which
+ * WHMIS requires to match the data sheet. Two forms would have drifted, so
+ * there is one, and `existing` decides whether it creates or corrects.
+ */
+function ChemicalForm({ existing, onClose }: { existing?: Chemical; onClose: () => void }) {
   const queryClient = useQueryClient()
-  const [name, setName] = useState('')
-  const [manufacturer, setManufacturer] = useState('')
-  const [productCode, setProductCode] = useState('')
-  const [locationId, setLocationId] = useState<string | null>(null)
-  const [hazardIds, setHazardIds] = useState<string[]>([])
-  const [hazardLabels, setHazardLabels] = useState<Record<string, string>>({})
-  const [signalWord, setSignalWord] = useState('')
-  const [container, setContainer] = useState('')
-  const [ppe, setPpe] = useState('')
-  const [firstAid, setFirstAid] = useState('')
+  const editing = Boolean(existing)
+  const [name, setName] = useState(existing?.name ?? '')
+  const [manufacturer, setManufacturer] = useState(existing?.manufacturer ?? '')
+  const [productCode, setProductCode] = useState(existing?.product_code ?? '')
+  const [locationId, setLocationId] = useState<string | null>(existing?.location_id ?? null)
+  const [hazardIds, setHazardIds] = useState<string[]>(
+    () => (existing?.hazard_classes ?? []).map((h) => h.id).filter((x): x is string => Boolean(x)))
+  const [hazardLabels, setHazardLabels] = useState<Record<string, string>>(
+    () => Object.fromEntries((existing?.hazard_classes ?? [])
+      .filter((h) => h.id).map((h) => [h.id as string, h.label])))
+  const [signalWord, setSignalWord] = useState(existing?.signal_word ?? '')
+  const [container, setContainer] = useState(existing?.container_size ?? '')
+  const [ppe, setPpe] = useState(existing?.ppe_required ?? '')
+  const [firstAid, setFirstAid] = useState(existing?.first_aid_note ?? '')
+
+  const body = () => ({
+    name,
+    manufacturer: manufacturer || null,
+    product_code: productCode || null,
+    location_id: locationId,
+    hazard_classes: hazardIds.map((id) => ({ id, label: hazardLabels[id] ?? '' })),
+    signal_word: signalWord || null,
+    container_size: container || null,
+    ppe_required: ppe || null,
+    first_aid_note: firstAid || null,
+  })
 
   const create = useMutation({
-    mutationFn: () => api.post('/api/v1/chemicals', {
-      name,
-      manufacturer: manufacturer || null,
-      product_code: productCode || null,
-      location_id: locationId,
-      hazard_classes: hazardIds.map((id) => ({ id, label: hazardLabels[id] ?? '' })),
-      signal_word: signalWord || null,
-      container_size: container || null,
-      ppe_required: ppe || null,
-      first_aid_note: firstAid || null,
-    }),
+    mutationFn: () => (editing
+      ? api.patch(`/api/v1/chemicals/${existing!.id}`, body())
+      : api.post('/api/v1/chemicals', body())),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chemicals'] })
       queryClient.invalidateQueries({ queryKey: ['chemical-gaps'] })
@@ -691,7 +724,9 @@ function NewChemicalForm({ onClose }: { onClose: () => void }) {
   return (
     <Card className="mb-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-neutral-900">Add a product</h2>
+        <h2 className="text-sm font-semibold text-neutral-900">
+          {editing ? 'Correct this product' : 'Add a product'}
+        </h2>
         <button type="button" onClick={onClose} aria-label="Close"
                 className="rounded p-1 text-neutral-400 hover:bg-neutral-50">
           <X className="h-4 w-4" />
@@ -764,13 +799,22 @@ function NewChemicalForm({ onClose }: { onClose: () => void }) {
         <button type="button" className={primaryButton}
                 disabled={!name.trim() || create.isPending}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
-          {create.isPending ? 'Adding…' : 'Add'}
+          {create.isPending ? (editing ? 'Saving…' : 'Adding…') : (editing ? 'Save' : 'Add')}
         </button>
       </div>
-      <p className="mt-2 text-right text-xs text-neutral-500">
-        File its data sheet next — a product without one is the first thing an
-        inspector asks about.
-      </p>
+      {!editing && (
+        <p className="mt-2 text-right text-xs text-neutral-500">
+          File its data sheet next — a product without one is the first thing an
+          inspector asks about.
+        </p>
+      )}
+      {editing && (
+        <p className="mt-2 text-right text-xs text-neutral-500">
+          The name is the product identifier on the label. WHMIS requires it to
+          match the data sheet, so a label already approved is withdrawn when it
+          changes and has to be approved again.
+        </p>
+      )}
     </Card>
   )
 }

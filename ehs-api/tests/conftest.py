@@ -64,9 +64,11 @@ EHS_KEYS = (
     "ehs.firstaid.write", "ehs.training.read", "ehs.training.write",
     "ehs.worker.read", "ehs.worker.write",
     "ehs.statutory.manage", "ehs.settings.manage",
-    # Added by 0015 / 0016. Listed so the key exists to be granted; who holds
-    # it is decided by EVERYONE_KEYS below.
-    "ehs.document.read", "ehs.permit.request",
+    # Added by 0015 / 0016.
+    "ehs.document.read", "ehs.document.manage",
+    "ehs.jhsc.read", "ehs.jhsc.manage",
+    "ehs.asset.read", "ehs.asset.inspect", "ehs.asset.manage",
+    "ehs.permit.request", "ehs.permit.read", "ehs.permit.issue",
 )
 EHS_GRANTS = {
     "ehs.incident.read": ["ehs_manager", "ehs_coordinator", "area_supervisor",
@@ -85,6 +87,19 @@ EHS_GRANTS = {
     "ehs.worker.write": ["ehs_manager", "ehs_coordinator"],
     "ehs.statutory.manage": ["ehs_manager"],
     "ehs.settings.manage": ["ehs_manager"],
+    # 0015 — the committee, the document library, the equipment register.
+    "ehs.jhsc.read": ["ehs_manager", "ehs_coordinator", "jhsc_member",
+                      "area_supervisor", "auditor"],
+    "ehs.jhsc.manage": ["ehs_manager", "ehs_coordinator"],
+    "ehs.document.manage": ["ehs_manager", "ehs_coordinator"],
+    "ehs.asset.read": ["ehs_manager", "ehs_coordinator", "area_supervisor",
+                       "jhsc_member", "auditor"],
+    "ehs.asset.inspect": ["ehs_manager", "ehs_coordinator", "area_supervisor", "first_aider"],
+    "ehs.asset.manage": ["ehs_manager", "ehs_coordinator"],
+    # 0016 — work permits.
+    "ehs.permit.read": ["ehs_manager", "ehs_coordinator", "area_supervisor",
+                        "jhsc_member", "first_aider", "auditor"],
+    "ehs.permit.issue": ["ehs_manager", "ehs_coordinator", "area_supervisor"],
 }
 
 # Ontario statutory holidays for the years the tests reach into.
