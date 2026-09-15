@@ -72,10 +72,33 @@ async def list_prs(
     return PrListResponse(items=items, total=total)
 
 
+async def _check_owner(db, owner_id: uuid.UUID | None) -> None:
+    """422 unless the named service owner is a real, active user.
+
+    The owner is who the completion-date sweep and the invoice-matched nudge
+    will ask to confirm the receipt (app/crud/pr_owner.py). A deactivated or
+    nonexistent id would pass the FK on the way in and then silently swallow
+    every one of those reminders months later, when nobody is watching this
+    form any more — so it is refused here, at the only moment a human can fix
+    it. None is always fine: it means the requester.
+    """
+    if owner_id is None:
+        return
+    from app.models.user import User
+    row = (await db.execute(
+        select(User.is_active).where(User.id == owner_id)
+    )).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=422, detail="Owner not found")
+    if not row:
+        raise HTTPException(status_code=422, detail="Owner is not an active user")
+
+
 @router.post("", response_model=PrResponse, status_code=status.HTTP_201_CREATED)
 async def create_pr(
     body: PrCreate, db: SessionDep, user: CurrentUserPayload, token: BearerToken,
 ):
+    await _check_owner(db, body.owner_id)
     return await pr_crud.create(
         db, body, created_by=uuid.UUID(user["sub"]), bearer_token=token,
     )
@@ -122,7 +145,13 @@ async def update_pr(
     if pr.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail=f"Cannot edit PR in status '{pr.status}'")
     if str(pr.created_by) != user["sub"] and user.get("role") != "system_admin":
-        raise HTTPException(status_code=403, detail="Not the PR owner")
+        # "Requester", not "owner": since PRs carry an owner_id of their own,
+        # the old "Not the PR owner" wording named the wrong person. Editing a
+        # draft belongs to whoever raised it; the service owner's part starts at
+        # receipt. (Nothing reads this string but a human.)
+        raise HTTPException(
+            status_code=403, detail="Only the requester who raised this PR can edit it")
+    await _check_owner(db, body.owner_id)
     return await pr_crud.update(db, pr, body, bearer_token=token)
 
 

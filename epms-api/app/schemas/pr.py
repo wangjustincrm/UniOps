@@ -98,6 +98,10 @@ class PrCreate(BaseModel):
     project_code: str | None = Field(default=None, max_length=100)
     required_by: date | None = None
     service_completion_date: date | None = None
+    # Service/project owner — who confirms the receipt. Optional on the wire
+    # even for types 4/6: omitted (or explicitly null) means "the requester",
+    # which is the form's own default. See app/crud/pr_owner.py.
+    owner_id: uuid.UUID | None = None
     delivery_address: str | None = None
     notes: str | None = None
     is_prepaid: bool = False
@@ -122,6 +126,7 @@ class PrUpdate(BaseModel):
     project_code: str | None = Field(default=None, max_length=100)
     required_by: date | None = None
     service_completion_date: date | None = None
+    owner_id: uuid.UUID | None = None
     delivery_address: str | None = None
     notes: str | None = None
     is_prepaid: bool | None = None
@@ -180,6 +185,10 @@ class PrResponse(BaseModel):
     project_code: str | None
     required_by: date | None
     service_completion_date: date | None = None
+    # owner_id is the raw column (NULL = the requester); owner_name is always
+    # filled — it resolves the fallback, so the UI never has to repeat it.
+    owner_id: uuid.UUID | None = None
+    owner_name: str | None = None
     delivery_address: str | None
     notes: str | None
     over_budget: bool

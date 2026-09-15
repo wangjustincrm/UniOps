@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ontology import scope_pr
 from app.crud._numbering import next_number
+from app.crud.pr_owner import owner_id_of
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
@@ -148,20 +149,28 @@ async def get_all(
 
 
 async def _attach_creator_names(db: AsyncSession, items: list[PurchaseRequest]) -> None:
-    """Set the transient `created_by_name` consumed by PrResponse on each row.
+    """Set the transient `created_by_name` / `owner_name` consumed by PrResponse.
 
     The list view shows the requester, so resolve every creator in one batched
-    query (never per row). get_by_id resolves the same attr via its own join.
+    query (never per row). get_by_id resolves the same attrs via its own join.
+
+    `owner_name` resolves the OWNER FALLBACK, not the column: a PR with
+    owner_id NULL is owned by its requester (crud.pr_owner), so its owner_name
+    is the requester's name rather than blank. Both ids go into the same
+    batched lookup — the two are usually the same person, so this stays one
+    query with one id in it.
     """
-    creator_ids = {it.created_by for it in items if it.created_by}
+    wanted = {it.created_by for it in items if it.created_by}
+    wanted |= {owner_id_of(it) for it in items if it.created_by}
     name_by_user: dict = {}
-    if creator_ids:
+    if wanted:
         rows = (await db.execute(
-            select(User.id, User.full_name).where(User.id.in_(creator_ids))
+            select(User.id, User.full_name).where(User.id.in_(wanted))
         )).all()
         name_by_user = {uid: name for uid, name in rows}
     for it in items:
         it.created_by_name = name_by_user.get(it.created_by)
+        it.owner_name = name_by_user.get(owner_id_of(it))
 
 
 async def get_by_id(db: AsyncSession, pr_id: uuid.UUID) -> PurchaseRequest | None:
@@ -175,6 +184,13 @@ async def get_by_id(db: AsyncSession, pr_id: uuid.UUID) -> PurchaseRequest | Non
         return None
     pr, creator_name = row
     pr.created_by_name = creator_name  # transient attr consumed by PrResponse
+    # Second hop rather than a second outerjoin: owner_id is NULL on the vast
+    # majority of rows, where the name is the one already in hand.
+    pr.owner_name = creator_name
+    if pr.owner_id and pr.owner_id != pr.created_by:
+        pr.owner_name = (await db.execute(
+            select(User.full_name).where(User.id == pr.owner_id)
+        )).scalar_one_or_none()
     return pr
 
 
@@ -259,6 +275,14 @@ async def create(
         project_code=payload.project_code,
         required_by=payload.required_by,
         service_completion_date=payload.service_completion_date,
+        # Stored verbatim, NOT coalesced to created_by: the form's default is a
+        # one-time choice the requester can move off, and a column that repeats
+        # created_by cannot be told apart from one that was deliberately set to
+        # the requester. NULL = the requester, resolved by crud.pr_owner.
+        # (update() treats None as "don't touch", like every other field there,
+        # so handing the owner back to the requester means naming them — there
+        # is no clear-to-NULL on the PATCH path and nothing needs one.)
+        owner_id=payload.owner_id,
         delivery_address=payload.delivery_address,
         notes=payload.notes,
         over_budget=over_budget,
@@ -276,6 +300,11 @@ async def create(
 
     await db.flush()
     await db.refresh(pr)
+    # The POST response is a PrResponse like any other, so it has to carry the
+    # same resolved names the detail view does — created_by_name was simply
+    # blank here before, and owner_name would have been too, which reads as
+    # "no owner" on a screen that just set one.
+    await _attach_creator_names(db, [pr])
     return pr
 
 
@@ -288,8 +317,10 @@ async def update(
     *, bearer_token: str | None = None,
 ) -> PurchaseRequest:
     needs_name_refresh = False
+    previous_owner_id = pr.owner_id
     for field in ("title", "type", "currency", "vendor_id", "cost_center_id", "department_id",
-                  "budget_code", "factor_combo", "project_code", "required_by", "service_completion_date", "delivery_address", "notes", "is_prepaid"):
+                  "budget_code", "factor_combo", "project_code", "required_by",
+                  "service_completion_date", "owner_id", "delivery_address", "notes", "is_prepaid"):
         val = getattr(payload, field)
         if val is not None:
             setattr(pr, field, val)
@@ -327,9 +358,76 @@ async def update(
         # Drop a stale justification once the PR is no longer over budget.
         pr.over_budget_justification = None
 
+    # Open receipt tasks have to follow the owner. Normally a no-op here (this
+    # endpoint is fenced to draft/returned, and a PR with no PO yet has no
+    # receipt task to move) — the Data Maintenance edit is the path that
+    # reaches a live PR. Wired in both so the two write paths cannot drift.
+    if pr.owner_id != previous_owner_id:
+        await reassign_open_receipt_tasks(db, pr)
+
     await db.flush()
     await db.refresh(pr)
+    await _attach_creator_names(db, [pr])
     return pr
+
+
+# ── Owner reassignment ────────────────────────────────────────────────────────
+
+# The receipt tasks whose assignee is resolved from the PR owner. Anchored on
+# two different documents: confirm_receipt hangs on the PO (the GR does not
+# exist yet — that is what it is asking for), the other two on the GR itself.
+# create_pa is deliberately absent: paying the vendor is the requester's job,
+# not the service owner's, and nothing about this feature moved it.
+_OWNER_TASK_TYPES = ("confirm_receipt", "acknowledge_gr", "confirm_service_gr")
+
+
+async def reassign_open_receipt_tasks(db: AsyncSession, pr: PurchaseRequest) -> int:
+    """Move this PR's still-open receipt tasks to its current owner.
+
+    The three creators resolve the owner ONCE, at the moment the task is
+    raised, and never revisit it — so changing owner_id afterwards would look
+    like it did nothing: the new owner's Task Inbox stays empty and the old
+    one keeps a to-do they can no longer answer. Same shape, and same reason,
+    as agreement_schedule.reassign_open_confirm_tasks.
+
+    Returns how many rows actually moved. Completed tasks are never touched —
+    those are history, not a to-do.
+    """
+    from app.models.gr import GoodsReceipt
+    from app.models.po import PurchaseOrder
+
+    assignee_id = owner_id_of(pr)
+    po_ids = list((await db.execute(
+        select(PurchaseOrder.id).where(PurchaseOrder.pr_id == pr.id)
+    )).scalars().all())
+    gr_ids = list((await db.execute(
+        select(GoodsReceipt.id).where(GoodsReceipt.pr_id == pr.id)
+    )).scalars().all())
+    anchors = [("po", po_ids), ("gr", gr_ids)]
+
+    changed = 0
+    for doc_type, doc_ids in anchors:
+        if not doc_ids:
+            continue
+        tasks = (await db.execute(select(Task).where(
+            Task.document_type == doc_type,
+            Task.document_id.in_(doc_ids),
+            Task.type.in_(_OWNER_TASK_TYPES),
+            Task.is_completed.is_(False),
+        ))).scalars().all()
+        for t in tasks:
+            # A confirm_receipt on a PHYSICAL PO is the warehouse pool's
+            # (assigned_role=warehouse_staff, assignee NULL) — it was never
+            # routed off the PR, so it must not be hijacked to a person here.
+            if t.assigned_user_id is None:
+                continue
+            if t.assigned_user_id == assignee_id:
+                continue
+            t.assigned_user_id = assignee_id
+            changed += 1
+    if changed:
+        await db.flush()
+    return changed
 
 
 # ── Workflow helpers ───────────────────────────────────────────────────────────

@@ -78,6 +78,21 @@ class PurchaseRequest(UUIDPrimaryKey, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
     )
 
+    # Service/project OWNER — the person who confirms the service was delivered
+    # and creates the GR. Collected by the Create PR form only for procurement
+    # types 4 (Service) and 6 (Project-Related), defaulted there to the
+    # requester and adjustable from it, because the person who raises the
+    # requisition is not always the person who can say the work finished.
+    #
+    # NULL is not "unset": it means "the requester", which is what every row
+    # written before this column existed means too. Never read it directly —
+    # app/crud/pr_owner.py owns that fallback, and every receipt-task routing
+    # point goes through it.
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=True, index=True,
+    )
+
     line_items: Mapped[list["PrLineItem"]] = relationship(
         "PrLineItem", back_populates="pr", cascade="all, delete-orphan", lazy="selectin",
         order_by="PrLineItem.sort_order"
