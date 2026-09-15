@@ -43,6 +43,7 @@ async def _seed(
     po_status: str = "issued",
     with_pr: bool = True,
     department_id=None,
+    owner=None,
 ):
     """建一条 vendor + requester + PR + PO 的最小链路。
 
@@ -67,6 +68,7 @@ async def _seed(
             type=po_type, status="approved", vendor_id=vendor.id,
             vendor_name=vendor.name, currency="CAD", amount=Decimal("1000.00"),
             created_by=requester.id, service_completion_date=completion_date,
+            owner_id=owner.id if owner is not None else None,
         )
         db.add(pr)
         await db.flush()
@@ -88,6 +90,17 @@ async def _ids(db, *, days: int = 5, **kw):
     po, pr, requester, _ = await _seed(
         db, completion_date=TODAY - timedelta(days=days), **kw)
     return po, pr, requester
+
+
+async def _person(db, *, role: str = "requester", department_id=None, name="Olive Owner"):
+    tag = uuid.uuid4().hex[:8]
+    u = await user_crud.create(db, RegisterRequest(
+        email=f"own-{tag}@example.com", password="TestPass1!",
+        full_name=name, role=role))
+    if department_id is not None:
+        u.department_id = department_id
+    await db.flush()
+    return u
 
 
 # ── 扫描命中条件 ──────────────────────────────────────────────────────────────
@@ -416,6 +429,97 @@ async def test_escalation_is_sent_only_once_per_task(test_engine, monkeypatch, p
     await run_service_gr_due()      # 不该再升级
 
     assert sent.count(manager.email) == 1, "升级信只发一次"
+    async with patched_sessions() as db:
+        task = await mod._open_confirm_receipt_task(db, po.id)
+        logs = (await db.execute(select(NotificationLog).where(
+            NotificationLog.task_id == task.id,
+            NotificationLog.template_key == "service_gr_escalation",
+        ))).scalars().all()
+    assert len(logs) == 1
+
+
+# ── Owner 路由 ────────────────────────────────────────────────────────────────
+#
+# 服务单常由行政代提:requester 是提单的人,Owner 才是知道活儿干完没干完的人。
+# 催办必须落在 Owner 身上,否则收件人根本答不上来。
+
+async def test_the_nudge_goes_to_the_owner_not_the_requester(
+    test_engine, spy, patched_sessions,
+):
+    async with patched_sessions() as db:
+        owner = await _person(db)
+        po, _, requester = await _ids(db, days=5, owner=owner)
+        await _configure(db, service_gr_due_enabled=True, service_gr_due_dry_run=False)
+        await db.commit()
+
+    await run_service_gr_due()
+
+    async with patched_sessions() as db:
+        task = await mod._open_confirm_receipt_task(db, po.id)
+    assert task is not None
+    assert task.assigned_user_id == owner.id, "点名 Owner"
+    # 否定断言配肯定断言:光断言「不是 requester」会被「谁都不是」满足。
+    assert task.assigned_user_id != requester.id
+    assert task.assigned_role == "requester", "池标签不变,变的是受理人"
+    assert (task.id, "service_gr_due") in spy.tasks
+
+
+async def test_without_an_owner_the_nudge_still_goes_to_the_requester(
+    test_engine, spy, patched_sessions,
+):
+    """owner_id 为空 = 「就是 requester」。上线前的存量单据全是这一种,
+    回落错了等于把所有老服务单的催办变成 NULL 受理人 → 角色群发。"""
+    async with patched_sessions() as db:
+        po, pr, requester = await _ids(db, days=5)
+        assert pr.owner_id is None
+        await _configure(db, service_gr_due_enabled=True, service_gr_due_dry_run=False)
+        await db.commit()
+
+    await run_service_gr_due()
+
+    async with patched_sessions() as db:
+        task = await mod._open_confirm_receipt_task(db, po.id)
+    assert task is not None
+    assert task.assigned_user_id == requester.id
+
+
+async def test_escalation_goes_to_the_owners_manager_not_the_requesters(
+    test_engine, monkeypatch, patched_sessions,
+):
+    """升级的语义是「我催了他、他没动」—— 要找**他**的经理。
+
+    Owner 和 requester 常常不在一个部门,按 requester 找会把状告到一个管不着
+    这件事的经理那里,而真正压得动的人一无所知。这里给两个部门各配一个经理,
+    断言只有 Owner 那位收到信(另一位必须一封都没有 —— 否则「都收到」也能
+    让「Owner 的经理收到了」这条断言通过)。
+    """
+    sent: list[str] = []
+
+    async def fake_send_email(to, subject, html, **kw):
+        sent.append(to)
+
+    monkeypatch.setattr("app.services.email.send_email", fake_send_email)
+
+    async with patched_sessions() as db:
+        owner_dept = Department(code=f"D{uuid.uuid4().hex[:6]}", name="Engineering")
+        req_dept = Department(code=f"D{uuid.uuid4().hex[:6]}", name="Admin")
+        db.add_all([owner_dept, req_dept])
+        await db.flush()
+        owner_mgr = await _person(
+            db, role="dept_manager", department_id=owner_dept.id, name="Olga OwnerMgr")
+        req_mgr = await _person(
+            db, role="dept_manager", department_id=req_dept.id, name="Rita ReqMgr")
+        owner = await _person(db, department_id=owner_dept.id)
+        po, _, _ = await _ids(
+            db, days=30, owner=owner, department_id=req_dept.id)
+        await _configure(db, service_gr_due_enabled=True, service_gr_due_dry_run=False)
+        await db.commit()
+
+    await run_service_gr_due()      # 催 Owner
+    await run_service_gr_due()      # 已催过 + 天数够 → 升级
+
+    assert owner_mgr.email in sent, "Owner 的部门经理要收到"
+    assert req_mgr.email not in sent, "requester 的部门经理不该收到"
     async with patched_sessions() as db:
         task = await mod._open_confirm_receipt_task(db, po.id)
         logs = (await db.execute(select(NotificationLog).where(
