@@ -94,6 +94,11 @@ values:
     notes:
       - The expected completion date is what the system watches; once it
         passes, you are reminded to confirm the work was done.
+      - >-
+        You also name a Service Owner — the person who will confirm the work was
+        delivered. It defaults to you, and you change it when someone else is
+        the one who will know it finished; the reminders and the receipt then go
+        to them instead.
 
   - value: 5
     label: Fixed Asset
@@ -112,3 +117,6 @@ values:
       Project No. so the spend lands against the project.
     notes:
       - Same completion-date reminder as a service PR.
+      - >-
+        Carries a Project Owner as well, the same way — whoever will confirm the
+        work is done, defaulting to you.
