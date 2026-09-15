@@ -23,8 +23,8 @@ from app.core.deps import BearerToken, SessionDep
 from app.core.permissions import CanManageDocument, CanReadDocument
 from app.crud import chemical as chemical_crud
 from app.crud import label as crud
-from app.services import ghs, label_pdf
-from app.services.attachments import proxy_download
+from app.services import ghs, label_pdf, pictograms
+from app.services.attachments import fetch_file_bytes, proxy_download
 
 router = APIRouter()
 
@@ -86,9 +86,9 @@ class ExtractionOut(BaseModel):
     note: str | None = None
 
 
-async def _out(label) -> LabelOut:
+async def _out(db, label) -> LabelOut:
     item = LabelOut.model_validate(label)
-    item.missing = await crud.missing_for_approval(label)
+    item.missing = await crud.missing_for_approval(db, label)
     return item
 
 
@@ -98,7 +98,7 @@ async def list_labels(
     chemical_id: uuid.UUID | None = None,
     status_in: list[str] | None = Query(default=None, alias="status"),
 ):
-    return [await _out(row) for row in
+    return [await _out(db, row) for row in
             await crud.list_labels(db, chemical_id=chemical_id, status_in=status_in)]
 
 
@@ -115,12 +115,12 @@ async def draft_label(
     """
     chemical = await chemical_crud.get_chemical(db, chemical_id)
     label = await crud.draft_from_chemical(db, chemical, creator_id=_user_id(user))
-    return await _out(label)
+    return await _out(db, label)
 
 
 @router.get("/labels/{label_id}", response_model=LabelOut)
 async def get_label(label_id: uuid.UUID, db: SessionDep, user: CanReadDocument):  # noqa: ARG001
-    return await _out(await crud.get_label(db, label_id))
+    return await _out(db, await crud.get_label(db, label_id))
 
 
 @router.patch("/labels/{label_id}", response_model=LabelOut)
@@ -132,7 +132,7 @@ async def update_label(
     for key in ("hazard_statements", "precautionary_statements"):
         if key in fields and fields[key] is not None:
             fields[key] = [s for s in fields[key]]
-    return await _out(await crud.update_label(db, label, fields))
+    return await _out(db, await crud.update_label(db, label, fields))
 
 
 @router.post("/labels/{label_id}/read-sds", response_model=ExtractionOut)
@@ -188,12 +188,12 @@ async def read_from_sds(
 async def approve_label(label_id: uuid.UUID, db: SessionDep, user: CanManageDocument):
     """The gate. Approving says you have read it against the data sheet."""
     label = await crud.get_label(db, label_id)
-    return await _out(await crud.approve(db, label, user_id=_user_id(user)))
+    return await _out(db, await crud.approve(db, label, user_id=_user_id(user)))
 
 
 @router.get("/labels/{label_id}/pdf")
 async def label_pdf_download(
-    label_id: uuid.UUID, db: SessionDep, user: CanReadDocument,  # noqa: ARG001
+    label_id: uuid.UUID, db: SessionDep, user: CanReadDocument, token: BearerToken,  # noqa: ARG001
     copies: int = Query(default=2, ge=1, le=20),
 ):
     """The printable sheet.
@@ -208,7 +208,21 @@ async def label_pdf_download(
             "This label has not been approved. Nothing prints until somebody has "
             "checked it against the data sheet.")
 
-    pdf = label_pdf.render(label, chemical_id=str(label.chemical_id), copies=copies)
+    # Fetch the artwork for whatever classes this label claims. Keyed by the
+    # vocabulary code so both shapes on file resolve — the reader writes the
+    # code, a hand-filled label writes the class name.
+    artwork: dict[str, bytes] = {}
+    for pic in await pictograms.resolve(db, label.pictograms):
+        if pic.file_id is None:
+            continue
+        data = await fetch_file_bytes(pic.file_id, token)
+        if data is None:
+            continue
+        for key in {pic.code.upper(), pic.label.strip().upper()}:
+            artwork[key] = data
+
+    pdf = label_pdf.render(label, chemical_id=str(label.chemical_id), copies=copies,
+                           artwork=artwork)
     await crud.record_print(db, label)
     return Response(
         content=pdf,

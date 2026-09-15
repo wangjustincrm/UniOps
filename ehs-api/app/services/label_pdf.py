@@ -6,7 +6,11 @@ signal word is larger, and the hazard statements are the only body text. Two
 labels to an A4 sheet, laid out for a laminator.
 
 **About the pictograms.** GHS pictograms are specific artwork — the flame, the
-skull, the exploding chest — and this renders the red diamond and the hazard
+skull, the exploding chest — published by Health Canada for WHMIS 2015. Nothing
+here draws one. The artwork is uploaded once per hazard class under Settings
+and composed in; a label claiming a class whose artwork is missing cannot be
+approved, so it cannot print. What this used to do was render the red diamond
+and the hazard
 class name inside it rather than the symbol, because the symbol files are not
 in this repository and drawing an approximation of a regulated pictogram would
 be worse than not drawing one. The label says so in the footer: the diamonds
@@ -24,6 +28,7 @@ import io
 from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
+from reportlab.lib.utils import ImageReader
 from reportlab.lib.colors import HexColor, black, white
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -56,38 +61,40 @@ def _wrap(c: pdfcanvas.Canvas, text: str, font: str, size: int, width: float) ->
     return lines
 
 
-def _diamond(c: pdfcanvas.Canvas, x: float, y: float, size: float, name: str) -> None:
-    """A GHS diamond: red border, white field, on point.
+def _pictogram(c: pdfcanvas.Canvas, x: float, y: float, size: float,
+               artwork: bytes | None, name: str) -> None:
+    """The official artwork for one hazard class, at `size` square.
 
-    The class name goes inside because the regulated symbol is not ours to
-    approximate. See the module docstring.
+    Where it is missing this draws a plainly empty slot rather than an
+    approximation. A near-enough diamond is the worse failure: it looks like a
+    pictogram, so nobody checks it, and a label that looks right while being
+    non-compliant goes on a drum and stays there. An empty slot is a question
+    somebody asks. Approval is blocked before it gets this far anyway — this is
+    the second line, for a label approved before its artwork was removed.
     """
-    half = size / 2
-    c.saveState()
-    c.setStrokeColor(GHS_RED)
-    c.setFillColor(white)
-    c.setLineWidth(2.2)
-    path = c.beginPath()
-    path.moveTo(x + half, y)
-    path.lineTo(x + size, y + half)
-    path.lineTo(x + half, y + size)
-    path.lineTo(x, y + half)
-    path.close()
-    c.drawPath(path, stroke=1, fill=1)
+    if artwork is not None:
+        c.drawImage(ImageReader(io.BytesIO(artwork)), x, y, width=size, height=size,
+                    preserveAspectRatio=True, anchor="c", mask="auto")
+        return
 
-    c.setFillColor(black)
-    words = name.split()
-    size_pt = 6 if len(words) > 1 else 7
-    c.setFont("Helvetica-Bold", size_pt)
-    lines = words if len(words) <= 2 else [" ".join(words[:2]), " ".join(words[2:])]
-    start = y + half + (len(lines) - 1) * (size_pt * 0.5)
-    for i, line in enumerate(lines):
-        c.drawCentredString(x + half, start - i * (size_pt + 1) - size_pt * 0.35,
-                            line[:16])
+    c.saveState()
+    c.setStrokeColor(HexColor("#999999"))
+    c.setFillColor(white)
+    c.setLineWidth(1)
+    c.setDash(2, 2)
+    c.rect(x, y, size, size, stroke=1, fill=1)
+    c.setDash()
+    c.setFillColor(HexColor("#999999"))
+    c.setFont("Helvetica", 6)
+    c.drawCentredString(x + size / 2, y + size / 2 + 3, "pictogram")
+    c.drawCentredString(x + size / 2, y + size / 2 - 4, "not uploaded")
+    c.setFont("Helvetica-Bold", 5.5)
+    c.drawCentredString(x + size / 2, y + 2.5, name[:22])
     c.restoreState()
 
 
-def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float) -> None:
+def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
+               artwork: dict[str, bytes] | None = None) -> None:
     left = MARGIN_X
     y = top
 
@@ -106,27 +113,26 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float) -> None
         c.drawString(inner, y, line)
         y -= 8 * mm
 
-    if label.supplier:
-        c.setFont("Helvetica", 9)
-        c.drawString(inner, y, label.supplier[:80])
-        y -= 6 * mm
-
-    # ── Signal word ─────────────────────────────────────────────────────────
-    if label.signal_word:
-        c.setFont("Helvetica-Bold", 24)
-        c.setFillColor(GHS_RED if label.signal_word == "Danger" else black)
-        c.drawString(inner, y - 2 * mm, label.signal_word.upper())
-        c.setFillColor(black)
-        y -= 12 * mm
-
-    # ── Pictograms ──────────────────────────────────────────────────────────
+    # ── Pictograms, then the signal word ────────────────────────────────────
+    # WHMIS 2015 orders the elements: product identifier, pictograms, signal
+    # word, hazard statements, precautionary statements, supplier identifier.
+    # The supplier used to sit under the product name at the top, which put the
+    # least urgent thing on the label above the two that carry the warning.
     if label.pictograms:
         size = 20 * mm
         x = inner
         for name in list(label.pictograms)[:5]:
-            _diamond(c, x, y - size, size, str(name))
+            key = str(name).strip().upper()
+            _pictogram(c, x, y - size, size, (artwork or {}).get(key), str(name))
             x += size + 4 * mm
         y -= size + 5 * mm
+
+    if label.signal_word:
+        c.setFont("Helvetica-Bold", 24)
+        c.setFillColor(GHS_RED if label.signal_word == "Danger" else black)
+        c.drawString(inner, y, label.signal_word.upper())
+        c.setFillColor(black)
+        y -= 10 * mm
 
     # ── Hazard statements ───────────────────────────────────────────────────
     for entry in list(label.hazard_statements or [])[:6]:
@@ -160,6 +166,16 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float) -> None
             c.drawString(inner, y, wrapped)
             y -= 4.1 * mm
 
+    # ── Supplier identifier ─────────────────────────────────────────────────
+    if label.supplier:
+        y -= 2 * mm
+        c.setFont("Helvetica", 8)
+        c.setFillColor(HexColor("#444444"))
+        for wrapped in _wrap(c, label.supplier, "Helvetica", 8, text_w)[:2]:
+            c.drawString(inner, y, wrapped)
+            y -= 4 * mm
+        c.setFillColor(black)
+
     # ── QR to the product record ────────────────────────────────────────────
     target = f"{settings.SAFETY_WEB_URL.rstrip('/')}/chemicals/{chemical_id}"
     widget = qr.QrCodeWidget(target)
@@ -179,12 +195,13 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float) -> None
     c.setFillColor(HexColor("#666666"))
     footer = (f"Approved {label.approved_at:%Y-%m-%d} by "
               f"{label.approved_by_name or 'HSE'} · "
-              "apply the official GHS pictogram stickers over the diamonds")
+              "a safety data sheet for this product is available — scan the code")
     c.drawString(inner, top - LABEL_H + 4 * mm, footer[:150])
     c.setFillColor(black)
 
 
-def render(label, *, chemical_id: str, copies: int = 2) -> bytes:
+def render(label, *, chemical_id: str, copies: int = 2,
+           artwork: dict[str, bytes] | None = None) -> bytes:
     """Two labels to an A4 sheet, laid out for a laminator."""
     buffer = io.BytesIO()
     c = pdfcanvas.Canvas(buffer, pagesize=A4)
@@ -196,7 +213,7 @@ def render(label, *, chemical_id: str, copies: int = 2) -> bytes:
         if slot == 0 and index:
             c.showPage()
         top = height - 10 * mm - slot * (LABEL_H + 8 * mm)
-        _one_label(c, label, chemical_id, top)
+        _one_label(c, label, chemical_id, top, artwork)
 
     c.showPage()
     c.save()

@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chemical import Chemical
 from app.models.label import ChemicalLabel
+from app.services import pictograms
 from app.models.mirrors import User
 from app.crud import chemical as chemical_crud
 
@@ -137,14 +138,24 @@ async def update_label(db: AsyncSession, label: ChemicalLabel, fields: dict) -> 
     return label
 
 
-async def missing_for_approval(label: ChemicalLabel) -> list[str]:
-    """What is not yet on the label. Shown; never enforced beyond the two that
-    make it not a label at all."""
+async def missing_for_approval(db: AsyncSession, label: ChemicalLabel) -> list[str]:
+    """What is not yet on the label, and what stops it being approved.
+
+    Missing artwork is on this list rather than merely shown. A label claiming
+    a hazard class whose pictogram has not been uploaded prints the words and
+    not the symbol, and WHMIS requires the symbol — so it would go on a drum
+    looking complete while being non-compliant, which is the failure this whole
+    gate exists to prevent. Upload the artwork once in Settings and every label
+    claiming that class is covered.
+    """
     gaps: list[str] = []
     if not (label.product_identifier or "").strip():
         gaps.append("the product identifier")
     if not label.pictograms and not label.hazard_statements:
         gaps.append("either a pictogram or a hazard statement")
+    for name in pictograms.missing_artwork(
+            await pictograms.resolve(db, label.pictograms)):
+        gaps.append(f"the WHMIS pictogram for {name} — upload it under Settings, Lists")
     return gaps
 
 
@@ -158,7 +169,7 @@ async def approve(
         raise HTTPException(
             status.HTTP_409_CONFLICT, f"This label is {label.status}")
 
-    gaps = await missing_for_approval(label)
+    gaps = await missing_for_approval(db, label)
     if gaps:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,

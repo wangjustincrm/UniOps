@@ -5,6 +5,7 @@ package: the two differ only in the `service` tag they send, and pulling this
 into `packages/` would make every service that stores a file depend on a new
 shared release. If a third service needs it, that is the moment to extract it.
 """
+import logging
 import uuid
 
 import httpx
@@ -17,6 +18,9 @@ from app.core.config import settings
 # puts a phone photo near 400 KB. The ceiling is for the occasional PDF and for
 # a client that skipped compression, not for raw camera output.
 MAX_FILE_SIZE = 25 * 1024 * 1024
+
+
+logger = logging.getLogger(__name__)
 
 
 async def upload_to_file_server(
@@ -63,6 +67,26 @@ async def proxy_download(storage_key: uuid.UUID, bearer_token: str) -> Response:
         media_type=resp.headers.get("content-type", "application/octet-stream"),
         headers={"Content-Disposition": disposition} if disposition else {},
     )
+
+
+async def fetch_file_bytes(storage_key: uuid.UUID, bearer_token: str) -> bytes | None:
+    """The file's contents, for composing rather than serving.
+
+    Returns None instead of raising: the one caller is the label renderer, and
+    a pictogram that cannot be fetched must not take the whole print job down.
+    The label draws an empty slot in its place, which is visible.
+    """
+    url = f"{settings.FILE_SERVER_URL}/files/{storage_key}"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers={"Authorization": f"Bearer {bearer_token}"})
+    except httpx.HTTPError:
+        logger.warning("pictogram %s could not be fetched from file-api", storage_key)
+        return None
+    if not resp.is_success:
+        logger.warning("pictogram %s: file-api answered %s", storage_key, resp.status_code)
+        return None
+    return resp.content
 
 
 async def delete_from_file_server(storage_key: uuid.UUID, bearer_token: str) -> None:

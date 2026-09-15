@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
-from app.core.deps import SessionDep
-from app.core.permissions import CanManageSettings, CanReadIncident, CanReportIncident
+from app.core.deps import BearerToken, SessionDep
+from app.core.permissions import (
+    CanManageSettings, CanReadDocument, CanReadIncident, CanReportIncident,
+)
 from app.crud import vocabulary as crud
+from app.services.attachments import MAX_FILE_SIZE, proxy_download, upload_to_file_server
 from app.models.config import EhsConfig
 from app.models.mirrors import Department, Location
 from app.schemas.settings import (
@@ -186,3 +189,91 @@ async def list_departments(db: SessionDep, user: CanReportIncident):  # noqa: AR
     return list((await db.execute(
         select(Department).where(Department.is_active.is_(True)).order_by(Department.code)
     )).scalars().all())
+
+
+# ── GHS pictogram artwork ────────────────────────────────────────────────────
+# The nine hazard-class pictograms are regulated artwork: a red diamond with a
+# specific symbol, published by Health Canada for WHMIS 2015. They are not
+# drawn here and never should be — an approximation of a regulated symbol on a
+# drum is a worse failure than an obviously missing one, because it looks
+# right. The artwork is uploaded once, against the hazard class it belongs to,
+# and the label composes with it.
+#
+# It lives in the vocabulary item's `attrs` rather than a table of its own:
+# `attrs` is the extension point these items were given, the artwork is an
+# attribute of the class and of nothing else, and a class retired from the list
+# takes its artwork out of circulation with it.
+PICTOGRAM_VOCABULARY = "ghs_hazard_class"
+# Raster only. An SVG would need a renderer this service does not carry, and a
+# pictogram that fails to draw at print time is the one failure mode there is
+# no recovering from — the label goes on the drum either way.
+PICTOGRAM_TYPES = {"image/png", "image/jpeg", "image/webp"}
+
+
+async def _pictogram_item(db, code: str, item_id: uuid.UUID):
+    if code != PICTOGRAM_VOCABULARY:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Pictograms belong to '{PICTOGRAM_VOCABULARY}' — no other list prints one",
+        )
+    return await crud.get_item(db, code, item_id)
+
+
+@router.post("/vocabularies/{code}/items/{item_id}/pictogram",
+             response_model=VocabularyItemOut)
+async def upload_pictogram(
+    code: str, item_id: uuid.UUID, file: UploadFile,
+    db: SessionDep, user: CanManageSettings, token: BearerToken,  # noqa: ARG001
+):
+    """Attach the official artwork for one hazard class."""
+    item = await _pictogram_item(db, code, item_id)
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(413, f"File exceeds {MAX_FILE_SIZE // 1024 // 1024} MB limit")
+    ctype = (file.content_type or "").split(";")[0].strip().lower()
+    if ctype not in PICTOGRAM_TYPES:
+        raise HTTPException(
+            415,
+            f"Unsupported file type '{ctype}'. A pictogram must be a PNG, JPEG or WebP "
+            "image — PNG with a transparent background prints best.",
+        )
+
+    file_id = await upload_to_file_server(
+        data, file.filename or "pictogram.png", ctype, "ehs_vocab", item.id, token)
+    # Replace the whole dict: SQLAlchemy does not see a mutation in place on a
+    # JSONB column, and a pictogram that silently failed to save is exactly the
+    # kind of thing nobody notices until a label prints without it.
+    item.attrs = {**(item.attrs or {}),
+                  "pictogram_file_id": str(file_id),
+                  "pictogram_filename": file.filename or "pictogram.png"}
+    await db.flush()
+    return item
+
+
+@router.delete("/vocabularies/{code}/items/{item_id}/pictogram",
+               response_model=VocabularyItemOut)
+async def remove_pictogram(
+    code: str, item_id: uuid.UUID, db: SessionDep, user: CanManageSettings,  # noqa: ARG001
+):
+    item = await _pictogram_item(db, code, item_id)
+    attrs = {k: v for k, v in (item.attrs or {}).items()
+             if k not in ("pictogram_file_id", "pictogram_filename")}
+    item.attrs = attrs
+    await db.flush()
+    return item
+
+
+@router.get("/vocabularies/{code}/items/{item_id}/pictogram")
+async def download_pictogram(
+    code: str, item_id: uuid.UUID,
+    db: SessionDep, user: CanReadDocument, token: BearerToken,  # noqa: ARG001
+):
+    """The artwork itself. Readable by everyone, like the data sheets."""
+    item = await _pictogram_item(db, code, item_id)
+    file_id = (item.attrs or {}).get("pictogram_file_id")
+    if not file_id:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"No pictogram has been uploaded for {item.label}",
+        )
+    return await proxy_download(uuid.UUID(str(file_id)), token)

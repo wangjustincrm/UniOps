@@ -4,10 +4,10 @@
  * Retiring an entry is the only form of removal there is, and the screen says
  * so rather than offering a delete that quietly means something else.
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Lock, Plus } from 'lucide-react'
-import { api, ApiError } from '@/lib/api'
+import { api, apiBlob, ApiError } from '@/lib/api'
 
 interface Vocabulary {
   code: string; name: string; description: string | null
@@ -17,7 +17,19 @@ interface Vocabulary {
 interface Item {
   id: string; code: string; label: string; sort_order: number
   is_active: boolean; parent_id: string | null; path: string | null
+  attrs?: { pictogram_file_id?: string; pictogram_filename?: string }
 }
+
+/**
+ * The one list whose entries carry artwork.
+ *
+ * GHS pictograms are regulated: a red diamond with a specific symbol, issued by
+ * Health Canada for WHMIS 2015. They are not drawn by this software and should
+ * not be — an approximation of a regulated symbol looks right, so nobody checks
+ * it. HSE uploads the official file once per class and every label claiming
+ * that class prints it; until then, labels claiming it cannot be approved.
+ */
+const PICTOGRAM_VOCABULARY = 'ghs_hazard_class' 
 
 export default function VocabulariesPage() {
   const queryClient = useQueryClient()
@@ -133,6 +145,7 @@ export default function VocabulariesPage() {
               {i.label}
             </span>
             <span className="font-mono text-xs text-neutral-400">{i.code}</span>
+            {active === PICTOGRAM_VOCABULARY && <PictogramSlot code={active} item={i} />}
             <button
               type="button"
               disabled={toggle.isPending || (current?.is_system_locked && i.is_active)}
@@ -150,5 +163,89 @@ export default function VocabulariesPage() {
         )}
       </ul>
     </div>
+  )
+}
+
+function PictogramSlot({ code, item }: { code: string; item: Item }) {
+  const queryClient = useQueryClient()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const fileId = item.attrs?.pictogram_file_id
+  const path = `/api/v1/settings/vocabularies/${code}/items/${item.id}/pictogram`
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['vocab-items'] })
+
+  // The artwork is proxied by ehs-api and needs the session token, which an
+  // `<img src>` cannot send — so it is fetched as a blob. Keyed on the file id
+  // rather than the item: replacing the artwork must replace the thumbnail, or
+  // somebody changes a pictogram, sees the old one, and prints it believing it
+  // changed.
+  const [preview, setPreview] = useState<string | null>(null)
+  useEffect(() => {
+    if (!fileId) { setPreview(null); return }
+    let url: string | null = null
+    let dropped = false
+    apiBlob(path)
+      .then((blob) => {
+        if (dropped) return
+        url = URL.createObjectURL(blob)
+        setPreview(url)
+      })
+      .catch(() => { if (!dropped) setPreview(null) })
+    return () => { dropped = true; if (url) URL.revokeObjectURL(url) }
+  }, [fileId, path])
+
+  const upload = useMutation({
+    mutationFn: (file: File) => {
+      const body = new FormData()
+      body.append('file', file)
+      return api.upload(path, body)
+    },
+    onSuccess: refresh,
+  })
+  const remove = useMutation({ mutationFn: () => api.del(path), onSuccess: refresh })
+
+  return (
+    <span className="flex items-center gap-2">
+      {fileId ? (
+        <img
+          src={preview ?? undefined}
+          alt={`${item.label} pictogram`}
+          className="h-9 w-9 rounded border border-neutral-200 bg-white object-contain"
+        />
+      ) : (
+        <span className="flex h-9 w-9 items-center justify-center rounded border border-dashed border-warning-500 text-[9px] leading-tight text-warning-700">
+          none
+        </span>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) upload.mutate(file)
+          e.target.value = ''
+        }}
+      />
+      <button
+        type="button"
+        disabled={upload.isPending}
+        onClick={() => inputRef.current?.click()}
+        className="min-h-[32px] rounded-md px-2 text-xs font-medium text-primary-700 disabled:opacity-40"
+      >
+        {upload.isPending ? 'Uploading…' : fileId ? 'Replace' : 'Upload'}
+      </button>
+      {fileId && (
+        <button
+          type="button"
+          disabled={remove.isPending}
+          onClick={() => { if (!remove.isPending) remove.mutate() }}
+          className="min-h-[32px] rounded-md px-1.5 text-xs text-neutral-500 disabled:opacity-40"
+        >
+          Remove
+        </button>
+      )}
+    </span>
   )
 }
