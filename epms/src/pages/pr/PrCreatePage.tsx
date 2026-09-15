@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useReplaceTab } from '@uniops/shell'
@@ -10,6 +10,7 @@ import { ArrowLeft, Upload, X, Calendar, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
+import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { ProcurementTypeSelector } from '@/components/pr/ProcurementTypeSelector'
 import { BudgetBalanceWidget, OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
@@ -24,6 +25,7 @@ import { prService } from '@/services/pr'
 import { api } from '@/lib/api'
 import { prAttachmentService } from '@/services/prAttachments'
 import { useVendors } from '@/hooks/useVendors'
+import { userService, type ApiUserBrief } from '@/services/users'
 import type { ApiVendor } from '@/services/vendors'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
 import { CURRENCIES } from '@/types'
@@ -79,6 +81,13 @@ const prSchema = z.object({
 
 type PrForm = z.infer<typeof prSchema>
 
+// Service (4) and Project-Related (6): the pair that runs the service GR flow,
+// carries a completion date, and now names an owner. Same set as
+// epms-api app/schemas/gr.py SERVICE_TYPES.
+function isServiceType(t: number | null): boolean {
+  return t === 4 || t === 6
+}
+
 function defaultLine(): PrLineItem {
   return { id: crypto.randomUUID(), description: '', materialId: '', qty: 1, unit: 'pcs', unitPrice: 0, lineTotal: 0, notes: '' }
 }
@@ -119,6 +128,29 @@ export default function PrCreatePage() {
   const [vendorOpen, setVendorOpen] = useState(false)
   const [selectedVendor, setSelectedVendor] = useState<ApiVendor | null>(null)
   const [vendorError, setVendorError] = useState<string | null>(null)
+  // Service/Project Owner combo box — who confirms the service was delivered.
+  // Defaults to the requester (the effect below), adjustable from there; only
+  // rendered for types 4 and 6. Same directory search as the Agreement owner
+  // picker.
+  //
+  // It can never end up EMPTY. `selectedOwner` is the committed value and
+  // `ownerQuery` is only the search text while the list is open — closing
+  // without picking restores the committed name rather than blanking the
+  // field, and there is no clear button. A combo box that can be emptied would
+  // silently mean "the requester" server-side, which is the right fallback but
+  // the wrong thing to show a person filling in a form.
+  const ownerAnchorRef = useRef<HTMLDivElement>(null)
+  const [ownerOpen, setOwnerOpen] = useState(false)
+  const ownerRect = useAnchorRect(ownerOpen, ownerAnchorRef)
+  const [ownerQuery, setOwnerQuery] = useState('')
+  const [selectedOwner, setSelectedOwner] = useState<ApiUserBrief | null>(null)
+  const { data: ownersData } = useQuery({
+    queryKey: ['users', 'directory', ownerQuery],
+    queryFn: () => userService.directory({ search: ownerQuery || undefined }),
+    enabled: ownerOpen,
+    staleTime: 30_000,
+  })
+  const owners = ownersData?.items ?? []
   const [selectedL1, setSelectedL1] = useState('')
   const [selectedL2, setSelectedL2] = useState('')
   // Only active accounts are selectable; keep the current selection even if it went inactive.
@@ -364,6 +396,15 @@ export default function PrCreatePage() {
         factor_combo: accountFactors.length > 0 ? factorCombo : undefined,
         required_by: formData.requiredBy,
         service_completion_date: formData.serviceCompletionDate || undefined,
+        // Only sent for the service/project pair — on a physical PR the picker
+        // is not rendered, and storing an owner there would be a deviation
+        // that isn't one. For 4/6 it is ALWAYS sent, including when it is the
+        // requester themselves: the field is a populated combo box, so what it
+        // shows is what gets saved. `?? user?.id` is belt-and-braces for a
+        // render where the default effect has not run yet.
+        owner_id: isServiceType(selectedType)
+          ? (selectedOwner?.id ?? user?.id)
+          : undefined,
         delivery_address: formData.deliveryAddress || config?.delivery_address || undefined,
         notes: formData.notes,
         over_budget_justification: isOverBudget ? justification : undefined,
@@ -412,6 +453,9 @@ export default function PrCreatePage() {
             : undefined,
         required_by: values.requiredBy || undefined,
         service_completion_date: values.serviceCompletionDate || undefined,
+        owner_id: isServiceType(selectedType)
+          ? (selectedOwner?.id ?? user?.id)
+          : undefined,
         delivery_address: values.deliveryAddress || config?.delivery_address || undefined,
         notes: values.notes,
         over_budget_justification: draftJustification || undefined,
@@ -454,13 +498,28 @@ export default function PrCreatePage() {
     if (selectedType) setValue('procurementType', selectedType)
   }, [selectedType, setValue])
 
+  // Owner defaults to the signed-in requester — a DEFAULT, set once, not an
+  // invariant: the guard is `selectedOwner` being unset, so a requester who
+  // picks someone else keeps that choice even as this effect re-runs.
+  useEffect(() => {
+    if (selectedOwner || !user?.id) return
+    setSelectedOwner({
+      id: user.id,
+      full_name: user.name,
+      email: user.email,
+      role: user.role,
+      department_id: user.department_id ?? null,
+      department_name: user.department ?? null,
+    })
+  }, [user, selectedOwner])
+
   const requiresBudget = requiresBudgetAccount(selectedType)
   const requiresFixedAsset = selectedType === 5
   const requiresProject = selectedType === 6
   // Type 6 (Project-Related) follows the same service GR flow as type 4 —
   // api/v1/gr.py has always treated the pair identically. Asking only type 4
   // for a date left every project PO permanently outside the reminder sweep.
-  const requiresServiceDate = selectedType === 4 || selectedType === 6
+  const requiresServiceDate = isServiceType(selectedType)
 
   return (
     <div className="flex flex-col gap-6">
@@ -762,6 +821,53 @@ export default function PrCreatePage() {
                         <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                       </div>
                     </FormField>
+                  )}
+
+                  {/* Service/Project Owner — Types 4 and 6. Defaults to the
+                      requester and can be changed. Whoever is named here gets
+                      the "confirm the service was delivered" task and email
+                      once the completion date above passes, instead of the
+                      requester (epms-api app/tasks/service_gr_due.py). */}
+                  {requiresServiceDate && (
+                    <div ref={ownerAnchorRef} className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-neutral-700" htmlFor="serviceOwner">
+                        Service/Project Owner <span className="text-danger-600">*</span>
+                      </label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                        <input
+                          id="serviceOwner"
+                          type="text"
+                          placeholder="Search people by name…"
+                          value={ownerOpen ? ownerQuery : (selectedOwner?.full_name ?? '')}
+                          onFocus={() => { setOwnerOpen(true); setOwnerQuery('') }}
+                          onChange={(e) => { setOwnerQuery(e.target.value); setOwnerOpen(true) }}
+                          className="h-10 w-full rounded-md border border-neutral-300 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                        />
+                      </div>
+                      {ownerOpen && ownerRect && (
+                        <DropdownPortal anchorRect={ownerRect} onClose={() => { setOwnerOpen(false); setOwnerQuery('') }}>
+                          {owners.map((u) => (
+                            <button
+                              key={u.id}
+                              type="button"
+                              className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-primary-50 text-left"
+                              onClick={() => { setSelectedOwner(u); setOwnerOpen(false); setOwnerQuery('') }}
+                            >
+                              <span>{u.full_name}</span>
+                              {u.department_name && <span className="text-xs text-neutral-400">{u.department_name}</span>}
+                            </button>
+                          ))}
+                          {owners.length === 0 && (
+                            <p className="px-3 py-2 text-sm text-neutral-400">No people found</p>
+                          )}
+                        </DropdownPortal>
+                      )}
+                      <p className="text-xs text-neutral-400">
+                        Receives the task and email to confirm the service was delivered.
+                        Defaults to you; search to hand it to someone else.
+                      </p>
+                    </div>
                   )}
 
                   <div className="flex items-center gap-2">

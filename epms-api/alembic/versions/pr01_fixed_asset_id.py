@@ -10,7 +10,17 @@ readable, approvable and payable. The requirement is enforced at submit only,
 next to the vendor and budget gates in services/doc_preflight.py.
 
 Revision ID: pr01_fixed_asset_id
-Revises: as01_assistant_usage
+Revises: po01_pr_owner_id
+
+Chained behind po01_pr_owner_id rather than off as01_assistant_usage, where it
+was written. Both branches added a column to purchase_requests and both pointed
+at the same parent, which gives alembic two heads — and `alembic upgrade head`
+(what migrate-prod.sh runs, under `set -e`) refuses to choose between them. The
+production run would have stopped at epms-api and taken identity-api,
+approval-api and everything after it down with it.
+
+The two are independent ADD COLUMNs, so the order between them carries no
+meaning; what matters is that there is one.
 """
 from typing import Sequence, Union
 
@@ -18,7 +28,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "pr01_fixed_asset_id"
-down_revision: Union[str, None] = "as01_assistant_usage"
+down_revision: Union[str, None] = "po01_pr_owner_id"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

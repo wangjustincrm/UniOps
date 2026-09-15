@@ -379,6 +379,21 @@ async def visible_pr_subquery(
     # task-chain is always OR-ed in: if you hold an open approval task for a PR
     # (routing may land it outside your dept/cost-center scope), you can see it.
     conds = [PurchaseRequest.id.in_(task_pr)]
+    # Named as the PR's service owner → you can see it, whatever role you hold
+    # and whatever department it is charged to. Same reasoning as the task-chain
+    # condition above and OR-ed in for the same reason: owner_id is a
+    # PER-DOCUMENT assignment, and the owner is asked to confirm the receipt on
+    # this PR (crud.pr_owner). A service PR raised by one department for an
+    # owner in another would otherwise 404 for the very person chased about it —
+    # and not only once the task exists: the owner has to be able to open the PO
+    # and create the GR *before* the completion date passes.
+    #
+    # NOT reflected in scoped_department_ids below, exactly like the task-chain
+    # condition: that helper answers "which DEPARTMENTS is this viewer scoped
+    # to" for the list filters, and a single owned document is not a department.
+    # Also not admissible in `is_pr_in_departments` — that is an authorisation
+    # gate, and this is visibility.
+    conds.append(PurchaseRequest.owner_id == user_id)
     cc_dept_ids: set[uuid.UUID] = set()       # cost-center oversight (dept_manager/gm/opm/director)
     creator_dept_ids: set[uuid.UUID] = set()  # creator's-department membership (dept_manager/director)
 

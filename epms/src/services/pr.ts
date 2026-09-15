@@ -46,6 +46,12 @@ export interface ApiPr {
   fixed_asset_id?: string | null
   required_by?: string
   service_completion_date?: string
+  // Service/project receipt owner. owner_id is the raw column and is null on
+  // every PR that never named one; owner_name always resolves — the server
+  // falls back to the requester (epms-api app/crud/pr_owner.py), so the UI must
+  // not re-implement that fallback.
+  owner_id?: string | null
+  owner_name?: string | null
   delivery_address?: string
   notes?: string
   over_budget: boolean
@@ -55,6 +61,10 @@ export interface ApiPr {
   line_items: ApiPrLineItem[]
   po_id?: string
   po_number?: string
+  // Returned by epms-api's PrResponse and always present; it was simply never
+  // declared here. The Edit page needs the id (not just the name) to seed the
+  // Owner picker when owner_id is NULL — i.e. when the owner IS the requester.
+  created_by: string
   created_by_name?: string | null
   created_at: string
   updated_at: string
@@ -75,6 +85,8 @@ export interface CreatePrBody {
   factor_combo?: Record<string, string>
   required_by?: string
   service_completion_date?: string
+  // Omit to mean "the requester" — types 4/6 only collect it.
+  owner_id?: string
   delivery_address?: string
   notes?: string
   over_budget_justification?: string
@@ -98,6 +110,7 @@ export interface UpdatePrBody {
   factor_combo?: Record<string, string> | null
   required_by?: string
   service_completion_date?: string
+  owner_id?: string
   delivery_address?: string
   notes?: string
   is_prepaid?: boolean

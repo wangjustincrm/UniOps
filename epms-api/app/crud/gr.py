@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ontology import scope_gr
 from app.crud._numbering import next_number
+from app.crud.pr_owner import get_pr_owner_id
 from app.crud.signatories import gr_signatories, resolve_user_names
 from app.models.config import CompanyConfig
 from app.models.gr import GoodsReceipt, GrLineItem
@@ -177,10 +178,14 @@ async def create(
                 file_data=file_bytes,
             ))
 
-    # Create acknowledge task for the PR requester. Imported POs (PMS/NC) have no
-    # linked PR → no requester exists; a requester-role task would then fall back
-    # to a role-wide broadcast (2026-08-05: 59 people emailed twice). Instead the
-    # requester steps are skipped entirely and system admins get an alert.
+    # Create the acknowledge task for the PR's owner (_create_ack_task resolves
+    # it — the requester unless a service/project PR names someone else).
+    # Imported POs (PMS/NC) have no linked PR → nobody to assign; a
+    # requester-role task would then fall back to a role-wide broadcast
+    # (2026-08-05: 59 people emailed twice). Instead the requester steps are
+    # skipped entirely and system admins get an alert. The probe stays on the
+    # requester: it is asking "is there a PR at all", and owner is NULL on
+    # nearly every row.
     requester_id = await get_pr_requester_id(db, po.pr_id)
     if requester_id is not None:
         await _create_ack_task(db, gr)
@@ -462,6 +467,21 @@ async def _get_pr_requester_id(db: AsyncSession, gr: GoodsReceipt) -> uuid.UUID 
     return await get_pr_requester_id(db, gr.pr_id)
 
 
+async def _get_pr_owner_id(db: AsyncSession, gr: GoodsReceipt) -> uuid.UUID | None:
+    """Who this GR's requester-side steps are assigned to.
+
+    The OWNER of the linked PR (crud.pr_owner: owner_id, else created_by), so
+    the acknowledge → collect / confirm chain lands on the same person the
+    completion-date sweep and the invoice-matched nudge chase. An owner is only
+    ever collected for service/project PRs, so for physical receipts this is
+    the requester — identical to what these tasks carried before.
+
+    None under exactly the same condition as _get_pr_requester_id (no linked
+    PR), which is what _auto_complete_requester_steps branches on.
+    """
+    return await get_pr_owner_id(db, gr.pr_id)
+
+
 async def _auto_complete_requester_steps(
     db: AsyncSession,
     gr: GoodsReceipt,
@@ -513,7 +533,7 @@ async def _auto_complete_requester_steps(
 
 
 async def _create_ack_task(db: AsyncSession, gr: GoodsReceipt) -> None:
-    requester_id = await _get_pr_requester_id(db, gr)
+    assignee_id = await _get_pr_owner_id(db, gr)
     db.add(Task(
         type="acknowledge_gr",
         priority="normal",
@@ -521,7 +541,7 @@ async def _create_ack_task(db: AsyncSession, gr: GoodsReceipt) -> None:
         document_id=gr.id,
         document_number=gr.number,
         assigned_role="requester",
-        assigned_user_id=requester_id,
+        assigned_user_id=assignee_id,
         title=f"Acknowledge GR: {gr.number} — {gr.title}",
         description="New goods receipt requires your acknowledgement.",
         vendor=gr.vendor_name,
@@ -529,7 +549,7 @@ async def _create_ack_task(db: AsyncSession, gr: GoodsReceipt) -> None:
 
 
 async def _create_collect_task(db: AsyncSession, gr: GoodsReceipt) -> None:
-    requester_id = await _get_pr_requester_id(db, gr)
+    assignee_id = await _get_pr_owner_id(db, gr)
     db.add(Task(
         type="collect_goods",
         priority="normal",
@@ -537,7 +557,7 @@ async def _create_collect_task(db: AsyncSession, gr: GoodsReceipt) -> None:
         document_id=gr.id,
         document_number=gr.number,
         assigned_role="requester",
-        assigned_user_id=requester_id,
+        assigned_user_id=assignee_id,
         title=f"Collect Goods: {gr.number} — {gr.title}",
         description=f"Goods are ready for collection at: {gr.storage_location or 'Warehouse'}.",
         vendor=gr.vendor_name,
@@ -545,7 +565,7 @@ async def _create_collect_task(db: AsyncSession, gr: GoodsReceipt) -> None:
 
 
 async def _create_service_confirm_task(db: AsyncSession, gr: GoodsReceipt) -> None:
-    requester_id = await _get_pr_requester_id(db, gr)
+    assignee_id = await _get_pr_owner_id(db, gr)
     db.add(Task(
         type="confirm_service_gr",
         priority="normal",
@@ -553,7 +573,7 @@ async def _create_service_confirm_task(db: AsyncSession, gr: GoodsReceipt) -> No
         document_id=gr.id,
         document_number=gr.number,
         assigned_role="requester",
-        assigned_user_id=requester_id,
+        assigned_user_id=assignee_id,
         title=f"Confirm Service: {gr.number} — {gr.title}",
         description="Please confirm that the service has been delivered.",
         vendor=gr.vendor_name,

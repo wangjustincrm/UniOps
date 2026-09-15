@@ -13,6 +13,7 @@ from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import invoice as invoice_crud
 from app.crud import vendor as vendor_crud
+from app.crud.pr_owner import owner_id_of
 from app.models.agreement import PurchaseAgreement
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
@@ -305,7 +306,8 @@ async def _create_or_renotify_create_pa(db, po, pr, invoice) -> None:
 async def _create_or_renotify_confirm_receipt(db, po, pr, invoice, physical: bool) -> None:
     """
     After an invoice is matched to a PO without a GR yet, nudge someone to
-    confirm receipt (physical → warehouse_staff pool; service → requester).
+    confirm receipt (physical → warehouse_staff pool; service → the PR's
+    service OWNER, which falls back to its requester — crud.pr_owner).
 
     Never nudge a PO that already shows receipt evidence. The 3-way test above
     should have routed those to create_pa, so reaching here with goods already
@@ -330,7 +332,13 @@ async def _create_or_renotify_confirm_receipt(db, po, pr, invoice, physical: boo
     if physical:
         assigned_role, assigned_user_id = "warehouse_staff", None
     else:
-        assigned_role, assigned_user_id = "requester", (pr.created_by if pr else None)
+        # Same assignee rule as the completion-date sweep
+        # (tasks/service_gr_due.py) — the two paths raise the SAME
+        # confirm_receipt task on the same PO and reuse each other's row, so a
+        # different rule here would mean whichever fired first decided who
+        # owns it. assigned_role keeps its "requester" pool label.
+        assigned_role = "requester"
+        assigned_user_id = owner_id_of(pr) if pr else None
     task = Task(
         type="confirm_receipt", priority="normal",
         document_type="po", document_id=po.id, document_number=po.number,
