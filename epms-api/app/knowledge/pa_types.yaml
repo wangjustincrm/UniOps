@@ -1,0 +1,68 @@
+# Payment Applications — four kinds, and the distinction that matters is
+# whether the vendor is being paid before delivery or after it.
+#
+# Derived: PaCreate's required fields. PA has no doc_preflight submit gates —
+# its rules live in api/v1/pa.py, which rejects a settlement or balance PA with
+# no prepayment_pa_id (422) and a second prepayment on the same PO (409).
+topic: pa_types
+label: Payment Application types
+doc_type: pa
+field: pa_type
+
+what_it_is: >
+  The request to actually pay a vendor. It gathers the purchase orders, the
+  invoices and the receipts that justify the payment, goes through approval,
+  and on approval becomes a remittance.
+
+how_types_are_set: >
+  Set when the PA is created, and driven by the purchase order: a PO marked
+  "prepayment required" is paid before delivery and needs a prepayment PA
+  first, then a settlement once the goods or the invoice arrive.
+
+question_hints:
+  - what types of payment application are there
+  - what is the difference between a prepayment and a settlement
+  - how do I pay a vendor up front
+  - what is a balance PA
+
+values:
+  - value: regular
+    label: Regular
+    covers: The ordinary case — goods or work received, invoice in hand, pay it.
+    when: >
+      The default. Use it whenever the vendor is paid after delivery against an
+      invoice you have already matched.
+    notes:
+      - Needs receipt evidence behind it; a PO with nothing received cannot be
+        paid this way.
+
+  - value: prepayment
+    label: Prepayment
+    covers: A deposit or full payment made before the vendor delivers.
+    when: >
+      When the purchase order is marked as requiring prepayment. This is the
+      first of a pair — the money goes out now and is reconciled later.
+    notes:
+      - Only one prepayment PA can be open against a purchase order at a time.
+        Settle or cancel the existing one before raising another.
+      - Records what percentage of the order is being prepaid and when the
+        settlement is expected.
+
+  - value: settlement
+    label: Settlement
+    covers: The reconciliation of a prepayment once the real invoice arrives.
+    when: >
+      After a prepayment, when you know the actual amount. It must reference
+      the prepayment PA it is settling — without that link it is rejected.
+    notes:
+      - If the invoice exactly matches what was prepaid, nothing is owed and it
+        reconciles immediately — no approval, no payment, no bank movement.
+      - If the prepayment was too large, a finance confirmation task gates the
+        reconciliation rather than it going through silently.
+
+  - value: balance
+    label: Balance
+    covers: The remaining amount owed after a part-prepayment.
+    when: >
+      When a deposit covered only part of the order and the rest falls due. Like
+      a settlement it must reference the original prepayment PA.

@@ -103,6 +103,9 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
     if planned["kind"] == "doc_types":
         return await _answer_doc_types(db, body, planned, actor)
 
+    if planned["kind"] == "modules":
+        return await _answer_modules(db, body, actor)
+
     if planned["kind"] == "plan":
         return await _answer_plan_question(db, scope, body, planned, actor)
 
@@ -367,6 +370,24 @@ async def _answer_plan_question(db, scope, body, planned, actor) -> dict:
     }
 
 
+async def _answer_modules(db, body, actor) -> dict:
+    """What the system is made of. Ungated for the same reason as the types
+    below: it describes scope, reads no rows and names no document."""
+    guide = doc_type_guide.modules()
+    payload = {"question": body.message, "kind": "modules", **guide}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+
+    return {
+        "answer": told["text"], "kind": "modules", "query": None,
+        "modules": guide,
+        "sources": {"modules": len(guide["modules"])},
+    }
+
+
 async def _answer_doc_types(db, body, planned, actor) -> dict:
     """What kinds of a document exist and what differs when you create one.
 
@@ -379,7 +400,9 @@ async def _answer_doc_types(db, body, planned, actor) -> dict:
     doc_type = (planned.get("doc_type") or "").lower()
     if doc_type not in doc_type_guide.SUPPORTED:
         return {
-            "answer": "I can only explain the purchase request types so far.",
+            "answer": ("I can explain purchase requests, purchase orders, goods "
+                       "receipts, payment applications, invoices and purchase "
+                       "agreements — not that."),
             "kind": "cannot_answer", "reason": "not_supported",
             "query": None, "sources": None,
         }

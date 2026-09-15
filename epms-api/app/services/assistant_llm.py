@@ -125,9 +125,21 @@ Rules:
   FORM: call explain_document_types. Answering these with the approval chain is
   wrong, and it is the mistake this route exists to stop — someone asking what
   distinguishes the types does not want to be told who approves them.
-- "How many PRs of each type", "which type do we raise most" are questions about
-  the DATA: run a query grouped by type. The dividing line is whether they are
-  asking what a type MEANS or how many there ARE.
+- "What modules are there", "what can I do in this system", "where do I claim
+  an expense", "what is MRP for" are about the SYSTEM, not one document: call
+  explain_modules. It is the layer above explain_document_types — use it when
+  they have not narrowed to a document yet, and when someone is plainly in the
+  wrong place and needs pointing at the right module.
+- The same route covers the other documents: PO types, the two kinds of goods
+  receipt, the four kinds of payment application, what the invoice statuses
+  mean, and the three kinds of purchase agreement. "What is a house account",
+  "what is the difference between a prepayment and a settlement PA", "why is
+  this invoice in exception" — all explain_document_types.
+- "How many PRs of each type", "which type do we raise most", "how many invoices
+  are in exception" are questions about the DATA: run a query grouped by the
+  field. The dividing line is whether they are asking what a value MEANS or how
+  many there ARE. "What does exception mean" is the guide; "which ones are in
+  exception" is a query.
 - "What statuses exist", "what fields does an invoice have" remain data
   questions: query them, grouping by the field in question so the reply carries
   how many of each there are, which is more use than the list alone.
@@ -335,22 +347,49 @@ _PROCESS_TOOL = {
     },
 }
 
+_MODULES_TOOL = {
+    "name": "explain_modules",
+    "description": (
+        "Use when someone asks what the system as a whole does, what parts it "
+        "has, or where a thing belongs — 'what modules are there', 'what can I "
+        "do in UniOps', 'where do I go to claim an expense', 'what is the "
+        "difference between OA and Procurement', 'what is MRP for'. Answers "
+        "with what each module covers, who uses it, and what you typically do "
+        "there. For the types and fields of one document, use "
+        "explain_document_types instead."
+    ),
+    "input_schema": {"type": "object", "properties": {}},
+}
+
 _DOC_TYPES_TOOL = {
     "name": "explain_document_types",
     "description": (
         "Use when someone asks what KINDS of a document exist and how they "
-        "differ — 'what PR types are there', 'what is the difference between "
-        "the PR types', 'what changes when I create a type 5', 'which "
-        "procurement type should I pick'. Answers with what each type is for "
-        "and what the system makes you fill in for it, read off the gates the "
-        "submit route actually enforces. This is a question about the FORM, "
-        "not about who signs off — explain_process answers the second and is "
-        "the wrong answer to the first."
+        "differ, or what a document IS and what you have to fill in for it — "
+        "'what PR types are there', 'what changes when I create a type 5', "
+        "'what is the difference between a prepayment and a settlement', "
+        "'what do the invoice statuses mean', 'what is a house account', "
+        "'what is the difference between a physical and a service receipt'. "
+        "Answers with what each kind is for and what the system actually makes "
+        "you supply, read off the create schema and the submit gates rather "
+        "than from any description of them. This is a question about the FORM "
+        "and the document itself, not about who signs off — explain_process "
+        "answers the second and is the wrong answer to the first."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "doc_type": {"type": "string", "enum": ["pr"]},
+            "doc_type": {
+                "type": "string",
+                "enum": ["pr", "po", "gr", "pa", "invoice", "agreement"],
+                "description": (
+                    "pr purchase request · po purchase order · gr goods "
+                    "receipt or service confirmation · pa payment application "
+                    "(regular/prepayment/settlement/balance) · invoice the "
+                    "matching states · agreement purchase agreement "
+                    "(house account/recurring/milestone)"
+                ),
+            },
         },
         "required": ["doc_type"],
     },
@@ -503,7 +542,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             system=system,
             tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _NEXT_TOOL,
                    _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
-                   _CANNOT_TOOL],
+                   _MODULES_TOOL, _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -528,6 +567,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             return {"kind": "next", "usage": _usage(resp)}
         if block.name == "explain_process":
             return {"kind": "process", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "explain_modules":
+            return {"kind": "modules", "usage": _usage(resp)}
         if block.name == "explain_document_types":
             return {"kind": "doc_types", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_plan":
@@ -760,15 +801,28 @@ You are helping a colleague who may never have been trained on this system.
   make the columns the things that actually differ. `covers` and `when_to_pick`
   say what the type is for; `required_before_submit` is what the system will
   stop them on; `receipt` is how the purchase gets confirmed as received.
-  `required_before_submit` is a complete list of the submit gates and nothing
-  more — it is not every difference between the types, so do not present it as
-  one, and read `requirements_are` for how to describe it.
+  Read `requirements_are` before describing either requirement list — it says
+  exactly what each covers. `required_to_create_any` applies to every kind;
+  `required_before_submit` is the EXTRA gates checked when the document leaves
+  draft, and an empty list there means no extra gates, never "no requirements".
+  Neither list is every difference between the kinds, so do not present it as
+  one. `what_it_is` explains the document itself — lead with it when they seem
+  to be asking what the thing is, not just how the kinds differ.
+  If `how_types_are_set` is present, say so: for most documents the kind is not
+  chosen by the person asking, and someone hunting for a dropdown that does not
+  exist needs telling.
   If a type carries `notes`, work them in; they are there because they matter.
   End with the one line a requester most needs: which type their case sounds
   like, if the question named one.
-- Never invent a step, a role, a rule, a task, or a field. If a type has no
-  requirement beyond what every type has, say that plainly — "nothing extra" is
-  an answer, and inventing a distinction to fill the row is not.
+- For modules: answer what they asked and no more. Someone asking where to
+  claim an expense wants OA named and a sentence on why, not a tour of eight
+  modules. Give the full list only when they asked for the full list.
+  `can_explain_further` is the only place you may offer to go deeper; offering
+  a document kind that is not in it promises something that will then be
+  refused.
+- Never invent a step, a role, a rule, a task, a module, or a field. If a type
+  has no requirement beyond what every type has, say that plainly — "nothing
+  extra" is an answer, and inventing a distinction to fill the row is not.
 """
 
 

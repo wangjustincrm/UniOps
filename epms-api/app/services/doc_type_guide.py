@@ -28,17 +28,50 @@ hand would have joined them; one computed from the gates cannot.
 from __future__ import annotations
 
 import functools
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-from app.schemas.gr import is_service
-from app.services.doc_preflight import field_checks_for
+from app.schemas.agreement import AgreementCreate
+from app.schemas.gr import GrCreate, is_service
+from app.schemas.invoice import InvoiceCreate
+from app.schemas.pa import PaCreate
+from app.schemas.po import PoCreate
+from app.schemas.pr import PrCreate
+from app.services.doc_preflight import SUBMIT_CHECKS, field_checks_for
 
 _KNOWLEDGE = Path(__file__).resolve().parent.parent / "knowledge"
 
-# doc_type -> knowledge file. One entry today; the shape is the point.
-_TOPICS = {"pr": "pr_types.yaml"}
+
+@dataclass(frozen=True)
+class _Topic:
+    """Where a document kind's answer comes from.
+
+    `create_schema` is the Pydantic model the create endpoint validates against,
+    and it is the second derivation in this module: what a document must carry
+    to be created at all is `model_fields` with `is_required()`, read off the
+    class the endpoint actually uses. It generalises where the submit gates do
+    not — only PR has those — so every document kind here can still answer "what
+    do I have to fill in" from enforcement rather than from prose.
+    """
+    file: str
+    create_schema: type
+    # True when doc_preflight owns submit gates for this kind. Today only PR
+    # does; the others are validated by their create schema and their crud.
+    has_submit_gates: bool = False
+
+
+MODULES_FILE = "modules.yaml"
+
+_TOPICS: dict[str, _Topic] = {
+    "pr": _Topic("pr_types.yaml", PrCreate, has_submit_gates=True),
+    "po": _Topic("po_types.yaml", PoCreate),
+    "gr": _Topic("gr_types.yaml", GrCreate),
+    "pa": _Topic("pa_types.yaml", PaCreate),
+    "invoice": _Topic("invoice_types.yaml", InvoiceCreate),
+    "agreement": _Topic("agreement_types.yaml", AgreementCreate),
+}
 SUPPORTED = tuple(_TOPICS)
 
 # A gate id says what it checks; this says it in words a requester would use,
@@ -78,23 +111,56 @@ class _BlankDoc:
 
 @functools.lru_cache(maxsize=None)
 def _load(doc_type: str) -> dict:
-    name = _TOPICS.get(doc_type)
-    if name is None:
+    topic = _TOPICS.get(doc_type)
+    if topic is None:
         raise LookupError(doc_type)
-    with (_KNOWLEDGE / name).open(encoding="utf-8") as fh:
+    with (_KNOWLEDGE / topic.file).open(encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
 
-def requirements_for(doc_type: str, value: int) -> list[dict]:
-    """What a document of this type must have before it can be submitted.
+def required_at_create(doc_type: str) -> list[str]:
+    """The fields the create endpoint will not accept the document without.
+
+    Straight off the Pydantic model the endpoint validates against — a field
+    made optional, or a new one made required, changes this answer without
+    anyone remembering to. Type-independent: it is one schema per document kind.
+    """
+    topic = _TOPICS.get(doc_type)
+    if topic is None:
+        raise LookupError(doc_type)
+    return [name for name, f in topic.create_schema.model_fields.items()
+            if f.is_required()]
+
+
+def requirements_for(doc_type: str, value) -> list[dict]:
+    """What a document of this type must have before it can be SUBMITTED.
 
     Read off the gates rather than written down, so this cannot describe a rule
     that is not enforced — nor miss one that is.
+
+    Empty for every kind but PR, and that emptiness is honest rather than a gap:
+    doc_preflight owns field gates for PR alone. The others are held to their
+    create schema and their crud, which is what required_at_create reports. The
+    narrator is told which of the two it is looking at so it cannot present "no
+    submit gates" as "no requirements".
     """
+    topic = _TOPICS.get(doc_type)
+    if topic is None:
+        raise LookupError(doc_type)
+    if not topic.has_submit_gates or doc_type not in SUBMIT_CHECKS:
+        return []
     return [
         {"id": c.id, "requirement": _GATE_LABELS.get(c.id, c.id)}
         for c in field_checks_for(doc_type, _BlankDoc(doc_type, value))
     ]
+
+
+def _receipt(doc_type: str, value) -> str | None:
+    """Who confirms receipt — only meaningful where a procurement type drives it."""
+    if doc_type not in ("pr", "po") or not isinstance(value, int):
+        return None
+    return ("The requester confirms the work is complete" if is_service(value)
+            else "The warehouse receives the goods")
 
 
 def build(doc_type: str) -> dict:
@@ -103,25 +169,82 @@ def build(doc_type: str) -> dict:
     out = []
     for entry in doc.get("values", []):
         value = entry["value"]
-        requirements = requirements_for(doc_type, value)
-        out.append({
+        item = {
             "value": value,
             "label": entry.get("label"),
             "covers": (entry.get("covers") or "").strip(),
             "when_to_pick": (entry.get("when") or "").strip(),
             "notes": entry.get("notes") or [],
-            # Derived, both of them.
-            "required_before_submit": requirements,
-            "receipt": ("The requester confirms the work is complete"
-                        if is_service(value)
-                        else "The warehouse receives the goods"),
-        })
+            # Derived.
+            "required_before_submit": requirements_for(doc_type, value),
+        }
+        receipt = _receipt(doc_type, value)
+        if receipt:
+            item["receipt"] = receipt
+        out.append(item)
     return {
         "doc_type": doc_type,
         "label": doc.get("label", doc_type.upper()),
+        "what_it_is": (doc.get("what_it_is") or "").strip(),
         "types": out,
-        # Said out loud so the narrator can pass it on: these are the gates that
-        # stop a submit, not every difference between the types. Line-item
-        # behaviour lives in the frontend and is described in the prose.
-        "requirements_are": "the field gates enforced when the document is submitted",
+        # Derived: one schema for the whole document kind, so it sits beside the
+        # per-type list rather than inside it.
+        "required_to_create_any": required_at_create(doc_type),
+        # Said out loud so the narrator can pass it on rather than guessing at
+        # the scope of what it was handed.
+        "requirements_are": (
+            "required_to_create_any is what the create form will not submit "
+            "without, for every type. required_before_submit is the extra "
+            "field gates checked when the document leaves draft, and is empty "
+            "for document kinds that have none — which means no EXTRA gates, "
+            "not no requirements."
+        ),
+        "how_types_are_set": (doc.get("how_types_are_set") or "").strip() or None,
+    }
+
+
+# ── Modules ──────────────────────────────────────────────────────────────────
+
+@functools.lru_cache(maxsize=None)
+def _load_modules() -> dict:
+    with (_KNOWLEDGE / MODULES_FILE).open(encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
+
+
+def modules() -> dict:
+    """What each part of UniOps is for, and which of them go deeper.
+
+    The layer above the document kinds. Prose, unavoidably: what a module is
+    FOR is not something any code states, and the modules that are not EPMS run
+    in their own services, which this one cannot import.
+
+    The one thing here that CAN be checked is checked. `can_explain_further`
+    is filtered against the kinds this module actually has knowledge for, so
+    the assistant never offers to go deeper on something it would then have to
+    refuse. test_module_guide.py fails if a module names a kind that does not
+    exist, or if a kind exists that no module claims.
+    """
+    doc = _load_modules()
+    out = []
+    for entry in doc.get("modules", []):
+        declared = entry.get("documents") or []
+        out.append({
+            "key": entry["key"],
+            "label": entry.get("label"),
+            "covers": (entry.get("covers") or "").strip(),
+            "who_uses_it": (entry.get("who") or "").strip(),
+            "typical_things_you_do": entry.get("typical") or [],
+            "notes": entry.get("notes") or [],
+            # Derived: only kinds the guide can really answer on.
+            "can_explain_further": [d for d in declared if d in _TOPICS],
+        })
+    return {
+        "label": doc.get("label", "UniOps modules"),
+        "modules": out,
+        "deeper_available_for": list(_TOPICS),
+        "what_this_is": (
+            "An overview of what each module is for. For any kind listed in "
+            "can_explain_further, ask again about that document and you get "
+            "its types and what has to be filled in."
+        ),
     }

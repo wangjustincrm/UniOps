@@ -36,6 +36,16 @@ label: Purchase Request types
 doc_type: pr
 field: type
 
+what_it_is: >
+  The internal request to buy something. A PR is where a purchase starts: you
+  say what you need and why, it goes through approval, and once approved it
+  becomes a purchase order that actually reaches the vendor.
+
+how_types_are_set: >
+  You choose the type first, on the tile selector at the top of the Create PR
+  form, and it drives the rest of the form — which fields appear, whether a
+  budget account is required, and who confirms receipt later.
+
 # Phrases that mean "explain the types", so the router has something concrete to
 # match against rather than falling through to the approval chain.
 question_hints:
