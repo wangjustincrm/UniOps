@@ -42,8 +42,11 @@ interface PrLineItemsProps {
   errors?: Record<string, LineErrors>   // keyed by index string e.g. "0", "1"
 }
 
-const showMaterialId = (t: ProcurementType | null) => t === 1 || t === 3
-const isSparePartsType = (t: ProcurementType | null) => t === 3
+// Exported so procurementTypes.test.ts can pin them: these two rules are the
+// line-item half of "what differs between the types", and unlike the submit
+// gates they live only here, where the backend's guide cannot derive them.
+export const showMaterialId = (t: ProcurementType | null) => t === 1 || t === 3
+export const isSparePartsType = (t: ProcurementType | null) => t === 3
 
 // ─── Parts Picker (Type 3 only) ──────────────────────────────────────────────
 

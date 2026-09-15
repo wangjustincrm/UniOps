@@ -28,11 +28,11 @@ async def _seed(test_engine):
             full_name="PO/PA Filter", role="system_admin"))
         await db.commit()
 
-        dept = Department(code=f"D{uuid.uuid4().hex[:4].upper()}", name="Chain Dept", is_active=True)
+        dept = Department(code=f"D{uuid.uuid4().hex[:8].upper()}", name="Chain Dept", is_active=True)
         db.add(dept)
         await db.commit()
         await db.refresh(dept)
-        cc = CostCenter(code=f"CC{uuid.uuid4().hex[:4].upper()}", name="Chain CC",
+        cc = CostCenter(code=f"CC{uuid.uuid4().hex[:8].upper()}", name="Chain CC",
                         is_active=True, department_id=dept.id)
         db.add(cc)
         await db.commit()

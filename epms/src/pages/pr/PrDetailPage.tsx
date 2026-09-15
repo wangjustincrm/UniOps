@@ -403,13 +403,19 @@ export default function PrDetailPage() {
                     ['Department', pr.department_name || '—'],
                     ['Cost Center', pr.cost_center_name || '—'],
                     ['Budget Code', pr.budget_code ? (budgetAccount ? `${pr.budget_code} — ${budgetAccount.name}` : pr.budget_code) : '—'],
+                    ...(pr.type === 5 ? [['Fixed Asset ID', pr.fixed_asset_id || '—'] as [string, string]] : []),
                     ...(pr.type === 6 ? [['Project No.', pr.project_code || '—'] as [string, string]] : []),
                     ['Currency', pr.currency ?? 'CAD'],
                     [`Total Amount (${pr.currency ?? 'CAD'})`, formatAmount(pr.amount, pr.currency ?? 'CAD')],
                     ['Required By Date', formatDate(pr.required_by ?? '')],
                     ...(pr.type === 4 || pr.type === 6
                       ? [['Service/Project Expected Completion Date',
-                          formatDate(pr.service_completion_date ?? '')] as [string, string]]
+                          formatDate(pr.service_completion_date ?? '')] as [string, string],
+                         // owner_name already resolves the NULL-means-requester
+                         // fallback server-side, so this row never reads blank
+                         // on a PR raised before the field existed.
+                         ['Service/Project Owner',
+                          pr.owner_name || '—'] as [string, string]]
                       : []),
                     ['Delivery Address', pr.delivery_address || '—'],
                     ['Notes', pr.notes || '—'],

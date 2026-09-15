@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
@@ -7,6 +8,7 @@ import { ArrowLeft, X, Calendar, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
+import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
 import { budgetAccountError } from '@/lib/prBudget'
 import { OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
@@ -20,6 +22,7 @@ import { prAttachmentService } from '@/services/prAttachments'
 import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useVendors } from '@/hooks/useVendors'
 import { useAuthStore } from '@/stores/auth.store'
+import { userService, type ApiUserBrief } from '@/services/users'
 import type { ApiVendor } from '@/services/vendors'
 import type { ApiBudgetL1 } from '@/services/budget'
 import type { PrLineItem, Currency, ProcurementType } from '@/types'
@@ -74,6 +77,7 @@ export default function PrEditPage() {
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [notes, setNotes] = useState('')
   const [projectCode, setProjectCode] = useState('')
+  const [fixedAssetId, setFixedAssetId] = useState('')
   const [isPrepaid, setIsPrepaid] = useState(false)
   const [justification, setJustification] = useState('')
   const [justificationError, setJustificationError] = useState<string | null>(null)
@@ -88,6 +92,38 @@ export default function PrEditPage() {
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
   const [selectedVendor, setSelectedVendor] = useState<ApiVendor | null>(null)
+
+  // service/project owner — mirrors PrCreatePage's picker
+  const ownerAnchorRef = useRef<HTMLDivElement>(null)
+  const [ownerOpen, setOwnerOpen] = useState(false)
+  const ownerRect = useAnchorRect(ownerOpen, ownerAnchorRef)
+  const [ownerQuery, setOwnerQuery] = useState('')
+  const [selectedOwner, setSelectedOwner] = useState<ApiUserBrief | null>(null)
+  const { data: ownersData } = useQuery({
+    queryKey: ['users', 'directory', ownerQuery],
+    queryFn: () => userService.directory({ search: ownerQuery || undefined }),
+    enabled: ownerOpen,
+    staleTime: 30_000,
+  })
+  const owners = ownersData?.items ?? []
+  // The saved owner is a bare id; owner_name off the PR response already
+  // resolves it (INCLUDING the NULL-means-requester fallback), so the picker is
+  // seeded from the two together and no extra lookup is needed. It therefore
+  // holds a person from first render, and — like the Create page — cannot be
+  // emptied afterwards.
+  useEffect(() => {
+    if (!pr || selectedOwner) return
+    const ownerId = pr.owner_id ?? pr.created_by
+    if (!ownerId) return
+    setSelectedOwner({
+      id: ownerId,
+      full_name: pr.owner_name ?? pr.created_by_name ?? '—',
+      email: '',
+      role: '',
+      department_id: null,
+      department_name: null,
+    })
+  }, [pr, selectedOwner])
 
   // cost center + budget
   const [selectedCostCenter, setSelectedCostCenter] = useState('')
@@ -124,6 +160,7 @@ export default function PrEditPage() {
     setDeliveryAddress(pr.delivery_address ?? '')
     setNotes(pr.notes ?? '')
     setProjectCode(pr.project_code ?? '')
+    setFixedAssetId(pr.fixed_asset_id ?? '')
     setIsPrepaid(pr.is_prepaid ?? false)
     setJustification(pr.over_budget_justification ?? '')
     setFactorCombo(pr.factor_combo ?? {})
@@ -213,6 +250,7 @@ export default function PrEditPage() {
     department_id: selectedDepartmentId,
     budget_code: selectedL2 || undefined,
     project_code: projectCode || undefined,
+    fixed_asset_id: fixedAssetId || undefined,
     // Only send the combo when every factor is picked (satisfies the server-side
     // shape check); lets a decomposition combo be corrected via Edit.
     factor_combo:
@@ -221,6 +259,13 @@ export default function PrEditPage() {
         : undefined,
     required_by: requiredBy || undefined,
     service_completion_date: serviceCompletionDate || undefined,
+    // Only for the service/project pair — the picker is not rendered otherwise,
+    // and PATCH treats undefined as "leave alone". Within the pair it is always
+    // sent: the combo box is seeded from owner_id ?? created_by, so it holds a
+    // person from first render and what it shows is what gets saved.
+    owner_id: (procurementType === 4 || procurementType === 6)
+      ? (selectedOwner?.id ?? pr?.created_by)
+      : undefined,
     delivery_address: deliveryAddress || undefined,
     notes: notes || undefined,
     is_prepaid: isPrepaid,
@@ -254,6 +299,8 @@ export default function PrEditPage() {
     e.preventDefault()
     if (!id || !title.trim() || !requiredBy) return
     if ((procurementType === 4 || procurementType === 6) && !serviceCompletionDate) return
+    if (procurementType === 5 && !fixedAssetId.trim()) return
+    if (procurementType === 6 && !projectCode.trim()) return
     const errs = validateLineItems(lineItems)
     if (Object.keys(errs).length > 0) { setLineErrors(errs); return }
     if (estimatedAmount === 0) { setLineErrors({ '0': { unitPrice: 'At least one line must have a price' } }); return }
@@ -593,6 +640,7 @@ export default function PrEditPage() {
                 Feeds app/tasks/service_gr_due.py, which nudges the requester to
                 create a GR once this date passes. Required on submit server-side. */}
             {(procurementType === 4 || procurementType === 6) && (
+              <div id="completion-date">
               <FormField label="Service/Project Expected Completion Date" required htmlFor="serviceCompletionDate">
                 <div className="relative">
                   <Input
@@ -604,20 +652,86 @@ export default function PrEditPage() {
                   <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                 </div>
               </FormField>
+              </div>
+            )}
+
+            {/* Fixed Asset ID — Type 5 only. The edit form is where a PR
+                blocked by the submit gate gets unblocked, so the field has to
+                exist here; it was only ever on the create form, where its value
+                was discarded. */}
+            {procurementType === 5 && (
+              <div id="fixed-asset-id">
+                <FormField label="Fixed Asset ID" required htmlFor="fixedAssetId">
+                  <input
+                    id="fixedAssetId"
+                    type="text"
+                    value={fixedAssetId}
+                    onChange={(e) => setFixedAssetId(e.target.value)}
+                    placeholder="e.g. FA-2026-0001"
+                    className="h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  />
+                </FormField>
+              </div>
+            )}
+
+            {/* Service/Project Owner — Types 4 and 6. Whoever is named here
+                receives the confirm-service-delivery task and email once the
+                completion date passes, instead of the requester. */}
+            {(procurementType === 4 || procurementType === 6) && (
+              <div ref={ownerAnchorRef} className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-neutral-700" htmlFor="serviceOwner">
+                  Service/Project Owner <span className="text-danger-600">*</span>
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                  <input
+                    id="serviceOwner"
+                    type="text"
+                    placeholder="Search people by name…"
+                    value={ownerOpen ? ownerQuery : (selectedOwner?.full_name ?? '')}
+                    onFocus={() => { setOwnerOpen(true); setOwnerQuery('') }}
+                    onChange={(e) => { setOwnerQuery(e.target.value); setOwnerOpen(true) }}
+                    className="h-10 w-full rounded-md border border-neutral-300 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  />
+                </div>
+                {ownerOpen && ownerRect && (
+                  <DropdownPortal anchorRect={ownerRect} onClose={() => { setOwnerOpen(false); setOwnerQuery('') }}>
+                    {owners.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-primary-50 text-left"
+                        onClick={() => { setSelectedOwner(u); setOwnerOpen(false); setOwnerQuery('') }}
+                      >
+                        <span>{u.full_name}</span>
+                        {u.department_name && <span className="text-xs text-neutral-400">{u.department_name}</span>}
+                      </button>
+                    ))}
+                    {owners.length === 0 && (
+                      <p className="px-3 py-2 text-sm text-neutral-400">No people found</p>
+                    )}
+                  </DropdownPortal>
+                )}
+                <p className="text-xs text-neutral-400">
+                  Receives the task and email to confirm the service was delivered.
+                </p>
+              </div>
             )}
 
             {/* Project Code — Type 6 only */}
             {procurementType === 6 && (
-              <FormField label="Project No." required htmlFor="projectCode">
-                <input
-                  id="projectCode"
-                  type="text"
-                  value={projectCode}
-                  onChange={(e) => setProjectCode(e.target.value)}
-                  placeholder="e.g. PROJ-2026-001"
-                  className="h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-                />
-              </FormField>
+              <div id="project-code">
+                <FormField label="Project No." required htmlFor="projectCode">
+                  <input
+                    id="projectCode"
+                    type="text"
+                    value={projectCode}
+                    onChange={(e) => setProjectCode(e.target.value)}
+                    placeholder="e.g. PROJ-2026-001"
+                    className="h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  />
+                </FormField>
+              </div>
             )}
 
             {/* Notes */}

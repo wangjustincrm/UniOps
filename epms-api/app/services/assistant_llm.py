@@ -97,6 +97,24 @@ Rules:
   statuses, currencies, codes.
   This matters more than it looks: `eq` on a shortened name matches nothing, and
   nothing is indistinguishable from "we never bought from them".
+- purchase_order.created_at is when the order was IMPORTED for most of the
+  history, not when it was raised: nothing in the table is dated before
+  2024-01-03 even though 986 orders carry 2023 numbers, and the PMS migration
+  stamped its own run date on hundreds at a time. A period filter over it is
+  still the best available and is fine for "recent" questions, but if someone
+  asks about a specific year before 2026, say that the date recorded is the
+  import date and that the count is therefore not a count of that year's
+  purchasing. Returning 0 for 2023 without saying that reads as "we bought
+  nothing", which is false.
+- When the question asks for what was ON a document — line items, "包括
+  LineItem", "with the line items", what was ordered, what was requested, the
+  detail behind the total — query the LINE entity (po_line, pr_line), not the
+  header. One row per line, with the header's fields reached across the link:
+    po_line  select ["order.number", "order.vendor_name", "description",
+                     "qty", "unit_price", "line_total"]
+  Returning the headers and saying the lines need a separate query is not an
+  answer. It is the answer that made someone ask twice, and the second time
+  there was nothing left to ask for.
 - You CAN reach fields on related entities. Each entity lists `links`; address a
   field across one as "<link>.<field>", and chain up to three of them. Examples:
     purchase_order  group_by ["originating_pr.department_name"]
@@ -115,14 +133,41 @@ Rules:
   so is a correct answer. Guessing is not.
 - If they are asking what THEY should do — what is waiting for them, what is in
   their inbox, what they owe — call whats_next.
+- "How many X can we make from what we have", "which material runs out first",
+  "what is stopping us making more X" is how_many_can_we_make, never a query.
+  It needs the recipe and the stock and arithmetic over both; a query returns
+  one table and cannot do it. Listing the stock of a few components and adding
+  it up is not an answer — the components that constrain production are usually
+  several recipe levels below the ones a single query would reach, and a total
+  across different materials is not a quantity of anything.
 - "Why does the plan say X" is explain_plan, not a query. The reasoning is
   recorded — forecast, opening stock, carry-in and the engine's flags are all on
   the line — so answering that the system does not record it is wrong.
 - explain_process is about the APPROVAL CHAIN — who signs off, in what order.
-  It is not about the data. "What types of PR are there", "what statuses exist",
-  "what fields does an invoice have" are questions about the data: answer them
-  with a query, grouping by the field in question so the reply carries how many
-  of each there are, which is more use than the list alone.
+  It is not about the data, and it is not about the form.
+- "What PR types are there", "what is the difference between them", "what do I
+  fill in for a type 5", "which type should I pick" are questions about the
+  FORM: call explain_document_types. Answering these with the approval chain is
+  wrong, and it is the mistake this route exists to stop — someone asking what
+  distinguishes the types does not want to be told who approves them.
+- "What modules are there", "what can I do in this system", "where do I claim
+  an expense", "what is MRP for" are about the SYSTEM, not one document: call
+  explain_modules. It is the layer above explain_document_types — use it when
+  they have not narrowed to a document yet, and when someone is plainly in the
+  wrong place and needs pointing at the right module.
+- The same route covers the other documents: PO types, the two kinds of goods
+  receipt, the four kinds of payment application, what the invoice statuses
+  mean, and the three kinds of purchase agreement. "What is a house account",
+  "what is the difference between a prepayment and a settlement PA", "why is
+  this invoice in exception" — all explain_document_types.
+- "How many PRs of each type", "which type do we raise most", "how many invoices
+  are in exception" are questions about the DATA: run a query grouped by the
+  field. The dividing line is whether they are asking what a value MEANS or how
+  many there ARE. "What does exception mean" is the guide; "which ones are in
+  exception" is a query.
+- "What statuses exist", "what fields does an invoice have" remain data
+  questions: query them, grouping by the field in question so the reply carries
+  how many of each there are, which is more use than the list alone.
 - If they are asking how a process works in general, rather than about one
   document, call explain_process. Many people here were never trained on this
   system, so "how does this work" is a real question and deserves the configured
@@ -148,6 +193,13 @@ You are answering a colleague's question inside UniOps, a purchasing system.
 
 You are given their question, the query that was run, and its results. The
 results are the only facts you have.
+
+- `near_misses` appears only when the query found NOTHING and a name search was
+  involved. It lists values that do exist and are close to what they typed. Do
+  not report "no records" on its own in that case — say nothing matched the name
+  as given, and name the close values, because the usual cause is a shortened or
+  slightly wrong name rather than an absence. These came from rows this person
+  can already see, so offering them leaks nothing.
 
 - Answer in the language the question was asked in.
 - Be direct. Lead with the answer, not with a description of what you did.
@@ -327,6 +379,88 @@ _PROCESS_TOOL = {
     },
 }
 
+_PRODUCIBLE_TOOL = {
+    "name": "how_many_can_we_make",
+    "description": (
+        "Use when someone asks how many of a product could be produced from "
+        "the material currently in stock — '现存的原料能生产多少S0102', 'how "
+        "many X can we make', 'what is stopping us making more X', 'which "
+        "material runs out first'. Explodes the product's recipe through every "
+        "sub-recipe to the raw materials, reads what the warehouse actually "
+        "has available, and does the division in code. Never attempt this with "
+        "a query: it needs the recipe AND the stock AND arithmetic across "
+        "both, and a query returns one table."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "product": {
+                "type": "string",
+                "description": "The product's material code, e.g. 'S0102'.",
+            },
+            "exclude": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Material codes to leave out of the calculation, when the "
+                    "question says to ignore one — '不考虑CR0059'. A material "
+                    "excluded here takes everything below it in the recipe "
+                    "with it."
+                ),
+            },
+        },
+        "required": ["product"],
+    },
+}
+
+_MODULES_TOOL = {
+    "name": "explain_modules",
+    "description": (
+        "Use when someone asks what the system as a whole does, what parts it "
+        "has, or where a thing belongs — 'what modules are there', 'what can I "
+        "do in UniOps', 'where do I go to claim an expense', 'what is the "
+        "difference between OA and Procurement', 'what is MRP for'. Answers "
+        "with what each module covers, who uses it, and what you typically do "
+        "there. For the types and fields of one document, use "
+        "explain_document_types instead."
+    ),
+    "input_schema": {"type": "object", "properties": {}},
+}
+
+_DOC_TYPES_TOOL = {
+    "name": "explain_document_types",
+    "description": (
+        "Use when someone asks what KINDS of a document exist and how they "
+        "differ, or what a document IS and what you have to fill in for it — "
+        "'what PR types are there', 'what changes when I create a type 5', "
+        "'what is the difference between a prepayment and a settlement', "
+        "'what do the invoice statuses mean', 'what is a house account', "
+        "'what is the difference between a physical and a service receipt'. "
+        "Answers with what each kind is for and what the system actually makes "
+        "you supply, read off the create schema and the submit gates rather "
+        "than from any description of them. This is a question about the FORM "
+        "and the document itself, not about who signs off — explain_process "
+        "answers the second and is the wrong answer to the first."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "doc_type": {
+                "type": "string",
+                "enum": ["pr", "po", "gr", "pa", "invoice", "agreement"],
+                "description": (
+                    "pr purchase request · po purchase order · gr goods "
+                    "receipt or service confirmation · pa payment application "
+                    "(regular/prepayment/settlement/balance) · invoice the "
+                    "matching states · agreement purchase agreement "
+                    "(house account/recurring/milestone)"
+                ),
+            },
+        },
+        "required": ["doc_type"],
+    },
+}
+
 _EXPLAIN_PLAN_TOOL = {
     "name": "explain_plan",
     "description": (
@@ -473,7 +607,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             max_tokens=_PLAN_MAX_TOKENS,
             system=system,
             tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _NEXT_TOOL,
-                   _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _CANNOT_TOOL],
+                   _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
+                   _MODULES_TOOL, _PRODUCIBLE_TOOL, _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -498,6 +633,12 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             return {"kind": "next", "usage": _usage(resp)}
         if block.name == "explain_process":
             return {"kind": "process", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "how_many_can_we_make":
+            return {"kind": "producible", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "explain_modules":
+            return {"kind": "modules", "usage": _usage(resp)}
+        if block.name == "explain_document_types":
+            return {"kind": "doc_types", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_plan":
             return {"kind": "plan", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_workflow":
@@ -707,7 +848,10 @@ async def narrate_workflow(message: str, view: dict) -> dict:
 _GUIDE_SYSTEM = """\
 You are helping a colleague who may never have been trained on this system.
 
-- Answer in the language the question was asked in.
+- Answer in the language the question was asked in. Match it exactly: a
+  question in Chinese is answered in Chinese, not in another CJK language —
+  one run of this prompt answered a Chinese question in Korean, which reads as
+  a broken system even when every number in it is right.
 - Write for someone who does not know the jargon. Say "the person who approves
   for your department", not "the dept_manager node".
 - For a task list: lead with how many things are waiting and what the most
@@ -722,7 +866,44 @@ You are helping a colleague who may never have been trained on this system.
 - If steps_available is false the engine could not be reached; say the chain
   could not be read rather than describing one from memory. You do not know
   this process except from what you were given.
-- Never invent a step, a role, a rule, or a task.
+- For document types: this is the form, not the approval chain. Do not describe
+  who approves anything — that was not asked and is a different question.
+  Give the types as a table when there are more than three, one row each, and
+  make the columns the things that actually differ. `covers` and `when_to_pick`
+  say what the type is for; `required_before_submit` is what the system will
+  stop them on; `receipt` is how the purchase gets confirmed as received.
+  Read `requirements_are` before describing either requirement list — it says
+  exactly what each covers. `required_to_create_any` applies to every kind;
+  `required_before_submit` is the EXTRA gates checked when the document leaves
+  draft, and an empty list there means no extra gates, never "no requirements".
+  Neither list is every difference between the kinds, so do not present it as
+  one. `what_it_is` explains the document itself — lead with it when they seem
+  to be asking what the thing is, not just how the kinds differ.
+  If `how_types_are_set` is present, say so: for most documents the kind is not
+  chosen by the person asking, and someone hunting for a dropdown that does not
+  exist needs telling.
+  If a type carries `notes`, work them in; they are there because they matter.
+  End with the one line a requester most needs: which type their case sounds
+  like, if the question named one.
+- For "how many can we make": the number in `can_make` is the answer and it was
+  computed for you — never recompute it, never adjust it, and never add a
+  material's quantity to another's. Lead with the number, then name what is
+  limiting it (`limited_by`) and what that material's situation is, because
+  "what do I do about it" is the next question. A material whose problem says
+  stock exists but none is usable is a different problem from one with no stock
+  at all — say which. Mention anything in `excluded` and `could_not_compute`;
+  a figure computed with a material left out is only honest if the omission is
+  stated. Pass on `basis` in your own words — this is a rough reference, and
+  presenting it as a production commitment would be the wrong reading.
+- For modules: answer what they asked and no more. Someone asking where to
+  claim an expense wants OA named and a sentence on why, not a tour of eight
+  modules. Give the full list only when they asked for the full list.
+  `can_explain_further` is the only place you may offer to go deeper; offering
+  a document kind that is not in it promises something that will then be
+  refused.
+- Never invent a step, a role, a rule, a task, a module, or a field. If a type
+  has no requirement beyond what every type has, say that plainly — "nothing
+  extra" is an answer, and inventing a distinction to fill the row is not.
 """
 
 

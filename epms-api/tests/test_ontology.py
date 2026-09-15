@@ -106,7 +106,16 @@ def test_shipped_date_fields_are_non_nullable_or_acknowledged():
         # test_ontology_matches_the_database.
         if entity.model.__tablename__ in _TABLE_MODELS:
             continue
-        nullable = getattr(entity.model, entity.date_field).property.columns[0].nullable
+        # A line entity has no date of its own and anchors on its parent's —
+        # "po_line.order.created_at". Resolve the hop and check the column that
+        # the period filter will really land on, which is the parent's.
+        model, attr = entity.model, entity.date_field
+        while "." in attr:
+            hop, attr = attr.split(".", 1)
+            link = entity.links[hop] if hop in entity.links else None
+            assert link is not None, f"{entity.name}.date_field crosses unknown link {hop!r}"
+            model = REGISTRY[link.target].model
+        nullable = getattr(model, attr).property.columns[0].nullable
         if nullable:
             assert entity.name in acknowledged, (
                 f"{entity.name}.{entity.date_field} is nullable and not acknowledged"

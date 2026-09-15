@@ -15,6 +15,7 @@ from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
 from app.crud.agreement_schedule import reassign_open_confirm_tasks
 from app.crud.gr import resync_po_received_qty, sync_po_receipt_status
+from app.crud.pr import reassign_open_receipt_tasks
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.approval import ApprovalEvent
 from app.models.invoice import Invoice
@@ -367,6 +368,18 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
         await db.flush()
         received_qty_resynced = await resync_po_received_qty(db, row.po_id)
 
+    receipt_tasks_reassigned = 0
+    if entity == "pr" and before.get("owner_id") != (
+            str(row.owner_id) if row.owner_id is not None else None):
+        # Mirrors the agreement block below, for the same reason and with the
+        # same blind spot: the three creators of a receipt task resolve the PR
+        # owner once, when the task is raised, and never revisit it. A service
+        # PO's completion date is usually months after the PR was approved, so
+        # this edit — the only write path that reaches a non-draft PR's owner —
+        # is where "the owner left, give it to someone else" actually happens.
+        await db.flush()
+        receipt_tasks_reassigned = await reassign_open_receipt_tasks(db, row)
+
     confirm_tasks_reassigned = 0
     if entity == "agreement" and before.get("owner_id") != (
             str(row.owner_id) if row.owner_id is not None else None):
@@ -398,6 +411,8 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
         after["po_lines_received_qty_resynced"] = received_qty_resynced
     if confirm_tasks_reassigned:
         after["confirm_tasks_reassigned"] = confirm_tasks_reassigned
+    if receipt_tasks_reassigned:
+        after["receipt_tasks_reassigned"] = receipt_tasks_reassigned
     after["_routing_requester_changed"] = routing_requester_changed
     after["_invoice_links_changed"] = invoice_links_changed
     db.add(AdminAuditLog(

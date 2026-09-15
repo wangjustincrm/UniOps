@@ -30,7 +30,8 @@ from app.core.access_scope import build_scope, is_pr_visible
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
-from app.services import guide_view, plan_view
+from app.services import doc_type_guide, guide_view, plan_view
+from app.services import producible_view
 from app.services import workflow_view
 from app.services import controlled_query as cq
 
@@ -99,6 +100,15 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
 
     if planned["kind"] == "process":
         return await _answer_process(db, user, token, body, planned, actor)
+
+    if planned["kind"] == "doc_types":
+        return await _answer_doc_types(db, body, planned, actor)
+
+    if planned["kind"] == "modules":
+        return await _answer_modules(db, body, actor)
+
+    if planned["kind"] == "producible":
+        return await _answer_producible(db, scope, body, planned, actor)
 
     if planned["kind"] == "plan":
         return await _answer_plan_question(db, scope, body, planned, actor)
@@ -361,6 +371,122 @@ async def _answer_plan_question(db, scope, body, planned, actor) -> dict:
         "sources": {"entity": "mrp_mps_line", "row_count": len(explained),
                     "complete": all(e["arithmetic_accounts_for_it"]
                                     or e["reasons"] for e in explained)},
+    }
+
+
+async def _answer_producible(db, scope, body, planned, actor) -> dict:
+    """How many of a product the material on hand would support.
+
+    Gated on mrp.report.view — the same permission as every other MRP entity.
+    This reads recipes and warehouse stock, and reaching them through a
+    calculation rather than a query does not make them less restricted.
+    """
+    if not (scope.get("perms") or {}).get("mrp.report.view", False):
+        return {
+            "answer": "I cannot see recipes or warehouse stock.",
+            "kind": "denied", "reason": "no_permission",
+            "query": None, "sources": None,
+        }
+
+    product = (planned.get("product") or "").strip()
+    if not product:
+        return {
+            "answer": "Tell me which product — its material code works best.",
+            "kind": "cannot_answer", "reason": "no_product",
+            "query": None, "sources": None,
+        }
+
+    try:
+        result = await producible_view.how_many_can_we_make(
+            db, product, set(planned.get("exclude") or []))
+    except producible_view.AmbiguousRecipe as exc:
+        # Refused rather than resolved — see the exception's own docstring.
+        return {
+            "answer": (f"{exc.product} has {len(exc.options)} recipes marked as "
+                       f"the default ({', '.join(exc.options)}). I cannot tell "
+                       f"which one applies, and picking one would give you a "
+                       f"confident answer about the wrong recipe."),
+            "kind": "cannot_answer", "reason": "ambiguous_recipe",
+            "query": None, "sources": None,
+        }
+
+    if result is None:
+        return {
+            "answer": (f"There is no default recipe for {product}, so there is "
+                       f"nothing to explode. If it is a raw material rather "
+                       f"than something we make, ask about its stock instead."),
+            "kind": "cannot_answer", "reason": "no_recipe",
+            "query": None, "sources": None,
+        }
+
+    payload = {"question": body.message, "kind": "producible", **result}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+
+    return {
+        "answer": told["text"], "kind": "producible", "query": None,
+        "producible": result,
+        "sources": {
+            "entity": "bom_line + wms_inventory_lot",
+            "row_count": len(result["materials"]),
+            "levels_deep": result["levels_deep"],
+            "complete": not result["could_not_compute"],
+        },
+    }
+
+
+async def _answer_modules(db, body, actor) -> dict:
+    """What the system is made of. Ungated for the same reason as the types
+    below: it describes scope, reads no rows and names no document."""
+    guide = doc_type_guide.modules()
+    payload = {"question": body.message, "kind": "modules", **guide}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+
+    return {
+        "answer": told["text"], "kind": "modules", "query": None,
+        "modules": guide,
+        "sources": {"modules": len(guide["modules"])},
+    }
+
+
+async def _answer_doc_types(db, body, planned, actor) -> dict:
+    """What kinds of a document exist and what differs when you create one.
+
+    Ungated, unlike every other route here, and deliberately: this describes the
+    shape of a form, not anyone's documents. It reads no rows, takes no scope
+    and names no PR — a requester who cannot see a single purchase request still
+    has to know what a type 5 is before they raise one. Gating it would have
+    meant the people most likely to ask were the ones who could not.
+    """
+    doc_type = (planned.get("doc_type") or "").lower()
+    if doc_type not in doc_type_guide.SUPPORTED:
+        return {
+            "answer": ("I can explain purchase requests, purchase orders, goods "
+                       "receipts, payment applications, invoices and purchase "
+                       "agreements — not that."),
+            "kind": "cannot_answer", "reason": "not_supported",
+            "query": None, "sources": None,
+        }
+
+    guide = doc_type_guide.build(doc_type)
+    payload = {"question": body.message, "kind": "document_types", **guide}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+
+    return {
+        "answer": told["text"], "kind": "document_types", "query": None,
+        "document_types": guide,
+        "sources": {"document": guide["label"], "types": len(guide["types"])},
     }
 
 

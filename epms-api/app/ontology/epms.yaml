@@ -28,7 +28,10 @@ entities:
 
   purchase_request:
     model: PurchaseRequest
-    label: "Purchase Request (PR) — the requisition that starts a purchase"
+    label: "Purchase Request (PR) — the requisition that starts a purchase.
+      HEADER ONLY: requester, department, budget account, status and the total.
+      What was actually asked for — descriptions, quantities, unit prices — is
+      on `pr_line`"
     perm_key: view_pr
     scope: pr
     date_field: created_at
@@ -83,10 +86,19 @@ entities:
         local: id
         remote: pr_id
         label: "Goods receipts recorded against this requisition"
+      lines:
+        target: pr_line
+        cardinality: one_to_many
+        local: id
+        remote: pr_id
+        label: "What was asked for — the line items"
 
   purchase_order:
     model: PurchaseOrder
-    label: "Purchase Order (PO) — the order placed with a vendor"
+    label: "Purchase Order (PO) — the order placed with a vendor. HEADER ONLY:
+      vendor, dates, status and the total. It does NOT carry what was ordered —
+      for line items, descriptions, quantities or unit prices, query `po_line`
+      instead and reach these fields across its `order` link"
     perm_key: view_po
     scope: po
     # placed_at reads like the right answer — it is when the order actually went
@@ -97,12 +109,33 @@ entities:
     # months" question. Measured 2026-09-13: last 3 months returns 650 orders by
     # created_at against 186 by placed_at.
     #
-    # created_at is populated for every row, and NC's import preserves the
-    # original dates (its rows span 2024-01 to 2026-08, not the sync window), so
-    # it is a real business date rather than a mirroring timestamp.
+    # ── created_at is NOT the order date for anything before 2026 ─────────────
+    # This block used to claim it was "a real business date rather than a
+    # mirroring timestamp". Measured 2026-09-15, that is false for most of the
+    # history. Comparing the year in each PO number (which encodes YYMM) against
+    # created_at:
     #
-    # placed_at stays available as a field — ask for it explicitly when the
-    # question really is about EPMS-issued orders.
+    #     numbers saying 2023   986 orders    0.0% have created_at in 2023
+    #     numbers saying 2024  1874 orders    5.9%
+    #     numbers saying 2025  2163 orders   47.3%
+    #     numbers saying 2026  1633 orders  100.0%
+    #
+    # The earliest created_at in the whole table is 2024-01-03, so NOTHING is
+    # dated 2023 even though 986 orders were raised then. The PMS migration
+    # stamped its own run date: 320 orders share created_at 2024-07-17 and 190
+    # share 2024-11-25, which are import batches, not days of heavy purchasing.
+    #
+    # It stays the date axis because it is the only column populated on every
+    # row — placed_at is set on 186 of 6755 — but a period filter over it means
+    # "imported or raised in", and for a question about 2023 or 2024 that is a
+    # different question from the one asked.
+    #
+    # There is no better column to switch to. The order's real date survives
+    # only inside its NUMBER, which encodes YYMM, and exposing that would mean
+    # attaching a computed column to the PurchaseOrder model every other query
+    # in this service also uses — too much blast radius for one field. Until a
+    # real order_date column is backfilled, the assistant is told to say what
+    # the axis means rather than pretend it means something else.
     date_field: created_at
     fields:
       number: {kind: text, label: "PO number"}
@@ -173,6 +206,95 @@ entities:
         local: id
         remote: po_id
         label: "Payment applications raised against this order"
+      lines:
+        target: po_line
+        cardinality: one_to_many
+        local: id
+        remote: po_id
+        label: "What was actually ordered — the line items"
+
+  # ── Line items ──────────────────────────────────────────────────────────────
+  #
+  # Added 2026-09-15. Asked for a vendor's orders "including LineItem", the
+  # assistant returned the headers and told the requester to "request a query of
+  # purchase_order_line_item" — an entity it had invented. Asked for exactly
+  # that, it correctly answered that no such entity exists. It had sent someone
+  # on a round trip to a table it made up, which is worse than declining.
+  #
+  # Neither line entity carries a scope of its own. A line is exactly as visible
+  # as the document it belongs to, and giving it independent rules would be a
+  # second opinion about who may see an order — two answers that drift. Both
+  # scope through the parent's subquery, the way goods_receipt already does.
+  po_line:
+    model: PoLineItem
+    label: "Purchase Order line — one thing that was ordered, with its quantity
+      and price. This is the entity for \"what was ON the order\"; reach the
+      vendor, date and status through `order`"
+    perm_key: view_po
+    scope: po_line
+    # Lines have no date of their own. Anchoring a period on the order's date
+    # is what makes \"what did we buy from them since 2023\" work — without
+    # this the only date reachable is the header's, one hop away, and a period
+    # filter would be silently dropped.
+    date_field: order.created_at
+    fields:
+      po_id: {kind: uuid, internal: true}
+      description: {kind: text, label: "Description"}
+      material_id: {kind: text, label: "Material ID"}
+      supplier_item_id: {kind: text, label: "Supplier item ID"}
+      qty: {kind: money, label: "Quantity ordered"}
+      unit: {kind: text, label: "Unit"}
+      # NUMERIC(15,5) in the database, not (15,2): NC quotes to five decimals
+      # and rounding to cents put 319 of 4,944 production lines out by 43,256
+      # in total. Reported at full precision for the same reason.
+      unit_price: {kind: money, label: "Unit price"}
+      line_total: {kind: money, label: "Line total"}
+      # How much of this line has actually arrived. The gap between this and qty
+      # is what is still outstanding, per line rather than per order.
+      received_qty: {kind: money, label: "Quantity received so far"}
+      sample: {kind: text, label: "Sample required"}
+      planned_arrival_date: {kind: date, label: "Planned arrival (NC orders only)"}
+    metrics:
+      count: {fn: count, field: "*", label: "Lines"}
+      qty: {fn: sum, field: qty, label: "Quantity"}
+      value: {fn: sum, field: line_total, label: "Line value"}
+    links:
+      order:
+        target: purchase_order
+        cardinality: many_to_one
+        local: po_id
+        remote: id
+        label: "The order this line is on"
+
+  pr_line:
+    model: PrLineItem
+    label: "Purchase Request line — one thing that was asked for, with its
+      quantity and price. Reach the requester, department and status through
+      `request`"
+    perm_key: view_pr
+    scope: pr_line
+    date_field: request.created_at
+    fields:
+      pr_id: {kind: uuid, internal: true}
+      description: {kind: text, label: "Description"}
+      material_id: {kind: text, label: "Material ID"}
+      supplier_item_id: {kind: text, label: "Supplier item ID"}
+      qty: {kind: money, label: "Quantity requested"}
+      unit: {kind: text, label: "Unit"}
+      unit_price: {kind: money, label: "Unit price"}
+      line_total: {kind: money, label: "Line total"}
+      notes: {kind: text, label: "Line notes"}
+    metrics:
+      count: {fn: count, field: "*", label: "Lines"}
+      qty: {fn: sum, field: qty, label: "Quantity"}
+      value: {fn: sum, field: line_total, label: "Line value"}
+    links:
+      request:
+        target: purchase_request
+        cardinality: many_to_one
+        local: pr_id
+        remote: id
+        label: "The requisition this line is on"
 
   goods_receipt:
     model: GoodsReceipt

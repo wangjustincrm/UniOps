@@ -1,0 +1,85 @@
+# Invoices have no "type" — they have a matching state, and that is what people
+# actually ask about: why is this one still unmatched, what does exception mean,
+# why has it not gone to payment.
+#
+# Derived: InvoiceCreate's required fields. There are no doc_preflight submit
+# gates for invoices — an invoice is not submitted, it is matched.
+#
+# ── One thing worth knowing before editing this ──────────────────────────────
+# The last two states are not written by EPMS. finance-api writes "paid" and
+# "partially_paid" straight into this same invoices table through its own
+# mirrored model when a payment actually executes. So an invoice can change
+# state without anything in EPMS having touched it, and the model's own comment
+# listing the states omits partially_paid. Verified in
+# crud/invoice.py:824 and finance-api/app/crud/payment_execute.py.
+topic: invoice_states
+label: Invoice matching states
+doc_type: invoice
+field: status
+
+what_it_is: >
+  What the vendor billed. An invoice is matched against the purchase order it
+  belongs to and the receipt proving the goods arrived — the three-way match —
+  and only a matched invoice can be paid.
+
+how_types_are_set: >
+  Not chosen. The state follows from matching: EPMS moves an invoice through
+  unmatched, matched, match_review and exception, and finance-api moves it to
+  paid or partially paid when a payment actually executes.
+
+question_hints:
+  - what do the invoice statuses mean
+  - why is this invoice still unmatched
+  - what is an invoice exception
+  - how does invoice matching work
+  - why has this invoice not been paid
+
+values:
+  - value: unmatched
+    label: Unmatched
+    covers: Uploaded, not yet tied to a purchase order.
+    when: >
+      Where every invoice starts. It stays here until someone matches it, or
+      until it is auto-attached to a PO whose receipts line up.
+    notes:
+      - An invoice can be split across several purchase orders. If it is, each
+        allocation line carries its own share, and the split is what gets paid
+        — not the header total.
+
+  - value: matched
+    label: Matched
+    covers: Tied to a purchase order and its receipts, and ready to be paid.
+    when: The normal resting state before a payment application is raised.
+
+  - value: match_review
+    label: Match review
+    covers: Matched automatically, but wanting a human to confirm it.
+    when: >
+      When the system found a plausible match it is not confident enough to
+      apply on its own.
+
+  - value: exception
+    label: Exception
+    covers: Something does not line up — quantity, price, or missing receipt.
+    when: >
+      Raised when the three-way match fails. It carries a task to whoever has
+      to resolve it, and it cannot be paid until that is cleared.
+
+  - value: approved
+    label: Approved
+    covers: Cleared for payment.
+    when: Set once a payment application covering it has been approved.
+
+  - value: paid
+    label: Paid
+    covers: Payment has actually executed.
+    when: >
+      Written by Finance when the money moves, not by EPMS. An invoice can
+      change to this without anything in EPMS having been touched.
+
+  - value: partially_paid
+    label: Partially paid
+    covers: Some of the invoice has been paid, the rest is still outstanding.
+    when: >
+      Also written by Finance on execution, when a payment covers only part of
+      what was billed.

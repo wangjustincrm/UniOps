@@ -1,0 +1,62 @@
+# Purchase Agreements — three kinds, and each one exists because a different
+# shape of spend does not fit a PR-per-purchase.
+#
+# Derived: AgreementCreate's required fields. Agreements have no doc_preflight
+# submit gates; their rules are enforced by a model_validator on
+# AgreementCreate (422) and by crud.agreement.update (409), which is why a
+# recurring agreement with no cycle is rejected at create rather than at submit.
+topic: agreement_types
+label: Purchase Agreement types
+doc_type: agreement
+field: agreement_type
+
+what_it_is: >
+  A standing arrangement with a vendor, so that recurring or open-ended spend
+  does not need a fresh purchase requisition every time. Invoices are claimed
+  against the agreement instead.
+
+question_hints:
+  - what types of purchase agreement are there
+  - what is a house account
+  - what is the difference between recurring and milestone
+  - how do I set up a standing arrangement with a vendor
+
+values:
+  - value: house_account
+    label: House Account
+    covers: >
+      An open account with a vendor that individual purchases are charged
+      against as they happen.
+    when: >
+      When you buy from the same vendor repeatedly in small, unplanned amounts
+      and raising a PR each time would be pure overhead.
+    notes:
+      - Purchases are charged against an open purchase order rather than a new
+        one per transaction.
+
+  - value: recurring
+    label: Recurring
+    covers: A fixed, repeating charge — rent, a service contract, a subscription.
+    when: >
+      When the same amount falls due on a cycle. The cycle generates the
+      expected invoice schedule, and arriving invoices are claimed against it.
+    notes:
+      - You must pick a cycle — weekly, monthly, quarterly, yearly, or special
+        monthly — and the day the invoice is expected. An agreement created
+        without both is rejected outright, because a recurring agreement with
+        no schedule produces no periods and nothing can ever be claimed
+        against it.
+      - >-
+        Special monthly is for charges that fall in only some months of the
+        year — you tick the months that actually bill.
+      - For a weekly cycle the expected day is a weekday, 1 to 7, Monday first.
+
+  - value: milestone
+    label: Milestone
+    covers: A staged arrangement where payment follows defined deliverables.
+    when: >
+      When the work has phases and each phase bills on completion rather than
+      on a calendar.
+    notes:
+      - Milestones can only be attached to this type; supplying them on any
+        other kind is rejected.

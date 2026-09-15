@@ -51,9 +51,10 @@ async def _grant_gr_receive(db):
         "VALUES ('warehouse_staff','epms.gr.receive') ON CONFLICT DO NOTHING"))
 
 
-async def _issued_po(db, *, po_type: int = 1, pr_requester=None):
+async def _issued_po(db, *, po_type: int = 1, pr_requester=None, pr_owner=None):
     """A committed issued PO (physical by default). When pr_requester is given,
-    an approved PR raised by that user is linked (service confirm-delivery)."""
+    an approved PR raised by that user is linked (service confirm-delivery);
+    pr_owner additionally names a different service owner on that PR."""
     v = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name="Acme", category="supplier",
                contact_name="C", contact_email="c@x.com")
     db.add(v); await db.flush()
@@ -64,7 +65,8 @@ async def _issued_po(db, *, po_type: int = 1, pr_requester=None):
     if pr_requester is not None:
         pr = PurchaseRequest(number=f"PR-{uuid.uuid4().hex[:8]}", title="Svc PR",
                              type=po_type, status="approved", vendor_id=v.id,
-                             vendor_name="Acme", created_by=pr_requester.id)
+                             vendor_name="Acme", created_by=pr_requester.id,
+                             owner_id=pr_owner.id if pr_owner is not None else None)
         db.add(pr); await db.flush()
         pr_id = pr.id
     po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:8]}", title="PO", type=po_type,
@@ -139,3 +141,54 @@ async def test_pr_requester_can_create_service_gr_without_warehouse_permission(t
     async with _client_for(user) as c:
         r = await c.post(GR_URL, json=_gr_payload(po_id))
     assert r.status_code == 201, r.text
+
+
+# ── Service owner admission ───────────────────────────────────────────────────
+#
+# A service/project PR can name an OWNER other than its requester, and the
+# completion-date sweep routes the confirm_receipt task there. That task's deep
+# link goes straight to /gr/new?poId=, so this gate has to admit the owner or
+# the reminder walks its recipient into a 403.
+
+
+async def _service_po_with_owner(test_engine):
+    """A type-4 PO whose PR was raised by one person and owned by another.
+    Returns (requester, owner, outsider, po_id) — all plain requesters with no
+    warehouse permission whatsoever."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_gr_receive(db)
+        requester = await _user(db, base_role="requester")
+        owner = await _user(db, base_role="requester")
+        outsider = await _user(db, base_role="requester")
+        po_id = await _issued_po(db, po_type=4, pr_requester=requester, pr_owner=owner)
+        await db.commit()
+    return requester, owner, outsider, po_id
+
+
+@pytest.mark.asyncio
+async def test_pr_owner_can_create_service_gr_without_warehouse_permission(test_engine):
+    _requester, owner, _outsider, po_id = await _service_po_with_owner(test_engine)
+    async with _client_for(owner) as c:
+        r = await c.post(GR_URL, json=_gr_payload(po_id))
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_naming_an_owner_does_not_strip_the_requester(test_engine):
+    """Union, not replacement: an admin who raised a service PR for an absent
+    engineer still has to be able to receive it."""
+    requester, _owner, _outsider, po_id = await _service_po_with_owner(test_engine)
+    async with _client_for(requester) as c:
+        r = await c.post(GR_URL, json=_gr_payload(po_id))
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_a_requester_who_is_neither_is_still_refused(test_engine):
+    """The denial half — without it, the two admissions above would also pass
+    if the service branch had simply stopped checking identity."""
+    _requester, _owner, outsider, po_id = await _service_po_with_owner(test_engine)
+    async with _client_for(outsider) as c:
+        r = await c.post(GR_URL, json=_gr_payload(po_id))
+    assert r.status_code == 403, r.text

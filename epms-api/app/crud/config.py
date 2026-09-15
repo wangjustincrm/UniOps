@@ -221,10 +221,15 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "<b>Vendor:</b> {vendor}\n\n"
         "<a href=\"{link}\">Confirm Service &amp; Create GR</a>\n\n{company_name}",
     ),
+    # ★`{requester_name}` 和 `{owner_name}` 渲染的是**同一个人** —— 收到催办却
+    # 没动的那位,也就是 PR 的 Owner(tasks/service_gr_due.py 两个键都填)。
+    # 老的键留着不能删:cfg.email_templates 是**数据行**,生产库里那份模板早就
+    # 写着 {requester_name},代码这边改名只会让线上渲染出一个空洞。新装库用
+    # {owner_name},措辞才和实际收件逻辑对得上。
     "service_gr_escalation": _DEFAULT_EMAIL_TEMPLATE(
         "Overdue: Service Completion Not Confirmed — {po_number}",
         "Hi {recipient_name},\n\nPO <b>{po_number}</b> was expected to be complete on "
-        "<b>{completion_date}</b> — {days_overdue} day(s) ago — and <b>{requester_name}</b> "
+        "<b>{completion_date}</b> — {days_overdue} day(s) ago — and <b>{owner_name}</b> "
         "has not yet confirmed the service or created a goods receipt.\n\n"
         "Until it is confirmed the vendor cannot be paid.\n\n"
         "<b>Vendor:</b> {vendor}\n\n"

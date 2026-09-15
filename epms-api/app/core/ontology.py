@@ -32,8 +32,8 @@ from app.models.pa import PaymentApplication
 from app.models.user import User
 from app.models.department import Department
 from app.models.cost_center import CostCenter
-from app.models.po import PurchaseOrder
-from app.models.pr import PurchaseRequest
+from app.models.po import PoLineItem, PurchaseOrder
+from app.models.pr import PrLineItem, PurchaseRequest
 
 _ONTOLOGY_DIR = Path(__file__).resolve().parent.parent / "ontology"
 ONTOLOGY_PATH = _ONTOLOGY_DIR / "epms.yaml"
@@ -82,7 +82,9 @@ _CARDINALITIES = frozenset({"one_to_many", "many_to_one"})
 # so a drift fails a test instead of a user's question.
 _MODELS: dict[str, type] = {
     "PurchaseRequest": PurchaseRequest,
+    "PrLineItem": PrLineItem,
     "PurchaseOrder": PurchaseOrder,
+    "PoLineItem": PoLineItem,
     "GoodsReceipt": GoodsReceipt,
     "Invoice": Invoice,
     "PaymentApplication": PaymentApplication,
@@ -175,6 +177,24 @@ async def scope_gr(q: Select, scope: dict, db: AsyncSession) -> Select:
     # Scoped through the PO, not by a GR subquery of its own.
     subq = scope.get("po_subq")
     return q if subq is None else q.where(GoodsReceipt.po_id.in_(subq))
+
+
+async def scope_po_line(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """A line is exactly as visible as the order it belongs to.
+
+    Scoped through the PO's subquery rather than getting one of its own. A line
+    entity with a scope of its own would be a second opinion about who may see
+    an order, and the two would drift; this way there is one answer and the
+    lines inherit it.
+    """
+    subq = scope.get("po_subq")
+    return q if subq is None else q.where(PoLineItem.po_id.in_(subq))
+
+
+async def scope_pr_line(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """Same reasoning as scope_po_line, through the requisition."""
+    subq = scope.get("pr_subq")
+    return q if subq is None else q.where(PrLineItem.pr_id.in_(subq))
 
 
 async def invoice_scope_conditions(db: AsyncSession, po_ids_subq,
@@ -424,6 +444,8 @@ _SCOPES: dict[str, Callable] = {
     "pr": scope_pr,
     "po": scope_po,
     "gr": scope_gr,
+    "po_line": scope_po_line,
+    "pr_line": scope_pr_line,
     "invoice": scope_invoice,
     "pa": scope_pa,
     "permission_only": scope_permission_only,

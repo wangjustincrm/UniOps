@@ -106,12 +106,16 @@ async def regenerate_pdf(
     filename = f"{pr.number}.pdf"
     requester_name, approvals = await approval_signatories(db, "pr", pr_id, pr.created_by)
     budget_account_name = await budget_client.get_account_name(token, pr.budget_code)
+    # Same resolution the approval-time generator uses, so Regenerate cannot
+    # print a different owner than the original PDF did.
+    from app.api.v1.pr import _owner_display_name
+    owner_name = await _owner_display_name(db, pr, requester_name)
     loop = asyncio.get_event_loop()
     pdf_bytes = await loop.run_in_executor(
         None, generate_pr_pdf, pr, company_name,
         cfg.pdf_templates if cfg else None,
         cfg.logo_data_url if cfg else None,
-        requester_name, approvals, budget_account_name,
+        requester_name, approvals, budget_account_name, owner_name,
     )
 
     # Replace any prior auto-PDF of the same name (row + backing file).

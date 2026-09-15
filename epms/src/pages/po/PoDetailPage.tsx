@@ -608,13 +608,23 @@ export default function PoDetailPage() {
   // project POs reachable from GR List but not from their own PO page.
   const isServicePo = po?.type === 4 || po?.type === 6
   // Physical PO: warehouse/procurement roles, PO must be issued or partially received
-  // Service PO: the *requester of the linked PR* (not the PO creator, not a generic
-  // 'requester' role) can confirm delivery / create the GR, from approved onwards.
-  const isPrRequester = !!po?.pr_requester_id && po.pr_requester_id === user?.id
+  // Service PO: the *owner or requester of the linked PR* (not the PO creator,
+  // not a generic 'requester' role) can confirm delivery / create the GR, from
+  // approved onwards.
+  //
+  // The UNION of pr_owner_id and pr_requester_id, matching POST /gr's own gate
+  // (epms-api api/v1/gr.py). The two differ whenever a service/project PR named
+  // someone else as its owner: the owner is who receives the confirm-service
+  // task, so gating on the requester alone would show the reminder's recipient
+  // no button — and dropping the requester arm would take the button away from
+  // someone the API still admits.
+  const canConfirmService =
+    (!!po?.pr_owner_id && po.pr_owner_id === user?.id) ||
+    (!!po?.pr_requester_id && po.pr_requester_id === user?.id)
   const canCreateGr =
     (['warehouse_staff', 'procurement_officer', 'procurement_manager', 'system_admin'].includes(user?.role ?? '') &&
       ['issued', 'partially_received'].includes(po?.status ?? '')) ||
-    (isServicePo && isPrRequester &&
+    (isServicePo && canConfirmService &&
       ['approved', 'issued', 'partially_received'].includes(po?.status ?? ''))
 
   const handleDownloadPdf = () => {

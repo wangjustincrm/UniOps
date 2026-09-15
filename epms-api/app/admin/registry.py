@@ -593,6 +593,12 @@ _PR_SCHEMA = EntitySchema(
         FieldSpec("currency", "string", True),
         FieldSpec("amount", "decimal", False),
         FieldSpec("created_by", "reference", True, label="Requester", ref_source="users"),
+        # Service/project receipt owner. Editable HERE and nowhere else once the
+        # PR leaves draft (the EPMS PATCH is fenced to draft/returned), which is
+        # the whole point: the completion date is often months out, and by the
+        # time the nudge fires the named owner may have moved on. Changing it
+        # drags the open receipt tasks along — see admin/service.py.
+        FieldSpec("owner_id", "reference", True, label="Service Owner", ref_source="users"),
         FieldSpec("vendor_id", "reference", True, label="Vendor", ref_source="vendors", ref_name_field="vendor_name"),
         FieldSpec("vendor_name", "string", False),
         FieldSpec("cost_center_id", "reference", True, label="Cost Center", ref_source="cost_centers", ref_name_field="cost_center_name"),

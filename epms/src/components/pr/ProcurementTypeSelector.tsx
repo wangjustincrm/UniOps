@@ -1,7 +1,10 @@
 import { cn } from '@/lib/utils'
 import type { ProcurementType } from '@/types'
 
-const TYPES: Array<{
+// Exported for procurementTypes.test.ts. Which types are selectable is a fact
+// about this file alone — the API accepts 1..6 — so the assistant's description
+// of type 1 as "not yours to raise" is pinned against it here.
+export const TYPES: Array<{
   type: ProcurementType
   icon: string
   label: string

@@ -1,0 +1,140 @@
+# What each part of UniOps is for.
+#
+# The top level of the guide. Where the document-kind files answer "what are
+# the types and what do I fill in", this answers the question underneath it:
+# what is this module, what lives in it, and is it the one I want.
+#
+# ── Why this layer is prose and the layer below it is derived ────────────────
+# Everything in the document-kind files that a running system can adjudicate is
+# derived from the enforcing code (see doc_type_guide.py). That is not available
+# here, and not because of laziness: what a module is FOR is not a fact any code
+# states, and the modules that are not EPMS live in their own services, which
+# epms-api cannot import. Scope, unlike a field rule, also drifts slowly — a
+# module's purpose changes when the business changes, not when a validator does.
+#
+# `documents` is the exception and IS checked: every entry must name a kind the
+# guide can actually go deeper on, and test_module_guide.py fails if one names a
+# kind that does not exist or if a kind exists that no module claims. So the
+# offer to "ask me more about X" is never an offer the assistant cannot keep.
+#
+# The module list itself mirrors Portal's navigation
+# (portal/src/components/layout/navConfig.tsx), because that is the list of
+# modules as a person sees them rather than as the services are split up.
+topic: modules
+label: UniOps modules
+
+question_hints:
+  - what modules are there
+  - what can I do in UniOps
+  - what is this system for
+  - where do I go to do X
+  - what is the difference between OA and Procurement
+
+modules:
+  - key: procurement
+    label: Procurement (EPMS)
+    covers: >
+      Buying things from outside suppliers, end to end: the request, the
+      approval, the order to the vendor, receiving what arrives, the vendor's
+      invoice, and the payment.
+    who: >
+      Everyone who needs to buy something, plus the people who approve it,
+      receive it, and pay it.
+    typical:
+      - Raise a purchase requisition and track its approval
+      - Receive goods, or confirm a service was completed
+      - Match a vendor invoice against the order and the receipt
+      - Raise a payment application once it is all lined up
+    documents: [pr, po, gr, invoice, pa, agreement]
+
+  - key: oa
+    label: OA — Office Automation
+    covers: >
+      Spending your own money and claiming it back, and travel. Separate from
+      Procurement because there is no vendor, no purchase order and no
+      receiving: you paid, and the company reimburses you.
+    who: Anyone claiming an expense or booking business travel, and their approvers.
+    typical:
+      - Claim an expense, with receipts
+      - Claim mileage
+      - Raise a travel request and claim against it
+    notes:
+      - >-
+        The dividing line people get wrong — if the company is being invoiced
+        by a vendor, that is Procurement. If you paid and want it back, that
+        is OA.
+
+  - key: vms
+    label: VMS — Visitor Management
+    covers: Visitors coming on site, and the approvals and health checks around it.
+    who: Whoever is hosting a visitor, plus the approvers for the areas being visited.
+    typical:
+      - Register a visitor and the areas they need access to
+      - Get the visit approved before they arrive
+      - Print a badge on the day
+
+  - key: finance
+    label: Finance
+    covers: >
+      The accounting side: the ledger, accounts payable and receivable, bank
+      and payment execution, and the exchange with NC and QuickBooks.
+    who: Finance staff. Most people never open it.
+    typical:
+      - Execute approved payments and issue remittance advice
+      - Reconcile accounts payable against what EPMS says is owed
+      - Post and review journal vouchers
+
+  - key: budget
+    label: Budget
+    covers: >
+      What each department and cost centre is allowed to spend, and what is
+      committed and spent against it so far.
+    who: Budget owners, department managers, and Finance.
+    typical:
+      - Check what is left on an account before raising a request
+      - See what a purchase requisition will do to the remaining balance
+    notes:
+      - >-
+        You meet this without opening it — the budget widget on the Create PR
+        form is this module, and an over-budget request is stopped or needs
+        justification because of it.
+
+  - key: mrp
+    label: MRP — Material Requirements Planning
+    covers: >
+      Production planning: what to make, when, and what materials that needs.
+      Forecast, master production schedule, bills of material and the resulting
+      purchasing suggestions.
+    who: Planning and production. Read access is separately permissioned.
+    typical:
+      - Look at the production plan currently in force
+      - Ask why the plan says what it says for a given week
+      - See what a product is made of
+    notes:
+      - Only the plan currently in force is readable. A superseded run is not,
+        which is deliberate — summing across runs double-counts.
+
+  - key: booking
+    label: Meeting Rooms
+    covers: Booking meeting rooms.
+    who: Anyone.
+    typical:
+      - Find a free room and book it
+      - Cancel a booking you made
+
+  - key: admin
+    label: Admin
+    covers: >
+      How the system itself is configured: who the users are, what roles they
+      hold, what each role may do, how approvals are routed, and who covers for
+      whom while they are away.
+    who: System administrators.
+    typical:
+      - Add a user, or change what a role is allowed to do
+      - Change how a document type is routed for approval
+      - Set up approval cover for someone on leave
+      - Correct data through Data Maintenance
+    notes:
+      - Permissions are configured here rather than written into the code, so
+        what you can see and do is a setting, not a fixed property of your job
+        title.
