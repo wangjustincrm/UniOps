@@ -238,9 +238,15 @@ class PoResponse(BaseModel):
     # Filled in by BOTH the list and the detail endpoint (api/v1/po.py), off one
     # definition in crud.po::payable_invoice_po_ids.
     has_unpaid_invoice: bool = False
-    # Computed (detail view): created_by of the linked PR — the requester who may
-    # confirm delivery (create GR) on a service/project PO. None for direct POs.
+    # Computed (detail view): created_by of the linked PR — who RAISED it.
+    # None for direct POs.
     pr_requester_id: uuid.UUID | None = None
+    # Computed (detail view): the linked PR's service owner (owner_id, else
+    # created_by) — the person api/v1/gr.py admits to confirm delivery / create
+    # the GR on a service/project PO, and the person its confirm_receipt task is
+    # routed to. Equal to pr_requester_id unless a service PR named someone
+    # else. None for direct POs.
+    pr_owner_id: uuid.UUID | None = None
     # The department the PO's approvals route through (PO → PR.department_id).
     # Not a column on the PO — resolved per response in api/v1/po.py. NULL for a
     # PO with no PR (an NC-imported one), which is a distinct value, not

@@ -15,6 +15,7 @@ from app.crud import po as po_crud
 from app.crud import vendor as vendor_crud
 from app.crud import gr as gr_crud
 from app.crud.current_step import enrich_current_step
+from app.crud.pr_owner import get_pr_owner_id
 from app.models.admin_audit_log import AdminAuditLog
 
 from app.models.pr import PurchaseRequest
@@ -124,6 +125,12 @@ async def get_po(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     # actual requester identity (not the PO creator / not a generic role).
     data = PoResponse.model_validate(po).model_dump()
     data["pr_requester_id"] = await gr_crud.get_pr_requester_id(db, po.pr_id)
+    # And its service OWNER — the identity POST /gr actually admits on a
+    # service/project PO. The two are the same person unless a service PR named
+    # someone else, and the PO page's Create GR button must follow the gate, not
+    # the requester label (an owner shown no button is an owner who received the
+    # reminder and cannot act on it).
+    data["pr_owner_id"] = await get_pr_owner_id(db, po.pr_id)
     data["pr_department_id"] = await po_crud.pr_department_id(db, po.pr_id)
     # Computed here too, not just on the list: the PO page's Create PA button
     # gates on it, and it used to re-derive its own version client-side from the
