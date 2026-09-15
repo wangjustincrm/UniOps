@@ -55,6 +55,7 @@ values:
       — raw material purchasing runs outside EPMS.
     notes:
       - Carries no budget account, and is the only type that does not.
+      - Line items carry a Material ID, picked from the ERP material list.
 
   - value: 2
     label: Misc / Consumables
@@ -67,9 +68,11 @@ values:
     label: Spare Parts
     covers: Maintenance and repair parts for plant equipment.
     when: >
-      Anything you would pull from the parts store. Lines are picked from the
-      Parts Catalog rather than typed, so the part number, unit and price come
-      from the catalog entry.
+      Anything you would pull from the parts store.
+    notes:
+      - Line items are picked from the Parts Catalog, not typed. Choosing a
+        part fills in its description, Material ID, unit and unit price.
+      - The Notes column is hidden on the line table for this type.
 
   - value: 4
     label: Service
@@ -78,6 +81,9 @@ values:
       When you are buying someone's time or work rather than a thing. There is
       nothing for the warehouse to receive, so you confirm the work is done
       yourself.
+    notes:
+      - The expected completion date is what the system watches; once it
+        passes, you are reminded to confirm the work was done.
 
   - value: 5
     label: Fixed Asset
@@ -94,3 +100,5 @@ values:
       When the cost belongs to a project and has to be traceable to it. Like a
       service PR you confirm completion yourself, and you also carry the
       Project No. so the spend lands against the project.
+    notes:
+      - Same completion-date reminder as a service PR.
