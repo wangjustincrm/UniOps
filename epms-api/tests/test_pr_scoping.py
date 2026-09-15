@@ -44,7 +44,7 @@ async def _make_dept(test_engine, code: str | None = None) -> str:
     """Insert a department directly (master data — no POST endpoint). Returns id."""
     from app.models.department import Department
 
-    code = code or f"D{uuid.uuid4().hex[:4].upper()}"
+    code = code or f"D{uuid.uuid4().hex[:8].upper()}"
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
         dept = Department(code=code, name=f"Dept {code}", is_active=True)
@@ -58,7 +58,7 @@ async def _make_cc(test_engine, dept_id: str, code: str | None = None) -> str:
     """Insert a cost center directly. Returns id."""
     from app.models.cost_center import CostCenter
 
-    code = code or f"CC{uuid.uuid4().hex[:4].upper()}"
+    code = code or f"CC{uuid.uuid4().hex[:8].upper()}"
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
         cc = CostCenter(
