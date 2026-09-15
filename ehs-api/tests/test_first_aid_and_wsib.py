@@ -305,3 +305,55 @@ async def test_a_worker_cannot_record_a_filing(worker, hse_manager):
     r = await wclient.post(f"/api/v1/incidents/{incident['id']}/wsib-form7/filed",
                            json={"confirmation_number": "X"})
     assert r.status_code == 403
+
+
+async def test_the_ministry_clock_can_be_stopped(hse_manager, worker, test_engine):
+    """Every statutory clock needs a way to be discharged by whoever met it.
+
+    The Ministry's had none. WSIB's was stopped by recording the form and
+    JHSC's by writing the reply, but s.51(1) kept counting after the report had
+    been sent — so the compliance screen showed an overdue legal obligation
+    that had in fact been met. An obligation nobody can discharge teaches
+    people to ignore the one screen that must not be ignored.
+    """
+    _, client = hse_manager
+    injured, _ = worker
+    incident = (await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Caught in the case sealer",
+        "incident_type": "unconscious",
+        "injury_class": "lost_time",
+        "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+        "description": "Found unconscious beside the sealer.",
+        "injured_user_id": str(injured.id),
+    })).json()
+
+    kinds = {d["kind"]: d for d in incident["deadlines"]}
+    assert "mol_48h" in kinds, "an unconscious worker is reportable under s.51(1)"
+    assert kinds["mol_48h"]["satisfied_at"] is None
+
+    r = await client.post(f"/api/v1/incidents/{incident['id']}/mol-report/filed",
+                          json={"reference": "Emailed to the Kingston office, ack 09:14"})
+    assert r.status_code == 200, r.text
+    after = {d["kind"]: d for d in r.json()["deadlines"]}
+    assert after["mol_48h"]["satisfied_at"] is not None, "the clock must stop"
+
+    # Recording it twice would overwrite the evidence of when it was actually met.
+    again = await client.post(f"/api/v1/incidents/{incident['id']}/mol-report/filed",
+                              json={"reference": "again"})
+    assert again.status_code == 409
+
+
+async def test_an_incident_owing_the_ministry_nothing_refuses_the_filing(hse_manager, worker):
+    """Marking an obligation met that never existed is its own kind of false record."""
+    _, client = hse_manager
+    injured, _ = worker
+    incident = (await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Cut finger",
+        "incident_type": "first_aid",
+        "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+        "description": "Small cut, plaster applied.",
+        "injured_user_id": str(injured.id),
+    })).json()
+    r = await client.post(f"/api/v1/incidents/{incident['id']}/mol-report/filed",
+                          json={"reference": "should not be accepted"})
+    assert r.status_code == 409

@@ -118,6 +118,23 @@ class DeadlineOut(BaseModel):
     escalation_level: int
 
 
+class MolReportFiledIn(BaseModel):
+    """Recording that the written report went to the Ministry.
+
+    OHSA s.51(1) is discharged by sending the report, not by anything UniOps
+    does, so this records the act rather than performing it. A reference is
+    required for the same reason WSIB's is: a legal clock marked satisfied
+    with nothing behind it is worse than one still showing as open — at an
+    inspection the second is a gap, the first is an unsupported claim.
+    """
+
+    reference: str = Field(
+        min_length=1, max_length=200,
+        description="Where it was sent and any acknowledgement — the evidence it left.")
+    filed_at: datetime | None = None
+    evidence_file_id: uuid.UUID | None = None
+
+
 class IncidentPersonOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

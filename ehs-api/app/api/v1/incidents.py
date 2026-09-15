@@ -35,6 +35,7 @@ from app.schemas.incident import (
     IncidentCreate,
     IncidentListItem,
     IncidentOut,
+    MolReportFiledIn,
 )
 from app.schemas.wsib import Form7FiledIn, Form7Package
 from app.schemas.investigation import (
@@ -282,6 +283,56 @@ async def _cause_tree(db, incident) -> CauseTreeOut:
 
 
 # ── WSIB Form 7 ─────────────────────────────────────────────────────────────
+
+
+@router.post("/{incident_id}/mol-report/filed", response_model=IncidentOut)
+async def mol_report_filed(
+    incident_id: uuid.UUID, payload: MolReportFiledIn, db: SessionDep, user: CanManageStatutory,
+):
+    """Record that the s.51(1) written report went to the Ministry, stopping that clock.
+
+    Every other clock in this table had a way to be discharged and this one did
+    not, so it ran forever: WSIB's was stopped by recording the form, JHSC's by
+    writing the reply, while the Ministry's 48 hours kept counting after the
+    report had been sent — which is how the first acceptance round found it,
+    with one incident showing an overdue legal obligation that had in fact been
+    met days earlier. An obligation nobody can discharge is worse than no
+    countdown at all: it trains people to ignore the one screen that must not
+    be ignored.
+
+    Certificate and policy-review clocks are not in the same position. Those
+    roll — renewing or reviewing moves the date out — so they are never
+    "satisfied" and need nothing here.
+    """
+    from app.services import deadlines as deadline_service
+
+    incident = await crud.get(db, incident_id)
+    deadline = next(
+        (d for d in await crud.load_deadlines(db, incident.id) if d.kind == "mol_48h"),
+        None,
+    )
+    if deadline is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{incident.incident_no} owes the Ministry nothing — it is not marked "
+            "as reportable under OHSA s.51(1)",
+        )
+    if deadline.satisfied_at is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"The Ministry report for {incident.incident_no} was already recorded "
+            f"on {deadline.satisfied_at.date().isoformat()}",
+        )
+
+    await deadline_service.satisfy(
+        db, deadline,
+        user_id=_user_id(user),
+        user_name=None,
+        evidence_file_id=payload.evidence_file_id,
+        evidence_note=payload.reference,
+        when=payload.filed_at or datetime.now(timezone.utc),
+    )
+    return await _to_out(db, incident)
 
 
 @router.get("/{incident_id}/wsib-form7", response_model=Form7Package)

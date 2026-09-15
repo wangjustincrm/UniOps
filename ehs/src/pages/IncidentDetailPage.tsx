@@ -165,6 +165,7 @@ export default function IncidentDetailPage() {
   const queryClient = useQueryClient()
   const { can } = usePermissions()
   const [confirmation, setConfirmation] = useState('')
+  const [molReference, setMolReference] = useState('')
 
 
   const incident = useQuery({
@@ -207,6 +208,17 @@ export default function IncidentDetailPage() {
   })
   const review = useMutation(act('hse-review'))
   const closeIncident = useMutation(act('close'))
+
+  // Stopping the Ministry's clock. It is recorded, not performed: OHSA s.51(1)
+  // is discharged by sending the report, and UniOps does not send it.
+  const recordMolReport = useMutation({
+    mutationFn: () => api.post(`/api/v1/incidents/${id}/mol-report/filed`,
+                               { reference: molReference }),
+    onSuccess: () => {
+      setMolReference('')
+      queryClient.invalidateQueries({ queryKey: ['incident', id] })
+    },
+  })
 
   const recordFiling = useMutation({
     mutationFn: () => api.post(`/api/v1/incidents/${id}/wsib-form7/filed`,
@@ -458,6 +470,44 @@ export default function IncidentDetailPage() {
                   <p className="mt-1.5 text-xs text-neutral-500">
                     {d.regulation_ref ?? 'Statutory obligation'} · due {formatDateTime(d.due_at)}
                   </p>
+                  {/* Every clock here needs a way to be stopped by whoever
+                      discharged it. The Ministry's had none, so it ran on after
+                      the report had gone — an overdue legal obligation on the
+                      screen that had actually been met. */}
+                  {d.kind === 'mol_48h' && !d.satisfied_at && can('ehs.statutory.manage') && (
+                    <div className="mt-2.5">
+                      <p className="text-xs text-neutral-500">
+                        UniOps does not notify the Ministry — send the written report,
+                        then record where it went to stop the clock.
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          className="min-h-[40px] flex-1 rounded-lg border border-neutral-300 px-2.5 text-sm"
+                          placeholder="Where it was sent, and any acknowledgement"
+                          value={molReference}
+                          onChange={(e) => setMolReference(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          disabled={!molReference.trim() || recordMolReport.isPending}
+                          onClick={() => { if (!recordMolReport.isPending) recordMolReport.mutate() }}
+                          className="min-h-[40px] rounded-lg bg-primary-600 px-3 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                          Record
+                        </button>
+                      </div>
+                      {recordMolReport.isError && (
+                        <p className="mt-1.5 text-xs text-danger-700">
+                          {(recordMolReport.error as ApiError).message}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {d.kind === 'mol_48h' && d.satisfied_at && (
+                    <p className="mt-1.5 text-xs text-success-700">
+                      Reported to the Ministry {formatDateTime(d.satisfied_at)}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>
