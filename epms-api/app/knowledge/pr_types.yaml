@@ -1,0 +1,96 @@
+# What the six procurement types mean, and what differs when you create one.
+#
+# Written because the assistant was asked "what PR types are there, and what is
+# different when you create them" and answered with the approval chain twice.
+# The router had no route for it: it is not a data question and not a question
+# about who signs off, it is a question about the form. The fifth in the same
+# family — approvers, PR types, plan reasoning, user counts — where the answer
+# existed and nothing was wired up to reach it.
+#
+# ── The split this file rests on ─────────────────────────────────────────────
+# Everything a running system can adjudicate is DERIVED, never written here:
+#
+#   which gates a type must clear   -> services/doc_preflight.field_checks_for
+#   how its receipt is confirmed    -> schemas/gr.is_service
+#
+# What is written here is what no code states: what a type is FOR, and when a
+# requester should pick it. That is the half a training document supplies and a
+# database cannot.
+#
+# The two halves are held together by tests. test_doc_type_guide.py asserts that
+# every claim below about fields matches the gates the submit route actually
+# enforces, and epms/src/components/pr/procurementTypes.test.ts pins the three
+# form behaviours that live only in the frontend (the Material ID column, the
+# Parts Catalog picker, and type 1 being unselectable).
+#
+# ── Why not read the PRD directly ────────────────────────────────────────────
+# Because it drifts, and silently. At the time of writing, epms/docs/PRD.md §2
+# says type 5 "Requires fixed asset ID" — true as intent, and false as
+# behaviour until the commit that added this file: the form asked for the value
+# and dropped it on the floor. Answering from the PRD would have told a
+# requester the system does something it did not do, which is the failure this
+# assistant exists to avoid. The PRD is where this prose came FROM; it is not
+# what answers the question.
+topic: pr_types
+label: Purchase Request types
+doc_type: pr
+field: type
+
+# Phrases that mean "explain the types", so the router has something concrete to
+# match against rather than falling through to the approval chain.
+question_hints:
+  - what types of PR are there
+  - what is the difference between the PR types
+  - what changes when I create each type
+  - which procurement type should I pick
+  - what do I have to fill in for a type 5
+
+values:
+  - value: 1
+    label: Raw Materials / Packaging
+    covers: Production raw materials and packaging.
+    when: >
+      Not yours to raise. The type exists because purchase orders for raw
+      materials arrive mirrored from NC, but the Create PR form has it disabled
+      — raw material purchasing runs outside EPMS.
+    notes:
+      - Carries no budget account, and is the only type that does not.
+
+  - value: 2
+    label: Misc / Consumables
+    covers: Office supplies, small equipment, cleaning and other consumables.
+    when: >
+      The everyday default. If what you are buying is consumed rather than kept
+      on the asset register, and is not a spare part or a service, this is it.
+
+  - value: 3
+    label: Spare Parts
+    covers: Maintenance and repair parts for plant equipment.
+    when: >
+      Anything you would pull from the parts store. Lines are picked from the
+      Parts Catalog rather than typed, so the part number, unit and price come
+      from the catalog entry.
+
+  - value: 4
+    label: Service
+    covers: Contracted work — maintenance, consulting, installation, labour.
+    when: >
+      When you are buying someone's time or work rather than a thing. There is
+      nothing for the warehouse to receive, so you confirm the work is done
+      yourself.
+
+  - value: 5
+    label: Fixed Asset
+    covers: Capitalisable equipment and assets that go on the asset register.
+    when: >
+      When the purchase becomes an asset rather than an expense. You need the
+      Fixed Asset ID before you can submit — get it from Finance if the asset
+      has not been raised yet.
+
+  - value: 6
+    label: Project-Related
+    covers: Purchases charged to a project rather than to routine operations.
+    when: >
+      When the cost belongs to a project and has to be traceable to it. Like a
+      service PR you confirm completion yourself, and you also carry the
+      Project No. so the spend lands against the project.

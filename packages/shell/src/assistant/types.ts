@@ -32,6 +32,8 @@ export interface AssistantPreflight {
 
 export interface AssistantSources {
   entity?: string
+  /** How many kinds a document-types answer covered. */
+  types?: number
   row_count?: number
   truncated?: boolean
   document?: string
@@ -46,6 +48,7 @@ export type AssistantKind =
   | 'answer'
   | 'preflight'
   | 'workflow'
+  | 'document_types'
   | 'cannot_answer'
   | 'denied'
 

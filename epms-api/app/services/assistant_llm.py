@@ -119,10 +119,18 @@ Rules:
   recorded — forecast, opening stock, carry-in and the engine's flags are all on
   the line — so answering that the system does not record it is wrong.
 - explain_process is about the APPROVAL CHAIN — who signs off, in what order.
-  It is not about the data. "What types of PR are there", "what statuses exist",
-  "what fields does an invoice have" are questions about the data: answer them
-  with a query, grouping by the field in question so the reply carries how many
-  of each there are, which is more use than the list alone.
+  It is not about the data, and it is not about the form.
+- "What PR types are there", "what is the difference between them", "what do I
+  fill in for a type 5", "which type should I pick" are questions about the
+  FORM: call explain_document_types. Answering these with the approval chain is
+  wrong, and it is the mistake this route exists to stop — someone asking what
+  distinguishes the types does not want to be told who approves them.
+- "How many PRs of each type", "which type do we raise most" are questions about
+  the DATA: run a query grouped by type. The dividing line is whether they are
+  asking what a type MEANS or how many there ARE.
+- "What statuses exist", "what fields does an invoice have" remain data
+  questions: query them, grouping by the field in question so the reply carries
+  how many of each there are, which is more use than the list alone.
 - If they are asking how a process works in general, rather than about one
   document, call explain_process. Many people here were never trained on this
   system, so "how does this work" is a real question and deserves the configured
@@ -327,6 +335,27 @@ _PROCESS_TOOL = {
     },
 }
 
+_DOC_TYPES_TOOL = {
+    "name": "explain_document_types",
+    "description": (
+        "Use when someone asks what KINDS of a document exist and how they "
+        "differ — 'what PR types are there', 'what is the difference between "
+        "the PR types', 'what changes when I create a type 5', 'which "
+        "procurement type should I pick'. Answers with what each type is for "
+        "and what the system makes you fill in for it, read off the gates the "
+        "submit route actually enforces. This is a question about the FORM, "
+        "not about who signs off — explain_process answers the second and is "
+        "the wrong answer to the first."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "doc_type": {"type": "string", "enum": ["pr"]},
+        },
+        "required": ["doc_type"],
+    },
+}
+
 _EXPLAIN_PLAN_TOOL = {
     "name": "explain_plan",
     "description": (
@@ -473,7 +502,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             max_tokens=_PLAN_MAX_TOKENS,
             system=system,
             tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _NEXT_TOOL,
-                   _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _CANNOT_TOOL],
+                   _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
+                   _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -498,6 +528,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             return {"kind": "next", "usage": _usage(resp)}
         if block.name == "explain_process":
             return {"kind": "process", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "explain_document_types":
+            return {"kind": "doc_types", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_plan":
             return {"kind": "plan", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_workflow":
@@ -722,7 +754,21 @@ You are helping a colleague who may never have been trained on this system.
 - If steps_available is false the engine could not be reached; say the chain
   could not be read rather than describing one from memory. You do not know
   this process except from what you were given.
-- Never invent a step, a role, a rule, or a task.
+- For document types: this is the form, not the approval chain. Do not describe
+  who approves anything — that was not asked and is a different question.
+  Give the types as a table when there are more than three, one row each, and
+  make the columns the things that actually differ. `covers` and `when_to_pick`
+  say what the type is for; `required_before_submit` is what the system will
+  stop them on; `receipt` is how the purchase gets confirmed as received.
+  `required_before_submit` is a complete list of the submit gates and nothing
+  more — it is not every difference between the types, so do not present it as
+  one, and read `requirements_are` for how to describe it.
+  If a type carries `notes`, work them in; they are there because they matter.
+  End with the one line a requester most needs: which type their case sounds
+  like, if the question named one.
+- Never invent a step, a role, a rule, a task, or a field. If a type has no
+  requirement beyond what every type has, say that plainly — "nothing extra" is
+  an answer, and inventing a distinction to fill the row is not.
 """
 
 
