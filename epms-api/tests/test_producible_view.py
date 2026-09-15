@@ -56,18 +56,29 @@ async def db_session(test_engine):
     """
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    tables = ("bom_lines", "boms", "nc_bom", "wms_inventory_lots")
     factory = async_sessionmaker(test_engine, class_=AsyncSession,
                                  expire_on_commit=False)
     async with factory() as db:
         async def wipe():
-            for table in tables:
-                await db.execute(sa.text(f"DELETE FROM {table}"))
+            """Only this file's rows.
+
+            Every BOM seeded here carries an nc_source_pk beginning "PK-" and
+            every lot sits in warehouse "W1", so the deletes can be scoped to
+            them. Saying DELETE FROM boms instead would take whatever the rest
+            of the suite had seeded — and these three tables are shared with
+            the ontology drift test, which measures real coverage on them.
+            """
+            await db.execute(sa.text(
+                "DELETE FROM bom_lines WHERE bom_id IN"
+                " (SELECT id FROM boms WHERE nc_source_pk LIKE 'PK-%')"))
+            await db.execute(sa.text("DELETE FROM boms WHERE nc_source_pk LIKE 'PK-%'"))
+            await db.execute(sa.text("DELETE FROM nc_bom WHERE nc_source_pk LIKE 'PK-%'"))
+            await db.execute(sa.text("DELETE FROM wms_inventory_lots WHERE warehouse_id = 'W1'"))
             await db.commit()
 
-        # Cleared before AND after. Clearing only on the way in leaves the last
-        # test's fixtures sitting in tables that other suites read — harmless in
-        # file order, and a failure that appears only under a different one.
+        # Cleared before AND after. Clearing only on the way in leaves this
+        # file's fixtures sitting in tables other tests read — harmless in file
+        # order, and a failure that appears only under a different one.
         await wipe()
         try:
             yield db

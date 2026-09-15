@@ -137,15 +137,29 @@ async def one_order(test_engine):
             # transaction READ ONLY — that is the guarantee the whole query
             # layer rests on — so the session the tests ran through cannot
             # issue a DELETE afterwards.
+            #
+            # Only the rows this fixture created, by id. An earlier version
+            # said DELETE FROM purchase_orders, which in a full run tried to
+            # take every other test's orders with it — it failed on a foreign
+            # key from invoice_po_allocations, and the failure was the lucky
+            # outcome: had those tables been empty it would have quietly
+            # destroyed the rows other tests were relying on.
+            ids = {"po": [str(o.id) for o in orders.values()],
+                   "vendor": [str(v.id) for v in vendors.values()],
+                   "user": str(author.id)}
             async with factory() as cleanup:
-                # Children first: po_line_items references purchase_orders,
-                # which references business_partners and users.
-                for table in ("po_line_items", "purchase_orders",
-                              "business_partners"):
-                    await cleanup.execute(sa.text(f"DELETE FROM {table}"))
+                await cleanup.execute(sa.text(
+                    "DELETE FROM po_line_items WHERE po_id = ANY(CAST(:p AS uuid[]))"),
+                    {"p": ids["po"]})
+                await cleanup.execute(sa.text(
+                    "DELETE FROM purchase_orders WHERE id = ANY(CAST(:p AS uuid[]))"),
+                    {"p": ids["po"]})
+                await cleanup.execute(sa.text(
+                    "DELETE FROM business_partners WHERE id = ANY(CAST(:v AS uuid[]))"),
+                    {"v": ids["vendor"]})
                 await cleanup.execute(
                     sa.text("DELETE FROM users WHERE id = CAST(:i AS uuid)"),
-                    {"i": str(author.id)})
+                    {"i": ids["user"]})
                 await cleanup.commit()
 
 
