@@ -107,7 +107,9 @@ export default function PrEditPage() {
   const owners = ownersData?.items ?? []
   // The saved owner is a bare id; owner_name off the PR response already
   // resolves it (INCLUDING the NULL-means-requester fallback), so the picker is
-  // seeded from the two together and no extra lookup is needed.
+  // seeded from the two together and no extra lookup is needed. It therefore
+  // holds a person from first render, and — like the Create page — cannot be
+  // emptied afterwards.
   useEffect(() => {
     if (!pr || selectedOwner) return
     const ownerId = pr.owner_id ?? pr.created_by
@@ -255,9 +257,11 @@ export default function PrEditPage() {
     required_by: requiredBy || undefined,
     service_completion_date: serviceCompletionDate || undefined,
     // Only for the service/project pair — the picker is not rendered otherwise,
-    // and PATCH treats undefined as "leave alone".
+    // and PATCH treats undefined as "leave alone". Within the pair it is always
+    // sent: the combo box is seeded from owner_id ?? created_by, so it holds a
+    // person from first render and what it shows is what gets saved.
     owner_id: (procurementType === 4 || procurementType === 6)
-      ? selectedOwner?.id
+      ? (selectedOwner?.id ?? pr?.created_by)
       : undefined,
     delivery_address: deliveryAddress || undefined,
     notes: notes || undefined,
@@ -650,7 +654,7 @@ export default function PrEditPage() {
             {(procurementType === 4 || procurementType === 6) && (
               <div ref={ownerAnchorRef} className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-neutral-700" htmlFor="serviceOwner">
-                  Service/Project Owner
+                  Service/Project Owner <span className="text-danger-600">*</span>
                 </label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
@@ -658,23 +662,14 @@ export default function PrEditPage() {
                     id="serviceOwner"
                     type="text"
                     placeholder="Search people by name…"
-                    value={selectedOwner ? selectedOwner.full_name : ownerQuery}
-                    onFocus={() => { setOwnerOpen(true); if (selectedOwner) setOwnerQuery('') }}
-                    onChange={(e) => { setOwnerQuery(e.target.value); setSelectedOwner(null); setOwnerOpen(true) }}
+                    value={ownerOpen ? ownerQuery : (selectedOwner?.full_name ?? '')}
+                    onFocus={() => { setOwnerOpen(true); setOwnerQuery('') }}
+                    onChange={(e) => { setOwnerQuery(e.target.value); setOwnerOpen(true) }}
                     className="h-10 w-full rounded-md border border-neutral-300 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                   />
-                  {selectedOwner && (
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedOwner(null); setOwnerQuery('') }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
                 </div>
-                {ownerOpen && !selectedOwner && ownerRect && (
-                  <DropdownPortal anchorRect={ownerRect} onClose={() => setOwnerOpen(false)}>
+                {ownerOpen && ownerRect && (
+                  <DropdownPortal anchorRect={ownerRect} onClose={() => { setOwnerOpen(false); setOwnerQuery('') }}>
                     {owners.map((u) => (
                       <button
                         key={u.id}
@@ -693,7 +688,6 @@ export default function PrEditPage() {
                 )}
                 <p className="text-xs text-neutral-400">
                   Receives the task and email to confirm the service was delivered.
-                  Leave blank to keep it with the requester.
                 </p>
               </div>
             )}
