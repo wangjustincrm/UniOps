@@ -72,6 +72,10 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   // services/nc_purchase_sync/error_tasks.py). Admin-only.
   import_erp_vendor: 'Import ERP Vendor',
   resolve_nc_sync_error: 'Resolve NC Sync Error',
+  // Posted NC voucher lines whose dimensions keep them out of the Budget
+  // Dashboard (finance-api services/jv_validation_tasks.py). Admin-only, one
+  // standing task that closes itself when the findings clear.
+  resolve_jv_validation: 'Resolve JV Validation Findings',
 }
 
 // Portal origin — NC sync errors that are not a missing vendor are resolved in
@@ -138,6 +142,13 @@ export function taskHref(task: TaskHrefInput): string {
     return task.type === 'import_erp_vendor'
       ? '/vendors'
       : `${PORTAL_URL}/admin?section=nc_sync`
+  }
+
+  // JV validation findings are voucher LINES, not a document — the destination
+  // is the Finance page that lists them. document_id is the sync run that
+  // reported them, so it cannot be part of the path.
+  if (docType === 'jv_validation') {
+    return financeHandoffHref('/finance/jv-validation')
   }
 
   // Both create_pa and create_prepayment_pa anchor on the PO and open the PA

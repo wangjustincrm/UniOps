@@ -100,6 +100,31 @@ def _migrate():
             conn.execute(sa.text(stmt))
         conn.commit()
 
+    # `tasks` is epms-owned too, and finance-api's mirror models only the four
+    # columns the payment executor touches. jv_validation_tasks.py writes a real
+    # inbox row over raw SQL (type / title / assigned_role / document_number …),
+    # so the test schema needs the full physical shape — same pattern as
+    # company_config above. DEFAULTs are a test-schema convenience the physical
+    # table does not have: they keep the existing two-column Task(...) inserts in
+    # test_payment_execute.py working against a NOT NULL column set.
+    with eng.connect() as conn:
+        for stmt in (
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS type varchar(40) NOT NULL DEFAULT ''",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority varchar(10) NOT NULL DEFAULT 'normal'",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS document_number varchar(40) NOT NULL DEFAULT ''",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_role varchar(50) NOT NULL DEFAULT ''",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_user_id uuid",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS title varchar(255) NOT NULL DEFAULT ''",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description text",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date date",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS amount numeric(15,2)",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS vendor varchar(255)",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_by uuid",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_by uuid",
+        ):
+            conn.execute(sa.text(stmt))
+        conn.commit()
+
     # `user_roles` is identity-owned (no ORM model here — payment_execute's
     # _user_role_codes reads it directly, same physical DB in prod, phase-3
     # Task 5). Shadow it so tests can grant additional roles.

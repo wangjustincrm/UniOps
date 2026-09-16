@@ -121,3 +121,26 @@ describe('TASK_TYPE_LABELS — NC purchase-sync error tasks', () => {
     expect(TASK_TYPE_LABELS.resolve_nc_sync_error).toBe('Resolve NC Sync Error')
   })
 })
+
+describe('taskHref — JV validation findings', () => {
+  // Same shape as the NC sync errors: document_type is not a document, and
+  // document_id is the sync RUN that reported the findings. The destination is
+  // the Finance page that lists them, reached by full-page handoff.
+  const RUN_ID = '3a1c9f2e-6b7d-4c8a-9e0f-1b2c3d4e5f60'
+  const task = { type: 'resolve_jv_validation', document_type: 'jv_validation', document_id: RUN_ID }
+
+  it('sends the task to the Finance JV Validation page', () => {
+    const href = taskHref(task)
+    expect(href).toMatch(/^https?:\/\//)              // absolute → full-page handoff
+    expect(href).toContain('/finance/jv-validation')
+  })
+
+  it('never produces the bare-uuid dead link', () => {
+    expect(taskHref(task)).not.toBe(`/${RUN_ID}`)
+    expect(taskHref(task)).not.toContain(RUN_ID)      // the run id is not a page
+  })
+
+  it('labels the type', () => {
+    expect(TASK_TYPE_LABELS.resolve_jv_validation).toBe('Resolve JV Validation Findings')
+  })
+})

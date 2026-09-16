@@ -5,6 +5,7 @@ import GeneralLedgerPage from '@/pages/finance/GeneralLedgerPage'
 import JournalVouchersPage from '@/pages/finance/JournalVouchersPage'
 import AccountBalancePage from '@/pages/finance/AccountBalancePage'
 import BudgetActualPage from '@/pages/finance/BudgetActualPage'
+import JvValidationPage from '@/pages/finance/JvValidationPage'
 import PaymentsPage from '@/pages/finance/PaymentsPage'
 import PaymentBatchPage from '@/pages/finance/PaymentBatchPage'
 import BankReconciliationPage from '@/pages/finance/BankReconciliationPage'
@@ -27,6 +28,7 @@ export const financeRoutes: RouteDef[] = [
   { path: '/finance/journal-vouchers', element: <JournalVouchersPage />, tab: { title: 'Journal Vouchers', icon: 'FileText', keyStrategy: 'static' } },
   { path: '/finance/account-balance', element: <AccountBalancePage />, tab: { title: 'Account Balance', icon: 'Scale', keyStrategy: 'static' } },
   { path: '/finance/budget-actual', element: <BudgetActualPage />, tab: { title: 'Budget Actual', icon: 'Target', keyStrategy: 'static' } },
+  { path: '/finance/jv-validation', element: <JvValidationPage />, tab: { title: 'JV Validation', icon: 'ShieldAlert', keyStrategy: 'static' } },
   { path: '/finance/payments', element: <PaymentsPage />, tab: { title: 'Payments', icon: 'Wallet', keyStrategy: 'static' } },
   { path: '/finance/payment-batches', element: <PaymentBatchPage />, tab: { title: 'Payment Batches', icon: 'Banknote', keyStrategy: 'static' } },
   { path: '/finance/bank', element: <BankReconciliationPage />, tab: { title: 'Bank Reconciliation', icon: 'Landmark', keyStrategy: 'static' } },

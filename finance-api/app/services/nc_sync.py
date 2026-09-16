@@ -588,6 +588,14 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
         logger.info("nc_sync run %s: status backfill flipped %d to posted, %d to draft",
                     run_id, n_posted, n_draft)
 
+        # What the run could not PLACE (as opposed to could not read): lines with
+        # no resolvable cost center / income-expense item never reach the Budget
+        # Dashboard, and used to leave no trace at all. One standing Admin Task,
+        # refreshed here inside the same transaction, closes itself when clean.
+        from app.services import jv_validation_tasks
+        outcome = jv_validation_tasks.raise_or_clear(cur, run_id)
+        logger.info("nc_sync run %s: JV validation task %s", run_id, outcome)
+
         # superseded-run guard: if sweeper already marked us abandoned, do not commit.
         cur.execute("select status from nc_sync_runs where id = %s for update", (run_id,))
         row = cur.fetchone()

@@ -14,6 +14,10 @@ import { groupTasks } from '@/lib/groupTasks'
 
 type TabValue = 'all' | 'urgent' | 'normal' | 'completed'
 
+// Task document types whose `description` is the substance of the card rather
+// than engine boilerplate — see the render comment below.
+const REASON_IN_CARD = new Set(['nc_sync', 'jv_validation'])
+
 const TABS: { value: TabValue; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'urgent', label: 'Urgent' },
@@ -118,13 +122,14 @@ function FullTaskCard({ task }: FullTaskCardProps) {
             {task.amount ? ` · ${formatCAD(task.amount)}` : ''}
           </p>
 
-          {/* Reason — NC sync error tasks only. Their whole point is the
-              explanation (which ERP supplier is missing, what to do next), and
-              it lives nowhere else: the subject is an NC order that is not in
-              EPMS, so there is no document page to open and read. Every other
-              task type has a boilerplate description ("Step 5/6: ...") that
-              would only add noise here. */}
-          {task.document_type === 'nc_sync' && task.description && (
+          {/* Reason — the two ERP-bridge task families only. Their whole point
+              is the explanation (which ERP supplier is missing, how many
+              voucher lines fell out of the budget and why), and it lives
+              nowhere else: the subject is NC data that is not an EPMS document,
+              so there is no document page to open and read. Every other task
+              type has a boilerplate description ("Step 5/6: ...") that would
+              only add noise here. */}
+          {REASON_IN_CARD.has(task.document_type) && task.description && (
             <p
               className={cn(
                 'mt-2 whitespace-pre-line text-xs leading-relaxed',
