@@ -32,6 +32,7 @@ from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
 from app.services import doc_type_guide, guide_view, plan_view
 from app.services import producible_view
+from app.services import report_lineage
 from app.services import workflow_view
 from app.services import controlled_query as cq
 
@@ -106,6 +107,9 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
 
     if planned["kind"] == "modules":
         return await _answer_modules(db, body, actor)
+
+    if planned["kind"] == "report":
+        return await _answer_report_lineage(db, scope, token, body, planned, actor)
 
     if planned["kind"] == "producible":
         return await _answer_producible(db, scope, body, planned, actor)
@@ -487,6 +491,49 @@ async def _answer_doc_types(db, body, planned, actor) -> dict:
         "answer": told["text"], "kind": "document_types", "query": None,
         "document_types": guide,
         "sources": {"document": guide["label"], "types": len(guide["types"])},
+    }
+
+
+async def _answer_report_lineage(db, scope, token, body, planned, actor) -> dict:
+    """Where the numbers on a report come from, and by what rule.
+
+    Half gated, and the halves are drawn where the sensitivity is. How a figure
+    is arrived at is explained to anyone — someone reading a budget number is
+    owed the rule behind it, and refusing that while showing them the number is
+    the worse of the two answers. The mapping rows themselves are gated, inside
+    report_lineage, by the same ontology keys the query layer uses, so the guide
+    and a direct query cannot disagree about who may see them.
+    """
+    report = (planned.get("report") or "").lower()
+    if report not in report_lineage.SUPPORTED:
+        return {
+            "answer": ("I can explain how the Budget Dashboard's Plan vs Actual "
+                       "figures are arrived at. I do not have the workings of "
+                       "any other report."),
+            "kind": "cannot_answer", "reason": "not_supported",
+            "query": None, "sources": None,
+        }
+
+    guide = await report_lineage.build(db, report, scope.get("perms", {}), token)
+    payload = {"question": body.message, "kind": "report_lineage", **guide}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+
+    mapping = guide["cost_centre_mapping"]
+    return {
+        "answer": told["text"], "kind": "report_lineage", "query": None,
+        "report_lineage": guide,
+        "sources": {
+            "report": guide["label"],
+            "figures": len(guide["figures"]),
+            "mapping_rules": mapping.get("count") if mapping.get("available") else None,
+            # A half-answer says so here as well as in the text, so the evidence
+            # line cannot look complete when it is not.
+            "complete": not guide["unavailable"],
+        },
     }
 
 

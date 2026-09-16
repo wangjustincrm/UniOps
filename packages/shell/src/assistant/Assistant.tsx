@@ -515,17 +515,37 @@ function Evidence({ reply }: { reply: AssistantReply }) {
 
   // Each kind of answer has different working behind it. Describing a workflow
   // reply as "query — 0 rows" was not just unhelpful, it was untrue: no query
-  // ran, and zero rows implied a search that had found nothing.
+  // ran, and zero rows implied a search that had found nothing. The same line
+  // was appearing under every guide answer for the same reason, which is a poor
+  // advertisement for a reply whose whole claim is that it was read off the
+  // system rather than made up.
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
   const summary =
     reply.kind === 'preflight'
       ? `${s?.document ?? 'document'} — ${reply.preflight?.checks.length ?? 0} checks`
       : reply.kind === 'workflow'
-        ? `${s?.document ?? 'document'} — ${s?.steps ?? 0} step${s?.steps === 1 ? '' : 's'}, ${
-            s?.events ?? 0
-          } event${s?.events === 1 ? '' : 's'}`
-        : `${s?.entity ?? 'query'} — ${s?.row_count ?? 0} row${s?.row_count === 1 ? '' : 's'}${
-            s?.truncated ? ' (first page)' : ''
-          }`
+        ? `${s?.document ?? 'document'} — ${plural(s?.steps ?? 0, 'step')}, ${plural(
+            s?.events ?? 0,
+            'event',
+          )}`
+        : reply.kind === 'report_lineage'
+          ? [
+              s?.report ?? 'report',
+              plural(s?.figures ?? 0, 'figure'),
+              s?.mapping_rules != null ? plural(s.mapping_rules, 'mapping rule') : null,
+              s?.complete === false ? 'partly unavailable' : null,
+            ]
+              .filter(Boolean)
+              .join(' — ')
+          : reply.kind === 'document_types'
+            ? `${s?.document ?? 'document'} — ${plural(s?.types ?? 0, 'type')}`
+            : reply.kind === 'modules'
+              ? plural(s?.modules ?? 0, 'module')
+              : reply.kind === 'producible'
+                ? `recipe — ${plural(s?.levels_deep ?? 0, 'level')} deep`
+                : `${s?.entity ?? 'query'} — ${plural(s?.row_count ?? 0, 'row')}${
+                    s?.truncated ? ' (first page)' : ''
+                  }`
 
   return (
     <div className="text-xs">

@@ -15,6 +15,13 @@
 # system_admin, from the Access Control Matrix. Widening view_finance widens
 # this, with nothing else in the way; that is the thing to be careful about.
 #
+# One exception, and it is deliberate: nc_cost_center_map also opens to the two
+# budget keys. It holds no amounts and names no document — twenty rows of codes
+# saying which cost centre an NC posting lands in — and the people who ask that
+# question are the ones reading a budget figure, not the ones reading the books.
+# Refusing them the rule while showing them the number it produced is the worse
+# of the two answers.
+#
 # ── Three traps in this data ─────────────────────────────────────────────────
 # Recorded here because they are invisible from the column names and each one
 # produces a confident wrong number:
@@ -28,6 +35,12 @@
 #   3. every amount exists twice — orig_* in the document's currency and local_*
 #      in the reporting currency. Summing across currencies is only meaningful
 #      on the local_* pair.
+#   4. most lines have no cost centre. 87,081 of 324,965 carry one, because the
+#      dimension is resolved when NC is mirrored and only expense postings have
+#      anything to resolve. "Spending by cost centre" over the whole ledger is
+#      therefore a quarter of the ledger, and the missing three quarters are
+#      balance-sheet movements rather than an accident. Say which it is; a total
+#      that silently drops 238,000 lines reads as the whole company.
 version: 1
 
 entities:
@@ -137,6 +150,20 @@ entities:
       currency: {kind: text, label: "Currency"}
       partner_name: {kind: text, label: "Partner"}
       tax_code: {kind: text, label: "Tax code"}
+      # The dimensions NC carries on a line, and the reason the Budget Plan vs
+      # Actual grid can group a month's postings at all. They were absent here
+      # until a manager asked which cost centre SELL-0107-S03 corresponds to in
+      # NC and the assistant answered that the mapping was not in its schema —
+      # while 87,081 lines carried a resolved cost centre and the map itself sat
+      # in a table twenty rows long.
+      cost_center_id: {kind: uuid, internal: true}
+      department_id: {kind: uuid, internal: true}
+      income_expense_item_id: {kind: uuid, internal: true}
+      # The cost-centre code as NC spelled it, kept beside the resolved id. A
+      # line that resolved to no cost centre still says what it came in as, and
+      # that pair is what the exceptions panel on the grid is made of: an NC
+      # code with nothing to map it to. 63,698 of 324,965 lines carry one.
+      nc_cc_code: {kind: text, label: "NC cost centre code"}
       created_at: {kind: datetime, label: "Row created"}
     metrics:
       count: {fn: count, field: "*", label: "Lines"}
@@ -155,6 +182,54 @@ entities:
         local: account_code
         remote: code
         label: "The account posted to"
+      cost_centre:
+        target: cost_center
+        cardinality: many_to_one
+        local: cost_center_id
+        remote: id
+        label: "The cost centre it was charged to"
+      department:
+        target: department
+        cardinality: many_to_one
+        local: department_id
+        remote: id
+        label: "The department it was charged to"
+      budget_account:
+        target: budget_account
+        cardinality: many_to_one
+        local: income_expense_item_id
+        remote: id
+        label: "The budget account (NC 收支项目) it counts against"
+
+  nc_cost_center_map:
+    table: budget_actual_cc_map
+    # No row count in the label: finance adds rules without a deploy, and a
+    # number written here would be stated to someone as fact long after it
+    # stopped being one. The count metric answers that question live.
+    label: "NC cost centre map — which UniOps cost centre an NC posting is
+      charged to. Maintained by finance, and the whole of the rule that puts a
+      journal voucher line into a cell of the Budget Plan vs Actual grid."
+    # Configuration, not anyone's spending: no amounts, no documents, twenty
+    # rows of codes. Anyone who can see a budget figure needs to be able to ask
+    # how it got there, so the budget keys reach it as well as view_finance.
+    perm_key: [finance.budget.view_all, finance.budget.view_dept, view_finance]
+    scope: permission_only
+    date_field: created_at
+    fields:
+      # The expense account the rule applies to — one of the five the grid is
+      # built from (5101 manufacturing overhead, 5301 R&D, 6601 selling, 6602
+      # G&A, 6603 financial). A rule is account-aware on purpose: the same NC
+      # department means a different UniOps cost centre under a different
+      # account.
+      account_code: {kind: text, label: "Expense account", enumerate: true}
+      # 'ALL' is a wildcard, not a department. A row with dept_code ALL applies
+      # to every department under that account; likewise nc_cc_code.
+      dept_code: {kind: text, label: "NC department code", enumerate: true}
+      nc_cc_code: {kind: text, label: "NC cost centre code", enumerate: true}
+      uniops_cc_code: {kind: text, label: "UniOps cost centre", enumerate: true}
+      created_at: {kind: datetime, label: "Added"}
+    metrics:
+      count: {fn: count, field: "*", label: "Mapping rules"}
 
   ap_invoice:
     table: ap_invoices

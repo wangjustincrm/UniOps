@@ -39,6 +39,7 @@ from app.schemas.invoice import InvoiceCreate
 from app.schemas.pa import PaCreate
 from app.schemas.po import PoCreate
 from app.schemas.pr import PrCreate
+from app.services import report_lineage
 from app.services.doc_preflight import SUBMIT_CHECKS, field_checks_for
 
 _KNOWLEDGE = Path(__file__).resolve().parent.parent / "knowledge"
@@ -219,10 +220,11 @@ def modules() -> dict:
     in their own services, which this one cannot import.
 
     The one thing here that CAN be checked is checked. `can_explain_further`
-    is filtered against the kinds this module actually has knowledge for, so
+    is filtered against the kinds this module actually has knowledge for, and
+    `can_explain_reports` against the reports whose workings the guide holds, so
     the assistant never offers to go deeper on something it would then have to
-    refuse. test_module_guide.py fails if a module names a kind that does not
-    exist, or if a kind exists that no module claims.
+    refuse. test_module_guide.py fails if a module names a kind or a report that
+    does not exist, or if a kind exists that no module claims.
     """
     doc = _load_modules()
     out = []
@@ -237,6 +239,10 @@ def modules() -> dict:
             "notes": entry.get("notes") or [],
             # Derived: only kinds the guide can really answer on.
             "can_explain_further": [d for d in declared if d in _TOPICS],
+            # Same rule for reports: a module may only offer to explain the
+            # workings of a report the guide actually holds the workings of.
+            "can_explain_reports": [r for r in (entry.get("reports") or [])
+                                    if r in report_lineage.SUPPORTED],
         })
     return {
         "label": doc.get("label", "UniOps modules"),

@@ -112,6 +112,19 @@ async def budget_actual_grid(request: Request, _: CurrentUser,
     return await crud.budget_actual_grid(db, period, budget)
 
 
+@router.get("/budget-actual/lineage")
+async def budget_actual_lineage(_: CurrentUser):
+    """The rule behind the NC-posted figures, in words, for the assistant.
+
+    No period, no rows, no scope: it describes how a number is arrived at, not
+    what any number is. It is served from here because the rule is here — the
+    categories, the exclusions and the resolver order are read off the objects
+    the sync and the grid use, so this cannot describe a rule that stopped
+    being true."""
+    from app.services import budget_actual_lineage as lineage
+    return lineage.describe()
+
+
 @router.get("/nc-actuals-monthly")
 async def nc_actuals_monthly(user: CurrentUser, db: AsyncSession = Depends(get_db),
                              fiscal_year: int = Query(...),

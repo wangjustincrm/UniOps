@@ -155,6 +155,18 @@ Rules:
   explain_modules. It is the layer above explain_document_types — use it when
   they have not narrowed to a document yet, and when someone is plainly in the
   wrong place and needs pointing at the right module.
+- "Where does this number come from", "how do you work out the actual", "what
+  rule puts this cost against my cost centre", "why does this month not match
+  NC" are explain_report. They are looking at a report and asking what fills
+  it. Two of these went wrong in one afternoon: "在这个 Monthly Plan vs Actual
+  的表里你是怎么获取 Actual 数据" was answered with what the Budget module is
+  for, and a cost-centre code was answered with "the mapping is not in my data
+  structure" — while the map is a twenty-row table you can query and the rest
+  is a rule each service will state on request.
+- A cost-centre code and how it maps to NC — "SELL-0107-S03 对应 NC 里哪个成本
+  中心或部门" — is a DATA question first: query nc_cost_center_map, which holds
+  exactly that, one row per rule. Use explain_report when they want the rule
+  behind the whole report rather than the row for one code.
 - The same route covers the other documents: PO types, the two kinds of goods
   receipt, the four kinds of payment application, what the invoice statuses
   mean, and the three kinds of purchase agreement. "What is a house account",
@@ -461,6 +473,38 @@ _DOC_TYPES_TOOL = {
     },
 }
 
+_REPORT_TOOL = {
+    "name": "explain_report",
+    "description": (
+        "Use when someone asks where the numbers on a REPORT come from, or by "
+        "what rule a figure was put where it is — 'how do you get the actual "
+        "in this Plan vs Actual table', 'what rule decides which cost centre a "
+        "JV line is charged to', 'why is this month's actual different from "
+        "NC', 'what does actual (docs) mean'. Answers with the rule each "
+        "service actually applies — which accounts are counted, which "
+        "documents, which plan, how the cost centre is chosen — plus the live "
+        "mapping table. This is a question about how a number was ARRIVED AT. "
+        "Answering it with what the Budget module is for is the mistake this "
+        "route exists to stop: they can already see the report, they want to "
+        "know what fills it."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "report": {
+                "type": "string",
+                "enum": ["budget_plan_vs_actual"],
+                "description": (
+                    "budget_plan_vs_actual — the Budget Dashboard's Monthly "
+                    "Plan vs Actual grid, its plan / actual (docs) / NC posted "
+                    "figures, and how a posting is assigned to a cost centre"
+                ),
+            },
+        },
+        "required": ["report"],
+    },
+}
+
 _EXPLAIN_PLAN_TOOL = {
     "name": "explain_plan",
     "description": (
@@ -608,7 +652,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             system=system,
             tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _NEXT_TOOL,
                    _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
-                   _MODULES_TOOL, _PRODUCIBLE_TOOL, _CANNOT_TOOL],
+                   _MODULES_TOOL, _PRODUCIBLE_TOOL, _REPORT_TOOL, _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -639,6 +683,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             return {"kind": "modules", "usage": _usage(resp)}
         if block.name == "explain_document_types":
             return {"kind": "doc_types", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "explain_report":
+            return {"kind": "report", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_plan":
             return {"kind": "plan", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_workflow":
@@ -898,9 +944,26 @@ You are helping a colleague who may never have been trained on this system.
 - For modules: answer what they asked and no more. Someone asking where to
   claim an expense wants OA named and a sentence on why, not a tour of eight
   modules. Give the full list only when they asked for the full list.
-  `can_explain_further` is the only place you may offer to go deeper; offering
-  a document kind that is not in it promises something that will then be
-  refused.
+  `can_explain_further` and `can_explain_reports` are the only places you may
+  offer to go deeper; offering a document kind or a report that is not in them
+  promises something that will then be refused.
+- For a report's workings: they are looking at the report already, so do not
+  describe what the module is for. Answer in the order they asked — usually
+  where the number comes from first, then how it was assigned to a cost centre.
+  Each entry in `figures` is one of the numbers in a cell and was reported by
+  the service that computes it; use its own words for what it counts. Give
+  `read_it_this_way` when it is there: what the ledger CURRENTLY holds is the
+  difference between what a figure is designed to mean and what it means today,
+  and someone reading `opening` rows as invoice activity is being misled by a
+  correct description.
+  The precedence under `cost_centre_rule` is an order — say it as one, first
+  match wins — and say what happens when nothing matches, because that case is
+  a visible exception rather than a silent default.
+  If they named a code, find it in `cost_centre_mapping.rules` and answer with
+  that row before anything general. If `available` is false, give `why` and
+  point them at whom to ask; do not describe rules you were not given.
+  Anything named in `unavailable` was not readable just now — say that part
+  could not be checked. Do not fill it in.
 - Never invent a step, a role, a rule, a task, a module, or a field. If a type
   has no requirement beyond what every type has, say that plainly — "nothing
   extra" is an answer, and inventing a distinction to fill the row is not.

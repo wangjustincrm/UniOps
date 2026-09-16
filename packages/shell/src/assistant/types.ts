@@ -36,6 +36,10 @@ export interface AssistantSources {
   types?: number
   /** How many modules a system-overview answer covered. */
   modules?: number
+  /** The report a lineage answer explained, and how much of it was readable. */
+  report?: string
+  figures?: number
+  mapping_rules?: number | null
   /** Recipe levels walked for a "how many can we make" answer. */
   levels_deep?: number
   row_count?: number
@@ -54,6 +58,7 @@ export type AssistantKind =
   | 'workflow'
   | 'document_types'
   | 'modules'
+  | 'report_lineage'
   | 'producible'
   | 'cannot_answer'
   | 'denied'
