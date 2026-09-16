@@ -99,7 +99,7 @@ export function VocabularyMultiSelect({
   placeholder?: string
   emptyHint?: string
 }) {
-  const { data, isLoading } = useVocabulary(vocabulary)
+  const { data, isLoading, isError } = useVocabulary(vocabulary)
   const [query, setQuery] = useState('')
   const [openGroup, setOpenGroup] = useState<string | null>(null)
 
@@ -124,6 +124,20 @@ export function VocabularyMultiSelect({
   }
 
   const current = groups.find((g) => g.group?.id === openGroup)
+  // A question can point at a list that is not there — a form built when the
+  // reference was typed by hand rather than chosen. Silently rendering an
+  // empty dropdown is how an inspection becomes impossible to finish with
+  // nothing on screen explaining why.
+  if (isError) {
+    return (
+      <p className="rounded-lg border border-danger-300 bg-danger-50 p-3 text-sm text-danger-700">
+        This question points at a list called “{vocabulary}”, and there is no
+        such list. Whoever maintains the form needs to point it at one under
+        Settings, Forms.
+      </p>
+    )
+  }
+
   const flat = groups.length === 1 && groups[0].group === null
 
   const chosenFor = (ids: string[]) => all.filter((o) => ids.includes(o.id))
@@ -245,7 +259,7 @@ export function VocabularySelect({
   onChange: (item: VocabItem | null) => void
   placeholder?: string
 }) {
-  const { data } = useVocabulary(vocabulary)
+  const { data, isError } = useVocabulary(vocabulary)
   const groups = useMemo(() => group(data ?? []), [data])
   const all = useMemo(() => leaves(data ?? []), [data])
 
@@ -257,6 +271,16 @@ export function VocabularySelect({
 
   const [openGroup, setOpenGroup] = useState<string>('')
   const activeGroup = openGroup || groupOf(selected)
+
+  if (isError) {
+    return (
+      <p className="rounded-lg border border-danger-300 bg-danger-50 p-3 text-sm text-danger-700">
+        This question points at a list called “{vocabulary}”, and there is no
+        such list. Whoever maintains the form needs to point it at one under
+        Settings, Forms.
+      </p>
+    )
+  }
 
   const flat = groups.length === 1 && groups[0].group === null
   const selectCls =

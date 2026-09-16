@@ -171,6 +171,14 @@ async def create_template(payload: TemplateIn, db: SessionDep, user: CanManageSe
         category=payload.category, creator_id=_user_id(user))
 
 
+@router.get("/templates/{template_id}", response_model=TemplateOut)
+async def get_template(template_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
+    """One template. The builder needs it to say which form is being edited —
+    it showed only "Form builder", which with four similarly-named inspections
+    open is not enough to tell them apart."""
+    return await crud.get_template(db, template_id)
+
+
 @router.get("/templates/{template_id}/versions", response_model=list[VersionOut])
 async def list_versions(template_id: uuid.UUID, db: SessionDep, user: CanManageSettings):  # noqa: ARG001
     return await crud.list_versions(db, template_id)

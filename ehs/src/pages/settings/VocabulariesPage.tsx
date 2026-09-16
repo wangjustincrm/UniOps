@@ -35,6 +35,9 @@ export default function VocabulariesPage() {
   const queryClient = useQueryClient()
   const [selected, setSelected] = useState<string | null>(null)
   const [showRetired, setShowRetired] = useState(false)
+  // Wording changes. Retiring and re-adding was the only way to fix a typo,
+  // which loses the entry's history and every record that pointed at it.
+  const [renaming, setRenaming] = useState<string | null>(null)
   const [draft, setDraft] = useState({ code: '', label: '' })
 
   const vocabs = useQuery({
@@ -138,12 +141,22 @@ export default function VocabulariesPage() {
       <ul className="divide-y divide-neutral-100 rounded-xl border border-neutral-200 bg-white">
         {items.data?.map((i) => (
           <li key={i.id} className={`flex items-center gap-3 px-3.5 py-2.5 ${i.is_active ? '' : 'opacity-50'}`}>
+            {renaming === i.id ? (
+              <RenameField item={i} code={active!} onDone={() => setRenaming(null)} />
+            ) : (
             <span className="min-w-0 flex-1 text-sm text-neutral-800">
               {i.path && i.path !== i.label ? (
                 <span className="text-neutral-400">{i.path.replace(/\/[^/]*$/, '/')}</span>
               ) : null}
               {i.label}
+              {!current?.is_system_locked && (
+                <button type="button" onClick={() => setRenaming(i.id)}
+                        className="ml-2 text-xs text-primary-700 hover:underline">
+                  Rename
+                </button>
+              )}
             </span>
+            )}
             <span className="font-mono text-xs text-neutral-400">{i.code}</span>
             {active === PICTOGRAM_VOCABULARY && <PictogramSlot code={active} item={i} />}
             <button
@@ -246,6 +259,42 @@ function PictogramSlot({ code, item }: { code: string; item: Item }) {
           Remove
         </button>
       )}
+    </span>
+  )
+}
+
+function RenameField({ item, code, onDone }: { item: Item; code: string; onDone: () => void }) {
+  const queryClient = useQueryClient()
+  const [label, setLabel] = useState(item.label)
+  const save = useMutation({
+    mutationFn: () => api.patch(
+      `/api/v1/settings/vocabularies/${code}/items/${item.id}`, { label: label.trim() }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vocab-items'] })
+      onDone()
+    },
+  })
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-2">
+      <input
+        autoFocus
+        className="min-h-[32px] min-w-0 flex-1 rounded border border-neutral-300 px-2 text-sm"
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && label.trim()) save.mutate()
+          if (e.key === 'Escape') onDone()
+        }}
+      />
+      <button type="button" disabled={!label.trim() || save.isPending}
+              onClick={() => { if (!save.isPending) save.mutate() }}
+              className="min-h-[32px] rounded-md px-2 text-xs font-medium text-primary-700 disabled:opacity-40">
+        Save
+      </button>
+      <button type="button" onClick={onDone}
+              className="min-h-[32px] rounded-md px-2 text-xs text-neutral-500">
+        Cancel
+      </button>
     </span>
   )
 }

@@ -345,3 +345,47 @@ def test_the_drawn_modules_match_the_encoder():
             drawn.add((y - QUIET_ZONE, x - QUIET_ZONE + i))
 
     assert drawn == expected, "the drawn code is not the code the encoder produced"
+
+
+async def test_a_form_can_be_asked_which_form_it_is(hse_manager):
+    """The builder had the template id and no way to ask what it was called.
+
+    It showed "Form builder" and nothing else, which with four similarly-named
+    ladder inspections open is not enough to tell them apart — and four is what
+    the first acceptance round produced, because starting over was easier than
+    working out which one was which.
+    """
+    _, client = hse_manager
+    created = await client.post("/api/v1/forms/templates", json={
+        "code": "ladder_weekly", "name": "Ladder inspection — weekly",
+        "category": "inspection",
+    })
+    assert created.status_code == 201, created.text
+    template = created.json()
+
+    one = await client.get(f"/api/v1/forms/templates/{template['id']}")
+    assert one.status_code == 200
+    assert one.json()["name"] == "Ladder inspection — weekly"
+    assert one.json()["code"] == "ladder_weekly"
+
+
+async def test_a_reference_list_is_named_differently_from_its_code(hse_manager):
+    """Why the builder must offer a choice rather than a text box.
+
+    The list a person knows as "Safety Equipment Type" answers to
+    `safety_asset_type`. Asked to type the code, HSE typed the name, the form
+    went out pointing at a list that does not exist, and the question had
+    nothing to pick from.
+    """
+    _, client = hse_manager
+    listing = (await client.get("/api/v1/settings/vocabularies")).json()
+    by_name = {v["name"]: v["code"] for v in listing}
+    assert by_name, "the builder's dropdown is filled from this"
+    assert any(name.lower().replace(" ", "_") != code for name, code in by_name.items()), (
+        "if every name matched its code the text box would have been survivable; "
+        "they do not, which is the whole reason for the dropdown")
+
+    missing = await client.get("/api/v1/settings/vocabularies/Safety_Equipment_Type/items")
+    assert missing.status_code == 404, (
+        "a question pointing at a list that does not exist has to fail loudly — "
+        "the picker used to render an empty dropdown and say nothing")

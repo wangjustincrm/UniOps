@@ -60,8 +60,22 @@ function keyFrom(label: string, taken: Set<string>): string {
   return key
 }
 
+interface VocabularySummary { code: string; name: string }
+interface TemplateSummary { id: string; code: string; name: string; category: string | null }
+
 export default function FormBuilderPage() {
   const { id = '' } = useParams()
+  // The lists a `vocabulary` question can point at.
+  const template = useQuery({
+    queryKey: ['form-template', id],
+    queryFn: () => api.get<TemplateSummary>(`/api/v1/forms/templates/${id}`),
+    enabled: Boolean(id),
+  })
+  const vocabularies = useQuery({
+    queryKey: ['vocabularies'],
+    queryFn: () => api.get<VocabularySummary[]>('/api/v1/settings/vocabularies'),
+    staleTime: 10 * 60_000,
+  })
   const queryClient = useQueryClient()
 
   const types = useQuery({
@@ -136,7 +150,19 @@ export default function FormBuilderPage() {
   return (
     <div className="p-4 pb-28">
       <header className="mb-4">
-        <h1 className="text-lg font-bold tracking-tight text-neutral-900">Form builder</h1>
+        {/* Which form this is. The page said "Form builder" and nothing else,
+            so with four similarly-named ladder inspections open in tabs there
+            was no way to tell them apart. */}
+        <h1 className="text-lg font-bold tracking-tight text-neutral-900">
+          {template.data?.name ?? 'Form builder'}
+        </h1>
+        {template.data && (
+          <p className="text-xs text-neutral-500">
+            <span className="font-mono">{template.data.code}</span>
+            {template.data.category ? ` · ${template.data.category}` : ''}
+            {' · editing the draft'}
+          </p>
+        )}
         <p className="mt-0.5 text-sm text-neutral-600">
           {published.length > 0
             ? `Published v${published[0].version_no}${
@@ -194,9 +220,37 @@ export default function FormBuilderPage() {
                 )}
 
                 {q.type === 'vocabulary' && (
-                  <input className={`${inputClass} mt-2`} value={q.vocabulary ?? ''}
-                         placeholder="Reference list code, e.g. hazard"
-                         onChange={(e) => update(i, { vocabulary: e.target.value || undefined })} />
+                  <>
+                    {/* Chosen, not typed. This was a free-text box asking for
+                        the list's *code* while the lists are known by their
+                        names, and the two do not match — "Safety Equipment
+                        Type" is `safety_asset_type`. A form went out
+                        referencing a list that does not exist, the picker had
+                        nothing in it, and the inspection could not be
+                        completed. */}
+                    <select
+                      className={`${inputClass} mt-2`}
+                      value={q.vocabulary ?? ''}
+                      onChange={(e) => update(i, { vocabulary: e.target.value || undefined })}
+                    >
+                      <option value="">Choose a list…</option>
+                      {(vocabularies.data ?? []).map((v) => (
+                        <option key={v.code} value={v.code}>{v.name}</option>
+                      ))}
+                      {/* A form built before this was a dropdown may point at
+                          something that is not on the list. Kept as an option
+                          so opening the form does not silently repoint it. */}
+                      {q.vocabulary && !(vocabularies.data ?? []).some((v) => v.code === q.vocabulary) && (
+                        <option value={q.vocabulary}>{q.vocabulary} — not a list that exists</option>
+                      )}
+                    </select>
+                    {q.vocabulary && !(vocabularies.data ?? []).some((v) => v.code === q.vocabulary) && (
+                      <p className="mt-1 text-xs text-danger-700">
+                        Nothing answers to “{q.vocabulary}”, so this question will
+                        have no options to pick from. Choose a list above.
+                      </p>
+                    )}
+                  </>
                 )}
 
                 <div className="mt-2 flex flex-wrap items-center gap-3">
