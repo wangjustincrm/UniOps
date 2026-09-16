@@ -12,7 +12,7 @@ the grid run on rather than in words beside them:
 
   categories        `crud.account_balance.BUDGET_ACTUAL_ACCOUNTS`, the dict the
                     grid iterates.
-  excluded          `_PAYROLL_PREFIX` / `_DEPREC_PREFIX`, the prefixes the grid
+  excluded          `EXCLUDED_IO_LABELS`, the prefixes the grid
                     lifts out of the per-cost-centre rows.
   cost-centre order NOT a description of `resolve_uniops_cc` — the probe below
                     runs it and reports which of three planted rules it chose.
@@ -24,8 +24,7 @@ read them straight out of budget_actual_cc_map.
 """
 from app.crud.account_balance import (
     BUDGET_ACTUAL_ACCOUNTS,
-    _DEPREC_PREFIX,
-    _PAYROLL_PREFIX,
+    EXCLUDED_IO_LABELS,
 )
 from app.services.cc_map_import import resolve_uniops_cc
 
@@ -108,16 +107,21 @@ def describe() -> dict:
         "month_from": (
             "The voucher's fiscal period, not the day anything was entered."
         ),
+        # Derived from the query's own exclusion set, not restated: an item
+        # added there must not keep being described as included here.
         "excluded_from_the_dashboard": [
-            {"budget_account_prefix": _PAYROLL_PREFIX, "what": "Payroll"},
-            {"budget_account_prefix": _DEPREC_PREFIX, "what": "Depreciation"},
+            {"budget_account_prefix": prefix, "what": what}
+            for prefix, what in EXCLUDED_IO_LABELS.items()
         ],
         "excluded_why": (
             "Finance tracks payroll and depreciation at category level only, "
-            "so they are not spread over cost centres. They are left out of "
-            "the dashboard's rows and totals entirely — the finance grid shows "
-            "them as separate tie-out lines. A cost centre's dashboard total "
-            "is therefore smaller than its total in the books, by design."
+            "so they are not spread over cost centres, and shut-down loss — "
+            "the stop-production entry that moves a share of manufacturing "
+            "overhead into G&A — is not budgeted per cost centre at all. They "
+            "are left out of the dashboard's rows and totals entirely; the "
+            "finance grid shows payroll and depreciation as separate tie-out "
+            "lines. A cost centre's dashboard total is therefore smaller than "
+            "its total in the books, by design."
         ),
         "cost_centre_rule": {
             "how": (

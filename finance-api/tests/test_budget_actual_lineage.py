@@ -38,7 +38,9 @@ async def test_every_category_it_names_appears_on_the_grid(db_session):
 
 
 async def test_what_it_says_is_excluded_is_excluded(db_session):
-    """Payroll and depreciation: named as left out, and actually left out."""
+    """Everything the descriptor names as left out is actually left out — it
+    iterates the descriptor, so an exclusion added to EXCLUDED_IO_LABELS is
+    covered here the moment it is declared."""
     cc = await _cc(db_session, "MOH-0106-E01", "ENG")
     kept, excluded_ids = uuid.uuid4(), []
     db_session.add(BudgetAccount(id=kept, code="CRM003", name="IT", is_active=True))

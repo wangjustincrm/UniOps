@@ -61,9 +61,13 @@ notes:
     finance Budget-vs-Actual grid, which is the list of what someone has to fix
     — in NC, or by adding a rule.
   - >-
-    Payroll and depreciation are missing from this report on purpose. Finance
-    tracks them at category level rather than per cost centre, so a cost
-    centre's total here is smaller than its total in the books.
+    Payroll, depreciation and shut-down loss are missing from this report on
+    purpose. Finance tracks payroll and depreciation at category level rather
+    than per cost centre, and shut-down loss — the stop-production entry that
+    moves a share of manufacturing overhead into G&A — is not budgeted per cost
+    centre at all. So a cost centre's total here is smaller than its total in
+    the books. The live list of what is left out is in the report's lineage
+    answer, which reads it from the query itself.
   - >-
     With no cost centre selected the grid adds up every cost centre that has a
     current approved budget for the year — so a cost centre whose plan was never
@@ -74,8 +78,8 @@ when_a_cell_looks_wrong: >-
   superseded plan shows as no plan. Is the cost on the right month — NC uses the
   voucher's fiscal period, not the day anyone typed it. Is it charged to the
   right cost centre — that is the mapping rule, and the map is a short list you
-  can ask to see. And is it payroll or depreciation, which this report leaves
-  out.
+  can ask to see. And is it payroll, depreciation or shut-down loss, which this
+  report leaves out.
 
 who_maintains_it: >-
   Finance owns the mapping rules, imported from the Budget vs Actual Mapping

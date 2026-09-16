@@ -163,12 +163,23 @@ _DEPREC_PREFIX = "CRM004"
 _SHUTDOWN_LOSS_PREFIX = "CRM09912"
 
 #: Every income-expense item the per-cost-center dashboard deliberately leaves
-#: out. NOTE CRM09912 has no budget_accounts row today, so it is already dropped
-#: by the INNER join in nc_actuals_monthly; listing it here is what keeps it out
-#: if the catalog ever gains one — and is what tells JV Validation that its
-#: 8.6M CAD is policy, not a defect. Keep in lockstep with the frontend's
-#: `isExcludedFromDashboard` (epms/src/pages/budget/BudgetDashboard.tsx).
-EXCLUDED_IO_PREFIXES = (_DEPREC_PREFIX, _PAYROLL_PREFIX, _SHUTDOWN_LOSS_PREFIX)
+#: out, with the name a person would use for it. NOTE CRM09912 has no
+#: budget_accounts row today, so it is already dropped by the INNER join in
+#: nc_actuals_monthly; listing it here is what keeps it out if the catalog ever
+#: gains one — and is what tells JV Validation that its 8.6M CAD is policy, not
+#: a defect.
+#:
+#: This is the SINGLE SOURCE for the exclusion set: services/budget_actual_
+#: lineage.py derives the assistant's "what this report leaves out" answer from
+#: it rather than restating it, so the explanation cannot drift from the query.
+#: The one copy that cannot derive is the frontend's `isExcludedFromDashboard`
+#: (epms/src/pages/budget/BudgetDashboard.tsx) — keep it in lockstep by hand.
+EXCLUDED_IO_LABELS = {
+    _DEPREC_PREFIX: "Depreciation",
+    _PAYROLL_PREFIX: "Payroll",
+    _SHUTDOWN_LOSS_PREFIX: "Shut-down loss",
+}
+EXCLUDED_IO_PREFIXES = tuple(EXCLUDED_IO_LABELS)
 
 
 async def _cc_map(db: AsyncSession) -> dict:
