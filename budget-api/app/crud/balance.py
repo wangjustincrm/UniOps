@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.ledger import get_actual_spent, get_committed
 from app.models.catalog import BudgetAccount, BudgetL1
-from app.models.ledger import BudgetLedger
+from app.models.ledger import ACTUAL_OPS, COMMIT_ADDS, COMMIT_RELEASES, BudgetLedger
 from app.models.plan import BudgetPlan, BudgetPlanLine
 from app.schemas.actual import (
     AccountSummary,
@@ -110,14 +110,13 @@ async def list_monthly_actuals(
         key = (cc, aid, fy, m)
         b = bucket.setdefault(key, {"committed": Decimal("0"), "actual_spent": Decimal("0")})
         amount = Decimal(str(total))
-        if op == "commit":
+        # One statement of the rule, not a second copy of it: actualize belongs
+        # to both buckets, which is why the actual test is not an elif.
+        if op in COMMIT_ADDS:
             b["committed"] += amount
-        elif op == "release":
+        elif op in COMMIT_RELEASES:
             b["committed"] -= amount
-        elif op == "actualize":
-            b["committed"] -= amount
-            b["actual_spent"] += amount
-        elif op in ("book_expense", "opening"):
+        if op in ACTUAL_OPS:
             b["actual_spent"] += amount
 
     # Resolve account codes
@@ -182,7 +181,7 @@ async def get_actuals_summary(
             actual_q = select(func.coalesce(func.sum(BudgetLedger.amount), 0)).where(
                 BudgetLedger.account_id == acct.id,
                 BudgetLedger.fiscal_year == fiscal_year,
-                BudgetLedger.operation.in_(["actualize", "book_expense", "opening"]),
+                BudgetLedger.operation.in_(ACTUAL_OPS),
             )
             if cc_ids:
                 annual_q = annual_q.where(BudgetPlan.cost_center_id.in_(cc_ids))
@@ -271,7 +270,7 @@ async def get_monthly_actuals_summary(
         )
         .where(
             BudgetLedger.fiscal_year == fiscal_year,
-            BudgetLedger.operation.in_(["actualize", "book_expense", "opening"]),
+            BudgetLedger.operation.in_(ACTUAL_OPS),
         )
         .group_by(BudgetLedger.account_id, BudgetLedger.month)
     )
