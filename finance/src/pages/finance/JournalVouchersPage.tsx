@@ -179,8 +179,15 @@ export default function JournalVouchersPage() {
           <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
         ) : (
           <>
-            <div className="overflow-hidden rounded-lg border border-neutral-200">
-              <table className="w-full text-sm">
+            {/* table-fixed, and every column but Summary carries a width.
+                Under table-auto the browser re-derives widths from content, so
+                the unconstrained Summary took the whole row and squeezed the
+                fixed-width columns down to their longest word — "JV · JV-2026
+                09-0276" wrapped onto three lines while Summary had space to
+                spare. Fixed layout makes the w-* classes authoritative and
+                leaves Summary exactly the remainder. */}
+            <div className="overflow-x-auto rounded-lg border border-neutral-200">
+              <table className="w-full min-w-[68rem] table-fixed text-sm">
                 <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                   <tr>
                     {canAct && (
@@ -188,23 +195,23 @@ export default function JournalVouchersPage() {
                         <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                       </th>
                     )}
-                    <th className="px-3 py-2 w-36 cursor-pointer select-none" onClick={() => toggleSort('jv_number')}>
+                    <th className="px-3 py-2 w-44 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('jv_number')}>
                       Voucher No.{sort.col === 'jv_number' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </th>
-                    <th className="px-3 py-2 w-24 cursor-pointer select-none" onClick={() => toggleSort('voucher_date')}>
+                    <th className="px-3 py-2 w-28 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('voucher_date')}>
                       Date{sort.col === 'voucher_date' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </th>
-                    <th className="px-3 py-2 cursor-pointer select-none" onClick={() => toggleSort('summary')}>
+                    <th className="px-3 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('summary')}>
                       Summary{sort.col === 'summary' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </th>
-                    <th className="px-3 py-2 w-32">Source</th>
-                    <th className="px-3 py-2 w-32 cursor-pointer select-none" onClick={() => toggleSort('source_subsystem')}>
+                    <th className="px-3 py-2 w-48 whitespace-nowrap">Source</th>
+                    <th className="px-3 py-2 w-20 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('source_subsystem')}>
                       System{sort.col === 'source_subsystem' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </th>
-                    <th className="px-3 py-2 w-32 text-right cursor-pointer select-none" onClick={() => toggleSort('total_debit')}>
+                    <th className="px-3 py-2 w-32 text-right cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('total_debit')}>
                       Debit (CAD){sort.col === 'total_debit' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </th>
-                    <th className="px-3 py-2 w-24 cursor-pointer select-none" onClick={() => toggleSort('status')}>
+                    <th className="px-3 py-2 w-28 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('status')}>
                       Status{sort.col === 'status' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </th>
                   </tr>
@@ -223,13 +230,35 @@ export default function JournalVouchersPage() {
                           )}
                         </td>
                       )}
-                      <td className="px-3 py-2 font-mono text-xs">{v.voucher_word} · {v.jv_number}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-600">{v.voucher_date}</td>
-                      <td className="px-3 py-2 text-neutral-700">{v.summary || '—'}</td>
+                      <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{v.voucher_word} · {v.jv_number}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-neutral-600 whitespace-nowrap">{v.voucher_date}</td>
+                      {/* The only column allowed to wrap; break-words so a long
+                          unbroken token cannot push the row wider than its share. */}
+                      <td className="px-3 py-2 text-neutral-700 break-words">{v.summary || '—'}</td>
+                      {/* Doc number on its own line: "ap_invoice · AP-20260916-0010"
+                          on one line needs ~28 mono chars, and the number is the
+                          half people scan for. */}
                       <td className="px-3 py-2 text-xs text-neutral-500">
-                        {v.source_doc_type ? `${v.source_doc_type} · ${v.source_doc_number ?? ''}` : '—'}
+                        {v.source_doc_type ? (
+                          <>
+                            <span className="block font-mono text-neutral-600 truncate"
+                                  title={v.source_doc_number ?? undefined}>
+                              {v.source_doc_number || '—'}
+                            </span>
+                            <span className="block truncate" title={v.source_doc_type}>
+                              {v.source_doc_type}
+                            </span>
+                          </>
+                        ) : '—'}
                       </td>
-                      <td className="px-3 py-2 text-neutral-600">{v.source_subsystem_label ?? '—'}</td>
+                      {/* The NC subsystem CODE, with the full name on hover:
+                          "Gain/Loss Carry-Forward" spelled out costs 160px of a
+                          row whose useful content is Summary, and AP / AR / GL
+                          is what finance reads anyway. */}
+                      <td className="px-3 py-2 font-mono text-xs text-neutral-600"
+                          title={v.source_subsystem_label ?? undefined}>
+                        {v.source_subsystem ?? '—'}
+                      </td>
                       <td className="px-3 py-2 text-right font-mono">{money(v.total_local_debit)}</td>
                       <td className="px-3 py-2"><JvStatusBadge status={v.status} /></td>
                     </tr>
