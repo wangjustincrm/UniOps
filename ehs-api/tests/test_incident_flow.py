@@ -5,7 +5,7 @@ injury, it gets classified, and the statutory clocks that follow start from the
 right instants.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -402,3 +402,61 @@ async def test_a_misspelt_key_does_not_blank_the_investigation(hse_manager, work
 
     kept = (await client.get(f"/api/v1/incidents/{inc['id']}/investigation")).json()
     assert kept["sequence_of_events"] == "the account that must survive"
+
+
+async def test_a_talk_reaches_a_supervisor_who_holds_the_role_the_designed_way(
+    hse_manager, test_engine
+):
+    """Supervisory roles are held alongside a job, not instead of one.
+
+    `area_supervisor` is marked not-assignable-as-primary, so the way to hold
+    it is as an additional role — and the toolbox talk looked only at
+    `users.role`, so those supervisors received nothing. Nothing looked wrong
+    either: the completion rate counted the deliveries that existed, so a talk
+    delivered to nobody read as fully delivered.
+    """
+    from sqlalchemy import text
+    from tests.conftest import make_user
+
+    _, client = hse_manager
+    supervisor = await make_user(test_engine, role="requester", full_name="Ken Boucher")
+    async with test_engine.begin() as conn:
+        await conn.execute(
+            text("INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'area_supervisor')"),
+            {"u": supervisor.id})
+
+    offered = (await client.get("/api/v1/toolbox-talks/supervisors")).json()
+    assert any(s["id"] == str(supervisor.id) for s in offered), (
+        "a supervisor holding the role the way it is designed to be held must be "
+        "offered the talk")
+
+
+async def test_a_talk_can_go_to_some_supervisors_rather_than_all(hse_manager, test_engine):
+    """Everybody is the right default, not the only option.
+
+    A topic concerning two crews, sent to forty people, teaches thirty-eight of
+    them to skip the next one.
+    """
+    from sqlalchemy import text
+    from tests.conftest import make_user
+
+    _, client = hse_manager
+    one = await make_user(test_engine, role="requester", full_name="Chosen Supervisor")
+    two = await make_user(test_engine, role="requester", full_name="Other Supervisor")
+    async with test_engine.begin() as conn:
+        for person in (one, two):
+            await conn.execute(
+                text("INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'area_supervisor')"),
+                {"u": person.id})
+
+    talk = (await client.post("/api/v1/toolbox-talks", json={
+        "title": "Ladder inspection before use",
+        "period_month": date.today().replace(day=1).isoformat(),
+    })).json()
+
+    sent = await client.post(f"/api/v1/toolbox-talks/{talk['id']}/publish",
+                             json={"supervisor_ids": [str(one.id)]})
+    assert sent.status_code == 200, sent.text
+    got = {d["supervisor_name"] for d in sent.json()}
+    assert "Chosen Supervisor" in got
+    assert "Other Supervisor" not in got, "it went to somebody who was not chosen"

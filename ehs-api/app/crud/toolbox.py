@@ -56,17 +56,39 @@ async def create_talk(
     return talk
 
 
-async def publish_talk(db: AsyncSession, talk: ToolboxTalk) -> list[TbtDelivery]:
-    """Hand the talk to every supervisor, and put it in their to-do list.
+SUPERVISORY_ROLES = ("area_supervisor", "dept_manager", "supervisor")
+
+
+async def supervisors_for_talks(db: AsyncSession) -> list[User]:
+    """Everyone who runs a crew, by either route to the role.
+
+    A role reaches somebody two ways in UniOps: as their primary login role, or
+    granted alongside it. This read only ever looked at the primary one, so an
+    area supervisor who holds that role the second way — which is the way the
+    role is designed to be held, it is marked not-assignable-as-primary —
+    received nothing, and their crew's talk was never delivered. Nothing showed
+    up as wrong: the completion rate counted only the deliveries that existed.
+    """
+    return await notify.by_roles(db, SUPERVISORY_ROLES)
+
+
+async def publish_talk(
+    db: AsyncSession, talk: ToolboxTalk, *, only_to: list[uuid.UUID] | None = None,
+) -> list[TbtDelivery]:
+    """Hand the talk to the supervisors who will run it.
 
     A delivery per supervisor rather than one shared record: each team meets
     separately, and completion is measured per team. Idempotent — publishing
     twice does not double anyone's list.
+
+    `only_to` narrows it. Everybody is the right default — the talk is monthly
+    and plant-wide — but a topic that concerns two crews sent to forty people
+    trains thirty-eight of them to ignore the next one.
     """
-    supervisors = (await db.execute(
-        select(User).where(User.is_active.is_(True), User.role.in_(
-            ("area_supervisor", "dept_manager", "supervisor")))
-    )).scalars().all()
+    supervisors = await supervisors_for_talks(db)
+    if only_to:
+        wanted = set(only_to)
+        supervisors = [s for s in supervisors if s.id in wanted]
 
     existing = {
         d.supervisor_id for d in (await db.execute(

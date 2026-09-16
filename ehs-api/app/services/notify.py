@@ -37,12 +37,18 @@ logger = logging.getLogger(__name__)
 DEFAULT_INCIDENT_ROLES = ("ehs_manager", "ehs_coordinator")
 
 
-async def _by_roles(db: AsyncSession, roles: tuple[str, ...]) -> list[User]:
+async def by_roles(db: AsyncSession, roles: tuple[str, ...]) -> list[User]:
     """Active holders of any of these roles, primary or additional.
 
     Reads `user_roles` as well as `users.role` for the same reason
     `uniops_authz` does: a first aider or JHSC member holds that in addition to
     their job, and looking only at the primary role would miss all of them.
+
+    Public because the toolbox talk needed the same answer and asked it a
+    different way, looking at primary roles only — so a supervisor holding that
+    role the way it is designed to be held received nothing, and nothing looked
+    wrong because the completion rate counted only the deliveries that existed.
+    One implementation, since two of them had already drifted.
     """
     from sqlalchemy import text
 
@@ -71,7 +77,7 @@ async def _incident_audience(db: AsyncSession, category_code: str | None) -> lis
         if picked:
             return picked
     return await mail.recipients(
-        db, [u.id for u in await _by_roles(db, DEFAULT_INCIDENT_ROLES)])
+        db, [u.id for u in await by_roles(db, DEFAULT_INCIDENT_ROLES)])
 
 
 # ── Incidents ────────────────────────────────────────────────────────────────
@@ -119,7 +125,7 @@ async def statutory_escalated(db: AsyncSession, deadline, *, overdue: bool) -> N
     where an inbox somebody has not opened today is not good enough.
     """
     people = await mail.recipients(
-        db, [u.id for u in await _by_roles(db, DEFAULT_INCIDENT_ROLES)])
+        db, [u.id for u in await by_roles(db, DEFAULT_INCIDENT_ROLES)])
     if not people:
         return
 
@@ -162,7 +168,7 @@ async def action_escalated(
         ids.append(supervisor_id)
     role_people: list[User] = []
     if level >= 3:
-        role_people = await _by_roles(db, ("ehs_manager",))
+        role_people = await by_roles(db, ("ehs_manager",))
     people = await mail.recipients(db, ids + [u.id for u in role_people])
     if not people:
         return
@@ -282,7 +288,7 @@ async def document_published(db: AsyncSession, document, audience_ids: list[uuid
 async def jhsc_recommendation(db: AsyncSession, meeting, recommendation) -> None:
     """The committee has recommended something; the employer owes a reply."""
     people = await mail.recipients(
-        db, [u.id for u in await _by_roles(db, DEFAULT_INCIDENT_ROLES)])
+        db, [u.id for u in await by_roles(db, DEFAULT_INCIDENT_ROLES)])
     if not people:
         return
     await mail.queue(
@@ -303,7 +309,7 @@ async def jhsc_recommendation(db: AsyncSession, meeting, recommendation) -> None
 async def jhsc_minutes_published(db: AsyncSession, meeting, member_ids: list[uuid.UUID]) -> None:
     """HSE: minutes go to management and to every member."""
     people = await mail.recipients(
-        db, list(member_ids) + [u.id for u in await _by_roles(db, DEFAULT_INCIDENT_ROLES)])
+        db, list(member_ids) + [u.id for u in await by_roles(db, DEFAULT_INCIDENT_ROLES)])
     if not people:
         return
     await mail.queue(

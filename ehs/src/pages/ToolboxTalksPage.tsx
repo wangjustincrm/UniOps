@@ -9,9 +9,9 @@
  * A supervisor sees only their own team's delivery; HSE sees the completion rate
  * across all of them, which is the number the management dashboard shows.
  */
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Plus, Users } from 'lucide-react'
+import { Check, Plus, Users, Paperclip } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/formatDate'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
@@ -20,7 +20,7 @@ import { usePermissions } from '@/hooks/usePermissions'
 
 interface Talk {
   id: string; talk_no: string; title: string; topic: string | null
-  period_month: string; is_published: boolean
+  period_month: string; is_published: boolean; material_filename: string | null
 }
 interface Delivery {
   id: string; talk_id: string; supervisor_name: string | null
@@ -51,13 +51,7 @@ export default function ToolboxTalksPage() {
       `/api/v1/toolbox-talks/deliveries${isHse ? '' : '?mine=true'}`),
   })
 
-  const publish = useMutation({
-    mutationFn: (talkId: string) => api.post(`/api/v1/toolbox-talks/${talkId}/publish`, {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['toolbox-talks'] })
-      queryClient.invalidateQueries({ queryKey: ['tbt-deliveries'] })
-    },
-  })
+  const [sending, setSending] = useState<Talk | null>(null)
 
   const mine = (deliveries.data ?? []).filter((d) => d.status === 'pending')
   const done = (deliveries.data ?? []).filter((d) => d.status === 'delivered')
@@ -119,14 +113,19 @@ export default function ToolboxTalksPage() {
               {t.is_published
                 ? <Completion talkId={t.id} />
                 : isHse && (
-                  <button type="button" disabled={publish.isPending}
-                          onClick={() => { if (!publish.isPending) publish.mutate(t.id) }}
-                          className="min-h-[36px] rounded-lg bg-primary-600 px-3 text-xs font-semibold text-white disabled:opacity-50">
-                    {publish.isPending ? 'Sending…' : 'Send to supervisors'}
+                  <button type="button" onClick={() => setSending(t)}
+                          className="min-h-[36px] rounded-lg bg-primary-600 px-3 text-xs font-semibold text-white">
+                    Send…
                   </button>
                 )}
             </div>
             {t.topic && <p className="mt-1.5 text-xs text-neutral-600">{t.topic}</p>}
+            {isHse && !t.is_published && <MaterialRow talk={t} />}
+            {t.material_filename && t.is_published && (
+              <p className="mt-1.5 text-xs text-neutral-500">
+                Sheet: {t.material_filename}
+              </p>
+            )}
           </li>
         ))}
       </ul>
@@ -154,6 +153,7 @@ export default function ToolboxTalksPage() {
 
       {signing && <SignRoomDialog delivery={signing} onClose={() => setSigning(null)}
                                   onDone={() => queryClient.invalidateQueries({ queryKey: ['tbt-deliveries'] })} />}
+      {sending && <SendDialog talk={sending} onClose={() => setSending(null)} />}
       {creating && <NewTopicDialog onClose={() => setCreating(false)}
                                     onDone={() => queryClient.invalidateQueries({ queryKey: ['toolbox-talks'] })} />}
     </div>
@@ -300,6 +300,116 @@ function NewTopicDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
                   onClick={() => { if (title.trim() && !create.isPending) { setError(null); create.mutate() } }}
                   className="min-h-[44px] flex-[1.4] rounded-lg bg-primary-600 text-sm font-semibold text-white disabled:opacity-50">
             {create.isPending ? 'Creating…' : 'Create'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Attaching the month's sheet. The topic *is* a one-page PDF. */
+function MaterialRow({ talk }: { talk: Talk }) {
+  const queryClient = useQueryClient()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const upload = useMutation({
+    mutationFn: (file: File) => {
+      const body = new FormData()
+      body.append('file', file)
+      return api.upload(`/api/v1/toolbox-talks/${talk.id}/material`, body)
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['toolbox-talks'] }),
+  })
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <Paperclip className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
+      <span className="text-neutral-600">
+        {talk.material_filename ?? 'No sheet attached — the crew signs against what it says'}
+      </span>
+      <input ref={inputRef} type="file" className="hidden"
+             accept="application/pdf,image/png,image/jpeg,image/webp"
+             onChange={(e) => {
+               const file = e.target.files?.[0]
+               if (file) upload.mutate(file)
+               e.target.value = ''
+             }} />
+      <button type="button" disabled={upload.isPending}
+              onClick={() => inputRef.current?.click()}
+              className="min-h-[32px] rounded-md border border-neutral-200 px-2 font-medium text-neutral-700 disabled:opacity-40">
+        {upload.isPending ? 'Uploading…' : talk.material_filename ? 'Replace' : 'Attach'}
+      </button>
+      {upload.isError && (
+        <span className="text-danger-700">{(upload.error as ApiError).message}</span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Who this month's talk goes to.
+ *
+ * Everybody is the default and usually right — it is monthly and plant-wide —
+ * but a topic that concerns two crews sent to forty people trains
+ * thirty-eight of them to ignore the next one.
+ */
+function SendDialog({ talk, onClose }: { talk: Talk; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [chosen, setChosen] = useState<string[]>([])
+  const supervisors = useQuery({
+    queryKey: ['toolbox-supervisors'],
+    queryFn: () => api.get<{ id: string; full_name: string; role: string }[]>(
+      '/api/v1/toolbox-talks/supervisors'),
+  })
+  const send = useMutation({
+    mutationFn: () => api.post(`/api/v1/toolbox-talks/${talk.id}/publish`,
+                               { supervisor_ids: chosen }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['toolbox-talks'] })
+      queryClient.invalidateQueries({ queryKey: ['toolbox-deliveries'] })
+      onClose()
+    },
+  })
+
+  const all = supervisors.data ?? []
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+      <div role="dialog" aria-modal="true" aria-label="Send this talk"
+           className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-4 sm:rounded-2xl">
+        <h2 className="text-sm font-semibold text-neutral-900">Send “{talk.title}”</h2>
+        <p className="mt-1 text-xs text-neutral-500">
+          Leave everyone unticked to send it to all {all.length} supervisors, which
+          is the usual thing to do.
+        </p>
+        <ul className="mt-3 flex flex-col gap-1">
+          {all.map((s) => (
+            <li key={s.id}>
+              <label className="flex min-h-[36px] items-center gap-2 text-sm text-neutral-800">
+                <input type="checkbox" checked={chosen.includes(s.id)}
+                       onChange={(e) => setChosen(e.target.checked
+                         ? [...chosen, s.id]
+                         : chosen.filter((x) => x !== s.id))} />
+                {s.full_name}
+                <span className="text-xs text-neutral-400">{s.role.replace(/_/g, ' ')}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        {!talk.material_filename && (
+          <p className="mt-3 rounded-lg bg-warning-50 p-2.5 text-xs text-warning-700">
+            No sheet is attached. The crew signs against what the sheet says, so
+            it is worth attaching one before this goes out.
+          </p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose}
+                  className="min-h-[40px] rounded-lg border border-neutral-200 px-3 text-sm">
+            Cancel
+          </button>
+          <button type="button" disabled={send.isPending}
+                  onClick={() => { if (!send.isPending) send.mutate() }}
+                  className="min-h-[40px] rounded-lg bg-primary-600 px-3 text-sm font-semibold text-white disabled:opacity-50">
+            {send.isPending ? 'Sending…'
+              : chosen.length ? `Send to ${chosen.length}` : 'Send to everyone'}
           </button>
         </div>
       </div>

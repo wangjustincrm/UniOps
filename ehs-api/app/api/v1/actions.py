@@ -5,12 +5,18 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel
+from sqlalchemy import select
 
 from app.core.deps import SessionDep
 from uniops_authz import has_permission
 
-from app.core.permissions import CanReadAction, CanVerifyAction, CanWriteAction
+from app.core.permissions import (
+    CanReadAction, CanReportIncident, CanVerifyAction, CanWriteAction,
+)
 from app.crud import action as crud
+from app.models.mirrors import Task
+from app.services import tasks as task_service
 from app.schemas.action import (
     ActionCreate,
     ActionDetail,
@@ -93,6 +99,73 @@ async def my_actions(
     statuses = None if include_closed else list(crud.OPEN_STATUSES)
     rows = await crud.list_(db, owner_id=_user_id(user), statuses=statuses, limit=200)
     return [ActionOut.model_validate(r) for r in rows]
+
+
+class AssignedTaskOut(BaseModel):
+    """One thing assigned to this person that is not a corrective action."""
+
+    id: uuid.UUID
+    type: str
+    title: str
+    description: str | None
+    priority: str
+    document_type: str
+    document_id: uuid.UUID
+    document_number: str
+    created_at: datetime
+    # Where to go to deal with it; empty when this module has no screen for it.
+    path: str
+
+
+# Where each kind of work is actually done. A task whose type is not here is
+# still listed — it says what it is and who it is for — but without a link,
+# which is better than a link that goes nowhere.
+TASK_PATHS: dict[str, str] = {
+    "ehs_tbt": "/toolbox-talks",
+    "ehs_run": "/forms",
+    "ehs_doc": "/documents/{id}",
+    "ehs_crs": "/training",
+    "ehs_cert": "/training",
+    "ehs_asset": "/equipment",
+    "ehs_inc": "/incidents/{id}",
+    "ehs_jhsc": "/jhsc",
+    "ehs_ptw": "/permits/{id}",
+}
+
+
+@router.get("/mine/tasks", response_model=list[AssignedTaskOut])
+async def my_tasks(db: SessionDep, user: CanReportIncident):
+    """Everything else assigned to me by this module.
+
+    "My Actions" listed corrective actions only, and every other thing the
+    module hands somebody — a toolbox talk to deliver, an inspection due, a
+    policy to sign — went to the `tasks` table and appeared nowhere on the page
+    named after being assigned work. The first acceptance round found it on the
+    toolbox talk: the tasks were created correctly, eleven of them, and the
+    supervisor had no screen that showed them.
+    """
+    rows = (await db.execute(
+        select(Task).where(
+            Task.assigned_user_id == _user_id(user),
+            Task.is_completed.is_(False),
+            Task.document_type.like("ehs%"),
+            # Not corrective actions: those are the list this sits under, and
+            # showing the same work twice is its own kind of wrong.
+            Task.document_type != task_service.DOC_ACTION,
+        ).order_by(Task.created_at.desc())
+    )).scalars().all()
+
+    out = []
+    for t in rows:
+        template = TASK_PATHS.get(t.document_type)
+        out.append(AssignedTaskOut(
+            id=t.id, type=t.type, title=t.title, description=t.description,
+            priority=t.priority, document_type=t.document_type,
+            document_id=t.document_id, document_number=t.document_number,
+            created_at=t.created_at,
+            path=template.format(id=t.document_id) if template else "",
+        ))
+    return out
 
 
 @router.get("/{action_id}", response_model=ActionDetail)

@@ -20,6 +20,11 @@ class ToolboxTalk(UUIDPrimaryKey, TimestampMixin, Base):
     period_month: Mapped[date] = mapped_column(Date, nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False,
                                                 default=False, server_default="false")
+
+    # The month's sheet. The topic is a one-page PDF; without somewhere to put
+    # it the crew signs for a talk nobody can produce afterwards.
+    material_file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    material_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 

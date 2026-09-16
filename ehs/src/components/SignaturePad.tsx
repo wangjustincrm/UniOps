@@ -46,6 +46,26 @@ export function SignaturePad({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedSignature])
 
+  // Clearing the value clears the ink.
+  //
+  // The pad wrote to `value` and never read it back, so a parent that reset it
+  // — the toolbox talk does, after each person signs — got a blank state above
+  // a canvas still carrying the last signature. The next person drew on top of
+  // it, and the image stored against their name contained somebody else's
+  // signature. On a training record.
+  //
+  // Only in draw mode, and it never re-applies the saved signature: filling
+  // that in is a default, not an invariant, and someone who clears the pad to
+  // draw instead has to be able to reach an empty one.
+  useEffect(() => {
+    if (value !== null || mode !== 'draw') return
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
+    setHasInk(false)
+    setDrawn(null)
+  }, [value, mode])
+
   useEffect(() => {
     if (mode !== 'draw') return
     const canvas = canvasRef.current
