@@ -8,6 +8,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class InvestigationIn(BaseModel):
+    # A PUT replaces the investigation, so anything left out is cleared. That is
+    # the right contract for a form that submits whole, and a dangerous one
+    # combined with silently ignoring fields it does not recognise: one
+    # misspelled key and the whole investigation is blanked, unrecoverably,
+    # with a 200 back. Rejecting the unknown key costs nothing and turns that
+    # into a 422.
+    model_config = ConfigDict(extra="forbid")
+
     investigator_id: uuid.UUID | None = None
     supporting_investigator_ids: list[uuid.UUID] = Field(default_factory=list)
     # Vocabulary item ids, so "which hazards keep coming up" is answerable.
@@ -32,6 +40,8 @@ class CauseIn(BaseModel):
 
 
 class CausesReplace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     """The investigation screen edits causes as a set, not one at a time."""
 
     causes: list[CauseIn]

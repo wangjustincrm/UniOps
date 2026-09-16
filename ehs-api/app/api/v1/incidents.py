@@ -174,6 +174,8 @@ async def classify_incident(
     the countdown immediately rather than re-fetching.
     """
     incident = await crud.get(db, incident_id)
+    crud.assert_open(incident, "how it is classified")
+    crud.withdraw_review(incident)
     await crud.classify(db, incident, payload, user_id=_user_id(user),
                         now=datetime.now(timezone.utc))
     return await _to_out(db, incident)
@@ -213,11 +215,29 @@ async def get_investigation(incident_id: uuid.UUID, db: SessionDep, user: CanRep
     return InvestigationOut.model_validate(inv) if inv else None
 
 
+@router.post("/{incident_id}/reopen", response_model=IncidentOut)
+async def reopen_incident(
+    incident_id: uuid.UUID, db: SessionDep, user: CanCloseIncident,
+):
+    """Put a closed incident back into investigation.
+
+    Behind the same permission as closing: whoever may finish a record may
+    unfinish it, and nobody else. The HSE review goes with it — whatever is
+    about to change, the reviewed version is not the one that will be closed
+    the second time.
+    """
+    incident = await crud.get(db, incident_id)
+    await crud.reopen(db, incident, _user_id(user))
+    return await _to_out(db, incident)
+
+
 @router.put("/{incident_id}/investigation", response_model=InvestigationOut)
 async def upsert_investigation(
     incident_id: uuid.UUID, payload: InvestigationIn, db: SessionDep, user: CanClassifyIncident,  # noqa: ARG001
 ):
     incident = await crud.get(db, incident_id)
+    crud.assert_open(incident, "the investigation")
+    crud.withdraw_review(incident)
     inv = await inv_crud.upsert_investigation(db, incident, payload)
     return InvestigationOut.model_validate(inv)
 
@@ -227,6 +247,7 @@ async def sign_investigation(
     incident_id: uuid.UUID, payload: InvestigationSignIn, db: SessionDep, user: CanClassifyIncident,
 ):
     incident = await crud.get(db, incident_id)
+    crud.assert_open(incident, "the investigation")
     inv = await inv_crud.sign_investigation(
         db, incident, payload.signature, user_id=_user_id(user),
         now=datetime.now(timezone.utc))
@@ -238,6 +259,8 @@ async def replace_causes(
     incident_id: uuid.UUID, payload: CausesReplace, db: SessionDep, user: CanClassifyIncident,  # noqa: ARG001
 ):
     incident = await crud.get(db, incident_id)
+    crud.assert_open(incident, "the causes")
+    crud.withdraw_review(incident)
     await inv_crud.replace_causes(db, incident, payload)
     return await _cause_tree(db, incident)
 

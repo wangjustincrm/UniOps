@@ -38,6 +38,7 @@ interface Incident {
   signature: string | null
   signer_name: string | null; signer_role: string | null; signed_at: string | null
   hse_reviewed_at: string | null; hse_reviewed_by_name: string | null
+  reopened_at: string | null; reopened_by_name: string | null
   /** Answers belonging to one form kind only — the near-miss operator questions. */
   extra: Record<string, unknown>
   classified_at: string | null; classified_by_name: string | null
@@ -208,6 +209,7 @@ export default function IncidentDetailPage() {
   })
   const review = useMutation(act('hse-review'))
   const closeIncident = useMutation(act('close'))
+  const reopen = useMutation(act('reopen'))
 
   // Stopping the Ministry's clock. It is recorded, not performed: OHSA s.51(1)
   // is discharged by sending the report, and UniOps does not send it.
@@ -366,7 +368,31 @@ export default function IncidentDetailPage() {
               <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
                 Closing this incident
               </h2>
-              {inc.hse_reviewed_at ? (
+              {inc.status === 'closed' ? (
+                <>
+                  <p className="text-xs text-neutral-500">
+                    Closed records are read only. Reopening is recorded against
+                    whoever does it, and costs the HSE review — it has to be
+                    reviewed again before it closes.
+                  </p>
+                  {can('ehs.incident.close') && (
+                    <button
+                      type="button"
+                      disabled={reopen.isPending}
+                      onClick={() => { if (!reopen.isPending) reopen.mutate() }}
+                      className="mt-2 min-h-[40px] rounded-lg border border-neutral-300 px-3 text-sm font-semibold text-neutral-700 disabled:opacity-50"
+                    >
+                      {reopen.isPending ? 'Reopening…' : 'Reopen'}
+                    </button>
+                  )}
+                  {inc.reopened_at && (
+                    <p className="mt-1.5 text-xs text-neutral-500">
+                      Previously reopened {formatDateTime(inc.reopened_at)}
+                      {inc.reopened_by_name ? ` by ${inc.reopened_by_name}` : ''}
+                    </p>
+                  )}
+                </>
+              ) : inc.hse_reviewed_at ? (
                 <p className="mb-2 text-xs text-neutral-600">
                   Reviewed by {inc.hse_reviewed_by_name ?? 'HSE'} on{' '}
                   {formatDateTime(inc.hse_reviewed_at)}.

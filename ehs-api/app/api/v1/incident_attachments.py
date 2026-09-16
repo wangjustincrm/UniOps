@@ -46,8 +46,10 @@ def _meta(a: IncidentAttachment) -> AttachmentMeta:
     )
 
 
-async def _incident_or_403(db, incident_id: uuid.UUID, user: dict):
+async def _incident_or_403(db, incident_id: uuid.UUID, user: dict, *, writing: str | None = None):
     incident = await crud.get(db, incident_id)
+    if writing:
+        crud.assert_open(incident, writing)
     if not await _may_read(db, user, incident):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
@@ -72,7 +74,7 @@ async def upload_attachment(
     incident_id: uuid.UUID, file: UploadFile,
     db: SessionDep, user: CurrentUserPayload, token: BearerToken,
 ):
-    await _incident_or_403(db, incident_id, user)
+    await _incident_or_403(db, incident_id, user, writing="its attachments")
 
     data = await file.read()
     if len(data) > MAX_FILE_SIZE:
@@ -113,7 +115,7 @@ async def delete_attachment(
     incident_id: uuid.UUID, attachment_id: uuid.UUID,
     db: SessionDep, user: CurrentUserPayload, token: BearerToken,
 ):
-    await _incident_or_403(db, incident_id, user)
+    await _incident_or_403(db, incident_id, user, writing="its attachments")
     att = await db.get(IncidentAttachment, attachment_id)
     if att is None or att.incident_id != incident_id:
         raise HTTPException(404, "Attachment not found")

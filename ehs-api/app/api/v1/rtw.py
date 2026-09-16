@@ -90,7 +90,15 @@ async def list_plans(incident_id: uuid.UUID, db: SessionDep, user: CanReadMedica
 async def create_plan(
     incident_id: uuid.UUID, payload: PlanIn, db: SessionDep, user: CanReadMedical,  # noqa: ARG001
 ):
-    """Open a plan. The worker defaults to whoever the incident records as hurt."""
+    """Open a plan. The worker defaults to whoever the incident records as hurt.
+
+    Deliberately not refused on a closed incident, unlike the rest of the
+    record. Modified duties routinely run for weeks after the incident itself
+    is finished, and the plan is a record about the person rather than a part
+    of the incident — freezing it with the incident would leave a live
+    return-to-work with nowhere to record its check-ins, and somebody would
+    keep it in a spreadsheet instead.
+    """
     incident = await incident_crud.get(db, incident_id)
     return await crud.create_plan(db, incident, payload.model_dump(exclude_unset=True))
 

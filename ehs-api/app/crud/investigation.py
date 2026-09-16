@@ -50,6 +50,16 @@ async def upsert_investigation(
         inv = IncidentInvestigation(id=uuid.uuid4(), incident_id=incident.id)
         db.add(inv)
 
+    # Editing un-signs it. The signature says "this is what I found"; leaving it
+    # attached across a rewrite would let a signed investigation say something
+    # its signatory never read — the same reason HSE's review is withdrawn when
+    # the record changes under it.
+    if inv.signature is not None:
+        inv.signature = None
+        inv.signed_by = None
+        inv.signed_by_name = None
+        inv.completed_at = None
+
     inv.investigator_id = payload.investigator_id
     inv.investigator_name = await _name(db, payload.investigator_id)
     inv.supporting_investigator_ids = [str(i) for i in payload.supporting_investigator_ids]

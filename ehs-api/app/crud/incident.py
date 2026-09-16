@@ -276,6 +276,64 @@ async def hse_review(db: AsyncSession, incident: Incident, reviewer_id: uuid.UUI
     return incident
 
 
+def assert_open(incident: Incident, what: str) -> None:
+    """Refuse a change to a closed incident.
+
+    A closed incident is a finished record. It is what an inspector is shown,
+    what the corrective actions were raised from, and what the statutory clocks
+    were measured against — so it stopped being a working document when it was
+    closed, and editing it afterwards changes history with nothing to say it
+    happened.
+
+    The refusal names reopening rather than just saying no. "Read only for
+    ever" is the wrong answer to a genuine correction: people work around it,
+    usually by raising a second incident for the same event, which is worse
+    than an edit anybody can see. Reopening is deliberate, restricted to the
+    role that closed it, and leaves a record.
+    """
+    if incident.status == "closed":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{incident.incident_no} is closed, so {what} cannot be changed. "
+            "Reopen it first — HSE can, and the reopening is recorded.",
+        )
+
+
+def withdraw_review(incident: Incident) -> None:
+    """Changing the substance of an incident un-reviews it.
+
+    HSE reviewed what the record said at the time. Leaving the review in place
+    across a change to the investigation or the classification would let an
+    incident reach `closed` carrying a review of something else — which makes
+    the gate a formality, and the gate is the whole of the control on closing.
+    """
+    if incident.hse_reviewed_at is None:
+        return
+    incident.hse_reviewed_at = None
+    incident.hse_reviewed_by = None
+    incident.hse_reviewed_by_name = None
+
+
+async def reopen(db: AsyncSession, incident: Incident, reopener_id: uuid.UUID) -> Incident:
+    """Put a closed incident back into investigation, on the record.
+
+    The review goes with it: whatever is about to change, the reviewed record
+    is not the one that will be closed the second time.
+    """
+    if incident.status != "closed":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{incident.incident_no} is not closed")
+    incident.status = "under_investigation"
+    incident.closed_at = None
+    incident.reopened_at = datetime.now(timezone.utc)
+    incident.reopened_by = reopener_id
+    incident.reopened_by_name = await _resolve_name(db, reopener_id)
+    withdraw_review(incident)
+    await db.flush()
+    return incident
+
+
 async def close(db: AsyncSession, incident: Incident) -> Incident:
     """Close an incident, refusing where HSE has not reviewed it."""
     if incident.status == "closed":

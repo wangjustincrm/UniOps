@@ -77,6 +77,7 @@ async def upsert_medical(
     incident_id: uuid.UUID, payload: MedicalIn, db: SessionDep, user: CanReadMedical,
 ):
     incident = await crud.get(db, incident_id)
+    crud.assert_open(incident, "the injury detail")
     if incident.status == "draft":
         raise HTTPException(
             status.HTTP_409_CONFLICT,

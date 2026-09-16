@@ -102,6 +102,15 @@ class Incident(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
     # The engine is pointed at approval_status via _DOC_META's status_attr so
     # it never touches the lifecycle column above.
     approval_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Reopening a closed incident. Recorded rather than silent: the alternative
+    # to an edit anybody can see is a second incident raised for the same
+    # event, which is what people do when a record is frozen with no way back.
+    reopened_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    reopened_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reopened_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     approval_step_idx: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     signature: Mapped[str | None] = mapped_column(Text, nullable=True)  # base64 PNG

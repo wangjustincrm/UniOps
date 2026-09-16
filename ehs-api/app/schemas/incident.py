@@ -189,6 +189,8 @@ class IncidentOut(BaseModel):
     classified_by_name: str | None
     submitted_at: datetime | None
     closed_at: datetime | None
+    reopened_at: datetime | None = None
+    reopened_by_name: str | None = None
     created_at: datetime
     persons: list[IncidentPersonOut] = Field(default_factory=list)
     deadlines: list[DeadlineOut] = Field(default_factory=list)

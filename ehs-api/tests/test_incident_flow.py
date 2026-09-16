@@ -5,7 +5,7 @@ injury, it gets classified, and the statutory clocks that follow start from the
 right instants.
 """
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -304,3 +304,101 @@ async def test_someone_with_read_sees_the_whole_register(worker, hse_manager):
     ids = {r["id"] for r in (await mclient.get("/api/v1/incidents")).json()}
     assert mine["id"] in ids
     assert theirs["id"] in ids
+
+
+async def test_a_closed_incident_refuses_changes(hse_manager, worker):
+    """A closed incident is a finished record, not a working document.
+
+    It is what an inspector is shown, what the corrective actions were raised
+    from, and what the statutory clocks were measured against. Editing it
+    afterwards changes history with nothing to say it happened — which is what
+    the first acceptance round found: "incidents are still updatable after the
+    incidents are reviewed or closed."
+    """
+    _, client = hse_manager
+    injured, _ = worker
+    inc = (await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Slipped on the ramp",
+        "incident_type": "first_aid",
+        "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+        "description": "Lost footing on the wet ramp.",
+        "injured_user_id": str(injured.id),
+    })).json()
+    await client.post(f"/api/v1/incidents/{inc['id']}/submit")
+    await client.post(f"/api/v1/incidents/{inc['id']}/hse-review")
+    closed = await client.post(f"/api/v1/incidents/{inc['id']}/close")
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["status"] == "closed"
+
+    for path, body in (
+        (f"/api/v1/incidents/{inc['id']}/investigation", {"sequence_of_events": "rewritten"}),
+        (f"/api/v1/incidents/{inc['id']}/causes", {"causes": []}),
+    ):
+        r = await client.put(path, json=body)
+        assert r.status_code == 409, f"{path} accepted a change to a closed incident"
+        assert "Reopen it" in r.text, "the refusal has to say where a real correction goes"
+
+
+async def test_reopening_is_recorded_and_costs_the_review(hse_manager, worker):
+    """Read-only for ever is the wrong answer to a genuine correction.
+
+    People work around it, usually by raising a second incident for the same
+    event, which is worse than an edit anybody can see. So reopening exists —
+    restricted, recorded, and it takes the HSE review with it, because the
+    reviewed version is not the one that will be closed the second time.
+    """
+    _, client = hse_manager
+    injured, _ = worker
+    inc = (await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Caught a finger",
+        "incident_type": "first_aid",
+        "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),
+        "description": "Finger caught in the guard.",
+        "injured_user_id": str(injured.id),
+    })).json()
+    await client.post(f"/api/v1/incidents/{inc['id']}/submit")
+    await client.post(f"/api/v1/incidents/{inc['id']}/hse-review")
+    await client.post(f"/api/v1/incidents/{inc['id']}/close")
+
+    body = (await client.post(f"/api/v1/incidents/{inc['id']}/reopen")).json()
+    assert body["status"] != "closed"
+    assert body["closed_at"] is None
+    assert body["reopened_at"] is not None
+    assert body["reopened_by_name"], "who reopened it is the point of recording it"
+    assert body["hse_reviewed_at"] is None, "the review does not survive the reopening"
+
+    edited = await client.put(f"/api/v1/incidents/{inc['id']}/investigation",
+                              json={"sequence_of_events": "what actually happened"})
+    assert edited.status_code == 200
+
+    # And it cannot be closed again until somebody has reviewed what it now says.
+    again = await client.post(f"/api/v1/incidents/{inc['id']}/close")
+    assert again.status_code == 409
+
+
+async def test_a_misspelt_key_does_not_blank_the_investigation(hse_manager, worker):
+    """A PUT replaces, so anything left out is cleared — and unknown keys were
+    silently dropped, which meant one typo blanked the whole investigation and
+    answered 200. Unrecoverably: there is no history on this table.
+
+    Found the hard way, on real data.
+    """
+    _, client = hse_manager
+    injured, _ = worker
+    inc = (await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Struck by a pallet",
+        "incident_type": "first_aid",
+        "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat(),
+        "description": "Pallet swung out.",
+        "injured_user_id": str(injured.id),
+    })).json()
+    await client.post(f"/api/v1/incidents/{inc['id']}/submit")
+    await client.put(f"/api/v1/incidents/{inc['id']}/investigation",
+                     json={"sequence_of_events": "the account that must survive"})
+
+    typo = await client.put(f"/api/v1/incidents/{inc['id']}/investigation",
+                            json={"what_happened": "wrong key"})
+    assert typo.status_code == 422
+
+    kept = (await client.get(f"/api/v1/incidents/{inc['id']}/investigation")).json()
+    assert kept["sequence_of_events"] == "the account that must survive"
