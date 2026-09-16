@@ -1,0 +1,82 @@
+# The Budget Dashboard's Monthly Plan vs Actual grid — what the numbers in it
+# mean and why there are three of them.
+#
+# ── What is prose here and what is not ───────────────────────────────────────
+# Almost nothing in the answer to "where does this number come from" is prose.
+# The five expense categories, the two exclusions, posted-only, gross debit and
+# the order the cost-centre map is consulted in are read from finance-api; the
+# plan filter and the operations that count as actual are read from budget-api;
+# the mapping rules themselves are read from the table finance maintains. All of
+# it is assembled in services/report_lineage.py and none of it is written down
+# twice.
+#
+# What is left — this file — is the part no code states: why the report shows
+# three figures rather than one, which of them is the one to trust, and what to
+# look at when a cell is wrong. That is a finance decision, not a fact about a
+# column.
+topic: report
+report: budget_plan_vs_actual
+label: Monthly Plan vs Actual
+
+question_hints:
+  - where does the actual on the budget dashboard come from
+  - how do you decide which cost centre a JV line belongs to
+  - why is this cost centre charged for this
+  - what rule fills the actual column
+  - why does the budget report disagree with NC
+
+where_it_lives: >-
+  EPMS → Budget → Budget Dashboard, and the same grid embedded in Finance as
+  Budget Dashboard. One row per budget account, one column per month.
+
+what_it_is: >-
+  A month-by-month comparison, for one cost centre or for all of them, of what
+  was budgeted against what has actually been spent. Every cell holds three
+  figures stacked: plan, actual (docs), and NC posted.
+
+why_three_figures: >-
+  They are three different moments in the life of the same money, and they are
+  shown together because the gap between them is the useful part. The plan is
+  what was approved before the year started. Actual (docs) is what UniOps
+  itself has recorded as spending as the paperwork went through. NC posted is
+  what has reached the accounting system and been tallied there.
+
+which_one_is_the_truth: >-
+  NC posted. It is the figure the over-budget colouring and the alerts are
+  judged on, because it is the only one of the three that has been through
+  accounting. Actual (docs) leads it — a cost can be recorded here before the
+  voucher exists in NC — and where the two disagree the difference is timing far
+  more often than error.
+
+notes:
+  - >-
+    The cost centre on a posting is decided when the voucher is mirrored from
+    NC, from the expense account together with the NC department and NC
+    cost-centre code on the line. It is not something a person picks in UniOps
+    afterwards, and changing the map does not move postings that were already
+    mirrored.
+  - >-
+    A combination the map does not cover is not quietly given a default. The
+    line ends with no cost centre and appears in the exceptions panel of the
+    finance Budget-vs-Actual grid, which is the list of what someone has to fix
+    — in NC, or by adding a rule.
+  - >-
+    Payroll and depreciation are missing from this report on purpose. Finance
+    tracks them at category level rather than per cost centre, so a cost
+    centre's total here is smaller than its total in the books.
+  - >-
+    With no cost centre selected the grid adds up every cost centre that has a
+    current approved budget for the year — so a cost centre whose plan was never
+    approved contributes its actuals and no plan.
+
+when_a_cell_looks_wrong: >-
+  Check them in this order. Is the plan there at all — an unapproved or
+  superseded plan shows as no plan. Is the cost on the right month — NC uses the
+  voucher's fiscal period, not the day anyone typed it. Is it charged to the
+  right cost centre — that is the mapping rule, and the map is a short list you
+  can ask to see. And is it payroll or depreciation, which this report leaves
+  out.
+
+who_maintains_it: >-
+  Finance owns the mapping rules, imported from the Budget vs Actual Mapping
+  workbook. Adding a rule is a finance change, not a code change.
