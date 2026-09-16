@@ -6,10 +6,10 @@
  * Sessions is what a supervisor lives in. Records is where a certificate that
  * arrived on paper gets typed in.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
-import { CalendarDays, Plus, Upload, X } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { CalendarDays, Plus, Upload, X, Paperclip } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -19,7 +19,12 @@ import {
 } from '@/components/ui'
 import TrainingGapsPanel from '@/pages/TrainingGapsPage'
 
-interface Course { id: string; code: string; name: string; is_statutory: boolean; validity_months: number | null }
+interface Course {
+  id: string; code: string; name: string; is_statutory: boolean
+  applies_to_all: boolean; validity_months: number | null; is_active: boolean
+  material_filename: string | null
+}
+interface QuizSummary { id: string; title: string; course_id: string | null }
 interface Session {
   id: string; delivery_no: string; course_label: string; title: string
   session_date: string; start_time: string | null; location_text: string | null
@@ -33,6 +38,7 @@ interface Record_ {
 
 const TABS = [
   { key: 'compliance', label: 'Compliance' },
+  { key: 'courses', label: 'Courses' },
   { key: 'sessions', label: 'Course sessions' },
   { key: 'records', label: 'Records' },
 ] as const
@@ -48,6 +54,7 @@ export default function TrainingPage() {
       <PageHeader title="Training" />
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'compliance' && <TrainingGapsPanel />}
+      {tab === 'courses' && <CoursesTab mayWrite={mayWrite} />}
       {tab === 'sessions' && <SessionsTab mayWrite={mayWrite} />}
       {tab === 'records' && <RecordsTab mayWrite={mayWrite} />}
     </div>
@@ -157,6 +164,13 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
   const [start, setStart] = useState('')
   const [where, setWhere] = useState('')
   const [coordinator, setCoordinator] = useState<PersonValue>(EMPTY_PERSON)
+  // The roster, built here rather than on a screen you reach afterwards.
+  // Scheduling and deciding who is coming are one thought, and splitting them
+  // across two screens meant the session existed for a while with nobody in
+  // it — which is also the state it stays in if the second screen is never
+  // opened.
+  const [learners, setLearners] = useState<PersonValue[]>([])
+  const [adding, setAdding] = useState<PersonValue>(EMPTY_PERSON)
 
   const courses = useQuery({
     queryKey: ['courses'],
@@ -164,14 +178,24 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
   })
 
   const create = useMutation({
-    mutationFn: () => api.post<Session>('/api/v1/course-sessions', {
-      course_id: courseId,
-      title: title || null,
-      session_date: date,
-      start_time: start ? `${start}:00` : null,
-      location_text: where || null,
-      coordinator_id: coordinator.userId,
-    }),
+    mutationFn: async () => {
+      const session = await api.post<Session>('/api/v1/course-sessions', {
+        course_id: courseId,
+        title: title || null,
+        session_date: date,
+        start_time: start ? `${start}:00` : null,
+        location_text: where || null,
+        coordinator_id: coordinator.userId,
+      })
+      const ids = learners.map((l) => l.userId).filter((x): x is string => Boolean(x))
+      if (ids.length) {
+        // Two calls because the session has to exist before anyone can be on
+        // it. If this half fails the session is still there to add them to,
+        // which is the failure worth having.
+        await api.post(`/api/v1/course-sessions/${session.id}/roster`, { user_ids: ids })
+      }
+      return session
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-sessions'] })
       onClose()
@@ -221,6 +245,33 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
           <PersonPicker value={coordinator} onChange={setCoordinator} allowExternal={false}
                         placeholder="Search for a supervisor" />
         </Field>
+      </div>
+
+      <div className="mt-3">
+        <Field label="Who is coming"
+               hint="Optional — more can be added later, and the supervisor running it can add their own">
+          <PersonPicker value={adding} onChange={(p) => {
+            if (p.userId && !learners.some((l) => l.userId === p.userId)) {
+              setLearners([...learners, p])
+            }
+            setAdding(EMPTY_PERSON)
+          }} />
+        </Field>
+        {learners.length > 0 && (
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {learners.map((l) => (
+              <li key={l.userId ?? l.name}
+                  className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
+                {l.name}
+                <button type="button" aria-label={`Remove ${l.name}`}
+                        onClick={() => setLearners(learners.filter((x) => x.userId !== l.userId))}
+                        className="text-neutral-400 hover:text-neutral-700">
+                  <X className="h-3 w-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <ErrorNote error={create.error} />
@@ -370,6 +421,197 @@ function NewRecordForm({ onClose }: { onClose: () => void }) {
           {create.isPending ? 'Saving…' : 'Save'}
         </button>
       </div>
+    </Card>
+  )
+}
+
+/**
+ * The course catalogue.
+ *
+ * Which courses everybody has to take is the plant's decision and was not
+ * editable: four are required of every employee, the compliance report counts
+ * every employee against them, and there was nothing on screen to change it.
+ * The material columns had the same history — added with the table, never
+ * written to, so a course's own handout had to be attached to each session
+ * separately or not at all.
+ */
+function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
+  const queryClient = useQueryClient()
+  const [adding, setAdding] = useState(false)
+  const courses = useQuery({
+    queryKey: ['training-courses'],
+    queryFn: () => api.get<Course[]>('/api/v1/training/courses'),
+  })
+  const quizzes = useQuery({
+    queryKey: ['quizzes'],
+    queryFn: () => api.get<QuizSummary[]>('/api/v1/quizzes'),
+  })
+  const patch = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+      api.patch(`/api/v1/training/courses/${id}`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['training-courses'] })
+      queryClient.invalidateQueries({ queryKey: ['training', 'gaps'] })
+    },
+  })
+
+  if (courses.isLoading) return <p className="text-sm text-neutral-500">Loading…</p>
+
+  const quizFor = (courseId: string) =>
+    (quizzes.data ?? []).find((q) => q.course_id === courseId) ?? null
+
+  return (
+    <div>
+      {mayWrite && (
+        <div className="mb-3 flex justify-end">
+          <button type="button" className={primaryButton} onClick={() => setAdding(true)}>
+            Add a course
+          </button>
+        </div>
+      )}
+      {adding && <NewCourseForm onClose={() => setAdding(false)} />}
+
+      <ul className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+        {(courses.data ?? []).map((c) => {
+          const quiz = quizFor(c.id)
+          return (
+            <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-neutral-100 p-3.5 last:border-b-0">
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-neutral-900">{c.name}</span>
+                <span className="mt-0.5 block text-xs text-neutral-500">
+                  <span className="font-mono">{c.code}</span>
+                  {c.is_statutory && ' · required by law'}
+                  {c.validity_months ? ` · valid ${c.validity_months} months` : ' · does not expire'}
+                </span>
+              </span>
+
+              {/* The quiz that belongs to this course, which the training
+                  screens never showed — so a quiz and the course it tests
+                  looked like two unrelated things. */}
+              {quiz ? (
+                <Link to={`/quizzes/${quiz.id}/edit`}
+                      className="text-xs font-medium text-primary-700 hover:underline">
+                  Quiz: {quiz.title}
+                </Link>
+              ) : (
+                <span className="text-xs text-neutral-400">No quiz</span>
+              )}
+
+              <CourseMaterial course={c} mayWrite={mayWrite} />
+
+              <label className="flex min-h-[32px] items-center gap-1.5 text-xs text-neutral-700">
+                <input
+                  type="checkbox"
+                  checked={c.applies_to_all}
+                  disabled={!mayWrite || patch.isPending}
+                  onChange={(e) => {
+                    if (!patch.isPending) {
+                      patch.mutate({ id: c.id, body: { applies_to_all: e.target.checked } })
+                    }
+                  }}
+                />
+                Everyone must take it
+              </label>
+            </li>
+          )
+        })}
+      </ul>
+      <ErrorNote error={patch.error} />
+      <p className="mt-2 text-xs text-neutral-500">
+        Untick “everyone” and the course stops counting against every employee in
+        the compliance report — it is then required only of the positions that
+        list it.
+      </p>
+    </div>
+  )
+}
+
+function CourseMaterial({ course, mayWrite }: { course: Course; mayWrite: boolean }) {
+  const queryClient = useQueryClient()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const upload = useMutation({
+    mutationFn: (file: File) => {
+      const body = new FormData()
+      body.append('file', file)
+      return api.upload(`/api/v1/training/courses/${course.id}/material`, body)
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['training-courses'] }),
+  })
+  if (!mayWrite && !course.material_filename) return null
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-neutral-600">
+      <Paperclip className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
+      {course.material_filename ?? 'No material'}
+      {mayWrite && (
+        <>
+          <input ref={inputRef} type="file" className="hidden"
+                 accept="application/pdf,image/png,image/jpeg,image/webp"
+                 onChange={(e) => {
+                   const file = e.target.files?.[0]
+                   if (file) upload.mutate(file)
+                   e.target.value = ''
+                 }} />
+          <button type="button" disabled={upload.isPending}
+                  onClick={() => inputRef.current?.click()}
+                  className="rounded-md px-1.5 font-medium text-primary-700 disabled:opacity-40">
+            {upload.isPending ? '…' : course.material_filename ? 'Replace' : 'Attach'}
+          </button>
+        </>
+      )}
+    </span>
+  )
+}
+
+function NewCourseForm({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [code, setCode] = useState('')
+  const [name, setName] = useState('')
+  const [months, setMonths] = useState('')
+  const [everyone, setEveryone] = useState(false)
+  const create = useMutation({
+    mutationFn: () => api.post('/api/v1/training/courses', {
+      code: code.trim().toUpperCase(), name: name.trim(),
+      applies_to_all: everyone,
+      validity_months: months ? Number(months) : null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['training-courses'] })
+      onClose()
+    },
+  })
+  return (
+    <Card className="mb-4">
+      <h3 className="mb-3 text-sm font-semibold text-neutral-900">Add a course</h3>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Code"><input className={inputClass} value={code}
+               onChange={(e) => setCode(e.target.value)} placeholder="LADDER" /></Field>
+        <Field label="Name"><input className={inputClass} value={name}
+               onChange={(e) => setName(e.target.value)} placeholder="Ladder safety" /></Field>
+        <Field label="Valid for (months)" hint="Leave empty if it does not expire">
+          <input className={inputClass} type="number" min={1} value={months}
+                 onChange={(e) => setMonths(e.target.value)} />
+        </Field>
+        <Field label="Who">
+          <label className="flex min-h-[44px] items-center gap-2 text-sm">
+            <input type="checkbox" checked={everyone}
+                   onChange={(e) => setEveryone(e.target.checked)} />
+            Everyone must take it
+          </label>
+        </Field>
+      </div>
+      <ErrorNote error={create.error} />
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
+        <button type="button" className={primaryButton}
+                disabled={!code.trim() || !name.trim() || create.isPending}
+                onClick={() => { if (!create.isPending) create.mutate() }}>
+          {create.isPending ? 'Adding…' : 'Add'}
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-neutral-500">
+        Courses required by law are seeded with the regulation behind them and
+        cannot be created here.
+      </p>
     </Card>
   )
 }

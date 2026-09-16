@@ -17,6 +17,35 @@ class CourseOut(BaseModel):
     applies_to_all: bool
     validity_months: int | None
     is_active: bool
+    material_filename: str | None = None
+
+
+class CourseIn(BaseModel):
+    """A new course. The eight statutory ones are seeded; this is for the rest."""
+
+    code: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=200)
+    applies_to_all: bool = False
+    validity_months: int | None = Field(default=None, ge=1, le=600)
+    material_filename: str | None = None
+
+
+class CoursePatch(BaseModel):
+    """Changing a course.
+
+    `applies_to_all` is the field this exists for. Four courses are required of
+    everybody, which is HSE's own list — but a list nobody can change is a
+    decision taken once and then enforced forever, and the compliance report
+    counts every employee against it. Whether a course is statutory is not
+    editable: that follows from the regulation, not from us.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    applies_to_all: bool | None = None
+    validity_months: int | None = Field(default=None, ge=1, le=600)
+    is_active: bool | None = None
 
 
 class TrainingRecordIn(BaseModel):

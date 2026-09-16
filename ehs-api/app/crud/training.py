@@ -37,6 +37,42 @@ async def list_courses(db: AsyncSession, *, statutory_only: bool = False) -> lis
     return list((await db.execute(stmt.order_by(Course.name))).scalars())
 
 
+async def get_course(db: AsyncSession, course_id: uuid.UUID) -> Course:
+    course = await db.get(Course, course_id)
+    if course is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+    return course
+
+
+async def create_course(db: AsyncSession, payload) -> Course:
+    """A course of the plant's own. The eight statutory ones are seeded."""
+    clash = (await db.execute(
+        select(Course).where(Course.code == payload.code))).scalar_one_or_none()
+    if clash is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"A course with the code {payload.code} already exists ({clash.name})")
+    course = Course(
+        id=uuid.uuid4(), code=payload.code, name=payload.name,
+        # Statutory is not something a course can be given here: it follows
+        # from the regulation that requires it, and the eight that are come
+        # seeded with their clause behind them.
+        is_statutory=False,
+        applies_to_all=payload.applies_to_all,
+        validity_months=payload.validity_months,
+    )
+    db.add(course)
+    await db.flush()
+    return course
+
+
+async def update_course(db: AsyncSession, course: Course, fields: dict) -> Course:
+    for key, value in fields.items():
+        setattr(course, key, value)
+    await db.flush()
+    return course
+
+
 async def record_training(
     db: AsyncSession, payload: TrainingRecordIn, *, recorded_by: uuid.UUID
 ) -> TrainingRecord:

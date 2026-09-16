@@ -343,3 +343,36 @@ async def test_the_gap_report_says_which_department_to_chase(
     theirs = [g for g in report["gaps"] if g["user_id"] == str(learner.id)]
     assert theirs, "this user has taken nothing, so they are behind on WHMIS"
     assert all(g["department_name"] == "Packaging" for g in theirs)
+
+
+async def test_who_must_take_a_course_can_be_changed(hse_manager, worker, courses, db_session):
+    """Four courses are required of every employee, and that was not editable.
+
+    The compliance report counts every person in the plant against that list,
+    so a list nobody can change is a decision taken once and enforced for ever.
+    The first acceptance round asked to "remove the mandatory courses from all
+    staff" and there was nothing to click.
+    """
+    _, client = hse_manager
+    whmis = courses["whmis"]
+    assert whmis.applies_to_all
+
+    before = (await client.get("/api/v1/training/gaps")).json()
+    assert any(c["course_code"] == "WHMIS" for c in before["courses"])
+
+    r = await client.patch(f"/api/v1/training/courses/{whmis.id}",
+                           json={"applies_to_all": False})
+    assert r.status_code == 200, r.text
+    assert r.json()["applies_to_all"] is False
+
+    after = (await client.get("/api/v1/training/gaps")).json()
+    assert not any(c["course_code"] == "WHMIS" for c in after["courses"]), (
+        "it must stop being counted against everybody straight away")
+
+
+async def test_whether_a_course_is_statutory_is_not_ours_to_change(hse_manager, courses):
+    """That follows from the regulation, not from us."""
+    _, client = hse_manager
+    r = await client.patch(f"/api/v1/training/courses/{courses['whmis'].id}",
+                           json={"is_statutory": False})
+    assert r.status_code == 422
