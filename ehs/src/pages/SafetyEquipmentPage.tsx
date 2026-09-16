@@ -16,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { AlertTriangle, ClipboardCheck, Plus, QrCode, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import QrPanel from '@/components/QrPanel'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { LocationSelect } from '@/components/LocationSelect'
@@ -252,6 +253,7 @@ function RegisterTab({
   focusedId?: string | null; onClearFocus?: () => void
 }) {
   const queryClient = useQueryClient()
+  const [codeFor, setCodeFor] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const shown = focusedId ? assets.filter((a) => a.id === focusedId) : assets
 
@@ -320,10 +322,16 @@ function RegisterTab({
                   </span>
 
                   {a.qr_token && (
-                    <span className="flex shrink-0 items-center gap-1 text-xs text-neutral-400"
-                          title="This item has a QR label">
+                    <button
+                      type="button"
+                      onClick={() => setCodeFor(codeFor === a.id ? null : a.id)}
+                      aria-expanded={codeFor === a.id}
+                      title="Show the code to print for this item"
+                      className="flex min-h-[32px] shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800"
+                    >
                       <QrCode className="h-4 w-4" aria-hidden />
-                    </span>
+                      Code
+                    </button>
                   )}
 
                   {a.status === 'out_of_service' ? (
@@ -345,6 +353,15 @@ function RegisterTab({
                     </span>
                   )}
                 </div>
+                {codeFor === a.id && (
+                  <div className="mt-3 border-t border-neutral-100 pt-3">
+                    <QrPanel
+                      token={a.qr_token}
+                      caption={a.name}
+                      sub={`${a.asset_no}${a.location_path ? ` · ${a.location_path}` : ''}`}
+                    />
+                  </div>
+                )}
               </Card>
             </li>
           ))}

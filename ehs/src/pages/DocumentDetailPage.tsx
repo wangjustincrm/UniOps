@@ -25,6 +25,7 @@ import {
   Card, Empty, ErrorNote, PageHeader, primaryButton, secondaryButton,
 } from '@/components/ui'
 import { CATEGORY_LABELS, type SafetyDoc } from '@/pages/DocumentsPage'
+import QrPanel from '@/components/QrPanel'
 
 interface Ack {
   id: string; user_id: string | null; user_name: string; user_role: string | null
@@ -74,6 +75,16 @@ export default function DocumentDetailPage() {
         {d.file_id && <DownloadButton doc={d} />}
       </PageHeader>
 
+
+      {d.qr_token && (
+        <Card className="mb-4">
+          <QrPanel
+            token={d.qr_token}
+            caption="Scan to open this document"
+            sub={`${d.doc_no} · v${d.version}`}
+          />
+        </Card>
+      )}
       <Card className="mb-4">
         {d.summary && <p className="mb-3 text-sm text-neutral-700">{d.summary}</p>}
         <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">

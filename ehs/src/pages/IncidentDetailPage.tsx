@@ -203,7 +203,7 @@ export default function IncidentDetailPage() {
 
   const canClose = can('ehs.incident.close')
 
-  const act = (verb: 'hse-review' | 'close') => ({
+  const act = (verb: 'hse-review' | 'close' | 'reopen') => ({
     mutationFn: () => api.post(`/api/v1/incidents/${id}/${verb}`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['incident', id] }),
   })

@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Check, ClipboardList, Plus, QrCode, Trash2, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import QrPanel from '@/components/QrPanel'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
   Card, Empty, ErrorNote, Field, PageHeader,
@@ -459,7 +460,12 @@ export function EditQuizPage() {
             <QrCode className="h-4 w-4 text-neutral-400" aria-hidden />
             The code to put on the screen
           </p>
-          <p className="mt-1 break-all font-mono text-xs text-neutral-600">{link}</p>
+          <div className="mt-2">
+            <QrPanel token={quiz.data?.qr_token ?? null}
+                     caption="Scan to take this quiz"
+                     sub={quiz.data?.title ?? null} />
+          </div>
+          <p className="mt-2 break-all font-mono text-[11px] text-neutral-400">{link}</p>
           <p className="mt-1 text-xs text-neutral-500">
             Everyone scans this at the end of the session and answers on their
             own phone.

@@ -20,9 +20,9 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, Download, FileText, FlaskConical, Plus, Printer,
-  Search, Sparkles, Upload, X,
-} from 'lucide-react'
+  Search, Sparkles, Upload, X, QrCode } from 'lucide-react'
 import { api, apiBlob } from '@/lib/api'
+import QrPanel from '@/components/QrPanel'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { LocationSelect } from '@/components/LocationSelect'
@@ -304,6 +304,7 @@ function SheetPill({ sheet }: { sheet: Sheet | null }) {
 
 function Detail({ chemical, mayManage }: { chemical: Chemical; mayManage: boolean }) {
   const [editing, setEditing] = useState(false)
+  const [sheetCode, setSheetCode] = useState<string | null>(null)
   const sheets = useQuery({
     queryKey: ['chemical-sds', chemical.id],
     queryFn: () => api.get<Sheet[]>(`/api/v1/chemicals/${chemical.id}/sds`),
@@ -374,6 +375,27 @@ function Detail({ chemical, mayManage }: { chemical: Chemical; mayManage: boolea
                 </span>
               )}
               <SheetActions sheet={s} chemicalId={chemical.id} mayManage={mayManage} />
+              {s.is_current && s.qr_token && (
+                <button
+                  type="button"
+                  onClick={() => setSheetCode(sheetCode === s.id ? null : s.id)}
+                  aria-expanded={sheetCode === s.id}
+                  title="Show the code to print for this data sheet"
+                  className="flex min-h-[32px] items-center gap-1 rounded-md px-1.5 text-xs text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800"
+                >
+                  <QrCode className="h-3.5 w-3.5" aria-hidden />
+                  Code
+                </button>
+              )}
+              {sheetCode === s.id && (
+                <div className="w-full border-t border-neutral-100 pt-2.5">
+                  <QrPanel
+                    token={s.qr_token}
+                    caption="Scan for this product's data sheet"
+                    sub={`${chemical.name} · rev ${s.revision ?? '—'}`}
+                  />
+                </div>
+              )}
             </li>
           ))}
         </ul>

@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from app.core.config import settings
+from app.services import qr_svg
 from app.core.deps import SessionDep
 from app.core.permissions import CanReportIncident
 from app.crud import asset as asset_crud
@@ -128,4 +130,32 @@ async def resolve(token: str, db: SessionDep, user: CanReportIncident):  # noqa:
         status.HTTP_404_NOT_FOUND,
         "This code is not in use. The label may be from something that has "
         "since been removed — check with HSE before relying on it.",
+    )
+
+
+@router.get("/{token}/image", response_class=Response)
+async def qr_image(
+    token: str, db: SessionDep, user: CanReportIncident,  # noqa: ARG001
+    size: int = Query(default=240, ge=96, le=1024),
+):
+    """The code itself, as SVG, ready to print and stick on something.
+
+    Resolved before it is drawn. A code for a token nothing answers is a
+    sticker that goes on a wall and does nothing when scanned, which is worse
+    than no sticker — somebody tries it, it fails, and they stop trying the
+    others.
+
+    SVG rather than a raster: it is going to be printed at whatever size the
+    label maker runs, and a code that has gone soft is one a phone gives up on.
+    """
+    target = await resolve(token, db, user)          # 404s on an unknown token
+    url = f"{settings.SAFETY_WEB_URL.rstrip('/')}/qr/{token}"
+    return Response(
+        content=qr_svg.svg(url, size_px=size),
+        media_type="image/svg+xml",
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "Content-Disposition":
+                f'inline; filename="qr-{target.kind}-{token}.svg"',
+        },
     )

@@ -5,9 +5,11 @@
  * and Safety is one of several things that will read it. The screen lives in
  * this module because HSE is who keeps it current.
  */
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { QrCode } from 'lucide-react'
 import { api } from '@/lib/api'
+import QrPanel from '@/components/QrPanel'
 
 interface Node {
   id: string; code: string; name: string; level: string; path: string
@@ -21,6 +23,9 @@ const LEVEL_LABEL: Record<string, string> = {
 }
 
 export default function LocationsPage() {
+  // The sticker by a door is the one thing here somebody uses without being
+  // asked to: scanning it opens the incident form with the area filled in.
+  const [showing, setShowing] = useState<Node | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['locations'],
     queryFn: () => api.get<Node[]>('/api/v1/settings/locations'),
@@ -35,14 +40,23 @@ export default function LocationsPage() {
         Every incident, inspection and corrective action is filed against one of
         these. Maintained centrally with the rest of the master data.
       </p>
+      {showing && (
+        <div className="mb-3 rounded-xl border border-neutral-200 bg-white p-3.5">
+          <QrPanel token={showing.qr_token} caption={showing.name} sub={showing.path} />
+          <button type="button" onClick={() => setShowing(null)}
+                  className="mt-2 text-xs text-neutral-500 hover:text-neutral-800">
+            Close
+          </button>
+        </div>
+      )}
       <ul className="rounded-xl border border-neutral-200 bg-white">
-        {data?.map((n) => <TreeNode key={n.id} node={n} />)}
+        {data?.map((n) => <TreeNode key={n.id} node={n} onShowCode={setShowing} />)}
       </ul>
     </div>
   )
 }
 
-function TreeNode({ node }: { node: Node }) {
+function TreeNode({ node, onShowCode }: { node: Node; onShowCode: (n: Node) => void }) {
   return (
     <>
       <li
@@ -57,10 +71,18 @@ function TreeNode({ node }: { node: Node }) {
           <span className="hidden text-xs text-neutral-400 sm:inline">{node.access_area}</span>
         )}
         {node.qr_token && (
-          <QrCode className="h-3.5 w-3.5 text-neutral-300" aria-label="Has a scannable code" />
+          <button
+            type="button"
+            onClick={() => onShowCode(node)}
+            title="Show the code to print for this area"
+            className="flex min-h-[32px] items-center gap-1 rounded-md px-1.5 text-xs text-neutral-400 hover:bg-neutral-50 hover:text-neutral-800"
+          >
+            <QrCode className="h-3.5 w-3.5" aria-hidden />
+            Code
+          </button>
         )}
       </li>
-      {node.children?.map((c) => <TreeNode key={c.id} node={c} />)}
+      {node.children?.map((c) => <TreeNode key={c.id} node={c} onShowCode={onShowCode} />)}
     </>
   )
 }

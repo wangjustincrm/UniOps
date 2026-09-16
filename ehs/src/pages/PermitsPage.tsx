@@ -24,6 +24,7 @@ import {
   AlertTriangle, Check, ClipboardCheck, Gauge, Plus, ShieldCheck, X,
 } from 'lucide-react'
 import { api } from '@/lib/api'
+import QrPanel from '@/components/QrPanel'
 import { formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useMyProfile } from '@/hooks/useMyProfile'
@@ -539,6 +540,15 @@ function SignaturePanel(
 
   return (
     <div className="mt-4">
+      {permit.qr_token && (
+        <div className="mb-4 border-b border-neutral-100 pb-3.5">
+          <QrPanel
+            token={permit.qr_token}
+            caption="Scan at the job for this permit"
+            sub={`${permit.permit_no}${permit.location_path ? ` · ${permit.location_path}` : ''}`}
+          />
+        </div>
+      )}
       <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
         Signatures
       </h3>

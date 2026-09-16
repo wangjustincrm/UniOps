@@ -287,3 +287,61 @@ async def test_the_location_tree_nests(hse_manager, db_session):
     assert tree[0]["name"] == "Kingston Plant"
     assert tree[0]["children"][0]["name"] == "Building 103"
     assert tree[0]["children"][0]["children"][0]["path"] == "Kingston Plant/Building 103/Filling"
+
+
+async def test_a_code_is_only_drawn_for_something_that_answers(hse_manager, test_engine):
+    """A sticker whose code goes nowhere is worse than no sticker.
+
+    Somebody tries it, nothing happens, and they stop trying the others — so
+    the token is resolved before it is drawn rather than encoding whatever
+    string arrives.
+    """
+    from sqlalchemy import text
+    _, client = hse_manager
+
+    missing = await client.get("/api/v1/qr/L-nothing-here/image")
+    assert missing.status_code == 404
+
+    async with test_engine.begin() as conn:
+        token = (await conn.execute(text(
+            "SELECT qr_token FROM locations WHERE qr_token IS NOT NULL LIMIT 1"))).scalar()
+    if token is None:
+        pytest.skip("no location carries a code in this database")
+
+    drawn = await client.get(f"/api/v1/qr/{token}/image")
+    assert drawn.status_code == 200
+    assert drawn.headers["content-type"].startswith("image/svg+xml")
+    body = drawn.text
+    assert body.startswith("<svg"), "it has to be an image, not a description of one"
+    # Four modules of quiet zone are the specification's minimum, and the usual
+    # reason a phone will not read a printed code is that they were trimmed.
+    assert 'viewBox="0 0 37 37"' in body or "viewBox=" in body
+
+
+def test_the_drawn_modules_match_the_encoder():
+    """The compact path is ours; the encoding is not.
+
+    Rendering reportlab's widget through renderSVG gives one rect per module
+    and 44 kB for a short URL, which on a page listing forty areas is most of a
+    megabyte. Runs are merged into one path instead — about twenty times
+    smaller, and worth nothing if a single module moved.
+    """
+    import re
+    from reportlab.graphics.barcode import qr
+
+    from app.services.qr_svg import QUIET_ZONE, svg
+
+    data = "https://safety.example/qr/abc123"
+    widget = qr.QrCodeWidget(data, barLevel="M")
+    widget.draw()
+    code = widget.qr
+    n = code.getModuleCount()
+    expected = {(r, c) for r in range(n) for c in range(n) if code.isDark(r, c)}
+
+    drawn: set[tuple[int, int]] = set()
+    for m in re.finditer(r"M(\d+) (\d+)h(\d+)v1h-\3z", svg(data)):
+        x, y, width = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        for i in range(width):
+            drawn.add((y - QUIET_ZONE, x - QUIET_ZONE + i))
+
+    assert drawn == expected, "the drawn code is not the code the encoder produced"
