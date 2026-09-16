@@ -93,11 +93,19 @@ modules:
     typical:
       - Check what is left on an account before raising a request
       - See what a purchase requisition will do to the remaining balance
+      - Ask how a figure on the Plan vs Actual grid was arrived at
+    reports:
+      - budget_plan_vs_actual
     notes:
       - >-
         You meet this without opening it — the budget widget on the Create PR
         form is this module, and an over-budget request is stopped or needs
         justification because of it.
+      - >-
+        The Plan vs Actual grid stacks three figures in every cell — plan,
+        actual (docs) and NC posted. Ask about any of them and the rule behind
+        it can be read out, including which cost centre a posting is charged to
+        and why.
 
   - key: mrp
     label: MRP — Material Requirements Planning

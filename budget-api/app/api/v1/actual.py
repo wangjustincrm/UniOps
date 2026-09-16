@@ -101,6 +101,17 @@ async def actuals_monthly_summary(
         db, cost_center_id=None, fiscal_year=fiscal_year, cc_ids=cc_ids)
 
 
+@router.get("/actuals/lineage")
+async def actuals_lineage(db: SessionDep, user: CurrentUserPayload):  # noqa: ARG001
+    """What the plan and actual (docs) figures on the dashboard are made of.
+
+    Describes how a figure is arrived at rather than what any figure is: no
+    cost centre, no year, no amounts — so it needs no scope. Anyone who can
+    reach the dashboard can ask why it says what it says."""
+    from app.services import lineage
+    return await lineage.describe(db)
+
+
 # ── 期初 (opening balance) import ─────────────────────────────────────────────
 
 @router.get("/actuals/opening", response_model=OpeningListResponse)

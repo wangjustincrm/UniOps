@@ -19,6 +19,20 @@ from app.db.base import Base, UUIDPrimaryKey
 
 LEDGER_OPS = {"commit", "release", "actualize", "book_expense", "opening"}
 
+# Which operations make up each figure the Budget Dashboard shows. Named here
+# because four places aggregate them and they must agree — and because the
+# assistant is now asked what "actual" means on that screen, which is exactly
+# this list and nothing else.
+#   actualize     an invoice was posted against something already committed
+#   book_expense  an expense claim booked straight to the budget
+#   opening       actuals finance imported for the part of the year that
+#                 happened before this ledger existed
+ACTUAL_OPS = ("actualize", "book_expense", "opening")
+#   commit adds, release and actualize give back: a commitment stops being a
+#   commitment both when it is cancelled and when it turns into a real cost.
+COMMIT_ADDS = ("commit",)
+COMMIT_RELEASES = ("release", "actualize")
+
 
 class BudgetLedger(UUIDPrimaryKey, Base):
     __tablename__ = "budget_ledger"

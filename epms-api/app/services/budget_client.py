@@ -123,3 +123,22 @@ async def get_actuals_summary(
     except httpx.HTTPError as e:
         logger.warning("budget-api /actuals/summary unreachable: %s", e)
         return None
+
+
+async def get_actuals_lineage(bearer_token: str | None) -> dict[str, Any] | None:
+    """What the plan and actual (docs) figures are made of, from budget-api.
+
+    The other half of the Budget Dashboard's explanation (finance-api owns the
+    NC half). Carries the live operation mix, which is the difference between
+    describing the design and saying what is currently true of the ledger.
+    Returns None when budget-api cannot be reached.
+    """
+    url = f"{settings.BUDGET_API_URL}/api/v1/actuals/lineage"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(url, headers=_auth_headers(bearer_token))
+            r.raise_for_status()
+            return r.json()
+    except httpx.HTTPError as e:
+        logger.warning("budget-api /actuals/lineage unreachable: %s", e)
+        return None
