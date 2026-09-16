@@ -148,12 +148,15 @@ async def nc_partner_vouchers(user: CurrentUser, db: AsyncSession = Depends(get_
                               fiscal_year: int = Query(...), month: int = Query(...),
                               cost_center_id: uuid.UUID | None = Query(default=None),
                               partner_id: str | None = Query(default=None)):
-    """Vouchers behind one (budget account × cost center × partner × month).
-    partner_id='none' => lines with no partner."""
-    pid: object = partner_id
-    if partner_id and partner_id != "none":
-        pid = uuid.UUID(partner_id)
+    """Vouchers behind one (budget account × cost center × party × month).
+
+    `partner_id` is the `key` a partner row reports, and is passed through as an
+    opaque string: a vendor uuid, the raw NC code for a vendor with no UniOps
+    record, or a bucket name ('multi' — voucher names several parties, 'none' —
+    no party anywhere on the voucher). It used to be parsed as a uuid, which
+    422'd on every non-uuid key the breakdown can now produce."""
     kw = await _cc_scope(db, user, cost_center_id)
+    pid: object = partner_id
     return await crud.nc_partner_vouchers(db, income_expense_item_id, fiscal_year,
                                           month, partner_id=pid, **kw)
 

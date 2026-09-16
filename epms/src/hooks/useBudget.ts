@@ -411,8 +411,18 @@ export interface PartnerMonthly {
   income_expense_item_id: string
   cost_center_id: string | null
   partners: {
+    // `key` is the row's identity for the voucher drill: a vendor uuid, the raw
+    // NC code when the vendor has no UniOps record, or a bucket name
+    // ('multi' / 'none'). Pass it back verbatim — partner_id is null for all
+    // three of those cases, so it cannot identify the row on its own.
+    key: string
     partner_id: string | null; partner_name: string | null
-    by_month: Record<number, string>; year_total: string
+    // Where the vendor came from: 'line' (the expense line named it), 'voucher'
+    // (inferred from the voucher's single party — NC puts the vendor on the
+    // payable line, not the expense line), 'mixed', 'multi' (voucher names
+    // several parties, not attributable), 'none' (no party on the voucher).
+    source: 'line' | 'voucher' | 'mixed' | 'multi' | 'none'
+    by_month: Record<number, string>; year_total: string; inferred_total: string
   }[]
 }
 
@@ -438,6 +448,8 @@ export interface PartnerVouchers {
     jv_id: string; jv_number: string; voucher_date: string
     account_code: string; account_name: string | null
     summary: string | null; partner_name: string | null
+    partner_source: 'line' | 'voucher' | 'multi' | 'none'
+    line_partner_name: string | null
     local_debit: string; local_credit: string
   }[]
 }

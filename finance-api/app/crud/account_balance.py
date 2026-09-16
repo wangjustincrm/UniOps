@@ -7,7 +7,7 @@ reads posting_lines) — this is the foundation the account-balance report consu
 """
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import String, case, cast, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.fiscal import opening_window, status_filter
@@ -157,6 +157,18 @@ BUDGET_ACTUAL_ACCOUNTS = {
 # category-level tie-out rows instead of being spread over cost centers.
 _PAYROLL_PREFIX = "CRM007"
 _DEPREC_PREFIX = "CRM004"
+#: Shut-down loss — the stop-production reclass that moves a share of MOH into
+#: G&A (`Shut down loss - utilities/depreciation/payroll/MOH`). Not budgeted per
+#: cost center, same treatment as Payroll and Depreciation (user, 2026-09-16).
+_SHUTDOWN_LOSS_PREFIX = "CRM09912"
+
+#: Every income-expense item the per-cost-center dashboard deliberately leaves
+#: out. NOTE CRM09912 has no budget_accounts row today, so it is already dropped
+#: by the INNER join in nc_actuals_monthly; listing it here is what keeps it out
+#: if the catalog ever gains one — and is what tells JV Validation that its
+#: 8.6M CAD is policy, not a defect. Keep in lockstep with the frontend's
+#: `isExcludedFromDashboard` (epms/src/pages/budget/BudgetDashboard.tsx).
+EXCLUDED_IO_PREFIXES = (_DEPREC_PREFIX, _PAYROLL_PREFIX, _SHUTDOWN_LOSS_PREFIX)
 
 
 async def _cc_map(db: AsyncSession) -> dict:
@@ -486,10 +498,10 @@ async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
                 JournalVoucherLine.account_code.in_(accts),
-                # Payroll (CRM007) / Depreciation (CRM004) are excluded from the
-                # dashboard entirely — they are category-level only (finance grid).
-                ~BudgetAccount.code.like(f"{_PAYROLL_PREFIX}%"),
-                ~BudgetAccount.code.like(f"{_DEPREC_PREFIX}%"))
+                # Payroll (CRM007) / Depreciation (CRM004) are category-level
+                # only (finance grid); shut-down loss (CRM09912) is not budgeted
+                # per cost center at all. See EXCLUDED_IO_PREFIXES.
+                *[~BudgetAccount.code.like(f"{p}%") for p in EXCLUDED_IO_PREFIXES])
          .group_by(JournalVoucherLine.income_expense_item_id, month))
     if cost_center_id is not None:
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
@@ -499,6 +511,69 @@ async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
     for aid, mm, dr in (await db.execute(q)).all():
         out.setdefault(str(aid), {})[int(mm)] = _s(Decimal(dr))
     return {"fiscal_year": fiscal_year, "accounts": out}
+
+
+# ── vendor attribution ───────────────────────────────────────────────────────
+#
+# NC hangs the 客商/客户 aux on the PAYABLE line, not on the expense line: a
+# purchase voucher reads `debit 6602 (no party) / credit 220201 (the vendor)`.
+# The dashboard sums debit only — correctly, because a credit is not spend — so
+# the vendor never reached the breakdown and 1,394 expense lines carrying
+# 2,203,191 CAD of 2026 spend showed as "(no vendor)" on vouchers that name one.
+#
+# The fix is to take the party from the VOUCHER, not from the credit line (whose
+# amount is not actual and must never be added in). It is applied only where it
+# is unambiguous: a voucher naming several parties cannot be split across its
+# expense lines without inventing an allocation, so those lines are bucketed as
+# `multi` and stay visibly unattributed rather than being guessed at.
+#
+# `source` on each row says where the attribution came from:
+#   line    — the expense line named the party itself (unchanged behaviour)
+#   voucher — inferred from the voucher's single party
+#   multi   — the voucher names several parties; not attributable
+#   none    — no party anywhere on the voucher (internal accrual / carry-forward)
+
+
+def _voucher_party():
+    """jv_id -> (distinct party count, the party when there is exactly one)."""
+    key = func.coalesce(cast(JournalVoucherLine.partner_id, String),
+                        JournalVoucherLine.partner_name)
+    return (select(JournalVoucherLine.jv_id.label("jv_id"),
+                   func.count(func.distinct(key)).label("n"),
+                   func.min(cast(JournalVoucherLine.partner_id, String)).label("pid"),
+                   func.min(JournalVoucherLine.partner_name).label("pname"))
+            .where(or_(JournalVoucherLine.partner_id.isnot(None),
+                       JournalVoucherLine.partner_name.isnot(None)))
+            .group_by(JournalVoucherLine.jv_id)
+            .subquery())
+
+
+def _effective_party(vp):
+    """(partner_id, partner_name, source) expressions for a line, given the
+    voucher-party subquery `vp` already outer-joined on jv_id."""
+    own = or_(JournalVoucherLine.partner_id.isnot(None),
+              JournalVoucherLine.partner_name.isnot(None))
+    pid = case((own, cast(JournalVoucherLine.partner_id, String)),
+               (vp.c.n == 1, vp.c.pid))
+    pname = case((own, JournalVoucherLine.partner_name),
+                 (vp.c.n == 1, vp.c.pname))
+    source = case((own, literal("line")),
+                  (vp.c.n == 1, literal("voucher")),
+                  (vp.c.n > 1, literal("multi")),
+                  else_=literal("none"))
+    return pid, pname, source
+
+
+def _party_key(pid, pname, source) -> str:
+    """Grouping identity for a partner row. Keyed on the party itself so a
+    line-named and a voucher-inferred hit on the SAME vendor land in one row;
+    falls back to the bucket name when there is no party.
+
+    Note this also fixes a second defect: the previous key was `partner_id or
+    "__none__"`, so every line whose vendor exists in NC but has no UniOps
+    vendor record (partner_id NULL, partner_name = the raw NC code) collapsed
+    into one bucket that then displayed whichever name it saw first."""
+    return pid or pname or source
 
 
 async def _predreal_subtree(db: AsyncSession) -> set:
@@ -513,8 +588,11 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
     """Budget Dashboard drill: for ONE budget account (收支项目) — with cost center
     already locked by the caller — NC posted actual per partner (客商/供应商/客户)
     per month across the fiscal year. Rows = partners that appeared that year,
-    sorted by year total desc; cells = monthly gross debit. `partner_id` None =
-    lines with no partner (denormalized name kept)."""
+    sorted by year total desc; cells = monthly gross debit. The party is the
+    line's own when it has one, else the voucher's when the voucher names
+    exactly one — see `_voucher_party`. Each row carries `key` (the identity to
+    pass back for the drill), `source`, and `inferred_total` (how much of the
+    row came from the voucher rather than the line)."""
     if cc_ids is not None and len(cc_ids) == 0:
         return {"fiscal_year": fiscal_year,
                 "income_expense_item_id": str(income_expense_item_id),
@@ -522,9 +600,12 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
                 "partners": []}
     accts = await _predreal_subtree(db)
     month = func.substr(JournalVoucher.fiscal_period, 6, 2)
-    q = (select(JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month,
+    vp = _voucher_party()
+    pid_e, pname_e, source_e = _effective_party(vp)
+    q = (select(pid_e, pname_e, source_e, month,
                 func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .outerjoin(vp, vp.c.jv_id == JournalVoucherLine.jv_id)
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
                 JournalVoucherLine.account_code.in_(accts),
@@ -536,22 +617,32 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
     elif cc_ids:
         q = q.where(JournalVoucherLine.cost_center_id.in_(cc_ids))
-    q = q.group_by(JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month)
+    q = q.group_by(pid_e, pname_e, source_e, month)
 
     agg: dict = {}
-    for pid, pname, mm, dr in (await db.execute(q)).all():
-        key = str(pid) if pid else "__none__"
-        rec = agg.setdefault(key, {"partner_id": str(pid) if pid else None,
-                                   "partner_name": pname, "by_month": {},
-                                   "_total": _ZERO})
+    for pid, pname, source, mm, dr in (await db.execute(q)).all():
+        key = _party_key(pid, pname, source)
+        rec = agg.setdefault(key, {"key": key, "partner_id": pid,
+                                   "partner_name": pname, "source": source,
+                                   "by_month": {}, "_total": _ZERO,
+                                   "_inferred": _ZERO})
         d = Decimal(dr)
-        rec["by_month"][int(mm)] = _s(d)
+        rec["by_month"][int(mm)] = _s(Decimal(rec["by_month"].get(int(mm), 0)) + d)
         rec["_total"] += d
+        if source == "voucher":
+            rec["_inferred"] += d
+            # A vendor seen both ways is one row; label it by the weaker source
+            # only if EVERY hit was inferred.
+            if rec["source"] == "line":
+                rec["source"] = "mixed"
+        elif source == "line" and rec["source"] == "voucher":
+            rec["source"] = "mixed"
         if pname and not rec["partner_name"]:
             rec["partner_name"] = pname
     partners = sorted(agg.values(), key=lambda r: r["_total"], reverse=True)
     for r in partners:
         r["year_total"] = _s(r.pop("_total"))
+        r["inferred_total"] = _s(r.pop("_inferred"))
     return {"fiscal_year": fiscal_year,
             "income_expense_item_id": str(income_expense_item_id),
             "cost_center_id": str(cost_center_id) if cost_center_id else None,
@@ -561,18 +652,22 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
 async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
                                  cost_center_id=None, cc_ids=None) -> dict:
     """Bulk vendor (客商) breakdown for ALL predreal budget accounts in ONE query —
-    the export equivalent of calling nc_partner_monthly per account. Groups posted
-    JV debit by (income_expense_item_id, partner_id, partner_name, month). Returns
-    {account_id_str: [ {partner_id, partner_name, by_month{month:str}, year_total}
-    ... sorted by year_total desc ]}. partner_id None == '(no vendor)' bucket."""
+    the export equivalent of calling nc_partner_monthly per account. Same party
+    attribution as nc_partner_monthly (line's own party, else the voucher's when
+    unambiguous — see `_voucher_party`). Returns {account_id_str: [ {key,
+    partner_id, partner_name, source, by_month{month:str}, year_total,
+    inferred_total} ... sorted by year_total desc ]}."""
     if cc_ids is not None and len(cc_ids) == 0:
         return {}
     accts = await _predreal_subtree(db)
     month = func.substr(JournalVoucher.fiscal_period, 6, 2)
+    vp = _voucher_party()
+    pid_e, pname_e, source_e = _effective_party(vp)
     q = (select(JournalVoucherLine.income_expense_item_id,
-                JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month,
+                pid_e, pname_e, source_e, month,
                 func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .outerjoin(vp, vp.c.jv_id == JournalVoucherLine.jv_id)
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
                 JournalVoucherLine.account_code.in_(accts),
@@ -582,19 +677,27 @@ async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
     elif cc_ids:
         q = q.where(JournalVoucherLine.cost_center_id.in_(cc_ids))
     q = q.group_by(JournalVoucherLine.income_expense_item_id,
-                   JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month)
+                   pid_e, pname_e, source_e, month)
 
     by_acct: dict = {}
-    for aid, pid, pname, mm, dr in (await db.execute(q)).all():
+    for aid, pid, pname, source, mm, dr in (await db.execute(q)).all():
         if aid is None:
             continue
         agg = by_acct.setdefault(str(aid), {})
-        key = str(pid) if pid else "__none__"
-        rec = agg.setdefault(key, {"partner_id": str(pid) if pid else None,
-                                   "partner_name": pname, "by_month": {}, "_total": _ZERO})
+        key = _party_key(pid, pname, source)
+        rec = agg.setdefault(key, {"key": key, "partner_id": pid,
+                                   "partner_name": pname, "source": source,
+                                   "by_month": {}, "_total": _ZERO,
+                                   "_inferred": _ZERO})
         d = Decimal(dr)
-        rec["by_month"][int(mm)] = _s(d)
+        rec["by_month"][int(mm)] = _s(Decimal(rec["by_month"].get(int(mm), 0)) + d)
         rec["_total"] += d
+        if source == "voucher":
+            rec["_inferred"] += d
+            if rec["source"] == "line":
+                rec["source"] = "mixed"
+        elif source == "line" and rec["source"] == "voucher":
+            rec["source"] = "mixed"
         if pname and not rec["partner_name"]:
             rec["partner_name"] = pname
 
@@ -603,6 +706,7 @@ async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
         partners = sorted(agg.values(), key=lambda r: r["_total"], reverse=True)
         for r in partners:
             r["year_total"] = _s(r.pop("_total"))
+            r["inferred_total"] = _s(r.pop("_inferred"))
         out[aid] = partners
     return out
 
@@ -610,16 +714,26 @@ async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
 async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_year: int,
                               month: int, cost_center_id=None, partner_id=None,
                               cc_ids=None) -> dict:
-    """Drill for one (budget account × cost center × partner × month): the posted
-    JV lines behind it. `partner_id='none'` filters lines with no partner."""
+    """Drill for one (budget account × cost center × party × month): the posted
+    JV lines behind it.
+
+    `partner_id` is the `key` from the partner breakdown, so the filter matches
+    exactly what the row summed: a vendor uuid, the raw NC code for a vendor with
+    no UniOps record, or one of the bucket names 'multi' / 'none'. It is compared
+    against the EFFECTIVE party (line's own, else the voucher's single party) —
+    filtering on the line's own party alone would return nothing for every row
+    the voucher fallback created."""
     from app.models.coa import ChartOfAccount
     period = f"{fiscal_year}-{int(month):02d}"
     if cc_ids is not None and len(cc_ids) == 0:
         return {"period": period, "rows": []}
     accts = await _predreal_subtree(db)
     coa = {a.code: a for a in (await db.execute(select(ChartOfAccount))).scalars()}
-    q = (select(JournalVoucherLine, JournalVoucher)
+    vp = _voucher_party()
+    pid_e, pname_e, source_e = _effective_party(vp)
+    q = (select(JournalVoucherLine, JournalVoucher, pid_e, pname_e, source_e)
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .outerjoin(vp, vp.c.jv_id == JournalVoucherLine.jv_id)
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period == period,
                 JournalVoucherLine.account_code.in_(accts),
@@ -630,19 +744,23 @@ async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_y
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
     elif cc_ids:
         q = q.where(JournalVoucherLine.cost_center_id.in_(cc_ids))
-    if partner_id == "none":
-        q = q.where(JournalVoucherLine.partner_id.is_(None))
-    elif partner_id is not None:
-        q = q.where(JournalVoucherLine.partner_id == partner_id)
+    if partner_id is not None:
+        key = str(partner_id)
+        q = q.where(func.coalesce(pid_e, pname_e, source_e) == key)
     rows = []
-    for ln, jv in (await db.execute(q)).all():
+    for ln, jv, pid, pname, source in (await db.execute(q)).all():
         acct = coa.get(ln.account_code)
         rows.append({
             "jv_id": str(jv.id), "jv_number": jv.jv_number,
             "voucher_date": jv.voucher_date.isoformat(),
             "account_code": ln.account_code, "account_name": acct.name if acct else None,
             "summary": ln.summary or jv.summary,
-            "partner_name": ln.partner_name,
+            # The party actually attributed to this line, plus where it came
+            # from — a reader who sees a vendor on an expense line that does not
+            # carry one in NC needs to know it came off the voucher.
+            "partner_name": pname,
+            "partner_source": source,
+            "line_partner_name": ln.partner_name,
             "local_debit": str(ln.local_debit), "local_credit": str(ln.local_credit),
         })
     return {"period": period, "rows": rows}

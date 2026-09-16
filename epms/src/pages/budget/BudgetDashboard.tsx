@@ -21,9 +21,13 @@ const currentYear = new Date().getUTCFullYear()
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-// Payroll (CRM007) / Depreciation (CRM004) are category-level only — fully
-// excluded from the dashboard's per-account rows, totals, and over-budget alerts.
-const isPayrollOrDeprec = (code: string) => code.startsWith('CRM004') || code.startsWith('CRM007')
+// Items the per-cost-center dashboard deliberately omits: Payroll (CRM007) and
+// Depreciation (CRM004) are tracked at category level only, and shut-down loss
+// (CRM09912 — the stop-production reclass of MOH into G&A) is not budgeted per
+// cost center at all. Keep in lockstep with finance-api's EXCLUDED_IO_PREFIXES
+// (crud/account_balance.py), which enforces the same list on the actual side.
+const EXCLUDED_PREFIXES = ['CRM004', 'CRM007', 'CRM09912']
+const isExcludedFromDashboard = (code: string) => EXCLUDED_PREFIXES.some((p) => code.startsWith(p))
 
 export default function BudgetDashboard() {
   const { data: config } = useConfig()
@@ -72,11 +76,11 @@ export default function BudgetDashboard() {
   }), [fiscalYear, ccId])
 
   const { data, isLoading } = useActualsSummary(summaryParams)
-  const accounts: ApiAccountSummary[] = (data?.accounts ?? []).filter((a) => !isPayrollOrDeprec(a.account_code))
+  const accounts: ApiAccountSummary[] = (data?.accounts ?? []).filter((a) => !isExcludedFromDashboard(a.account_code))
 
   const { data: monthlyData, isLoading: monthlyLoading } = useMonthlyActualsSummary(summaryParams)
   const monthlyAccounts: ApiMonthlyAccountSummary[] = useMemo(
-    () => (monthlyData?.accounts ?? []).filter((a) => !isPayrollOrDeprec(a.account_code)), [monthlyData])
+    () => (monthlyData?.accounts ?? []).filter((a) => !isExcludedFromDashboard(a.account_code)), [monthlyData])
 
   // NC posted actual (finance-api) per account × month — the third cell line.
   const { data: ncData } = useNcActualsMonthly(summaryParams)
@@ -490,6 +494,17 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
 
 // ── Partner (客商/供应商/客户) inline breakdown ────────────────────────────────
 
+// What an unattributed row is called, by why it is unattributed. "(no vendor)"
+// for all of them hid the difference between "the voucher names several parties
+// and we refuse to guess" and "this is an internal accrual with no party at all".
+const NO_VENDOR_LABEL: Record<string, string> = {
+  multi: '(several parties on the voucher)',
+  none: '(no vendor — internal entry)',
+  line: '(no vendor)',
+  voucher: '(no vendor)',
+  mixed: '(no vendor)',
+}
+
 function PartnerRows({ account, fiscalYear, costCenterId }: {
   account: ApiMonthlyAccountSummary
   fiscalYear: number
@@ -510,12 +525,24 @@ function PartnerRows({ account, fiscalYear, costCenterId }: {
   return (
     <>
       {partners.map((p, i) => {
-        const pid = p.partner_id ?? 'none'
+        const pid = p.key
         return (
           <Fragment key={`${pid}-${i}`}>
             <tr className="border-b border-neutral-100 bg-emerald-50">
               <td className="py-1.5 pl-10 pr-3 text-xs text-neutral-600 break-words">
-                {p.partner_name || <span className="text-neutral-400">(no vendor)</span>}
+                {p.partner_name || <span className="text-neutral-400">{NO_VENDOR_LABEL[p.source]}</span>}
+                {/* NC hangs the vendor on the payable line, not the expense
+                    line, so most of these are read off the voucher rather than
+                    off the line the money is on. Say so — a vendor that is not
+                    on the line in NC must not look like one that is. */}
+                {(p.source === 'voucher' || p.source === 'mixed') && p.partner_name && (
+                  <span className="ml-1.5 rounded bg-emerald-100 px-1 py-0.5 text-[10px] text-emerald-800"
+                        title={p.source === 'voucher'
+                          ? 'Vendor taken from the voucher (the expense line itself names none)'
+                          : `Partly from the voucher: ${p.inferred_total} of ${p.year_total}`}>
+                    {p.source === 'voucher' ? 'from voucher' : 'partly from voucher'}
+                  </span>
+                )}
               </td>
               {Array.from({ length: 12 }, (_, k) => k + 1).map((m) => {
                 const v = Number(p.by_month[m] ?? 0)
@@ -536,7 +563,8 @@ function PartnerRows({ account, fiscalYear, costCenterId }: {
             </tr>
             {voucherKey && voucherKey.startsWith(`${pid}:`) && (
               <VoucherRow account={account} fiscalYear={fiscalYear} costCenterId={costCenterId}
-                partnerId={p.partner_id} partnerName={p.partner_name} month={Number(voucherKey.split(':')[1])} />
+                partnerKey={p.key} partnerName={p.partner_name || NO_VENDOR_LABEL[p.source]}
+                month={Number(voucherKey.split(':')[1])} />
             )}
           </Fragment>
         )
@@ -545,17 +573,17 @@ function PartnerRows({ account, fiscalYear, costCenterId }: {
   )
 }
 
-function VoucherRow({ account, fiscalYear, costCenterId, partnerId, partnerName, month }: {
+function VoucherRow({ account, fiscalYear, costCenterId, partnerKey, partnerName, month }: {
   account: ApiMonthlyAccountSummary
   fiscalYear: number
   costCenterId?: string
-  partnerId: string | null
+  partnerKey: string
   partnerName: string | null
   month: number
 }) {
   const { data, isLoading } = useNcPartnerVouchers({
     income_expense_item_id: account.account_id, fiscal_year: fiscalYear, month,
-    cost_center_id: costCenterId, partner_id: partnerId ?? 'none',
+    cost_center_id: costCenterId, partner_id: partnerKey,
   })
   const rows = data?.rows ?? []
   return (
