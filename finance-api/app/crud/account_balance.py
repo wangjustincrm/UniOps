@@ -7,7 +7,7 @@ reads posting_lines) — this is the foundation the account-balance report consu
 """
 from decimal import Decimal
 
-from sqlalchemy import String, case, cast, func, literal, or_, select
+from sqlalchemy import String, and_, case, cast, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.fiscal import opening_window, status_filter
@@ -488,32 +488,96 @@ async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict)
             "unmapped": await _ba_unmapped(db, period)}
 
 
+# ── which budget account a line belongs to ───────────────────────────────────
+#
+# Two different rules, because NC books the two families differently:
+#
+#   5101 / 5301 / 6601 / 6602   the line carries a 收支项目 (income-expense item)
+#                               aux, and that IS the budget account.
+#   6603 财务费用                NC does not put an income-expense item on these
+#                               lines at all. The ACCOUNT is the budget line —
+#                               660301 Interest income, 660303 Bank Charge, …
+#                               each exists in budget_accounts under the very
+#                               same code (verified: all six codes NC posts to
+#                               in 2025-2026 match one).
+#
+# Before this, 6603 fell through the income-expense join and FN-0103 read zero
+# actual for every month of every year while 97,182.57 sat in the books.
+
+#: The category whose budget account is the accounting account itself.
+_BY_ACCOUNT_CODE_CATEGORY = "6603"
+
+
+async def _by_account_code_subtree(db: AsyncSession) -> set:
+    return await _subtree_codes(db, _BY_ACCOUNT_CODE_CATEGORY)
+
+
+def _budget_account_join(q, fn_codes, alias):
+    """Attach the by-account-code lookup used for the 6603 subtree."""
+    return q.outerjoin(alias, and_(alias.code == JournalVoucherLine.account_code,
+                                   JournalVoucherLine.account_code.in_(fn_codes)))
+
+
+def _effective_account_id_filter(fn_codes, account_id):
+    """WHERE clause matching lines that belong to budget account `account_id`
+    under either rule: by account code inside the 6603 subtree, by
+    income-expense item elsewhere."""
+    from app.models.mirrors import BudgetAccount
+    in_fn = JournalVoucherLine.account_code.in_(fn_codes)
+    by_code = (select(BudgetAccount.code)
+               .where(BudgetAccount.id == account_id).scalar_subquery())
+    return case(
+        (in_fn, JournalVoucherLine.account_code == by_code),
+        else_=(JournalVoucherLine.income_expense_item_id == account_id),
+    )
+
+
+def _effective_budget_account(fn_codes, by_item, by_code):
+    """(account_id, account_code) for a line: the account-code match inside the
+    6603 subtree, the income-expense item everywhere else."""
+    in_fn = JournalVoucherLine.account_code.in_(fn_codes)
+    return (case((in_fn, by_code.id), else_=by_item.id),
+            case((in_fn, by_code.code), else_=by_item.code))
+
+
 async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
                              cost_center_id=None, cc_ids=None) -> dict:
     """NC posted actual per (income_expense_item_id, month) across the 5 predreal
     category subtrees for `fiscal_year`, optionally scoped to one cost center
     (`cost_center_id`) or a set of cost centers (`cc_ids`). Feeds the EPMS Budget
-    Dashboard's NC-actual line (keyed by budget account_id = income_expense_item_id).
+    Dashboard's NC-actual line, keyed by budget account — the line's
+    income-expense item, or for the 6603 subtree the account itself (see
+    `_effective_budget_account`).
     actual = period gross DEBIT. Returns {account_id: {month:int -> amount:str}}."""
     if cc_ids is not None and len(cc_ids) == 0:
         return {"fiscal_year": fiscal_year, "accounts": {}}
+    from sqlalchemy.orm import aliased
+
     from app.models.mirrors import BudgetAccount
     accts: set = set()
     for a in BUDGET_ACTUAL_ACCOUNTS:
         accts |= await _subtree_codes(db, a)
+    fn_codes = await _by_account_code_subtree(db)
+    by_code = aliased(BudgetAccount)
+    acct_id, acct_code = _effective_budget_account(fn_codes, BudgetAccount, by_code)
     month = func.substr(JournalVoucher.fiscal_period, 6, 2)   # 'MM' -> int in Python
-    q = (select(JournalVoucherLine.income_expense_item_id, month,
+    q = (select(acct_id, month,
                 func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
-         .join(BudgetAccount, JournalVoucherLine.income_expense_item_id == BudgetAccount.id)
-         .where(JournalVoucher.status == POSTED,
-                JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
-                JournalVoucherLine.account_code.in_(accts),
-                # Payroll (CRM007) / Depreciation (CRM004) are category-level
-                # only (finance grid); shut-down loss (CRM09912) is not budgeted
-                # per cost center at all. See EXCLUDED_IO_PREFIXES.
-                *[~BudgetAccount.code.like(f"{p}%") for p in EXCLUDED_IO_PREFIXES])
-         .group_by(JournalVoucherLine.income_expense_item_id, month))
+         .outerjoin(BudgetAccount,
+                    JournalVoucherLine.income_expense_item_id == BudgetAccount.id))
+    q = _budget_account_join(q, fn_codes, by_code)
+    q = (q.where(JournalVoucher.status == POSTED,
+                 JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
+                 JournalVoucherLine.account_code.in_(accts),
+                 # A line with no budget account on either rule is not actual
+                 # anywhere — it is a JV Validation finding, not a dashboard row.
+                 acct_id.isnot(None),
+                 # Payroll (CRM007) / Depreciation (CRM004) are category-level
+                 # only (finance grid); shut-down loss (CRM09912) is not budgeted
+                 # per cost center at all. See EXCLUDED_IO_PREFIXES.
+                 *[~acct_code.like(f"{p}%") for p in EXCLUDED_IO_PREFIXES])
+          .group_by(acct_id, month))
     if cost_center_id is not None:
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
     elif cc_ids:
@@ -613,6 +677,11 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
     month = func.substr(JournalVoucher.fiscal_period, 6, 2)
     vp = _voucher_party()
     pid_e, pname_e, source_e = _effective_party(vp)
+    # Match the dashboard's own keying: inside 6603 the budget account is the
+    # accounting account, so filtering on income_expense_item_id alone would
+    # drill into an empty list for every FN-0103 cell.
+    fn_codes = await _by_account_code_subtree(db)
+    acct_id = _effective_account_id_filter(fn_codes, income_expense_item_id)
     q = (select(pid_e, pname_e, source_e, month,
                 func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
@@ -620,7 +689,7 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
                 JournalVoucherLine.account_code.in_(accts),
-                JournalVoucherLine.income_expense_item_id == income_expense_item_id,
+                acct_id,
                 # actual = debit only; drop pure-credit carry-forward lines (and
                 # thus credit-only partners) so the breakdown isn't cluttered.
                 JournalVoucherLine.local_debit != 0))
@@ -670,25 +739,32 @@ async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
     inferred_total} ... sorted by year_total desc ]}."""
     if cc_ids is not None and len(cc_ids) == 0:
         return {}
+    from sqlalchemy.orm import aliased
+
+    from app.models.mirrors import BudgetAccount
     accts = await _predreal_subtree(db)
     month = func.substr(JournalVoucher.fiscal_period, 6, 2)
     vp = _voucher_party()
     pid_e, pname_e, source_e = _effective_party(vp)
-    q = (select(JournalVoucherLine.income_expense_item_id,
-                pid_e, pname_e, source_e, month,
+    fn_codes = await _by_account_code_subtree(db)
+    by_code = aliased(BudgetAccount)
+    acct_id, _ = _effective_budget_account(fn_codes, BudgetAccount, by_code)
+    q = (select(acct_id, pid_e, pname_e, source_e, month,
                 func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
-         .outerjoin(vp, vp.c.jv_id == JournalVoucherLine.jv_id)
-         .where(JournalVoucher.status == POSTED,
+         .outerjoin(BudgetAccount,
+                    JournalVoucherLine.income_expense_item_id == BudgetAccount.id)
+         .outerjoin(vp, vp.c.jv_id == JournalVoucherLine.jv_id))
+    q = _budget_account_join(q, fn_codes, by_code)
+    q = q.where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
                 JournalVoucherLine.account_code.in_(accts),
-                JournalVoucherLine.local_debit != 0))
+                JournalVoucherLine.local_debit != 0)
     if cost_center_id is not None:
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
     elif cc_ids:
         q = q.where(JournalVoucherLine.cost_center_id.in_(cc_ids))
-    q = q.group_by(JournalVoucherLine.income_expense_item_id,
-                   pid_e, pname_e, source_e, month)
+    q = q.group_by(acct_id, pid_e, pname_e, source_e, month)
 
     by_acct: dict = {}
     for aid, pid, pname, source, mm, dr in (await db.execute(q)).all():
@@ -742,13 +818,15 @@ async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_y
     coa = {a.code: a for a in (await db.execute(select(ChartOfAccount))).scalars()}
     vp = _voucher_party()
     pid_e, pname_e, source_e = _effective_party(vp)
+    fn_codes = await _by_account_code_subtree(db)
+    acct_id = _effective_account_id_filter(fn_codes, income_expense_item_id)
     q = (select(JournalVoucherLine, JournalVoucher, pid_e, pname_e, source_e)
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
          .outerjoin(vp, vp.c.jv_id == JournalVoucherLine.jv_id)
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period == period,
                 JournalVoucherLine.account_code.in_(accts),
-                JournalVoucherLine.income_expense_item_id == income_expense_item_id,
+                acct_id,
                 JournalVoucherLine.local_debit != 0)   # debit-only (drop carry-forward credit)
          .order_by(JournalVoucher.voucher_date))
     if cost_center_id is not None:

@@ -9,6 +9,11 @@
  *
  * Read-only. Each row drills into its voucher; the fix is in NC, in the
  * budget-actual cost center map, or in the budget account catalog.
+ *
+ * Not covered here at all: payroll (CRM007), depreciation (CRM004) and
+ * shut-down loss (CRM09912). They are kept out of the per-cost-center dashboard
+ * by decision, so holding them to rules about a placement they are never given
+ * would report thousands of lines nobody can act on.
  */
 import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
@@ -25,7 +30,7 @@ const linkBtn = 'text-xs font-medium text-[#085E5E] hover:underline'
 
 interface RuleSummary {
   rule: string; label: string
-  drops_from_dashboard: boolean; needs_decision: boolean; by_policy: boolean
+  drops_from_dashboard: boolean; needs_decision: boolean
   lines: number; vouchers: number; debit: string; credit: string
 }
 interface SummaryResp { period_from: string; period_to: string; rules: RuleSummary[] }
@@ -54,13 +59,13 @@ const RULE_HELP: Record<string, string> = {
   income_expense_unresolved:
     'The voucher carries an income-expense code that has no budget account with that exact code (NC codes carry a CRM prefix; the catalog must match). Fix: add or rename the budget account, then re-sync.',
   income_expense_missing:
-    'The line has no income-expense dimension at all, so there is no budget account to post it against. Fix: fill it in NC.',
+    'The line has no income-expense dimension at all, so there is no budget account to post it against. Applies only to the families NC books by income-expense item — 6603 financial expenses are checked by account instead. Fix: fill it in NC.',
   category_mismatch:
     'The account belongs to one expense category and the cost center to another (e.g. a 5101 manufacturing line in a GA-* cost center). The money lands in the other category’s budget.',
   department_mismatch:
     'The cost center’s department segment differs from the department on the line, and the mapping table does not declare that pairing on purpose.',
-  excluded_by_policy:
-    'Not a defect. Payroll (CRM007), Depreciation (CRM004) and shut-down loss (CRM09912) are kept out of the per-cost-center dashboard on purpose — payroll and depreciation are tracked at category level, and shut-down loss is not budgeted per cost center. Listed here only so the amount stays visible and nothing is silently missing from both places.',
+  account_not_in_catalog:
+    'Financial expenses (6603) are budgeted BY ACCOUNT — NC puts no income-expense item on them, and each account has a budget account of the same code (660301 Interest income, 660303 Bank Charge, …). This account has none. Fix: add a budget account with exactly this code.',
   cc_map_drift:
     'Re-syncing today would place this line in a DIFFERENT cost center than the one stored on it — the mapping table changed after the line was imported. Use this to preview a mapping change before running a full re-sync.',
 }
@@ -164,6 +169,11 @@ export default function JvValidationPage() {
           </button>
         </div>
 
+        <p className="mb-3 text-xs text-neutral-500">
+          Payroll, depreciation and shut-down loss are not validated here — they are
+          kept out of the per-cost-center dashboard on purpose.
+        </p>
+
         {droppedLines > 0 && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <strong>{droppedLines.toLocaleString()} posted lines ({money(String(droppedDebit))} CAD debit)</strong>{' '}
@@ -212,12 +222,9 @@ export default function JvValidationPage() {
                     <td className="px-3 py-2 text-right font-mono">{money(r.debit)}</td>
                     <td className="px-3 py-2">
                       <span className={cn('rounded px-2 py-0.5 text-xs font-medium',
-                        r.by_policy ? 'bg-neutral-100 text-neutral-600'
-                          : r.drops_from_dashboard ? 'bg-red-50 text-red-700'
+                        r.drops_from_dashboard ? 'bg-red-50 text-red-700'
                           : 'bg-amber-50 text-amber-800')}>
-                        {r.by_policy ? 'Excluded by policy'
-                          : r.drops_from_dashboard ? 'Dropped from dashboard'
-                          : 'Check placement'}
+                        {r.drops_from_dashboard ? 'Dropped from dashboard' : 'Check placement'}
                       </span>
                       {/* A mapping gap is fixed by adding a row; a missing
                           placement rule is not fixable at all until a person

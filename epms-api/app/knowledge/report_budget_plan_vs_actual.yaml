@@ -61,6 +61,11 @@ notes:
     finance Budget-vs-Actual grid, which is the list of what someone has to fix
     — in NC, or by adding a rule.
   - >-
+    Financial expenses are the one family keyed differently. NC puts no
+    income-expense item on them, so the accounting account itself is the budget
+    line — Interest income, Bank Charge and their siblings each match a budget
+    account of the same code. Everything else is keyed by income-expense item.
+  - >-
     Payroll, depreciation and shut-down loss are missing from this report on
     purpose. Finance tracks payroll and depreciation at category level rather
     than per cost centre, and shut-down loss — the stop-production entry that

@@ -38,10 +38,10 @@ RULES: tuple[str, ...] = (
     "cost_center_code_unmatched",
     "income_expense_unresolved",
     "income_expense_missing",
+    "account_not_in_catalog",
     "category_mismatch",
     "department_mismatch",
     "cc_map_drift",
-    "excluded_by_policy",
 )
 
 RULE_LABELS: dict[str, str] = {
@@ -57,21 +57,16 @@ RULE_LABELS: dict[str, str] = {
         "Income-expense code not in the budget account catalog",
     "income_expense_missing":
         "No income-expense item on the line at all",
+    "account_not_in_catalog":
+        "Financial-expense account has no budget account with the same code",
     "category_mismatch":
         "Account category and cost center disagree",
     "department_mismatch":
         "Department and cost center disagree",
     "cc_map_drift":
         "Cost center differs from what the current mapping resolves to",
-    "excluded_by_policy":
-        "Kept out of the dashboard on purpose (payroll / depreciation / shut-down loss)",
+    # (rule text only — the exclusion for unreplayable lines is in the SQL)
 }
-
-#: Not a defect — reported so the amount stays visible and accounted for. The
-#: dashboard's cost-center detail deliberately omits these, and without a line
-#: here their money would simply be missing from both the dashboard and this
-#: page, which is the exact failure this module exists to prevent.
-POLICY_RULES: frozenset[str] = frozenset({"excluded_by_policy"})
 
 #: Rules whose lines are MISSING from the Budget Dashboard entirely (as opposed
 #: to landing in a questionable bucket). Their amounts are what "the parts do
@@ -79,6 +74,7 @@ POLICY_RULES: frozenset[str] = frozenset({"excluded_by_policy"})
 DROPPED_RULES: frozenset[str] = frozenset({
     "cost_center_no_map_for_department", "cost_center_code_unmatched",
     "income_expense_unresolved", "income_expense_missing",
+    "account_not_in_catalog",
 })
 
 #: Findings a person must rule on before any amount of re-syncing can place the
@@ -106,7 +102,6 @@ _CATEGORY_VALUES = ", ".join(f"('{a}')" for a in BUDGET_ACTUAL_ACCOUNTS)
 # is a format specifier to psycopg2 (`cur.execute(sql, params)`), which raises
 # "not enough arguments for format string" on the sync path while the async path
 # works fine — a break that only shows up in the post-sync task raiser.
-_EXCLUDED_IO_SQL = "b.io_text like any(%(excluded_io)s)"
 _EXCLUDED_IO_PATTERNS = [f"{p}%" for p in EXCLUDED_IO_PREFIXES]
 
 # ── The query ────────────────────────────────────────────────────────────────
@@ -146,6 +141,7 @@ base as (
            l.cost_center_id, cc.code as cc_code,
            l.nc_cc_code, l.department_id, dp.code as dept_code,
            l.income_expense_item_id, ba.code as ba_code,
+           ba_acct.code    as ba_by_account_code,
            dim.value_text  as io_text,
            coalesce(
              (select m.uniops_cc_code from budget_actual_cc_map m
@@ -166,11 +162,22 @@ base as (
       left join cost_centers cc on cc.id = l.cost_center_id
       left join departments dp on dp.id = l.department_id
       left join budget_accounts ba on ba.id = l.income_expense_item_id
+      -- 6603 only: NC books financial expenses by ACCOUNT, with no
+      -- income-expense item, and each account has a budget account of the same
+      -- code (660301 Interest income, 660303 Bank Charge, ...).
+      left join budget_accounts ba_acct
+             on ba_acct.code = l.account_code and cat.category = '6603'
       left join jv_line_dimensions dim
              on dim.jv_line_id = l.id and dim.dim_code = 'income_expense_item'
      where v.status = 'posted'
        and v.fiscal_period >= %(period_from)s
        and v.fiscal_period <= %(period_to)s
+       -- Payroll / depreciation / shut-down loss are out of the dashboard by
+       -- decision, so they are out of its validation too: a line is not held to
+       -- rules about a placement it is never given (user, 2026-09-17). Matched
+       -- on the NC code TEXT, not the resolved account — CRM09912 has no
+       -- catalog row, so an account-side match would miss every line of it.
+       and not coalesce(dim.value_text like any(%(excluded_io)s), false)
 ),
 flagged as (
     select b.*, r.rule
@@ -190,12 +197,16 @@ flagged as (
          and exists (select 1 from budget_actual_cc_map m
                       where m.account_code = b.category
                         and m.dept_code in (coalesce(b.dept_code, ''), 'ALL'))),
+        -- The income-expense pair applies only where NC actually books by
+        -- income-expense item. 6603 is checked by account instead, below.
         ('income_expense_unresolved',
-         b.income_expense_item_id is null and b.io_text is not null
-         and not ({_EXCLUDED_IO_SQL})),
+         b.category <> '6603'
+         and b.income_expense_item_id is null and b.io_text is not null),
         ('income_expense_missing',
-         b.income_expense_item_id is null and b.io_text is null),
-        ('excluded_by_policy', {_EXCLUDED_IO_SQL}),
+         b.category <> '6603'
+         and b.income_expense_item_id is null and b.io_text is null),
+        ('account_not_in_catalog',
+         b.category = '6603' and b.ba_by_account_code is null),
         ('category_mismatch',
          b.cc_code is not null
          and split_part(b.cc_code, '-', 1) is distinct from {_category_prefix_case('b.category')}),
@@ -207,8 +218,16 @@ flagged as (
                           where m.account_code = b.category
                             and m.uniops_cc_code = b.cc_code
                             and m.dept_code in (b.dept_code, 'ALL'))),
+        -- Not comparable when the line carries no department: the mirror stores
+        -- the RESOLVED department_id, and NC department codes that EPMS has no
+        -- row for (0108, which the map does place — 6602/0108 -> GA-0100)
+        -- resolve to NULL. Recomputing from a NULL department then "expects"
+        -- no cost center and reports drift on a line the sync placed correctly.
+        -- Only a line whose department we can actually replay is judged here.
         ('cc_map_drift',
-         b.expected_cc is distinct from b.cc_code)
+         b.expected_cc is distinct from b.cc_code
+         and not (b.dept_code is null and b.cc_code is not null
+                  and b.expected_cc is null))
       ) as r(rule, hit)
      where r.hit
 )
@@ -274,7 +293,6 @@ async def summary(db, period_from: str, period_to: str) -> list[dict[str, Any]]:
             "label": RULE_LABELS[rule],
             "drops_from_dashboard": rule in DROPPED_RULES,
             "needs_decision": rule in NEEDS_DECISION_RULES,
-            "by_policy": rule in POLICY_RULES,
             "lines": int(r[1]) if r else 0,
             "vouchers": int(r[2]) if r else 0,
             "debit": _d(r[3]) if r else "0.00",

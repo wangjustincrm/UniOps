@@ -45,11 +45,14 @@ CLEAN = "CLEAN"          # line_summary markers, so assertions can name a line
 NO_CC = "NO_CC"          # map knows the dept, not the NC code
 NO_MAP = "NO_MAP"        # map does not know this account x dept at all
 UNRESOLVED_IO = "UNRESOLVED_IO"
-NO_IO = "NO_IO"
+NO_IO = "NO_IO"          # 6602 line with no income-expense dimension
+FN_UNKNOWN = "FN_UNKNOWN" # 6603 account with no budget account of that code
+FN_OK = "FN_OK"          # 6603 account that DOES have one
 WRONG_CATEGORY = "WRONG_CATEGORY"
 WRONG_DEPT = "WRONG_DEPT"
 MAP_EXEMPT = "MAP_EXEMPT"
 POLICY = "POLICY"        # payroll/depreciation/shut-down loss — excluded on purpose
+NO_DEPT = "NO_DEPT"      # placed by the map via an NC department EPMS has no row for
 
 
 def _seed():
@@ -64,7 +67,8 @@ def _seed():
 
     for code, parent in (("5101", None), ("510102", "5101"),
                          ("6601", None), ("660101", "6601"),
-                         ("6602", None), ("6603", None)):
+                         ("6602", None), ("6603", None),
+                         ("660301", "6603"), ("660399", "6603")):
         cur.execute(
             "insert into chart_of_accounts (id, code, name, account_type, "
             "normal_balance, is_postable, parent_code, is_active, aux_dimensions, "
@@ -76,9 +80,10 @@ def _seed():
         cur.execute("insert into departments (id, code, name, is_active, created_at, "
                     "updated_at) values (%s,%s,%s,true,now(),now())", (did, code, code))
 
-    cc_moh, cc_ga, cc_sell = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    cc_moh, cc_ga, cc_sell, cc_fn = (uuid.uuid4(), uuid.uuid4(),
+                                     uuid.uuid4(), uuid.uuid4())
     for cid, code in ((cc_moh, "MOH-0105-LAB"), (cc_ga, "GA-0101"),
-                      (cc_sell, "SELL-0107-S03")):
+                      (cc_sell, "SELL-0107-S03"), (cc_fn, "FN-0103")):
         cur.execute("insert into cost_centers (id, code, name, is_active, created_at, "
                     "updated_at) values (%s,%s,%s,true,now(),now())", (cid, code, code))
 
@@ -88,7 +93,8 @@ def _seed():
                                    ("6601", "0107", "ALL", "SELL-0107-S03"),
                                    # 6602 x dept 0107 deliberately parked in the
                                    # HR cost center — the exemption case.
-                                   ("6602", "0107", "ALL", "GA-0101")):
+                                   ("6602", "0107", "ALL", "GA-0101"),
+                                   ("6603", "ALL", "ALL", "FN-0103")):
         cur.execute("insert into budget_actual_cc_map (id, account_code, dept_code, "
                     "nc_cc_code, uniops_cc_code, created_at, updated_at) "
                     "values (%s,%s,%s,%s,%s,now(),now())",
@@ -97,6 +103,11 @@ def _seed():
     ba = uuid.uuid4()
     cur.execute("insert into budget_accounts (id, code, name, is_active, created_at, "
                 "updated_at) values (%s,'CRM00201','Training',true,now(),now())", (ba,))
+    # 6603 is budgeted BY ACCOUNT: 660301 has a budget account of the same code,
+    # 660399 deliberately does not.
+    cur.execute("insert into budget_accounts (id, code, name, is_active, created_at, "
+                "updated_at) values (%s,'660301','Interest income',true,now(),now())",
+                (uuid.uuid4(),))
 
     jv = uuid.uuid4()
     cur.execute(
@@ -136,14 +147,24 @@ def _seed():
     # JV-202608-0079's shape: an income-expense code with no budget account.
     line(3, "6602", UNRESOLVED_IO, cc=cc_ga, nc_cc=None, dept=dept_ga,
          io_text="CRM671105", debit="27212.38")
-    # 6603's shape: no income-expense dimension at all.
-    line(4, "6603", NO_IO, cc=cc_ga, dept=dept_ga)
+    # No income-expense dimension at all, on an account family that is booked
+    # by income-expense item — a real gap.
+    line(4, "6602", NO_IO, cc=cc_ga, dept=dept_ga)
+    # 6603 is booked by ACCOUNT, no income-expense item involved: the one with a
+    # matching budget account is clean, the one without is the finding.
+    line(11, "660301", FN_OK, cc=cc_fn, dept=dept_ga)
+    line(12, "660399", FN_UNKNOWN, cc=cc_fn, dept=dept_ga)
     # A manufacturing account booked to a G&A cost center.
     line(5, "510102", WRONG_CATEGORY, cc=cc_ga, dept=dept_ga, io_id=ba, io_text="CRM00201")
     # Cost center GA-0101 (dept segment 0101) on a line stamped dept 0105.
     line(6, "6602", WRONG_DEPT, cc=cc_ga, dept=dept_moh, io_id=ba, io_text="CRM00201")
     # Same disagreement, but the map says so on purpose -> exempt.
     line(7, "6602", MAP_EXEMPT, cc=cc_ga, dept=dept_sell, io_id=ba, io_text="CRM00201")
+    # Placed correctly by the sync off an NC department code that EPMS has no
+    # departments row for (production: 0108 -> GA-0100). The mirror stores only
+    # the resolved department_id, so it is NULL here and the drift rule cannot
+    # replay the decision — it must stay quiet rather than call this drift.
+    line(10, "6602", NO_DEPT, cc=cc_ga, dept=None, io_id=ba, io_text="CRM00201")
     # Shut-down loss: no budget account, deliberately outside the dashboard. It
     # must NOT be reported as an unresolved income-expense item.
     line(9, "6602", POLICY, cc=cc_ga, dept=dept_ga, io_text="CRM09912", debit="8621672.11")
@@ -196,22 +217,38 @@ async def test_income_expense_unresolved_fires(db_session, seeded):
     hit = await _flagged(db_session, "income_expense_unresolved")
     assert UNRESOLVED_IO in hit
     assert CLEAN not in hit and NO_IO not in hit    # NO_IO is the other rule
-    # Excluded-by-policy items have no budget account either, but they are not
-    # a defect — reporting them here would bury the 16 real ones under 3,101.
-    assert POLICY not in hit
+    assert POLICY not in hit                       # bypassed entirely
 
 
-async def test_policy_exclusions_are_reported_separately(db_session, seeded):
-    hit = await _flagged(db_session, "excluded_by_policy")
-    assert POLICY in hit
-    assert UNRESOLVED_IO not in hit
-    s = {r["rule"]: r for r in await svc.summary(db_session, "2026-01", "2026-12")}
-    row = s["excluded_by_policy"]
-    assert row["by_policy"] is True
-    # Not counted as money missing from the dashboard — it is not missing, it is
-    # out of scope by decision.
-    assert row["drops_from_dashboard"] is False
-    assert row["needs_decision"] is False
+async def test_policy_exclusions_are_bypassed_entirely(db_session, seeded):
+    """Payroll / depreciation / shut-down loss are not held to placement rules.
+
+    They are kept out of the per-cost-centre dashboard by decision, so a line
+    of theirs with no cost centre is not a defect — it is the arrangement. They
+    used to be listed under their own rule; reporting 6,572 lines nobody can or
+    should act on buried the 33 that matter (user, 2026-09-17).
+    """
+    assert POLICY not in await _flagged(db_session)
+
+
+async def test_6603_is_checked_by_account_not_by_income_expense_item(db_session, seeded):
+    """NC books financial expenses by ACCOUNT — 660301 Interest income,
+    660303 Bank Charge — and never puts an income-expense item on them. Holding
+    them to the income-expense rule reported all 684 of them as broken while
+    every one was booked exactly as finance intends."""
+    missing = await _flagged(db_session, "income_expense_missing")
+    assert NO_IO in missing                      # 6602 with no item: a real gap
+    assert FN_UNKNOWN not in missing             # 6603: wrong rule for it
+    assert FN_OK not in missing
+
+    not_in_catalog = await _flagged(db_session, "account_not_in_catalog")
+    assert FN_UNKNOWN in not_in_catalog          # 660399 has no budget account
+    assert FN_OK not in not_in_catalog           # 660301 has one
+    assert NO_IO not in not_in_catalog
+
+
+async def test_a_6603_line_with_its_budget_account_is_clean(db_session, seeded):
+    assert FN_OK not in await _flagged(db_session)
 
 
 async def test_income_expense_missing_fires(db_session, seeded):
@@ -242,7 +279,8 @@ async def test_every_seeded_defect_is_found(db_session, seeded):
     """The suite would still pass if a rule silently stopped matching anything
     OTHER than its own fixture line; this pins the whole set."""
     hit = await _flagged(db_session)
-    assert {NO_CC, NO_MAP, UNRESOLVED_IO, NO_IO, WRONG_CATEGORY, WRONG_DEPT} <= hit
+    assert {NO_CC, NO_MAP, UNRESOLVED_IO, NO_IO, FN_UNKNOWN,
+            WRONG_CATEGORY, WRONG_DEPT} <= hit
 
 
 # ── cc_map_drift: the preview for a mapping change ───────────────────────────
@@ -262,6 +300,20 @@ async def test_cc_map_drift_is_quiet_until_the_map_changes(db_session, seeded):
     assert row["cost_center_code"] is None
 
 
+async def test_drift_stays_quiet_on_lines_it_cannot_replay(db_session, seeded):
+    """A line the sync placed via an NC department code EPMS has no row for.
+
+    Production hit this the day the rule shipped: two 2025 lines sat in GA-0100
+    off the map's 6602/0108 row, EPMS has no department 0108, and recomputing
+    from the resulting NULL department "expected" no cost center — so a
+    correctly placed line was reported as drift. The rule must be silent where
+    it cannot replay the decision, not confidently wrong.
+    """
+    assert NO_DEPT not in await _flagged(db_session, "cc_map_drift")
+    # And silent here does not mean silent everywhere: the line is clean.
+    assert NO_DEPT not in await _flagged(db_session)
+
+
 # ── summary + period window ──────────────────────────────────────────────────
 
 async def test_summary_counts_and_amounts(db_session, seeded):
@@ -271,6 +323,7 @@ async def test_summary_counts_and_amounts(db_session, seeded):
     assert s["income_expense_unresolved"]["debit"] == "27212.38"
     assert s["income_expense_unresolved"]["drops_from_dashboard"] is True
     assert s["category_mismatch"]["drops_from_dashboard"] is False
+    assert s["account_not_in_catalog"]["drops_from_dashboard"] is True
     # Only the no-map half needs a human ruling before anything can be fixed.
     assert s["cost_center_no_map_for_department"]["needs_decision"] is True
     assert s["cost_center_code_unmatched"]["needs_decision"] is False
@@ -406,14 +459,25 @@ async def test_nc_sync_run_raises_the_task(db_session):
     """start_run -> the standing task exists, written in the run's own
     transaction. Guards the wiring, not the rules: a correct validator that the
     sync never calls leaves the inbox as silent as before."""
-    from app.services import nc_sync
-    from tests.test_nc_sync import _mini_extract
+    from app.services.nc_sync import NcExtract, start_run
 
     _exec("delete from tasks")
-    # A posted 5101 line whose NC cost center 'E01' has no map row and whose
-    # income-expense code has no budget account -> two findings, one task.
-    run_id = nc_sync.start_run("incremental", uuid.uuid4(),
-                               fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
+
+    def _extract():
+        # Deliberately NOT test_nc_sync's _mini_extract: its income-expense code
+        # is CRM004, which is bypassed now, so it would raise nothing and this
+        # test would pass while proving the opposite of what it claims.
+        return NcExtract(
+            ccy={"CADPK": "CAD"},
+            aux={"A1": ("0104", "E09", "CRM00201", "", "")},   # 'E09' is in no map row
+            vouchers=[("VALPK1", "2026", "07", 1, "v", "2026-07-10 09:00:00",
+                       "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
+            details=[("VALPK1", 1, "5101", 100, 0, 100, 0, "CADPK", 1, "x", "A1"),
+                     ("VALPK1", 2, "2202", 0, 100, 0, 100, "CADPK", 1, "x", "A1")],
+            max_creationtime="2026-07-11 08:00:00", tallied={"VALPK1"})
+
+    run_id = start_run("incremental", uuid.uuid4(),
+                       fetch=lambda wm: _extract(), pg_dsn=_TEST_DSN)
     assert _exec("select status from nc_sync_runs where id=%s", (run_id,))[0][0] == "success"
     rows = _exec("select type, document_number, document_id from tasks "
                  "where is_completed is false")

@@ -14,6 +14,8 @@ the grid run on rather than in words beside them:
                     grid iterates.
   excluded          `EXCLUDED_IO_LABELS`, the prefixes the grid
                     lifts out of the per-cost-centre rows.
+  budget account    `_BY_ACCOUNT_CODE_CATEGORY`, the one category keyed by
+                    account code rather than by income-expense item.
   cost-centre order NOT a description of `resolve_uniops_cc` — the probe below
                     runs it and reports which of three planted rules it chose.
                     Reordering the resolver changes this answer.
@@ -23,6 +25,7 @@ finance's to edit, they change without a deploy, and whoever is answering can
 read them straight out of budget_actual_cc_map.
 """
 from app.crud.account_balance import (
+    _BY_ACCOUNT_CODE_CATEGORY,
     BUDGET_ACTUAL_ACCOUNTS,
     EXCLUDED_IO_LABELS,
 )
@@ -95,6 +98,23 @@ def describe() -> dict:
             "accounts, followed by parent_code — never by how the code is "
             "spelled. 660303 can sit under 6603 or under 6601."
         ),
+        # Which budget line a voucher line lands on — two rules, because NC
+        # books the two families differently. Derived from the constant the
+        # query itself branches on, so the answer cannot outlive the rule.
+        "budget_account_rule": {
+            "by_income_expense_item": (
+                "For manufacturing overhead, R&D, selling and G&A the line "
+                "carries a 收支项目 (income-expense item) and THAT is the budget "
+                "line. A line without one reaches no budget cell at all."
+            ),
+            "by_account_code": (
+                f"For {_BY_ACCOUNT_CODE_CATEGORY} financial expenses NC puts no "
+                "income-expense item on the line. The ACCOUNT is the budget "
+                "line instead — 660301 Interest income, 660303 Bank Charge — "
+                "each matched to the budget account of exactly the same code."
+            ),
+            "by_account_code_applies_to": _BY_ACCOUNT_CODE_CATEGORY,
+        },
         "posted_only": (
             "Only vouchers NC has tallied count. An untallied voucher is a "
             "draft in our mirror and colours nothing."

@@ -189,3 +189,70 @@ async def test_bulk_breakdown_matches_the_single_account_one(db_session, seeded)
            {k: v["year_total"] for k, v in one.items()}
     assert {k: v["source"] for k, v in bulk_rows.items()} == \
            {k: v["source"] for k, v in one.items()}
+
+
+# ── 6603: budgeted by account, not by income-expense item ────────────────────
+
+@pytest.fixture
+def seeded_6603(db_session):
+    """A financial-expense voucher in NC's own shape: an account under 6603, no
+    income-expense item anywhere, vendor on the payable line."""
+    cc = uuid.UUID("44444444-4444-4444-8444-444444444444")
+    fn_account = uuid.uuid4()
+    con = psycopg2.connect(_TEST_DSN); con.autocommit = True
+    cur = con.cursor()
+    for t in ("jv_line_dimensions", "journal_voucher_lines", "journal_vouchers",
+              "cost_centers", "budget_accounts", "chart_of_accounts"):
+        cur.execute(f"delete from {t}")
+    for code, parent in (("6603", None), ("660303", "6603")):
+        cur.execute(
+            "insert into chart_of_accounts (id, code, name, account_type, "
+            "normal_balance, is_postable, parent_code, is_active, aux_dimensions, "
+            "created_at, updated_at) values (%s,%s,%s,'expense','debit',true,%s,true,"
+            "'[]'::jsonb, now(), now())", (uuid.uuid4(), code, code, parent))
+    cur.execute("insert into cost_centers (id, code, name, is_active, created_at, "
+                "updated_at) values (%s,'FN-0103','FIN-FinanceExpense',true,now(),now())", (cc,))
+    # The budget account IS the accounting account, same code.
+    cur.execute("insert into budget_accounts (id, code, name, is_active, created_at, "
+                "updated_at) values (%s,'660303','Bank Charge',true,now(),now())", (fn_account,))
+    jv = uuid.uuid4()
+    cur.execute(
+        "insert into journal_vouchers (id, jv_number, voucher_word, voucher_date, "
+        "fiscal_period, summary, status, total_debit, total_credit, total_local_debit, "
+        "total_local_credit, created_at, updated_at) values "
+        "(%s,'JV-FN-0001','JV','2026-06-15','2026-06','bank charge','posted',0,0,0,0,now(),now())",
+        (jv,))
+    for no, account, debit, credit, pid, pname, with_cc in (
+            (1, "660303", 90, 0, None, None, True),
+            (2, "220201", 0, 90, VENDOR_X, "Vendor X", False)):
+        cur.execute(
+            "insert into journal_voucher_lines (id, jv_id, line_no, account_code, summary, "
+            "orig_debit, orig_credit, local_debit, local_credit, currency, fx_rate, "
+            "cost_center_id, income_expense_item_id, partner_id, partner_name, "
+            "created_at, updated_at) "
+            "values (%s,%s,%s,%s,'bank charge',%s,%s,%s,%s,'CAD',1,%s,null,%s,%s,now(),now())",
+            (uuid.uuid4(), jv, no, account, debit, credit, debit, credit,
+             cc if with_cc else None, pid, pname))
+    con.close()
+    return {"cc": cc, "fn_account": fn_account}
+
+
+async def test_6603_actual_is_keyed_by_the_accounting_account(db_session, seeded_6603):
+    """FN-0103 read zero actual for every month of every year while 97,182.57
+    sat in the books: 6603 lines carry no income-expense item, so the INNER join
+    that keys the dashboard dropped all of them."""
+    res = await crud.nc_actuals_monthly(db_session, 2026, seeded_6603["cc"])
+    assert res["accounts"][str(seeded_6603["fn_account"])] == {6: "90.00"}
+
+
+async def test_6603_drill_finds_its_vendor(db_session, seeded_6603):
+    """The drill must key the same way the cell does — and the vendor still
+    comes off the voucher, since the expense line names none."""
+    res = await crud.nc_partner_monthly(db_session, seeded_6603["fn_account"], 2026)
+    rows = {r["key"]: r for r in res["partners"]}
+    assert rows[str(VENDOR_X)]["year_total"] == "90.00"
+    assert rows[str(VENDOR_X)]["source"] == "voucher"
+
+    vouchers = await crud.nc_partner_vouchers(
+        db_session, seeded_6603["fn_account"], 2026, 6, partner_id=str(VENDOR_X))
+    assert {r["jv_number"] for r in vouchers["rows"]} == {"JV-FN-0001"}
