@@ -145,3 +145,144 @@ def test_it_does_not_promise_to_explain_other_accounts():
     """Most of the ledger is mapped by an older, account-blind rule. Saying so
     is the difference between an answer and a misleading one."""
     assert DESC["cost_centre_rule"]["other_accounts"]
+
+
+# ── per-cost-centre actuals (the half a budget comparison was missing) ────────
+
+async def test_actuals_by_cost_centre_stop_at_the_month_asked_for(db_session):
+    """The window is inclusive, and a later month must not leak into it."""
+    cc = await _cc(db_session, "MOH-0106-E01", "ENG")
+    ba = uuid.uuid4()
+    db_session.add(BudgetAccount(id=ba, code="CRM003", name="IT", is_active=True))
+    await db_session.flush()
+    account = DESC["categories"][0]["account_code"]
+    for period, amount in (("2026-06", "60.00"), ("2026-08", "80.00"),
+                           ("2026-09", "900.00")):
+        await _posted_dim_event(db_session, account, amount, cc_id=cc, ba_id=ba,
+                                period=period)
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    to_august = await ab.nc_actuals_by_cost_center(db_session, 2026, through_month=8)
+    assert [(r["cost_center_code"], r["actual"]) for r in to_august["cost_centers"]] \
+        == [("MOH-0106-E01", "140.00")]
+
+    whole_year = await ab.nc_actuals_by_cost_center(db_session, 2026)
+    assert whole_year["cost_centers"][0]["actual"] == "1040.00"
+
+
+async def test_actuals_by_cost_centre_uses_the_dashboards_own_basis(db_session):
+    """Same exclusions, so the total is comparable with the plan beside it.
+
+    Asserted against the dashboard's own aggregate rather than against a list of
+    rules: if the two ever disagree, one of them is lying to somebody.
+    """
+    cc = await _cc(db_session, "MOH-0106-E01", "ENG")
+    kept, excluded = uuid.uuid4(), uuid.uuid4()
+    prefix = DESC["excluded_from_the_dashboard"][0]["budget_account_prefix"]
+    db_session.add_all([
+        BudgetAccount(id=kept, code="CRM003", name="IT", is_active=True),
+        BudgetAccount(id=excluded, code=f"{prefix}99", name="Left out", is_active=True),
+    ])
+    await db_session.flush()
+    account = DESC["categories"][0]["account_code"]
+    await _posted_dim_event(db_session, account, "10.00", cc_id=cc, ba_id=kept,
+                            period="2026-06")
+    await _posted_dim_event(db_session, account, "90.00", cc_id=cc, ba_id=excluded,
+                            period="2026-06")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    by_cc = await ab.nc_actuals_by_cost_center(db_session, 2026, through_month=6)
+    per_account = await ab.nc_actuals_monthly(db_session, 2026, cc)
+    from decimal import Decimal
+    dashboard_total = sum(
+        (Decimal(v) for months in per_account["accounts"].values()
+         for v in months.values()), Decimal("0"))
+    assert Decimal(by_cc["cost_centers"][0]["actual"]) == dashboard_total == Decimal("10.00")
+    # And the 90 is reported as left out rather than simply gone.
+    assert by_cc["dropped"]["excluded_items"]["amount"] == "90.00"
+
+
+async def test_it_says_what_it_could_not_place(db_session):
+    """Money in no cell of the report, split by why it is in none.
+
+    Both buckets, because they mean different things to whoever has to fix
+    them: a posting with a budget account and no cost centre is an unmapped
+    combination, and one with neither key is a voucher nobody can attribute at
+    all. Either way it is spending that a plan-vs-actual comparison would
+    otherwise quietly leave out, which reads as money saved.
+    """
+    ba = uuid.uuid4()
+    db_session.add(BudgetAccount(id=ba, code="CRM003", name="IT", is_active=True))
+    await db_session.flush()
+    # keyed by income-expense item, but the map resolved no cost centre
+    await _posted_dim_event(db_session, DESC["categories"][0]["account_code"],
+                            "77.00", ba_id=ba, period="2026-06")
+    # inside the by-account-code family, and no budget account carries that code
+    await _posted_dim_event(db_session, DESC["categories"][-1]["account_code"],
+                            "13.00", period="2026-06")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    out = await ab.nc_actuals_by_cost_center(db_session, 2026, through_month=12)
+    assert out["cost_centers"] == []
+    assert out["dropped"]["no_cost_center"] == {"lines": 1, "amount": "77.00"}
+    assert out["dropped"]["no_budget_account"] == {"lines": 1, "amount": "13.00"}
+    assert out["dropped_means"]
+
+
+async def test_the_dropped_buckets_do_not_overlap(db_session):
+    """They are published under one heading, so they will be added together.
+
+    A payroll line with no cost centre satisfies two of the three descriptions.
+    Counting it twice inflated the "missing" figure by 906,456.65 against real
+    data, which is the kind of number someone takes to a meeting.
+
+    The identity asserted here is the one that makes the set trustworthy: what
+    the dashboard counts, plus what has no cost centre to hang it on, is what
+    this aggregate totals.
+    """
+    from decimal import Decimal
+    cc = await _cc(db_session, "MOH-0106-E01", "ENG")
+    kept, excluded = uuid.uuid4(), uuid.uuid4()
+    prefix = DESC["excluded_from_the_dashboard"][0]["budget_account_prefix"]
+    db_session.add_all([
+        BudgetAccount(id=kept, code="CRM003", name="IT", is_active=True),
+        BudgetAccount(id=excluded, code=f"{prefix}99", name="Left out", is_active=True),
+    ])
+    await db_session.flush()
+    account = DESC["categories"][0]["account_code"]
+    await _posted_dim_event(db_session, account, "10.00", cc_id=cc, ba_id=kept,
+                            period="2026-03")
+    # excluded AND without a cost centre — the line that used to land in two
+    # buckets at once
+    await _posted_dim_event(db_session, account, "90.00", ba_id=excluded,
+                            period="2026-03")
+    await _posted_dim_event(db_session, account, "7.00", ba_id=kept, period="2026-03")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    out = await ab.nc_actuals_by_cost_center(db_session, 2026, through_month=12)
+    d = out["dropped"]
+    assert d["excluded_items"]["amount"] == "90.00"
+    assert d["no_cost_center"] == {"lines": 1, "amount": "7.00"}
+    assert d["no_budget_account"] == {"lines": 0, "amount": "0.00"}
+
+    per_cc = sum((Decimal(r["actual"]) for r in out["cost_centers"]), Decimal("0"))
+    dashboard = sum(
+        (Decimal(v) for months in (await ab.nc_actuals_monthly(
+            db_session, 2026))["accounts"].values() for v in months.values()),
+        Decimal("0"))
+    assert per_cc + Decimal(d["no_cost_center"]["amount"]) == dashboard
+
+
+async def test_an_empty_scope_is_not_the_whole_company(db_session):
+    """The fail-closed case. cc_ids=[] must mean nothing, never everything."""
+    assert (await ab.nc_actuals_by_cost_center(
+        db_session, 2026, cc_ids=[]))["cost_centers"] == []
+
+
+async def test_the_by_cost_centre_endpoint_serves_it(client):
+    r = await client.get(
+        "/finance/v1/gl/nc-actuals-by-cost-center?fiscal_year=2026&through_month=8",
+        headers=_h())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["through_month"] == 8 and "cost_centers" in body and "dropped" in body
