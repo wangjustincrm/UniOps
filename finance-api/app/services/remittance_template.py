@@ -14,6 +14,7 @@ subject header. Vendor rows still omit the PA number — it means nothing to the
 vendor and leaks internal numbering.
 """
 import re
+from datetime import date
 from html import escape
 
 from app.crud.remittance import PayeeGroup
@@ -72,7 +73,17 @@ def _field(template: dict, key: str) -> str:
 
 def render(group: PayeeGroup, *, company_name: str, reference: str,
            payment_method: str, template: dict | None = None,
-           logo_data_url: str | None = None) -> tuple[str, str]:
+           logo_data_url: str | None = None,
+           payment_date: date | None = None) -> tuple[str, str]:
+    """Subject + HTML body for one payee's advice.
+
+    `payment_date` overrides the Payment Date shown against every line — the
+    operator's statement of when the funds actually left, which is not
+    necessarily the date the payment was recorded in UniOps (see
+    app/api/v1/remittance.py's PAYMENT_DATE_FIELD). Omitted, each line keeps
+    its own recorded date exactly as before. Display only: the GroupLine
+    objects and the payment records behind them are never mutated here.
+    """
     template = template or {}
     is_vendor = group.recipient_kind == KIND_VENDOR
     ref_header = "Invoice No" if is_vendor else "Claim No"
@@ -131,7 +142,7 @@ def render(group: PayeeGroup, *, company_name: str, reference: str,
         "<tr>"
         f"<td style='{_CELL}'>"
         f"{escape(l.vendor_inv_no if is_vendor else l.doc_number)}</td>"
-        f"<td style='{_CELL}'>{l.payment_date}</td>"
+        f"<td style='{_CELL}'>{payment_date or l.payment_date}</td>"
         + _amount_cell(l) +
         "</tr>"
         for l in group.lines

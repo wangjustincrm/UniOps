@@ -20,7 +20,7 @@ from datetime import date
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,8 +56,25 @@ class RecipientRef(BaseModel):
     resend: bool = False
 
 
+# The date the advice TELLS THE PAYEE the money left, shared by every send
+# scope. AP routinely sends the advice a day or two after the funds actually
+# moved (bank cut-off, a cheque run signed the day before, a wire released
+# late Friday), so the date stored on the payment record — the date the
+# payment was RECORDED in UniOps — is not always the date the payee's bank
+# will show. Sending a date the payee cannot reconcile against their own
+# statement is exactly the confusion this exists to remove. It overrides what
+# the advice DISPLAYS and nothing else: `PaymentRecord.payment_date` is
+# accounting data behind the GL and is never rewritten from here.
+PAYMENT_DATE_FIELD = Field(
+    default=None,
+    description="Payment date shown on the advice; defaults to each payment "
+                "record's own payment_date when omitted.",
+)
+
+
 class SendRequest(BaseModel):
     recipients: list[RecipientRef] | None = None
+    payment_date: date | None = PAYMENT_DATE_FIELD
 
 
 class SelectionRequest(BaseModel):
@@ -74,6 +91,26 @@ class SelectionSendRequest(BaseModel):
     bug (Fix 3 Round 2), not a shortcut to reintroduce here."""
     payment_ids: list[uuid.UUID]
     recipients: list[RecipientRef] | None = None
+    payment_date: date | None = PAYMENT_DATE_FIELD
+
+
+def _advice_date(value: date | None) -> date | None:
+    """Validate the operator-supplied advice date. The only rule is that it
+    cannot be in the future: this date describes money that has ALREADY
+    moved (a remittance advice is only ever sent for a `completed` payment),
+    so a future date is a typo, and one the payee would read as a promise.
+
+    Backdating is the whole point and is deliberately unbounded — see
+    PAYMENT_DATE_FIELD. Comparing against the server's `date.today()` cannot
+    reject a legitimate "today" from a Toronto operator: the server runs UTC,
+    which is never BEHIND America/Toronto, so local-today is always <= UTC
+    today. (The frontend caps its picker at local today for the same reason
+    — RemittancePanel.tsx's `todayLocal`.)
+    """
+    if value is not None and value > date.today():
+        raise HTTPException(status_code=400,
+                             detail="Payment date cannot be in the future")
+    return value
 
 
 # Who may send remittance advice. Deliberately NOT
@@ -271,6 +308,7 @@ async def _preview(db: AsyncSession, user: dict, *, scope_kind: str,
 async def _send(db: AsyncSession, user: dict, body: SendRequest, *,
                  scope_kind: str, scope_id: uuid.UUID) -> dict:
     await _authorize(db, user)
+    advice_date = _advice_date(body.payment_date)
     reference, method, _ = await _scope_context(db, scope_kind=scope_kind, scope_id=scope_id)
     sender = await rc.load(db)
     if sender is None:
@@ -286,6 +324,7 @@ async def _send(db: AsyncSession, user: dict, body: SendRequest, *,
         company_name=company_name, sender=sender,
         actor_id=uuid.UUID(str(user["sub"])),
         resend_ids=resend_ids,
+        payment_date=advice_date,
     )
     # No trailing db.commit() here — app/crud/remittance_send.py's
     # send_groups() already commits the log row right after EACH payee's send
@@ -344,6 +383,7 @@ async def _selection_preview(db: AsyncSession, user: dict,
 async def _selection_send(db: AsyncSession, user: dict,
                            body: SelectionSendRequest) -> dict:
     await _authorize(db, user)
+    advice_date = _advice_date(body.payment_date)
     records, groups = await _resolve_selection(db, body.payment_ids)
     scope_id = rem.selection_scope_id(body.payment_ids)
     sender = await rc.load(db)
@@ -360,6 +400,7 @@ async def _selection_send(db: AsyncSession, user: dict,
         company_name=company_name, sender=sender,
         actor_id=uuid.UUID(str(user["sub"])),
         resend_ids=resend_ids,
+        payment_date=advice_date,
     )
     # See _send's comment above — send_groups already commits per payee.
     return _send_summary(results)
