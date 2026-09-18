@@ -651,6 +651,114 @@ def _party_key(pid, pname, source) -> str:
     return pid or pname or source
 
 
+async def nc_actuals_by_cost_center(db: AsyncSession, fiscal_year: int,
+                                   through_month: int = 12,
+                                   cc_ids=None) -> dict:
+    """NC posted actual per cost centre for a year, up to and including a month.
+
+    The dashboard's figure summed a different way. Someone comparing a year's
+    budget with what has been spent so far asks for it per cost centre, and the
+    only aggregate that existed was per budget account — so the question could
+    not be answered at all, and the assistant returned the plan alone.
+
+    Every filter is the dashboard's, deliberately: same five category subtrees,
+    same posted-only rule, same gross debit, same exclusions, same budget-account
+    keying. A total assembled from a different basis would not be comparable
+    with the plan it is about to be subtracted from, and nothing on the screen
+    would show that.
+
+    `dropped` is the other half of the answer. Lines that carry an expense
+    account but no cost centre, or none of the two budget-account keys, are not
+    in any cell of the report — they are JV Validation findings. Reporting the
+    total without saying how much is missing from it is how a comparison
+    quietly understates spending.
+    """
+    if cc_ids is not None and len(cc_ids) == 0:
+        return {"fiscal_year": fiscal_year, "through_month": through_month,
+                "cost_centers": [], "dropped": {}}
+    from sqlalchemy.orm import aliased
+
+    from app.models.mirrors import BudgetAccount, CostCenter
+    accts: set = set()
+    for a in BUDGET_ACTUAL_ACCOUNTS:
+        accts |= await _subtree_codes(db, a)
+    fn_codes = await _by_account_code_subtree(db)
+    by_code = aliased(BudgetAccount)
+    acct_id, acct_code = _effective_budget_account(fn_codes, BudgetAccount, by_code)
+    month = func.substr(JournalVoucher.fiscal_period, 6, 2)
+
+    def _base(select_cols):
+        q = (select(*select_cols)
+             .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+             .outerjoin(BudgetAccount,
+                        JournalVoucherLine.income_expense_item_id == BudgetAccount.id))
+        q = _budget_account_join(q, fn_codes, by_code)
+        return q.where(JournalVoucher.status == POSTED,
+                       JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
+                       # 'MM' is zero-padded, so comparing it as text is the
+                       # same order as comparing it as a number — and saves a
+                       # cast on every line of a 325k-row table.
+                       month <= f"{through_month:02d}",
+                       JournalVoucherLine.account_code.in_(accts))
+
+    kept = [acct_id.isnot(None), JournalVoucherLine.cost_center_id.isnot(None),
+            *[~acct_code.like(f"{p}%") for p in EXCLUDED_IO_PREFIXES]]
+
+    q = (_base([JournalVoucherLine.cost_center_id, CostCenter.code, CostCenter.name,
+                func.coalesce(func.sum(JournalVoucherLine.local_debit), 0)])
+         .outerjoin(CostCenter, JournalVoucherLine.cost_center_id == CostCenter.id)
+         .where(*kept)
+         .group_by(JournalVoucherLine.cost_center_id, CostCenter.code, CostCenter.name))
+    if cc_ids:
+        q = q.where(JournalVoucherLine.cost_center_id.in_(cc_ids))
+
+    rows = [{"cost_center_id": str(cid), "cost_center_code": code,
+             "cost_center_name": name, "actual": _s(Decimal(dr))}
+            for cid, code, name, dr in (await db.execute(q)).all()]
+    rows.sort(key=lambda r: r["cost_center_code"] or "\uffff")
+
+    # What the same window holds that no cell of the report can show. Counted
+    # over the whole company even when the caller is scoped to a department:
+    # an unattributable line has no cost centre to scope it by, which is the
+    # whole reason it is missing.
+    async def _missing(*conds):
+        got = (await db.execute(_base([
+            func.count(), func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
+        ]).where(*conds))).one()
+        return {"lines": int(got[0]), "amount": _s(Decimal(got[1]))}
+
+    return {
+        "fiscal_year": fiscal_year,
+        "through_month": through_month,
+        "cost_centers": rows,
+        # Disjoint on purpose, and in this order: a payroll line with no cost
+        # centre belongs to the policy bucket, not to both. Overlapping buckets
+        # are worse than no buckets — the first thing anyone does with three
+        # numbers under one heading is add them up, and the first version of
+        # this double-counted 906,456.65 that way.
+        "dropped": {
+            "excluded_items": await _missing(
+                acct_id.isnot(None),
+                or_(*[acct_code.like(f"{p}%") for p in EXCLUDED_IO_PREFIXES])),
+            "no_budget_account": await _missing(acct_id.is_(None)),
+            "no_cost_center": await _missing(
+                acct_id.isnot(None),
+                *[~acct_code.like(f"{p}%") for p in EXCLUDED_IO_PREFIXES],
+                JournalVoucherLine.cost_center_id.is_(None)),
+        },
+        "dropped_means": (
+            "Not in this total and not in any cell of the Budget Dashboard. "
+            "The three buckets do not overlap, so they can be added up. "
+            "no_cost_center and no_budget_account are JV Validation findings — "
+            "postings that resolved to nothing to hang them on. excluded_items "
+            "is by design: "
+            + ", ".join(f"{label} ({prefix})"
+                        for prefix, label in EXCLUDED_IO_LABELS.items())
+            + " are not budgeted per cost centre."
+        ),
+    }
+
+
 async def _predreal_subtree(db: AsyncSession) -> set:
     accts: set = set()
     for a in BUDGET_ACTUAL_ACCOUNTS:

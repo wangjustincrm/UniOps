@@ -88,12 +88,22 @@ async def describe(db: AsyncSession) -> dict:
                     "promised, not money spent, and it is not part of actual."
                 ),
                 "what_is_in_it_now": mix,
+                # The other half of the same fact, and the one that stops a
+                # reader extrapolating: an operation with no entries at all is
+                # not "waiting for traffic" as far as anything here can tell.
+                # Whether something is wired to write it is not visible from
+                # this side, so the honest statement is that it has never
+                # happened — not that it will.
+                "never_recorded": [op for op in ACTUAL_OPS
+                                   if op not in {r["operation"] for r in mix}],
                 "read_it_this_way": (
                     "Only these operations are present: "
                     + ", ".join(f"{r['operation']} ({r['entries']})" for r in only)
-                    + ". Anything the list does not contain is not being "
-                    "recorded yet, and a figure made only of `opening` is what "
-                    "finance imported, not what documents have consumed."
+                    + ". The rest have never been recorded once. A figure made "
+                    "only of `opening` is what finance imported, not what "
+                    "documents have consumed, and nothing observable here says "
+                    "the missing operations are going to start arriving — do "
+                    "not tell anyone their costs will show up in it."
                     if only else
                     "The ledger is empty, so this line is zero everywhere — "
                     "which means nothing has been recorded, not that nothing "

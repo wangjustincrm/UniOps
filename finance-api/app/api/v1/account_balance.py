@@ -137,6 +137,25 @@ async def nc_actuals_monthly(user: CurrentUser, db: AsyncSession = Depends(get_d
     return await crud.nc_actuals_monthly(db, fiscal_year, **kw)
 
 
+@router.get("/nc-actuals-by-cost-center")
+async def nc_actuals_by_cost_center(user: CurrentUser, db: AsyncSession = Depends(get_db),
+                                    fiscal_year: int = Query(...),
+                                    through_month: int = Query(default=12, ge=1, le=12),
+                                    cost_center_id: uuid.UUID | None = Query(default=None)):
+    """NC posted actual per cost centre, year to date through a month.
+
+    The dashboard's own figure summed by cost centre instead of by budget
+    account, so a year's plan and what has been spent against it can be put
+    side by side. Scoped exactly like the other NC reads (`_cc_scope`), and it
+    reports what the window drops as well as what it totals."""
+    kw = await _cc_scope(db, user, cost_center_id)
+    cc_ids = kw.get("cc_ids")
+    if kw.get("cost_center_id") is not None:
+        cc_ids = [kw["cost_center_id"]]
+    return await crud.nc_actuals_by_cost_center(
+        db, fiscal_year, through_month=through_month, cc_ids=cc_ids)
+
+
 @router.get("/nc-partner-monthly")
 async def nc_partner_monthly(user: CurrentUser, db: AsyncSession = Depends(get_db),
                              income_expense_item_id: uuid.UUID = Query(...),

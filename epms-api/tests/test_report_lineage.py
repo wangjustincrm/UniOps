@@ -78,14 +78,52 @@ async def _rows(db, rows):
     await db.commit()
 
 
-async def test_the_figures_are_the_owning_services_words(db, services):
+async def test_the_figures_are_the_ones_on_the_screen_in_screen_order(db, services):
+    """`shows` decides, not what the services happen to return.
+
+    budget-api still computes the doc-side actual because its API kept it; the
+    dashboard stopped showing it in 2026-09. An assistant that lists it as one
+    of the numbers in the cell is describing a screen nobody is looking at —
+    which is exactly what a user reported.
+    """
     out = await report_lineage.build(db, "budget_plan_vs_actual",
                                      FULL_PERMS, "tok")
-    # Plan and actual (docs) first, NC last — the order of the stacked cell.
-    assert [f["label"] for f in out["figures"]] == ["plan", "actual (docs)", "NC posted"]
+    assert [f["label"] for f in out["figures"]] == ["plan", "NC posted"]
     # Verbatim: nothing in this service paraphrases a rule it does not own.
-    assert out["figures"][2] == FINANCE_HALF
+    assert out["figures"][-1] == FINANCE_HALF
     assert not out["unavailable"]
+
+
+async def test_a_retired_figure_is_explained_but_never_presented_as_shown(db, services):
+    """"There used to be a middle number" deserves an answer, not a silence."""
+    out = await report_lineage.build(db, "budget_plan_vs_actual",
+                                     FULL_PERMS, "tok")
+    gone = {r["figure"]: r for r in out["no_longer_shown"]}
+    assert "actual_docs" in gone
+    assert gone["actual_docs"]["still_shown"] is False
+    assert gone["actual_docs"]["why_it_went"] and gone["actual_docs"]["removed"]
+    # Still described by the service that computes it, rather than remembered.
+    assert gone["actual_docs"]["what_it_was"]["label"] == "actual (docs)"
+    assert "actual_docs" not in {f["figure"] for f in out["figures"]}
+
+
+async def test_a_figure_the_report_shows_but_nobody_reports_is_flagged(db, monkeypatch):
+    """A service that renames or drops a figure must surface as a gap.
+
+    The failure this prevents is the quiet one: `shows` lists a key, no service
+    answers to it, and the cell silently loses a number from its explanation.
+    """
+    async def fin(*, bearer_token=None):
+        return {"figure": "renamed_since", "label": "NC posted"}
+
+    async def bud(token=None):
+        return BUDGET_HALF
+
+    monkeypatch.setattr(report_lineage.finance_client, "budget_actual_lineage", fin)
+    monkeypatch.setattr(report_lineage.budget_client, "get_actuals_lineage", bud)
+    out = await report_lineage.build(db, "budget_plan_vs_actual", FULL_PERMS, "tok")
+    assert [f["figure"] for f in out["figures"]] == ["plan"]
+    assert any("nc_posted" in u for u in out["unavailable"])
 
 
 async def test_an_unreachable_service_is_named_not_remembered(db, monkeypatch):
@@ -104,7 +142,7 @@ async def test_an_unreachable_service_is_named_not_remembered(db, monkeypatch):
     assert out["figures"] == []
     assert len(out["unavailable"]) == 2
     # The prose half still answers "what is this report" — that part is ours.
-    assert out["what_it_is"] and out["why_three_figures"]
+    assert out["what_it_is"] and out["why_these_figures"]
 
 
 async def test_the_rules_are_the_rows(db, services):

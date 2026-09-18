@@ -98,33 +98,82 @@ async def _mapping_rules(db: AsyncSession, perms: dict) -> dict:
     }
 
 
+def _reported(nc: dict | None, docs: dict | None) -> tuple[dict, list[str]]:
+    """Every figure the owning services can describe, keyed by its own name.
+
+    Each service names its figures; nothing here renames them, so `shows` in the
+    knowledge file addresses them by the same key the service uses and a service
+    that renames one shows up as missing rather than as silence.
+    """
+    by_key: dict[str, dict] = {}
+    unavailable: list[str] = []
+    if docs and docs.get("figures"):
+        for fig in docs["figures"]:
+            by_key[fig.get("figure")] = fig
+    else:
+        unavailable.append("the plan figure, owned by budget-api")
+    if nc:
+        by_key[nc.get("figure")] = nc
+    else:
+        unavailable.append("the NC posted figure, owned by finance-api")
+    return by_key, unavailable
+
+
 async def build(db: AsyncSession, report: str, perms: dict,
                 token: str | None) -> dict:
     """The prose, the rules as the owning services state them, and the live map."""
     doc = _load(report)
     nc = await finance_client.budget_actual_lineage(bearer_token=token)
     docs = await budget_client.get_actuals_lineage(token)
+    reported, unavailable = _reported(nc, docs)
 
+    # What the screen shows, in the order it shows it — NOT everything the
+    # services can compute. budget-api still returns the doc-side actual because
+    # the API kept it; the dashboard stopped showing it in 2026-09, and an
+    # assistant still describing a third number in the cell is describing a
+    # screen nobody is looking at.
     figures: list[dict] = []
-    unavailable: list[str] = []
-    if docs and docs.get("figures"):
-        figures.extend(docs["figures"])
-    else:
-        unavailable.append("plan and actual (docs), owned by budget-api")
-    if nc:
-        figures.append(nc)
-    else:
-        unavailable.append("NC posted, owned by finance-api")
+    everything_answered = not unavailable
+    for key in doc.get("shows") or []:
+        fig = reported.get(key)
+        if fig is not None:
+            figures.append(fig)
+        elif everything_answered:
+            # Only diagnosable as a rename or a removal when every service DID
+            # answer. With one of them down we do not know which figures it
+            # would have carried, and "no service reported it" would be a second
+            # entry for the outage already named above.
+            unavailable.append(
+                f"the {key} figure — every service answered and none reported it, "
+                f"so it has been renamed or dropped on the side that owns it")
+
+    # Retired figures: described, but never as part of the cell. Someone who
+    # remembers three numbers asks where the middle one went, and "it was
+    # removed because it was always wrong" is the answer.
+    retired = []
+    for entry in doc.get("retired") or []:
+        item = {"figure": entry["figure"], "label": entry.get("label"),
+                "removed": str(entry.get("removed") or ""),
+                "why_it_went": (entry.get("why") or "").strip(),
+                "still_shown": False}
+        was = reported.get(entry["figure"])
+        if was:
+            # The service still computes it, so what it was is reported rather
+            # than remembered — including the live "what is in it now".
+            item["what_it_was"] = was
+        retired.append(item)
 
     return {
         "report": report,
         "label": doc.get("label", report),
         "where_it_lives": (doc.get("where_it_lives") or "").strip(),
         "what_it_is": (doc.get("what_it_is") or "").strip(),
-        "why_three_figures": (doc.get("why_three_figures") or "").strip(),
+        "why_these_figures": (doc.get("why_these_figures") or "").strip(),
         "which_one_is_the_truth": (doc.get("which_one_is_the_truth") or "").strip(),
-        # Derived: each figure as the service that computes it describes it.
+        # Derived: each figure as the service that computes it describes it,
+        # filtered to the ones the report actually puts on the screen.
         "figures": figures,
+        "no_longer_shown": retired,
         # Live: the rules finance maintains, not a copy of them.
         "cost_centre_mapping": await _mapping_rules(db, perms),
         "notes": doc.get("notes") or [],
@@ -136,7 +185,10 @@ async def build(db: AsyncSession, report: str, perms: dict,
         "sources_are": (
             "Every rule under `figures` is reported by the service that "
             "computes that figure, and `cost_centre_mapping.rules` is the live "
-            "table. Anything listed in `unavailable` could not be reached — say "
-            "so rather than describing that part."
+            "table. `figures` is what the cell holds today — do not describe "
+            "anything else as being on the screen. `no_longer_shown` is for "
+            "answering where a figure someone remembers has gone, and nothing "
+            "in it is on the report any more. Anything listed in `unavailable` "
+            "could not be reached — say so rather than describing that part."
         ),
     }
