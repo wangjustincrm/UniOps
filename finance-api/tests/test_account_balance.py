@@ -188,8 +188,16 @@ async def test_coa_aux_item_roundtrip_and_unique(db_session):
 from app.models.mirrors import BudgetAccount, Department
 
 
+async def _coa(db, code, parent=None, name=None):
+    from app.models.coa import ChartOfAccount
+    db.add(ChartOfAccount(code=code, name=name or code, account_type="expense",
+                          normal_balance="debit", is_postable=parent is not None,
+                          parent_code=parent))
+    await db.flush()
+
+
 async def _posted_dim_event(db, account, amount, cc_id=None, dept_id=None, ba_id=None,
-                            period="2026-07"):
+                            period="2026-07", value_text=None):
     occurred = datetime(int(period[:4]), int(period[5:7]), 15, tzinfo=timezone.utc)
     line = {"line_role": "purchase_expense", "account_code": account,
             "debit": Decimal(amount), "currency": "CAD"}
@@ -197,8 +205,12 @@ async def _posted_dim_event(db, account, amount, cc_id=None, dept_id=None, ba_id
         line["cost_center_id"] = cc_id
     if dept_id:
         line["department_id"] = dept_id
-    if ba_id:
-        line["aux"] = {"income_expense_item": {"value_id": ba_id, "value_text": "X"}}
+    if ba_id or value_text:
+        # value_id None + value_text set is the real NC shape for a code the
+        # catalog does not have (CRM09912); the dimension row is written either
+        # way, and only the resolved id is missing.
+        line["aux"] = {"income_expense_item": {"value_id": ba_id,
+                                               "value_text": value_text or "X"}}
     await emit_event(
         db, source_service="finance", source_doc_type="ap_invoice",
         source_doc_id=uuid.uuid4(), source_doc_number="AP-1", event_type="accrual",
@@ -755,6 +767,8 @@ async def test_budget_actual_grid_excludes_pd_ties_out_and_merges_budget(db_sess
     assert moh["depreciation_actual"] == "50.00"
     assert moh["category_actual_total"] == "450.00"     # 100 + 300 + 50 == account debit
     assert moh["tie_ok"] is True
+    assert {(x["label"], x["actual"]) for x in moh["category_level"]} == {
+        ("Payroll", "300.00"), ("Depreciation", "50.00")}
     # 6603 (财务费用) is now a category, and the exceptions key is present
     assert any(c["account_code"] == "6603" for c in grid["categories"])
     assert grid["unmapped"] == []
@@ -764,6 +778,54 @@ async def test_budget_actual_grid_excludes_pd_ties_out_and_merges_budget(db_sess
     d = next(x for x in next(c for c in grid2["categories"] if c["account_code"] == "5101")["detail"]
              if x["income_expense_code"] == "CRM003")
     assert d["budget"] == "1000.00" and d["variance"] == "900.00"
+
+
+async def test_budget_actual_grid_lifts_shutdown_loss_out_of_the_detail(db_session):
+    """Shut-down loss has no budget account, so the grid could not recognise it
+    the way it recognises payroll and depreciation: it fell through to a detail
+    row with no cost center and no item name — 1,326,701.36 of it in 2026-08,
+    reading as an unexplained hole in G&A. Recognised off the RAW NC code now."""
+    cc = await _cc(db_session, "GA-0107", "SC")
+    it = uuid.uuid4()
+    db_session.add(BudgetAccount(id=it, code="CRM01004", name="Office Supplies",
+                                 is_active=True))
+    await db_session.flush()
+    await _posted_dim_event(db_session, "6602", "50.00", cc_id=cc, ba_id=it, period="2026-06")
+    # The real shape: an income-expense code NC knows and the catalog does not,
+    # on a line with no cost center.
+    await _posted_dim_event(db_session, "6602", "900.00", cc_id=None, ba_id=None,
+                            period="2026-06", value_text="CRM09912")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    ga = next(c for c in await _grid_categories(db_session) if c["account_code"] == "6602")
+    assert [x["label"] for x in ga["category_level"]] == ["Shut-down loss"]
+    assert ga["category_level"][0]["actual"] == "900.00"
+    assert [d["actual"] for d in ga["detail"]] == ["50.00"]
+    assert ga["detail_actual_total"] == "50.00"
+    assert ga["category_actual_total"] == "950.00"
+    assert ga["tie_ok"] is True
+
+
+async def _grid_categories(db_session):
+    return (await ab.budget_actual_grid(db_session, "2026-06", {}))["categories"]
+
+
+async def test_budget_actual_grid_keys_6603_by_account_code(db_session):
+    """6603 carries no income-expense item; the account is the budget line."""
+    cc = await _cc(db_session, "FN-0103", "FIN")
+    ba = uuid.uuid4()
+    db_session.add(BudgetAccount(id=ba, code="660303", name="Bank Charge", is_active=True))
+    await db_session.flush()
+    await _coa(db_session, "660303", parent="6603")
+    await _posted_dim_event(db_session, "660303", "77.00", cc_id=cc, ba_id=None,
+                            period="2026-06")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    fn = next(c for c in await _grid_categories(db_session) if c["account_code"] == "6603")
+    row = next(d for d in fn["detail"] if d["income_expense_code"] == "660303")
+    assert row["actual"] == "77.00"
+    assert row["income_expense_name"] == "Bank Charge"
+    assert row["cost_center_code"] == "FN-0103"
 
 
 async def test_budget_actual_grid_unmapped_exceptions(db_session):

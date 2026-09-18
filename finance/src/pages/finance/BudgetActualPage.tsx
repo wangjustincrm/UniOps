@@ -1,7 +1,8 @@
 /**
  * Budget vs Actual (预实对比) — per (cost center × income-expense item) budget /
- * actual / variance for the 5 expense categories, with category-level Payroll /
- * Depreciation tie-out rows and an exceptions panel for unmapped lines. Actual =
+ * actual / variance for the 5 expense categories, with tie-out rows for the
+ * items finance tracks at category level (payroll, depreciation, shut-down
+ * loss) and an exceptions panel for unmapped lines. Actual =
  * NC posted JV period debit (via /gl/budget-actual-grid); budget = budget-api
  * current approved plan. Read-only; each actual drills into its composing vouchers.
  */
@@ -31,6 +32,11 @@ interface DetailRow {
 interface Category {
   account_code: string; category: string; detail: DetailRow[]
   payroll_actual: string; depreciation_actual: string
+  // Every item tracked at category level rather than per cost center, from the
+  // backend's own exclusion list — so adding one there adds a row here without
+  // a change on this side. payroll_actual / depreciation_actual are the same
+  // figures kept for compatibility.
+  category_level?: { prefix: string; label: string; actual: string }[]
   detail_actual_total: string; category_actual_total: string; tie_ok: boolean
 }
 interface Unmapped {
@@ -150,14 +156,20 @@ export default function BudgetActualPage() {
                           </td>
                         </tr>
                       ))}
-                      {/* category-level tie-out rows (finance tracks P/D by category, not cost center) */}
-                      {[{ label: 'Payroll', v: cat.payroll_actual }, { label: 'Depreciation', v: cat.depreciation_actual }]
-                        .filter((x) => Number(x.v) !== 0)
+                      {/* Category-level tie-out rows: finance tracks these by
+                          category rather than by cost center. Driven by the
+                          backend list — shut-down loss joined payroll and
+                          depreciation there, and until it did, its 1.3M a month
+                          sat in a detail row with no cost center and no name. */}
+                      {(cat.category_level
+                        ?? [{ prefix: 'CRM007', label: 'Payroll', actual: cat.payroll_actual },
+                            { prefix: 'CRM004', label: 'Depreciation', actual: cat.depreciation_actual }])
+                        .filter((x) => Number(x.actual) !== 0)
                         .map((x) => (
-                          <tr key={x.label} className="border-t border-neutral-100 bg-neutral-50 text-neutral-500">
+                          <tr key={x.prefix} className="border-t border-neutral-100 bg-neutral-50 text-neutral-500">
                             <td className="px-3 py-2 italic" colSpan={2}>{x.label} (category-level)</td>
                             <td className="px-3 py-2 text-right">—</td>
-                            <td className="px-3 py-2 text-right font-mono">{money(x.v)}</td>
+                            <td className="px-3 py-2 text-right font-mono">{money(x.actual)}</td>
                             <td className="px-3 py-2 text-right">—</td>
                             <td></td>
                           </tr>
