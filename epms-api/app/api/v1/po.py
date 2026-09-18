@@ -10,6 +10,7 @@ from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.access_scope import build_scope
 from app.services import approval_client as approval_client
+from app.services.budget_client import ensure_known_budget_code
 from app.services.approval_client import delegate_action
 from app.crud import po as po_crud
 from app.crud import vendor as vendor_crud
@@ -100,10 +101,11 @@ async def list_pos(
 
 
 @router.post("", response_model=PoResponse, status_code=status.HTTP_201_CREATED)
-async def create_po(body: PoCreate, db: SessionDep, user: PoWriteDep):
+async def create_po(body: PoCreate, db: SessionDep, user: PoWriteDep, token: BearerToken):
     vendor = await vendor_crud.get_by_id(db, body.vendor_id)
     if vendor is None:
         raise HTTPException(status_code=404, detail="Vendor not found")
+    await ensure_known_budget_code(token, body.budget_code)
     return await po_crud.create(
         db, body,
         vendor_code=vendor.code,
@@ -141,12 +143,16 @@ async def get_po(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
 
 
 @router.patch("/{po_id}", response_model=PoResponse)
-async def update_po(po_id: uuid.UUID, body: PoUpdate, db: SessionDep, user: PoWriteDep):
+async def update_po(po_id: uuid.UUID, body: PoUpdate, db: SessionDep, user: PoWriteDep, token: BearerToken):
     po = await po_crud.get_by_id(db, po_id)
     if po is None:
         raise HTTPException(status_code=404, detail="PO not found")
     if po.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail=f"Cannot edit PO in status '{po.status}'")
+    # PoUpdate is a partial: None means "not sent", so an unrelated PATCH is not
+    # forced to re-prove a code it never touched.
+    if body.budget_code is not None:
+        await ensure_known_budget_code(token, body.budget_code)
 
     vendor_code = vendor_name = None
     if body.vendor_id is not None:

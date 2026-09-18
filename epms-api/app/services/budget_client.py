@@ -10,11 +10,13 @@ return empty summaries.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from decimal import Decimal
 from typing import Any
 
 import httpx
+from fastapi import HTTPException
 
 from app.core.config import settings
 
@@ -58,29 +60,85 @@ async def get_balance(
         return None
 
 
+# The L2 catalog is small (169 rows today), global — not user-scoped, budget-api
+# returns the same list to everyone the way the frontend's cached catalog query
+# assumes — and changes only when someone edits the chart of accounts. Every
+# document write now checks a code against it, so hold it briefly rather than
+# refetching per request. Only successful responses are cached; a failure must
+# not pin "unreachable" for a minute.
+_ACCOUNTS_TTL_SECONDS = 60.0
+_accounts_cache: tuple[float, list[dict[str, Any]]] | None = None
+
+
+def clear_accounts_cache() -> None:
+    """Drop the cached catalog. Tests need this seam: a cache that survives
+    between them makes the second test in a file see the first one's stubbed
+    catalog, which looks like the code under test ignoring its own input."""
+    global _accounts_cache
+    _accounts_cache = None
+
+
+async def get_accounts(bearer_token: str | None) -> list[dict[str, Any]] | None:
+    """The budget account catalog, or None when budget-api can't be reached.
+
+    None means "don't know", not "empty" — the two are opposite conclusions for
+    a validator, so callers must not collapse them into a falsy check.
+    """
+    global _accounts_cache
+    now = time.monotonic()
+    if _accounts_cache is not None and now - _accounts_cache[0] < _ACCOUNTS_TTL_SECONDS:
+        return _accounts_cache[1]
+    url = f"{settings.BUDGET_API_URL}/api/v1/accounts"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(url, headers=_auth_headers(bearer_token))
+            r.raise_for_status()
+            accounts = r.json()
+    except (httpx.HTTPError, ValueError) as e:
+        logger.warning("budget-api /accounts unreachable: %s", e)
+        return None
+    if not isinstance(accounts, list):
+        logger.warning("budget-api /accounts returned %s, not a list", type(accounts).__name__)
+        return None
+    _accounts_cache = (now, accounts)
+    return accounts
+
+
 async def get_account_name(bearer_token: str | None, code: str | None) -> str | None:
     """The budget account's display name for a given code, or None.
 
-    budget-api exposes no by-code lookup, so this pulls the catalog (168 rows
-    today) and matches client-side -- the same thing the PR Detail page does
-    with its cached catalog query.
+    budget-api exposes no by-code lookup, so this pulls the catalog and matches
+    client-side -- the same thing the PR Detail page does with its cached
+    catalog query.
 
     Fail-open like the rest of this module: a document must still render when
     budget-api is unreachable, just with the bare code as before.
     """
     if not code:
         return None
-    url = f"{settings.BUDGET_API_URL}/api/v1/accounts"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            r = await client.get(url, headers=_auth_headers(bearer_token))
-            r.raise_for_status()
-            for acct in r.json():
-                if acct.get("code") == code:
-                    return acct.get("name") or None
-    except (httpx.HTTPError, ValueError) as e:
-        logger.warning("budget-api /accounts unreachable: %s — rendering the code alone", e)
+    accounts = await get_accounts(bearer_token)
+    if accounts is None:
+        return None
+    for acct in accounts:
+        if acct.get("code") == code:
+            return acct.get("name") or None
     return None
+
+
+async def account_code_is_known(bearer_token: str | None, code: str | None) -> bool | None:
+    """Is `code` an actual budget account code?
+
+    True / False, or **None when budget-api is unreachable** — the caller cannot
+    tell a bad code from a missing catalog, and must decide which way to fail.
+    A blank code is True: the column is nullable and "no budget account" is a
+    legitimate state on every document that carries it.
+    """
+    if not code:
+        return True
+    accounts = await get_accounts(bearer_token)
+    if accounts is None:
+        return None
+    return any(acct.get("code") == code for acct in accounts)
 
 
 async def compute_over_budget(
@@ -142,3 +200,41 @@ async def get_actuals_lineage(bearer_token: str | None) -> dict[str, Any] | None
     except httpx.HTTPError as e:
         logger.warning("budget-api /actuals/lineage unreachable: %s", e)
         return None
+
+
+async def ensure_known_budget_code(bearer_token: str | None, code: str | None) -> None:
+    """Reject a budget_code that is not an account code. Raises 422.
+
+    `purchase_requests.budget_code` / `purchase_orders.budget_code` /
+    `purchase_agreements.budget_code` are plain text with no foreign key to the
+    catalog, and for a long time nothing checked them: the PR form wrote
+    "<code>-<name>" until 2026-07-17 and the PO form was a free-text box with
+    "e.g. CRM003-01" as its placeholder. 6,099 rows had to be repaired on
+    2026-09-18. The forms now pick from the catalog; this is the half that also
+    holds for anything posting to the API directly.
+
+    **Fail-open when budget-api is unreachable.** The pickers that produce this
+    value are themselves filled from budget-api, so during an outage a user
+    cannot choose a code at all and the only writes left are legitimate ones
+    replaying an existing value. Refusing them would turn a budget-service blip
+    into "no purchase orders can be saved", which is a worse failure than the
+    one this guards against.
+
+    Data Maintenance is deliberately not routed through here: it exists to write
+    values the normal path forbids, and an admin repairing a row is the one
+    caller who may need to.
+    """
+    known = await account_code_is_known(bearer_token, code)
+    if known is None:
+        logger.warning(
+            "budget-api unreachable — accepting budget_code %r unchecked", code,
+        )
+        return
+    if not known:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"'{code}' is not a budget account code. Pick an account from the "
+                f"list — the code alone, without the account name."
+            ),
+        )
