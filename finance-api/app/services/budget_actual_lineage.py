@@ -115,6 +115,28 @@ def describe() -> dict:
             ),
             "by_account_code_applies_to": _BY_ACCOUNT_CODE_CATEGORY,
         },
+        # The roll-up above the grid sums the same lines a different way; say so
+        # here, because "why is the summary bigger than the detail" is the first
+        # question it will raise.
+        "rollup_levels": {
+            "levels": ["company", "expense centre", "department", "cost centre"],
+            "expense_centre_from": (
+                "The cost centre CODE prefix (MOH / RD / SELL / GA / FN), not "
+                "the accounting account. The two agree except where a plan line "
+                "sits on a cost centre of another family."
+            ),
+            "department_spans": (
+                "A department can run several expense centres — Supply Chain "
+                "has G&A, manufacturing overhead and selling — so the "
+                "department level is a roll-up, not a rename."
+            ),
+            "unallocated": (
+                "Category-level items and lines that reach no cost centre are "
+                "reported as their own row rather than dropped. Placed plus "
+                "unallocated equals every posted line in the window; the "
+                "summary states that sum so it can be checked."
+            ),
+        },
         "posted_only": (
             "Only vouchers NC has tallied count. An untallied voucher is a "
             "draft in our mirror and colours nothing."

@@ -510,8 +510,10 @@ async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict)
                 "income_expense_code": ie_code, "income_expense_name": ie_name,
                 "budget": _s(budget), "actual": _s(dr), "variance": _s(budget - dr),
             })
-        detail.sort(key=lambda d: (d["cost_center_code"] or "￿",
-                                   d["income_expense_code"] or "￿"))
+        # Budget account first: the account code is the axis finance reads down,
+        # and the same account's cost centres belong next to each other.
+        detail.sort(key=lambda d: (d["income_expense_code"] or "￿",
+                                   d["cost_center_code"] or "￿"))
         detail_total = sum((Decimal(d["actual"]) for d in detail), _ZERO)
         policy_total = sum(by_policy.values(), _ZERO)
         categories.append({

@@ -125,6 +125,132 @@ async def budget_actual_lineage(_: CurrentUser):
     return lineage.describe()
 
 
+@router.get("/budget-actual/rollup")
+async def budget_actual_rollup(_: CurrentUser, db: AsyncSession = Depends(get_db),
+                               fiscal_year: int = Query(...),
+                               month_from: int = Query(default=1, ge=1, le=12),
+                               month_to: int | None = Query(default=None, ge=1, le=12)):
+    """Company / expense centre / department / cost centre roll-up for the
+    finance Budget-vs-Actual report.
+
+    `month_from`..`month_to` covers every window finance asked for with one pair:
+    a single month (9..9), a quarter (7..9), an arbitrary range, or year-to-date
+    (1..9, the default). `month_to` defaults to the current month when the
+    requested year is the current one, and to December otherwise — asking for
+    "2025" should not return three quarters of it because today is September."""
+    from datetime import date
+
+    from app.crud import budget_rollup
+    if month_to is None:
+        today = date.today()
+        month_to = today.month if fiscal_year == today.year else 12
+    if month_from > month_to:
+        raise HTTPException(status_code=422, detail="month_from is after month_to")
+    return await budget_rollup.rollup(db, fiscal_year=fiscal_year,
+                                      month_from=month_from, month_to=month_to)
+
+
+@router.get("/budget-actual/rollup/export")
+async def budget_actual_rollup_export(
+        _: CurrentUser, db: AsyncSession = Depends(get_db),
+        fiscal_year: int = Query(...),
+        month_from: int = Query(default=1, ge=1, le=12),
+        month_to: int | None = Query(default=None, ge=1, le=12),
+        group_by: str = Query(default="centre")):
+    """The roll-up as an .xlsx, grouped the way the page is grouped.
+
+    The tree is written out fully expanded — a collapsed row on screen is a
+    convenience, a missing row in a spreadsheet is missing data."""
+    from datetime import date
+
+    from fastapi.responses import Response
+
+    from app.crud import budget_rollup
+    from app.services.budget_rollup_export import build_rollup_xlsx
+
+    if group_by not in ("centre", "department"):
+        raise HTTPException(status_code=422, detail=f"unknown group_by {group_by!r}")
+    if month_to is None:
+        today = date.today()
+        month_to = today.month if fiscal_year == today.year else 12
+    if month_from > month_to:
+        raise HTTPException(status_code=422, detail="month_from is after month_to")
+
+    data = await budget_rollup.rollup(db, fiscal_year=fiscal_year,
+                                      month_from=month_from, month_to=month_to)
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    label = (months[month_from - 1] if month_from == month_to
+             else f"{months[month_from - 1]}-{months[month_to - 1]}")
+    xlsx = build_rollup_xlsx(rollup=data, group_by=group_by, window_label=label)
+    name = f"budget-actual-{group_by}-FY{fiscal_year}-{label}.xlsx"
+    return Response(
+        content=xlsx,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.get("/budget-actual/breakdown")
+async def budget_actual_breakdown(_: CurrentUser, db: AsyncSession = Depends(get_db),
+                                  fiscal_year: int = Query(...),
+                                  month_from: int = Query(default=1, ge=1, le=12),
+                                  month_to: int | None = Query(default=None, ge=1, le=12),
+                                  scope_kind: str = Query(default="company"),
+                                  scope_key: str = Query(default="")):
+    """What a roll-up figure is made of: budget account × cost centre, over the
+    same window and the same rules as the roll-up above it.
+
+    `scope_kind` mirrors what the reader clicked — company / centre (expense
+    centre prefix) / department (code) / cost_centre (code)."""
+    from datetime import date
+
+    from app.crud import budget_rollup
+    if scope_kind not in ("company", "centre", "department", "cost_centre"):
+        raise HTTPException(status_code=422, detail=f"unknown scope_kind {scope_kind!r}")
+    if scope_kind != "company" and not scope_key:
+        raise HTTPException(status_code=422,
+                            detail=f"scope_key is required for scope_kind={scope_kind}")
+    if month_to is None:
+        today = date.today()
+        month_to = today.month if fiscal_year == today.year else 12
+    if month_from > month_to:
+        raise HTTPException(status_code=422, detail="month_from is after month_to")
+    return await budget_rollup.breakdown(
+        db, fiscal_year=fiscal_year, month_from=month_from, month_to=month_to,
+        scope_kind=scope_kind, scope_key=scope_key)
+
+
+@router.get("/budget-actual/unallocated-lines")
+async def budget_actual_unallocated_lines(
+        _: CurrentUser, db: AsyncSession = Depends(get_db),
+        fiscal_year: int = Query(...),
+        month_from: int = Query(default=1, ge=1, le=12),
+        month_to: int | None = Query(default=None, ge=1, le=12),
+        bucket: str = Query(...),
+        limit: int = Query(default=200, ge=1, le=1000),
+        offset: int = Query(default=0, ge=0)):
+    """The voucher lines behind one bucket of the roll-up's unallocated row.
+
+    `bucket` is an excluded income-expense prefix (CRM004 / CRM007 / CRM09912)
+    or the literal `__unplaced__` for lines that reach no cost centre for any
+    other reason — the bucket a reader most needs to open, since every line in
+    it is something nobody decided where to put."""
+    from datetime import date
+
+    from app.crud import budget_rollup
+    allowed = set(budget_rollup.EXCLUDED_IO_PREFIXES) | {"__unplaced__"}
+    if bucket not in allowed:
+        raise HTTPException(status_code=422, detail=f"unknown bucket {bucket!r}")
+    if month_to is None:
+        today = date.today()
+        month_to = today.month if fiscal_year == today.year else 12
+    if month_from > month_to:
+        raise HTTPException(status_code=422, detail="month_from is after month_to")
+    return await budget_rollup.unallocated_lines(
+        db, fiscal_year=fiscal_year, month_from=month_from, month_to=month_to,
+        bucket=bucket, limit=limit, offset=offset)
+
+
 @router.get("/nc-actuals-monthly")
 async def nc_actuals_monthly(user: CurrentUser, db: AsyncSession = Depends(get_db),
                              fiscal_year: int = Query(...),

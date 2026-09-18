@@ -100,6 +100,29 @@ def _migrate():
             conn.execute(sa.text(stmt))
         conn.commit()
 
+    # budget-api owns these two (no ORM model here — same physical DB in prod,
+    # the way budget_accounts already is). crud/budget_rollup.py reads them
+    # directly to aggregate plan by cost centre; going through budget-api's HTTP
+    # API would mean twelve round trips for one page.
+    with eng.connect() as conn:
+        conn.execute(sa.text("DROP TABLE IF EXISTS budget_plan_lines CASCADE"))
+        conn.execute(sa.text("DROP TABLE IF EXISTS budget_plans CASCADE"))
+        conn.execute(sa.text(
+            "CREATE TABLE budget_plans ("
+            " id uuid PRIMARY KEY, cost_center_id uuid NOT NULL, fiscal_year integer NOT NULL,"
+            " status varchar(20) NOT NULL, is_current boolean NOT NULL DEFAULT true,"
+            " created_at timestamptz NOT NULL DEFAULT now(),"
+            " updated_at timestamptz NOT NULL DEFAULT now())"))
+        conn.execute(sa.text(
+            "CREATE TABLE budget_plan_lines ("
+            " id uuid PRIMARY KEY,"
+            " plan_id uuid NOT NULL REFERENCES budget_plans(id) ON DELETE CASCADE,"
+            " account_id uuid NOT NULL, month integer NOT NULL,"
+            " amount numeric(15,2) NOT NULL DEFAULT 0,"
+            " created_at timestamptz NOT NULL DEFAULT now(),"
+            " updated_at timestamptz NOT NULL DEFAULT now())"))
+        conn.commit()
+
     # `tasks` is epms-owned too, and finance-api's mirror models only the four
     # columns the payment executor touches. jv_validation_tasks.py writes a real
     # inbox row over raw SQL (type / title / assigned_role / document_number …),
