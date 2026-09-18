@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
+import { BudgetAccountSelect } from '@/components/budget/BudgetAccountSelect'
 import { useConfig } from '@/hooks/useConfig'
 import { formatAmount, cn } from '@/lib/utils'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
@@ -279,7 +280,7 @@ export default function PoEditPage() {
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <FormField label="Budget Code" htmlFor="budgetCode">
-                <Input id="budgetCode" value={budgetCode} onChange={(e) => setBudgetCode(e.target.value)} />
+                <BudgetAccountSelect id="budgetCode" value={budgetCode} onChange={setBudgetCode} />
               </FormField>
 
               <div className="flex flex-col gap-1.5">

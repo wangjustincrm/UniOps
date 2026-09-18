@@ -26,6 +26,7 @@ from app.schemas.agreement import (
 )
 from app.schemas.pr import ApprovalEventResponse
 from app.services.approval_client import delegate_action
+from app.services.budget_client import ensure_known_budget_code
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +58,13 @@ async def list_agreements(
 
 
 @router.post("", response_model=AgreementResponse, status_code=status.HTTP_201_CREATED)
-async def create_agreement(body: AgreementCreate, db: SessionDep, user: AgrWriteDep):
+async def create_agreement(
+    body: AgreementCreate, db: SessionDep, user: AgrWriteDep, token: BearerToken,
+):
     vendor = await vendor_crud.get_by_id(db, body.vendor_id)
     if vendor is None:
         raise HTTPException(status_code=404, detail="Vendor not found")
+    await ensure_known_budget_code(token, body.budget_code)
     return await agr_crud.create(
         db, body, vendor_name=vendor.name, created_by=uuid.UUID(user["sub"]),
     )
@@ -110,7 +114,8 @@ async def agreement_approval_events(
 
 @router.patch("/{agreement_id}", response_model=AgreementResponse)
 async def update_agreement(
-    agreement_id: uuid.UUID, body: AgreementUpdate, db: SessionDep, user: AgrWriteDep
+    agreement_id: uuid.UUID, body: AgreementUpdate, db: SessionDep, user: AgrWriteDep,
+    token: BearerToken,
 ):
     agr = await _visible_agreement_or_404(db, user, agreement_id)
     if agr.status not in agr_crud.EDITABLE_STATUSES:
@@ -119,6 +124,9 @@ async def update_agreement(
             detail=f"Agreement is {agr.status}; only a draft agreement can be edited. "
                    "Changing terms after approval requires a new approval round.",
         )
+    # Partial payload: None means "not sent".
+    if body.budget_code is not None:
+        await ensure_known_budget_code(token, body.budget_code)
     try:
         return await agr_crud.update(db, agr, body)
     except ValueError as exc:

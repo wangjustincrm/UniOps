@@ -23,6 +23,7 @@ from app.schemas.pr import (
 from app.schemas.reminder import ReminderResponse
 from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
+from app.services.budget_client import ensure_known_budget_code
 from app.services.doc_preflight import field_checks_for
 from app.services.manual_reminder import remind_document
 from app.services.notification import fire_and_forget_notify
@@ -119,6 +120,7 @@ async def create_pr(
     body: PrCreate, db: SessionDep, user: CurrentUserPayload, token: BearerToken,
 ):
     await _check_owner(db, body.owner_id)
+    await ensure_known_budget_code(token, body.budget_code)
     return await pr_crud.create(
         db, body, created_by=uuid.UUID(user["sub"]), bearer_token=token,
     )
@@ -172,6 +174,10 @@ async def update_pr(
         raise HTTPException(
             status_code=403, detail="Only the requester who raised this PR can edit it")
     await _check_owner(db, body.owner_id)
+    # Partial payload: None means "not sent", so an edit that never touched the
+    # budget account isn't asked to re-prove it.
+    if body.budget_code is not None:
+        await ensure_known_budget_code(token, body.budget_code)
     return await pr_crud.update(db, pr, body, bearer_token=token)
 
 

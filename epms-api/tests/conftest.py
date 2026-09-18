@@ -427,6 +427,21 @@ async def _restore_default_matrix(test_engine):
 
 
 @pytest.fixture(autouse=True)
+def _clear_budget_account_cache():
+    """budget_client caches the account catalog for 60s (every document write
+    now validates budget_code against it). Module-level state outlives a test,
+    so without this the next test's MockTransport is never consulted and it
+    asserts against the previous test's stub catalog. Clear on both sides: a
+    test that populates the cache must not leak into the next one, and a test
+    that runs after a real fetch must not start from one."""
+    from app.services import budget_client
+
+    budget_client.clear_accounts_cache()
+    yield
+    budget_client.clear_accounts_cache()
+
+
+@pytest.fixture(autouse=True)
 async def _drain_background_tasks():
     """Cancel any fire-and-forget task the test left in flight, and WAIT for the
     cancellation to unwind it.

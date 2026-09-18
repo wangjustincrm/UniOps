@@ -16,7 +16,7 @@ import { agreementAttachmentService } from '@/services/agreementAttachments'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { userService, type ApiUserBrief } from '@/services/users'
-import { BudgetAccountCascade } from '@/components/agreements/BudgetAccountCascade'
+import { BudgetAccountCascade } from '@/components/budget/BudgetAccountCascade'
 import { RecurringFields, EMPTY_RECURRING_FIELDS, type RecurringFieldsValue } from '@/components/agreements/RecurringFields'
 import { MilestoneEditor } from '@/components/agreements/MilestoneEditor'
 
