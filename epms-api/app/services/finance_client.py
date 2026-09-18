@@ -184,3 +184,29 @@ async def budget_actual_lineage(*, bearer_token: str | None) -> dict | None:
     except httpx.HTTPError as e:
         logger.warning("finance-api /gl/budget-actual/lineage unreachable: %s", e)
         return None
+
+
+async def nc_actuals_by_cost_center(*, bearer_token: str | None, fiscal_year: int,
+                                    through_month: int) -> dict | None:
+    """NC posted actual per cost centre for a year, through a month.
+
+    The actual half of a plan-vs-actual comparison. Asked of finance-api rather
+    than computed here because the rule for what counts as NC-posted spending is
+    finance-api's — five account subtrees, posted-only, gross debit, two keying
+    rules and three excluded families — and a second implementation would be a
+    second answer to the same question.
+
+    Returns None when finance-api cannot be reached; the caller says the actual
+    is unavailable rather than presenting the plan as though it were a variance.
+    """
+    url = f"{settings.FINANCE_API_URL}/finance/v1/gl/nc-actuals-by-cost-center"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(
+                url, params={"fiscal_year": fiscal_year, "through_month": through_month},
+                headers={"Authorization": f"Bearer {bearer_token}"} if bearer_token else {})
+            r.raise_for_status()
+            return r.json()
+    except httpx.HTTPError as e:
+        logger.warning("finance-api /gl/nc-actuals-by-cost-center unreachable: %s", e)
+        return None

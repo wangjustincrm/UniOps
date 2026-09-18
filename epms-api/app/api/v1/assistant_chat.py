@@ -20,6 +20,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+import datetime as _dt
 import uuid as _uuid
 
 from sqlalchemy import select
@@ -32,6 +33,7 @@ from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
 from app.services import doc_type_guide, guide_view, plan_view
 from app.services import producible_view
+from app.services import budget_variance
 from app.services import report_lineage
 from app.services import workflow_view
 from app.services import controlled_query as cq
@@ -110,6 +112,9 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
 
     if planned["kind"] == "report":
         return await _answer_report_lineage(db, scope, token, body, planned, actor)
+
+    if planned["kind"] == "variance":
+        return await _answer_budget_variance(db, scope, token, body, planned, actor)
 
     if planned["kind"] == "producible":
         return await _answer_producible(db, scope, body, planned, actor)
@@ -491,6 +496,41 @@ async def _answer_doc_types(db, body, planned, actor) -> dict:
         "answer": told["text"], "kind": "document_types", "query": None,
         "document_types": guide,
         "sources": {"document": guide["label"], "types": len(guide["types"])},
+    }
+
+
+async def _answer_budget_variance(db, scope, token, body, planned, actor) -> dict:
+    """Budget against spending, with the subtraction already done.
+
+    Gated on the budget entities' own keys, inside the service, so this cannot
+    hand back through arithmetic what a query would have refused. The row scope
+    is the ontology's own department rule for the same reason.
+    """
+    year = planned.get("fiscal_year") or _dt.datetime.now(_dt.timezone.utc).year
+    through = planned.get("through_month") or 12
+    result = await budget_variance.build(
+        db, scope, fiscal_year=int(year), through_month=int(through), token=token)
+    if not result.get("allowed"):
+        return {
+            "answer": result.get("why") or "You cannot see budget figures.",
+            "kind": "denied", "query": None, "sources": None,
+        }
+
+    payload = {"question": body.message, "kind": "budget_variance", **result}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+
+    return {
+        "answer": told["text"], "kind": "budget_variance", "query": None,
+        "budget_variance": result,
+        "sources": {
+            "entity": "budget_plan_line + journal_voucher_line",
+            "row_count": len(result.get("rows") or []),
+            "complete": "actual_unavailable" not in result,
+        },
     }
 
 

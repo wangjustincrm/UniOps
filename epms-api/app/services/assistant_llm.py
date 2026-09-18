@@ -155,6 +155,12 @@ Rules:
   explain_modules. It is the layer above explain_document_types — use it when
   they have not narrowed to a document yet, and when someone is plainly in the
   wrong place and needs pointing at the right module.
+- Budget COMPARED WITH spending is budget_vs_actual, never a query. Plan lives
+  on the budget lines and actual lives in the ledger, so one query reaches one
+  of them; and you may not subtract them yourself. A reply that lists budgets
+  and says the actuals could not be found is the failure this route exists to
+  stop — it happened, and when the person said "yes, go and get them" the same
+  plan came back a second time.
 - "Where does this number come from", "how do you work out the actual", "what
   rule puts this cost against my cost centre", "why does this month not match
   NC" are explain_report. They are looking at a report and asking what fills
@@ -505,6 +511,43 @@ _REPORT_TOOL = {
     },
 }
 
+_BUDGET_VARIANCE_TOOL = {
+    "name": "budget_vs_actual",
+    "description": (
+        "Use when someone wants BUDGET COMPARED WITH SPENDING — a summary of "
+        "plan against actual, a variance, how much is left, who is over or "
+        "under. '各成本中心年度总预算和到8月为止的实际值，给出差异额和差异百分比', "
+        "'which cost centres are over budget', 'how much of this year's budget "
+        "have we used', 'budget vs actual summary'. This cannot be a query: the "
+        "plan and the actual are in different tables and the answer needs a "
+        "subtraction, so a query returns one half and no variance — which is "
+        "what happened the last time and the reply listed the plan twice. The "
+        "arithmetic is done for you and the rows come back ready to present."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "fiscal_year": {
+                "type": "integer",
+                "description": (
+                    "The budget year. Use the current year unless they name "
+                    "another."
+                ),
+            },
+            "through_month": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12,
+                "description": (
+                    "Count spending up to and including this month, 1-12. '到 "
+                    "8 月为止' is 8. Omit for the whole year."
+                ),
+            },
+        },
+        "required": ["fiscal_year"],
+    },
+}
+
 _EXPLAIN_PLAN_TOOL = {
     "name": "explain_plan",
     "description": (
@@ -652,7 +695,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             system=system,
             tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _NEXT_TOOL,
                    _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
-                   _MODULES_TOOL, _PRODUCIBLE_TOOL, _REPORT_TOOL, _CANNOT_TOOL],
+                   _MODULES_TOOL, _PRODUCIBLE_TOOL, _REPORT_TOOL,
+                   _BUDGET_VARIANCE_TOOL, _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -683,6 +727,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             return {"kind": "modules", "usage": _usage(resp)}
         if block.name == "explain_document_types":
             return {"kind": "doc_types", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "budget_vs_actual":
+            return {"kind": "variance", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_report":
             return {"kind": "report", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_plan":
@@ -947,15 +993,43 @@ You are helping a colleague who may never have been trained on this system.
   `can_explain_further` and `can_explain_reports` are the only places you may
   offer to go deeper; offering a document kind or a report that is not in them
   promises something that will then be refused.
+- For budget vs actual: the numbers were computed for you — never recompute
+  one, never add a column of them up yourself, and never convert between the
+  two comparisons. Lead with a table: cost centre, annual plan, actual to date,
+  variance, variance %. Print each code and name EXACTLY as given, even when the
+  rest of the answer is in another language — they are identifiers, and someone
+  who searches the system for a name you translated will not find it.
+  `variance` is plan MINUS actual, so positive is under
+  budget — say which way round it is, because half of finance reads it the
+  other way. A row with `no_approved_plan` true has spending and no budget: it
+  is not "under budget", it has no budget, and a percentage is deliberately
+  absent there rather than zero.
+  Two comparisons are given and they answer different questions — against the
+  whole year's plan, and against the same months of it. Use the one they asked
+  for, and if they only said "budget", give the annual one and name it.
+  `not_in_the_actual` is spending the actual side could not place. Mention it
+  whenever it is non-zero: an actual that is missing money reads as a cost
+  centre doing well. `nothing_visible` and `actual_unavailable` are refusals —
+  pass them on as they are, and never fall back to presenting the plan alone as
+  though it answered a question about variance.
 - For a report's workings: they are looking at the report already, so do not
   describe what the module is for. Answer in the order they asked — usually
   where the number comes from first, then how it was assigned to a cost centre.
   Each entry in `figures` is one of the numbers in a cell and was reported by
-  the service that computes it; use its own words for what it counts. Give
+  the service that computes it; use its own words for what it counts. `figures`
+  is the WHOLE of what is on the screen — do not add a number to the cell from
+  anywhere else, including from what the report used to show. Give
   `read_it_this_way` when it is there: what the ledger CURRENTLY holds is the
   difference between what a figure is designed to mean and what it means today,
   and someone reading `opening` rows as invoice activity is being misled by a
   correct description.
+  `no_longer_shown` is not part of the report. Use it only to answer where a
+  figure someone remembers has gone, and give `why_it_went`. Never say a figure
+  will start filling in, or that amounts will appear once documents flow,
+  unless what you were given says so: a figure whose `never_recorded` list
+  names the operations that would fill it is a figure nothing is writing to,
+  and promising it will populate is inventing a plan for someone else's
+  roadmap.
   The precedence under `cost_centre_rule` is an order — say it as one, first
   match wins — and say what happens when nothing matches, because that case is
   a visible exception rather than a silent default.
