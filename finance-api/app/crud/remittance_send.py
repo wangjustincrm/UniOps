@@ -21,7 +21,7 @@ Do not "optimize" this back into a single trailing commit.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -111,7 +111,8 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
                        groups: list[PayeeGroup], reference: str,
                        payment_method: str, company_name: str,
                        sender: RemittanceSettings, actor_id: uuid.UUID,
-                       resend_ids: set[tuple[str, uuid.UUID]] | None = None) -> list[dict]:
+                       resend_ids: set[tuple[str, uuid.UUID]] | None = None,
+                       payment_date: date | None = None) -> list[dict]:
     """Send one email per payee group and record the outcome.
 
     Blocked or emailless groups are refused server-side and never reach
@@ -144,6 +145,14 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
     reliably closes is the SEQUENTIAL case: a retry after a proxy timeout, a
     stale tab refreshed and re-submitted, or a second submission of the same
     already-completed request.
+
+    `payment_date`, when given, is the date the operator says the funds
+    actually left, and it replaces the per-line date the advice DISPLAYS for
+    every payee in this send (see app/api/v1/remittance.py's
+    PAYMENT_DATE_FIELD for why the recorded date is not always that date).
+    It is passed through to render() only — nothing here writes it back to
+    payment_records, and the log row is unaffected: this changes what the
+    payee is told, never what the ledger holds.
     """
     results: list[dict] = []
     resend_ids = resend_ids or set()
@@ -169,7 +178,8 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
             subject, html = render(g, company_name=company_name, reference=reference,
                                     payment_method=payment_method,
                                     template=sender.template,
-                                    logo_data_url=sender.logo_data_url)
+                                    logo_data_url=sender.logo_data_url,
+                                    payment_date=payment_date)
         except Exception as exc:  # noqa: BLE001 — isolate one payee's failure
             # render() never reaches send_email(), so nothing has logged this
             # yet anywhere — unlike an SMTP failure (logged inside

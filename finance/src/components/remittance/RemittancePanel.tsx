@@ -68,6 +68,20 @@ function payeeKey(kind: string, id: string): string {
   return `${kind}:${id}`
 }
 
+/**
+ * Today in the OPERATOR's timezone as `YYYY-MM-DD` — deliberately not
+ * `new Date().toISOString().slice(0, 10)`, which is today in UTC. The
+ * company runs at UTC-4/-5, so from 8pm local onwards the UTC form is
+ * already tomorrow, and the picker would open on a date the operator never
+ * chose (and that the server would reject as future). Same reason the
+ * `max` attribute below uses this and not the ISO form.
+ */
+function todayLocal(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 function fmtMoney(v: string, ccy: string): string {
   return `${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${ccy}`
 }
@@ -90,6 +104,15 @@ export function RemittancePanel({ scope, onSent }: {
   // that will appear in that payee's advice. Default collapsed (empty set)
   // so the panel stays as compact as it was before this existed.
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // The payment date the advice will SHOW, for every line in it. Defaults to
+  // today because that is the common case (advice goes out the day the
+  // payment runs), and is backdated by hand when it does not: the funds
+  // often leave a day or two before AP gets to the advice — bank cut-off, a
+  // cheque run signed the day before — and a date the payee cannot find on
+  // their own statement is exactly what this removes. It overrides only what
+  // the email displays; the payment record behind the GL is never touched
+  // (see finance-api/app/api/v1/remittance.py's PAYMENT_DATE_FIELD).
+  const [paymentDate, setPaymentDate] = useState(todayLocal())
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<SendResult | null>(null)
@@ -122,6 +145,7 @@ export function RemittancePanel({ scope, onSent }: {
     setLastResult(null)
     setSelected(new Set())
     setExpanded(new Set())
+    setPaymentDate(todayLocal())
     prevGroupsRef.current = null
   }, [key])
 
@@ -177,7 +201,7 @@ export function RemittancePanel({ scope, onSent }: {
     setSending(true)
     setSendError(null)
     try {
-      const result = await sendRemittance(scope, recipients)
+      const result = await sendRemittance(scope, recipients, paymentDate)
       setLastResult(result)
       onSent?.(result)
       // Re-fetch rather than locally patch state — a send just changed the
@@ -232,10 +256,19 @@ export function RemittancePanel({ scope, onSent }: {
           <span className="mx-2 text-neutral-300">·</span>
           {preview.payment_method}
         </div>
-        <button type="button" onClick={() => void refetch()} disabled={isFetching} className={secondaryBtn}>
-          <RefreshCw className={cn('h-4 w-4', isFetching && 'animate-spin')} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-sm text-neutral-600">
+            Payment date
+            <input type="date" value={paymentDate} max={todayLocal()}
+              onChange={(e) => setPaymentDate(e.target.value)}
+              title="The date the advice tells the payee the funds left. Defaults to today — back-date it if the payment actually cleared earlier."
+              className="rounded-md border border-neutral-300 px-2 py-1 text-sm" />
+          </label>
+          <button type="button" onClick={() => void refetch()} disabled={isFetching} className={secondaryBtn}>
+            <RefreshCw className={cn('h-4 w-4', isFetching && 'animate-spin')} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {sendError && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{sendError}</div>}
@@ -338,7 +371,11 @@ export function RemittancePanel({ scope, onSent }: {
                                 return (
                                   <tr key={li} className={cn(li > 0 && 'border-t border-neutral-100')}>
                                     <td className="py-1 pr-3 align-top text-neutral-600">{l.reference}</td>
-                                    <td className="py-1 pr-3 align-top text-neutral-500">{l.payment_date}</td>
+                                    {/* The date the advice will carry, not the date recorded
+                                        against the payment — those differ whenever the operator
+                                        back-dates above, and this detail exists so AP is reading
+                                        exactly what the payee will read. */}
+                                    <td className="py-1 pr-3 align-top text-neutral-500">{paymentDate || l.payment_date}</td>
                                     <td className="py-1 text-right align-top font-mono">
                                       {hasCredit ? (
                                         <div className="space-y-0.5">

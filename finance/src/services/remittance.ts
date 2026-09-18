@@ -153,11 +153,23 @@ export function fetchPreview(scope: RemittanceScope): Promise<RemittancePreview>
 export function sendRemittance(
   scope: RemittanceScope,
   recipients: { recipient_kind: string; party_id: string; resend?: boolean }[] | null,
+  /**
+   * `YYYY-MM-DD` — the date the advice tells the payee the funds left, for
+   * every line in it. AP often sends the advice a day or two after the money
+   * actually moved, so the date recorded against the payment is not always
+   * the date the payee's bank will show. Omitted (or undefined), each line
+   * keeps its own recorded payment date, exactly as before this existed.
+   *
+   * Display only: it changes what the email says, never the payment record
+   * behind the GL. The server rejects a future date with a 400.
+   */
+  paymentDate?: string,
 ): Promise<SendResult> {
+  const payment_date = paymentDate || undefined
   if (scope.kind === 'selection') {
     return financeApi.post<SendResult>(
       '/payments/remittance/selection/send',
-      { payment_ids: scope.paymentIds, recipients })
+      { payment_ids: scope.paymentIds, recipients, payment_date })
   }
-  return financeApi.post<SendResult>(`${base(scope)}/send`, { recipients })
+  return financeApi.post<SendResult>(`${base(scope)}/send`, { recipients, payment_date })
 }
