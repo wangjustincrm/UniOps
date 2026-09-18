@@ -1,5 +1,5 @@
 # The Budget Dashboard's Monthly Plan vs Actual grid — what the numbers in it
-# mean and why there are three of them.
+# mean, and which of them are actually on it.
 #
 # ── What is prose here and what is not ───────────────────────────────────────
 # Almost nothing in the answer to "where does this number come from" is prose.
@@ -10,10 +10,16 @@
 # it is assembled in services/report_lineage.py and none of it is written down
 # twice.
 #
-# What is left — this file — is the part no code states: why the report shows
-# three figures rather than one, which of them is the one to trust, and what to
-# look at when a cell is wrong. That is a finance decision, not a fact about a
-# column.
+# What is left — this file — is the part no code states: which figures the
+# report puts in a cell, why, and what to look at when one is wrong. That is a
+# finance decision, not a fact about a column.
+#
+# `shows` is load-bearing, not decoration. The services report every figure
+# they can compute; this list says which of them a person is actually looking
+# at, and report_lineage.py filters by it. A figure the report stopped showing
+# goes to `retired` with the date and the reason, because "there used to be a
+# middle number, where did it go" is a question that gets asked once per person
+# and deserves an answer rather than a silence.
 topic: report
 report: budget_plan_vs_actual
 label: Monthly Plan vs Actual
@@ -25,28 +31,47 @@ question_hints:
   - what rule fills the actual column
   - why does the budget report disagree with NC
 
+# The figures in one cell, top to bottom. Keys are the services' own figure
+# names: `plan` and `actual_docs` from budget-api, `nc_posted` from finance-api.
+shows:
+  - plan
+  - nc_posted
+
+retired:
+  - figure: actual_docs
+    label: actual (docs)
+    removed: 2026-09-17
+    why: >-
+      It promised what this cost centre had spent in UniOps, and could only ever
+      show the opening balance finance had imported: not one of the movements
+      that were meant to fill it had ever been recorded, so the line repeated a
+      single imported figure into every month of every cell under a heading that
+      said it was current spend. A number that is always wrong is worse than no
+      number. It is removed from the screen only — the API still returns it, and
+      what it holds today is still reported under `what_it_was`, so the line
+      comes back the day something really books to that ledger.
+
 where_it_lives: >-
   EPMS → Budget → Budget Dashboard, and the same grid embedded in Finance as
   Budget Dashboard. One row per budget account, one column per month.
 
 what_it_is: >-
   A month-by-month comparison, for one cost centre or for all of them, of what
-  was budgeted against what has actually been spent. Every cell holds three
-  figures stacked: plan, actual (docs), and NC posted.
+  was budgeted against what has actually been spent. Every cell holds two
+  figures stacked: plan on top, NC posted actual under it, red when the actual
+  is over the plan.
 
-why_three_figures: >-
-  They are three different moments in the life of the same money, and they are
-  shown together because the gap between them is the useful part. The plan is
-  what was approved before the year started. Actual (docs) is what UniOps
-  itself has recorded as spending as the paperwork went through. NC posted is
-  what has reached the accounting system and been tallied there.
+why_these_figures: >-
+  They are the two ends of the same money: what was approved before the year
+  started, and what has reached the accounting system and been tallied there.
+  The gap between them is the whole point of the screen.
 
 which_one_is_the_truth: >-
-  NC posted. It is the figure the over-budget colouring and the alerts are
-  judged on, because it is the only one of the three that has been through
-  accounting. Actual (docs) leads it — a cost can be recorded here before the
-  voucher exists in NC — and where the two disagree the difference is timing far
-  more often than error.
+  Both, for what each one is. The plan is the commitment; NC posted is the
+  spending, and it is the figure the over-budget colouring, the alert cards and
+  the export are all judged on, because it is the one that has been through
+  accounting. When someone says "actual" on this screen they mean NC posted —
+  there is no longer a second actual to confuse it with.
 
 notes:
   - >-
