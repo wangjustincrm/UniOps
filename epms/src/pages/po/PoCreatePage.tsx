@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
+import { BudgetAccountSelect } from '@/components/budget/BudgetAccountSelect'
 import { useConfig } from '@/hooks/useConfig'
 import { formatAmount, cn } from '@/lib/utils'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
@@ -117,7 +118,9 @@ export default function PoCreatePage() {
     const pr = linkedPrData
     if (!pr) return
     setTitle(pr.title)
-    setBudgetCode(pr.budget_code)
+    // `?? ''` because PrResponse types budget_code optional and the select is
+    // a controlled input: undefined would flip it to uncontrolled mid-render.
+    setBudgetCode(pr.budget_code ?? '')
     setProcurementType(pr.type)
     setIsPrepaid(pr.is_prepaid ?? false)
     if (pr.required_by) setExpectedDelivery(pr.required_by)
@@ -338,11 +341,10 @@ export default function PoCreatePage() {
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               {/* Budget Code */}
               <FormField label="Budget Code" htmlFor="budgetCode">
-                <Input
+                <BudgetAccountSelect
                   id="budgetCode"
-                  placeholder="e.g. CRM003-01"
                   value={budgetCode}
-                  onChange={(e) => setBudgetCode(e.target.value)}
+                  onChange={setBudgetCode}
                 />
               </FormField>
 
