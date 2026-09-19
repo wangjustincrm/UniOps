@@ -1,11 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, ExternalLink, FileText, Loader2 } from 'lucide-react'
-import * as pdfjsLib from 'pdfjs-dist'
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).href
+import { pdfjsLib, type PDFDocumentProxy, type RenderTask } from '@/lib/pdfjs'
 
 // Live preview of the uploaded invoice file so the user can verify AI-parsed
 // fields against the source document. PDFs are rendered to a canvas with
@@ -20,8 +15,8 @@ function PdfCanvas({ file }: { file: File }) {
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
-  const pdfRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null)
-  const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null)
+  const pdfRef = useRef<PDFDocumentProxy | null>(null)
+  const renderTaskRef = useRef<RenderTask | null>(null)
 
   useEffect(() => {
     let cancelled = false
