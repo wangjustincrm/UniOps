@@ -63,6 +63,20 @@ values:
         as they are. So "it will not let me upload, it says the total does not
         match" is this check, and the fix is a missing line item or a charge —
         not a retry.
+      - >
+        One PDF can hold several invoices. Vendors send a month at a time —
+        each invoice complete, one or more pages, sometimes uneven. Uploaded
+        whole that is ONE invoice in EPMS and the rest are never paid, so a
+        multi-page PDF stops at a splitter first: the pages are shown as
+        thumbnails and the uploader clicks the scissors between two pages
+        wherever a new invoice starts (with one-click presets for "every page"
+        and "every 2 pages"). Nothing guesses at the boundaries — a wrong cut
+        merges two invoices or halves one, and neither shows up anywhere
+        downstream. Each piece is then read, checked and created on its own,
+        with its own pages attached and its own invoice number, and the vendor
+        picked for the first one carries to the rest. They are created one at a
+        time as they are confirmed, so stopping half way leaves the finished
+        ones real and in Unmatched — never a half-committed batch.
 
   - value: matched
     label: Matched
