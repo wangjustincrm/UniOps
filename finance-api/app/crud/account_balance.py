@@ -12,7 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.fiscal import opening_window, status_filter
 from app.models.coa import ChartOfAccount
-from app.models.journal_voucher import POSTED, JournalVoucher, JournalVoucherLine
+from app.models.journal_voucher import (
+    POSTED,
+    JournalVoucher,
+    JournalVoucherLine,
+    JvLineDimension,
+)
 
 _ZERO = Decimal("0")
 
@@ -401,23 +406,41 @@ async def budget_actual(db: AsyncSession, period: str) -> dict:
 
 async def _ba_lines(db: AsyncSession, account_code: str, period: str):
     """Posted lines for a category account's subtree in `period`, grouped by
-    (cost_center_id, income_expense_item_id) with the cost-center + budget-account
-    (CRM 收支项目) code/name joined in. Value = period gross DEBIT."""
+    (cost_center, budget account) with the codes/names joined in. Value = period
+    gross DEBIT.
+
+    Keys the budget account the same two ways the dashboard does (see
+    `_effective_budget_account`): by account code inside 6603, by income-expense
+    item everywhere else. Also returns the RAW NC income-expense code, because
+    the policy exclusions have to be recognised by what NC wrote — CRM09912 has
+    no budget_accounts row, so matching on the resolved account would miss every
+    line of it and leave 1.3M a month sitting in an unnamed "(no cost center)"
+    detail row."""
+    from sqlalchemy.orm import aliased
+
     from app.models.mirrors import BudgetAccount, CostCenter
     subtree = await _subtree_codes(db, account_code)
-    q = (select(JournalVoucherLine.cost_center_id,
-                JournalVoucherLine.income_expense_item_id,
-                CostCenter.code, CostCenter.name,
-                BudgetAccount.code, BudgetAccount.name,
-                func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
+    fn_codes = await _by_account_code_subtree(db)
+    by_code = aliased(BudgetAccount)
+    acct_id, acct_code = _effective_budget_account(fn_codes, BudgetAccount, by_code)
+    acct_name = case((JournalVoucherLine.account_code.in_(fn_codes), by_code.name),
+                     else_=BudgetAccount.name)
+    dim = aliased(JvLineDimension)
+    q = (select(JournalVoucherLine.cost_center_id, acct_id,
+                CostCenter.code, CostCenter.name, acct_code, acct_name,
+                func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
+                func.max(dim.value_text))
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
          .outerjoin(CostCenter, JournalVoucherLine.cost_center_id == CostCenter.id)
          .outerjoin(BudgetAccount, JournalVoucherLine.income_expense_item_id == BudgetAccount.id)
-         .where(JournalVoucher.status == POSTED,
-                JournalVoucher.fiscal_period == period,
-                JournalVoucherLine.account_code.in_(subtree))
-         .group_by(JournalVoucherLine.cost_center_id, JournalVoucherLine.income_expense_item_id,
-                   CostCenter.code, CostCenter.name, BudgetAccount.code, BudgetAccount.name))
+         .outerjoin(dim, and_(dim.jv_line_id == JournalVoucherLine.id,
+                              dim.dim_code == "income_expense_item")))
+    q = _budget_account_join(q, fn_codes, by_code)
+    q = (q.where(JournalVoucher.status == POSTED,
+                 JournalVoucher.fiscal_period == period,
+                 JournalVoucherLine.account_code.in_(subtree))
+          .group_by(JournalVoucherLine.cost_center_id, acct_id,
+                    CostCenter.code, CostCenter.name, acct_code, acct_name))
     return (await db.execute(q)).all()
 
 
@@ -449,22 +472,35 @@ async def _ba_unmapped(db: AsyncSession, period: str) -> list:
 
 async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict) -> dict:
     """Budget-vs-Actual grid. Per category (the 5 expense accounts): detail rows
-    per (cost center × income-expense item) with budget/actual/variance, EXCLUDING
-    Payroll(CRM007)/Depreciation(CRM004) which roll into category-level tie-out
-    rows. `budget_lookup`: (cost_center_id, income_expense_item_id) -> Decimal.
-    actual = period gross DEBIT (expense accounts net ~0 via 结转)."""
+    per (cost center × budget account) with budget/actual/variance, EXCLUDING the
+    items that are tracked at category level only — payroll, depreciation and
+    shut-down loss — which roll into category-level tie-out rows instead.
+    `budget_lookup`: (cost_center_id, budget_account_id) -> Decimal.
+    actual = period gross DEBIT (expense accounts net ~0 via 结转).
+
+    The exclusions are recognised off the RAW NC code, not the resolved budget
+    account: shut-down loss (CRM09912) has no catalog row, so it used to fall
+    through to a detail row with no cost center and no item name — 1,326,701.36
+    of it in 2026-08 alone, read as an unexplained hole in G&A."""
     categories = []
     for acct, category in BUDGET_ACTUAL_ACCOUNTS.items():
-        detail, payroll, deprec, total = [], _ZERO, _ZERO, _ZERO
-        for cc_id, ie_id, cc_code, cc_name, ie_code, ie_name, dr in await _ba_lines(db, acct, period):
+        detail, total = [], _ZERO
+        by_policy: dict[str, Decimal] = {p: _ZERO for p in EXCLUDED_IO_PREFIXES}
+        for (cc_id, ie_id, cc_code, cc_name, ie_code, ie_name, dr,
+             nc_io_code) in await _ba_lines(db, acct, period):
             dr = Decimal(dr)
             total += dr
-            code = ie_code or ""
-            if code.startswith(_PAYROLL_PREFIX):
-                payroll += dr
-                continue
-            if code.startswith(_DEPREC_PREFIX):
-                deprec += dr
+            # EITHER source matching is enough. What NC wrote is the only
+            # signal for shut-down loss (no catalog row at all); the resolved
+            # code is the only one when the dimension row is absent. Where both
+            # exist and disagree, excluding is the safe side — a policy item
+            # landing in the detail is a wrong number in a named row, while the
+            # reverse is a line in a tie-out total that already ties.
+            hit = next((p for p in EXCLUDED_IO_PREFIXES
+                        if any(c.startswith(p) for c in (nc_io_code, ie_code) if c)),
+                       None)
+            if hit is not None:
+                by_policy[hit] += dr
                 continue
             budget = Decimal(budget_lookup.get((cc_id, ie_id), _ZERO))
             detail.append({
@@ -474,15 +510,25 @@ async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict)
                 "income_expense_code": ie_code, "income_expense_name": ie_name,
                 "budget": _s(budget), "actual": _s(dr), "variance": _s(budget - dr),
             })
-        detail.sort(key=lambda d: (d["cost_center_code"] or "￿",
-                                   d["income_expense_code"] or "￿"))
+        # Budget account first: the account code is the axis finance reads down,
+        # and the same account's cost centres belong next to each other.
+        detail.sort(key=lambda d: (d["income_expense_code"] or "￿",
+                                   d["cost_center_code"] or "￿"))
         detail_total = sum((Decimal(d["actual"]) for d in detail), _ZERO)
+        policy_total = sum(by_policy.values(), _ZERO)
         categories.append({
             "account_code": acct, "category": category, "detail": detail,
-            "payroll_actual": _s(payroll), "depreciation_actual": _s(deprec),
+            # Kept as named fields for the existing UI rows, and repeated in
+            # `category_level` so a new exclusion shows up without a schema change.
+            "payroll_actual": _s(by_policy[_PAYROLL_PREFIX]),
+            "depreciation_actual": _s(by_policy[_DEPREC_PREFIX]),
+            "category_level": [
+                {"prefix": p, "label": EXCLUDED_IO_LABELS[p], "actual": _s(v)}
+                for p, v in by_policy.items() if v != _ZERO
+            ],
             "detail_actual_total": _s(detail_total),
             "category_actual_total": _s(total),
-            "tie_ok": (detail_total + payroll + deprec) == total,
+            "tie_ok": (detail_total + policy_total) == total,
         })
     return {"period": period, "categories": categories,
             "unmapped": await _ba_unmapped(db, period)}

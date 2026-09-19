@@ -1,7 +1,8 @@
 /**
  * Budget vs Actual (预实对比) — per (cost center × income-expense item) budget /
- * actual / variance for the 5 expense categories, with category-level Payroll /
- * Depreciation tie-out rows and an exceptions panel for unmapped lines. Actual =
+ * actual / variance for the 5 expense categories, with tie-out rows for the
+ * items finance tracks at category level (payroll, depreciation, shut-down
+ * loss) and an exceptions panel for unmapped lines. Actual =
  * NC posted JV period debit (via /gl/budget-actual-grid); budget = budget-api
  * current approved plan. Read-only; each actual drills into its composing vouchers.
  */
@@ -14,6 +15,8 @@ import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { AccountVouchersModal } from './AccountVouchersModal'
+import { BudgetActualRollup, type Scope } from './BudgetActualRollup'
+import { BudgetActualBreakdown } from './BudgetActualBreakdown'
 import { JvDetailModal } from './JvDetailModal'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
@@ -31,6 +34,11 @@ interface DetailRow {
 interface Category {
   account_code: string; category: string; detail: DetailRow[]
   payroll_actual: string; depreciation_actual: string
+  // Every item tracked at category level rather than per cost center, from the
+  // backend's own exclusion list — so adding one there adds a row here without
+  // a change on this side. payroll_actual / depreciation_actual are the same
+  // figures kept for compatibility.
+  category_level?: { prefix: string; label: string; actual: string }[]
   detail_actual_total: string; category_actual_total: string; tie_ok: boolean
 }
 interface Unmapped {
@@ -52,6 +60,14 @@ export default function BudgetActualPage() {
   const { user } = useAuthStore()
   const qc = useQueryClient()
   const [period, setPeriod] = useState(thisMonth())
+  // Window and selection live here because the roll-up sets them and the
+  // composition reads them — the two panels are one report, not two pages.
+  const nowMonth = Number(thisMonth().slice(5, 7))
+  const [win, setWin] = useState<[number, number]>([1, nowMonth])
+  const [winLabel, setWinLabel] = useState('YTD')
+  // No selection = no panel. The composition is an answer to a click, so it
+  // should not be sitting open before anything has been asked.
+  const [scope, setScope] = useState<Scope | null>(null)
   const [drill, setDrill] = useState<Drill | null>(null)
   const [jvId, setJvId] = useState<string | null>(null)
 
@@ -91,10 +107,44 @@ export default function BudgetActualPage() {
       title="Budget vs Actual"
       subtitle="Budget (approved plan) vs NC posted actual, per cost center × income-expense item (CAD)"
     >
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-4">
+      {/* Room to scroll the last rows clear of the panel. The panel is sized
+          against <main>; this is against the viewport, so it is a close-enough
+          over-estimate rather than an exact match. */}
+      <div className={cn('mx-auto max-w-7xl', scope && 'pb-[56vh]')}>
+        {/* Summary first: this page is read by finance to report from, so the
+            totals come before the composition. The detail grid below still
+            works one month at a time — it answers "what is IN this figure",
+            which is a different question from "what is the figure". */}
+        <BudgetActualRollup fiscalYear={Number(period.slice(0, 4))}
+                            onFiscalYearChange={(y) => setPeriod(`${y}${period.slice(4)}`)}
+                            window={win}
+                            onWindowChange={(w, label) => { setWin(w); setWinLabel(label) }}
+                            scope={scope} onScopeChange={setScope} />
+
+        {scope && (
+          <BudgetActualBreakdown fiscalYear={Number(period.slice(0, 4))}
+                                 window={win} windowLabel={winLabel} scope={scope}
+                                 onClose={() => setScope(null)} />
+        )}
+
+        {/* The month grid stays for the one thing the two panels above cannot
+            do: open the vouchers behind a figure. It is a different question
+            ("which documents") at a different grain (one month), so it is
+            collapsed rather than removed. */}
+        <details className="mb-4 rounded-lg border border-neutral-200 bg-white [&[open]>summary]:border-b [&[open]>summary]:border-neutral-100">
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-neutral-800 transition-colors hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+            Monthly detail with vouchers
+            <span className="ml-2 text-xs font-normal text-neutral-500">
+              one month, drills into the documents behind each figure
+            </span>
+          </summary>
+          <div className="px-3 py-3">
+        <div className="mb-3 flex items-center gap-2">
           <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)}
                  className={cn(inputCls, 'w-40')} />
+          <span className="text-xs text-neutral-400">
+            Per cost centre × budget account, with a Vouchers drill on every row
+          </span>
         </div>
 
         {isFetching && !data ? (
@@ -150,14 +200,20 @@ export default function BudgetActualPage() {
                           </td>
                         </tr>
                       ))}
-                      {/* category-level tie-out rows (finance tracks P/D by category, not cost center) */}
-                      {[{ label: 'Payroll', v: cat.payroll_actual }, { label: 'Depreciation', v: cat.depreciation_actual }]
-                        .filter((x) => Number(x.v) !== 0)
+                      {/* Category-level tie-out rows: finance tracks these by
+                          category rather than by cost center. Driven by the
+                          backend list — shut-down loss joined payroll and
+                          depreciation there, and until it did, its 1.3M a month
+                          sat in a detail row with no cost center and no name. */}
+                      {(cat.category_level
+                        ?? [{ prefix: 'CRM007', label: 'Payroll', actual: cat.payroll_actual },
+                            { prefix: 'CRM004', label: 'Depreciation', actual: cat.depreciation_actual }])
+                        .filter((x) => Number(x.actual) !== 0)
                         .map((x) => (
-                          <tr key={x.label} className="border-t border-neutral-100 bg-neutral-50 text-neutral-500">
+                          <tr key={x.prefix} className="border-t border-neutral-100 bg-neutral-50 text-neutral-500">
                             <td className="px-3 py-2 italic" colSpan={2}>{x.label} (category-level)</td>
                             <td className="px-3 py-2 text-right">—</td>
-                            <td className="px-3 py-2 text-right font-mono">{money(x.v)}</td>
+                            <td className="px-3 py-2 text-right font-mono">{money(x.actual)}</td>
                             <td className="px-3 py-2 text-right">—</td>
                             <td></td>
                           </tr>
@@ -219,6 +275,8 @@ export default function BudgetActualPage() {
             )}
           </div>
         )}
+          </div>
+        </details>
       </div>
 
       {drill && (
