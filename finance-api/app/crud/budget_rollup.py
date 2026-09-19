@@ -92,7 +92,7 @@ lines as (
            -- one: shut-down loss has no catalog row, and a line whose dimension
            -- row is missing has only the resolved code.
            coalesce(dim.value_text, ba.code, '') as nc_code,
-           coalesce(ba_acct.id, ba.id) as budget_account_id
+           coalesce(ba_acct.id, ba.id, ba_dim.id) as budget_account_id
       from journal_vouchers v
       join journal_voucher_lines l on l.jv_id = v.id
       join cat on cat.code = l.account_code
@@ -101,6 +101,15 @@ lines as (
              on ba_acct.code = l.account_code and l.account_code in (select code from fn)
       left join jv_line_dimensions dim
              on dim.jv_line_id = l.id and dim.dim_code = 'income_expense_item'
+      -- NC often sends the income/expense item as dimension TEXT with no
+      -- resolved id (13,057 FY2026 lines carry both and they have never once
+      -- disagreed, so which of the two wins is academic -- but 4,199 carry
+      -- only the text). Without this join such a line has no budget account
+      -- and drops into the unallocated bucket, while nc_code above prints the
+      -- very code that would have placed it, and the policy match below
+      -- already trusts that same text. Resolving it here is what makes those
+      -- three agree.
+      left join budget_accounts ba_dim on ba_dim.code = dim.value_text
      where v.status = 'posted'
        and v.fiscal_period like :year_like
 ),
@@ -173,7 +182,7 @@ lines as (
     select cast(substr(v.fiscal_period, 6, 2) as int) as m,
            l.local_debit as amt,
            coalesce(dim.value_text, ba.code, '') as nc_code,
-           coalesce(ba_acct.id, ba.id) as budget_account_id,
+           coalesce(ba_acct.id, ba.id, ba_dim.id) as budget_account_id,
            l.cost_center_id
       from journal_vouchers v
       join journal_voucher_lines l on l.jv_id = v.id
@@ -183,6 +192,15 @@ lines as (
              on ba_acct.code = l.account_code and l.account_code in (select code from fn)
       left join jv_line_dimensions dim
              on dim.jv_line_id = l.id and dim.dim_code = 'income_expense_item'
+      -- NC often sends the income/expense item as dimension TEXT with no
+      -- resolved id (13,057 FY2026 lines carry both and they have never once
+      -- disagreed, so which of the two wins is academic -- but 4,199 carry
+      -- only the text). Without this join such a line has no budget account
+      -- and drops into the unallocated bucket, while nc_code above prints the
+      -- very code that would have placed it, and the policy match below
+      -- already trusts that same text. Resolving it here is what makes those
+      -- three agree.
+      left join budget_accounts ba_dim on ba_dim.code = dim.value_text
      where v.status = 'posted' and v.fiscal_period like :year_like
 ),
 classified as (
@@ -223,7 +241,7 @@ lines as (
            dp.code as dept_code,
            coalesce(dim.value_text, ba.code, '') as nc_code,
            dim.value_text as nc_io_text,
-           coalesce(ba_acct.id, ba.id) as budget_account_id,
+           coalesce(ba_acct.id, ba.id, ba_dim.id) as budget_account_id,
            cast(substr(v.fiscal_period, 6, 2) as int) as m
       from journal_vouchers v
       join journal_voucher_lines l on l.jv_id = v.id
@@ -234,6 +252,15 @@ lines as (
              on ba_acct.code = l.account_code and l.account_code in (select code from fn)
       left join jv_line_dimensions dim
              on dim.jv_line_id = l.id and dim.dim_code = 'income_expense_item'
+      -- NC often sends the income/expense item as dimension TEXT with no
+      -- resolved id (13,057 FY2026 lines carry both and they have never once
+      -- disagreed, so which of the two wins is academic -- but 4,199 carry
+      -- only the text). Without this join such a line has no budget account
+      -- and drops into the unallocated bucket, while nc_code above prints the
+      -- very code that would have placed it, and the policy match below
+      -- already trusts that same text. Resolving it here is what makes those
+      -- three agree.
+      left join budget_accounts ba_dim on ba_dim.code = dim.value_text
      where v.status = 'posted' and v.fiscal_period like :year_like
 ),
 classified as (
@@ -242,7 +269,13 @@ classified as (
       from lines
 )
 select jv_id, jv_number, voucher_date, fiscal_period, line_no, account_code,
-       coalesce(line_summary, jv_summary), local_debit, dept_code, nc_io_text
+       coalesce(line_summary, jv_summary), local_debit, dept_code, nc_io_text,
+       -- Why this line is in the bucket. Two different faults share it, and
+       -- the bucket's one label can only name one of them; without this the
+       -- reader sees "not placed in any cost centre" against a line that has
+       -- a cost centre and concludes the report is broken.
+       (cost_center_id is null) as missing_cost_centre,
+       (budget_account_id is null) as missing_budget_account
   from classified
  where m between :month_from and :month_to
    and case when :bucket = '__unplaced__'
@@ -273,6 +306,8 @@ async def unallocated_lines(db, *, fiscal_year: int, month_from: int, month_to: 
             "fiscal_period": r[3], "line_no": r[4], "account_code": r[5],
             "summary": r[6], "debit": _s(r[7]),
             "department_code": r[8], "nc_income_expense": r[9],
+            "missing_cost_centre": bool(r[10]),
+            "missing_budget_account": bool(r[11]),
         } for r in rows],
     }
 
@@ -342,7 +377,7 @@ lines as (
            cast(substr(v.fiscal_period, 6, 2) as int) as m,
            l.local_debit as amt,
            coalesce(dim.value_text, ba.code, '') as nc_code,
-           coalesce(ba_acct.id, ba.id) as budget_account_id
+           coalesce(ba_acct.id, ba.id, ba_dim.id) as budget_account_id
       from journal_vouchers v
       join journal_voucher_lines l on l.jv_id = v.id
       join cat on cat.code = l.account_code
@@ -352,6 +387,15 @@ lines as (
              on ba_acct.code = l.account_code and l.account_code in (select code from fn)
       left join jv_line_dimensions dim
              on dim.jv_line_id = l.id and dim.dim_code = 'income_expense_item'
+      -- NC often sends the income/expense item as dimension TEXT with no
+      -- resolved id (13,057 FY2026 lines carry both and they have never once
+      -- disagreed, so which of the two wins is academic -- but 4,199 carry
+      -- only the text). Without this join such a line has no budget account
+      -- and drops into the unallocated bucket, while nc_code above prints the
+      -- very code that would have placed it, and the policy match below
+      -- already trusts that same text. Resolving it here is what makes those
+      -- three agree.
+      left join budget_accounts ba_dim on ba_dim.code = dim.value_text
      where v.status = 'posted' and v.fiscal_period like :year_like
 ),
 actual as (
@@ -511,7 +555,12 @@ async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dic
         unallocated_ytd += Decimal(ytd)
         breakdown.append({
             "key": bucket,
-            "label": ("Not placed in any cost centre" if bucket == "__unplaced__"
+            # The bucket holds lines missing a cost centre OR a budget
+            # account, so a label naming only the first is false for the ones
+            # that have a cost centre (4,199 of FY2026's). Name both; the
+            # drill-down says which applies line by line.
+            "label": ("Missing a cost centre or a budget account"
+                      if bucket == "__unplaced__"
                       else EXCLUDED_IO_LABELS.get(bucket, bucket)),
             "actual_period": _s(period), "actual_ytd": _s(ytd),
         })
