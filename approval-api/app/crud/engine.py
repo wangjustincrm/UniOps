@@ -682,8 +682,10 @@ async def _routing_department_id(
     db: AsyncSession, doc_type: str, doc: Any, routing_uid: uuid.UUID,
 ) -> uuid.UUID | None:
     """Department that drives dept-based approval routing (dept_manager /
-    gm_or_opm / director). Prefer the department explicitly selected on the
-    originating PR; fall back to the routing user's own department (legacy)."""
+    gm_or_opm / director). Prefer the department the DOCUMENT names — the one
+    filled in on the agreement (for an agreement and for a PA raised against
+    one), else the one selected on the originating PR; fall back to the routing
+    user's own department (legacy)."""
     # 协议自带 department_id(建档时选定),没有 PR 可追溯 —— 直接用它。
     # 必须与可见性口径一致:epms-api 的 PA 列表按 PurchaseAgreement.department_id
     # 收窄(crud/pa.py)。若这里改用提交人部门,受限审批人会收到任务却在列表里
@@ -693,6 +695,21 @@ async def _routing_department_id(
         dept = getattr(doc, "department_id", None)
         if dept:
             return dept
+
+    # 协议关联的 PA 同理:它没有 PO、也没有 PR(epms-api crud/pa.py 的协议路径
+    # po_links 为空 → po_id 为 NULL),原本只能退回"建单人的部门",于是部门经理
+    # 那步落到了协议 Owner / AP 代建人所在部门的经理身上,而不是协议上填的部门。
+    # 口径与协议本身(上面的 "agr" 分支)以及可见性(epms-api crud/pa.py::get_all
+    # 按 PurchaseAgreement.department_id 收窄 PA 列表)保持一致。
+    if doc_type in ("pa", "pa_dir"):
+        agr_id = getattr(doc, "agreement_id", None)
+        if agr_id:
+            dept = (await db.execute(
+                select(PurchaseAgreement.department_id)
+                .where(PurchaseAgreement.id == agr_id)
+            )).scalar_one_or_none()
+            if dept:
+                return dept
 
     pr_id = None
     if doc_type == "pr":
@@ -818,11 +835,16 @@ async def resolve_step_assignment(
         # _actor_can_approve would let none of them act (PR-20260620-0001). Fail
         # loudly so the document stays put until the department is configured.
         if assigned_user_id is None:
+            # Which department the router landed on depends on the document —
+            # the agreement's own (agreement, agreement-sourced PA), the one
+            # selected on the PR, else the submitter's. Naming it "the
+            # requester's" sent people to the wrong department's page.
             raise ValueError(
                 "Cannot route approval: no active Department Manager is configured "
-                "for the requester's department. Assign a Department Manager to that "
-                "department (Admin → Departments / Users) before this document can "
-                "be submitted."
+                "for this document's department (the department named on the "
+                "agreement or the PR, falling back to the submitter's own). Assign "
+                "a Department Manager to that department (Admin → Departments / "
+                "Users) before this document can be submitted."
             )
     elif role == "gm_or_opm":
         # GM vs OPM is decided by the routing department (PR's selected

@@ -114,21 +114,21 @@ async def _task_chain_agreement_ids(
 ) -> Select:
     """Agreement ids reachable from `task_user_ids`'s open PA-approval tasks.
 
-    approval-api's `_routing_department_id` (engine.py) has no agreement case:
-    for doc_type in ("pa", "pa_dir") it only resolves a department via
-    `po_id → PurchaseOrder.pr_id → PurchaseRequest.department_id`, which is
-    always None for an agreement PA (no po_id) — so it falls straight through
-    to the routing user's OWN department, and `_routing_user_id` resolves
-    "routing user" to the PA's `created_by` whenever there is no PO/PR chain.
-    In short: an agreement PA's dept_manager/gm_or_opm/director approval step
-    routes on the PA CREATOR's department, not the agreement's own
-    `department_id` that `visible_agreement_subquery` scopes on. Those two can
-    diverge (an AP clerk in one department raising a PA against another
-    department's agreement) — without this task-chain fallback, the assigned
-    approver gets the `approve_pa` task and can open the PA directly (the
-    open-task shortcut in `is_pa_visible`), but it never appears in their PA
-    list. Mirrors `_task_chain_po_ids`, which is exactly why PO-based PAs
-    never had this hole."""
+    approval-api's `_routing_department_id` (engine.py) NOW reads the agreement's
+    own `department_id` for an agreement PA, so routing and this scope agree on
+    the common path. This fallback still earns its place for the cases where
+    they cannot agree:
+
+      * PAs routed BEFORE that fix — their open approve_pa tasks are already
+        pinned to a manager of the CREATOR's department, and nothing re-routes
+        an in-flight document;
+      * an agreement with no `department_id` at all, which still falls through
+        to the routing user's own department.
+
+    Without it the assigned approver gets the `approve_pa` task and can open the
+    PA directly (the open-task shortcut in `is_pa_visible`), but it never appears
+    in their PA list. Mirrors `_task_chain_po_ids`, which is exactly why PO-based
+    PAs never had this hole."""
     return select(PaymentApplication.agreement_id).where(
         PaymentApplication.id.in_(await _open_task_doc_ids(db, own_user_id, task_user_ids, "pa")),
         PaymentApplication.agreement_id.isnot(None),
