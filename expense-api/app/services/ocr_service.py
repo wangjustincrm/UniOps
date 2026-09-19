@@ -112,6 +112,11 @@ Line item field meaning (READ CAREFULLY):
 - EVERY line belongs in that sum, including lines that carry NO tax. A zero-tax
   line (exempt goods, freight billed as a line, a non-taxable service) counts
   towards "subtotal" exactly like a taxed one. Never sum only the taxed lines.
+- A row whose description IS the tax — "Sales Tax", "GST", "HST", "PST", "QST",
+  "VAT" — is not a line item, it is the tax. Leave it out of "line_items" and
+  carry it in the header "tax_amount". Some vendors print the tax as one or more
+  rows inside the line table and still exclude it from the printed sub-total;
+  returning those rows as line items makes the lines sum past the subtotal.
 - NEVER put the tax-inclusive figure in a line's "amount". For a single-line invoice
   whose only printed number is the grand total, still report "amount" as the pre-tax
   line value (= subtotal), and carry the tax in the header "tax_amount".

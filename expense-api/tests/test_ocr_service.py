@@ -633,7 +633,54 @@ async def test_extract_invoice_flags_a_total_it_cannot_explain(anthropic_stub):
     assert result["total_check"]["difference"] == 200.00
 
 
+# Real document, 2026-09-19: "Invoice - (multiple).pdf", six Culligan Water
+# invoices one to a page. Sub-total 187.50, HST 0.98, Balance 188.48 — 0.98 is
+# 13% of the 7.50 delivery fee alone, because the water is zero-rated and the
+# bottle deposit is not taxed. Exactly the mixed taxed/untaxed shape that was
+# reported, on a vendor that also prints "Sales Tax" as a row in the line table
+# and leaves it out of the printed sub-total.
+
+CULLIGAN_LINES = [("Delivery Fee", 7.50, 0.98), ("18L RO Water Delv", 210.00, 0.0),
+                  ("Bottle Deposit", -30.00, 0.0)]
+
+
+def test_culligan_subtotal_summed_from_the_taxed_line_only_is_repaired():
+    """The reported bug on the real document: only the 7.50 taxed row reaches
+    the subtotal, and 180.00 of water and deposit is never paid."""
+    result, _, check = _totals(
+        subtotal=7.50, tax=0.98, total=188.48, lines=CULLIGAN_LINES,
+    )
+    assert result["subtotal"] == 187.50
+    assert check["status"] == "repaired"
+
+
+def test_culligan_tax_row_returned_as_a_line_does_not_trigger_a_repair():
+    """The header already reconciles (187.50 + 0.98 = 188.48). The lines summing
+    past the subtotal is the tax row being double-reported, not a missing line —
+    "correcting" the subtotal to 188.48 here would pay the tax twice."""
+    result, _, check = _totals(
+        subtotal=187.50, tax=0.98, total=188.48,
+        lines=[("Delivery Fee", 7.50, 0.98), ("Sales Tax", 0.98, 0.0),
+               ("18L RO Water Delv", 210.00, 0.0), ("Bottle Deposit", -30.00, 0.0)],
+    )
+    assert result["subtotal"] == 187.50
+    assert check["status"] == "ok"
+    assert check["repairs"] == []
+
+
+def test_culligan_zero_rated_line_lost_altogether_is_reported():
+    """When the line never got extracted there is nothing to repair from — the
+    210.00 shortfall has to reach a person."""
+    result, _, check = _totals(
+        subtotal=-22.50, tax=0.98, total=188.48,
+        lines=[("Delivery Fee", 7.50, 0.98), ("Bottle Deposit", -30.00, 0.0)],
+    )
+    assert check["status"] == "mismatch"
+    assert check["difference"] == 210.00
+
+
 def test_prompt_states_the_two_rules_the_failures_broke():
     """The repairs above are a net, not the fix — the model has to be told."""
     assert "other_charges" in ocr_service._INVOICE_PROMPT
     assert "Never sum only the taxed lines." in ocr_service._INVOICE_PROMPT
+    assert "is not a line item, it is the tax" in ocr_service._INVOICE_PROMPT
