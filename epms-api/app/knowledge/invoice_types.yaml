@@ -3,7 +3,11 @@
 # why has it not gone to payment.
 #
 # Derived: InvoiceCreate's required fields. There are no doc_preflight submit
-# gates for invoices — an invoice is not submitted, it is matched.
+# gates for invoices — an invoice is not submitted, it is matched. The one gate
+# worth knowing about is not a backend gate at all and so cannot be derived: the
+# upload form refuses an invoice whose amount + tax does not reconcile with the
+# total printed on the document (see the note on `unmatched`, and
+# expense-api ocr_service._reconcile_totals).
 #
 # ── One thing worth knowing before editing this ──────────────────────────────
 # The last two states are not written by EPMS. finance-api writes "paid" and
@@ -45,6 +49,34 @@ values:
       - An invoice can be split across several purchase orders. If it is, each
         allocation line carries its own share, and the split is what gets paid
         — not the header total.
+      - >
+        Upload checks the figures against the document. EPMS holds only a
+        pre-tax amount and a tax amount and adds them to get the invoice total,
+        so anything AI extraction leaves out of those two is never paid, on an
+        invoice that matches and approves like any other. Two ways that
+        happened: an untaxed line dropped out of a subtotal summed from the
+        taxed rows only, and a freight or late fee printed under the subtotal,
+        which is neither a line nor a tax. Extraction now also reads the grand
+        total as printed, repairs what it can prove (the subtotal, and a charge
+        billed on top of it), and the upload form blocks on any remaining
+        difference until the uploader either fixes the amounts or confirms them
+        as they are. So "it will not let me upload, it says the total does not
+        match" is this check, and the fix is a missing line item or a charge —
+        not a retry.
+      - >
+        One PDF can hold several invoices. Vendors send a month at a time —
+        each invoice complete, one or more pages, sometimes uneven. Uploaded
+        whole that is ONE invoice in EPMS and the rest are never paid, so a
+        multi-page PDF stops at a splitter first: the pages are shown as
+        thumbnails and the uploader clicks the scissors between two pages
+        wherever a new invoice starts (with one-click presets for "every page"
+        and "every 2 pages"). Nothing guesses at the boundaries — a wrong cut
+        merges two invoices or halves one, and neither shows up anywhere
+        downstream. Each piece is then read, checked and created on its own,
+        with its own pages attached and its own invoice number, and the vendor
+        picked for the first one carries to the rest. They are created one at a
+        time as they are confirmed, so stopping half way leaves the finished
+        ones real and in Unmatched — never a half-committed batch.
 
   - value: matched
     label: Matched

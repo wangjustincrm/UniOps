@@ -379,3 +379,308 @@ async def test_slip_unreadable_document_keeps_the_manual_entry_message(anthropic
 
     with pytest.raises(ValueError, match="Could not read this document"):
         await ocr_service.extract_slip(b"%PDF-fake", "application/pdf")
+
+
+# ── total check: does amount + tax add up to the total printed on the invoice? ──
+# Regression: 2026-09 EPMS uploads where the parsed Amount was short of the
+# document. Two shapes, both silent — EPMS derives total_amount = amount +
+# tax_amount, so anything left out of those two fields is money the vendor never
+# gets paid, and the invoice still matches, approves and pays through cleanly.
+#   (a) an invoice mixing taxed and untaxed lines: the model sums only the taxed
+#       rows into "subtotal" and the untaxed line vanishes from the header;
+#   (b) a footer charge (freight, late fee, handling) printed under the subtotal:
+#       neither a line nor a tax, so it had nowhere to go and was dropped.
+
+def _totals(subtotal, tax, total, lines, charges=None, label=None) -> tuple[dict, list[dict], dict]:
+    """Run _reconcile_totals over a header/lines pair; return (result, lines, check)."""
+    result = {"subtotal": subtotal, "tax_amount": tax, "total_amount": total,
+              "other_charges": charges, "other_charges_label": label}
+    rows = [
+        {"line_number": i + 1, "description": d, "quantity": 1.0,
+         "unit_price": a, "amount": a, "tax_amount": t}
+        for i, (d, a, t) in enumerate(lines)
+    ]
+    check = ocr_service._reconcile_totals(result, rows)
+    return result, rows, check
+
+
+def test_untaxed_line_left_out_of_subtotal_is_recovered():
+    """(a) Taxed lines 1000 + untaxed line 200; the model's subtotal counts only
+    the taxed 1000, but the printed total 1330 proves the line list is right."""
+    result, _, check = _totals(
+        subtotal=1000.00, tax=130.00, total=1330.00,
+        lines=[("Taxable goods", 1000.00, 130.00), ("Exempt service", 200.00, 0.0)],
+    )
+    assert result["subtotal"] == 1200.00          # was 1000.00 — the untaxed line is back
+    assert check["status"] == "repaired"
+    assert check["difference"] == 0.0
+    assert check["line_sum"] == 1200.00
+    assert any("line items" in r for r in check["repairs"])
+
+
+def test_freight_printed_under_the_subtotal_is_added_to_the_amount():
+    """(b) Subtotal 1000 + freight 75 + tax 139.75 = 1214.75 printed. Freight has
+    no column of its own in EPMS, so it is folded into the pre-tax amount and
+    itemised — otherwise the vendor is paid 75 short."""
+    result, rows, check = _totals(
+        subtotal=1000.00, tax=139.75, total=1214.75,
+        lines=[("Widgets", 1000.00, 130.00)],
+        charges=75.00, label="Freight",
+    )
+    assert result["subtotal"] == 1075.00
+    assert check["status"] == "repaired"
+    assert check["difference"] == 0.0
+    assert rows[-1]["description"] == "Freight"
+    assert rows[-1]["amount"] == 75.00
+    assert rows[-1]["tax_amount"] == 0.0
+
+
+def test_late_fee_without_a_label_still_lands_as_a_line():
+    result, rows, _ = _totals(
+        subtotal=500.00, tax=65.00, total=590.00,
+        lines=[("Service", 500.00, 65.00)],
+        charges=25.00,
+    )
+    assert result["subtotal"] == 525.00
+    assert rows[-1]["description"] == "Other charges"
+
+
+def test_charge_already_inside_the_subtotal_is_not_counted_twice():
+    """Model reports freight both as a charge AND inside the subtotal. The
+    arithmetic (subtotal + tax already == total) says so; do not fold."""
+    result, rows, check = _totals(
+        subtotal=1075.00, tax=139.75, total=1214.75,
+        lines=[("Widgets", 1000.00, 130.00), ("Freight", 75.00, 9.75)],
+        charges=75.00, label="Freight",
+    )
+    assert result["subtotal"] == 1075.00
+    assert len(rows) == 2                         # nothing appended
+    assert check["status"] == "ok"
+
+
+def test_unexplained_difference_is_reported_not_guessed():
+    """A residual could be a misread tax as easily as a missing line — moving it
+    into the amount would fix the payable and corrupt the tax. Report it."""
+    result, rows, check = _totals(
+        subtotal=1000.00, tax=130.00, total=1230.00,
+        lines=[("Widgets", 1000.00, 130.00)],
+    )
+    assert result["subtotal"] == 1000.00          # untouched
+    assert len(rows) == 1
+    assert check["status"] == "mismatch"
+    assert check["difference"] == 100.00
+    assert check["document_total"] == 1230.00
+    assert check["computed_total"] == 1130.00
+
+
+def test_healthy_invoice_reports_ok_and_changes_nothing():
+    result, rows, check = _totals(
+        subtotal=1000.00, tax=130.00, total=1130.00,
+        lines=[("Widgets", 600.00, 78.00), ("Gadgets", 400.00, 52.00)],
+    )
+    assert result["subtotal"] == 1000.00
+    assert len(rows) == 2
+    assert check["status"] == "ok"
+    assert check["repairs"] == []
+    assert check["notes"] == []
+
+
+def test_penny_rounding_is_not_a_mismatch():
+    """Vendors round; 1 cent of drift must not block an upload."""
+    _, _, check = _totals(
+        subtotal=1000.00, tax=130.00, total=1130.01,
+        lines=[("Widgets", 1000.00, 130.00)],
+    )
+    assert check["status"] == "ok"
+
+
+def test_float_noise_is_not_a_mismatch():
+    """109.00 + 14.17 is 123.17000000000002 in binary float — cents, not floats."""
+    _, _, check = _totals(
+        subtotal=109.00, tax=14.17, total=123.17,
+        lines=[("Prime membership", 109.00, 0.0)],
+    )
+    assert check["status"] == "ok"
+    assert check["difference"] == 0.0
+
+
+def test_no_printed_total_is_unverified_not_ok():
+    """Nothing to check against — say so rather than claim the figures agree."""
+    _, _, check = _totals(
+        subtotal=1000.00, tax=130.00, total=None,
+        lines=[("Widgets", 1000.00, 130.00)],
+    )
+    assert check["status"] == "unverified"
+    assert check["difference"] is None
+    assert check["document_total"] is None
+
+
+def test_charge_without_a_printed_total_is_flagged_not_guessed_at():
+    """With no grand total, "billed on top of the subtotal" and "already one of
+    the lines" look identical — both leave the line sum equal to the subtotal.
+    Folding on a coin flip would double-pay half the time; say so instead."""
+    result, rows, check = _totals(
+        subtotal=1000.00, tax=130.00, total=None,
+        lines=[("Widgets", 1000.00, 130.00)],
+        charges=75.00, label="Freight",
+    )
+    assert result["subtotal"] == 1000.00
+    assert len(rows) == 1
+    assert check["status"] == "unverified"
+    assert check["repairs"] == []
+    assert any("Freight" in n and "75.00" in n for n in check["notes"])
+
+
+def test_missing_subtotal_is_taken_from_the_lines():
+    result, _, check = _totals(
+        subtotal=None, tax=130.00, total=1130.00,
+        lines=[("Widgets", 600.00, 78.00), ("Gadgets", 400.00, 52.00)],
+    )
+    assert result["subtotal"] == 1000.00
+    assert check["status"] == "repaired"
+    assert check["difference"] == 0.0
+
+
+def test_missing_subtotal_and_no_lines_falls_back_to_the_total():
+    result, _, check = _totals(
+        subtotal=None, tax=130.00, total=1130.00, lines=[],
+    )
+    assert result["subtotal"] == 1000.00
+    assert check["line_sum"] is None
+    assert check["status"] == "repaired"
+
+
+def test_credit_note_negatives_reconcile_the_same_way():
+    """Sign is carried through, not abs()'d — a credit note must check out too."""
+    result, _, check = _totals(
+        subtotal=-500.00, tax=-65.00, total=-565.00,
+        lines=[("Returned goods", -500.00, -65.00)],
+    )
+    assert result["subtotal"] == -500.00
+    assert check["status"] == "ok"
+
+
+def _mixed_tax_json() -> dict:
+    """Taxed + untaxed lines, subtotal counting only the taxed one (failure (a))."""
+    field = lambda v: {"value": v, "confidence": 1.0}  # noqa: E731
+    return {
+        "document_type": field("invoice"),
+        "vendor_name": field("Mixed Supply Co"),
+        "invoice_number": field("MS-7781"),
+        "po_number": field(None),
+        "invoice_date": field("2026-09-02"),
+        "due_date": field(None),
+        "payment_terms_net_days": field(30),
+        "currency": field("CAD"),
+        "subtotal": field(1000.00),      # the untaxed 200 line is missing from it
+        "tax_amount": field(130.00),
+        "other_charges": field(None),
+        "total_amount": field(1330.00),  # what the document prints
+        "line_items": [
+            {"description": "Taxable goods", "quantity": 1, "unit_price": 1000.00,
+             "amount": 1000.00, "tax_amount": 130.00},
+            {"description": "Exempt service", "quantity": 1, "unit_price": 200.00,
+             "amount": 200.00, "tax_amount": 0},
+        ],
+    }
+
+
+async def test_extract_invoice_recovers_the_untaxed_line(anthropic_stub):
+    """End to end: the amount EPMS prefills equals the document, not the taxed part."""
+    anthropic_stub.response = _response(json.dumps(_mixed_tax_json()))
+
+    result = await ocr_service.extract_invoice(b"%PDF-fake", "application/pdf")
+
+    assert result["subtotal"] == 1200.00
+    assert result["subtotal"] + result["tax_amount"] == result["total_amount"]
+    assert result["total_check"]["status"] == "repaired"
+
+
+def _freight_json() -> dict:
+    field = lambda v: {"value": v, "confidence": 1.0}  # noqa: E731
+    doc = _mixed_tax_json()
+    doc["subtotal"] = field(1000.00)
+    doc["tax_amount"] = field(130.00)
+    doc["other_charges"] = {"value": 75.00, "label": "Freight", "confidence": 1.0}
+    doc["total_amount"] = field(1205.00)
+    doc["line_items"] = [
+        {"description": "Taxable goods", "quantity": 1, "unit_price": 1000.00,
+         "amount": 1000.00, "tax_amount": 130.00},
+    ]
+    return doc
+
+
+async def test_extract_invoice_folds_freight_into_the_amount(anthropic_stub):
+    anthropic_stub.response = _response(json.dumps(_freight_json()))
+
+    result = await ocr_service.extract_invoice(b"%PDF-fake", "application/pdf")
+
+    assert result["subtotal"] == 1075.00
+    assert result["line_items"][-1]["description"] == "Freight"
+    assert result["total_check"]["status"] == "repaired"
+    assert result["total_check"]["difference"] == 0.0
+
+
+async def test_extract_invoice_flags_a_total_it_cannot_explain(anthropic_stub):
+    doc = _mixed_tax_json()
+    doc["line_items"] = doc["line_items"][:1]          # the 200 line never got extracted
+    anthropic_stub.response = _response(json.dumps(doc))
+
+    result = await ocr_service.extract_invoice(b"%PDF-fake", "application/pdf")
+
+    assert result["subtotal"] == 1000.00               # nothing invented
+    assert result["total_check"]["status"] == "mismatch"
+    assert result["total_check"]["difference"] == 200.00
+
+
+# Real document, 2026-09-19: "Invoice - (multiple).pdf", six Culligan Water
+# invoices one to a page. Sub-total 187.50, HST 0.98, Balance 188.48 — 0.98 is
+# 13% of the 7.50 delivery fee alone, because the water is zero-rated and the
+# bottle deposit is not taxed. Exactly the mixed taxed/untaxed shape that was
+# reported, on a vendor that also prints "Sales Tax" as a row in the line table
+# and leaves it out of the printed sub-total.
+
+CULLIGAN_LINES = [("Delivery Fee", 7.50, 0.98), ("18L RO Water Delv", 210.00, 0.0),
+                  ("Bottle Deposit", -30.00, 0.0)]
+
+
+def test_culligan_subtotal_summed_from_the_taxed_line_only_is_repaired():
+    """The reported bug on the real document: only the 7.50 taxed row reaches
+    the subtotal, and 180.00 of water and deposit is never paid."""
+    result, _, check = _totals(
+        subtotal=7.50, tax=0.98, total=188.48, lines=CULLIGAN_LINES,
+    )
+    assert result["subtotal"] == 187.50
+    assert check["status"] == "repaired"
+
+
+def test_culligan_tax_row_returned_as_a_line_does_not_trigger_a_repair():
+    """The header already reconciles (187.50 + 0.98 = 188.48). The lines summing
+    past the subtotal is the tax row being double-reported, not a missing line —
+    "correcting" the subtotal to 188.48 here would pay the tax twice."""
+    result, _, check = _totals(
+        subtotal=187.50, tax=0.98, total=188.48,
+        lines=[("Delivery Fee", 7.50, 0.98), ("Sales Tax", 0.98, 0.0),
+               ("18L RO Water Delv", 210.00, 0.0), ("Bottle Deposit", -30.00, 0.0)],
+    )
+    assert result["subtotal"] == 187.50
+    assert check["status"] == "ok"
+    assert check["repairs"] == []
+
+
+def test_culligan_zero_rated_line_lost_altogether_is_reported():
+    """When the line never got extracted there is nothing to repair from — the
+    210.00 shortfall has to reach a person."""
+    result, _, check = _totals(
+        subtotal=-22.50, tax=0.98, total=188.48,
+        lines=[("Delivery Fee", 7.50, 0.98), ("Bottle Deposit", -30.00, 0.0)],
+    )
+    assert check["status"] == "mismatch"
+    assert check["difference"] == 210.00
+
+
+def test_prompt_states_the_two_rules_the_failures_broke():
+    """The repairs above are a net, not the fix — the model has to be told."""
+    assert "other_charges" in ocr_service._INVOICE_PROMPT
+    assert "Never sum only the taxed lines." in ocr_service._INVOICE_PROMPT
+    assert "is not a line item, it is the tax" in ocr_service._INVOICE_PROMPT
