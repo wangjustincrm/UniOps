@@ -5,6 +5,7 @@
  * Styling follows GeneralLedgerPage (neutral palette, #085E5E primary).
  */
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BookOpen, Check, Loader2, RotateCcw, Send, Undo2, X } from 'lucide-react'
 import { financeApi } from '@/lib/api'
@@ -96,8 +97,17 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
   const v = data?.voucher
   const multiCurrency = data?.lines.some((l) => l.currency !== 'CAD') ?? false
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+  // Portalled to document.body, and a layer above the z-50 every other finance
+  // overlay uses. Both parts matter, and the second is why the first is not
+  // enough on its own: this modal is opened FROM list overlays
+  // (AccountVouchersModal, UnallocatedLinesModal) and has to sit above the one
+  // that launched it. UnallocatedLinesModal portals too, so while this one
+  // rendered inline it lost outright — same z-50, but a body child paints over
+  // a node nested in the page, whatever the JSX order says. Matching portals
+  // would leave the winner decided by mount order; the explicit higher layer
+  // says what is actually meant: the voucher is the child overlay.
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
@@ -213,7 +223,8 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
