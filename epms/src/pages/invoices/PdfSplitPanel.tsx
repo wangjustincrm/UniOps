@@ -44,10 +44,20 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
   onClose: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
   const taskRef = useRef<RenderTask | null>(null)
   const [fit, setFit] = useState(true)
   const [rendering, setRendering] = useState(true)
 
+  // The zoom is a RE-RENDER, not a CSS resize.
+  //
+  // The first attempt fitted with `max-h-full` on the canvas and toggled it
+  // off for actual size. It did nothing visible: a percentage max-height only
+  // binds against a definite container height, and inside a centred flex row
+  // there is none — so the canvas sat at its natural size in both states and
+  // the button looked broken. Deriving the scale from the box's measured size
+  // has no such dependency, and it renders at the resolution actually shown
+  // instead of letting the browser resample a bitmap drawn for another size.
   useEffect(() => {
     let cancelled = false
     setRendering(true)
@@ -56,17 +66,33 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
     pdf.getPage(page).then((p) => {
       if (cancelled) return
       const canvas = canvasRef.current
-      if (!canvas) return
-      const viewport = p.getViewport({ scale: 2 })
+      const box = boxRef.current
+      if (!canvas || !box) return
+
+      const unit = p.getViewport({ scale: 1 })
+      // Fit: as large as the box allows. Actual size: 2 CSS px per PDF point,
+      // ~200%, which is what reading a vendor's small print takes.
+      const fitScale = Math.min((box.clientWidth - 24) / unit.width,
+                                (box.clientHeight - 24) / unit.height)
+      // A box that has not been laid out yet measures 0, and a scale of 0 draws
+      // a 0x0 canvas — indistinguishable from "the viewer is broken".
+      const scale = fit ? (fitScale > 0 ? fitScale : 1) : 2
+      // Drawn at device resolution and laid out at CSS size, so a HiDPI screen
+      // gets a sharp page rather than an upscaled one.
+      const dpr = window.devicePixelRatio || 1
+      const viewport = p.getViewport({ scale: scale * dpr })
       canvas.width = viewport.width
       canvas.height = viewport.height
+      canvas.style.width = `${viewport.width / dpr}px`
+      canvas.style.height = `${viewport.height / dpr}px`
+
       const task = p.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport })
       taskRef.current = task
       return task.promise.then(() => { if (!cancelled) setRendering(false) })
     }).catch(() => { /* superseded by a newer render */ })
 
     return () => { cancelled = true; taskRef.current?.cancel() }
-  }, [pdf, page])
+  }, [pdf, page, fit])
 
   // Arrow keys page through, Escape closes — the same reflexes any viewer has.
   useEffect(() => {
@@ -81,9 +107,10 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
 
   return createPortal(
     // z-60: this opens from inside the upload modal, which is z-50.
-    <div className="fixed inset-0 z-[60] flex flex-col bg-neutral-900/80 backdrop-blur-sm"
-         onClick={onClose}>
-      <div className="flex shrink-0 items-center justify-between gap-3 px-5 py-3 text-sm text-neutral-100"
+    // Absolute bands rather than a flex column: the viewport box needs a
+    // definite height for both the scroll and the fit measurement above.
+    <div className="fixed inset-0 z-[60] bg-neutral-900/80 backdrop-blur-sm" onClick={onClose}>
+      <div className="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-3 px-5 text-sm text-neutral-100"
            onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3">
           <span className="font-medium">Page {page} of {pageCount}</span>
@@ -106,9 +133,9 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
             {startsInvoice ? 'Starts a new invoice' : 'Start a new invoice here'}
           </button>
           <button type="button" onClick={() => setFit((f) => !f)}
-                  className="rounded-lg bg-neutral-700 p-1.5 text-neutral-100 hover:bg-neutral-600"
-                  title={fit ? 'Actual size' : 'Fit to window'}>
-            {fit ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-700 px-3 py-1.5 text-xs font-medium text-neutral-100 hover:bg-neutral-600">
+            {fit ? <><Maximize2 className="h-3.5 w-3.5" /> Actual size</>
+                 : <><Minimize2 className="h-3.5 w-3.5" /> Fit to window</>}
           </button>
           <button type="button" onClick={onClose}
                   className="rounded-lg bg-neutral-700 p-1.5 text-neutral-100 hover:bg-neutral-600">
@@ -117,29 +144,31 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
         </div>
       </div>
 
-      <div className="flex flex-1 min-h-0 items-center gap-2 px-3 pb-4">
-        <button type="button" disabled={page === 1}
-                onClick={(e) => { e.stopPropagation(); onGo(page - 1) }}
-                className="shrink-0 rounded-full bg-neutral-700/80 p-2 text-white hover:bg-neutral-600 disabled:opacity-20">
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <div className="flex h-full flex-1 justify-center overflow-auto rounded-lg bg-neutral-800 p-2"
-             onClick={(e) => e.stopPropagation()}>
-          {rendering && (
-            <div className="flex items-center gap-2 text-sm text-neutral-400">
-              <Loader2 className="h-4 w-4 animate-spin" /> Rendering…
-            </div>
-          )}
-          <canvas ref={canvasRef}
-                  className={cn('rounded bg-white shadow-lg', rendering && 'hidden',
-                                fit ? 'max-h-full max-w-full object-contain' : 'max-w-none')} />
-        </div>
-        <button type="button" disabled={page === pageCount}
-                onClick={(e) => { e.stopPropagation(); onGo(page + 1) }}
-                className="shrink-0 rounded-full bg-neutral-700/80 p-2 text-white hover:bg-neutral-600 disabled:opacity-20">
-          <ChevronRight className="h-5 w-5" />
-        </button>
+      <div ref={boxRef}
+           className="absolute inset-x-14 bottom-4 top-14 overflow-auto rounded-lg bg-neutral-800 p-3"
+           onClick={(e) => e.stopPropagation()}>
+        {rendering && (
+          <div className="flex h-full items-center justify-center gap-2 text-sm text-neutral-400">
+            <Loader2 className="h-4 w-4 animate-spin" /> Rendering…
+          </div>
+        )}
+        {/* mx-auto, not a centring flex parent: a centred flex item that
+            overflows its scroll container has its top-left cut off and
+            unreachable, which is exactly the state "actual size" produces. */}
+        <canvas ref={canvasRef}
+                className={cn('mx-auto block rounded bg-white shadow-lg', rendering && 'hidden')} />
       </div>
+
+      <button type="button" disabled={page === 1}
+              onClick={(e) => { e.stopPropagation(); onGo(page - 1) }}
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-neutral-700/90 p-2 text-white hover:bg-neutral-600 disabled:opacity-20">
+        <ChevronLeft className="h-5 w-5" />
+      </button>
+      <button type="button" disabled={page === pageCount}
+              onClick={(e) => { e.stopPropagation(); onGo(page + 1) }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-neutral-700/90 p-2 text-white hover:bg-neutral-600 disabled:opacity-20">
+        <ChevronRight className="h-5 w-5" />
+      </button>
     </div>,
     document.body,
   )
