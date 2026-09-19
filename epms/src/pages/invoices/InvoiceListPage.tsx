@@ -29,6 +29,8 @@ import type { ApiPo } from '@/services/po'
 import { InvoiceAllocationPanel, type AllocationAssignment } from './InvoiceAllocationPanel'
 import { MatchPanel } from './MatchPanel'
 import { FilePreviewPanel } from './FilePreviewPanel'
+import { PdfSplitPanel } from './PdfSplitPanel'
+import { readPageCount, splitPdf, type PageGroup } from '@/lib/pdf-split'
 import { AssignMatchDialog } from './AssignMatchDialog'
 import { InvoiceChainDrawer } from './InvoiceChainDrawer'
 
@@ -112,6 +114,21 @@ interface UploadModalProps {
 const displayAmount = (raw: number, kind: 'invoice' | 'credit_note'): string =>
   String(kind === 'credit_note' ? Math.abs(raw) : raw)
 
+type PickedVendor = { id: string; name: string; code: string }
+
+/** Loose enough to survive "Culligan Water" vs "CULLIGAN WATER INC.".
+ *  Used only to decide whether to KEEP a vendor the user already picked while
+ *  stepping through invoices split out of one file — never to pick one. A false
+ *  negative just reopens the picker; a false positive is caught by the vendor
+ *  sitting there in the form, named, for the whole of the next invoice. */
+const vendorNamesLookAlike = (a: string, b: string): boolean => {
+  const norm = (v: string) => v.toLowerCase()
+    .replace(/\b(inc|ltd|llc|corp|co|company|limited|incorporated)\b/g, '')
+    .replace(/[^a-z0-9]/g, '')
+  const x = norm(a), y = norm(b)
+  return x.length > 2 && y.length > 2 && (x.includes(y) || y.includes(x))
+}
+
 function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const { data: invoicesData } = useInvoices()
   const invoices = invoicesData?.items ?? []
@@ -172,8 +189,33 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   // verified against the document must not be blocked by that.
   const [totalOverride, setTotalOverride] = useState(false)
 
-  const handleFile = async (f: File) => {
+  // ── Multi-invoice PDFs ─────────────────────────────────────────────────────
+  // A vendor's monthly PDF is often several complete invoices, one or more
+  // pages each. Uploaded whole that is ONE invoice in EPMS and the rest are
+  // never paid, so a multi-page PDF stops at the splitter first and a person
+  // says where the boundaries are. What comes back is a queue: each slice is
+  // parsed, checked and created on its own, through this very same form.
+  const [pendingSplit, setPendingSplit] = useState<File | null>(null)
+  const [splitting,    setSplitting]    = useState(false)
+  const [queue,        setQueue]        = useState<File[]>([])
+  const [queueIndex,   setQueueIndex]   = useState(0)
+  const [createdIds,   setCreatedIds]   = useState<string[]>([])
+
+  /** Load ONE invoice document into the form: reset, parse, prefill.
+   *
+   *  `keepVendor` carries a pick forward between invoices split out of the same
+   *  file — they are nearly always one vendor, and picking it six times is six
+   *  chances to pick wrong. Everything else is cleared: a queue item whose parse
+   *  comes back empty must not inherit the previous invoice's number, dates and
+   *  amounts and upload a duplicate of it under a new file name. */
+  const startInvoice = async (f: File, keepVendor: PickedVendor | null) => {
     setFile({ name: f.name, size: fmtSize(f.size), raw: f })
+    setSelectedVendor(keepVendor)
+    setVendorQuery(''); setVendorOpen(false)
+    setVendorInvoiceNumber(''); setPoNumber('')
+    setInvoiceDate(new Date().toISOString().slice(0, 10)); setDueDate('')
+    setAmount(''); setTaxAmount(''); setNotes('')
+    setSubmitted(false); setSubmitError(null); setCreatedInv(null)
     setParseError(null)
     setParseErrKind('file')
     setAiFields(new Set())
@@ -219,10 +261,16 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       setDocTypeAutoDetected(detected)
 
       if (fields.vendorName) {
-        setVendorQuery(fields.vendorName)
-        setVendorOpen(true)
-        setVendorHint(`AI extracted: "${fields.vendorName}"`)
-        filled.add('vendorName')
+        if (keepVendor && vendorNamesLookAlike(keepVendor.name, fields.vendorName)) {
+          // Same company as the invoice before it — leave the pick alone rather
+          // than dropping the user back into the picker for every slice.
+        } else {
+          setSelectedVendor(null)
+          setVendorQuery(fields.vendorName)
+          setVendorOpen(true)
+          setVendorHint(`AI extracted: "${fields.vendorName}"`)
+          filled.add('vendorName')
+        }
       }
 
       if (fields.vendorInvoiceNumber) { setVendorInvoiceNumber(fields.vendorInvoiceNumber); filled.add('vendorInvoiceNumber') }
@@ -281,6 +329,60 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       setParsing(false)
     }
   }
+
+  /** What a chosen file goes through before it becomes an invoice.
+   *
+   *  A multi-page PDF is held at the splitter; anything else (an image, a
+   *  one-page PDF, or a PDF pdf-lib cannot read) goes straight into the form,
+   *  exactly as it always has. */
+  const handleFile = async (f: File) => {
+    setQueue([]); setQueueIndex(0); setCreatedIds([]); setPendingSplit(null)
+    const pages = await readPageCount(f)
+    if (pages !== null && pages > 1) {
+      setFile({ name: f.name, size: fmtSize(f.size), raw: f })
+      setPendingSplit(f)
+      return
+    }
+    await startInvoice(f, null)
+  }
+
+  const confirmSplit = async (groups: PageGroup[]) => {
+    const source = pendingSplit
+    if (!source) return
+    setSplitting(true)
+    try {
+      const slices = await splitPdf(source, groups)
+      setQueue(slices.length > 1 ? slices : [])
+      setQueueIndex(0)
+      setPendingSplit(null)
+      await startInvoice(slices[0], null)
+    } catch {
+      // A PDF that will not cut must still be a PDF that uploads.
+      setPendingSplit(null)
+      await startInvoice(source, null)
+    } finally {
+      setSplitting(false)
+    }
+  }
+
+  /** One document is done. Step to the next slice, or hand back to the page.
+   *
+   *  Every invoice is created as it is confirmed, so abandoning a queue half way
+   *  leaves the finished ones real and visible in Unmatched — never a batch that
+   *  half-committed. */
+  const finishOne = (id: string, kind: 'invoice' | 'credit' = 'invoice') => {
+    setCreatedIds((prev) => [...prev, id])
+    const next = queueIndex + 1
+    if (next < queue.length) {
+      setQueueIndex(next)
+      void startInvoice(queue[next], selectedVendor)
+      return
+    }
+    onUploaded(id, kind)
+  }
+
+  const queueTotal     = queue.length
+  const queueRemaining = queueTotal > 0 ? queueTotal - queueIndex - 1 : 0
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
@@ -459,7 +561,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
             if (!res.ok) console.error('Credit note attachment upload failed:', res.status)
           }).catch((e) => console.error('Credit note attachment upload failed:', e))
         }
-        onUploaded(credit.id, 'credit')
+        finishOne(credit.id, 'credit')
       } catch (err) {
         const status = (err as { status?: number }).status
         setSubmitError(
@@ -516,13 +618,13 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
             ? { id: inv.id, allocations: lineAllocs, gr_id: linkedGr?.id }
             : { id: inv.id, po_id: matchedPo.id, gr_id: linkedGr?.id },
           {
-            onSuccess: () => onUploaded(inv.id),
+            onSuccess: () => finishOne(inv.id),
             onError: () => setCreatedInv(inv),   // fall back to manual panel
           },
         )
         return
       }
-      onUploaded(inv.id)
+      finishOne(inv.id)
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Upload failed')
     }
@@ -568,12 +670,12 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       matchInvoiceMutation.mutate(
         { id: createdInv.id, allocations: payload.allocations, non_po_lines: payload.nonPoLines,
           reference_po_id: payload.referencePoId ?? undefined, gr_id: linkedGr?.id },
-        { onSuccess: () => onUploaded(createdInv.id) },
+        { onSuccess: () => finishOne(createdInv.id) },
       )
     }
 
     // Closing/skipping keeps the invoice — it stays in the queue as unmatched.
-    const finishUnmatched = () => onUploaded(createdInv.id)
+    const finishUnmatched = () => finishOne(createdInv.id)
 
     return (
       <>
@@ -629,7 +731,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
           <AssignMatchDialog
             invoiceId={createdInv.id}
             onClose={() => setShowAssignDialog(false)}
-            onAssigned={() => { setShowAssignDialog(false); onUploaded(createdInv.id) }}
+            onAssigned={() => { setShowAssignDialog(false); finishOne(createdInv.id) }}
           />
         )}
       </>
@@ -649,8 +751,14 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               <Upload className="h-5 w-5 text-primary-600" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-neutral-900">Upload Invoice</h2>
-              <p className="text-xs text-neutral-400">New invoice will be queued for PO matching</p>
+              <h2 className="text-sm font-semibold text-neutral-900">
+                {queueTotal > 1 ? `Upload Invoice ${queueIndex + 1} of ${queueTotal}` : 'Upload Invoice'}
+              </h2>
+              <p className="text-xs text-neutral-400">
+                {queueTotal > 1
+                  ? `${file?.name ?? ''} · ${createdIds.length} of ${queueTotal} created so far`
+                  : 'New invoice will be queued for PO matching'}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
@@ -714,6 +822,17 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
             </div>
           )}
 
+          {/* A multi-page PDF is cut first — the thumbnails ARE the preview, so
+              the splitter takes the whole body until the boundaries are settled. */}
+          {pendingSplit ? (
+          <PdfSplitPanel
+            file={pendingSplit}
+            busy={splitting}
+            onConfirm={confirmSplit}
+            onCancel={() => { const f = pendingSplit; setPendingSplit(null); void startInvoice(f, null) }}
+          />
+          ) : (
+          <>
           {/* File selected: preview (left) + form (right). No file: `contents`
               makes both wrappers transparent so the layout is exactly as before. */}
           <div className={cn(file ? 'flex flex-1 min-h-0 gap-5' : 'contents')}>
@@ -1138,10 +1257,19 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
           </div>
           </div>
+          </>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="border-t border-neutral-100 px-6 py-4 flex flex-col gap-2 shrink-0">
+        <div className={cn('border-t border-neutral-100 px-6 py-4 flex-col gap-2 shrink-0',
+                           pendingSplit ? 'hidden' : 'flex')}>
+          {queueRemaining > 0 && (
+            <p className="text-xs text-neutral-500">
+              {queueRemaining} more {queueRemaining === 1 ? 'invoice' : 'invoices'} from this file after
+              this one. Each is created as you confirm it — closing now keeps what is already created.
+            </p>
+          )}
           {submitError && (
             <div className="flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -1154,7 +1282,9 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               <Upload className="h-4 w-4" />
               {createInvoice.isPending || createVendorCredit.isPending || matchInvoiceMutation.isPending
                 ? 'Uploading…'
-                : docType === 'credit_note' ? 'Upload Credit Note' : 'Upload Invoice'}
+                : docType === 'credit_note' ? 'Upload Credit Note'
+                : queueRemaining > 0 ? 'Upload & next'
+                : 'Upload Invoice'}
             </Button>
           </div>
         </div>
