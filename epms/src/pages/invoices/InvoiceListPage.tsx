@@ -6,7 +6,7 @@ import {
   X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2, UserPlus,
   ArrowDown, ArrowUp, ArrowUpDown,
 } from 'lucide-react'
-import { parseInvoiceFile, type ParseFailureKind } from '@/lib/invoice-parser'
+import { parseInvoiceFile, type ParseFailureKind, type ParsedTotalCheck } from '@/lib/invoice-parser'
 import { EXPENSE_BASE } from '@/lib/api'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
@@ -164,6 +164,13 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const [aiFields,      setAiFields]      = useState<Set<string>>(new Set())
   const [vendorHint,    setVendorHint]    = useState<string | null>(null)
   const [netTermsHint,  setNetTermsHint]  = useState<string | null>(null)
+  // The arithmetic check expense-api ran over the document (null when the file
+  // was not parsed, or the extraction found no printed total to check against).
+  const [totalCheck,    setTotalCheck]    = useState<ParsedTotalCheck | null>(null)
+  // Set by the operator to upload despite a total that does not reconcile —
+  // OCR can misread the grand total itself, and a hand-keyed figure they have
+  // verified against the document must not be blocked by that.
+  const [totalOverride, setTotalOverride] = useState(false)
 
   const handleFile = async (f: File) => {
     setFile({ name: f.name, size: fmtSize(f.size), raw: f })
@@ -177,6 +184,8 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
     setDocTypeAutoDetected(false)
     setRawAmount(null)
     setRawTax(null)
+    setTotalCheck(null)
+    setTotalOverride(false)
 
     setParsing(true)
     try {
@@ -240,6 +249,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       }
 
       const kind = detected ? 'credit_note' : 'invoice'
+      setTotalCheck(fields.totalCheck)
       setRawAmount(fields.amount)
       setRawTax(fields.taxAmount)
       if (fields.amount    !== null)  { setAmount(displayAmount(fields.amount, kind)); filled.add('amount') }
@@ -287,6 +297,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   // positive invoice. No-ops when there is nothing parsed (manual entry).
   const changeDocType = (next: 'invoice' | 'credit_note') => {
     setDocType(next)
+    setTotalOverride(false)   // the amounts are re-derived below — re-check them
     if (rawAmount !== null) setAmount(displayAmount(rawAmount, next))
     if (rawTax    !== null) setTaxAmount(displayAmount(rawTax, next))
   }
@@ -294,6 +305,50 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const amtNum = parseFloat(amount) || 0
   const taxNum = parseFloat(taxAmount) || 0
   const total  = amtNum + taxNum
+
+  // ── Total check ────────────────────────────────────────────────────────────
+  // EPMS has exactly two money fields and derives the invoice total from them
+  // (epms-api: total_amount = amount + tax_amount). So whatever the extraction
+  // leaves out of Amount and Tax is simply never paid, on an invoice that goes
+  // on to match, approve and pay like any other. Two shapes did that silently:
+  // an untaxed line dropped out of a subtotal the model summed from the taxed
+  // rows only, and a freight / late fee printed under the subtotal, which is
+  // neither a line nor a tax and had nowhere to go.
+  //
+  // expense-api repairs the provable ones; this is the net under the rest, and
+  // it stays live while the fields are edited by hand — the comparison is
+  // against the grand total PRINTED on the document, not against anything
+  // re-derived from the same figures being checked.
+  //
+  // Credit notes are entered as positive figures (see displayAmount), so the
+  // printed total — negative on the document — is compared by magnitude.
+  const docTotalRaw = totalCheck?.documentTotal ?? null
+  const docTotal = docTotalRaw === null
+    ? null
+    : (docType === 'credit_note' ? Math.abs(docTotalRaw) : docTotalRaw)
+  // Cents, not floats: 109 + 14.17 is 123.17000000000002, and 2e-14 must not
+  // read as "the total does not match". 2 cents of slack, same as the server.
+  const totalDiff = docTotal === null
+    ? null
+    : (Math.round(docTotal * 100) - Math.round(total * 100)) / 100
+  const totalMismatch = totalDiff !== null && Math.abs(totalDiff) > 0.02
+  // Not gated on status: a repair can also land on an invoice whose grand total
+  // was unreadable ('unverified'), and that is exactly when the operator most
+  // needs to be told the amount is not the figure printed beside "Subtotal".
+  const totalRepairs = totalCheck?.repairs ?? []
+  // Things the server could not settle on its own — e.g. a freight figure on an
+  // invoice whose grand total was unreadable, where "billed on top" and "already
+  // one of the lines" are indistinguishable. Shown, never acted on.
+  const totalNotes = totalCheck?.notes ?? []
+
+  /** Trust the printed grand total and put the residual on the pre-tax amount —
+   *  the tax is the figure vendors print most legibly, and every failure shape
+   *  seen so far short-changed the amount, not the tax. */
+  const useDocumentTotal = () => {
+    if (docTotal === null) return
+    setAmount(String(Math.round((docTotal - taxNum) * 100) / 100))
+    setAiFields((prev) => { const n = new Set(prev); n.delete('amount'); return n })
+  }
 
   // Kept as a separate boolean (not inlined into the JSX ternary condition):
   // if the ternary's test were `docType === 'credit_note'` directly, TS
@@ -350,6 +405,20 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
         docType === 'credit_note'
           ? 'Credit amount must be greater than zero.'
           : 'Negative total — this looks like a Credit Note. Switch the document type above.',
+      )
+      return
+    }
+    // The total does not reconcile with the document and nobody has said it is
+    // fine anyway. Blocking here rather than warning: the failure this guards
+    // against is invisible downstream — an invoice short by a dropped line or
+    // an unrecorded freight charge matches, approves and pays exactly like a
+    // correct one, and the vendor is the only party who ever finds out.
+    if (totalMismatch && !totalOverride) {
+      setSubmitError(
+        `Amount + tax is ${formatAmount(total, currency)} but the document total reads ` +
+        `${formatAmount(docTotal ?? 0, currency)} (difference ${formatAmount(Math.abs(totalDiff ?? 0), currency)}). ` +
+        'Check for a line item or a charge (freight, late fee) that was not picked up, ' +
+        'or confirm the figures above the line items to upload anyway.',
       )
       return
     }
@@ -860,6 +929,9 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               <input type="number" min={0} step={0.01} value={amount}
                 onChange={(e) => {
                   setAmount(e.target.value)
+                  // "these figures are correct" was given about the figures that
+                  // were on screen then; editing one withdraws it.
+                  setTotalOverride(false)
                   setAiFields((prev) => { const n = new Set(prev); n.delete('amount'); return n })
                 }}
                 placeholder="0.00"
@@ -874,6 +946,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               <input type="number" min={0} step={0.01} value={taxAmount}
                 onChange={(e) => {
                   setTaxAmount(e.target.value)
+                  setTotalOverride(false)
                   setAiFields((prev) => { const n = new Set(prev); n.delete('taxAmount'); return n })
                 }}
                 placeholder="0.00"
@@ -895,10 +968,72 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
             </div>
           </div>
 
-          {total > 0 && (
-            <div className="rounded-lg bg-neutral-50 border border-neutral-200 px-4 py-2.5 flex justify-between text-sm">
-              <span className="text-neutral-500">Total Amount</span>
-              <span className="font-mono font-semibold text-neutral-900">{formatAmount(total, currency)}</span>
+          {/* Also renders on a zero total when there is something to say about it —
+              a repair or a note must never be hidden by the figure it is about. */}
+          {(total > 0 || docTotal !== null || totalRepairs.length > 0 || totalNotes.length > 0) && (
+            <div className={cn(
+              'rounded-lg border px-4 py-2.5 text-sm',
+              totalMismatch ? 'border-danger-300 bg-danger-50' : 'border-neutral-200 bg-neutral-50',
+            )}>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Total Amount</span>
+                <span className="font-mono font-semibold text-neutral-900">{formatAmount(total, currency)}</span>
+              </div>
+
+              {docTotal !== null && (
+                <div className="mt-1 flex justify-between text-xs">
+                  <span className="text-neutral-500">Total printed on the document</span>
+                  <span className={cn('font-mono', totalMismatch ? 'font-semibold text-danger-700' : 'text-neutral-500')}>
+                    {formatAmount(docTotal, currency)}
+                  </span>
+                </div>
+              )}
+
+              {totalMismatch && (
+                <div className="mt-2 border-t border-danger-200 pt-2">
+                  <p className="flex items-start gap-1.5 text-xs text-danger-700">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      Off by <span className="font-mono font-semibold">{formatAmount(Math.abs(totalDiff ?? 0), currency)}</span>
+                      {(totalDiff ?? 0) > 0 ? ' short of' : ' over'} the invoice.
+                      Look for a line item, or a charge such as freight or a late fee, that was not picked up.
+                    </span>
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                    <button
+                      type="button"
+                      onClick={useDocumentTotal}
+                      className="text-xs font-medium text-primary-600 underline hover:text-primary-700"
+                    >
+                      Set Amount so the total matches
+                    </button>
+                    <label className="flex items-center gap-1.5 text-xs text-neutral-600">
+                      <input type="checkbox" checked={totalOverride}
+                             onChange={(e) => setTotalOverride(e.target.checked)} />
+                      The amounts above are correct — upload anyway
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {!totalMismatch && totalRepairs.length > 0 && (
+                <div className="mt-2 border-t border-neutral-200 pt-2">
+                  <p className="text-xs font-medium text-neutral-600">
+                    Adjusted so the total matches the document:
+                  </p>
+                  <ul className="mt-1 list-disc pl-4 text-xs text-neutral-500">
+                    {totalRepairs.map((r, i) => <li key={i}>{r}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {totalNotes.length > 0 && (
+                <div className="mt-2 border-t border-warning-200 pt-2">
+                  <ul className="list-disc pl-4 text-xs text-warning-700">
+                    {totalNotes.map((n, i) => <li key={i}>{n}</li>)}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
 
