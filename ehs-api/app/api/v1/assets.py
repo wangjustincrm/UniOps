@@ -148,6 +148,24 @@ async def return_to_service(asset_id: uuid.UUID, db: SessionDep, user: CanManage
     return await crud.return_to_service(db, await crud.get_asset(db, asset_id))
 
 
+@router.post("/{asset_id}/inspections", response_model=InspectionOut,
+             status_code=status.HTTP_201_CREATED)
+async def record_check_now(
+    asset_id: uuid.UUID, payload: RecordIn, db: SessionDep, user: CanInspectAsset,
+):
+    """Record a check done now, whether or not one was due.
+
+    The only way to record one was against an occurrence the sweep had already
+    raised — so with nothing due on anything, pressing "record a check" saved
+    nothing at all. The schedule says when a check is owed, not when one is
+    allowed to happen.
+    """
+    asset = await crud.get_asset(db, asset_id)
+    return await crud.record_ad_hoc(
+        db, asset, result=payload.result, notes=payload.notes,
+        user_id=_user_id(user), performed_on=payload.performed_on)
+
+
 @router.post("/inspections/{inspection_id}/record", response_model=InspectionOut)
 async def record_inspection(
     inspection_id: uuid.UUID, payload: RecordIn, db: SessionDep, user: CanInspectAsset,

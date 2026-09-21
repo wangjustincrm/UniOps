@@ -220,3 +220,51 @@ async def test_thresholds_follow_configuration(db_session, monkeypatch, test_eng
 
     await scheduler.run_tick(NOW)
     assert action.escalation_level == 2
+
+
+async def test_a_check_can_be_recorded_when_none_was_due(hse_manager, test_engine):
+    """The schedule says when a check is owed, not when one may happen.
+
+    Recording was only possible against an occurrence the sweep had already
+    raised. With nothing due on anything — every asset weeks out — pressing
+    "record a check" had no row to write to and saved nothing, which the second
+    acceptance round reported as checks not being logged anywhere. Somebody
+    walks past an extinguisher and looks at it; that is a check.
+    """
+    from sqlalchemy import text
+    _, client = hse_manager
+
+    asset = (await client.post("/api/v1/safety-assets", json={
+        "name": "Extinguisher by the dryer door",
+        "inspection_frequency": "monthly",
+    })).json()
+
+    async with test_engine.begin() as conn:
+        due_before = (await conn.execute(text(
+            "SELECT count(*) FROM ehs_asset_inspections WHERE asset_id = :a"),
+            {"a": asset["id"]})).scalar()
+    assert due_before == 0, "nothing is due on a brand new asset"
+
+    done = await client.post(f"/api/v1/safety-assets/{asset['id']}/inspections",
+                             json={"result": "passed", "notes": "Gauge in the green"})
+    assert done.status_code == 201, done.text
+    assert done.json()["result"] == "passed"
+
+    after = (await client.get(f"/api/v1/safety-assets/{asset['id']}")).json()
+    assert after["last_inspected_on"] is not None, "the check has to count for something"
+    assert after["status"] == "in_service"
+
+
+async def test_failing_an_ad_hoc_check_takes_the_item_out_of_service(hse_manager):
+    """Same consequences as a scheduled one, or it is not really a check."""
+    _, client = hse_manager
+    asset = (await client.post("/api/v1/safety-assets", json={
+        "name": "Eye wash by the caustic line",
+        "inspection_frequency": "monthly",
+    })).json()
+
+    await client.post(f"/api/v1/safety-assets/{asset['id']}/inspections",
+                      json={"result": "failed", "notes": "No flow"})
+
+    after = (await client.get(f"/api/v1/safety-assets/{asset['id']}")).json()
+    assert after["status"] == "out_of_service"

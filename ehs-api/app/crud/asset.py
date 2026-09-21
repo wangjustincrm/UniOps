@@ -271,6 +271,47 @@ async def record_inspection(
     return inspection
 
 
+async def record_ad_hoc(
+    db: AsyncSession, asset: SafetyAsset, *, result: str, notes: str | None,
+    user_id: uuid.UUID, performed_on: date | None = None,
+) -> AssetInspection:
+    """A check somebody did, whether or not one was due.
+
+    Recording only against an occurrence the sweep had already raised was the
+    whole of it, and the second acceptance round found what that means on the
+    floor: "record a check is not logged anywhere once complete." Nothing was
+    due on anything — every asset's next check was weeks out — so there was no
+    row to record against and the check went nowhere.
+
+    That is not how equipment is checked. Somebody walks past an extinguisher,
+    looks at it, and that is a check; the schedule says when one is *owed*, not
+    when one may happen. So this makes the occurrence and records it in the
+    same breath, and it counts: the asset's last-checked date moves, a failure
+    takes it out of service, and the next due date is measured from today
+    rather than from the date somebody missed.
+    """
+    when = performed_on or date.today()
+    inspection = AssetInspection(
+        id=uuid.uuid4(),
+        asset_id=asset.id,
+        due_on=when,
+        result="due",
+    )
+    db.add(inspection)
+    await db.flush()
+
+    await record_inspection(
+        db, inspection, result=result, notes=notes,
+        submission_id=None, user_id=user_id, performed_on=when)
+
+    # Checking early moves the cycle rather than leaving a second check owed
+    # next week for something just looked at.
+    if asset.inspection_frequency:
+        asset.next_due_on = next_due(when, asset.inspection_frequency)
+    await db.flush()
+    return inspection
+
+
 async def return_to_service(db: AsyncSession, asset: SafetyAsset) -> SafetyAsset:
     """Put a repaired or replaced item back, and restart its cycle."""
     if asset.status == "retired":

@@ -22,7 +22,8 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { LocationSelect } from '@/components/LocationSelect'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, Tabs, inputClass, primaryButton, secondaryButton,
+  Card, dangerButton, Empty, ErrorNote, Field, PageHeader, Tabs, inputClass,
+  primaryButton, secondaryButton,
 } from '@/components/ui'
 
 interface Asset {
@@ -110,7 +111,7 @@ export default function SafetyEquipmentPage() {
       )}
       {tab === 'register' && (
         <RegisterTab
-          assets={assets.data ?? []} mayManage={mayManage}
+          assets={assets.data ?? []} mayManage={mayManage} mayInspect={mayInspect}
           focusedId={focused}
           onClearFocus={() => setParams({}, { replace: true })}
         />
@@ -247,13 +248,17 @@ function RecordDialog(
 }
 
 function RegisterTab({
-  assets, mayManage, focusedId, onClearFocus,
+  assets, mayManage, mayInspect, focusedId, onClearFocus,
 }: {
-  assets: Asset[]; mayManage: boolean
+  assets: Asset[]; mayManage: boolean; mayInspect: boolean
   focusedId?: string | null; onClearFocus?: () => void
 }) {
   const queryClient = useQueryClient()
   const [codeFor, setCodeFor] = useState<string | null>(null)
+  // A check somebody did, whether or not one was due. Recording was only
+  // possible against an occurrence the sweep had raised, and with nothing due
+  // on anything, pressing the button saved nothing.
+  const [checkingNow, setCheckingNow] = useState<Asset | null>(null)
   const [adding, setAdding] = useState(false)
   const shown = focusedId ? assets.filter((a) => a.id === focusedId) : assets
 
@@ -321,6 +326,16 @@ function RegisterTab({
                     </span>
                   </span>
 
+                  {mayInspect && a.status === 'in_service' && (
+                    <button
+                      type="button"
+                      onClick={() => setCheckingNow(a)}
+                      className="flex min-h-[32px] shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-primary-700 hover:bg-primary-50"
+                    >
+                      Record a check
+                    </button>
+                  )}
+
                   {a.qr_token && (
                     <button
                       type="button"
@@ -366,6 +381,9 @@ function RegisterTab({
             </li>
           ))}
         </ul>
+      )}
+      {checkingNow && (
+        <AdHocCheck asset={checkingNow} onClose={() => setCheckingNow(null)} />
       )}
       <ErrorNote error={restore.error} />
     </>
@@ -445,5 +463,55 @@ function NewAssetForm({ onClose }: { onClose: () => void }) {
         </button>
       </div>
     </Card>
+  )
+}
+
+/** Recording a check done now. The schedule says when one is owed, not when
+ *  one may happen. */
+function AdHocCheck({ asset, onClose }: { asset: Asset; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [notes, setNotes] = useState('')
+  const record = useMutation({
+    mutationFn: (result: 'passed' | 'failed') =>
+      api.post(`/api/v1/safety-assets/${asset.id}/inspections`,
+               { result, notes: notes || null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['safety-assets'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-inspections'] })
+      onClose()
+    },
+  })
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
+      <div role="dialog" aria-modal="true" aria-label="Record a check"
+           className="w-full max-w-md rounded-t-2xl bg-white p-4 sm:rounded-2xl">
+        <h2 className="text-sm font-semibold text-neutral-900">{asset.name}</h2>
+        <p className="mt-0.5 text-xs text-neutral-500">
+          {asset.asset_no}{asset.location_path ? ` · ${asset.location_path}` : ''}
+        </p>
+        <Field label="Notes" hint="What you saw. Kept on the register.">
+          <input className={inputClass} value={notes}
+                 onChange={(e) => setNotes(e.target.value)}
+                 placeholder="Gauge in the green, seal intact" />
+        </Field>
+        <p className="mt-2 text-xs text-neutral-500">
+          Failing it takes the item out of service and raises a corrective
+          action, which is the point of saying so.
+        </p>
+        <ErrorNote error={record.error} />
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
+          <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
+          <button type="button" className={dangerButton} disabled={record.isPending}
+                  onClick={() => { if (!record.isPending) record.mutate('failed') }}>
+            Failed
+          </button>
+          <button type="button" className={primaryButton} disabled={record.isPending}
+                  onClick={() => { if (!record.isPending) record.mutate('passed') }}>
+            {record.isPending ? 'Recording…' : 'Passed'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
