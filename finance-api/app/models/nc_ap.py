@@ -121,6 +121,75 @@ class NcApSyncRun(UUIDPrimaryKey, TimestampMixin, Base):
     bills_upserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     lines_upserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     lines_deleted: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    payments_upserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    payment_lines_upserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    payment_lines_deleted: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     tie_out_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     tie_out: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class NcApPayment(UUIDPrimaryKey, TimestampMixin, Base):
+    """NC payment document (付款单). Mirrored because the payables alone cannot
+    tell you whether a supplier's open balance is real — see 0034's note."""
+    __tablename__ = "nc_ap_payments"
+
+    nc_pk: Mapped[str] = mapped_column(String(25), nullable=False, unique=True)
+    bill_no: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    trade_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    bill_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    src_syscode: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bill_year: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    bill_period: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    bill_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pay_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    approve_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    bill_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    approve_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    money: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    local_money: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    invoice_no: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    invoice_no_norm: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    settle_flag: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    scomment: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    nc_ts: Mapped[str] = mapped_column(String(19), nullable=False, index=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    lines: Mapped[list["NcApPaymentLine"]] = relationship(
+        back_populates="payment", cascade="all, delete-orphan", passive_deletes=True)
+
+
+class NcApPaymentLine(Base):
+    __tablename__ = "nc_ap_payment_lines"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True,
+                                          default=uuid.uuid4)
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nc_ap_payments.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    nc_pk: Mapped[str] = mapped_column(String(25), nullable=False, unique=True)
+    row_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bill_no: Mapped[str] = mapped_column(String(40), nullable=False)
+    bill_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pay_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    bill_year: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    bill_period: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    money_de: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    money_bal: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    local_money_de: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    settle_money: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    subject_code: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    supplier_pk: Mapped[str | None] = mapped_column(String(25), nullable=True)
+    supplier_code: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    supplier_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    src_bill_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    src_bill_id: Mapped[str | None] = mapped_column(String(25), nullable=True, index=True)
+    top_bill_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    top_bill_id: Mapped[str | None] = mapped_column(String(25), nullable=True)
+    scomment: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    nc_ts: Mapped[str] = mapped_column(String(19), nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    payment: Mapped[NcApPayment] = relationship(back_populates="lines")

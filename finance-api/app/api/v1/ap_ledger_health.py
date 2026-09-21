@@ -1,0 +1,30 @@
+"""Payable subledger health — which suppliers' open balances can be trusted.
+
+Read-only. Sits under the same finance read authorisation as the rest of the
+reporting surface.
+"""
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.deps import CurrentUser
+from app.db.base import get_db
+from app.services import ap_ledger_health as svc
+
+router = APIRouter(prefix="/ap-ledger-health", tags=["ap-ledger-health"])
+
+
+@router.get("/summary")
+async def summary(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    return await svc.summary(db)
+
+
+@router.get("/items")
+async def items(user: CurrentUser,
+                health: str | None = Query(None),
+                currency: str | None = Query(None),
+                limit: int = Query(200, ge=1, le=1000),
+                db: AsyncSession = Depends(get_db)):
+    if health is not None and health not in (svc.CONSISTENT, svc.UNCLEARED):
+        raise HTTPException(status_code=422,
+                            detail=f"health must be {svc.CONSISTENT} or {svc.UNCLEARED}")
+    return await svc.items(db, health=health, currency=currency, limit=limit)
