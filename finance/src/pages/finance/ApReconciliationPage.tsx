@@ -150,7 +150,7 @@ export default function ApReconciliationPage() {
     queryKey: ['ap-recon-summary', includePaid],
     queryFn: () => financeApi.get<SummaryResp>(`/ap-recon/summary?${qs}`),
   })
-  const { data: items, isFetching: loadingItems } = useQuery({
+  const { data: items, isFetching: loadingItems, error: itemsError } = useQuery({
     queryKey: ['ap-recon-items', category, offset, includePaid],
     queryFn: () => financeApi.get<ItemsResp>(
       `/ap-recon/items?category=${category}&limit=${PAGE}&offset=${offset}&${qs}`),
@@ -321,6 +321,13 @@ export default function ApReconciliationPage() {
               {loadingItems && !items ? (
                 <tr><td colSpan={10} className="px-3 py-8 text-center">
                   <Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" />
+                </td></tr>
+              ) : itemsError ? (
+                // A failed request must never read as "nothing here" — that is
+                // how a summary saying 145 sits next to an empty table with no
+                // hint that anything went wrong.
+                <tr><td colSpan={10} className="px-3 py-8 text-center text-danger-700">
+                  Could not load this category: {String((itemsError as Error).message ?? itemsError)}
                 </td></tr>
               ) : (items?.items.length ?? 0) === 0 ? (
                 <tr><td colSpan={10} className="px-3 py-8 text-center text-neutral-400">

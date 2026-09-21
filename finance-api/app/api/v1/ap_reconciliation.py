@@ -16,8 +16,10 @@ from app.services import ap_reconciliation as svc
 
 router = APIRouter(prefix="/ap-recon", tags=["ap-recon"])
 
-_CATEGORIES = {svc.NO_MATCH, svc.INVOICE_NO_MISMATCH, svc.IN_NC_OPEN,
-               svc.IN_NC_SETTLED, svc.NOT_SUBMITTED}
+# Derived, never hand-listed: a category the summary can report but this set
+# omits would be counted on screen and 422 on click, with the page showing
+# "nothing in this category" and no sign that anything failed.
+_CATEGORIES = set(svc.CATEGORIES)
 
 
 def _filters(date_from: date | None, date_to: date | None,

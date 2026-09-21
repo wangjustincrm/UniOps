@@ -41,6 +41,12 @@ INVOICE_NO_MISMATCH = "invoice_no_mismatch"  # same supplier + amount, different
 NOT_SUBMITTED = "not_submitted"            # our draft — expected to be absent
 IN_NC_UNAPPROVED = "in_nc_unapproved"      # NC has a document, but never approved it
 
+# The single source of truth for what the summary can report and the drill-down
+# will accept. Hand-maintaining a second copy in the API layer is how a category
+# ends up counted in the summary and 422-ing on click.
+CATEGORIES = (NO_MATCH, IN_NC_UNAPPROVED, INVOICE_NO_MISMATCH,
+              IN_NC_OPEN, IN_NC_SETTLED, NOT_SUBMITTED)
+
 # Amount tolerance when matching by money instead of by number. NC and we both
 # store 2dp, so this is a guard against representation noise, not fuzziness.
 AMOUNT_EPSILON = "0.01"
@@ -196,8 +202,7 @@ async def summary(db: AsyncSession, f: ReconFilters) -> dict:
     rows = (await db.execute(text(sql), params)).mappings().all()
     by_cat = {r["category"]: dict(r) for r in rows}
     out = []
-    for key in (NO_MATCH, IN_NC_UNAPPROVED, INVOICE_NO_MISMATCH, IN_NC_OPEN,
-                IN_NC_SETTLED, NOT_SUBMITTED):
+    for key in CATEGORIES:
         r = by_cat.get(key)
         out.append({
             "category": key,
