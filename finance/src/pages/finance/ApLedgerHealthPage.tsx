@@ -57,6 +57,8 @@ interface OpenBill {
   money_cr: string | null; money_bal: string | null
   /** What NC's own payment documents say was already paid against THIS bill. */
   paid_against: string | null
+  /** How many approved payment lines point at this bill. */
+  payment_lines: number
   invoice_no: string | null; purchase_order: string | null; trade_type: string | null
 }
 interface PayLine {
@@ -64,6 +66,8 @@ interface PayLine {
   money_de: string | null
   applied_to_bill_no: string | null
   applied_bill_still_open: string | null
+  /** The payable this cleared is STILL flagged open — paid but never applied. */
+  applied_bill_is_open: boolean
   scomment: string | null
 }
 interface BillsTotal { bills: number; money_cr: string; money_bal: string; paid_against: string }
@@ -141,8 +145,17 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
   // the complaint this answers, but the count is always on screen and one
   // click brings them back, dimmed. Never silently dropped.
   const [hideOffsets, setHideOffsets] = useState(true)
+  // Click a bill or a payment to light up its counterpart. The link exists in
+  // NC (a payment carries the payable it cleared) but nothing on a flat pair of
+  // tables shows it.
+  const [linkedBill, setLinkedBill] = useState<string | null>(null)
   const bills = data?.open_bills ?? []
   const pays = data?.payments ?? []
+  // How often a payment here settled one of the bills still listed opposite.
+  // Usually never: a payment closes what it pays, so an open bill and a
+  // recorded payment are two nearly disjoint populations. When it is NOT zero,
+  // those are bills that were paid and never cleared.
+  const paysToOpen = pays.filter((p) => p.applied_bill_is_open).length
   const untied = pays.filter((p) => !p.applied_to_bill_no).length
   // The sharper finding: bills that are fully covered by payments pointing
   // straight at them, and are still flagged open. Nothing to chase — just
@@ -199,9 +212,19 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                       const covered = Number(b.paid_against ?? 0) >= Number(b.money_cr ?? 0)
                         && Number(b.money_cr ?? 0) > 0
                       return (
-                        <tr key={b.bill_no} className={cn('border-t border-neutral-100',
-                                                          covered && 'bg-amber-50/60')}>
-                          <td className="px-2.5 py-1.5 font-mono">{b.bill_no}</td>
+                        <tr key={b.bill_no}
+                            onClick={() => setLinkedBill(linkedBill === b.bill_no ? null : b.bill_no)}
+                            className={cn('cursor-pointer border-t border-neutral-100',
+                                          covered && 'bg-amber-50/60',
+                                          linkedBill === b.bill_no && 'ring-2 ring-inset ring-[#085E5E]')}>
+                          <td className="px-2.5 py-1.5 font-mono">
+                            {b.bill_no}
+                            {b.payment_lines > 0 && (
+                              <span className="ml-1.5 rounded bg-primary-100 px-1 py-0.5 text-[10px] font-semibold text-[#085E5E]">
+                                {b.payment_lines} pmt
+                              </span>
+                            )}
+                          </td>
                           <td className="px-2.5 py-1.5 text-neutral-600">{day(b.bill_date)}</td>
                           <td className="px-2.5 py-1.5 font-mono text-neutral-600">{b.invoice_no ?? '—'}</td>
                           <td className="px-2.5 py-1.5 text-right font-mono tabular-nums">{money(b.money_cr)}</td>
@@ -231,7 +254,16 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
             </div>
 
             <div className="min-w-0">
-              <h3 className="mb-2 text-sm font-semibold text-neutral-800">Payments recorded for this supplier</h3>
+              <h3 className="mb-1 text-sm font-semibold text-neutral-800">Payments recorded for this supplier</h3>
+              <p className="mb-2 text-[11px] leading-relaxed text-neutral-500">
+                Each payment carries the payable it cleared. Click either side to light up its
+                counterpart.{' '}
+                {paysToOpen === 0
+                  ? <>None of these cleared a bill still listed opposite — expected, since a payment
+                      closes what it pays, so the two lists barely overlap.</>
+                  : <span className="font-medium text-amber-700">{paysToOpen} of them cleared a bill
+                      that is STILL flagged open — paid, but never applied.</span>}
+              </p>
               <div className="max-h-[52vh] overflow-auto rounded-lg border border-neutral-200">
                 <table className="w-full min-w-[440px] text-xs">
                   <thead className="sticky top-0 bg-neutral-50">
@@ -246,7 +278,13 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                     {pays.length === 0 ? (
                       <tr><td colSpan={4} className="px-2.5 py-6 text-center text-neutral-400">None.</td></tr>
                     ) : pays.map((p, i) => (
-                      <tr key={p.bill_no + i} className="border-t border-neutral-100">
+                      <tr key={p.bill_no + i}
+                          onClick={() => setLinkedBill(
+                            linkedBill === p.applied_to_bill_no ? null : p.applied_to_bill_no)}
+                          className={cn('border-t border-neutral-100',
+                                        p.applied_to_bill_no && 'cursor-pointer',
+                                        linkedBill && p.applied_to_bill_no === linkedBill
+                                          && 'bg-primary-50 ring-2 ring-inset ring-[#085E5E]')}>
                         <td className="px-2.5 py-1.5 font-mono">{p.bill_no}</td>
                         {/* NC leaves PAYDATE empty on every payment line in this
                             database, so the document date is the only date there
@@ -256,7 +294,10 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                         <td className="px-2.5 py-1.5 font-mono">
                           {p.applied_to_bill_no ? (
                             <>
-                              <span className="text-neutral-700">{p.applied_to_bill_no}</span>
+                              <span className={cn(p.applied_bill_is_open
+                                                    ? 'font-semibold text-amber-700' : 'text-neutral-700')}>
+                                {p.applied_to_bill_no}
+                              </span>
                               {Number(p.applied_bill_still_open ?? 0) !== 0 && (
                                 <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-800">
                                   still open

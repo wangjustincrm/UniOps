@@ -286,9 +286,19 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
                -- What NC's own payment documents say was paid against this
                -- exact bill. When this equals the billed amount and the bill is
                -- still open, the payment was made and never applied.
+               -- Approved payments only, matching the payment list beside it:
+               -- counting drafts here would show a bill as paid while the
+               -- payment that paid it is nowhere on the page.
                coalesce((select sum(p.money_de)
                            from nc_ap_payment_lines p
-                          where p.top_bill_id = min(b.nc_pk)), 0) as paid_against
+                           join nc_ap_payments ph on ph.id = p.payment_id
+                          where p.top_bill_id = min(b.nc_pk)
+                            and ph.bill_status = 1 and ph.approve_status = 1), 0) as paid_against,
+               coalesce((select count(*)
+                           from nc_ap_payment_lines p
+                           join nc_ap_payments ph on ph.id = p.payment_id
+                          where p.top_bill_id = min(b.nc_pk)
+                            and ph.bill_status = 1 and ph.approve_status = 1), 0) as payment_lines
           from nc_ap_bill_lines l
           join nc_ap_bills b on b.id = l.bill_id
          where l.supplier_code = :code and b.currency = :ccy and l.money_bal <> 0
@@ -305,6 +315,12 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
                ab.id is not null as applied_bill_still_open_known,
                coalesce((select sum(x.money_bal) from nc_ap_bill_lines x
                           where x.bill_id = ab.id), 0) as applied_bill_still_open,
+               -- Whether the payable this payment cleared is one of the bills
+               -- shown opposite. Usually it is NOT: the open bills and the
+               -- payments are two different populations, which is exactly the
+               -- thing that is hard to see without saying it.
+               exists (select 1 from nc_ap_bill_lines x
+                        where x.bill_id = ab.id and x.money_bal <> 0) as applied_bill_is_open,
                p.scomment
           from nc_ap_payment_lines l
           join nc_ap_payments p on p.id = l.payment_id
@@ -332,7 +348,9 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
     paid_tot = (await db.execute(text(f"""
         select coalesce(sum(paid), 0) from (
             select coalesce((select sum(p.money_de) from nc_ap_payment_lines p
-                              where p.top_bill_id = b.nc_pk), 0) as paid
+                               join nc_ap_payments ph on ph.id = p.payment_id
+                              where p.top_bill_id = b.nc_pk
+                                and ph.bill_status = 1 and ph.approve_status = 1), 0) as paid
               from nc_ap_bills b
              where b.currency = :ccy and {_EFFECTIVE}
                and exists (select 1 from nc_ap_bill_lines l
@@ -372,6 +390,7 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
             "bill_year": r["bill_year"],
             "money_cr": m(r["money_cr"]), "money_bal": m(r["money_bal"]),
             "paid_against": m(r["paid_against"]),
+            "payment_lines": int(r["payment_lines"]),
             "invoice_no": r["invoice_no"], "purchase_order": r["purchase_order"],
             "trade_type": r["trade_type"],
         } for r in bills],
@@ -383,6 +402,7 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
             # of no use to anyone reading the page.
             "applied_to_bill_no": r["applied_to_bill_no"],
             "applied_bill_still_open": m(r["applied_bill_still_open"]),
+            "applied_bill_is_open": bool(r["applied_bill_is_open"]),
             "scomment": r["scomment"],
         } for r in payments],
     }
