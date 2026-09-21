@@ -17,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, HeartPulse, Plus, Siren, Timer, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
+import { Link } from 'react-router-dom'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
@@ -94,7 +95,7 @@ export default function EmergencyPage() {
                   subtitle="Drills, what they measured, and who is qualified to respond" />
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'drills' && <DrillsTab mayRun={mayRun} />}
-      {tab === 'responders' && <RespondersTab />}
+      {tab === 'responders' && <RespondersTab mayWriteTraining={can('ehs.training.write')} />}
     </div>
   )
 }
@@ -523,7 +524,7 @@ function NewDrillForm({ onClose }: { onClose: () => void }) {
 
 // ── Responders ───────────────────────────────────────────────────────────────
 
-function RespondersTab() {
+function RespondersTab({ mayWriteTraining }: { mayWriteTraining: boolean }) {
   const responders = useQuery({
     queryKey: ['responders'],
     queryFn: () => api.get<Responder[]>('/api/v1/emergency/responders'),
@@ -542,6 +543,17 @@ function RespondersTab() {
         record. Nothing is maintained here, so it cannot drift from what the
         register says.
       </p>
+
+      {mayWriteTraining && (
+        <div className="mb-3 flex justify-end">
+          {/* The list is derived, so there is nothing to edit here — the way
+              to change who is a first aider is to record the course, and the
+              panel used to say so without offering any way to get there. */}
+          <Link to="/training?record=FIRSTAID" className={secondaryButton}>
+            Record a First Aid completion
+          </Link>
+        </div>
+      )}
 
       {c && (
         <>

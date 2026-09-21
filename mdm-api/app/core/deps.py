@@ -9,13 +9,26 @@ bearer = HTTPBearer()
 # Roles permitted to authenticate to mdm-api. This is an authentication gate
 # only — every built-in app role must be able to READ master data (units,
 # departments, parts, …). Writes remain restricted per-endpoint via
-# require_roles(...). Keep in sync with the built-in roles in epms-api.
+# require_roles(...) or require_permission(...).
+#
+# ★ This list is hand-maintained and had drifted by nine roles: every role
+# added after it was written — the five Safety roles, director, supervisor,
+# erp_pa_officer, payment_officer — was locked out of mdm-api entirely,
+# permission keys included. The HSE Manager holding `mdm.location.write` still
+# got "Insufficient role", because the key is checked behind this door rather
+# than at it. Anything added to role_defs from here on has to be added here
+# too, and the real fix is to read role_defs instead of keeping a copy — see
+# the note in the commit that found this.
 ALLOWED_ROLES = {
     "service_account", "system_admin", "finance_manager",
     "gm", "opm", "procurement_manager", "procurement_officer",
     "finance_bp", "ap_clerk", "dept_manager", "dept_admin",
     "requester", "vendor_manager", "warehouse_staff",
-    "cfo", "auditor",
+    "cfo", "auditor", "director", "supervisor",
+    "erp_pa_officer", "payment_officer",
+    # Safety. The HSE Manager maintains the plant area tree, which is mdm data.
+    "ehs_manager", "ehs_coordinator", "area_supervisor",
+    "jhsc_member", "first_aider",
 }
 
 

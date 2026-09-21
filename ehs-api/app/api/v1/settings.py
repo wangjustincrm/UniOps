@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.core.deps import BearerToken, SessionDep
@@ -19,6 +19,7 @@ from app.core.permissions import (
     CanManageSettings, CanReadDocument, CanReadIncident, CanReportIncident,
 )
 from app.crud import vocabulary as crud
+from app.services import mdm
 from app.services.attachments import MAX_FILE_SIZE, proxy_download, upload_to_file_server
 from app.models.config import EhsConfig
 from app.models.mirrors import Department, Location
@@ -138,7 +139,7 @@ async def retire_item(code: str, item_id: uuid.UUID, db: SessionDep, user: CanMa
     return VocabularyItemOut.model_validate(await crud.retire_item(db, code, item_id))
 
 
-# ── Plant tree (read-only — mdm-api owns the table) ─────────────────────────
+# ── Plant tree (read here, written through mdm-api, which owns the table) ───
 
 
 # Every incident is filed against an area, so the tree has to be readable by
@@ -169,6 +170,62 @@ async def location_tree(
         else:
             parent.children.append(node)
     return roots
+
+
+class LocationIn(BaseModel):
+    """What HSE fills in to add an area.
+
+    No code: they name areas, and a code typed by hand is a code that
+    eventually collides with another or contradicts its parent. mdm-api derives
+    one from the parent and the name.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=200)
+    parent_id: uuid.UUID | None = None
+    level: str = Field(pattern="^(area|department|line|sub_line|room|workstation)$")
+    access_area: str | None = Field(default=None, max_length=30)
+    is_selectable: bool = True
+    sort_order: int = 0
+
+
+class LocationPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    level: str | None = Field(
+        default=None, pattern="^(area|department|line|sub_line|room|workstation)$")
+    access_area: str | None = Field(default=None, max_length=30)
+    is_selectable: bool | None = None
+    sort_order: int | None = None
+
+
+# The write path is a proxy, not a second implementation: `locations` belongs
+# to mdm-api and the maintenance screen belongs to Safety, which is the whole
+# reason these three endpoints exist. Permission is applied at the far end
+# against the caller's own token — see app/services/mdm.py.
+@router.post("/locations", status_code=status.HTTP_201_CREATED)
+async def create_location(body: LocationIn, token: BearerToken):
+    return await mdm.create_location(
+        {k: (str(v) if isinstance(v, uuid.UUID) else v)
+         for k, v in body.model_dump().items()}, token)
+
+
+@router.patch("/locations/{location_id}")
+async def update_location(location_id: uuid.UUID, body: LocationPatch, token: BearerToken):
+    return await mdm.update_location(location_id, body.model_dump(exclude_unset=True), token)
+
+
+@router.post("/locations/{location_id}/retire")
+async def retire_location(location_id: uuid.UUID, token: BearerToken):
+    """Off the list offered for new records; every past record keeps it."""
+    return await mdm.set_location_active(location_id, False, token)
+
+
+@router.post("/locations/{location_id}/restore")
+async def restore_location(location_id: uuid.UUID, token: BearerToken):
+    return await mdm.set_location_active(location_id, True, token)
 
 
 class DepartmentOut(BaseModel):

@@ -6,9 +6,9 @@
  * Sessions is what a supervisor lives in. Records is where a certificate that
  * arrived on paper gets typed in.
  */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CalendarDays, Plus, Upload, X, Paperclip } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
@@ -45,7 +45,14 @@ const TABS = [
 type TabKey = (typeof TABS)[number]['key']
 
 export default function TrainingPage() {
-  const [tab, setTab] = useState<TabKey>('compliance')
+  // The first-aid cover panel can only tell somebody that cover is short; the
+  // thing that fixes it is a training record, which lives here. `?record=CODE`
+  // is how that panel hands the job over — it opens this page on the records
+  // tab with the form already on the right course, instead of naming a course
+  // and leaving the reader to find it.
+  const [params, setParams] = useSearchParams()
+  const recordCourse = params.get('record')
+  const [tab, setTab] = useState<TabKey>(recordCourse ? 'records' : 'compliance')
   const { can } = usePermissions()
   const mayWrite = can('ehs.training.write')
 
@@ -56,7 +63,13 @@ export default function TrainingPage() {
       {tab === 'compliance' && <TrainingGapsPanel />}
       {tab === 'courses' && <CoursesTab mayWrite={mayWrite} />}
       {tab === 'sessions' && <SessionsTab mayWrite={mayWrite} />}
-      {tab === 'records' && <RecordsTab mayWrite={mayWrite} />}
+      {tab === 'records' && (
+        <RecordsTab
+          mayWrite={mayWrite}
+          openForCourse={recordCourse}
+          onConsumed={() => setParams({}, { replace: true })}
+        />
+      )}
     </div>
   )
 }
@@ -290,8 +303,13 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
 
 // ── Records ──────────────────────────────────────────────────────────────────
 
-function RecordsTab({ mayWrite }: { mayWrite: boolean }) {
-  const [adding, setAdding] = useState(false)
+function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
+  mayWrite: boolean; openForCourse?: string | null; onConsumed?: () => void
+}) {
+  // Opened straight from the link, not from the button on this page. The
+  // parameter is cleared as it is consumed so that closing the form and
+  // reopening the tab does not put it back.
+  const [adding, setAdding] = useState(Boolean(openForCourse && mayWrite))
   const records = useQuery({
     queryKey: ['training-records'],
     queryFn: () => api.get<Record_[]>('/api/v1/training/records'),
@@ -308,7 +326,12 @@ function RecordsTab({ mayWrite }: { mayWrite: boolean }) {
         </div>
       )}
 
-      {adding && <NewRecordForm onClose={() => setAdding(false)} />}
+      {adding && (
+        <NewRecordForm
+          courseCode={openForCourse}
+          onClose={() => { setAdding(false); onConsumed?.() }}
+        />
+      )}
 
       {records.data?.length === 0 && !adding ? (
         <Empty>
@@ -343,7 +366,9 @@ function RecordsTab({ mayWrite }: { mayWrite: boolean }) {
   )
 }
 
-function NewRecordForm({ onClose }: { onClose: () => void }) {
+function NewRecordForm({ onClose, courseCode }: {
+  onClose: () => void; courseCode?: string | null
+}) {
   const queryClient = useQueryClient()
   const [person, setPerson] = useState<PersonValue>(EMPTY_PERSON)
   const [courseId, setCourseId] = useState('')
@@ -355,6 +380,18 @@ function NewRecordForm({ onClose }: { onClose: () => void }) {
     queryKey: ['courses'],
     queryFn: () => api.get<Course[]>('/api/v1/training/courses'),
   })
+
+  // The course arrives as a code because that is what the sending page knows;
+  // the list it has to be matched against loads separately, so the match runs
+  // when the list arrives rather than at mount. Only ever preselects: once
+  // somebody has chosen a course themselves, this leaves it alone.
+  const courseList = courses.data
+  useEffect(() => {
+    if (!courseCode || courseId || !courseList) return
+    const match = courseList.find(
+      (c) => c.code.toLowerCase() === courseCode.toLowerCase())
+    if (match) setCourseId(match.id)
+  }, [courseCode, courseId, courseList])
 
   const create = useMutation({
     mutationFn: () => api.post('/api/v1/training/records', {
