@@ -22,6 +22,10 @@ _FREQUENCY = "^(monthly|quarterly|semiannual|annual)$"
 
 
 class AssetIn(BaseModel):
+    # A key this model does not know is a mistake, not something to drop
+    # quietly — see the same note on hazards.
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=200)
     asset_type_id: uuid.UUID | None = None
     asset_type_label: str | None = Field(default=None, max_length=200)
@@ -51,6 +55,10 @@ class AssetOut(BaseModel):
     id: uuid.UUID
     asset_no: str
     name: str
+    # The id as well as the label: the label keeps an old record readable after
+    # the vocabulary is renamed, the id is what puts the picker back on the
+    # right row when the record is reopened to be corrected.
+    asset_type_id: uuid.UUID | None
     asset_type_label: str | None
     serial_no: str | None
     manufacturer: str | None

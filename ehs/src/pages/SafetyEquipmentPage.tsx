@@ -27,7 +27,8 @@ import {
 } from '@/components/ui'
 
 interface Asset {
-  id: string; asset_no: string; name: string; asset_type_label: string | null
+  id: string; asset_no: string; name: string
+  asset_type_id: string | null; asset_type_label: string | null
   serial_no: string | null; manufacturer: string | null; model: string | null
   location_id: string | null; location_path: string | null; department_name: string | null
   inspection_frequency: string | null; next_due_on: string | null
@@ -260,6 +261,7 @@ function RegisterTab({
   // on anything, pressing the button saved nothing.
   const [checkingNow, setCheckingNow] = useState<Asset | null>(null)
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<Asset | null>(null)
   const shown = focusedId ? assets.filter((a) => a.id === focusedId) : assets
 
   const restore = useMutation({
@@ -293,7 +295,8 @@ function RegisterTab({
           </button>
         </div>
       )}
-      {adding && <NewAssetForm onClose={() => setAdding(false)} />}
+      {adding && <AssetForm onClose={() => setAdding(false)} />}
+      {editing && <AssetForm existing={editing} onClose={() => setEditing(null)} />}
 
       {shown.length === 0 && !adding ? (
         <Empty>
@@ -325,6 +328,16 @@ function RegisterTab({
                       {a.last_inspected_on && ` · last ${formatDate(a.last_inspected_on)}`}
                     </span>
                   </span>
+
+                  {mayManage && (
+                    <button
+                      type="button"
+                      onClick={() => setEditing(a)}
+                      className="flex min-h-[32px] shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900"
+                    >
+                      Edit
+                    </button>
+                  )}
 
                   {mayInspect && a.status === 'in_service' && (
                     <button
@@ -390,25 +403,43 @@ function RegisterTab({
   )
 }
 
-function NewAssetForm({ onClose }: { onClose: () => void }) {
+/**
+ * Registering a piece of equipment, and correcting its record.
+ *
+ * An extinguisher gets moved, a harness's serial is typed wrong, a cycle set
+ * to monthly turns out to be quarterly. The PATCH endpoint was there from the
+ * start with nothing on screen reaching it, so the only way to fix any of that
+ * was to register the item a second time — which puts two of it on the
+ * register, each with its own QR label, and a coverage count that says the
+ * plant has more extinguishers than it has.
+ */
+function AssetForm({ existing, onClose }: { existing?: Asset; onClose: () => void }) {
   const queryClient = useQueryClient()
-  const [name, setName] = useState('')
-  const [type, setType] = useState<VocabItem | null>(null)
-  const [locationId, setLocationId] = useState<string | null>(null)
-  const [serial, setSerial] = useState('')
-  const [frequency, setFrequency] = useState('monthly')
-  const [expiresOn, setExpiresOn] = useState('')
+  const editing = Boolean(existing)
+  const [name, setName] = useState(existing?.name ?? '')
+  const [type, setType] = useState<VocabItem | null>(
+    existing?.asset_type_id
+      ? { id: existing.asset_type_id, label: existing.asset_type_label ?? '' } as VocabItem
+      : null)
+  const [locationId, setLocationId] = useState<string | null>(existing?.location_id ?? null)
+  const [serial, setSerial] = useState(existing?.serial_no ?? '')
+  const [frequency, setFrequency] = useState(existing?.inspection_frequency ?? 'monthly')
+  const [expiresOn, setExpiresOn] = useState(existing?.expires_on ?? '')
+
+  const body = () => ({
+    name,
+    asset_type_id: type?.id ?? null,
+    asset_type_label: type?.label ?? null,
+    location_id: locationId,
+    serial_no: serial || null,
+    inspection_frequency: frequency || null,
+    expires_on: expiresOn || null,
+  })
 
   const create = useMutation({
-    mutationFn: () => api.post('/api/v1/safety-assets', {
-      name,
-      asset_type_id: type?.id ?? null,
-      asset_type_label: type?.label ?? null,
-      location_id: locationId,
-      serial_no: serial || null,
-      inspection_frequency: frequency || null,
-      expires_on: expiresOn || null,
-    }),
+    mutationFn: () => (editing
+      ? api.patch(`/api/v1/safety-assets/${existing!.id}`, body())
+      : api.post('/api/v1/safety-assets', body())),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['safety-assets'] })
       queryClient.invalidateQueries({ queryKey: ['asset-coverage'] })
@@ -419,7 +450,9 @@ function NewAssetForm({ onClose }: { onClose: () => void }) {
   return (
     <Card className="mb-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-neutral-900">Register equipment</h2>
+        <h2 className="text-sm font-semibold text-neutral-900">
+          {editing ? `Correct ${existing!.asset_no}` : 'Register equipment'}
+        </h2>
         <button type="button" onClick={onClose} aria-label="Close"
                 className="rounded p-1 text-neutral-400 hover:bg-neutral-50">
           <X className="h-4 w-4" />
@@ -440,7 +473,10 @@ function NewAssetForm({ onClose }: { onClose: () => void }) {
         <Field label="Serial number">
           <input className={inputClass} value={serial} onChange={(e) => setSerial(e.target.value)} />
         </Field>
-        <Field label="Checked" hint="The first check falls one period from today">
+        <Field label="Checked"
+               hint={editing
+                 ? 'Changing this moves when the next check falls due'
+                 : 'The first check falls one period from today'}>
           <select className={inputClass} value={frequency}
                   onChange={(e) => setFrequency(e.target.value)}>
             {FREQUENCIES.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
@@ -459,7 +495,9 @@ function NewAssetForm({ onClose }: { onClose: () => void }) {
         <button type="button" className={primaryButton}
                 disabled={!name.trim() || create.isPending}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
-          {create.isPending ? 'Registering…' : 'Register'}
+          {create.isPending
+            ? (editing ? 'Saving…' : 'Registering…')
+            : (editing ? 'Save' : 'Register')}
         </button>
       </div>
     </Card>

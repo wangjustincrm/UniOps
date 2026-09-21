@@ -282,3 +282,36 @@ async def test_days_since_counts_injuries_not_every_record(hse_manager, worker, 
     assert after["days_since_last_incident"] == before["days_since_last_incident"], (
         "a near miss is not an injury, and reporting one must not cost the plant "
         "its count")
+
+
+async def test_changing_the_check_cycle_moves_the_next_check(hse_manager):
+    """A shorter cycle that does not bring the date forward is cosmetic.
+
+    An extinguisher moved from quarterly to monthly kept its date three months
+    out and quietly missed two checks — the register said monthly, the schedule
+    kept the old promise, and nothing on screen disagreed.
+    """
+    from datetime import date
+
+    _, client = hse_manager
+    created = await client.post("/api/v1/safety-assets", json={
+        "name": "Extinguisher — ABC 10lb",
+        "inspection_frequency": "quarterly",
+    })
+    assert created.status_code in (200, 201), created.text
+    quarterly_due = date.fromisoformat(created.json()["next_due_on"])
+
+    tightened = await client.patch(f"/api/v1/safety-assets/{created.json()['id']}", json={
+        "inspection_frequency": "monthly",
+    })
+    assert tightened.status_code == 200, tightened.text
+    monthly_due = date.fromisoformat(tightened.json()["next_due_on"])
+    assert monthly_due < quarterly_due, (
+        "monthly must fall due sooner than the quarterly date it replaced")
+
+    # And taken off a cycle, nothing is owed at all.
+    off = await client.patch(f"/api/v1/safety-assets/{created.json()['id']}", json={
+        "inspection_frequency": None,
+    })
+    assert off.json()["next_due_on"] is None, (
+        "an item nobody schedules must stop raising checks")

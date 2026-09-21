@@ -30,6 +30,11 @@ _CONTROL_LEVELS = "^(elimination|substitution|engineering|administrative|ppe)$"
 # ── Hazards ──────────────────────────────────────────────────────────────────
 
 class HazardIn(BaseModel):
+    # A key this model does not know is a mistake, not something to drop
+    # quietly: a misspelled field name would otherwise read as "the user
+    # cleared it" and overwrite a good value with nothing.
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(min_length=1, max_length=250)
     description: str | None = None
     hazard_type_id: uuid.UUID | None = None
@@ -61,6 +66,11 @@ class HazardOut(BaseModel):
     hazard_no: str
     title: str
     description: str | None
+    # Both halves: the label is the snapshot that keeps an old record readable
+    # after the vocabulary is renamed, the id is what puts the picker back on
+    # the right entry when the record is reopened for correction. Returning
+    # only the label meant editing a hazard silently cleared its kind.
+    hazard_type_id: uuid.UUID | None
     hazard_type_label: str | None
     location_id: uuid.UUID | None
     location_path: str | None

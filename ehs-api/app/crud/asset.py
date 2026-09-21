@@ -125,10 +125,30 @@ async def update_asset(db: AsyncSession, asset: SafetyAsset, fields: dict) -> Sa
     if "location_id" in fields:
         path, dept_id, dept_name = await _location_fields(db, fields["location_id"])
         asset.location_path, asset.department_id, asset.department_name = path, dept_id, dept_name
+    # Whether the cycle itself changed decides whether the next check moves,
+    # so it has to be read before the new values are written on.
+    cycle_changed = (
+        "inspection_frequency" in fields
+        and fields["inspection_frequency"] != asset.inspection_frequency
+    )
     for key, value in fields.items():
         setattr(asset, key, value)
+
     if asset.inspection_frequency and asset.next_due_on is None:
         asset.next_due_on = next_due(date.today(), asset.inspection_frequency)
+    elif cycle_changed and asset.inspection_frequency and "next_due_on" not in fields:
+        # Putting an item on a shorter cycle has to bring its next check
+        # forward, or the change is cosmetic: an extinguisher moved from
+        # quarterly to monthly would keep its date three months out and quietly
+        # miss two checks. Counted from the last check that actually happened,
+        # because that is what the new interval is an interval from.
+        asset.next_due_on = next_due(
+            asset.last_inspected_on or date.today(), asset.inspection_frequency)
+    elif cycle_changed and not asset.inspection_frequency:
+        # Taken off a cycle entirely — nothing is owed, and a date left behind
+        # would keep raising checks for an item nobody schedules any more.
+        asset.next_due_on = None
+
     await db.flush()
     return asset
 

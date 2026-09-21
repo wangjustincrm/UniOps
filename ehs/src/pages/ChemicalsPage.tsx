@@ -193,14 +193,19 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
   const [locationId, setLocationId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
+  // A product that has left the plant stays on the record — an incident two
+  // years old may name it — but it is not what somebody standing in front of
+  // a drum is looking for, so it is off the list until asked for.
+  const [showRetired, setShowRetired] = useState(false)
 
   const query = [
     search.trim() ? `search=${encodeURIComponent(search.trim())}` : '',
     locationId ? `location_id=${locationId}` : '',
+    showRetired ? 'include_retired=true' : '',
   ].filter(Boolean).join('&')
 
   const chemicals = useQuery({
-    queryKey: ['chemicals', search.trim(), locationId],
+    queryKey: ['chemicals', search.trim(), locationId, showRetired],
     queryFn: () => api.get<Chemical[]>(`/api/v1/chemicals${query ? `?${query}` : ''}`),
   })
 
@@ -225,6 +230,12 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
           </button>
         )}
       </div>
+
+      <label className="mb-3 flex items-center gap-2 text-xs text-neutral-600">
+        <input type="checkbox" checked={showRetired}
+               onChange={(e) => setShowRetired(e.target.checked)} />
+        Include products no longer kept on site
+      </label>
 
       {creating && <ChemicalForm onClose={() => setCreating(false)} />}
 
@@ -302,6 +313,59 @@ function SheetPill({ sheet }: { sheet: Sheet | null }) {
   )
 }
 
+/**
+ * Taking a product off the inventory.
+ *
+ * The endpoint was there from the start with nothing on screen reaching it,
+ * so a drum that left the plant stayed on the list of what is here — and the
+ * WHMIS inventory is meant to be an answer to "what is on this site", which a
+ * list padded with products nobody stocks any more is not. It is not a delete:
+ * an incident or an exposure record from two years ago may name this product,
+ * and the data sheet in force at the time has to stay reachable from it.
+ */
+function RetireButton({ chemical }: { chemical: Chemical }) {
+  const queryClient = useQueryClient()
+  const [confirming, setConfirming] = useState(false)
+  const retire = useMutation({
+    mutationFn: () => api.post(`/api/v1/chemicals/${chemical.id}/retire`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chemicals'] })
+      queryClient.invalidateQueries({ queryKey: ['chemical-gaps'] })
+      setConfirming(false)
+    },
+  })
+
+  if (!chemical.is_active) {
+    return (
+      <span className="self-center rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold text-neutral-600">
+        No longer kept on site
+      </span>
+    )
+  }
+
+  if (!confirming) {
+    return (
+      <button type="button" className={secondaryButton} onClick={() => setConfirming(true)}>
+        No longer on site
+      </button>
+    )
+  }
+
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-neutral-600">
+        Take {chemical.name} off the inventory? Past records keep it.
+      </span>
+      <button type="button" className={secondaryButton}
+              onClick={() => setConfirming(false)}>Cancel</button>
+      <button type="button" className={primaryButton} disabled={retire.isPending}
+              onClick={() => { if (!retire.isPending) retire.mutate() }}>
+        {retire.isPending ? 'Removing…' : 'Take it off'}
+      </button>
+    </span>
+  )
+}
+
 function Detail({ chemical, mayManage }: { chemical: Chemical; mayManage: boolean }) {
   const [editing, setEditing] = useState(false)
   const [sheetCode, setSheetCode] = useState<string | null>(null)
@@ -321,7 +385,8 @@ function Detail({ chemical, mayManage }: { chemical: Chemical; mayManage: boolea
   return (
     <div className="border-t border-neutral-100 p-3.5">
       {mayManage && (
-        <div className="mb-3 flex justify-end">
+        <div className="mb-3 flex flex-wrap justify-end gap-2">
+          <RetireButton chemical={chemical} />
           <button type="button" className={secondaryButton} onClick={() => setEditing(true)}>
             Correct this product
           </button>

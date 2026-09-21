@@ -26,7 +26,7 @@ import {
 
 export interface Hazard {
   id: string; hazard_no: string; title: string; description: string | null
-  hazard_type_label: string | null
+  hazard_type_id: string | null; hazard_type_label: string | null
   location_id: string | null; location_path: string | null; department_name: string | null
   risk_assessment_id: string | null
   current_rating: string | null; residual_rating: string | null
@@ -79,6 +79,7 @@ export default function HazardsPage() {
   const { can } = usePermissions()
   const mayWrite = can('ehs.action.write')
   const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState<Hazard | null>(null)
   const [assessing, setAssessing] = useState<Hazard | null>(null)
   const [showEliminated, setShowEliminated] = useState(false)
 
@@ -118,7 +119,10 @@ export default function HazardsPage() {
         </ul>
       )}
 
-      {creating && <NewHazardForm onClose={() => setCreating(false)} />}
+      {creating && <HazardForm onClose={() => setCreating(false)} />}
+      {editing && (
+        <HazardForm existing={editing} onClose={() => setEditing(null)} />
+      )}
 
       <label className="mb-3 flex items-center gap-2 text-xs text-neutral-600">
         <input type="checkbox" checked={showEliminated}
@@ -179,10 +183,16 @@ export default function HazardsPage() {
                       </span>
                     )}
                     {mayWrite && (
-                      <button type="button" onClick={() => setAssessing(h)}
-                              className="text-xs font-semibold text-primary-700 hover:underline">
-                        {h.current_rating ? 'Reassess' : 'Assess the risk'}
-                      </button>
+                      <span className="flex items-center gap-2.5">
+                        <button type="button" onClick={() => setEditing(h)}
+                                className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 hover:underline">
+                          Edit
+                        </button>
+                        <button type="button" onClick={() => setAssessing(h)}
+                                className="text-xs font-semibold text-primary-700 hover:underline">
+                          {h.current_rating ? 'Reassess' : 'Assess the risk'}
+                        </button>
+                      </span>
                     )}
                   </span>
                 </div>
@@ -199,27 +209,48 @@ export default function HazardsPage() {
   )
 }
 
-function NewHazardForm({ onClose }: { onClose: () => void }) {
+/**
+ * Recording a hazard, and correcting one.
+ *
+ * A hazard on the register is a standing claim about the plant that outlives
+ * whoever wrote it: the controls get improved, the owner changes job, the
+ * review date moves. The PATCH endpoint existed from the start and nothing on
+ * screen reached it, so the only way to fix a wrong owner or a superseded
+ * control was to record the hazard a second time — which leaves the plant
+ * reading as though it has two of them. One form, and `existing` decides
+ * whether it records or corrects.
+ */
+function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => void }) {
   const queryClient = useQueryClient()
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [type, setType] = useState<VocabItem | null>(null)
-  const [locationId, setLocationId] = useState<string | null>(null)
-  const [controls, setControls] = useState('')
-  const [level, setLevel] = useState('')
-  const [owner, setOwner] = useState<PersonValue>(EMPTY_PERSON)
-  const [reviewOn, setReviewOn] = useState('')
+  const editing = Boolean(existing)
+  const [title, setTitle] = useState(existing?.title ?? '')
+  const [description, setDescription] = useState(existing?.description ?? '')
+  const [type, setType] = useState<VocabItem | null>(
+    existing?.hazard_type_id
+      ? { id: existing.hazard_type_id, label: existing.hazard_type_label ?? '' } as VocabItem
+      : null)
+  const [locationId, setLocationId] = useState<string | null>(existing?.location_id ?? null)
+  const [controls, setControls] = useState(existing?.existing_controls ?? '')
+  const [level, setLevel] = useState(existing?.control_level ?? '')
+  const [owner, setOwner] = useState<PersonValue>(existing?.owner_id
+    ? { ...EMPTY_PERSON, userId: existing.owner_id, name: existing.owner_name ?? '' }
+    : EMPTY_PERSON)
+  const [reviewOn, setReviewOn] = useState(existing?.review_due_on ?? '')
+
+  const body = () => ({
+    title, description: description || null,
+    hazard_type_id: type?.id ?? null, hazard_type_label: type?.label ?? null,
+    location_id: locationId,
+    existing_controls: controls || null,
+    control_level: level || null,
+    owner_id: owner.userId,
+    review_due_on: reviewOn || null,
+  })
 
   const create = useMutation({
-    mutationFn: () => api.post('/api/v1/hazards', {
-      title, description: description || null,
-      hazard_type_id: type?.id ?? null, hazard_type_label: type?.label ?? null,
-      location_id: locationId,
-      existing_controls: controls || null,
-      control_level: level || null,
-      owner_id: owner.userId,
-      review_due_on: reviewOn || null,
-    }),
+    mutationFn: () => (editing
+      ? api.patch(`/api/v1/hazards/${existing!.id}`, body())
+      : api.post('/api/v1/hazards', body())),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['hazards'] })
       queryClient.invalidateQueries({ queryKey: ['hazard-summary'] })
@@ -230,7 +261,9 @@ function NewHazardForm({ onClose }: { onClose: () => void }) {
   return (
     <Card className="mb-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-neutral-900">Record a hazard</h2>
+        <h2 className="text-sm font-semibold text-neutral-900">
+          {editing ? `Correct ${existing!.hazard_no}` : 'Record a hazard'}
+        </h2>
         <button type="button" onClick={onClose} aria-label="Close"
                 className="rounded p-1 text-neutral-400 hover:bg-neutral-50">
           <X className="h-4 w-4" />
@@ -282,7 +315,9 @@ function NewHazardForm({ onClose }: { onClose: () => void }) {
         <button type="button" className={primaryButton}
                 disabled={!title.trim() || create.isPending}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
-          {create.isPending ? 'Recording…' : 'Record'}
+          {create.isPending
+            ? (editing ? 'Saving…' : 'Recording…')
+            : (editing ? 'Save' : 'Record')}
         </button>
       </div>
     </Card>
