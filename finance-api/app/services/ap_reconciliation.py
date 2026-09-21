@@ -39,6 +39,7 @@ IN_NC_SETTLED = "in_nc_settled"            # NC has it and settled it
 NO_MATCH = "missing_in_nc"                 # not in NC under any key we can find
 INVOICE_NO_MISMATCH = "invoice_no_mismatch"  # same supplier + amount, different number
 NOT_SUBMITTED = "not_submitted"            # our draft — expected to be absent
+IN_NC_UNAPPROVED = "in_nc_unapproved"      # NC has a document, but never approved it
 
 # Amount tolerance when matching by money instead of by number. NC and we both
 # store 2dp, so this is a guard against representation noise, not fuzziness.
@@ -89,15 +90,31 @@ with ours as (
 ),
 -- One row per (invoice number, supplier) as NC holds it. Grouped because a
 -- single NC bill can carry the same invoice number on several lines.
+-- Only documents NC actually stands behind. Matching against an unapproved
+-- draft would report our invoice as "on NC's books" when NC never accepted it;
+-- 13 of 149 matches were exactly that before this filter existed.
 nc_inv as (
-    select invoice_no_norm, supplier_code,
-           sum(money_cr) as nc_money_cr,
-           sum(money_bal) as nc_money_bal,
-           min(bill_no) as nc_bill_no,
+    select l.invoice_no_norm, l.supplier_code,
+           sum(l.money_cr) as nc_money_cr,
+           sum(l.money_bal) as nc_money_bal,
+           min(l.bill_no) as nc_bill_no,
            count(*) as nc_lines
-      from nc_ap_bill_lines
-     where invoice_no_norm is not null
-     group by invoice_no_norm, supplier_code
+      from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+     where l.invoice_no_norm is not null
+       and b.bill_status = 1 and b.approve_status = 1
+     group by l.invoice_no_norm, l.supplier_code
+),
+-- The same lookup over the documents NC did NOT approve. An invoice that only
+-- matches here is a real finding of its own: finance raised the document and
+-- then abandoned it, so the liability is neither on the books nor chased.
+nc_inv_unapproved as (
+    select l.invoice_no_norm, l.supplier_code, min(l.bill_no) as nc_bill_no
+      from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+     where l.invoice_no_norm is not null
+       and not (b.bill_status = 1 and b.approve_status = 1)
+     group by l.invoice_no_norm, l.supplier_code
 ),
 -- distinct on keeps this to exactly ONE row per invoice of ours. Without it a
 -- number reused across suppliers would fan out and inflate every count in the
@@ -125,6 +142,8 @@ by_amount as (
       from ours o
       join nc_ap_bill_lines l
         on l.supplier_code = o.erp_id
+      join nc_ap_bills ab
+        on ab.id = l.bill_id and ab.bill_status = 1 and ab.approve_status = 1
        and abs(l.money_cr - o.total_amount) <= {AMOUNT_EPSILON}
        and o.invoice_date is not null
        and l.bill_date is not null
@@ -133,8 +152,15 @@ by_amount as (
        and not exists (select 1 from matched m where m.id = o.id)
      order by o.id, abs(l.bill_date::date - o.invoice_date)
 ),
+unapproved as (
+    select distinct on (o.id) o.id, n.nc_bill_no as unapproved_bill_no
+      from ours o
+      join nc_inv_unapproved n on n.invoice_no_norm = o.inv_norm
+     where not exists (select 1 from matched m where m.id = o.id)
+     order by o.id, n.nc_bill_no
+),
 classified as (
-    select o.*,
+    select o.*, u.unapproved_bill_no,
            m.nc_bill_no, m.nc_money_cr, m.nc_money_bal, m.nc_lines, m.supplier_agrees,
            a.alt_bill_no, a.alt_invoice_no, a.alt_money_cr, a.alt_money_bal,
            a.alt_bill_date, a.alt_day_gap,
@@ -144,11 +170,13 @@ classified as (
                   and coalesce(m.nc_money_bal, 0) <> 0 then '{IN_NC_OPEN}'
              when m.id is not null                then '{IN_NC_SETTLED}'
              when a.id is not null                then '{INVOICE_NO_MISMATCH}'
+             when u.id is not null                then '{IN_NC_UNAPPROVED}'
              else '{NO_MATCH}'
            end as category
       from ours o
       left join matched m on m.id = o.id
       left join by_amount a on a.id = o.id
+      left join unapproved u on u.id = o.id
 )
 """
 
@@ -168,7 +196,8 @@ async def summary(db: AsyncSession, f: ReconFilters) -> dict:
     rows = (await db.execute(text(sql), params)).mappings().all()
     by_cat = {r["category"]: dict(r) for r in rows}
     out = []
-    for key in (NO_MATCH, INVOICE_NO_MISMATCH, IN_NC_OPEN, IN_NC_SETTLED, NOT_SUBMITTED):
+    for key in (NO_MATCH, IN_NC_UNAPPROVED, INVOICE_NO_MISMATCH, IN_NC_OPEN,
+                IN_NC_SETTLED, NOT_SUBMITTED):
         r = by_cat.get(key)
         out.append({
             "category": key,
@@ -191,7 +220,7 @@ async def items(db: AsyncSession, f: ReconFilters, category: str,
            total_amount, paid_amount, invoice_date, due_date, status, po_number,
            source, category, nc_bill_no, nc_money_cr, nc_money_bal, nc_lines,
            supplier_agrees, alt_bill_no, alt_invoice_no, alt_money_cr, alt_money_bal,
-           alt_bill_date, alt_day_gap
+           alt_bill_date, alt_day_gap, unapproved_bill_no
       from classified
      where category = :category
      order by total_amount desc nulls last
@@ -221,6 +250,7 @@ def _item_out(r) -> dict:
         "po_number": r["po_number"],
         "source": r["source"],
         "category": r["category"],
+        "unapproved_bill_no": r["unapproved_bill_no"],
         "nc": {
             "bill_no": r["nc_bill_no"],
             "money_cr": s(r["nc_money_cr"]),

@@ -1,29 +1,38 @@
 """Is NC's payable subledger telling the truth about what is still owed?
 
-For most suppliers, yes. For some, badly not — and the difference decides
-whether a cash-flow forecast can be built on `money_bal` at all.
+Yes — once you only count documents NC actually approved. That correction came
+from Justin looking at an NC bill-entry screen, seeing no `money_bal` field on
+it, and asking whether the column is used at all. It is; the mistake was mine,
+for never filtering on document status.
 
-The evidence (NC production, 2026-09-21): 2021 milk was billed 32,641,249.87
-and paid 32,114,350.99, yet 13,411,519.10 of those lines are still flagged open.
-The money moved; the payment was never applied against the lines. Across the
-whole population the subledger says 46.9M open while billed-minus-paid says
-26.9M — about 20M of payable that exists only as an uncleared flag.
+What the numbers say (NC production, 2026-09-22):
 
-So this check splits suppliers in two:
+    status        lines    billed            open balance
+    approved     17,896    191,116,917.52    10,452,032.99
+    unapproved      887     35,483,410.06    35,483,410.06
+    other           168        963,404.33       963,404.33
 
-  consistent  subledger open == billed - paid. Its open balance can be used.
-  uncleared   they disagree. Its open balance overstates, by the gap shown.
+Of 46.9M "open", 36.4M sits on documents NC never approved; the real payable is
+~10.45M. And among approved bills the subledger is all but perfect: 162
+supplier/currency pairs where open == billed - paid to the cent, against 2 that
+differ by 44,667.12 in total.
 
-**What this does NOT claim.** `billed - paid` is not "the true amount owed"
-either — payments can include prepayments and credits that were never tied to a
-bill, and a supplier can legitimately hold both. The comparison is a
-DISCREPANCY DETECTOR, not a second valuation: it says the two figures NC itself
-holds do not agree, and how far apart they are. Which one is right is a
-question for finance, per supplier.
+So the finding is NOT "the subledger does not clear". It is:
 
-**Currency is never mixed.** NC stores original-currency amounts and this
-company transacts in CAD, USD, CNY and EUR. Summing across them would produce a
-number with no meaning, so every row here is per (supplier x currency).
+  **abandoned**     payables raised and never approved, still carrying a
+                    balance. 509 bills at (-1,-1) of which only 31 were ever
+                    paid, 95 at (-1,3) and 5 at (-99,3) with no payment at all.
+                    Some are outright duplicates: D12026042500138432 and ...433
+                    are the same supplier, amount and invoice number, one
+                    approved and one not.
+  **inconsistent**  approved bills where open and billed-minus-paid still
+                    disagree. Nearly empty today, kept as a tripwire so a real
+                    clearing failure cannot appear later unnoticed.
+
+`billed - paid` stays a DISCREPANCY DETECTOR, not a second valuation: paying
+past what was billed is a prepayment or an unapplied credit, not an error.
+
+Currency is never mixed — this company transacts in CAD, USD, CNY and EUR.
 """
 from __future__ import annotations
 
@@ -31,7 +40,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 CONSISTENT = "consistent"
-UNCLEARED = "uncleared"
+INCONSISTENT = "inconsistent"
+ABANDONED = "abandoned"
+
+# A payable NC stands behind. Everything else is a draft, a duplicate or a void.
+_EFFECTIVE = "b.bill_status = 1 and b.approve_status = 1"
 
 # Both sides are 2dp in NC; this guards representation noise, not fuzziness.
 TOLERANCE = "0.01"
@@ -44,12 +57,15 @@ with billed as (
            max(l.supplier_name) as supplier_name
       from nc_ap_bill_lines l
       join nc_ap_bills b on b.id = l.bill_id
+     where {_EFFECTIVE}
      group by l.supplier_code, b.currency
 ),
 paid as (
-    select supplier_code, currency, sum(money_de) as paid
-      from nc_ap_payment_lines
-     group by supplier_code, currency
+    select l.supplier_code, l.currency, sum(l.money_de) as paid
+      from nc_ap_payment_lines l
+      join nc_ap_payments p on p.id = l.payment_id
+     where p.bill_status = 1 and p.approve_status = 1
+     group by l.supplier_code, l.currency
 ),
 joined as (
     select b.supplier_code, b.currency, b.supplier_name,
@@ -63,15 +79,92 @@ joined as (
 ),
 classified as (
     select j.*,
-           case when abs(gap) <= {TOLERANCE} then '{CONSISTENT}' else '{UNCLEARED}' end as health
+           case when abs(gap) <= {TOLERANCE} then '{CONSISTENT}' else '{INCONSISTENT}' end as health
       from joined j
      where subledger_open <> 0
 )
 """
 
 
+_EMPTY_ABANDONED = {"bills": 0, "money_bal": "0", "superseded_bills": 0, "superseded_bal": "0"}
+
+# Documents NC never approved that still carry a balance. `superseded` marks the
+# ones whose supplier and invoice number also appear on an APPROVED bill — an
+# abandoned duplicate, the cheapest kind to clear.
+_ABANDONED = f"""
+with ab as (
+    select b.bill_no, b.currency, b.bill_date::date as bill_date, b.bill_year,
+           b.bill_status, b.approve_status,
+           l.supplier_code, l.supplier_name, l.invoice_no, l.invoice_no_norm,
+           l.money_cr, l.money_bal
+      from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+     where not ({_EFFECTIVE}) and l.money_bal <> 0
+),
+flagged as (
+    select ab.*,
+           (ab.invoice_no_norm is not null and exists (
+              select 1 from nc_ap_bill_lines l2
+              join nc_ap_bills b2 on b2.id = l2.bill_id
+               where b2.bill_status = 1 and b2.approve_status = 1
+                 and l2.invoice_no_norm = ab.invoice_no_norm
+                 and l2.supplier_code is not distinct from ab.supplier_code
+           )) as superseded
+      from ab
+)
+"""
+
+
+async def abandoned_summary(db: AsyncSession) -> dict:
+    rows = (await db.execute(text(_ABANDONED + """
+        select currency,
+               count(distinct bill_no) as bills,
+               coalesce(sum(money_bal), 0) as money_bal,
+               count(distinct bill_no) filter (where superseded) as superseded_bills,
+               coalesce(sum(money_bal) filter (where superseded), 0) as superseded_bal
+          from flagged group by currency
+    """))).mappings().all()
+    return {(r["currency"] or "(unknown)"): {
+        "bills": int(r["bills"]), "money_bal": str(r["money_bal"]),
+        "superseded_bills": int(r["superseded_bills"]),
+        "superseded_bal": str(r["superseded_bal"]),
+    } for r in rows}
+
+
+async def abandoned_items(db: AsyncSession, currency: str | None = None,
+                          limit: int = 500) -> dict:
+    """Payable documents NC never approved, biggest balance first."""
+    params: dict = {"limit": max(1, min(limit, 2000))}
+    clause = ""
+    if currency:
+        clause = " where currency = :ccy"
+        params["ccy"] = currency
+    rows = (await db.execute(text(_ABANDONED + f"""
+        select bill_no, currency, bill_date, bill_year, bill_status, approve_status,
+               supplier_code, max(supplier_name) as supplier_name,
+               max(invoice_no) as invoice_no,
+               sum(money_cr) as money_cr, sum(money_bal) as money_bal,
+               bool_or(superseded) as superseded
+          from flagged {clause}
+         group by bill_no, currency, bill_date, bill_year, bill_status,
+                  approve_status, supplier_code
+         order by abs(sum(money_bal)) desc
+         limit :limit
+    """), params)).mappings().all()
+    return {"total": len(rows), "items": [{
+        "bill_no": r["bill_no"], "currency": r["currency"],
+        "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
+        "bill_year": r["bill_year"], "bill_status": r["bill_status"],
+        "approve_status": r["approve_status"], "supplier_code": r["supplier_code"],
+        "supplier_name": r["supplier_name"], "invoice_no": r["invoice_no"],
+        "money_cr": str(r["money_cr"]), "money_bal": str(r["money_bal"]),
+        "superseded": r["superseded"],
+    } for r in rows]}
+
+
 async def summary(db: AsyncSession) -> dict:
-    """Per currency, how much of the open balance can be trusted."""
+    """Per currency: the balance that can be used, and the two kinds that cannot."""
+    abandoned = await abandoned_summary(db)
     sql = _BASE + """
     select currency, health,
            count(*) as suppliers,
@@ -86,7 +179,7 @@ async def summary(db: AsyncSession) -> dict:
     by_ccy: dict[str, dict] = {}
     for r in rows:
         ccy = r["currency"] or "(unknown)"
-        entry = by_ccy.setdefault(ccy, {"currency": ccy, CONSISTENT: None, UNCLEARED: None})
+        entry = by_ccy.setdefault(ccy, {"currency": ccy, CONSISTENT: None, INCONSISTENT: None})
         entry[r["health"]] = {
             "suppliers": int(r["suppliers"]),
             "subledger_open": str(r["subledger_open"]),
@@ -99,7 +192,8 @@ async def summary(db: AsyncSession) -> dict:
         e = by_ccy[ccy]
         out.append({"currency": ccy,
                     "consistent": e[CONSISTENT] or empty,
-                    "uncleared": e[UNCLEARED] or empty})
+                    "inconsistent": e[INCONSISTENT] or empty,
+                    "abandoned": abandoned.get(ccy) or _EMPTY_ABANDONED})
     return {"currencies": out}
 
 
@@ -195,6 +289,7 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
           from nc_ap_bill_lines l
           join nc_ap_bills b on b.id = l.bill_id
          where l.supplier_code = :code and b.currency = :ccy and l.money_bal <> 0
+           and b.bill_status = 1 and b.approve_status = 1
          group by l.bill_no
          order by min(l.bill_date), l.bill_no
          limit :lim
@@ -212,6 +307,7 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
           join nc_ap_payments p on p.id = l.payment_id
           left join nc_ap_bills ab on ab.nc_pk = l.top_bill_id
          where l.supplier_code = :code and l.currency = :ccy
+           and p.bill_status = 1 and p.approve_status = 1
          order by p.bill_date desc nulls last, p.bill_no desc
          limit :lim
     """), {"code": supplier_code, "ccy": currency, "lim": lim})).mappings().all()

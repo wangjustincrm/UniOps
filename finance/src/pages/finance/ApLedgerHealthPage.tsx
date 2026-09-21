@@ -1,12 +1,13 @@
 /**
  * AP Subledger Health — which supplier balances in NC can be believed.
  *
- * NC's payable subledger reports far more open than billed-minus-paid does.
- * The clearest case: bill D12021092200128305 was billed 36,040.00, has
- * 36,040.00 of payments pointing squarely at it, and both of its lines are
- * still flagged fully open. The payment exists and is attached — the balance
- * was simply never cleared. At scale that is 2021 milk: billed 32,641,249.87,
- * paid 32,114,350.99, 13,411,519.10 still shown as open.
+ * Once only APPROVED documents are counted, NC's subledger is healthy: 143 CAD
+ * supplier positions where open equals billed-minus-paid to the cent, against
+ * 3 that differ by 32,988.93 in total.
+ *
+ * What is not healthy is what sits outside that: 487 CAD payable documents NC
+ * never approved, carrying 33,513,491.02 of balance, 270 of them duplicates of
+ * a bill that WAS approved. That is the finding this page leads with.
  *
  * This page does NOT decide who is right. It cannot: billed-minus-paid is not a
  * truth either — a supplier paid beyond what was billed is holding a prepayment
@@ -26,8 +27,9 @@ import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-interface Side { suppliers: number; subledger_open: string; billed_minus_paid: string; gap: string }
-interface CcyRow { currency: string; consistent: Side; uncleared: Side }
+interface Side { suppliers: number; subledger_open: string; billed_minus_paid?: string; gap: string }
+interface Abandoned { bills: number; money_bal: string; superseded_bills: number; superseded_bal: string }
+interface CcyRow { currency: string; consistent: Side; inconsistent: Side; abandoned: Abandoned }
 interface SummaryResp { currencies: CcyRow[] }
 
 interface SupplierRow {
@@ -58,6 +60,14 @@ interface PayLine {
   scomment: string | null
 }
 interface DetailResp { supplier_code: string; currency: string; open_bills: OpenBill[]; payments: PayLine[] }
+
+interface AbandonedRow {
+  bill_no: string; currency: string; bill_date: string | null; bill_year: string | null
+  bill_status: number | null; approve_status: number | null
+  supplier_code: string | null; supplier_name: string | null; invoice_no: string | null
+  money_cr: string; money_bal: string; superseded: boolean
+}
+interface AbandonedResp { total: number; items: AbandonedRow[] }
 
 function money(v: string | null | undefined) {
   if (v === null || v === undefined) return '—'
@@ -208,7 +218,9 @@ function SupplierDetail({ code, name, currency, onClose }: {
 export default function ApLedgerHealthPage() {
   const { user } = useAuthStore()
   const [currency, setCurrency] = useState('CAD')
-  const [health, setHealth] = useState<string>('uncleared')
+  // 'abandoned' first: it is where the money is, and it is the one finance can
+  // actually act on. The approved-supplier view is the tripwire beside it.
+  const [view, setView] = useState<'abandoned' | 'suppliers'>('abandoned')
   const [open, setOpen] = useState<{ code: string; name: string | null } | null>(null)
 
   const { data: summary, isFetching: loadingSummary } = useQuery({
@@ -216,24 +228,39 @@ export default function ApLedgerHealthPage() {
     queryFn: () => financeApi.get<SummaryResp>('/ap-ledger-health/summary'),
   })
   const { data: items, isFetching: loadingItems } = useQuery({
-    queryKey: ['ap-ledger-health-items', currency, health],
+    queryKey: ['ap-ledger-health-items', currency],
     queryFn: () => financeApi.get<ItemsResp>(
-      `/ap-ledger-health/items?currency=${currency}&health=${health}&limit=500`),
+      `/ap-ledger-health/items?currency=${currency}&limit=500`),
+    enabled: view === 'suppliers',
+  })
+  const { data: abandoned, isFetching: loadingAbandoned } = useQuery({
+    queryKey: ['ap-ledger-abandoned', currency],
+    queryFn: () => financeApi.get<AbandonedResp>(
+      `/ap-ledger-health/abandoned?currency=${currency}&limit=500`),
+    enabled: view === 'abandoned',
   })
 
   const ccyRows = summary?.currencies ?? []
 
   const exportCsv = () => {
-    const head = ['Supplier code', 'Supplier', 'Currency', 'Health', 'Billed', 'Paid',
-                  'Subledger open', 'Billed minus paid', 'Gap']
-    const body = (items?.items ?? []).map((r) => [
-      r.supplier_code, r.supplier_name, r.currency, r.health,
-      r.billed, r.paid, r.subledger_open, r.billed_minus_paid, r.gap])
+    const head = view === 'abandoned'
+      ? ['Bill', 'Date', 'Supplier code', 'Supplier', 'Invoice no', 'Currency',
+         'Billed', 'Balance carried', 'Bill status', 'Approve status', 'Duplicate of an approved bill']
+      : ['Supplier code', 'Supplier', 'Currency', 'Health', 'Billed', 'Paid',
+         'Subledger open', 'Billed minus paid', 'Gap']
+    const body = view === 'abandoned'
+      ? (abandoned?.items ?? []).map((r) => [
+          r.bill_no, r.bill_date, r.supplier_code, r.supplier_name, r.invoice_no,
+          r.currency, r.money_cr, r.money_bal, r.bill_status, r.approve_status,
+          r.superseded ? 'yes' : 'no'])
+      : (items?.items ?? []).map((r) => [
+          r.supplier_code, r.supplier_name, r.currency, r.health,
+          r.billed, r.paid, r.subledger_open, r.billed_minus_paid, r.gap])
     const csv = [head, ...body].map((row) => row.map(csvEscape).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `ap-subledger-health-${currency}-${health}.csv`
+    a.download = `ap-subledger-health-${currency}-${view}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -249,16 +276,15 @@ export default function ApLedgerHealthPage() {
       <div className="mx-auto max-w-7xl">
         <div className="mb-5 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm leading-relaxed text-neutral-700">
           <p className="mb-1.5">
-            NC holds two figures for what a supplier is owed: the <strong>open balance on the
-            payable lines</strong>, and <strong>what was billed minus what was paid</strong>. For most
-            suppliers they agree exactly. Where they do not, the open balance is carrying bills
-            that were paid — often by a payment NC has attached to that very bill — and never
-            cleared. Open a supplier and the <em>Paid against it</em> column shows which ones.
+            Counting only the documents NC <strong>approved</strong>, the subledger is healthy — open
+            balance and billed-minus-paid agree to the cent for almost every supplier. The balance
+            that cannot be used sits on documents NC <strong>never approved</strong>: drafts and
+            duplicates that were raised, abandoned, and still carry their full amount.
           </p>
           <p className="text-neutral-500">
-            This page does not decide which figure is right — paying beyond what was billed is
-            normal too (a prepayment, an unapplied credit). It shows that the two disagree and
-            hands over the documents behind the gap. <strong>The judgement is finance&rsquo;s, per supplier.</strong>
+            Marked <em>duplicate</em> are the clearest: the same supplier, amount and invoice number
+            also exist on an approved bill, so the abandoned one is pure residue. The rest need a
+            decision. This page does not make it — <strong>the judgement is finance&rsquo;s, per document.</strong>
           </p>
         </div>
 
@@ -267,7 +293,7 @@ export default function ApLedgerHealthPage() {
         ) : (
           <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {ccyRows.map((c) => {
-              const bad = Number(c.uncleared.gap) !== 0
+              const bad = Number(c.abandoned.money_bal) !== 0
               return (
                 <button key={c.currency} onClick={() => setCurrency(c.currency)}
                         className={cn('rounded-lg border p-3 text-left transition-colors',
@@ -281,20 +307,21 @@ export default function ApLedgerHealthPage() {
                   </div>
                   <dl className="mt-2 space-y-1 text-xs">
                     <div className="flex justify-between gap-2">
-                      <dt className="text-neutral-500">Trustworthy</dt>
+                      <dt className="text-neutral-500">Real payable</dt>
                       <dd className="font-mono tabular-nums">{money(c.consistent.subledger_open)}</dd>
                     </div>
                     <div className="flex justify-between gap-2">
-                      <dt className="text-neutral-500">In question</dt>
-                      <dd className="font-mono tabular-nums">{money(c.uncleared.subledger_open)}</dd>
+                      <dt className="text-neutral-500">Approved, disagrees</dt>
+                      <dd className="font-mono tabular-nums">{money(c.inconsistent.gap)}</dd>
                     </div>
                     <div className="flex justify-between gap-2 border-t border-neutral-200 pt-1">
-                      <dt className="font-medium text-amber-700">Overstated by</dt>
-                      <dd className="font-mono tabular-nums font-semibold text-amber-700">{money(c.uncleared.gap)}</dd>
+                      <dt className="font-medium text-amber-700">On abandoned docs</dt>
+                      <dd className="font-mono tabular-nums font-semibold text-amber-700">{money(c.abandoned.money_bal)}</dd>
                     </div>
                   </dl>
                   <p className="mt-1.5 text-[11px] text-neutral-400">
-                    {c.consistent.suppliers} agree · {c.uncleared.suppliers} disagree
+                    {c.consistent.suppliers} suppliers agree · {c.abandoned.bills} abandoned docs
+                    {c.abandoned.superseded_bills > 0 && <>, {c.abandoned.superseded_bills} duplicate</>}
                   </p>
                 </button>
               )
@@ -304,16 +331,16 @@ export default function ApLedgerHealthPage() {
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <div className="inline-flex overflow-hidden rounded-lg border border-neutral-300">
-            {[['uncleared', 'Disagree'], ['consistent', 'Agree']].map(([k, label]) => (
-              <button key={k} onClick={() => setHealth(k)}
+            {([['abandoned', 'Abandoned documents'], ['suppliers', 'Approved suppliers']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setView(k)}
                       className={cn('px-3 py-1.5 text-sm',
-                                    health === k ? 'bg-[#085E5E] text-white' : 'bg-white text-neutral-700 hover:bg-neutral-50')}>
+                                    view === k ? 'bg-[#085E5E] text-white' : 'bg-white text-neutral-700 hover:bg-neutral-50')}>
                 {label}
               </button>
             ))}
           </div>
           <span className="text-sm text-neutral-500">
-            {currency} · {items?.total ?? 0} suppliers
+            {currency} · {view === 'abandoned' ? `${abandoned?.total ?? 0} documents` : `${items?.total ?? 0} suppliers`}
           </span>
           <button onClick={exportCsv}
                   className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
@@ -321,6 +348,54 @@ export default function ApLedgerHealthPage() {
           </button>
         </div>
 
+        {view === 'abandoned' ? (
+          <div className="overflow-x-auto rounded-lg border border-neutral-200">
+            <table className="w-full min-w-[880px] text-sm">
+              <thead>
+                <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
+                  <th className="px-3 py-2 text-left font-medium">Bill</th>
+                  <th className="px-3 py-2 text-left font-medium">Date</th>
+                  <th className="px-3 py-2 text-left font-medium">Supplier</th>
+                  <th className="px-3 py-2 text-left font-medium">Invoice no.</th>
+                  <th className="px-3 py-2 text-right font-medium">Billed</th>
+                  <th className="px-3 py-2 text-right font-medium">Balance carried</th>
+                  <th className="px-3 py-2 text-left font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingAbandoned && !abandoned ? (
+                  <tr><td colSpan={7} className="px-3 py-8 text-center">
+                    <Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></td></tr>
+                ) : (abandoned?.items.length ?? 0) === 0 ? (
+                  <tr><td colSpan={7} className="px-3 py-8 text-center text-neutral-400">
+                    No abandoned documents carrying a balance in {currency}.</td></tr>
+                ) : abandoned!.items.map((r) => (
+                  <tr key={r.bill_no} className="border-t border-neutral-100 hover:bg-neutral-50/60">
+                    <td className="px-3 py-2 font-mono text-xs">{r.bill_no}</td>
+                    <td className="px-3 py-2 text-xs text-neutral-600">{day(r.bill_date)}</td>
+                    <td className="px-3 py-2">
+                      <div className="text-neutral-800">{r.supplier_name ?? '—'}</div>
+                      <div className="font-mono text-[11px] text-neutral-400">{r.supplier_code ?? '—'}</div>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-neutral-600">{r.invoice_no ?? '—'}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums text-neutral-600">{money(r.money_cr)}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-amber-700">{money(r.money_bal)}</td>
+                    <td className="px-3 py-2 text-xs">
+                      <span className="font-mono text-neutral-500">{r.bill_status}/{r.approve_status}</span>
+                      {/* The cheapest ones to clear: an approved bill already
+                          carries this supplier, amount and invoice number. */}
+                      {r.superseded && (
+                        <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                          duplicate
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
         <div className="overflow-x-auto rounded-lg border border-neutral-200">
           <table className="w-full min-w-[820px] text-sm">
             <thead>
@@ -368,6 +443,7 @@ export default function ApLedgerHealthPage() {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {open && (

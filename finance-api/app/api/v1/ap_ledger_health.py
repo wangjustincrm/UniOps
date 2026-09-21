@@ -18,6 +18,16 @@ async def summary(user: CurrentUser, db: AsyncSession = Depends(get_db)):
     return await svc.summary(db)
 
 
+@router.get("/abandoned")
+async def abandoned(user: CurrentUser,
+                    currency: str | None = Query(None),
+                    limit: int = Query(500, ge=1, le=2000),
+                    db: AsyncSession = Depends(get_db)):
+    """Payable documents NC never approved that still carry a balance — the
+    bulk of what looked like an open balance before status was accounted for."""
+    return await svc.abandoned_items(db, currency=currency, limit=limit)
+
+
 @router.get("/supplier")
 async def supplier(user: CurrentUser,
                    supplier_code: str = Query(...),
@@ -35,7 +45,7 @@ async def items(user: CurrentUser,
                 currency: str | None = Query(None),
                 limit: int = Query(200, ge=1, le=1000),
                 db: AsyncSession = Depends(get_db)):
-    if health is not None and health not in (svc.CONSISTENT, svc.UNCLEARED):
+    if health is not None and health not in (svc.CONSISTENT, svc.INCONSISTENT):
         raise HTTPException(status_code=422,
-                            detail=f"health must be {svc.CONSISTENT} or {svc.UNCLEARED}")
+                            detail=f"health must be {svc.CONSISTENT} or {svc.INCONSISTENT}")
     return await svc.items(db, health=health, currency=currency, limit=limit)

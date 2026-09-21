@@ -62,6 +62,7 @@ interface ItemRow {
   po_number: string | null
   source: string | null
   category: string
+  unapproved_bill_no: string | null
   nc: NcSide | null
   nc_amount_match: AltSide | null
 }
@@ -89,6 +90,12 @@ const CATEGORIES: { key: string; label: string; help: string; tone: 'bad' | 'war
     label: 'Missing in NC',
     tone: 'bad',
     help: 'We hold the invoice and NC has no bill for it under any number we can find. These are real liabilities NC’s books do not carry yet — chase finance to key them.',
+  },
+  {
+    key: 'in_nc_unapproved',
+    label: 'In NC but never approved',
+    tone: 'bad',
+    help: 'NC has a document for this invoice, but it was never approved — so it is not on the books and nothing will ever pay it. Usually a draft someone abandoned, sometimes a duplicate of a bill that was approved under a different number.',
   },
   {
     key: 'invoice_no_mismatch',
@@ -327,7 +334,11 @@ export default function ApReconciliationPage() {
                   <td className="px-3 py-2 text-right font-mono tabular-nums">{money(r.total_amount)}</td>
                   <td className="px-3 py-2 text-xs text-neutral-600">{day(r.invoice_date)}</td>
                   <td className="px-3 py-2 text-xs text-neutral-600">{day(r.due_date)}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-neutral-500">{r.po_number ?? '—'}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-neutral-500">
+                    {r.po_number ?? (r.unapproved_bill_no
+                      ? <span className="text-amber-700">{r.unapproved_bill_no}</span>
+                      : '—')}
+                  </td>
                   {category === 'invoice_no_mismatch' ? (
                     <>
                       <td className="px-3 py-2 font-mono text-xs text-amber-800">
