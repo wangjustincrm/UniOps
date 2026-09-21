@@ -9,10 +9,11 @@ column. Keep them that way: a mirror model that drifts from its table is a bug
 that only shows up as a 500 in production.
 """
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import (Boolean, Date, DateTime, ForeignKey, Integer, Numeric,
+                        String, Text)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -203,3 +204,44 @@ class NcApPaymentLine(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     payment: Mapped[NcApPayment] = relationship(back_populates="lines")
+
+
+# Why a stale payable was taken off the working list. Kept as a closed set so
+# the reasons can be counted and reported; "other" is the escape hatch and is
+# the one case where the note is mandatory (enforced in the API, where the
+# message can reach the person typing).
+DISMISS_REASONS = {
+    "legacy": "Legacy balance — NC period closed, cannot be cleared there",
+    "duplicate": "Duplicate document",
+    "settled_elsewhere": "Settled outside the AP module (manual journal entry)",
+    "written_off": "Written off / no longer payable",
+    "other": "Other",
+}
+
+
+class NcApBillDismissal(Base):
+    """Finance's judgement that an NC payable is not real debt.
+
+    Mirrors 0035_ap_bill_dismiss column for column. Never joined INTO the
+    mirror's own totals — see app/services/ap_ledger_health.py, which reports
+    NC's figure and the dismissed figure side by side rather than netting them
+    silently.
+    """
+    __tablename__ = "nc_ap_bill_dismissals"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True,
+                                          default=uuid.uuid4)
+    bill_no: Mapped[str] = mapped_column(String(40), nullable=False)
+    supplier_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    supplier_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    money_bal_at_dismissal: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    bill_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    reason: Mapped[str] = mapped_column(String(40), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dismissed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    dismissed_by_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    dismissed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    restored_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    restored_by_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
