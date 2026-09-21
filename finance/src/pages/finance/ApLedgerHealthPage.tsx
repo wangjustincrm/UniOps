@@ -778,16 +778,20 @@ export default function ApLedgerHealthPage() {
                       <dt className="text-neutral-500">Approved, disagrees</dt>
                       <dd className="font-mono tabular-nums">{money(c.inconsistent.gap)}</dd>
                     </div>
-                    {/* Only rendered once finance has actually set something
-                        aside, so a currency with no judgements reads exactly as
-                        it did before — and where there ARE judgements, the
-                        subtraction is spelled out rather than folded in. */}
-                    {Number(c.ignored.money_bal) !== 0 && (
+                    {/* Reads from the CONSISTENT bucket, because that bucket is
+                        what "Real payable" above is — the currency-wide ignored
+                        figure includes bills on suppliers whose subledger
+                        disagrees, and those contribute nothing to that line.
+                        Subtracting one from the other printed a "Net payable"
+                        identical to the gross, which is worse than showing
+                        nothing. Only rendered once something has been set aside,
+                        so an untouched currency reads exactly as it did before. */}
+                    {Number(c.consistent.ignored_bal) !== 0 && (
                       <>
                         <div className="flex justify-between gap-2">
                           <dt className="text-neutral-400">Ignored by finance</dt>
                           <dd className="font-mono tabular-nums text-neutral-400">
-                            &minus;{money(c.ignored.money_bal)}
+                            &minus;{money(c.consistent.ignored_bal)}
                           </dd>
                         </div>
                         <div className="flex justify-between gap-2 border-t border-neutral-200 pt-1">
