@@ -20,28 +20,41 @@ const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'h
 
 // `permission` gates visibility via the EPMS Access Control Matrix (same keys the
 // old Portal navConfig used). Items hide for users whose role lacks the toggle.
+//
+// Sections follow the finance function, not the URL prefix: the AP and AR
+// subledgers, the GL reporting spine (General), the voucher workbench, budgeting,
+// banking, and setup. Order matters — the first item a user can see is also the
+// module landing page (see `firstVisible` below), so AP stays first.
 interface NavItem { label: string; href: string; icon: LucideIcon; permission?: string }
 interface NavSection { title: string; items: NavItem[] }
 
 const NAV: NavSection[] = [
   {
-    title: 'Finance',
+    title: 'AP',
     items: [
       { label: 'Accounts Payable', href: '/finance/ap', icon: CreditCard, permission: 'view_finance' },
-      { label: 'Accounts Receivable', href: '/finance/ar', icon: Receipt, permission: 'view_finance' },
-      { label: 'General Ledger', href: '/finance/gl', icon: BookOpen, permission: 'view_finance' },
-      { label: 'Journal Vouchers', href: '/finance/journal-vouchers', icon: FileText, permission: 'view_finance' },
-      { label: 'Account Balance', href: '/finance/account-balance', icon: Scale, permission: 'view_finance' },
-      { label: 'Budget Actual', href: '/finance/budget-actual', icon: Target, permission: 'view_finance' },
-      { label: 'JV Validation', href: '/finance/jv-validation', icon: ShieldAlert, permission: 'view_finance' },
       { label: 'Payments', href: '/finance/payments', icon: Wallet, permission: 'view_finance' },
       { label: 'Payment Batches', href: '/finance/payment-batches', icon: Banknote, permission: 'view_finance' },
-      { label: 'Bank Reconciliation', href: '/finance/bank', icon: Landmark, permission: 'view_finance' },
-      { label: 'QuickBooks', href: '/finance/qbo', icon: RefreshCw, permission: 'view_finance' },
-      // Throwaway: remove with QboCreditImportPage when QuickBooks is retired.
-      // Gated on the credit-manage key, not view_finance — this writes spendable
-      // credit into the ledger payments are made from, so read access is not enough.
-      { label: 'QBO Credit Import', href: '/finance/qbo-credit-import', icon: Download, permission: 'epms.vendor_credit.manage' },
+    ],
+  },
+  {
+    title: 'AR',
+    items: [
+      { label: 'Accounts Receivable', href: '/finance/ar', icon: Receipt, permission: 'view_finance' },
+    ],
+  },
+  {
+    title: 'General',
+    items: [
+      { label: 'General Ledger', href: '/finance/gl', icon: BookOpen, permission: 'view_finance' },
+      { label: 'Account Balance', href: '/finance/account-balance', icon: Scale, permission: 'view_finance' },
+    ],
+  },
+  {
+    title: 'Voucher',
+    items: [
+      { label: 'Journal Vouchers', href: '/finance/journal-vouchers', icon: FileText, permission: 'view_finance' },
+      { label: 'JV Validation', href: '/finance/jv-validation', icon: ShieldAlert, permission: 'view_finance' },
     ],
   },
   {
@@ -49,9 +62,19 @@ const NAV: NavSection[] = [
     items: [
       { label: 'Budget Dashboard', href: '/budget/dashboard', icon: LayoutDashboard, permission: 'view_budget_dashboard' },
       { label: 'Budget Plans', href: '/budget/plans', icon: ClipboardList, permission: 'view_budget_plans' },
+      // Budget vs actual: reads the current approved plan, so it belongs with the
+      // plans it compares against even though the page itself lives under /finance.
+      { label: 'Budget Actual', href: '/finance/budget-actual', icon: Target, permission: 'view_finance' },
       { label: 'Account Catalog', href: '/budget/catalog', icon: FolderTree, permission: 'view_finance' },
       { label: 'Factor Library', href: '/budget/factors', icon: FlaskConical, permission: 'view_finance' },
       { label: 'Budget Config', href: '/budget/config', icon: SlidersHorizontal, permission: 'view_finance' },
+    ],
+  },
+  {
+    title: 'Banking',
+    items: [
+      { label: 'Bank Reconciliation', href: '/finance/bank', icon: Landmark, permission: 'view_finance' },
+      { label: 'Bank Settings', href: '/finance/bank-settings', icon: Settings, permission: 'view_finance' },
     ],
   },
   {
@@ -59,7 +82,11 @@ const NAV: NavSection[] = [
     items: [
       { label: 'Chart of Accounts', href: '/finance/coa', icon: FolderTree, permission: 'view_finance' },
       { label: 'Tax Settings', href: '/finance/tax', icon: Percent, permission: 'view_finance' },
-      { label: 'Bank Settings', href: '/finance/bank-settings', icon: Settings, permission: 'view_finance' },
+      { label: 'QuickBooks', href: '/finance/qbo', icon: RefreshCw, permission: 'view_finance' },
+      // Throwaway: remove with QboCreditImportPage when QuickBooks is retired.
+      // Gated on the credit-manage key, not view_finance — this writes spendable
+      // credit into the ledger payments are made from, so read access is not enough.
+      { label: 'QBO Credit Import', href: '/finance/qbo-credit-import', icon: Download, permission: 'epms.vendor_credit.manage' },
     ],
   },
 ]
