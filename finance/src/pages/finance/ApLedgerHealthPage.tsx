@@ -73,6 +73,15 @@ interface AbandonedRow {
 }
 interface AbandonedResp { total: number; items: AbandonedRow[] }
 
+interface GlLine {
+  same_currency: boolean
+  jv_number: string; voucher_date: string | null; fiscal_period: string | null
+  subsystem: string | null; account_code: string; summary: string | null
+  debit: string | null; credit: string | null; currency: string | null
+  matches_gap: boolean
+}
+interface GlResp { total: number; matching: number; matching_other_currency: number; items: GlLine[] }
+
 function money(v: string | null | undefined) {
   if (v === null || v === undefined) return '—'
   const n = Number(v)
@@ -86,13 +95,25 @@ function csvEscape(v: unknown) {
 /** Already YYYY-MM-DD from the API — never re-parse a date-only string. */
 function day(v: string | null) { return v ? v.slice(0, 10) : '—' }
 
-function SupplierDetail({ code, name, currency, onClose }: {
-  code: string; name: string | null; currency: string; onClose: () => void
+function SupplierDetail({ code, name, currency, gap, onClose }: {
+  code: string; name: string | null; currency: string; gap: string | null; onClose: () => void
 }) {
   const { data, isFetching } = useQuery({
     queryKey: ['ap-ledger-supplier', code, currency],
     queryFn: () => financeApi.get<DetailResp>(
       `/ap-ledger-health/supplier?supplier_code=${encodeURIComponent(code)}&currency=${currency}`),
+  })
+  // Finance settles some differences by posting straight to the payable
+  // account, skipping the payment document — invisible to the payment-side
+  // comparison, which is why those gaps come out negative. Only fetched when
+  // there is a gap to explain.
+  const hasGap = gap !== null && Number(gap) !== 0
+  const { data: gl } = useQuery({
+    queryKey: ['ap-ledger-gl', name, currency, gap],
+    queryFn: () => financeApi.get<GlResp>(
+      `/ap-ledger-health/gl-clearing?supplier_name=${encodeURIComponent(name ?? '')}` +
+      `&currency=${currency}&gap=${encodeURIComponent(gap ?? '')}&limit=400`),
+    enabled: hasGap && !!name,
   })
   const bills = data?.open_bills ?? []
   const pays = data?.payments ?? []
@@ -214,6 +235,68 @@ function SupplierDetail({ code, name, currency, onClose }: {
             </div>
           </div>
         )}
+
+        {hasGap && gl && (
+          <div className="border-t border-neutral-200 px-5 pb-5 pt-4">
+            <h3 className="mb-1 text-sm font-semibold text-neutral-800">
+              Journal entries on this supplier&rsquo;s payable account
+            </h3>
+            <p className="mb-2.5 max-w-3xl text-xs leading-relaxed text-neutral-500">
+              Vouchers that moved the payable without an AP document — where a difference settled
+              by a manual entry shows up. {gl.matching > 0
+                ? <span className="font-medium text-[#085E5E]">{gl.matching} of them is for exactly
+                    the difference.</span>
+                : <>None is for exactly the difference, so it is either the net of several or was
+                    settled another way.</>}
+            </p>
+            <div className="max-h-[38vh] overflow-auto rounded-lg border border-neutral-200">
+              <table className="w-full min-w-[640px] text-xs">
+                <thead className="sticky top-0 bg-neutral-50">
+                  <tr className="border-b border-neutral-100 text-[11px] text-neutral-500">
+                    <th className="px-2.5 py-2 text-left font-medium">Voucher</th>
+                    <th className="px-2.5 py-2 text-left font-medium">Date</th>
+                    <th className="px-2.5 py-2 text-left font-medium">Source</th>
+                    <th className="px-2.5 py-2 text-left font-medium">Account</th>
+                    <th className="px-2.5 py-2 text-right font-medium">Debit</th>
+                    <th className="px-2.5 py-2 text-right font-medium">Credit</th>
+                    <th className="px-2.5 py-2 text-left font-medium">Narration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gl.items.length === 0 ? (
+                    <tr><td colSpan={7} className="px-2.5 py-6 text-center text-neutral-400">
+                      No journal entries on this supplier&rsquo;s payable account.</td></tr>
+                  ) : gl.items.map((r, i) => (
+                    <tr key={r.jv_number + i}
+                        className={cn('border-t border-neutral-100', r.matches_gap && 'bg-primary-50/70')}>
+                      <td className="px-2.5 py-1.5 font-mono">
+                        {r.jv_number}
+                        {r.matches_gap && (
+                          <span className="ml-1.5 rounded bg-[#085E5E] px-1 py-0.5 text-[10px] font-semibold text-white">
+                            matches
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-2.5 py-1.5 text-neutral-600">{day(r.voucher_date)}</td>
+                      <td className="px-2.5 py-1.5 font-mono text-neutral-500">{r.subsystem ?? '—'}</td>
+                      <td className="px-2.5 py-1.5 font-mono text-neutral-600">
+                        {r.account_code}
+                        {/* A voucher in another currency against this gap is
+                            worth seeing, not hiding — sometimes it IS the answer. */}
+                        {!r.same_currency && (
+                          <span className="ml-1 text-[10px] text-amber-700">{r.currency}</span>
+                        )}
+                      </td>
+                      <td className="px-2.5 py-1.5 text-right font-mono tabular-nums">{money(r.debit)}</td>
+                      <td className="px-2.5 py-1.5 text-right font-mono tabular-nums">{money(r.credit)}</td>
+                      <td className="px-2.5 py-1.5 text-neutral-600">{r.summary ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -225,7 +308,7 @@ export default function ApLedgerHealthPage() {
   // The approved payable is the page's subject. The abandoned documents are
   // not work — they are an exclusion that has to be declared, not worked.
   const [view, setView] = useState<'suppliers' | 'abandoned'>('suppliers')
-  const [open, setOpen] = useState<{ code: string; name: string | null } | null>(null)
+  const [open, setOpen] = useState<{ code: string; name: string | null; gap: string | null } | null>(null)
 
   const { data: summary, isFetching: loadingSummary } = useQuery({
     queryKey: ['ap-ledger-health-summary'],
@@ -440,7 +523,7 @@ export default function ApLedgerHealthPage() {
                   </td>
                   <td className="px-3 py-2">
                     {r.supplier_code && (
-                      <button onClick={() => setOpen({ code: r.supplier_code!, name: r.supplier_name })}
+                      <button onClick={() => setOpen({ code: r.supplier_code!, name: r.supplier_name, gap: r.gap })}
                               className="text-xs font-medium text-[#085E5E] hover:underline">
                         Show documents
                       </button>
@@ -456,7 +539,7 @@ export default function ApLedgerHealthPage() {
 
       {open && (
         <SupplierDetail code={open.code} name={open.name} currency={currency}
-                        onClose={() => setOpen(null)} />
+                        gap={open.gap} onClose={() => setOpen(null)} />
       )}
     </PortalChromeLayout>
   )

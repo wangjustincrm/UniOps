@@ -343,3 +343,85 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
             "scomment": r["scomment"],
         } for r in payments],
     }
+
+
+# Accounts payable in the chart of accounts. A voucher that moves one of these
+# without an AP-module document behind it is a manual settlement.
+_AP_ACCOUNT_PREFIX = "2202"
+
+
+async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency: str,
+                                 gap: str | float | None = None,
+                                 limit: int = 200) -> dict:
+    """Vouchers that moved this supplier's payable WITHOUT an AP document.
+
+    Finance confirmed (2026-09-22) that some differences were settled by posting
+    a journal voucher straight to the payable account, skipping the payment
+    document entirely. That is invisible to the payment-side comparison — which
+    is exactly why the gap shows up as NEGATIVE: the subledger came down and no
+    payment exists to account for it.
+
+    So this looks for the other half: lines on a 2202* account, for this
+    supplier, on vouchers NOT raised by the AP subsystem. `matches_gap` flags
+    the ones whose amount equals the difference, since with a lifetime total in
+    the millions against a gap in the thousands, the total proves nothing and
+    only the individual voucher does.
+
+    Joined on supplier NAME: both sides carry NC's own BD_SUPPLIER.name, so it
+    is the same string, not a fuzzy comparison. 653 of 756 mirrored suppliers
+    resolve this way; the rest simply have no voucher activity on a payable
+    account.
+    """
+    target = None
+    if gap is not None:
+        try:
+            target = abs(float(gap))
+        except (TypeError, ValueError):
+            target = None
+
+    rows = (await db.execute(text(f"""
+        select v.jv_number, v.voucher_date, v.fiscal_period, v.source_subsystem,
+               v.summary as voucher_summary,
+               l.account_code, l.summary as line_summary,
+               l.orig_debit, l.orig_credit, l.currency
+          from journal_voucher_lines l
+          join journal_vouchers v on v.id = l.jv_id
+         where l.partner_name = :name
+           and l.account_code like '{_AP_ACCOUNT_PREFIX}%'
+           and v.source_subsystem is distinct from 'AP'
+           and (coalesce(l.orig_debit, 0) <> 0 or coalesce(l.orig_credit, 0) <> 0)
+         -- Currency orders the list, it does not filter it. Aptargroup's CAD gap
+         -- has zero CAD vouchers behind it and 63 USD ones — filtering on
+         -- currency hid the only rows that could explain the difference, and a
+         -- gap that appears in one currency and its mirror image in another
+         -- (Willis: CAD -3,913.50, USD +3,913.50) is itself the answer.
+         order by (l.currency = :ccy) desc nulls last,
+                  v.voucher_date desc nulls last, v.jv_number desc
+         limit :limit
+    """), {"name": supplier_name, "ccy": currency,
+           "limit": max(1, min(limit, 1000))})).mappings().all()
+
+    def near(a) -> bool:
+        return target is not None and a is not None and abs(abs(float(a)) - target) <= 0.01
+
+    items = [{
+        "same_currency": r["currency"] == currency,
+        "jv_number": r["jv_number"],
+        "voucher_date": r["voucher_date"].isoformat() if r["voucher_date"] else None,
+        "fiscal_period": r["fiscal_period"],
+        "subsystem": r["source_subsystem"],
+        "account_code": r["account_code"],
+        "summary": r["line_summary"] or r["voucher_summary"],
+        "debit": str(r["orig_debit"]) if r["orig_debit"] is not None else None,
+        "credit": str(r["orig_credit"]) if r["orig_credit"] is not None else None,
+        "currency": r["currency"],
+        # The one worth opening in NC.
+        "matches_gap": near(r["orig_debit"]) or near(r["orig_credit"]),
+    } for r in rows]
+    return {"supplier_name": supplier_name, "currency": currency,
+            "gap": str(gap) if gap is not None else None,
+            "total": len(items),
+            "matching": sum(1 for i in items if i["matches_gap"]),
+            "matching_other_currency": sum(
+                1 for i in items if i["matches_gap"] and not i["same_currency"]),
+            "items": items}

@@ -28,6 +28,19 @@ async def abandoned(user: CurrentUser,
     return await svc.abandoned_items(db, currency=currency, limit=limit)
 
 
+@router.get("/gl-clearing")
+async def gl_clearing(user: CurrentUser,
+                      supplier_name: str = Query(...),
+                      currency: str = Query(...),
+                      gap: str | None = Query(None),
+                      limit: int = Query(200, ge=1, le=1000),
+                      db: AsyncSession = Depends(get_db)):
+    """Vouchers that moved this supplier's payable without an AP document —
+    where a difference settled by a manual journal entry shows up."""
+    return await svc.gl_clearing_candidates(db, supplier_name, currency,
+                                            gap=gap, limit=limit)
+
+
 @router.get("/supplier")
 async def supplier(user: CurrentUser,
                    supplier_code: str = Query(...),
