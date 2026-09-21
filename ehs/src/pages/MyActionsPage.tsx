@@ -61,6 +61,12 @@ export default function MyActionsPage() {
     queryKey: ['actions', 'mine', 'tasks'],
     queryFn: () => api.get<AssignedTask[]>('/api/v1/actions/mine/tasks'),
   })
+  // Judging whether somebody else's fix worked is a different job from doing
+  // your own, so it is its own group rather than more rows in the same list.
+  const toVerify = useQuery({
+    queryKey: ['actions', 'mine', 'to-verify'],
+    queryFn: () => api.get<ActionListItem[]>('/api/v1/actions/mine/to-verify'),
+  })
 
   if (isLoading) {
     return <p className="p-4 text-sm text-neutral-500">Loading your actions…</p>
@@ -75,8 +81,9 @@ export default function MyActionsPage() {
 
   const actions = data ?? []
   const other = tasks.data ?? []
+  const verifying = toVerify.data ?? []
 
-  if (actions.length === 0 && other.length === 0) {
+  if (actions.length === 0 && other.length === 0 && verifying.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 p-10 text-center">
         <CheckCircle2 className="h-8 w-8 text-success-500" aria-hidden />
@@ -113,6 +120,35 @@ export default function MyActionsPage() {
           {actions.length > 0 && (
             <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
               Corrective actions
+            </p>
+          )}
+        </>
+      )}
+      {verifying.length > 0 && (
+        <>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+            Waiting on you to verify
+          </p>
+          {verifying.map((a) => (
+            <Link
+              key={a.id}
+              to={`/actions/${a.id}`}
+              className="block rounded-xl border border-warning-500/40 bg-warning-50/40 p-3.5 transition-colors hover:border-warning-500"
+            >
+              <h2 className="text-sm font-semibold text-neutral-900">{a.title}</h2>
+              <p className="mt-0.5 text-xs text-neutral-500">
+                {a.action_no}
+                {a.source_ref ? ` · from ${a.source_ref}` : ''}
+              </p>
+              <p className="mt-1.5 text-xs text-neutral-600">
+                The work is reported done. Confirm the control is effective —
+                or that it is not, which sends it back.
+              </p>
+            </Link>
+          ))}
+          {actions.length > 0 && (
+            <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+              Yours to do
             </p>
           )}
         </>

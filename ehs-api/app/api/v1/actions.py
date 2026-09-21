@@ -12,7 +12,7 @@ from app.core.deps import SessionDep
 from uniops_authz import has_permission
 
 from app.core.permissions import (
-    CanReadAction, CanReportIncident, CanVerifyAction, CanWriteAction,
+    CanReadAction, CanReportIncident, CanWriteAction,
 )
 from app.crud import action as crud
 from app.models.mirrors import Task
@@ -96,8 +96,35 @@ async def my_actions(
     include_closed: bool = False,
 ):
     """What is assigned to the caller — the landing page for most employees."""
-    statuses = None if include_closed else list(crud.OPEN_STATUSES)
+    # What is mine to do, which is not the same as what I own. An action handed
+    # over for verification is somebody else's move, and it used to sit in this
+    # list afterwards looking like outstanding work — the second acceptance
+    # round reported it as items not leaving the screen once completed. They
+    # come back if a verification finds the control ineffective, which is the
+    # point of verifying.
+    statuses = None if include_closed else ["open", "in_progress"]
     rows = await crud.list_(db, owner_id=_user_id(user), statuses=statuses, limit=200)
+    return [ActionOut.model_validate(r) for r in rows]
+
+
+@router.get("/mine/to-verify", response_model=list[ActionOut])
+async def actions_to_verify(db: SessionDep, user: CanReadAction):
+    """Waiting on this caller to confirm the control works.
+
+    Separate from "my actions" because it is a different job: one is work to
+    do, the other is judging whether somebody else's worked. Holding
+    `ehs.action.verify` shows all of them; without it you see the ones you own,
+    which HSE asked for.
+    """
+    me = _user_id(user)
+    may_verify_any = await has_permission(
+        db, me, user.get("role", ""), "ehs.action.verify")
+    rows = await crud.list_(
+        db,
+        owner_id=None if may_verify_any else me,
+        statuses=["pending_verification"],
+        limit=200,
+    )
     return [ActionOut.model_validate(r) for r in rows]
 
 
@@ -201,10 +228,31 @@ async def add_update(
 
 @router.post("/{action_id}/verify", response_model=ActionDetail)
 async def verify_action(
-    action_id: uuid.UUID, payload: ActionVerifyIn, db: SessionDep, user: CanVerifyAction,
+    action_id: uuid.UUID, payload: ActionVerifyIn, db: SessionDep, user: CanReadAction,
 ):
-    """Confirm the control is effective — or that it is not, which reopens it."""
+    """Confirm the control is effective — or that it is not, which reopens it.
+
+    Who may: anyone holding `ehs.action.verify` — HSE, the coordinator, area
+    supervisors and committee members — for any action, and the action's own
+    owner for theirs. Both halves come from HSE's answer in the second
+    acceptance round, and the second half is why this is a rule here rather
+    than only a permission: it depends on the row.
+
+    It is a change of principle and worth naming. The module was built so that
+    whoever did the work could not sign it off — the second-person check COR
+    and ISO 45001 look for. HSE asked for the owner to be able to, so an owner
+    may. The verification stores who performed it beside who owned the action
+    and the audit pack shows both, so a self-verification reads as one rather
+    than passing for independent.
+    """
     action = await crud.get(db, action_id)
-    await crud.verify(db, action, payload, user_id=_user_id(user),
+    me = _user_id(user)
+    may_verify_any = await has_permission(
+        db, me, user.get("role", ""), "ehs.action.verify")
+    if not may_verify_any and action.owner_id != me:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "You can only verify a corrective action assigned to you")
+    await crud.verify(db, action, payload, user_id=me,
                       now=datetime.now(timezone.utc))
     return await _detail(db, action)

@@ -161,14 +161,33 @@ async def test_a_failed_verification_reopens_it_with_a_new_task(hse_manager, wor
     assert str(open_tasks[0]["assigned_user_id"]) == str(owner.id)
 
 
-async def test_a_worker_cannot_verify_their_own_work(hse_manager, worker):
+async def test_an_owner_verifying_their_own_work_is_recorded_as_such(hse_manager, worker):
+    """This used to be refused, and HSE asked for it to be allowed.
+
+    The module was built so that whoever did the work could not sign it off —
+    the second-person check COR and ISO 45001 look for. The second acceptance
+    round answered our question with "every role should be able to verify an
+    action if it is assigned to them", so it is allowed. That is their process
+    to choose.
+
+    What does not change is the record: the verification carries who performed
+    it, so an owner verifying their own reads as exactly that in the audit pack
+    rather than passing for independent.
+    """
     _, mclient = hse_manager
     owner, wclient = worker
     action = (await mclient.post("/api/v1/actions", json=_payload(owner.id))).json()
     await wclient.post(f"/api/v1/actions/{action['id']}/updates",
                        json={"body": "done", "new_status": "pending_verification"})
     r = await wclient.post(f"/api/v1/actions/{action['id']}/verify", json={"is_effective": True})
-    assert r.status_code == 403
+    assert r.status_code == 200, r.text
+
+    detail = r.json()
+    assert detail["status"] == "closed"
+    verifier = detail["verifications"][-1]
+    assert verifier["verified_by_name"] == owner.full_name, (
+        "who verified has to be on the record, or a self-verification is "
+        "indistinguishable from an independent one")
 
 
 async def test_verifying_a_closed_action_is_refused(hse_manager, worker):
@@ -291,3 +310,64 @@ async def test_an_auditor_sees_the_whole_action_register(hse_manager, worker, au
     a = (await mclient.post("/api/v1/actions", json=_payload(owner.id))).json()
     ids = {r["id"] for r in (await aclient.get("/api/v1/actions")).json()}
     assert a["id"] in ids
+
+
+async def test_the_owner_may_verify_their_own_action(hse_manager, worker):
+    """HSE asked for this, and it is a change of principle worth naming.
+
+    The module was built so that whoever did the work could not sign it off —
+    the second-person check COR and ISO 45001 look for. The second acceptance
+    round answered our question with "every role should be able to verify an
+    action if it is assigned to them", so an owner may. The record still says
+    who verified beside who owned it, so a self-verification reads as one.
+    """
+    _, mclient = hse_manager
+    owner, wclient = worker
+    action = (await mclient.post("/api/v1/actions", json=_payload(owner.id))).json()
+    await wclient.post(f"/api/v1/actions/{action['id']}/updates",
+                       json={"body": "Guard fitted.", "new_status": "pending_verification"})
+
+    verified = await wclient.post(f"/api/v1/actions/{action['id']}/verify",
+                                  json={"is_effective": True, "note": "Checked on the line"})
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["status"] == "closed"
+
+
+async def test_somebody_elses_action_still_needs_the_permission(
+    hse_manager, worker, test_engine, db_session
+):
+    """The other half of the answer: all CAPA items, but only for those roles."""
+    from tests.conftest import authed_client, make_token, make_user
+
+    _, mclient = hse_manager
+    owner, _ = worker
+    action = (await mclient.post("/api/v1/actions", json=_payload(owner.id))).json()
+
+    bystander = await make_user(test_engine, role="requester", full_name="Not Involved")
+    async with authed_client(make_token(bystander.id, bystander.role), db_session) as theirs:
+        r = await theirs.post(f"/api/v1/actions/{action['id']}/verify",
+                              json={"is_effective": True})
+        assert r.status_code == 403
+
+
+async def test_handing_over_takes_it_off_your_list(hse_manager, worker):
+    """It is somebody else's move once handed over.
+
+    It used to stay in "my actions" afterwards, looking like outstanding work —
+    reported in round 2 as items not leaving the screen once completed.
+    """
+    _, mclient = hse_manager
+    owner, wclient = worker
+    action = (await mclient.post("/api/v1/actions", json=_payload(owner.id))).json()
+
+    mine = (await wclient.get("/api/v1/actions/mine")).json()
+    assert any(a["id"] == action["id"] for a in mine)
+
+    await wclient.post(f"/api/v1/actions/{action['id']}/updates",
+                       json={"body": "Done.", "new_status": "pending_verification"})
+
+    mine_after = (await wclient.get("/api/v1/actions/mine")).json()
+    assert all(a["id"] != action["id"] for a in mine_after), "it is no longer yours to do"
+
+    waiting = (await wclient.get("/api/v1/actions/mine/to-verify")).json()
+    assert any(a["id"] == action["id"] for a in waiting), "but it is yours to judge"
