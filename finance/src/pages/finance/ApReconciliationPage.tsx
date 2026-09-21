@@ -22,7 +22,7 @@
 import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CalendarX2, CheckCircle2, Download, Loader2 } from 'lucide-react'
+import { AlertTriangle, CalendarX2, CheckCircle2, Download, Loader2, Scale } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -46,7 +46,15 @@ interface CategoryRow {
 }
 interface SummaryResp { categories: CategoryRow[]; mirror: MirrorState }
 
-interface NcSide { bill_no: string | null; money_cr: string | null; money_bal: string | null; lines: number | null; supplier_agrees: boolean | null }
+interface NcSide {
+  bill_no: string | null; money_cr: string | null; money_bal: string | null
+  lines: number | null; supplier_agrees: boolean | null
+  /** NC billed minus what we recorded. Positive = NC is higher. */
+  amount_gap: string | null
+  amount_differs: boolean
+  /** NC's line is negative under our number — a credit note, not a smaller bill. */
+  is_credit: boolean
+}
 interface AltSide { bill_no: string | null; invoice_no: string | null; money_cr: string | null; money_bal: string | null; bill_date: string | null; day_gap: number | null }
 interface ItemRow {
   id: string
@@ -80,6 +88,31 @@ interface AnomalyRow {
   reason: string
 }
 interface AnomaliesResp { total: number; items: AnomalyRow[] }
+
+interface GapRow {
+  id: string
+  ap_invoice_number: string | null
+  vendor_invoice_number: string | null
+  vendor_name: string | null
+  total_amount: string | null
+  invoice_date: string | null
+  status: string | null
+  po_number: string | null
+  category: string
+  nc_bill_no: string | null
+  nc_money_cr: string
+  nc_money_bal: string
+  nc_lines: number | null
+  amount_gap: string
+  is_credit: boolean
+}
+interface GapsResp {
+  total: number
+  drafts_excluded: number
+  nc_billed_more: { invoices: number; amount: string }
+  nc_billed_less: { invoices: number; amount: string }
+  items: GapRow[]
+}
 
 /** Display order is worst-first: the categories that cost money come before the
  *  ones that are merely untidy, and drafts come last because they are not a
@@ -143,6 +176,7 @@ export default function ApReconciliationPage() {
   const [offset, setOffset] = useState(0)
   const [includePaid, setIncludePaid] = useState(true)
   const [showAnomalies, setShowAnomalies] = useState(false)
+  const [showGaps, setShowGaps] = useState(false)
 
   const qs = `include_paid=${includePaid}`
 
@@ -158,6 +192,13 @@ export default function ApReconciliationPage() {
   const { data: anomalies } = useQuery({
     queryKey: ['ap-recon-anomalies', includePaid],
     queryFn: () => financeApi.get<AnomaliesResp>(`/ap-recon/date-anomalies?${qs}`),
+  })
+  // Cuts across in_nc_open and in_nc_settled rather than being a category of
+  // its own — making it one would quietly move invoices out of the open list,
+  // which is the figure the cash-flow forecast is built from.
+  const { data: gaps } = useQuery({
+    queryKey: ['ap-recon-gaps', includePaid],
+    queryFn: () => financeApi.get<GapsResp>(`/ap-recon/amount-mismatches?${qs}`),
   })
 
   const byKey = useMemo(() => {
@@ -181,12 +222,13 @@ export default function ApReconciliationPage() {
     }
     const head = ['AP No', 'Vendor', 'Vendor code', 'Our invoice no', 'Amount',
                   'Invoice date', 'Due date', 'Status', 'PO', 'Category',
-                  'NC bill', 'NC billed', 'NC open',
+                  'NC bill', 'NC billed', 'NC open', 'NC billed minus ours',
                   'NC invoice no (amount match)', 'Day gap']
     const body = all.map((r) => [
       r.ap_invoice_number, r.vendor_name, r.vendor_erp_id, r.vendor_invoice_number,
       r.total_amount, r.invoice_date, r.due_date, r.status, r.po_number, r.category,
       r.nc?.bill_no ?? '', r.nc?.money_cr ?? '', r.nc?.money_bal ?? '',
+      r.nc?.amount_gap ?? '',
       r.nc_amount_match?.invoice_no ?? '', r.nc_amount_match?.day_gap ?? '',
     ])
     const csv = [head, ...body].map((row) => row.map(csvEscape).join(',')).join('\n')
@@ -312,6 +354,10 @@ export default function ApReconciliationPage() {
                 ) : (
                   <>
                     <th className="px-3 py-2 text-left font-medium">NC bill</th>
+                    {/* NC's own billed figure, next to ours. Without it an
+                        invoice that matched for the WRONG amount reads as
+                        perfectly reconciled on this screen. */}
+                    <th className="px-3 py-2 text-right font-medium">NC billed</th>
                     <th className="px-3 py-2 text-right font-medium">NC open</th>
                   </>
                 )}
@@ -319,18 +365,18 @@ export default function ApReconciliationPage() {
             </thead>
             <tbody>
               {loadingItems && !items ? (
-                <tr><td colSpan={10} className="px-3 py-8 text-center">
+                <tr><td colSpan={11} className="px-3 py-8 text-center">
                   <Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" />
                 </td></tr>
               ) : itemsError ? (
                 // A failed request must never read as "nothing here" — that is
                 // how a summary saying 145 sits next to an empty table with no
                 // hint that anything went wrong.
-                <tr><td colSpan={10} className="px-3 py-8 text-center text-danger-700">
+                <tr><td colSpan={11} className="px-3 py-8 text-center text-danger-700">
                   Could not load this category: {String((itemsError as Error).message ?? itemsError)}
                 </td></tr>
               ) : (items?.items.length ?? 0) === 0 ? (
-                <tr><td colSpan={10} className="px-3 py-8 text-center text-neutral-400">
+                <tr><td colSpan={11} className="px-3 py-8 text-center text-neutral-400">
                   Nothing in this category.
                 </td></tr>
               ) : items!.items.map((r) => (
@@ -365,6 +411,16 @@ export default function ApReconciliationPage() {
                   ) : (
                     <>
                       <td className="px-3 py-2 font-mono text-xs text-neutral-500">{r.nc?.bill_no ?? '—'}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">
+                        {money(r.nc?.money_cr)}
+                        {r.nc?.amount_differs && (
+                          <div className={cn('text-[11px]', r.nc.is_credit ? 'text-neutral-500' : 'text-amber-700')}>
+                            {r.nc.is_credit
+                              ? 'credit note'
+                              : <>{Number(r.nc.amount_gap) > 0 ? '+' : ''}{money(r.nc.amount_gap)} vs ours</>}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums">{money(r.nc?.money_bal)}</td>
                     </>
                   )}
@@ -384,6 +440,103 @@ export default function ApReconciliationPage() {
                     onClick={() => setOffset(offset + PAGE)}
                     className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm disabled:opacity-40">Next</button>
           </div>
+        </div>
+
+        {/* The mirror image of the invoice-number check: there the money agreed
+            and the number did not; here the number agrees and the money does
+            not. Kept out of the category table on purpose — it cuts across two
+            of those categories, and turning it into a seventh would move
+            invoices out of the open list, which is the cash-flow figure. */}
+        <div className="mt-8">
+          <button onClick={() => setShowGaps((v) => !v)}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-neutral-700 hover:text-[#085E5E]">
+            <Scale className="h-4 w-4" />
+            Matched, but NC billed a different amount
+            <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold',
+                                (gaps?.total ?? 0) > 0
+                                  ? 'bg-danger-100 text-danger-700' : 'bg-neutral-100 text-neutral-500')}>
+              {gaps?.total ?? 0}
+            </span>
+          </button>
+          {showGaps && (
+            <>
+              <p className="mt-2 max-w-3xl text-xs leading-relaxed text-neutral-500">
+                Same invoice number, same supplier, different money. These pass every other
+                check on this page — matched, on NC&rsquo;s books, shown as reconciled — which is
+                what makes them worth looking at.{' '}
+                {gaps && gaps.nc_billed_more.invoices > gaps.nc_billed_less.invoices * 3 && (
+                  <span className="text-neutral-600">
+                    <strong>NC is higher in {gaps.nc_billed_more.invoices} of {gaps.total}</strong>,
+                    by {money(gaps.nc_billed_more.amount)} in total. That is a direction, not keying
+                    noise: freight, deposits and environmental fees printed on an invoice fall
+                    outside our amount-plus-tax fields, while finance keys the paper total into NC.
+                  </span>
+                )}
+                {gaps && gaps.drafts_excluded > 0 && (
+                  <> {gaps.drafts_excluded} draft{gaps.drafts_excluded === 1 ? '' : 's'} also
+                    differ and are excluded — a draft can still be edited.</>
+                )}
+              </p>
+              <div className="mt-3 overflow-x-auto rounded-lg border border-neutral-200">
+                <table className="w-full min-w-[860px] text-sm">
+                  <thead>
+                    <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
+                      <th className="px-3 py-2 text-left font-medium">AP No.</th>
+                      <th className="px-3 py-2 text-left font-medium">Vendor</th>
+                      <th className="px-3 py-2 text-left font-medium">Invoice no.</th>
+                      <th className="px-3 py-2 text-left font-medium">PO</th>
+                      <th className="px-3 py-2 text-right font-medium">Ours</th>
+                      <th className="px-3 py-2 text-right font-medium">NC billed</th>
+                      <th className="px-3 py-2 text-right font-medium">Difference</th>
+                      <th className="px-3 py-2 text-left font-medium">NC bill</th>
+                      <th className="px-3 py-2 text-left font-medium">State in NC</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(gaps?.items.length ?? 0) === 0 ? (
+                      <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
+                        Every matched invoice agrees with NC to the cent.
+                      </td></tr>
+                    ) : gaps!.items.map((r) => (
+                      <tr key={r.id} className="border-t border-neutral-100 hover:bg-neutral-50/60">
+                        <td className="px-3 py-2 font-mono text-xs">{r.ap_invoice_number ?? '—'}</td>
+                        <td className="px-3 py-2">{r.vendor_name ?? '—'}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{r.vendor_invoice_number ?? '—'}</td>
+                        {/* Every one of these carries a PO — so the money that
+                            went missing is money against a purchase order. */}
+                        <td className="px-3 py-2 font-mono text-xs text-neutral-500">{r.po_number ?? '—'}</td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums">{money(r.total_amount)}</td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums">{money(r.nc_money_cr)}</td>
+                        <td className={cn('px-3 py-2 text-right font-mono tabular-nums font-semibold',
+                                          r.is_credit ? 'text-neutral-500' : 'text-danger-700')}>
+                          {Number(r.amount_gap) > 0 ? '+' : ''}{money(r.amount_gap)}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-neutral-500">
+                          {r.nc_bill_no ?? '—'}
+                          {(r.nc_lines ?? 1) > 1 && (
+                            <span className="ml-1 text-[10px] text-neutral-400">{r.nc_lines} lines</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-xs">
+                          {r.is_credit ? (
+                            <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-600">
+                              credit note
+                            </span>
+                          ) : r.category === 'in_nc_open' ? (
+                            <span className="text-neutral-600">open · {money(r.nc_money_bal)}</span>
+                          ) : (
+                            // Already paid at NC's figure — nothing left to
+                            // correct on the money, only on our record.
+                            <span className="text-neutral-400">settled</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
 
         {/* A different question from the NC comparison: not "is it on NC's

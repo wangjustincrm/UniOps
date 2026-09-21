@@ -340,7 +340,7 @@ async def amount_mismatches(db: AsyncSession, f: ReconFilters) -> dict:
     Measured 2026-09-23 (dev1 mirror of production): 33 of 215 matched
     invoices, net 7,289.03. Two things the data says plainly:
 
-    * **NC is higher in 32 of 33.** Not random keying noise — a direction. It is
+    * **NC is higher in 31 of 33.** Not random keying noise — a direction. It is
       the same defect the invoice total check was built for: EPMS stores amount
       and tax, and derives the total, so freight, deposits and environmental
       fees printed on the invoice fall outside both fields and quietly vanish
