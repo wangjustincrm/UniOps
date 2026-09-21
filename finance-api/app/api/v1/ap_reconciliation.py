@@ -85,3 +85,18 @@ async def date_anomalies(user: CurrentUser,
     """Invoice dates that cannot be right — they feed the cash-flow buckets
     directly, so a day/month swap moves real money into the wrong month."""
     return await svc.date_anomalies(db, _filters(date_from, date_to, include_paid))
+
+
+@router.get("/amount-mismatches")
+async def amount_mismatches(user: CurrentUser,
+                            date_from: date | None = None,
+                            date_to: date | None = None,
+                            include_paid: bool = True,
+                            db: AsyncSession = Depends(get_db)):
+    """Judgement 7: the invoice number matched NC but the money did not.
+
+    Deliberately NOT a seventh category. It cuts across `in_nc_open` and
+    `in_nc_settled`, and making it a category would silently move invoices out
+    of the open list — the one figure the cash-flow forecast is built on.
+    """
+    return await svc.amount_mismatches(db, _filters(date_from, date_to, include_paid))

@@ -168,6 +168,13 @@ unapproved as (
 classified as (
     select o.*, u.unapproved_bill_no,
            m.nc_bill_no, m.nc_money_cr, m.nc_money_bal, m.nc_lines, m.supplier_agrees,
+           -- Judgement 7: same invoice number, same supplier, DIFFERENT money.
+           -- The mirror image of invoice_no_mismatch, and invisible without it:
+           -- an invoice in this state looks perfectly reconciled. Positive means
+           -- NC billed MORE than we recorded, which is the direction almost all
+           -- of them run — see amount_mismatches() for why that matters.
+           case when m.nc_bill_no is not null
+                then m.nc_money_cr - o.total_amount end as amount_gap,
            a.alt_bill_no, a.alt_invoice_no, a.alt_money_cr, a.alt_money_bal,
            a.alt_bill_date, a.alt_day_gap,
            case
@@ -224,7 +231,8 @@ async def items(db: AsyncSession, f: ReconFilters, category: str,
     select id, ap_invoice_number, vendor_invoice_number, vendor_name, erp_id,
            total_amount, paid_amount, invoice_date, due_date, status, po_number,
            source, category, nc_bill_no, nc_money_cr, nc_money_bal, nc_lines,
-           supplier_agrees, alt_bill_no, alt_invoice_no, alt_money_cr, alt_money_bal,
+           supplier_agrees, amount_gap,
+           alt_bill_no, alt_invoice_no, alt_money_cr, alt_money_bal,
            alt_bill_date, alt_day_gap, unapproved_bill_no
       from classified
      where category = :category
@@ -262,6 +270,15 @@ def _item_out(r) -> dict:
             "money_bal": s(r["nc_money_bal"]),
             "lines": r["nc_lines"],
             "supplier_agrees": r["supplier_agrees"],
+            # NC billed minus what we recorded. Carried on every matched row,
+            # not just in the dedicated panel, so a difference cannot be missed
+            # by someone working the open list.
+            "amount_gap": s(r["amount_gap"]),
+            "amount_differs": r["amount_gap"] is not None
+            and abs(r["amount_gap"]) > float(AMOUNT_EPSILON),
+            # A negative NC line under our invoice number is a credit note, not
+            # a smaller bill. Saying so stops it being read as an under-billing.
+            "is_credit": r["nc_money_cr"] is not None and r["nc_money_cr"] < 0,
         } if r["nc_bill_no"] else None,
         # Only present for invoice_no_mismatch: what NC appears to have keyed
         # instead. Shown so a human confirms before anyone edits NC.
@@ -309,3 +326,82 @@ async def date_anomalies(db: AsyncSession, f: ReconFilters) -> dict:
         "status": r["status"],
         "reason": r["reason"],
     } for r in rows]}
+
+
+async def amount_mismatches(db: AsyncSession, f: ReconFilters) -> dict:
+    """Judgement 7: our invoice matched NC, but for a different amount.
+
+    The mirror image of `invoice_no_mismatch` — there the money agreed and the
+    number did not; here the number agrees and the money does not. It is the
+    more dangerous of the two, because an invoice in this state passes every
+    other check on this page: it is matched, it is on NC's books, and the open
+    list shows it as reconciled.
+
+    Measured 2026-09-23 (dev1 mirror of production): 33 of 215 matched
+    invoices, net 7,289.03. Two things the data says plainly:
+
+    * **NC is higher in 32 of 33.** Not random keying noise — a direction. It is
+      the same defect the invoice total check was built for: EPMS stores amount
+      and tax, and derives the total, so freight, deposits and environmental
+      fees printed on the invoice fall outside both fields and quietly vanish
+      from our figure. Finance keys the paper total into NC, so NC keeps it.
+      The gaps read like it: 19.00, 20.00, 25.00, 65.00, 90.00.
+    * **Every one of them has a PO.** So the money that went missing is money
+      against a purchase order, which is exactly the money a three-way match is
+      supposed to protect.
+
+    Drafts are excluded, the same way they are excluded everywhere else here: a
+    draft can still be edited, so it is not yet a discrepancy. They are counted
+    separately rather than dropped silently.
+    """
+    where, params = f.clause()
+    sql = _BASE.format(where=where) + f"""
+    select id, ap_invoice_number, vendor_invoice_number, vendor_name, erp_id,
+           total_amount, invoice_date, status, po_number, source, category,
+           nc_bill_no, nc_money_cr, nc_money_bal, nc_lines, amount_gap
+      from classified
+     where nc_bill_no is not null
+       and abs(amount_gap) > {AMOUNT_EPSILON}
+       and status <> 'draft'
+     order by abs(amount_gap) desc
+    """
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    drafts = (await db.execute(text(_BASE.format(where=where) + f"""
+        select count(*) from classified
+         where nc_bill_no is not null and abs(amount_gap) > {AMOUNT_EPSILON}
+           and status = 'draft'
+    """), params)).scalar_one()
+
+    # Totals over the whole finding, per direction. One net figure alone would
+    # let an over-billing cancel an under-billing and report neither.
+    over = sum(r["amount_gap"] for r in rows if r["amount_gap"] > 0)
+    under = sum(-r["amount_gap"] for r in rows if r["amount_gap"] < 0)
+    return {
+        "total": len(rows),
+        "drafts_excluded": int(drafts),
+        "nc_billed_more": {"invoices": sum(1 for r in rows if r["amount_gap"] > 0),
+                           "amount": str(over)},
+        "nc_billed_less": {"invoices": sum(1 for r in rows if r["amount_gap"] < 0),
+                           "amount": str(under)},
+        "items": [{
+            "id": str(r["id"]),
+            "ap_invoice_number": r["ap_invoice_number"],
+            "vendor_invoice_number": r["vendor_invoice_number"],
+            "vendor_name": r["vendor_name"],
+            "vendor_erp_id": r["erp_id"],
+            "total_amount": str(r["total_amount"]) if r["total_amount"] is not None else None,
+            "invoice_date": r["invoice_date"].isoformat() if r["invoice_date"] else None,
+            "status": r["status"],
+            "po_number": r["po_number"],
+            "source": r["source"],
+            "category": r["category"],
+            "nc_bill_no": r["nc_bill_no"],
+            "nc_money_cr": str(r["nc_money_cr"]),
+            "nc_money_bal": str(r["nc_money_bal"]),
+            "nc_lines": r["nc_lines"],
+            "amount_gap": str(r["amount_gap"]),
+            # NC's line is negative under our invoice number: a credit note, not
+            # a smaller bill.
+            "is_credit": r["nc_money_cr"] is not None and r["nc_money_cr"] < 0,
+        } for r in rows],
+    }
