@@ -2,9 +2,11 @@
  * AP Subledger Health — which supplier balances in NC can be believed.
  *
  * NC's payable subledger reports far more open than billed-minus-paid does.
- * The clearest case: 2021 milk was billed 32,641,249.87, paid 32,114,350.99,
- * and 13,411,519.10 of those lines are still flagged open. The money moved; the
- * payment was never applied against the lines.
+ * The clearest case: bill D12021092200128305 was billed 36,040.00, has
+ * 36,040.00 of payments pointing squarely at it, and both of its lines are
+ * still flagged fully open. The payment exists and is attached — the balance
+ * was simply never cleared. At scale that is 2021 milk: billed 32,641,249.87,
+ * paid 32,114,350.99, 13,411,519.10 still shown as open.
  *
  * This page does NOT decide who is right. It cannot: billed-minus-paid is not a
  * truth either — a supplier paid beyond what was billed is holding a prepayment
@@ -44,12 +46,15 @@ interface ItemsResp { total: number; items: SupplierRow[] }
 interface OpenBill {
   bill_no: string; bill_date: string | null; bill_year: string | null
   money_cr: string | null; money_bal: string | null
-  invoice_no: string | null; purchase_order: string | null
-  trade_type: string | null; src_syscode: number | null; scomment: string | null
+  /** What NC's own payment documents say was already paid against THIS bill. */
+  paid_against: string | null
+  invoice_no: string | null; purchase_order: string | null; trade_type: string | null
 }
 interface PayLine {
-  bill_no: string; pay_date: string | null; bill_year: string | null
-  money_de: string | null; src_bill_type: string | null; src_bill_id: string | null
+  bill_no: string; pay_date: string | null; doc_date: string | null; bill_year: string | null
+  money_de: string | null
+  applied_to_bill_no: string | null
+  applied_bill_still_open: string | null
   scomment: string | null
 }
 interface DetailResp { supplier_code: string; currency: string; open_bills: OpenBill[]; payments: PayLine[] }
@@ -77,7 +82,12 @@ function SupplierDetail({ code, name, currency, onClose }: {
   })
   const bills = data?.open_bills ?? []
   const pays = data?.payments ?? []
-  const untied = pays.filter((p) => !p.src_bill_id).length
+  const untied = pays.filter((p) => !p.applied_to_bill_no).length
+  // The sharper finding: bills that are fully covered by payments pointing
+  // straight at them, and are still flagged open. Nothing to chase — just
+  // never cleared.
+  const paidButOpen = bills.filter(
+    (b) => Number(b.paid_against ?? 0) >= Number(b.money_cr ?? 0) && Number(b.money_cr ?? 0) > 0).length
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6">
@@ -87,8 +97,13 @@ function SupplierDetail({ code, name, currency, onClose }: {
             <h2 className="text-base font-semibold text-neutral-900">{name ?? code}</h2>
             <p className="mt-0.5 text-xs text-neutral-500">
               {code} · {currency} · {bills.length} bills still flagged open · {pays.length} payment lines
+              {paidButOpen > 0 && (
+                <> · <span className="font-medium text-amber-700">
+                  {paidButOpen} of those are already covered by payments pointing at them
+                </span></>
+              )}
               {untied > 0 && (
-                <> · <span className="text-amber-700">{untied} payment lines tied to no document</span></>
+                <> · <span className="text-neutral-500">{untied} payments applied to no payable</span></>
               )}
             </p>
           </div>
@@ -112,21 +127,31 @@ function SupplierDetail({ code, name, currency, onClose }: {
                       <th className="px-2.5 py-2 text-left font-medium">Date</th>
                       <th className="px-2.5 py-2 text-left font-medium">Invoice</th>
                       <th className="px-2.5 py-2 text-right font-medium">Billed</th>
+                      <th className="px-2.5 py-2 text-right font-medium">Paid against it</th>
                       <th className="px-2.5 py-2 text-right font-medium">Still open</th>
                     </tr>
                   </thead>
                   <tbody>
                     {bills.length === 0 ? (
-                      <tr><td colSpan={5} className="px-2.5 py-6 text-center text-neutral-400">None.</td></tr>
-                    ) : bills.map((b) => (
-                      <tr key={b.bill_no + b.invoice_no} className="border-t border-neutral-100">
-                        <td className="px-2.5 py-1.5 font-mono">{b.bill_no}</td>
-                        <td className="px-2.5 py-1.5 text-neutral-600">{day(b.bill_date)}</td>
-                        <td className="px-2.5 py-1.5 font-mono text-neutral-600">{b.invoice_no ?? '—'}</td>
-                        <td className="px-2.5 py-1.5 text-right font-mono tabular-nums">{money(b.money_cr)}</td>
-                        <td className="px-2.5 py-1.5 text-right font-mono tabular-nums font-semibold">{money(b.money_bal)}</td>
-                      </tr>
-                    ))}
+                      <tr><td colSpan={6} className="px-2.5 py-6 text-center text-neutral-400">None.</td></tr>
+                    ) : bills.map((b) => {
+                      const covered = Number(b.paid_against ?? 0) >= Number(b.money_cr ?? 0)
+                        && Number(b.money_cr ?? 0) > 0
+                      return (
+                        <tr key={b.bill_no} className={cn('border-t border-neutral-100',
+                                                          covered && 'bg-amber-50/60')}>
+                          <td className="px-2.5 py-1.5 font-mono">{b.bill_no}</td>
+                          <td className="px-2.5 py-1.5 text-neutral-600">{day(b.bill_date)}</td>
+                          <td className="px-2.5 py-1.5 font-mono text-neutral-600">{b.invoice_no ?? '—'}</td>
+                          <td className="px-2.5 py-1.5 text-right font-mono tabular-nums">{money(b.money_cr)}</td>
+                          <td className={cn('px-2.5 py-1.5 text-right font-mono tabular-nums',
+                                            covered ? 'font-semibold text-amber-700' : 'text-neutral-500')}>
+                            {money(b.paid_against)}
+                          </td>
+                          <td className="px-2.5 py-1.5 text-right font-mono tabular-nums font-semibold">{money(b.money_bal)}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -139,9 +164,9 @@ function SupplierDetail({ code, name, currency, onClose }: {
                   <thead className="sticky top-0 bg-neutral-50">
                     <tr className="border-b border-neutral-100 text-[11px] text-neutral-500">
                       <th className="px-2.5 py-2 text-left font-medium">Payment</th>
-                      <th className="px-2.5 py-2 text-left font-medium">Paid on</th>
+                      <th className="px-2.5 py-2 text-left font-medium">Document date</th>
                       <th className="px-2.5 py-2 text-right font-medium">Amount</th>
-                      <th className="px-2.5 py-2 text-left font-medium">Applied to</th>
+                      <th className="px-2.5 py-2 text-left font-medium">Applied to payable</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -150,13 +175,22 @@ function SupplierDetail({ code, name, currency, onClose }: {
                     ) : pays.map((p, i) => (
                       <tr key={p.bill_no + i} className="border-t border-neutral-100">
                         <td className="px-2.5 py-1.5 font-mono">{p.bill_no}</td>
-                        <td className="px-2.5 py-1.5 text-neutral-600">{day(p.pay_date)}</td>
+                        {/* NC leaves PAYDATE empty on every payment line in this
+                            database, so the document date is the only date there
+                            is — say which one it is rather than showing a dash. */}
+                        <td className="px-2.5 py-1.5 text-neutral-600">{day(p.pay_date ?? p.doc_date)}</td>
                         <td className="px-2.5 py-1.5 text-right font-mono tabular-nums">{money(p.money_de)}</td>
-                        {/* Empty here is the story: a payment tied to no source
-                            document is exactly how a subledger stops clearing. */}
-                        <td className={cn('px-2.5 py-1.5 font-mono',
-                                          p.src_bill_id ? 'text-neutral-600' : 'text-amber-700')}>
-                          {p.src_bill_id ? (p.src_bill_type ?? 'linked') : 'nothing'}
+                        <td className="px-2.5 py-1.5 font-mono">
+                          {p.applied_to_bill_no ? (
+                            <>
+                              <span className="text-neutral-700">{p.applied_to_bill_no}</span>
+                              {Number(p.applied_bill_still_open ?? 0) !== 0 && (
+                                <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-800">
+                                  still open
+                                </span>
+                              )}
+                            </>
+                          ) : <span className="text-neutral-400">none</span>}
                         </td>
                       </tr>
                     ))}
@@ -217,8 +251,9 @@ export default function ApLedgerHealthPage() {
           <p className="mb-1.5">
             NC holds two figures for what a supplier is owed: the <strong>open balance on the
             payable lines</strong>, and <strong>what was billed minus what was paid</strong>. For most
-            suppliers they agree exactly. Where they do not, the open balance is carrying
-            payables that were paid but never applied against the lines.
+            suppliers they agree exactly. Where they do not, the open balance is carrying bills
+            that were paid — often by a payment NC has attached to that very bill — and never
+            cleared. Open a supplier and the <em>Paid against it</em> column shows which ones.
           </p>
           <p className="text-neutral-500">
             This page does not decide which figure is right — paying beyond what was billed is

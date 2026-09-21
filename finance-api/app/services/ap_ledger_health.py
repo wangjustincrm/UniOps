@@ -154,39 +154,73 @@ async def trusted_supplier_codes(db: AsyncSession, currency: str | None = None) 
 
 async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
                           limit: int = 500) -> dict:
-    """The evidence behind one supplier's gap: the bills still flagged open,
-    and the payments that exist alongside them.
+    """The evidence behind one supplier's gap.
 
-    An aggregate cannot be judged. Finance has to see which documents are
-    sitting open and what was paid around them before deciding whether the
-    balance is real, was settled outside the subledger, or should be written
-    off — so both sides come back together, oldest bill first, because the
-    oldest ones are where uncleared balances collect.
+    An aggregate cannot be judged, so this returns the documents: the bills NC
+    still flags open, WITH how much has already been paid against each one, and
+    the payments themselves with the payable they point at.
+
+    Two things learned the hard way about NC's pointers (2026-09-21):
+
+    * The link from a payment to a payable is `TOP_BILLID` / `TOP_BILLTYPE`
+      ('F1' = 应付单). 17,485 of 17,591 payment lines carry it and every one
+      resolves. `SRC_BILLID` is the ORIGIN document — type '21' is 采购订单, a
+      purchase order — so reading it as "what this payment settled" both prints
+      a meaningless code and reports a linked payment as unlinked.
+    * Which makes the real finding sharper, not weaker: bill D12021092200128305
+      was billed 36,040.00, has 36,040.00 of payments pointing squarely at it,
+      and both of its lines are still flagged fully open. The payment is
+      attached; the balance was simply never cleared.
+
+    Bills are grouped by document because "paid against" is a property of the
+    bill, not of one of its lines — repeating a bill-level total on every line
+    would read as if it had been paid several times over.
     """
     lim = max(1, min(limit, 2000))
     bills = (await db.execute(text("""
-        select l.bill_no, l.bill_date::date as bill_date, l.bill_year,
-               l.money_cr, l.money_bal, l.invoice_no, l.purchase_order,
-               b.trade_type, b.src_syscode, l.scomment
+        select l.bill_no,
+               min(l.bill_date)::date as bill_date,
+               min(l.bill_year) as bill_year,
+               sum(l.money_cr)  as money_cr,
+               sum(l.money_bal) as money_bal,
+               min(l.invoice_no) as invoice_no,
+               min(l.purchase_order) as purchase_order,
+               min(b.trade_type) as trade_type,
+               -- What NC's own payment documents say was paid against this
+               -- exact bill. When this equals the billed amount and the bill is
+               -- still open, the payment was made and never applied.
+               coalesce((select sum(p.money_de)
+                           from nc_ap_payment_lines p
+                          where p.top_bill_id = min(b.nc_pk)), 0) as paid_against
           from nc_ap_bill_lines l
           join nc_ap_bills b on b.id = l.bill_id
          where l.supplier_code = :code and b.currency = :ccy and l.money_bal <> 0
-         order by l.bill_date, l.bill_no
+         group by l.bill_no
+         order by min(l.bill_date), l.bill_no
          limit :lim
     """), {"code": supplier_code, "ccy": currency, "lim": lim})).mappings().all()
 
     payments = (await db.execute(text("""
-        select p.bill_no, p.pay_date::date as pay_date, p.bill_year,
-               l.money_de, l.src_bill_type, l.src_bill_id, p.scomment
+        select p.bill_no, p.pay_date::date as pay_date, p.bill_date::date as doc_date,
+               p.bill_year, l.money_de, l.top_bill_type, l.top_bill_id,
+               ab.bill_no as applied_to_bill_no,
+               ab.id is not null as applied_bill_still_open_known,
+               coalesce((select sum(x.money_bal) from nc_ap_bill_lines x
+                          where x.bill_id = ab.id), 0) as applied_bill_still_open,
+               p.scomment
           from nc_ap_payment_lines l
           join nc_ap_payments p on p.id = l.payment_id
+          left join nc_ap_bills ab on ab.nc_pk = l.top_bill_id
          where l.supplier_code = :code and l.currency = :ccy
-         order by p.pay_date desc nulls last, p.bill_no desc
+         order by p.bill_date desc nulls last, p.bill_no desc
          limit :lim
     """), {"code": supplier_code, "ccy": currency, "lim": lim})).mappings().all()
 
     def d(v):
         return v.isoformat() if v else None
+
+    def m(v):
+        return str(v) if v is not None else None
 
     return {
         "supplier_code": supplier_code,
@@ -194,20 +228,19 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
         "open_bills": [{
             "bill_no": r["bill_no"], "bill_date": d(r["bill_date"]),
             "bill_year": r["bill_year"],
-            "money_cr": str(r["money_cr"]) if r["money_cr"] is not None else None,
-            "money_bal": str(r["money_bal"]) if r["money_bal"] is not None else None,
+            "money_cr": m(r["money_cr"]), "money_bal": m(r["money_bal"]),
+            "paid_against": m(r["paid_against"]),
             "invoice_no": r["invoice_no"], "purchase_order": r["purchase_order"],
-            "trade_type": r["trade_type"], "src_syscode": r["src_syscode"],
-            "scomment": r["scomment"],
+            "trade_type": r["trade_type"],
         } for r in bills],
         "payments": [{
             "bill_no": r["bill_no"], "pay_date": d(r["pay_date"]),
-            "bill_year": r["bill_year"],
-            "money_de": str(r["money_de"]) if r["money_de"] is not None else None,
-            # NC's own pointer back to a source document. Empty here is itself
-            # the story: a payment that was never tied to anything is exactly
-            # how a subledger stops clearing.
-            "src_bill_type": r["src_bill_type"], "src_bill_id": r["src_bill_id"],
+            "doc_date": d(r["doc_date"]), "bill_year": r["bill_year"],
+            "money_de": m(r["money_de"]),
+            # The payable this payment points at, by its NUMBER — the code is
+            # of no use to anyone reading the page.
+            "applied_to_bill_no": r["applied_to_bill_no"],
+            "applied_bill_still_open": m(r["applied_bill_still_open"]),
             "scomment": r["scomment"],
         } for r in payments],
     }
