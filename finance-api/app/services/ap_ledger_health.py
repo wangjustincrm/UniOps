@@ -315,6 +315,39 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
          limit :lim
     """), {"code": supplier_code, "ccy": currency, "lim": lim})).mappings().all()
 
+    # Totals are computed over the whole set, never by adding up the rows that
+    # happened to fit under the limit — "total of what is shown" read as a total
+    # is how a page starts lying quietly.
+    bill_tot = (await db.execute(text(f"""
+        select count(distinct l.bill_no) as bills,
+               coalesce(sum(l.money_cr), 0) as money_cr,
+               coalesce(sum(l.money_bal), 0) as money_bal
+          from nc_ap_bill_lines l
+          join nc_ap_bills b on b.id = l.bill_id
+         where l.supplier_code = :code and b.currency = :ccy and l.money_bal <> 0
+           and {_EFFECTIVE}
+    """), {"code": supplier_code, "ccy": currency})).mappings().one()
+    # paid_against sums per BILL, not per line — a bill with three open lines
+    # would otherwise count its payments three times.
+    paid_tot = (await db.execute(text(f"""
+        select coalesce(sum(paid), 0) from (
+            select coalesce((select sum(p.money_de) from nc_ap_payment_lines p
+                              where p.top_bill_id = b.nc_pk), 0) as paid
+              from nc_ap_bills b
+             where b.currency = :ccy and {_EFFECTIVE}
+               and exists (select 1 from nc_ap_bill_lines l
+                            where l.bill_id = b.id and l.money_bal <> 0
+                              and l.supplier_code = :code)
+        ) x
+    """), {"code": supplier_code, "ccy": currency})).scalar_one()
+    pay_tot = (await db.execute(text("""
+        select count(*) as lines, coalesce(sum(l.money_de), 0) as money_de
+          from nc_ap_payment_lines l
+          join nc_ap_payments p on p.id = l.payment_id
+         where l.supplier_code = :code and l.currency = :ccy
+           and p.bill_status = 1 and p.approve_status = 1
+    """), {"code": supplier_code, "ccy": currency})).mappings().one()
+
     def d(v):
         return v.isoformat() if v else None
 
@@ -324,6 +357,16 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
     return {
         "supplier_code": supplier_code,
         "currency": currency,
+        "open_bills_total": {
+            "bills": int(bill_tot["bills"]),
+            "money_cr": str(bill_tot["money_cr"]),
+            "money_bal": str(bill_tot["money_bal"]),
+            "paid_against": str(paid_tot),
+        },
+        "payments_total": {
+            "lines": int(pay_tot["lines"]),
+            "money_de": str(pay_tot["money_de"]),
+        },
         "open_bills": [{
             "bill_no": r["bill_no"], "bill_date": d(r["bill_date"]),
             "bill_year": r["bill_year"],
@@ -404,6 +447,34 @@ async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency:
     def near(a) -> bool:
         return target is not None and a is not None and abs(abs(float(a)) - target) <= 0.01
 
+    # Per CURRENCY, never one combined figure. This list is deliberately not
+    # filtered by currency (Aptargroup's CAD gap has only USD vouchers behind
+    # it), so a single total would add CAD to USD and mean nothing.
+    tot_rows = (await db.execute(text(f"""
+        select l.currency, count(*) as lines,
+               coalesce(sum(l.orig_debit), 0) as debit,
+               coalesce(sum(l.orig_credit), 0) as credit
+          from journal_voucher_lines l
+          join journal_vouchers v on v.id = l.jv_id
+         where l.partner_name = :name
+           and l.account_code like '{_AP_ACCOUNT_PREFIX}%'
+           and v.source_subsystem is distinct from 'AP'
+           and (coalesce(l.orig_debit, 0) <> 0 or coalesce(l.orig_credit, 0) <> 0)
+         group by l.currency
+         order by (l.currency = :ccy) desc nulls last, l.currency
+    """), {"name": supplier_name, "ccy": currency})).mappings().all()
+    totals = [{
+        "currency": t["currency"],
+        "same_currency": t["currency"] == currency,
+        "lines": int(t["lines"]),
+        "debit": str(t["debit"]),
+        "credit": str(t["credit"]),
+        # Debit reduces the payable, credit raises it, so this is what the
+        # vouchers did to the balance on their own.
+        "net": str(t["debit"] - t["credit"]),
+        "net_matches_gap": near(t["debit"] - t["credit"]),
+    } for t in tot_rows]
+
     items = [{
         "same_currency": r["currency"] == currency,
         "jv_number": r["jv_number"],
@@ -424,4 +495,5 @@ async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency:
             "matching": sum(1 for i in items if i["matches_gap"]),
             "matching_other_currency": sum(
                 1 for i in items if i["matches_gap"] and not i["same_currency"]),
+            "totals": totals,
             "items": items}

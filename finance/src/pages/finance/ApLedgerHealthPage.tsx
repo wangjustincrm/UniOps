@@ -31,6 +31,9 @@ import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
+// Shared by the three subtotal rows in the supplier view.
+const footCell = 'px-2.5 py-2 text-right font-mono tabular-nums font-semibold text-neutral-800'
+
 interface Side { suppliers: number; subledger_open: string; billed_minus_paid?: string; gap: string }
 interface Abandoned { bills: number; money_bal: string; superseded_bills: number; superseded_bal: string }
 interface CcyRow { currency: string; consistent: Side; inconsistent: Side; abandoned: Abandoned }
@@ -63,7 +66,13 @@ interface PayLine {
   applied_bill_still_open: string | null
   scomment: string | null
 }
-interface DetailResp { supplier_code: string; currency: string; open_bills: OpenBill[]; payments: PayLine[] }
+interface BillsTotal { bills: number; money_cr: string; money_bal: string; paid_against: string }
+interface PaymentsTotal { lines: number; money_de: string }
+interface DetailResp {
+  supplier_code: string; currency: string
+  open_bills_total: BillsTotal; payments_total: PaymentsTotal
+  open_bills: OpenBill[]; payments: PayLine[]
+}
 
 interface AbandonedRow {
   bill_no: string; currency: string; bill_date: string | null; bill_year: string | null
@@ -80,7 +89,14 @@ interface GlLine {
   debit: string | null; credit: string | null; currency: string | null
   matches_gap: boolean
 }
-interface GlResp { total: number; matching: number; matching_other_currency: number; items: GlLine[] }
+interface GlTotal {
+  currency: string | null; same_currency: boolean; lines: number
+  debit: string; credit: string; net: string; net_matches_gap: boolean
+}
+interface GlResp {
+  total: number; matching: number; matching_other_currency: number
+  totals: GlTotal[]; items: GlLine[]
+}
 
 function money(v: string | null | undefined) {
   if (v === null || v === undefined) return '—'
@@ -188,6 +204,18 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                       )
                     })}
                   </tbody>
+                  {data?.open_bills_total && (
+                    <tfoot className="sticky bottom-0 bg-neutral-50">
+                      <tr className="border-t-2 border-neutral-300">
+                        <td className="px-2.5 py-2 text-[11px] font-semibold text-neutral-600" colSpan={3}>
+                          {data.open_bills_total.bills} bills · {currency}
+                        </td>
+                        <td className={footCell}>{money(data.open_bills_total.money_cr)}</td>
+                        <td className={footCell}>{money(data.open_bills_total.paid_against)}</td>
+                        <td className={footCell}>{money(data.open_bills_total.money_bal)}</td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             </div>
@@ -230,6 +258,17 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                       </tr>
                     ))}
                   </tbody>
+                  {data?.payments_total && (
+                    <tfoot className="sticky bottom-0 bg-neutral-50">
+                      <tr className="border-t-2 border-neutral-300">
+                        <td className="px-2.5 py-2 text-[11px] font-semibold text-neutral-600" colSpan={2}>
+                          {data.payments_total.lines} payment lines · {currency}
+                        </td>
+                        <td className={footCell}>{money(data.payments_total.money_de)}</td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             </div>
@@ -293,6 +332,36 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                     </tr>
                   ))}
                 </tbody>
+                {/* One subtotal PER CURRENCY. This list is not filtered by
+                    currency on purpose, so a single combined figure would add
+                    CAD to USD — and for Aptargroup every one of the 66 lines is
+                    USD against a CAD gap, which the split makes obvious. */}
+                {gl.totals.length > 0 && (
+                  <tfoot className="sticky bottom-0 bg-neutral-50">
+                    {gl.totals.map((t) => (
+                      <tr key={t.currency ?? 'none'} className="border-t-2 border-neutral-300">
+                        <td className="px-2.5 py-2 text-[11px] font-semibold text-neutral-600" colSpan={3}>
+                          {t.lines} lines · {t.currency ?? 'no currency'}
+                          {t.same_currency
+                            ? <span className="ml-1.5 text-[10px] font-normal text-neutral-400">supplier currency</span>
+                            : <span className="ml-1.5 text-[10px] font-normal text-amber-700">other currency</span>}
+                        </td>
+                        <td className="px-2.5 py-2 text-[11px] text-neutral-500">net</td>
+                        <td className={footCell}>{money(t.debit)}</td>
+                        <td className={footCell}>{money(t.credit)}</td>
+                        <td className={cn('px-2.5 py-2 font-mono tabular-nums font-semibold',
+                                          t.net_matches_gap ? 'text-[#085E5E]' : 'text-neutral-800')}>
+                          {money(t.net)}
+                          {t.net_matches_gap && (
+                            <span className="ml-1.5 rounded bg-[#085E5E] px-1 py-0.5 text-[10px] text-white">
+                              = difference
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tfoot>
+                )}
               </table>
             </div>
           </div>
