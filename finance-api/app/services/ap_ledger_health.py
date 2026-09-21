@@ -422,6 +422,9 @@ async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency:
         except (TypeError, ValueError):
             target = None
 
+    # Fetched WITHOUT the display limit: offsetting pairs are found across the
+    # whole set, so a pair split by the page boundary is not missed. The slice
+    # happens after pairing.
     rows = (await db.execute(text(f"""
         select v.jv_number, v.voucher_date, v.fiscal_period, v.source_subsystem,
                v.summary as voucher_summary,
@@ -440,9 +443,8 @@ async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency:
          -- (Willis: CAD -3,913.50, USD +3,913.50) is itself the answer.
          order by (l.currency = :ccy) desc nulls last,
                   v.voucher_date desc nulls last, v.jv_number desc
-         limit :limit
-    """), {"name": supplier_name, "ccy": currency,
-           "limit": max(1, min(limit, 1000))})).mappings().all()
+         limit 5000
+    """), {"name": supplier_name, "ccy": currency})).mappings().all()
 
     def near(a) -> bool:
         return target is not None and a is not None and abs(abs(float(a)) - target) <= 0.01
@@ -463,6 +465,26 @@ async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency:
          group by l.currency
          order by (l.currency = :ccy) desc nulls last, l.currency
     """), {"name": supplier_name, "ccy": currency})).mappings().all()
+    offsets = _pair_offsets(rows)
+    # 5000 is the read cap; if it is hit, the offset figures describe a subset
+    # and must say so rather than presenting a partial net as the whole.
+    capped = len(rows) >= 5000
+
+    # The number that actually matters: what is left once the self-cancelling
+    # pairs are taken out. Computed from the same rows the pairing used, so the
+    # two can never disagree on screen.
+    from collections import defaultdict as _dd
+    net_real: dict = _dd(float)
+    real_lines: dict = _dd(int)
+    for r in rows:
+        if offsets.get(id(r)):
+            continue
+        eff = _effect(r)
+        if eff == 0:
+            continue
+        net_real[r["currency"]] += -eff        # same sign convention as `net`
+        real_lines[r["currency"]] += 1
+
     totals = [{
         "currency": t["currency"],
         "same_currency": t["currency"] == currency,
@@ -473,10 +495,17 @@ async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency:
         # vouchers did to the balance on their own.
         "net": str(t["debit"] - t["credit"]),
         "net_matches_gap": near(t["debit"] - t["credit"]),
+        "lines_after_offsets": real_lines.get(t["currency"], 0),
+        "net_after_offsets": f'{net_real.get(t["currency"], 0.0):.2f}',
+        "net_after_offsets_matches_gap": near(net_real.get(t["currency"], 0.0)),
     } for t in tot_rows]
+
 
     items = [{
         "same_currency": r["currency"] == currency,
+        # Set when this line cancels another one. Same value on both halves so
+        # the UI can dim them together.
+        "offset_group": offsets.get(id(r)),
         "jv_number": r["jv_number"],
         "voucher_date": r["voucher_date"].isoformat() if r["voucher_date"] else None,
         "fiscal_period": r["fiscal_period"],
@@ -492,8 +521,51 @@ async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency:
     return {"supplier_name": supplier_name, "currency": currency,
             "gap": str(gap) if gap is not None else None,
             "total": len(items),
+            "shown": min(len(items), max(1, min(limit, 1000))),
             "matching": sum(1 for i in items if i["matches_gap"]),
             "matching_other_currency": sum(
                 1 for i in items if i["matches_gap"] and not i["same_currency"]),
+            "offset_lines": sum(1 for i in items if i["offset_group"]),
+            "offsets_capped": capped,
             "totals": totals,
-            "items": items}
+            "items": items[:max(1, min(limit, 1000))]}
+
+
+def _effect(row) -> float:
+    """What this line did to the payable. Credit raises it, debit reduces it."""
+    return float(row["orig_credit"] or 0) - float(row["orig_debit"] or 0)
+
+
+def _pair_offsets(rows) -> dict:
+    """Mark lines that cancel each other out, 1:1.
+
+    Most of what sits on a supplier's payable account is noise of this kind: a
+    voucher posted and reversed, or one leg against another inside the same
+    voucher (220201 credit 283,041.00 against 220203 debit 283,041.00). They
+    net to nothing and they bury the handful of lines that matter.
+
+    Pairing is greedy, deterministic and one-to-one: within a currency, each
+    amount's positives are matched against its negatives in list order, and
+    anything left over stays unpaired. Deliberately NOT "every 10,000 line is
+    offset" — two genuine charges of the same size must not cancel each other,
+    so a line is only dimmed when there is a specific counterpart for it.
+
+    Returns {id(row): group_key} with the same key on both halves.
+    """
+    from collections import defaultdict
+
+    buckets: dict = defaultdict(lambda: ([], []))
+    for r in rows:
+        eff = _effect(r)
+        if eff == 0:
+            continue
+        pos, neg = buckets[(r["currency"], round(abs(eff), 2))]
+        (pos if eff > 0 else neg).append(r)
+
+    out: dict = {}
+    for (ccy, amount), (pos, neg) in buckets.items():
+        for i, (a, b) in enumerate(zip(pos, neg)):
+            key = f"{ccy or 'x'}:{amount}:{i}"
+            out[id(a)] = key
+            out[id(b)] = key
+    return out

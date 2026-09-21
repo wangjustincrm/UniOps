@@ -84,6 +84,8 @@ interface AbandonedResp { total: number; items: AbandonedRow[] }
 
 interface GlLine {
   same_currency: boolean
+  /** Shared by both halves of a cancelling pair; null when the line is real. */
+  offset_group: string | null
   jv_number: string; voucher_date: string | null; fiscal_period: string | null
   subsystem: string | null; account_code: string; summary: string | null
   debit: string | null; credit: string | null; currency: string | null
@@ -92,9 +94,12 @@ interface GlLine {
 interface GlTotal {
   currency: string | null; same_currency: boolean; lines: number
   debit: string; credit: string; net: string; net_matches_gap: boolean
+  lines_after_offsets: number; net_after_offsets: string
+  net_after_offsets_matches_gap: boolean
 }
 interface GlResp {
-  total: number; matching: number; matching_other_currency: number
+  total: number; shown: number; matching: number; matching_other_currency: number
+  offset_lines: number; offsets_capped: boolean
   totals: GlTotal[]; items: GlLine[]
 }
 
@@ -131,6 +136,11 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
       `&currency=${currency}&gap=${encodeURIComponent(gap ?? '')}&limit=400`),
     enabled: hasGap && !!name,
   })
+  // Most of what sits on a payable account cancels itself out — a voucher and
+  // its reversal, or two legs of one entry. Hidden by default because that is
+  // the complaint this answers, but the count is always on screen and one
+  // click brings them back, dimmed. Never silently dropped.
+  const [hideOffsets, setHideOffsets] = useState(true)
   const bills = data?.open_bills ?? []
   const pays = data?.payments ?? []
   const untied = pays.filter((p) => !p.applied_to_bill_no).length
@@ -288,6 +298,16 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                 : <>None is for exactly the difference, so it is either the net of several or was
                     settled another way.</>}
             </p>
+            {gl.offset_lines > 0 && (
+              <label className="mb-2 inline-flex items-center gap-1.5 text-xs text-neutral-600">
+                <input type="checkbox" checked={hideOffsets}
+                       onChange={(e) => setHideOffsets(e.target.checked)} />
+                Hide {gl.offset_lines} entries that cancel each other out
+                <span className="text-neutral-400">
+                  ({gl.total - gl.offset_lines} left)
+                </span>
+              </label>
+            )}
             <div className="max-h-[38vh] overflow-auto rounded-lg border border-neutral-200">
               <table className="w-full min-w-[640px] text-xs">
                 <thead className="sticky top-0 bg-neutral-50">
@@ -305,11 +325,20 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                   {gl.items.length === 0 ? (
                     <tr><td colSpan={7} className="px-2.5 py-6 text-center text-neutral-400">
                       No journal entries on this supplier&rsquo;s payable account.</td></tr>
-                  ) : gl.items.map((r, i) => (
+                  ) : gl.items
+                        .filter((r) => !(hideOffsets && r.offset_group))
+                        .map((r, i) => (
                     <tr key={r.jv_number + i}
-                        className={cn('border-t border-neutral-100', r.matches_gap && 'bg-primary-50/70')}>
+                        className={cn('border-t border-neutral-100',
+                                      r.matches_gap && 'bg-primary-50/70',
+                                      r.offset_group && 'text-neutral-400')}>
                       <td className="px-2.5 py-1.5 font-mono">
                         {r.jv_number}
+                        {r.offset_group && (
+                          <span className="ml-1.5 rounded bg-neutral-200 px-1 py-0.5 text-[10px] font-medium text-neutral-500">
+                            offset
+                          </span>
+                        )}
                         {r.matches_gap && (
                           <span className="ml-1.5 rounded bg-[#085E5E] px-1 py-0.5 text-[10px] font-semibold text-white">
                             matches
@@ -341,7 +370,7 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                     {gl.totals.map((t) => (
                       <tr key={t.currency ?? 'none'} className="border-t-2 border-neutral-300">
                         <td className="px-2.5 py-2 text-[11px] font-semibold text-neutral-600" colSpan={3}>
-                          {t.lines} lines · {t.currency ?? 'no currency'}
+                          {hideOffsets ? t.lines_after_offsets : t.lines} lines · {t.currency ?? 'no currency'}
                           {t.same_currency
                             ? <span className="ml-1.5 text-[10px] font-normal text-neutral-400">supplier currency</span>
                             : <span className="ml-1.5 text-[10px] font-normal text-amber-700">other currency</span>}
@@ -351,8 +380,8 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                         <td className={footCell}>{money(t.credit)}</td>
                         <td className={cn('px-2.5 py-2 font-mono tabular-nums font-semibold',
                                           t.net_matches_gap ? 'text-[#085E5E]' : 'text-neutral-800')}>
-                          {money(t.net)}
-                          {t.net_matches_gap && (
+                          {money(hideOffsets ? t.net_after_offsets : t.net)}
+                          {(hideOffsets ? t.net_after_offsets_matches_gap : t.net_matches_gap) && (
                             <span className="ml-1.5 rounded bg-[#085E5E] px-1 py-0.5 text-[10px] text-white">
                               = difference
                             </span>
