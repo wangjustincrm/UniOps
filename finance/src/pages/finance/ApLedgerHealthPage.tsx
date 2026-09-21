@@ -354,7 +354,7 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                 )}
               </div>
               <div className="max-h-[52vh] overflow-auto rounded-lg border border-neutral-200">
-                <table className="w-full min-w-[480px] text-xs">
+                <table className="w-full min-w-[520px] text-xs">
                   <thead className="sticky top-0 bg-neutral-50">
                     <tr className="border-b border-neutral-100 text-[11px] text-neutral-500">
                       <th className="w-7 px-2 py-2 text-left font-medium">
@@ -423,7 +423,7 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                               </span>
                             )}
                           </td>
-                          <td className="px-2.5 py-1.5 text-neutral-600">{day(b.bill_date)}</td>
+                          <td className="whitespace-nowrap px-2.5 py-1.5 text-neutral-600">{day(b.bill_date)}</td>
                           <td className="px-2.5 py-1.5 font-mono text-neutral-600">{b.invoice_no ?? '—'}</td>
                           <td className="px-2.5 py-1.5 text-right font-mono tabular-nums">{money(b.money_cr)}</td>
                           <td className={cn('px-2.5 py-1.5 text-right font-mono tabular-nums',
