@@ -390,7 +390,7 @@ export default function AppLayout() {
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <Header onMobileMenuToggle={() => setMobileOpen((v) => !v)} />
           <TabRouterSync routes={ehsRoutes} />
-          <TabBar />
+          <div className="shrink-0" data-print="hide"><TabBar /></div>
           <main className="relative flex-1 overflow-hidden">
             <TabHost routes={ehsRoutes} pageClassName="mx-auto max-w-[1440px]" />
           </main>

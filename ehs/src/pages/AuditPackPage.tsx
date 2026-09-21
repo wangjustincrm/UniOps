@@ -82,7 +82,8 @@ export default function AuditPackPage() {
                onChange={(e) => setFrom(e.target.value)} aria-label="From" />
         <input type="date" className={`${inputClass} w-40`} value={to}
                onChange={(e) => setTo(e.target.value)} aria-label="To" />
-        <button type="button" className={secondaryButton} onClick={() => window.print()}>
+        <button type="button" className={secondaryButton} data-print="hide"
+                onClick={() => window.print()}>
           <Printer className="h-4 w-4" aria-hidden />
           Print
         </button>

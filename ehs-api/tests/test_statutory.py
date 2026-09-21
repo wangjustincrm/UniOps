@@ -244,3 +244,41 @@ def test_a_full_year_of_wsib_deadlines_never_lands_on_a_non_business_day():
         assert is_business_day(due, HOLIDAYS), f"{day.date()} -> {due} is not a business day"
         assert due > day.date()
         day += timedelta(days=1)
+
+
+async def test_days_since_counts_injuries_not_every_record(hse_manager, worker, test_engine):
+    """Reporting a good catch must not reset the tile to zero.
+
+    It counted every incident of any kind, so a near miss — the thing the
+    module most wants people to report — wiped the number that the plant reads
+    as "how we are doing". HSE asked for it to mean medical incidents, and to
+    say so on the tile.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    _, client = hse_manager
+    injured, _ = worker
+    long_ago = datetime.now(timezone.utc) - timedelta(days=40)
+
+    await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Cut finger",
+        "incident_type": "first_aid",
+        "occurred_at": long_ago.isoformat(),
+        "description": "Caught on a burr.",
+        "injured_user_id": str(injured.id),
+    })
+    before = (await client.get("/api/v1/dashboard")).json()["headline"]
+    assert before["days_since_last_incident"] >= 39
+
+    # A near miss today. Good news, and it used to read as a reset.
+    await client.post("/api/v1/incidents", json={
+        "form_kind": "near_miss", "title": "Pallet nearly fell",
+        "incident_type": "near_miss",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "description": "Nobody underneath.",
+        "talked_to_operator": "yes",
+    })
+    after = (await client.get("/api/v1/dashboard")).json()["headline"]
+    assert after["days_since_last_incident"] == before["days_since_last_incident"], (
+        "a near miss is not an injury, and reporting one must not cost the plant "
+        "its count")

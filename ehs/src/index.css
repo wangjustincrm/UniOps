@@ -7,3 +7,57 @@
    dev container, where the package is mounted alongside the app. */
 @source "../../packages/shell/src";
 @import "@uniops/shell/tokens.css";
+
+/* ── Printing ─────────────────────────────────────────────────────────────
+   The shell is a fixed-height, overflow-hidden chrome around a tab host whose
+   pages are absolutely-positioned layers that scroll inside it. On paper that
+   produces exactly one page: everything below the fold is clipped by the same
+   rules that make the app sit still on screen. The audit evidence pack is the
+   document this matters for — it is what an inspector is handed — and it
+   printed its first page only.
+
+   Every selector below names something that is literally in the DOM (`#root`,
+   `h-screen`, the tab host's `absolute inset-0` layers, `<aside>`, `<header>`)
+   rather than a guess at nesting depth, because this machine has no browser to
+   render-check the result against. */
+@media print {
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  /* Nothing between the page and <body> may clip or cap a height. */
+  #root, #root * {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .h-screen { height: auto !important }
+
+  /* The tab host stacks its pages as absolute layers, so the live page has no
+     height of its own to hand the printer. Inactive tabs carry `hidden` and
+     stay hidden — this only puts the visible one back in flow. */
+  main,
+  main .absolute {
+    position: static !important;
+    inset: auto !important;
+    height: auto !important;
+  }
+
+  /* Navigation, tabs and the controls that produced the document are not part
+     of what is being handed over. */
+  aside,
+  header,
+  [data-print="hide"] {
+    display: none !important;
+  }
+
+  /* A table split across pages repeats its head, and a row is not torn in
+     half — an audit trail read across a page break has to stay legible. */
+  thead { display: table-header-group }
+  tr, li { break-inside: avoid }
+  h1, h2, h3 { break-after: avoid }
+
+  a[href]::after { content: "" }   /* no URL spam beside every link */
+}

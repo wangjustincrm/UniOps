@@ -8,7 +8,10 @@
  *
  * Three deliberate departures from the original:
  *
- *   **Days since the last incident is the largest number on the page.** It is
+ *   **Days since the last medical incident is the largest number on the page.**
+ *     It counts injuries only: counting everything meant reporting a good
+ *     catch reset it to zero, which punishes the reporting it exists to
+ *     encourage. It is
  *   the only figure here where a bigger number is better, and it is the one a
  *   plant puts on a board by the door. Everything else counts things going
  *   wrong.
@@ -29,6 +32,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CalendarClock, TrendingUp } from 'lucide-react'
 import { api } from '@/lib/api'
+import { formatDate } from '@/lib/formatDate'
 
 interface Headline {
   year: number; injuries: number; first_aid: number; medical: number
@@ -50,7 +54,12 @@ interface Dashboard {
   body_parts: CountRow[]
   injured_departments: CountRow[]
   participation: ParticipationRow[]
-  jhsc: { available: boolean; reason: string | null }
+  jhsc: {
+    available: boolean
+    reason: string | null
+    months?: { month: string; held_on: string | null; present: number; invited: number }[]
+    members?: number
+  }
 }
 
 const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
@@ -151,7 +160,7 @@ export default function DashboardPage() {
               {h.days_since_last_incident ?? '—'}
             </p>
             <p className="mt-1.5 text-xs font-semibold uppercase tracking-wide text-primary-700">
-              Days since the last incident
+              Days since the last medical incident
             </p>
           </div>
         </div>
@@ -216,7 +225,12 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {/* ── Trend ──────────────────────────────────────────────────────── */}
         <Panel title="Injuries by month" className="lg:col-span-2">
-          <div className="flex h-32 items-end gap-1.5">
+          {/* items-stretch, not items-end. The bars are sized with percentage
+              heights, and a percentage resolves against a parent with a
+              definite height — which `items-end` denies it, leaving every
+              column auto-height and every bar computing to zero. The chart was
+              not empty; it was invisible. */}
+          <div className="flex h-32 items-stretch gap-1.5">
             {data.medical_events.map((r, i) => {
               const total = r.first_aid + r.medical_aid + r.lost_time
               return (
@@ -242,7 +256,7 @@ export default function DashboardPage() {
         {/* ── Near misses ────────────────────────────────────────────────── */}
         <Panel title="Near misses and good catches"
                note="A rising line here is good — it means people are reporting what nearly happened.">
-          <div className="flex h-28 items-end gap-1.5">
+          <div className="flex h-28 items-stretch gap-1.5">
             {data.near_misses.map((r, i) => (
               <div key={r.month} className="flex flex-1 flex-col items-center gap-1.5">
                 <div className="relative flex w-full flex-1 items-end"
@@ -319,11 +333,46 @@ export default function DashboardPage() {
         </Panel>
 
         {/* ── The gap, stated ────────────────────────────────────────────── */}
-        <Panel title="JHSC meeting attendance" className="lg:col-span-2">
-          <div className="flex items-start gap-2.5 rounded-lg border border-dashed border-neutral-300 p-4">
-            <TrendingUp className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" aria-hidden />
-            <p className="text-sm text-neutral-600">{data.jhsc.reason}</p>
-          </div>
+        <Panel title="JHSC meeting attendance" className="lg:col-span-2"
+               note="OHSA s.9 wants the committee meeting and a record of who was there.">
+          {/* The months were always in the response and only the "nothing to
+              show" branch was ever written, so a committee that had met twice
+              still read as having no data. */}
+          {data.jhsc.available && (data.jhsc.months?.length ?? 0) > 0 ? (
+            <ul className="flex flex-col gap-2">
+              {data.jhsc.months!.map((m) => {
+                const invited = Math.max(m.invited, 1)
+                const pct = Math.round((m.present / invited) * 100)
+                return (
+                  <li key={m.month} className="flex items-center gap-2">
+                    <span className="w-24 shrink-0 text-right text-xs text-neutral-600">
+                      {MONTH_NAMES[Number(m.month) - 1] ?? m.month}
+                      {m.held_on && (
+                        <span className="block text-[10px] text-neutral-400">
+                          {formatDate(m.held_on)}
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex h-4 flex-1 overflow-hidden rounded-sm bg-neutral-100">
+                      <span className={pct >= 50 ? 'bg-success-500' : 'bg-warning-400'}
+                            style={{ width: `${(m.present / invited) * 100}%` }}
+                            title={`${m.present} of ${m.invited} attended`} />
+                    </span>
+                    <span className="w-16 text-xs font-semibold tabular-nums text-neutral-800">
+                      {m.present}/{m.invited}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <div className="flex items-start gap-2.5 rounded-lg border border-dashed border-neutral-300 p-4">
+              <TrendingUp className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" aria-hidden />
+              <p className="text-sm text-neutral-600">
+                {data.jhsc.reason ?? 'No meeting has been recorded yet this year.'}
+              </p>
+            </div>
+          )}
         </Panel>
       </div>
     </div>

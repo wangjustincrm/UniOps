@@ -65,9 +65,14 @@ async def headline(db: AsyncSession, *, year: int, hours_worked: float | None) -
 
     injuries, first_aid, medical, lost_time, recordable, cost_total, cost_known, lost_hours = row
 
-    # Days since the last incident of any kind — the tile they highlight green.
+    # Days since the last injury, not since the last record of any kind.
+    #
+    # It counted everything — a near miss, a spill, a security matter — so
+    # reporting a good catch reset the tile to zero, which punishes exactly the
+    # behaviour the near-miss reporting is there to encourage. HSE asked for it
+    # to mean medical incidents, and to be labelled that way.
     last = (await db.execute(text(
-        "select max(occurred_at) from ehs_incidents"))).scalar()
+        "select max(occurred_at) from ehs_incidents where injury_class is not null"))).scalar()
     days_since = None
     if last is not None:
         days_since = (datetime.now(timezone.utc).astimezone(ONTARIO).date()
