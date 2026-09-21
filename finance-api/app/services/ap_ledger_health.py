@@ -150,3 +150,64 @@ async def trusted_supplier_codes(db: AsyncSession, currency: str | None = None) 
         params["ccy"] = currency
     rows = (await db.execute(text(sql), params)).scalars().all()
     return {r for r in rows if r}
+
+
+async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
+                          limit: int = 500) -> dict:
+    """The evidence behind one supplier's gap: the bills still flagged open,
+    and the payments that exist alongside them.
+
+    An aggregate cannot be judged. Finance has to see which documents are
+    sitting open and what was paid around them before deciding whether the
+    balance is real, was settled outside the subledger, or should be written
+    off — so both sides come back together, oldest bill first, because the
+    oldest ones are where uncleared balances collect.
+    """
+    lim = max(1, min(limit, 2000))
+    bills = (await db.execute(text("""
+        select l.bill_no, l.bill_date::date as bill_date, l.bill_year,
+               l.money_cr, l.money_bal, l.invoice_no, l.purchase_order,
+               b.trade_type, b.src_syscode, l.scomment
+          from nc_ap_bill_lines l
+          join nc_ap_bills b on b.id = l.bill_id
+         where l.supplier_code = :code and b.currency = :ccy and l.money_bal <> 0
+         order by l.bill_date, l.bill_no
+         limit :lim
+    """), {"code": supplier_code, "ccy": currency, "lim": lim})).mappings().all()
+
+    payments = (await db.execute(text("""
+        select p.bill_no, p.pay_date::date as pay_date, p.bill_year,
+               l.money_de, l.src_bill_type, l.src_bill_id, p.scomment
+          from nc_ap_payment_lines l
+          join nc_ap_payments p on p.id = l.payment_id
+         where l.supplier_code = :code and l.currency = :ccy
+         order by p.pay_date desc nulls last, p.bill_no desc
+         limit :lim
+    """), {"code": supplier_code, "ccy": currency, "lim": lim})).mappings().all()
+
+    def d(v):
+        return v.isoformat() if v else None
+
+    return {
+        "supplier_code": supplier_code,
+        "currency": currency,
+        "open_bills": [{
+            "bill_no": r["bill_no"], "bill_date": d(r["bill_date"]),
+            "bill_year": r["bill_year"],
+            "money_cr": str(r["money_cr"]) if r["money_cr"] is not None else None,
+            "money_bal": str(r["money_bal"]) if r["money_bal"] is not None else None,
+            "invoice_no": r["invoice_no"], "purchase_order": r["purchase_order"],
+            "trade_type": r["trade_type"], "src_syscode": r["src_syscode"],
+            "scomment": r["scomment"],
+        } for r in bills],
+        "payments": [{
+            "bill_no": r["bill_no"], "pay_date": d(r["pay_date"]),
+            "bill_year": r["bill_year"],
+            "money_de": str(r["money_de"]) if r["money_de"] is not None else None,
+            # NC's own pointer back to a source document. Empty here is itself
+            # the story: a payment that was never tied to anything is exactly
+            # how a subledger stops clearing.
+            "src_bill_type": r["src_bill_type"], "src_bill_id": r["src_bill_id"],
+            "scomment": r["scomment"],
+        } for r in payments],
+    }

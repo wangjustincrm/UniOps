@@ -18,6 +18,17 @@ async def summary(user: CurrentUser, db: AsyncSession = Depends(get_db)):
     return await svc.summary(db)
 
 
+@router.get("/supplier")
+async def supplier(user: CurrentUser,
+                   supplier_code: str = Query(...),
+                   currency: str = Query(...),
+                   limit: int = Query(500, ge=1, le=2000),
+                   db: AsyncSession = Depends(get_db)):
+    """The open bills and the payments behind one supplier's gap — the evidence
+    finance needs to judge whether the balance is real."""
+    return await svc.supplier_detail(db, supplier_code, currency, limit=limit)
+
+
 @router.get("/items")
 async def items(user: CurrentUser,
                 health: str | None = Query(None),

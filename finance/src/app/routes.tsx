@@ -1,6 +1,7 @@
 import type { RouteDef } from '@uniops/shell'
 import AccountsPayablePage from '@/pages/finance/AccountsPayablePage'
 import ApReconciliationPage from '@/pages/finance/ApReconciliationPage'
+import ApLedgerHealthPage from '@/pages/finance/ApLedgerHealthPage'
 import AccountsReceivablePage from '@/pages/finance/AccountsReceivablePage'
 import GeneralLedgerPage from '@/pages/finance/GeneralLedgerPage'
 import JournalVouchersPage from '@/pages/finance/JournalVouchersPage'
@@ -25,6 +26,7 @@ import FactorLibraryPage from '@/pages/budget/FactorLibraryPage'
 export const financeRoutes: RouteDef[] = [
   { path: '/finance/ap', element: <AccountsPayablePage />, tab: { title: 'Accounts Payable', icon: 'CreditCard', keyStrategy: 'static', pinned: true } },
   { path: '/finance/ap-recon', element: <ApReconciliationPage />, tab: { title: 'AP Reconciliation', icon: 'ClipboardCheck', keyStrategy: 'static' } },
+  { path: '/finance/ap-ledger-health', element: <ApLedgerHealthPage />, tab: { title: 'AP Subledger Health', icon: 'HeartPulse', keyStrategy: 'static' } },
   { path: '/finance/ar', element: <AccountsReceivablePage />, tab: { title: 'Accounts Receivable', icon: 'Receipt', keyStrategy: 'static' } },
   { path: '/finance/gl', element: <GeneralLedgerPage />, tab: { title: 'General Ledger', icon: 'BookOpen', keyStrategy: 'static' } },
   { path: '/finance/journal-vouchers', element: <JournalVouchersPage />, tab: { title: 'Journal Vouchers', icon: 'FileText', keyStrategy: 'static' } },
