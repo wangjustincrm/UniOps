@@ -72,7 +72,13 @@ interface MissingRow {
   bills: number; amount: string
   oldest_bill: string | null; newest_bill: string | null
 }
-interface MissingResp { total: number; items: MissingRow[] }
+interface MissingResp {
+  total: number
+  /** The single date carrying the most undated money — an opening-balance load
+   *  looks exactly like this, and it changes what finance should do about it. */
+  largest_single_date: { bill_date: string; bills: number; amount: string } | null
+  items: MissingRow[]
+}
 
 const UNDATED = 'undated'
 
@@ -332,9 +338,30 @@ export default function ApCashFlowPage() {
             <p className="mb-2 max-w-3xl text-[11px] leading-relaxed text-neutral-500">
               NC bills these suppliers, but we hold no payment term for them, so there is no
               due date to calculate. They are excluded from both tables above rather than
-              defaulted to Net 30. <strong>Create the vendor record</strong> (EPMS &rsquo;Vendors&rsquo; →
-              From ERP), or set the term on the one that exists, and the balance moves into
-              the forecast on the next load.
+              defaulted to Net 30.{' '}
+              {/* Two different fixes, and which one applies is mostly decided by
+                  the date. A single day carrying most of this is an opening-
+                  balance load, and setting those suppliers up in the vendor
+                  master would be work spent on money that should be judged. */}
+              {missing?.largest_single_date
+                && Number(missing.largest_single_date.amount) > Number(undated.amount) / 2 ? (
+                <>
+                  <strong>{missing.largest_single_date.bills} of these bills are all dated{' '}
+                  {day(missing.largest_single_date.bill_date)}</strong> and carry{' '}
+                  {money(missing.largest_single_date.amount)} — that is an opening-balance load,
+                  not suppliers waiting to be set up. Judge those on{' '}
+                  <a href="/finance/ap-ledger-health" className="text-[#085E5E] hover:underline">
+                    AP Subledger Health</a> instead. For the rest,{' '}
+                  <strong>create the vendor record</strong> (EPMS &rsquo;Vendors&rsquo; → From ERP) or set
+                  the term on the one that exists, and the balance moves into the forecast.
+                </>
+              ) : (
+                <>
+                  <strong>Create the vendor record</strong> (EPMS &rsquo;Vendors&rsquo; → From ERP), or set
+                  the term on the one that exists, and the balance moves into the forecast on
+                  the next load.
+                </>
+              )}
             </p>
             <div className="overflow-x-auto rounded-lg border border-neutral-200">
               <table className="w-full min-w-[720px] text-sm">

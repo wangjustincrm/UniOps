@@ -255,7 +255,30 @@ async def missing_terms(db: AsyncSession, currency: str | None = None) -> dict:
          group by supplier_code, currency
          order by sum(open_bal) desc
     """), params)).mappings().all()
-    return {"total": len(rows), "items": [{
+
+    # The date carrying the most undated money, and how much of it.
+    #
+    # Measured before this existed: 25 of the 53 undated CAD bills share one
+    # date, 2020-08-31, and carry 2,475,876.92 — 74% of the undated balance. An
+    # opening-balance load at NC go-live, not 39 suppliers waiting to be set up.
+    # Without saying so, this page sends finance off to create vendor records
+    # for money that should be judged on AP Subledger Health instead. The date
+    # is DERIVED, never hard-coded: a go-live date belongs to the data, not to
+    # this file, and the same cluster in a different company would be a
+    # different day.
+    cluster = (await db.execute(text(_BASE + f"""
+        select bill_date, count(*) as bills, coalesce(sum(open_bal), 0) as amount
+          from bucketed {clause} and bill_date is not null
+         group by bill_date order by sum(open_bal) desc limit 1
+    """), params)).mappings().first()
+
+    return {"total": len(rows),
+            "largest_single_date": {
+                "bill_date": cluster["bill_date"].isoformat(),
+                "bills": int(cluster["bills"]),
+                "amount": str(cluster["amount"]),
+            } if cluster else None,
+            "items": [{
         "supplier_code": r["supplier_code"],
         "supplier_name": r["supplier_name"],
         "currency": r["currency"],
