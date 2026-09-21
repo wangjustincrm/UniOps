@@ -13,7 +13,7 @@
  * result explains every wrong answer rather than just scoring it. A quiz that
  * only tells you that you failed is a filter, not training.
  */
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Check, ClipboardList, Plus, QrCode, Trash2, X } from 'lucide-react'
@@ -446,6 +446,7 @@ export function EditQuizPage() {
   const set = (i: number, patch: Partial<AuthorQuestion>) =>
     setDraft(rows.map((r, k) => k === i ? { ...r, ...patch } : r))
 
+  const [presenting, setPresenting] = useState(false)
   const link = quiz.data?.qr_token
     ? `${window.location.origin}/qr/${quiz.data.qr_token}` : null
 
@@ -454,23 +455,29 @@ export function EditQuizPage() {
       <PageHeader title={quiz.data?.title ?? 'Quiz'}
                   subtitle={`Pass at ${quiz.data?.pass_mark_percent ?? 80}%`} />
 
+      {/* The code is shown on its own, never on this page.
+          This is the authoring view: the questions and their answers are below.
+          Putting the code here meant projecting the code meant projecting the
+          answer key — which is what the second acceptance round caught. */}
       {link && (
         <Card className="mb-4">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-neutral-900">
             <QrCode className="h-4 w-4 text-neutral-400" aria-hidden />
             The code to put on the screen
           </p>
-          <div className="mt-2">
-            <QrPanel token={quiz.data?.qr_token ?? null}
-                     caption="Scan to take this quiz"
-                     sub={quiz.data?.title ?? null} />
-          </div>
-          <p className="mt-2 break-all font-mono text-[11px] text-neutral-400">{link}</p>
           <p className="mt-1 text-xs text-neutral-500">
-            Everyone scans this at the end of the session and answers on their
-            own phone.
+            Opens on its own, with nothing else on it. The answers are on this
+            page, so this page is not the one to put on the projector.
           </p>
+          <button type="button" onClick={() => setPresenting(true)}
+                  className={`${primaryButton} mt-2.5`}>
+            Show the code to the room
+          </button>
         </Card>
+      )}
+
+      {presenting && quiz.data && (
+        <QuizCodeScreen quiz={quiz.data} onClose={() => setPresenting(false)} />
       )}
 
       {(results.data?.people ?? 0) > 0 && (
@@ -619,6 +626,35 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-xs text-neutral-500">{label}</p>
       <p className="font-mono text-lg font-bold tabular-nums text-neutral-900">{value}</p>
+    </div>
+  )
+}
+
+/**
+ * The code, full screen, and nothing else.
+ *
+ * What gets projected. Deliberately carries the quiz title and the code and no
+ * question — the authoring page has the answers on it, and showing the code
+ * from there showed the class the answer key.
+ */
+function QuizCodeScreen({ quiz, onClose }: { quiz: Quiz; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-white p-6"
+         role="dialog" aria-modal="true" aria-label="Scan to take the quiz">
+      <h2 className="text-center text-2xl font-bold tracking-tight text-neutral-900">
+        {quiz.title}
+      </h2>
+      <QrPanel token={quiz.qr_token} caption="Scan to take this quiz" size={280} />
+      <p className="text-sm text-neutral-500">Answer on your own phone.</p>
+      <button type="button" onClick={onClose} className={secondaryButton}>
+        Done
+      </button>
     </div>
   )
 }

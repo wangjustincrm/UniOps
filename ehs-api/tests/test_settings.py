@@ -369,7 +369,7 @@ async def test_a_form_can_be_asked_which_form_it_is(hse_manager):
     assert one.json()["code"] == "ladder_weekly"
 
 
-async def test_a_reference_list_is_named_differently_from_its_code(hse_manager):
+async def test_a_reference_list_is_named_differently_from_its_code(hse_manager, test_engine):
     """Why the builder must offer a choice rather than a text box.
 
     The list a person knows as "Safety Equipment Type" answers to
@@ -377,7 +377,17 @@ async def test_a_reference_list_is_named_differently_from_its_code(hse_manager):
     went out pointing at a list that does not exist, and the question had
     nothing to pick from.
     """
+    from sqlalchemy import text
     _, client = hse_manager
+    # Seeded here rather than relied on. This used to pass only because another
+    # test file happened to run first and insert one — a test that depends on
+    # its neighbours is not testing what it says it is.
+    async with test_engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO ehs_vocabularies (code, name, is_hierarchical, is_system_locked)"
+            " VALUES ('safety_asset_type', 'Safety Equipment Type', false, false)"
+            " ON CONFLICT DO NOTHING"))
+
     listing = (await client.get("/api/v1/settings/vocabularies")).json()
     by_name = {v["name"]: v["code"] for v in listing}
     assert by_name, "the builder's dropdown is filled from this"
@@ -389,3 +399,50 @@ async def test_a_reference_list_is_named_differently_from_its_code(hse_manager):
     assert missing.status_code == 404, (
         "a question pointing at a list that does not exist has to fail loudly — "
         "the picker used to render an empty dropdown and say nothing")
+
+
+async def test_a_requester_sees_the_permits_they_raised(hse_manager, test_engine, db_session):
+    """Raising one and then seeing nothing looks exactly like it not saving.
+
+    Every role can raise a permit — the person who needs a tank cleaned is not
+    the person authorised to allow entry into it — but reading the register is
+    narrower, and the list refused outright. The second acceptance round
+    reported it as "it does not save once the raise it button is pressed". It
+    had saved.
+    """
+    from tests.conftest import authed_client, make_token, make_user
+
+    _, hse = hse_manager
+    from sqlalchemy import text
+    # The six permit types come from a migration this test database does not
+    # run, so one is made here.
+    async with test_engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO ehs_permit_types (id, code, name, is_active)"
+            " VALUES (gen_random_uuid(), 'CONFINED', 'Confined space entry', true)"
+            " ON CONFLICT DO NOTHING"))
+    types = (await hse.get("/api/v1/permit-types")).json()
+    assert types, "a permit type has to exist before one can be raised"
+
+    requester = await make_user(test_engine, role="requester", full_name="Tank Cleaner")
+    async with authed_client(make_token(requester.id, requester.role), db_session) as theirs:
+        raised = await theirs.post("/api/v1/permits", json={
+            "type_id": types[0]["id"],
+            "work_description": "Clean the balance tank",
+        })
+        assert raised.status_code == 201, raised.text
+        mine = await theirs.get("/api/v1/permits")
+        assert mine.status_code == 200, "raising one and then being refused the list is the bug"
+        assert any(p["id"] == raised.json()["id"] for p in mine.json())
+
+        one = await theirs.get(f"/api/v1/permits/{raised.json()['id']}")
+        assert one.status_code == 200
+
+    # And no further: the register itself stays behind ehs.permit.read.
+    other = (await hse.post("/api/v1/permits", json={
+        "type_id": types[0]["id"], "work_description": "Hot work in the dryer",
+    })).json()
+    async with authed_client(make_token(requester.id, requester.role), db_session) as theirs:
+        assert (await theirs.get(f"/api/v1/permits/{other['id']}")).status_code == 403
+        listed = (await theirs.get("/api/v1/permits")).json()
+        assert all(p["id"] != other["id"] for p in listed)

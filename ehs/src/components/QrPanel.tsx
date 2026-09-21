@@ -37,9 +37,16 @@ export default function QrPanel({ token, caption, sub, size = 132 }: Props) {
     setFailed(false)
     // The image is proxied by ehs-api and needs the session token, which an
     // `<img src>` cannot send — so it comes back as text and is inlined.
-    apiBlob(`/api/v1/qr/${encodeURIComponent(token)}/image?size=${size * 2}`)
+    apiBlob(`/api/v1/qr/${encodeURIComponent(token)}/image?size=${size}`)
       .then((blob) => blob.text())
-      .then((text) => { if (!dropped) setSvg(text) })
+      // Strip the width and height the server put on it. An SVG without them
+      // fills whatever box it is in, which is what both users of this want —
+      // a 132px card here, 55mm on paper. Carrying its own size is what made
+      // it overflow the card, cut off at the edge and sitting on the text
+      // beside it.
+      .then((text) => {
+        if (!dropped) setSvg(text.replace(/\s(?:width|height)="\d+"/g, ''))
+      })
       .catch(() => { if (!dropped) setFailed(true) })
     return () => { dropped = true }
   }, [token, size])
@@ -63,7 +70,7 @@ export default function QrPanel({ token, caption, sub, size = 132 }: Props) {
       <style>
         @page { margin: 12mm }
         body { font-family: system-ui, sans-serif; text-align: center; margin: 0 }
-        .code { width: 40mm; height: 40mm; margin: 0 auto }
+        .code { width: 55mm; height: 55mm; margin: 0 auto }
         .code svg { width: 100%; height: 100% }
         h1 { font-size: 11pt; margin: 4mm 0 1mm; font-weight: 600 }
         p { font-size: 9pt; margin: 0; color: #444 }
@@ -78,9 +85,13 @@ export default function QrPanel({ token, caption, sub, size = 132 }: Props) {
   }
 
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex flex-wrap items-start gap-3">
       <div
-        className="shrink-0 rounded-lg border border-neutral-200 bg-white p-1.5"
+        // The box decides the size and the SVG fills it. It used to carry its
+        // own width of twice this, so it overflowed: cut off at the edge of
+        // the card and sitting on top of whatever was beside it. That is three
+        // of the four complaints about the codes in one line of CSS.
+        className="shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-white p-1.5"
         style={{ width: size, height: size }}
         // Our own server's SVG, fetched with the session token. Inlined rather
         // than an object URL so it can be handed straight to the print window.
@@ -96,7 +107,7 @@ export default function QrPanel({ token, caption, sub, size = 132 }: Props) {
           className="mt-2 inline-flex min-h-[32px] items-center gap-1.5 rounded-md border border-neutral-200 px-2.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
         >
           <Printer className="h-3.5 w-3.5" aria-hidden />
-          Print at 40 mm
+          Print at 55 mm
         </button>
       </div>
     </div>

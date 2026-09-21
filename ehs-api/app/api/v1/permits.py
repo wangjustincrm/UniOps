@@ -17,11 +17,13 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import SessionDep
+from uniops_authz import has_permission
+
 from app.core.permissions import CanIssuePermit, CanReadPermit, CanRequestPermit
 from app.crud import permit as crud
 from app.services import permit as rules
@@ -171,17 +173,35 @@ async def list_types(db: SessionDep, user: CanRequestPermit):  # noqa: ARG001
     return await crud.list_types(db)
 
 
+async def _may_browse(db, payload: dict) -> bool:
+    """Whether this caller may see permits other than their own."""
+    return await has_permission(db, _user_id(payload), payload.get("role", ""),
+                                "ehs.permit.read")
+
+
 @router.get("/permits", response_model=list[PermitOut])
 async def list_permits(
-    db: SessionDep, user: CanReadPermit,
+    db: SessionDep, user: CanRequestPermit,
     status_in: list[str] | None = Query(default=None, alias="status"),
     location_id: uuid.UUID | None = None,
     mine: bool = Query(default=False, description="Only the ones I asked for"),
     live: bool = Query(default=False, description="Only what is valid right now"),
 ):
+    """The permits this caller may see.
+
+    Gated on requesting rather than reading, and narrowed to your own when you
+    hold only the first. Every role can raise a permit — the person who needs a
+    tank cleaned is not the person authorised to allow entry — but reading the
+    register is narrower, so the list refused outright and somebody who had
+    just raised one was shown nothing. It looked exactly like the permit had
+    not saved, which is what the second acceptance round reported: "it does not
+    save once the raise it button is pressed." It had saved. They could not see
+    it. The same rule the incident register already follows.
+    """
+    only_mine = mine or not await _may_browse(db, user)
     rows = await crud.list_permits(
         db, status_in=status_in, location_id=location_id,
-        requester_id=_user_id(user) if mine else None, active_now=live)
+        requester_id=_user_id(user) if only_mine else None, active_now=live)
     return [await _out(db, p) for p in rows]
 
 
@@ -193,8 +213,14 @@ async def create_permit(payload: PermitIn, db: SessionDep, user: CanRequestPermi
 
 
 @router.get("/permits/{permit_id}", response_model=PermitOut)
-async def get_permit(permit_id: uuid.UUID, db: SessionDep, user: CanReadPermit):  # noqa: ARG001
-    return await _out(db, await crud.get_permit(db, permit_id), with_blockers=True)
+async def get_permit(permit_id: uuid.UUID, db: SessionDep, user: CanRequestPermit):
+    """One permit. Your own always; anyone else's needs the register."""
+    permit = await crud.get_permit(db, permit_id)
+    if permit.requested_by != _user_id(user) and not await _may_browse(db, user):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "You can only open permits you raised")
+    return await _out(db, permit, with_blockers=True)
 
 
 @router.patch("/permits/{permit_id}", response_model=PermitOut)

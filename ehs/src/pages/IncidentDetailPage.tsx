@@ -203,9 +203,20 @@ export default function IncidentDetailPage() {
 
   const canClose = can('ehs.incident.close')
 
+  // Everything that changes an incident refreshes the register too. It did not,
+  // so closing one from here left the list showing the status it had before —
+  // the second acceptance round read that as the close not having worked. With
+  // `refetchOnWindowFocus` off and the tab shell keeping pages alive, the stale
+  // row survives until a hard reload.
+  const touched = () => {
+    queryClient.invalidateQueries({ queryKey: ['incident', id] })
+    queryClient.invalidateQueries({ queryKey: ['incidents'] })
+    queryClient.invalidateQueries({ queryKey: ['deadlines'] })
+  }
+
   const act = (verb: 'hse-review' | 'close' | 'reopen') => ({
     mutationFn: () => api.post(`/api/v1/incidents/${id}/${verb}`, {}),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['incident', id] }),
+    onSuccess: touched,
   })
   const review = useMutation(act('hse-review'))
   const closeIncident = useMutation(act('close'))
@@ -216,19 +227,13 @@ export default function IncidentDetailPage() {
   const recordMolReport = useMutation({
     mutationFn: () => api.post(`/api/v1/incidents/${id}/mol-report/filed`,
                                { reference: molReference }),
-    onSuccess: () => {
-      setMolReference('')
-      queryClient.invalidateQueries({ queryKey: ['incident', id] })
-    },
+    onSuccess: () => { setMolReference(''); touched() },
   })
 
   const recordFiling = useMutation({
     mutationFn: () => api.post(`/api/v1/incidents/${id}/wsib-form7/filed`,
                                { confirmation_number: confirmation }),
-    onSuccess: () => {
-      setConfirmation('')
-      queryClient.invalidateQueries({ queryKey: ['incident', id] })
-    },
+    onSuccess: () => { setConfirmation(''); touched() },
   })
 
   if (incident.isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
