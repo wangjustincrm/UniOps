@@ -19,12 +19,15 @@ differ by 44,667.12 in total.
 
 So the finding is NOT "the subledger does not clear". It is:
 
-  **abandoned**     payables raised and never approved, still carrying a
-                    balance. 509 bills at (-1,-1) of which only 31 were ever
-                    paid, 95 at (-1,3) and 5 at (-99,3) with no payment at all.
-                    Some are outright duplicates: D12026042500138432 and ...433
-                    are the same supplier, amount and invoice number, one
-                    approved and one not.
+  **excluded**      payables raised and never approved, still carrying a
+                    balance: 478 bills with no payment at all, 31 whose only
+                    payments are THEMSELVES unapproved drafts (checked
+                    2026-09-22: zero approved payment lines against any of
+                    them), and 100 more in other non-approved states. Nothing
+                    real ever happened on any of them, so finance does not need
+                    to work them — but the page still states how much was left
+                    out, because a silently dropped 33.5M is exactly the kind
+                    of thing that turns into "why does this not match NC".
   **inconsistent**  approved bills where open and billed-minus-paid still
                     disagree. Nearly empty today, kept as a tripwire so a real
                     clearing failure cannot appear later unnoticed.

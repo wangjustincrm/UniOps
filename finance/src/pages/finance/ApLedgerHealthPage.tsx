@@ -5,9 +5,13 @@
  * supplier positions where open equals billed-minus-paid to the cent, against
  * 3 that differ by 32,988.93 in total.
  *
- * What is not healthy is what sits outside that: 487 CAD payable documents NC
- * never approved, carrying 33,513,491.02 of balance, 270 of them duplicates of
- * a bill that WAS approved. That is the finding this page leads with.
+ * 487 CAD documents NC never approved sit outside that, carrying 33,513,491.02.
+ * They are not work: 478 have no payment, and the 31 that appear to have one
+ * are paired with payment documents that are themselves unapproved drafts —
+ * zero approved payment lines against any of them. So the page does not lead
+ * with them. It states how much it excluded and why, and keeps them one click
+ * away, because a quietly dropped 33.5M becomes "why does this not match NC"
+ * six months later.
  *
  * This page does NOT decide who is right. It cannot: billed-minus-paid is not a
  * truth either — a supplier paid beyond what was billed is holding a prepayment
@@ -218,9 +222,9 @@ function SupplierDetail({ code, name, currency, onClose }: {
 export default function ApLedgerHealthPage() {
   const { user } = useAuthStore()
   const [currency, setCurrency] = useState('CAD')
-  // 'abandoned' first: it is where the money is, and it is the one finance can
-  // actually act on. The approved-supplier view is the tripwire beside it.
-  const [view, setView] = useState<'abandoned' | 'suppliers'>('abandoned')
+  // The approved payable is the page's subject. The abandoned documents are
+  // not work — they are an exclusion that has to be declared, not worked.
+  const [view, setView] = useState<'suppliers' | 'abandoned'>('suppliers')
   const [open, setOpen] = useState<{ code: string; name: string | null } | null>(null)
 
   const { data: summary, isFetching: loadingSummary } = useQuery({
@@ -276,15 +280,17 @@ export default function ApLedgerHealthPage() {
       <div className="mx-auto max-w-7xl">
         <div className="mb-5 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm leading-relaxed text-neutral-700">
           <p className="mb-1.5">
-            Counting only the documents NC <strong>approved</strong>, the subledger is healthy — open
-            balance and billed-minus-paid agree to the cent for almost every supplier. The balance
-            that cannot be used sits on documents NC <strong>never approved</strong>: drafts and
-            duplicates that were raised, abandoned, and still carry their full amount.
+            Counting only the documents NC <strong>approved</strong>, the subledger is healthy — the open
+            balance and billed-minus-paid agree to the cent for almost every supplier. That is the
+            figure the cash-flow forecast is built on, and this page exists to keep it honest: any
+            supplier where the two start to disagree shows up here.
           </p>
           <p className="text-neutral-500">
-            Marked <em>duplicate</em> are the clearest: the same supplier, amount and invoice number
-            also exist on an approved bill, so the abandoned one is pure residue. The rest need a
-            decision. This page does not make it — <strong>the judgement is finance&rsquo;s, per document.</strong>
+            Documents NC never approved are <strong>excluded</strong> and are not work: none of them has
+            an approved payment against it, so no money ever moved. They are listed only so the
+            exclusion is on the record — if a figure here ever differs from an NC report, this is
+            the difference. Where the approved side does disagree,
+            <strong> the judgement is finance&rsquo;s, per supplier.</strong>
           </p>
         </div>
 
@@ -293,7 +299,7 @@ export default function ApLedgerHealthPage() {
         ) : (
           <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {ccyRows.map((c) => {
-              const bad = Number(c.abandoned.money_bal) !== 0
+              const bad = Number(c.inconsistent.gap) !== 0
               return (
                 <button key={c.currency} onClick={() => setCurrency(c.currency)}
                         className={cn('rounded-lg border p-3 text-left transition-colors',
@@ -301,6 +307,8 @@ export default function ApLedgerHealthPage() {
                                         ? 'border-[#085E5E] bg-primary-50/60'
                                         : 'border-neutral-200 hover:bg-neutral-50')}>
                   <div className="flex items-center gap-1.5">
+                    {/* The health signal is the approved side disagreeing —
+                        never the size of the excluded pile, which is inert. */}
                     {bad ? <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
                          : <CheckCircle2 className="h-3.5 w-3.5 text-[#085E5E]" />}
                     <span className="font-mono text-sm font-semibold">{c.currency}</span>
@@ -315,8 +323,8 @@ export default function ApLedgerHealthPage() {
                       <dd className="font-mono tabular-nums">{money(c.inconsistent.gap)}</dd>
                     </div>
                     <div className="flex justify-between gap-2 border-t border-neutral-200 pt-1">
-                      <dt className="font-medium text-amber-700">On abandoned docs</dt>
-                      <dd className="font-mono tabular-nums font-semibold text-amber-700">{money(c.abandoned.money_bal)}</dd>
+                      <dt className="text-neutral-400">Excluded (unapproved)</dt>
+                      <dd className="font-mono tabular-nums text-neutral-400">{money(c.abandoned.money_bal)}</dd>
                     </div>
                   </dl>
                   <p className="mt-1.5 text-[11px] text-neutral-400">
@@ -331,7 +339,7 @@ export default function ApLedgerHealthPage() {
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <div className="inline-flex overflow-hidden rounded-lg border border-neutral-300">
-            {([['abandoned', 'Abandoned documents'], ['suppliers', 'Approved suppliers']] as const).map(([k, label]) => (
+            {([['suppliers', 'Approved suppliers'], ['abandoned', 'Excluded documents']] as const).map(([k, label]) => (
               <button key={k} onClick={() => setView(k)}
                       className={cn('px-3 py-1.5 text-sm',
                                     view === k ? 'bg-[#085E5E] text-white' : 'bg-white text-neutral-700 hover:bg-neutral-50')}>
