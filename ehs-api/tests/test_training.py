@@ -376,3 +376,39 @@ async def test_whether_a_course_is_statutory_is_not_ours_to_change(hse_manager, 
     r = await client.patch(f"/api/v1/training/courses/{courses['whmis'].id}",
                            json={"is_statutory": False})
     assert r.status_code == 422
+
+
+async def test_taking_somebody_off_a_position_and_putting_them_back(hse_manager, worker, db_session):
+    """Removing and re-adding the same day is a correction, not two spells.
+
+    An ended assignment stays on file — last year's compliance report has to
+    keep reading true — and the row is unique on person, position and start
+    date. So putting somebody back the same day collided with their own ended
+    row and answered 500, which is what the second acceptance round hit:
+    "removing staff and then adding them back returns server error msg".
+    """
+    from sqlalchemy import text
+    _, client = hse_manager
+    person, _ = worker
+
+    position = (await client.post("/api/v1/positions", json={
+        "code": "SEALER", "name": "Case sealer operator",
+    })).json()
+
+    added = await client.post(f"/api/v1/positions/{position['id']}/holders",
+                              json={"user_id": str(person.id)})
+    assert added.status_code == 201, added.text
+
+    removed = await client.delete(
+        f"/api/v1/positions/{position['id']}/holders/{added.json()['assignment_id']}")
+    assert removed.status_code == 204
+
+    again = await client.post(f"/api/v1/positions/{position['id']}/holders",
+                              json={"user_id": str(person.id)})
+    assert again.status_code == 201, again.text
+
+    rows = (await db_session.execute(text(
+        "SELECT count(*), count(*) FILTER (WHERE effective_to IS NULL)"
+        "  FROM ehs_worker_positions WHERE user_id = :u AND position_id = :p"),
+        {"u": person.id, "p": position["id"]})).one()
+    assert rows == (1, 1), "one row, in force — not a second spell in the same job"

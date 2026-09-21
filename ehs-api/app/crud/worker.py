@@ -214,6 +214,29 @@ async def assign(
         if held.position_id == position_id:
             return held
 
+    # An assignment that was ended rather than deleted is still on file, and
+    # the row is unique on (person, position, start date). Taking somebody off
+    # a position and putting them back the same day therefore collided with
+    # their own ended row and answered 500 — which is what the second
+    # acceptance round found: "removing staff and then adding them back returns
+    # server error msg".
+    #
+    # Revived rather than duplicated, because that is what it means: removed
+    # and re-added the same day is a correction, not two spells in the job. A
+    # row from an earlier date is left alone — that is a real second spell, and
+    # the new one starts today.
+    ended = (await db.execute(
+        select(WorkerPosition).where(
+            WorkerPosition.user_id == user_id,
+            WorkerPosition.position_id == position_id,
+            WorkerPosition.effective_from == effective_from,
+        )
+    )).scalar_one_or_none()
+    if ended is not None:
+        ended.effective_to = None
+        await db.flush()
+        return ended
+
     row = WorkerPosition(
         id=uuid.uuid4(), user_id=user_id, position_id=position_id,
         effective_from=effective_from,

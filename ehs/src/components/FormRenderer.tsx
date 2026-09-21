@@ -11,6 +11,7 @@
  * tap between a person and the next question is one they will not make while
  * standing at a rack), and the whole form is one scroll rather than a wizard.
  */
+import { useState } from 'react'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { PhotoCapture } from '@/components/PhotoCapture'
 import { SignaturePad } from '@/components/SignaturePad'
@@ -202,12 +203,25 @@ export function FormRenderer({
               </div>
             )}
 
-            {(q.type === 'person' || q.type === 'person_multi') && (
+            {q.type === 'person_multi' && (
+              <PeopleField
+                value={value}
+                onChange={(next) => set(q.key)(next.length ? next : null)}
+              />
+            )}
+
+            {q.type === 'person' && (
               <PersonPicker
-                value={(value as PersonValue) ?? EMPTY_PERSON}
+                // Read back through the same translation it is written with.
+                // The answer is stored as {id,label} — the shape the server
+                // snapshots the name from — and this used to hand that
+                // straight to a picker expecting {userId,name}, so every field
+                // went blank the moment it was filled in. It read as the
+                // selection not sticking, and it stopped the inspection being
+                // finished at all.
+                value={toPersonValue(value)}
                 onChange={(p) => set(q.key)(
-                  // Sent as {id,label} so the server snapshots the name it showed.
-                  p.userId ? { id: p.userId, label: p.name } : p.name)}
+                  p.userId ? { id: p.userId, label: p.name } : p.name || null)}
               />
             )}
 
@@ -245,6 +259,84 @@ export function FormRenderer({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/** One stored answer, as the person picker wants it.
+ *
+ *  Answers travel as `{id, label}` for an employee and a bare string for
+ *  somebody who is not one — a contractor, a visitor. The picker speaks
+ *  `PersonValue`. Keeping the two apart is deliberate: the server stores a
+ *  name snapshot beside the id so a record three years old still reads as it
+ *  did. What was missing was the way back.
+ */
+export function toPersonValue(stored: unknown): PersonValue {
+  if (!stored) return EMPTY_PERSON
+  if (typeof stored === 'string') {
+    return { ...EMPTY_PERSON, name: stored }
+  }
+  const v = stored as { id?: string; label?: string; userId?: string; name?: string }
+  // Tolerates a PersonValue too: a draft saved before this existed may hold one.
+  if (v.userId || v.name) {
+    return { ...EMPTY_PERSON, ...(stored as PersonValue) }
+  }
+  return {
+    ...EMPTY_PERSON,
+    userId: v.id ?? null,
+    name: v.label ?? '',
+  }
+}
+
+/**
+ * A question that takes several people.
+ *
+ * The type has always been offered — "Several people", stored as a list of
+ * ids — and was rendered with the single picker, so it could only ever hold
+ * one. A form asking who else was involved recorded exactly one of them.
+ */
+function PeopleField({
+  value, onChange,
+}: {
+  value: unknown
+  onChange: (next: { id: string; label: string }[]) => void
+}) {
+  const [adding, setAdding] = useState<PersonValue>(EMPTY_PERSON)
+  const chosen: { id: string; label: string }[] = Array.isArray(value)
+    ? (value as unknown[]).map((v) => {
+        const p = toPersonValue(v)
+        return { id: p.userId ?? p.name, label: p.name }
+      }).filter((p) => p.label)
+    : []
+
+  return (
+    <div>
+      <PersonPicker
+        value={adding}
+        placeholder="Add somebody"
+        onChange={(p) => {
+          const id = p.userId ?? p.name
+          if (id && !chosen.some((c) => c.id === id)) {
+            onChange([...chosen, { id, label: p.name }])
+          }
+          setAdding(EMPTY_PERSON)
+        }}
+      />
+      {chosen.length > 0 && (
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {chosen.map((c) => (
+            <li key={c.id}
+                className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
+              {c.label}
+              <button type="button" aria-label={`Remove ${c.label}`}
+                      onClick={() => onChange(chosen.filter((x) => x.id !== c.id))}
+                      className="text-neutral-400 hover:text-neutral-700">
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
