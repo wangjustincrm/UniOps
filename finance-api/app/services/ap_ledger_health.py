@@ -1,0 +1,990 @@
+"""Is NC's payable subledger telling the truth about what is still owed?
+
+Yes — once you only count documents NC actually approved. That correction came
+from Justin looking at an NC bill-entry screen, seeing no `money_bal` field on
+it, and asking whether the column is used at all. It is; the mistake was mine,
+for never filtering on document status.
+
+What the numbers say (NC production, 2026-09-22):
+
+    status        lines    billed            open balance
+    approved     17,896    191,116,917.52    10,452,032.99
+    unapproved      887     35,483,410.06    35,483,410.06
+    other           168        963,404.33       963,404.33
+
+Of 46.9M "open", 36.4M sits on documents NC never approved; the real payable is
+~10.45M. And among approved bills the subledger is all but perfect: 162
+supplier/currency pairs where open == billed - paid to the cent, against 2 that
+differ by 44,667.12 in total.
+
+So the finding is NOT "the subledger does not clear". It is:
+
+  **excluded**      payables raised and never approved, still carrying a
+                    balance: 478 bills with no payment at all, 31 whose only
+                    payments are THEMSELVES unapproved drafts (checked
+                    2026-09-22: zero approved payment lines against any of
+                    them), and 100 more in other non-approved states. Nothing
+                    real ever happened on any of them, so finance does not need
+                    to work them — but the page still states how much was left
+                    out, because a silently dropped 33.5M is exactly the kind
+                    of thing that turns into "why does this not match NC".
+  **inconsistent**  approved bills where open and billed-minus-paid still
+                    disagree. Nearly empty today, kept as a tripwire so a real
+                    clearing failure cannot appear later unnoticed.
+
+`billed - paid` stays a DISCREPANCY DETECTOR, not a second valuation: paying
+past what was billed is a prepayment or an unapplied credit, not an error.
+
+Currency is never mixed — this company transacts in CAD, USD, CNY and EUR.
+"""
+from __future__ import annotations
+
+from decimal import Decimal
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+CONSISTENT = "consistent"
+INCONSISTENT = "inconsistent"
+ABANDONED = "abandoned"
+
+# A payable NC stands behind. Everything else is a draft, a duplicate or a void.
+_EFFECTIVE = "b.bill_status = 1 and b.approve_status = 1"
+
+# Both sides are 2dp in NC; this guards representation noise, not fuzziness.
+TOLERANCE = "0.01"
+
+_BASE = f"""
+with billed as (
+    select l.supplier_code, b.currency,
+           sum(l.money_cr)  as billed,
+           sum(l.money_bal) as subledger_open,
+           max(l.supplier_name) as supplier_name
+      from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+     where {_EFFECTIVE}
+     group by l.supplier_code, b.currency
+),
+paid as (
+    select l.supplier_code, l.currency, sum(l.money_de) as paid
+      from nc_ap_payment_lines l
+      join nc_ap_payments p on p.id = l.payment_id
+     where p.bill_status = 1 and p.approve_status = 1
+     group by l.supplier_code, l.currency
+),
+ignored as (
+    -- Bills finance has judged not to be real debt (see 0035_ap_bill_dismiss).
+    -- Carried ALONGSIDE the NC figure, never subtracted inside it: every layer
+    -- above can still show what NC says and what was set aside, separately.
+    select l.supplier_code, b.currency,
+           sum(l.money_bal) as ignored_bal,
+           count(distinct l.bill_no) as ignored_bills
+      from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+      join nc_ap_bill_dismissals d
+        on d.bill_no = l.bill_no and d.restored_at is null
+     where {_EFFECTIVE}
+     group by l.supplier_code, b.currency
+),
+joined as (
+    select b.supplier_code, b.currency, b.supplier_name,
+           b.billed, coalesce(p.paid, 0) as paid, b.subledger_open,
+           b.billed - coalesce(p.paid, 0) as billed_minus_paid,
+           b.subledger_open - (b.billed - coalesce(p.paid, 0)) as gap,
+           coalesce(i.ignored_bal, 0) as ignored_bal,
+           coalesce(i.ignored_bills, 0) as ignored_bills,
+           b.subledger_open - coalesce(i.ignored_bal, 0) as open_after_ignored
+      from billed b
+      left join paid p
+        on p.supplier_code is not distinct from b.supplier_code
+       and p.currency is not distinct from b.currency
+      left join ignored i
+        on i.supplier_code is not distinct from b.supplier_code
+       and i.currency is not distinct from b.currency
+),
+classified as (
+    select j.*,
+           case when abs(gap) <= {TOLERANCE} then '{CONSISTENT}' else '{INCONSISTENT}' end as health
+      from joined j
+     where subledger_open <> 0
+)
+"""
+
+
+_EMPTY_ABANDONED = {"bills": 0, "money_bal": "0", "superseded_bills": 0, "superseded_bal": "0"}
+
+# Documents NC never approved that still carry a balance. `superseded` marks the
+# ones whose supplier and invoice number also appear on an APPROVED bill — an
+# abandoned duplicate, the cheapest kind to clear.
+_ABANDONED = f"""
+with ab as (
+    select b.bill_no, b.currency, b.bill_date::date as bill_date, b.bill_year,
+           b.bill_status, b.approve_status,
+           l.supplier_code, l.supplier_name, l.invoice_no, l.invoice_no_norm,
+           l.money_cr, l.money_bal
+      from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+     where not ({_EFFECTIVE}) and l.money_bal <> 0
+),
+flagged as (
+    select ab.*,
+           (ab.invoice_no_norm is not null and exists (
+              select 1 from nc_ap_bill_lines l2
+              join nc_ap_bills b2 on b2.id = l2.bill_id
+               where b2.bill_status = 1 and b2.approve_status = 1
+                 and l2.invoice_no_norm = ab.invoice_no_norm
+                 and l2.supplier_code is not distinct from ab.supplier_code
+           )) as superseded
+      from ab
+)
+"""
+
+
+async def abandoned_summary(db: AsyncSession) -> dict:
+    rows = (await db.execute(text(_ABANDONED + """
+        select currency,
+               count(distinct bill_no) as bills,
+               coalesce(sum(money_bal), 0) as money_bal,
+               count(distinct bill_no) filter (where superseded) as superseded_bills,
+               coalesce(sum(money_bal) filter (where superseded), 0) as superseded_bal
+          from flagged group by currency
+    """))).mappings().all()
+    return {(r["currency"] or "(unknown)"): {
+        "bills": int(r["bills"]), "money_bal": str(r["money_bal"]),
+        "superseded_bills": int(r["superseded_bills"]),
+        "superseded_bal": str(r["superseded_bal"]),
+    } for r in rows}
+
+
+async def abandoned_items(db: AsyncSession, currency: str | None = None,
+                          limit: int = 500) -> dict:
+    """Payable documents NC never approved, biggest balance first."""
+    params: dict = {"limit": max(1, min(limit, 2000))}
+    clause = ""
+    if currency:
+        clause = " where currency = :ccy"
+        params["ccy"] = currency
+    rows = (await db.execute(text(_ABANDONED + f"""
+        select bill_no, currency, bill_date, bill_year, bill_status, approve_status,
+               supplier_code, max(supplier_name) as supplier_name,
+               max(invoice_no) as invoice_no,
+               sum(money_cr) as money_cr, sum(money_bal) as money_bal,
+               bool_or(superseded) as superseded
+          from flagged {clause}
+         group by bill_no, currency, bill_date, bill_year, bill_status,
+                  approve_status, supplier_code
+         order by abs(sum(money_bal)) desc
+         limit :limit
+    """), params)).mappings().all()
+    return {"total": len(rows), "items": [{
+        "bill_no": r["bill_no"], "currency": r["currency"],
+        "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
+        "bill_year": r["bill_year"], "bill_status": r["bill_status"],
+        "approve_status": r["approve_status"], "supplier_code": r["supplier_code"],
+        "supplier_name": r["supplier_name"], "invoice_no": r["invoice_no"],
+        "money_cr": str(r["money_cr"]), "money_bal": str(r["money_bal"]),
+        "superseded": r["superseded"],
+    } for r in rows]}
+
+
+async def summary(db: AsyncSession) -> dict:
+    """Per currency: the balance that can be used, and the two kinds that cannot."""
+    abandoned = await abandoned_summary(db)
+    sql = _BASE + """
+    select currency, health,
+           count(*) as suppliers,
+           coalesce(sum(subledger_open), 0) as subledger_open,
+           coalesce(sum(billed_minus_paid), 0) as billed_minus_paid,
+           coalesce(sum(gap), 0) as gap,
+           coalesce(sum(ignored_bal), 0) as ignored_bal,
+           coalesce(sum(ignored_bills), 0) as ignored_bills,
+           coalesce(sum(open_after_ignored), 0) as open_after_ignored
+      from classified
+     group by currency, health
+     order by currency, health
+    """
+    rows = (await db.execute(text(sql))).mappings().all()
+    by_ccy: dict[str, dict] = {}
+    for r in rows:
+        ccy = r["currency"] or "(unknown)"
+        entry = by_ccy.setdefault(ccy, {"currency": ccy, CONSISTENT: None, INCONSISTENT: None})
+        entry[r["health"]] = {
+            "suppliers": int(r["suppliers"]),
+            "subledger_open": str(r["subledger_open"]),
+            "billed_minus_paid": str(r["billed_minus_paid"]),
+            "gap": str(r["gap"]),
+            "ignored_bal": str(r["ignored_bal"]),
+            "ignored_bills": int(r["ignored_bills"]),
+            "open_after_ignored": str(r["open_after_ignored"]),
+        }
+    empty = {"suppliers": 0, "subledger_open": "0", "billed_minus_paid": "0", "gap": "0",
+             "ignored_bal": "0", "ignored_bills": 0, "open_after_ignored": "0"}
+    out = []
+    for ccy in sorted(by_ccy):
+        e = by_ccy[ccy]
+        con = e[CONSISTENT] or empty
+        inc = e[INCONSISTENT] or empty
+        # Currency-level, across both health states: the card shows one
+        # "ignored" figure, and it has to be the whole of what was set aside
+        # for that currency or the arithmetic on screen will not close.
+        ignored_bal = Decimal(con["ignored_bal"]) + Decimal(inc["ignored_bal"])
+        out.append({"currency": ccy,
+                    "consistent": con,
+                    "inconsistent": inc,
+                    "ignored": {
+                        "bills": con["ignored_bills"] + inc["ignored_bills"],
+                        "money_bal": str(ignored_bal),
+                    },
+                    "abandoned": abandoned.get(ccy) or _EMPTY_ABANDONED})
+    return {"currencies": out}
+
+
+async def items(db: AsyncSession, health: str | None = None,
+                currency: str | None = None, limit: int = 200) -> dict:
+    """Supplier-level detail, worst gap first — that is the order it gets
+    worked in, and the biggest gaps are the ones distorting the forecast."""
+    where, params = [], {"limit": max(1, min(limit, 1000))}
+    if health:
+        where.append("health = :health")
+        params["health"] = health
+    if currency:
+        where.append("currency = :currency")
+        params["currency"] = currency
+    clause = (" where " + " and ".join(where)) if where else ""
+    sql = _BASE + f"""
+    select supplier_code, supplier_name, currency, health,
+           billed, paid, subledger_open, billed_minus_paid, gap,
+           ignored_bal, ignored_bills, open_after_ignored
+      from classified
+      {clause}
+     -- Suppliers whose whole balance has been set aside sink to the bottom:
+     -- that is the point of setting it aside. They are not dropped — the row
+     -- still states what was ignored and who ignored it.
+     order by (open_after_ignored = 0 and ignored_bills > 0),
+              abs(gap) desc, open_after_ignored desc, subledger_open desc
+     limit :limit
+    """
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "items": [{
+        "supplier_code": r["supplier_code"],
+        "supplier_name": r["supplier_name"],
+        "currency": r["currency"],
+        "health": r["health"],
+        "billed": str(r["billed"]),
+        "paid": str(r["paid"]),
+        "subledger_open": str(r["subledger_open"]),
+        "billed_minus_paid": str(r["billed_minus_paid"]),
+        "gap": str(r["gap"]),
+        "ignored_bal": str(r["ignored_bal"]),
+        "ignored_bills": int(r["ignored_bills"]),
+        "open_after_ignored": str(r["open_after_ignored"]),
+    } for r in rows]}
+
+
+async def trusted_supplier_codes(db: AsyncSession, currency: str | None = None) -> set[str]:
+    """Suppliers whose open balance the cash-flow layers may use directly.
+
+    Kept as a function rather than a stored flag so it can never go stale: it is
+    recomputed from the mirror every time, like everything else above it.
+    """
+    sql = _BASE + " select distinct supplier_code from classified where health = :h"
+    params: dict = {"h": CONSISTENT}
+    if currency:
+        sql += " and currency = :ccy"
+        params["ccy"] = currency
+    rows = (await db.execute(text(sql), params)).scalars().all()
+    return {r for r in rows if r}
+
+
+async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
+                          limit: int = 500) -> dict:
+    """The evidence behind one supplier's gap.
+
+    An aggregate cannot be judged, so this returns the documents: the bills NC
+    still flags open, WITH how much has already been paid against each one, and
+    the payments themselves with the payable they point at.
+
+    Two things learned the hard way about NC's pointers (2026-09-21):
+
+    * The link from a payment to a payable is `TOP_BILLID` / `TOP_BILLTYPE`
+      ('F1' = 应付单). 17,485 of 17,591 payment lines carry it and every one
+      resolves. `SRC_BILLID` is the ORIGIN document — type '21' is 采购订单, a
+      purchase order — so reading it as "what this payment settled" both prints
+      a meaningless code and reports a linked payment as unlinked.
+    * Which makes the real finding sharper, not weaker: bill D12021092200128305
+      was billed 36,040.00, has 36,040.00 of payments pointing squarely at it,
+      and both of its lines are still flagged fully open. The payment is
+      attached; the balance was simply never cleared.
+
+    Bills are grouped by document because "paid against" is a property of the
+    bill, not of one of its lines — repeating a bill-level total on every line
+    would read as if it had been paid several times over.
+    """
+    lim = max(1, min(limit, 2000))
+    bills = (await db.execute(text("""
+        select l.bill_no,
+               min(l.bill_date)::date as bill_date,
+               min(l.bill_year) as bill_year,
+               sum(l.money_cr)  as money_cr,
+               sum(l.money_bal) as money_bal,
+               min(l.invoice_no) as invoice_no,
+               min(l.purchase_order) as purchase_order,
+               min(b.trade_type) as trade_type,
+               -- What NC's own payment documents say was paid against this
+               -- exact bill. When this equals the billed amount and the bill is
+               -- still open, the payment was made and never applied.
+               -- Approved payments only, matching the payment list beside it:
+               -- counting drafts here would show a bill as paid while the
+               -- payment that paid it is nowhere on the page.
+               coalesce((select sum(p.money_de)
+                           from nc_ap_payment_lines p
+                           join nc_ap_payments ph on ph.id = p.payment_id
+                          where p.top_bill_id = min(b.nc_pk)
+                            and ph.bill_status = 1 and ph.approve_status = 1), 0) as paid_against,
+               coalesce((select count(*)
+                           from nc_ap_payment_lines p
+                           join nc_ap_payments ph on ph.id = p.payment_id
+                          where p.top_bill_id = min(b.nc_pk)
+                            and ph.bill_status = 1 and ph.approve_status = 1), 0) as payment_lines,
+               -- Finance's own judgement on this document. At most one live
+               -- row per bill (partial unique index), so the join cannot fan
+               -- the bill out into duplicates.
+               d.reason as dismiss_reason, d.note as dismiss_note,
+               d.dismissed_by_name, d.dismissed_at
+          from nc_ap_bill_lines l
+          join nc_ap_bills b on b.id = l.bill_id
+          left join nc_ap_bill_dismissals d
+            on d.bill_no = l.bill_no and d.restored_at is null
+         where l.supplier_code = :code and b.currency = :ccy and l.money_bal <> 0
+           and b.bill_status = 1 and b.approve_status = 1
+         group by l.bill_no, d.reason, d.note, d.dismissed_by_name, d.dismissed_at
+         -- Ignored bills last: the list is a work queue, and what was set
+         -- aside should not be the first thing on it.
+         order by (d.reason is not null), min(l.bill_date), l.bill_no
+         limit :lim
+    """), {"code": supplier_code, "ccy": currency, "lim": lim})).mappings().all()
+
+    payments = (await db.execute(text("""
+        select p.bill_no, p.pay_date::date as pay_date, p.bill_date::date as doc_date,
+               p.bill_year, l.money_de, l.top_bill_type, l.top_bill_id,
+               ab.bill_no as applied_to_bill_no,
+               ab.id is not null as applied_bill_still_open_known,
+               coalesce((select sum(x.money_bal) from nc_ap_bill_lines x
+                          where x.bill_id = ab.id), 0) as applied_bill_still_open,
+               -- Whether the payable this payment cleared is one of the bills
+               -- shown opposite. Usually it is NOT: the open bills and the
+               -- payments are two different populations, which is exactly the
+               -- thing that is hard to see without saying it.
+               exists (select 1 from nc_ap_bill_lines x
+                        where x.bill_id = ab.id and x.money_bal <> 0) as applied_bill_is_open,
+               p.scomment
+          from nc_ap_payment_lines l
+          join nc_ap_payments p on p.id = l.payment_id
+          left join nc_ap_bills ab on ab.nc_pk = l.top_bill_id
+         where l.supplier_code = :code and l.currency = :ccy
+           and p.bill_status = 1 and p.approve_status = 1
+         order by p.bill_date desc nulls last, p.bill_no desc
+         limit :lim
+    """), {"code": supplier_code, "ccy": currency, "lim": lim})).mappings().all()
+
+    # Totals are computed over the whole set, never by adding up the rows that
+    # happened to fit under the limit — "total of what is shown" read as a total
+    # is how a page starts lying quietly.
+    bill_tot = (await db.execute(text(f"""
+        select count(distinct l.bill_no) as bills,
+               coalesce(sum(l.money_cr), 0) as money_cr,
+               coalesce(sum(l.money_bal), 0) as money_bal,
+               -- The same two figures again, restricted to what finance set
+               -- aside. Reported separately rather than deducted, so the row
+               -- that says "NC shows X" and the row that says "Y of it is
+               -- ignored" can both be checked against NC independently.
+               count(distinct l.bill_no) filter (where d.bill_no is not null) as ignored_bills,
+               coalesce(sum(l.money_bal) filter (where d.bill_no is not null), 0) as ignored_bal
+          from nc_ap_bill_lines l
+          join nc_ap_bills b on b.id = l.bill_id
+          left join nc_ap_bill_dismissals d
+            on d.bill_no = l.bill_no and d.restored_at is null
+         where l.supplier_code = :code and b.currency = :ccy and l.money_bal <> 0
+           and {_EFFECTIVE}
+    """), {"code": supplier_code, "ccy": currency})).mappings().one()
+    # paid_against sums per BILL, not per line — a bill with three open lines
+    # would otherwise count its payments three times.
+    paid_tot = (await db.execute(text(f"""
+        select coalesce(sum(paid), 0) from (
+            select coalesce((select sum(p.money_de) from nc_ap_payment_lines p
+                               join nc_ap_payments ph on ph.id = p.payment_id
+                              where p.top_bill_id = b.nc_pk
+                                and ph.bill_status = 1 and ph.approve_status = 1), 0) as paid
+              from nc_ap_bills b
+             where b.currency = :ccy and {_EFFECTIVE}
+               and exists (select 1 from nc_ap_bill_lines l
+                            where l.bill_id = b.id and l.money_bal <> 0
+                              and l.supplier_code = :code)
+        ) x
+    """), {"code": supplier_code, "ccy": currency})).scalar_one()
+    pay_tot = (await db.execute(text("""
+        select count(*) as lines, coalesce(sum(l.money_de), 0) as money_de
+          from nc_ap_payment_lines l
+          join nc_ap_payments p on p.id = l.payment_id
+         where l.supplier_code = :code and l.currency = :ccy
+           and p.bill_status = 1 and p.approve_status = 1
+    """), {"code": supplier_code, "ccy": currency})).mappings().one()
+
+    def d(v):
+        return v.isoformat() if v else None
+
+    def m(v):
+        return str(v) if v is not None else None
+
+    return {
+        "supplier_code": supplier_code,
+        "currency": currency,
+        "open_bills_total": {
+            "bills": int(bill_tot["bills"]),
+            "money_cr": str(bill_tot["money_cr"]),
+            "money_bal": str(bill_tot["money_bal"]),
+            "paid_against": str(paid_tot),
+            "ignored_bills": int(bill_tot["ignored_bills"]),
+            "ignored_bal": str(bill_tot["ignored_bal"]),
+            "money_bal_after_ignored": str(bill_tot["money_bal"] - bill_tot["ignored_bal"]),
+        },
+        "payments_total": {
+            "lines": int(pay_tot["lines"]),
+            "money_de": str(pay_tot["money_de"]),
+        },
+        "open_bills": [{
+            "bill_no": r["bill_no"], "bill_date": d(r["bill_date"]),
+            "bill_year": r["bill_year"],
+            "money_cr": m(r["money_cr"]), "money_bal": m(r["money_bal"]),
+            "paid_against": m(r["paid_against"]),
+            "payment_lines": int(r["payment_lines"]),
+            "invoice_no": r["invoice_no"], "purchase_order": r["purchase_order"],
+            "trade_type": r["trade_type"],
+            "dismissed": None if not r["dismiss_reason"] else {
+                "reason": r["dismiss_reason"],
+                "note": r["dismiss_note"],
+                "by": r["dismissed_by_name"],
+                "at": r["dismissed_at"].isoformat() if r["dismissed_at"] else None,
+            },
+        } for r in bills],
+        "payments": [{
+            "bill_no": r["bill_no"], "pay_date": d(r["pay_date"]),
+            "doc_date": d(r["doc_date"]), "bill_year": r["bill_year"],
+            "money_de": m(r["money_de"]),
+            # The payable this payment points at, by its NUMBER — the code is
+            # of no use to anyone reading the page.
+            "applied_to_bill_no": r["applied_to_bill_no"],
+            "applied_bill_still_open": m(r["applied_bill_still_open"]),
+            "applied_bill_is_open": bool(r["applied_bill_is_open"]),
+            "scomment": r["scomment"],
+        } for r in payments],
+    }
+
+
+# Accounts payable in the chart of accounts. A voucher that moves one of these
+# without an AP-module document behind it is a manual settlement.
+_AP_ACCOUNT_PREFIX = "2202"
+
+
+async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency: str,
+                                 gap: str | float | None = None,
+                                 limit: int = 200) -> dict:
+    """Vouchers that moved this supplier's payable WITHOUT an AP document.
+
+    Finance confirmed (2026-09-22) that some differences were settled by posting
+    a journal voucher straight to the payable account, skipping the payment
+    document entirely. That is invisible to the payment-side comparison — which
+    is exactly why the gap shows up as NEGATIVE: the subledger came down and no
+    payment exists to account for it.
+
+    So this looks for the other half: lines on a 2202* account, for this
+    supplier, on vouchers NOT raised by the AP subsystem. `matches_gap` flags
+    the ones whose amount equals the difference, since with a lifetime total in
+    the millions against a gap in the thousands, the total proves nothing and
+    only the individual voucher does.
+
+    Joined on supplier NAME: both sides carry NC's own BD_SUPPLIER.name, so it
+    is the same string, not a fuzzy comparison. 653 of 756 mirrored suppliers
+    resolve this way; the rest simply have no voucher activity on a payable
+    account.
+    """
+    target = None
+    if gap is not None:
+        try:
+            target = abs(float(gap))
+        except (TypeError, ValueError):
+            target = None
+
+    # Fetched WITHOUT the display limit: offsetting pairs are found across the
+    # whole set, so a pair split by the page boundary is not missed. The slice
+    # happens after pairing.
+    rows = (await db.execute(text(f"""
+        select v.jv_number, v.voucher_date, v.fiscal_period, v.source_subsystem,
+               v.summary as voucher_summary,
+               l.account_code, l.summary as line_summary,
+               l.orig_debit, l.orig_credit, l.currency
+          from journal_voucher_lines l
+          join journal_vouchers v on v.id = l.jv_id
+         where l.partner_name = :name
+           and l.account_code like '{_AP_ACCOUNT_PREFIX}%'
+           and v.source_subsystem is distinct from 'AP'
+           and (coalesce(l.orig_debit, 0) <> 0 or coalesce(l.orig_credit, 0) <> 0)
+         -- Currency orders the list, it does not filter it. Aptargroup's CAD gap
+         -- has zero CAD vouchers behind it and 63 USD ones — filtering on
+         -- currency hid the only rows that could explain the difference, and a
+         -- gap that appears in one currency and its mirror image in another
+         -- (Willis: CAD -3,913.50, USD +3,913.50) is itself the answer.
+         order by (l.currency = :ccy) desc nulls last,
+                  v.voucher_date desc nulls last, v.jv_number desc
+         limit 5000
+    """), {"name": supplier_name, "ccy": currency})).mappings().all()
+
+    def near(a) -> bool:
+        return target is not None and a is not None and abs(abs(float(a)) - target) <= 0.01
+
+    # Per CURRENCY, never one combined figure. This list is deliberately not
+    # filtered by currency (Aptargroup's CAD gap has only USD vouchers behind
+    # it), so a single total would add CAD to USD and mean nothing.
+    tot_rows = (await db.execute(text(f"""
+        select l.currency, count(*) as lines,
+               coalesce(sum(l.orig_debit), 0) as debit,
+               coalesce(sum(l.orig_credit), 0) as credit
+          from journal_voucher_lines l
+          join journal_vouchers v on v.id = l.jv_id
+         where l.partner_name = :name
+           and l.account_code like '{_AP_ACCOUNT_PREFIX}%'
+           and v.source_subsystem is distinct from 'AP'
+           and (coalesce(l.orig_debit, 0) <> 0 or coalesce(l.orig_credit, 0) <> 0)
+         group by l.currency
+         order by (l.currency = :ccy) desc nulls last, l.currency
+    """), {"name": supplier_name, "ccy": currency})).mappings().all()
+    offsets = _pair_offsets(rows)
+    # 5000 is the read cap; if it is hit, the offset figures describe a subset
+    # and must say so rather than presenting a partial net as the whole.
+    capped = len(rows) >= 5000
+
+    # The number that actually matters: what is left once the self-cancelling
+    # pairs are taken out. Computed from the same rows the pairing used, so the
+    # two can never disagree on screen.
+    from collections import defaultdict as _dd
+    net_real: dict = _dd(float)
+    real_lines: dict = _dd(int)
+    for r in rows:
+        if offsets.get(id(r)):
+            continue
+        eff = _effect(r)
+        if eff == 0:
+            continue
+        net_real[r["currency"]] += -eff        # same sign convention as `net`
+        real_lines[r["currency"]] += 1
+
+    totals = [{
+        "currency": t["currency"],
+        "same_currency": t["currency"] == currency,
+        "lines": int(t["lines"]),
+        "debit": str(t["debit"]),
+        "credit": str(t["credit"]),
+        # Debit reduces the payable, credit raises it, so this is what the
+        # vouchers did to the balance on their own.
+        "net": str(t["debit"] - t["credit"]),
+        "net_matches_gap": near(t["debit"] - t["credit"]),
+        "lines_after_offsets": real_lines.get(t["currency"], 0),
+        "net_after_offsets": f'{net_real.get(t["currency"], 0.0):.2f}',
+        "net_after_offsets_matches_gap": near(net_real.get(t["currency"], 0.0)),
+    } for t in tot_rows]
+
+
+    items = [{
+        "same_currency": r["currency"] == currency,
+        # Set when this line cancels another one. Same value on both halves so
+        # the UI can dim them together.
+        "offset_group": offsets.get(id(r)),
+        "jv_number": r["jv_number"],
+        "voucher_date": r["voucher_date"].isoformat() if r["voucher_date"] else None,
+        "fiscal_period": r["fiscal_period"],
+        "subsystem": r["source_subsystem"],
+        "account_code": r["account_code"],
+        "summary": r["line_summary"] or r["voucher_summary"],
+        "debit": str(r["orig_debit"]) if r["orig_debit"] is not None else None,
+        "credit": str(r["orig_credit"]) if r["orig_credit"] is not None else None,
+        "currency": r["currency"],
+        # The one worth opening in NC.
+        "matches_gap": near(r["orig_debit"]) or near(r["orig_credit"]),
+    } for r in rows]
+    return {"supplier_name": supplier_name, "currency": currency,
+            "gap": str(gap) if gap is not None else None,
+            "total": len(items),
+            "shown": min(len(items), max(1, min(limit, 1000))),
+            "matching": sum(1 for i in items if i["matches_gap"]),
+            "matching_other_currency": sum(
+                1 for i in items if i["matches_gap"] and not i["same_currency"]),
+            "offset_lines": sum(1 for i in items if i["offset_group"]),
+            "offsets_capped": capped,
+            "totals": totals,
+            "items": items[:max(1, min(limit, 1000))]}
+
+
+def _effect(row) -> float:
+    """What this line did to the payable. Credit raises it, debit reduces it."""
+    return float(row["orig_credit"] or 0) - float(row["orig_debit"] or 0)
+
+
+def _pair_offsets(rows) -> dict:
+    """Mark lines that cancel each other out, 1:1.
+
+    Most of what sits on a supplier's payable account is noise of this kind: a
+    voucher posted and reversed, or one leg against another inside the same
+    voucher (220201 credit 283,041.00 against 220203 debit 283,041.00). They
+    net to nothing and they bury the handful of lines that matter.
+
+    Pairing is greedy, deterministic and one-to-one: within a currency, each
+    amount's positives are matched against its negatives in list order, and
+    anything left over stays unpaired. Deliberately NOT "every 10,000 line is
+    offset" — two genuine charges of the same size must not cancel each other,
+    so a line is only dimmed when there is a specific counterpart for it.
+
+    Returns {id(row): group_key} with the same key on both halves.
+    """
+    from collections import defaultdict
+
+    buckets: dict = defaultdict(lambda: ([], []))
+    for r in rows:
+        eff = _effect(r)
+        if eff == 0:
+            continue
+        pos, neg = buckets[(r["currency"], round(abs(eff), 2))]
+        (pos if eff > 0 else neg).append(r)
+
+    out: dict = {}
+    for (ccy, amount), (pos, neg) in buckets.items():
+        for i, (a, b) in enumerate(zip(pos, neg)):
+            key = f"{ccy or 'x'}:{amount}:{i}"
+            out[id(a)] = key
+            out[id(b)] = key
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Finance's judgement: taking a stale payable off the working list.
+#
+# The page above answers "what does NC say"; this is the one place where a
+# human answer is recorded back. Three rules hold everything else together:
+#
+#   * NC is never written to and never contradicted. A dismissal is additive.
+#   * A dismissal is only accepted for a bill that EXISTS in the mirror and is
+#     effective — otherwise a typo silently becomes a permanent exclusion that
+#     matches nothing and can never be found again.
+#   * Reversing keeps the history (`restored_at`), because "who removed
+#     1,028.18 of payable" is exactly the question an auditor asks later.
+# ---------------------------------------------------------------------------
+
+async def dismissable_bills(db: AsyncSession, bill_nos: list[str]) -> dict[str, dict]:
+    """The mirror's own view of the bills being dismissed, keyed by bill_no.
+
+    Used to stamp the dismissal with the balance as it stood, and to reject
+    anything the mirror does not actually hold.
+    """
+    if not bill_nos:
+        return {}
+    rows = (await db.execute(text(f"""
+        select l.bill_no,
+               min(l.supplier_code) as supplier_code,
+               min(l.supplier_name) as supplier_name,
+               min(b.currency) as currency,
+               min(l.bill_date)::date as bill_date,
+               sum(l.money_bal) as money_bal
+          from nc_ap_bill_lines l
+          join nc_ap_bills b on b.id = l.bill_id
+         where l.bill_no = any(:nos) and {_EFFECTIVE}
+         group by l.bill_no
+    """), {"nos": list(bill_nos)})).mappings().all()
+    return {r["bill_no"]: dict(r) for r in rows}
+
+
+async def dismiss_bills(db: AsyncSession, bill_nos: list[str], reason: str,
+                        note: str | None, user_id, user_name: str | None) -> dict:
+    """Set bills aside. Idempotent: a bill already dismissed stays as it was.
+
+    Returns what happened per bill rather than a bare count — a partial success
+    that reports itself as a success is how the screen and the table drift
+    apart.
+    """
+    known = await dismissable_bills(db, bill_nos)
+    live = set((await db.execute(text("""
+        select bill_no from nc_ap_bill_dismissals
+         where bill_no = any(:nos) and restored_at is null
+    """), {"nos": list(bill_nos)})).scalars().all())
+
+    dismissed, already, unknown = [], [], []
+    for no in dict.fromkeys(bill_nos):        # de-duplicate, keep order
+        if no in live:
+            already.append(no)
+            continue
+        info = known.get(no)
+        if info is None:
+            unknown.append(no)
+            continue
+        await db.execute(text("""
+            insert into nc_ap_bill_dismissals
+                (bill_no, supplier_code, supplier_name, currency,
+                 money_bal_at_dismissal, bill_date, reason, note,
+                 dismissed_by, dismissed_by_name, dismissed_at)
+            values (:bill_no, :supplier_code, :supplier_name, :currency,
+                    :money_bal, :bill_date, :reason, :note,
+                    :by, :by_name, now())
+        """), {"bill_no": no, "supplier_code": info["supplier_code"],
+               "supplier_name": info["supplier_name"], "currency": info["currency"],
+               "money_bal": info["money_bal"], "bill_date": info["bill_date"],
+               "reason": reason, "note": note, "by": user_id, "by_name": user_name})
+        dismissed.append(no)
+    await db.commit()
+    return {"dismissed": dismissed, "already_dismissed": already, "not_found": unknown}
+
+
+async def restore_bills(db: AsyncSession, bill_nos: list[str],
+                        user_id, user_name: str | None) -> dict:
+    """Put bills back on the working list, keeping the retired dismissal."""
+    if not bill_nos:
+        return {"restored": []}
+    restored = (await db.execute(text("""
+        update nc_ap_bill_dismissals
+           set restored_at = now(), restored_by = :by, restored_by_name = :by_name
+         where bill_no = any(:nos) and restored_at is null
+        returning bill_no
+    """), {"nos": list(bill_nos), "by": user_id, "by_name": user_name})).scalars().all()
+    await db.commit()
+    return {"restored": list(restored)}
+
+
+async def dismissal_log(db: AsyncSession, currency: str | None = None,
+                        include_restored: bool = False, limit: int = 500) -> dict:
+    """Every judgement made here, newest first — the audit trail, and the only
+    way to find a bill again once it has left the working list."""
+    where = [] if include_restored else ["d.restored_at is null"]
+    params: dict = {"limit": max(1, min(limit, 2000))}
+    if currency:
+        where.append("d.currency = :ccy")
+        params["ccy"] = currency
+    clause = (" where " + " and ".join(where)) if where else ""
+    rows = (await db.execute(text(f"""
+        select d.bill_no, d.supplier_code, d.supplier_name, d.currency,
+               d.money_bal_at_dismissal, d.bill_date, d.reason, d.note,
+               d.dismissed_by_name, d.dismissed_at,
+               d.restored_at, d.restored_by_name,
+               -- What the bill carries in the mirror TODAY. A later NC sync can
+               -- move it; showing both makes that visible instead of letting
+               -- the dismissal quietly cover a changed number.
+               (select coalesce(sum(l.money_bal), 0) from nc_ap_bill_lines l
+                 where l.bill_no = d.bill_no) as money_bal_now
+          from nc_ap_bill_dismissals d
+          {clause}
+         order by d.dismissed_at desc
+         limit :limit
+    """), params)).mappings().all()
+    return {"total": len(rows), "items": [{
+        "bill_no": r["bill_no"], "supplier_code": r["supplier_code"],
+        "supplier_name": r["supplier_name"], "currency": r["currency"],
+        "money_bal_at_dismissal": str(r["money_bal_at_dismissal"])
+        if r["money_bal_at_dismissal"] is not None else None,
+        "money_bal_now": str(r["money_bal_now"]),
+        "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
+        "reason": r["reason"], "note": r["note"],
+        "dismissed_by": r["dismissed_by_name"],
+        "dismissed_at": r["dismissed_at"].isoformat() if r["dismissed_at"] else None,
+        "restored_at": r["restored_at"].isoformat() if r["restored_at"] else None,
+        "restored_by": r["restored_by_name"],
+    } for r in rows]}
+
+
+# ---------------------------------------------------------------------------
+# Working the open bills directly, across every supplier.
+#
+# The supplier view answers "is this supplier's balance believable". This one
+# answers the other question the data kept raising: which DOCUMENTS are not
+# real debt. They turned out to cluster by date rather than by supplier — 90
+# CAD bills carrying 3,065,616.22 all dated 2020-08-31, NC's opening-balance
+# load at go-live, spread across dozens of suppliers. Reached one supplier at a
+# time that is a week of clicking; reached by date it is one filter.
+# ---------------------------------------------------------------------------
+
+_LIVE_DISMISSAL = """
+    left join nc_ap_bill_dismissals d
+      on d.bill_no = l.bill_no and d.restored_at is null
+"""
+
+
+def _bill_filters(currency: str | None, date_from, date_to,
+                  supplier_code: str | None) -> tuple[str, dict]:
+    """The filter WITHOUT the dismissed predicate.
+
+    Deliberately separate: the totals are always counted over the whole
+    matching population, and only the ROWS are filtered. Counting them
+    together meant that ignoring 88 bills left the page reading "0 bills
+    match" with nothing to say what had just happened to 3M.
+    """
+    where = [_EFFECTIVE, "l.money_bal <> 0"]
+    params: dict = {}
+    if currency:
+        where.append("b.currency = :ccy")
+        params["ccy"] = currency
+    if date_from:
+        where.append("l.bill_date::date >= :date_from")
+        params["date_from"] = date_from
+    if date_to:
+        where.append("l.bill_date::date <= :date_to")
+        params["date_to"] = date_to
+    if supplier_code:
+        where.append("l.supplier_code = :supplier_code")
+        params["supplier_code"] = supplier_code
+    return " and ".join(where), params
+
+
+async def date_clusters(db: AsyncSession, currency: str | None = None,
+                        limit: int = 12) -> dict:
+    """The bill dates carrying the most open balance.
+
+    Discovery, not decoration. Nobody would think to filter on 2020-08-31; the
+    cluster has to announce itself. A single date holding millions across many
+    suppliers is the signature of a migration load, and that is exactly the
+    population this page exists to let finance judge.
+    """
+    where, params = _bill_filters(currency, None, None, None)
+    params["limit"] = max(1, min(limit, 50))
+    rows = (await db.execute(text(f"""
+        select l.bill_date::date as bill_date,
+               count(distinct l.bill_no) as bills,
+               coalesce(sum(l.money_bal), 0) as amount,
+               count(distinct l.supplier_code) as suppliers,
+               count(distinct l.bill_no) filter (where d.bill_no is not null) as dismissed_bills
+          from nc_ap_bill_lines l
+          join nc_ap_bills b on b.id = l.bill_id
+          {_LIVE_DISMISSAL}
+         where {where} and l.bill_date is not null
+         group by l.bill_date::date
+         order by sum(l.money_bal) desc
+         limit :limit
+    """), params)).mappings().all()
+    return {"items": [{
+        "bill_date": r["bill_date"].isoformat(),
+        "bills": int(r["bills"]),
+        "suppliers": int(r["suppliers"]),
+        "amount": str(r["amount"]),
+        "dismissed_bills": int(r["dismissed_bills"]),
+    } for r in rows]}
+
+
+async def open_bills(db: AsyncSession, currency: str | None = None,
+                     date_from=None, date_to=None, supplier_code: str | None = None,
+                     include_dismissed: bool = False, min_amount=None,
+                     limit: int = 500, offset: int = 0) -> dict:
+    """Every open approved bill matching the filter, biggest first.
+
+    Returns the totals for the WHOLE match, not for the page — a bulk action
+    needs to state what it is about to affect, and "total of the rows that
+    happened to fit" is how a page starts lying at exactly the wrong moment.
+    """
+    where, params = _bill_filters(currency, date_from, date_to, supplier_code)
+    having = ""
+    if min_amount is not None:
+        having = " having abs(sum(l.money_bal)) >= :min_amount"
+        params["min_amount"] = min_amount
+
+    def body(hide_dismissed: bool) -> str:
+        return f"""
+      from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+      {_LIVE_DISMISSAL}
+     where {where}{' and d.bill_no is null' if hide_dismissed else ''}
+     group by l.bill_no, b.currency, d.bill_no, d.reason, d.note,
+              d.dismissed_by_name, d.dismissed_at
+     {having}
+    """
+    page = dict(params, limit=max(1, min(limit, 1000)), offset=max(0, offset))
+    rows = (await db.execute(text(f"""
+        select l.bill_no, b.currency,
+               min(l.bill_date)::date as bill_date,
+               min(l.supplier_code) as supplier_code,
+               min(l.supplier_name) as supplier_name,
+               min(l.invoice_no) as invoice_no,
+               min(l.purchase_order) as purchase_order,
+               min(b.trade_type) as trade_type,
+               sum(l.money_cr) as money_cr,
+               sum(l.money_bal) as money_bal,
+               d.reason as dismiss_reason, d.note as dismiss_note,
+               d.dismissed_by_name, d.dismissed_at
+        {body(not include_dismissed)}
+         order by abs(sum(l.money_bal)) desc, l.bill_no
+         limit :limit offset :offset
+    """), page)).mappings().all()
+
+    tot = (await db.execute(text(f"""
+        select count(*) as bills,
+               coalesce(sum(money_bal), 0) as money_bal,
+               count(*) filter (where dismissed) as dismissed_bills,
+               coalesce(sum(money_bal) filter (where dismissed), 0) as dismissed_bal
+          from (
+            select sum(l.money_bal) as money_bal, d.bill_no is not null as dismissed
+            {body(False)}
+          ) x
+    """), params)).mappings().one()
+
+    return {
+        # Over the WHOLE match, dismissed included — see _bill_filters.
+        "total": int(tot["bills"]),
+        "money_bal": str(tot["money_bal"]),
+        "dismissed_bills": int(tot["dismissed_bills"]),
+        "dismissed_bal": str(tot["dismissed_bal"]),
+        "showing_dismissed": include_dismissed,
+        "items": [{
+            "bill_no": r["bill_no"],
+            "currency": r["currency"],
+            "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
+            "supplier_code": r["supplier_code"],
+            "supplier_name": r["supplier_name"],
+            "invoice_no": r["invoice_no"],
+            "purchase_order": r["purchase_order"],
+            "trade_type": r["trade_type"],
+            "money_cr": str(r["money_cr"]),
+            "money_bal": str(r["money_bal"]),
+            "dismissed": None if not r["dismiss_reason"] else {
+                "reason": r["dismiss_reason"],
+                "note": r["dismiss_note"],
+                "by": r["dismissed_by_name"],
+                "at": r["dismissed_at"].isoformat() if r["dismissed_at"] else None,
+            },
+        } for r in rows],
+    }
+
+
+async def dismiss_matching(db: AsyncSession, currency: str | None, date_from, date_to,
+                           supplier_code: str | None, min_amount,
+                           reason: str, note: str | None,
+                           user_id, user_name: str | None,
+                           expected_bills: int) -> dict:
+    """Ignore every bill matching a filter, in one decision.
+
+    `expected_bills` is not ceremony. The caller saw a count on screen before
+    it clicked; if the mirror has moved since — a sync landed, someone else
+    dismissed some — the set is no longer the one that was reviewed, and a bulk
+    write that silently covers more than was agreed to is the single worst
+    thing this feature could do. Mismatch is refused, not reconciled.
+    """
+    matching = await open_bills(db, currency=currency, date_from=date_from,
+                                date_to=date_to, supplier_code=supplier_code,
+                                include_dismissed=False, min_amount=min_amount,
+                                limit=1000)
+    # `total` now spans the whole match, already-ignored included, so the
+    # comparison has to be against the LIVE ones — the same figure the screen
+    # showed next to the button.
+    live = matching["total"] - matching["dismissed_bills"]
+    if live != expected_bills:
+        return {"applied": False, "reason": "changed",
+                "expected_bills": expected_bills, "actual_bills": live}
+    # The page read is capped; a filter wider than the cap must not be applied
+    # from a screen that could only ever have shown part of it.
+    if live > len(matching["items"]):
+        return {"applied": False, "reason": "too_many",
+                "actual_bills": live, "max_per_action": len(matching["items"])}
+    out = await dismiss_bills(db, [b["bill_no"] for b in matching["items"]],
+                              reason, note, user_id, user_name)
+    return {"applied": True, "money_bal": matching["money_bal"], **out}

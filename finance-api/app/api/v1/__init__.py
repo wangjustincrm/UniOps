@@ -16,6 +16,10 @@ from app.api.v1.jv_validation import router as jv_validation_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.health import router as health_router
 from app.api.v1.nc_sync import router as nc_sync_router
+from app.api.v1.nc_ap_sync import router as nc_ap_sync_router
+from app.api.v1.ap_reconciliation import router as ap_recon_router
+from app.api.v1.ap_cash_flow import router as ap_cash_flow_router
+from app.api.v1.ap_ledger_health import router as ap_ledger_health_router
 from app.api.v1.nc_coa_sync import router as nc_coa_sync_router
 from app.api.v1.qbo import router as qbo_router
 from app.api.v1.vendor_credit_import import router as qbo_credit_import_router
@@ -39,6 +43,10 @@ api_router.include_router(account_balance_router)
 api_router.include_router(jv_validation_router)
 api_router.include_router(admin_router)
 api_router.include_router(nc_sync_router)
+api_router.include_router(nc_ap_sync_router)
+api_router.include_router(ap_recon_router)
+api_router.include_router(ap_ledger_health_router)
+api_router.include_router(ap_cash_flow_router)
 api_router.include_router(nc_coa_sync_router)
 api_router.include_router(qbo_router)
 api_router.include_router(vendor_credits_router)

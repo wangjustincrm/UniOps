@@ -4,7 +4,7 @@ import {
   CreditCard, Receipt, BookOpen, FileText, Banknote, Landmark, LayoutDashboard,
   ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Settings,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, Scale, Target,
-  RefreshCw, Wallet, Download, ShieldAlert,
+  RefreshCw, Wallet, Download, ShieldAlert, ClipboardCheck, HeartPulse, TrendingUp,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -33,6 +33,9 @@ const NAV: NavSection[] = [
     title: 'AP',
     items: [
       { label: 'Accounts Payable', href: '/finance/ap', icon: CreditCard, permission: 'view_finance' },
+      { label: 'AP Reconciliation', href: '/finance/ap-recon', icon: ClipboardCheck, permission: 'view_finance' },
+      { label: 'AP Subledger Health', href: '/finance/ap-ledger-health', icon: HeartPulse, permission: 'view_finance' },
+      { label: 'AP Cash Flow', href: '/finance/ap-cash-flow', icon: TrendingUp, permission: 'view_finance' },
       { label: 'Payments', href: '/finance/payments', icon: Wallet, permission: 'view_finance' },
       { label: 'Payment Batches', href: '/finance/payment-batches', icon: Banknote, permission: 'view_finance' },
     ],
