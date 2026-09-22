@@ -8,7 +8,7 @@ staff the emergency response.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -17,6 +17,7 @@ from app.api.v1.incidents import _user_id
 from app.core.deps import SessionDep
 from app.core.permissions import CanReadIncident, CanWriteFirstAid
 from app.crud import drill as crud
+from app.crud.incident import _resolve_name
 
 router = APIRouter()
 
@@ -37,6 +38,10 @@ class DrillIn(BaseModel):
 
 
 class DrillPatch(BaseModel):
+    # An unknown key is a mistake, not something to drop quietly — the same
+    # reason the incident and medical write models refuse them.
+    model_config = ConfigDict(extra="forbid")
+
     scenario: str | None = None
     planned_for: date | None = None
     held_on: date | None = None
@@ -52,6 +57,12 @@ class DrillPatch(BaseModel):
     observations: str | None = None
     what_worked: str | None = None
     what_failed: str | None = None
+    # Why it went the way it did, from the same list the investigations use.
+    root_cause_id: uuid.UUID | None = None
+    root_cause_label: str | None = Field(default=None, max_length=200)
+    # Base64 PNG. Signing stamps the name and time on the server — a signature
+    # whose "who" and "when" came from the client is not evidence of anything.
+    signature: str | None = None
 
 
 class DrillOut(BaseModel):
@@ -72,6 +83,11 @@ class DrillOut(BaseModel):
     all_accounted_for: bool | None
     missing_note: str | None
     observations: str | None
+    root_cause_id: uuid.UUID | None
+    root_cause_label: str | None
+    signature: str | None
+    signed_by_name: str | None
+    signed_at: datetime | None
     what_worked: str | None
     what_failed: str | None
     status: str
@@ -183,7 +199,19 @@ async def update_drill(
     drill_id: uuid.UUID, payload: DrillPatch, db: SessionDep, user: CanWriteFirstAid,  # noqa: ARG001
 ):
     drill = await crud.get_drill(db, drill_id)
-    return await crud.update_drill(db, drill, payload.model_dump(exclude_unset=True))
+    fields = payload.model_dump(exclude_unset=True)
+    if fields.get("signature"):
+        # Stamped here, never taken from the caller. A signature carrying a
+        # name and a time the client chose is not evidence of anything, and
+        # this is the record an inspector is handed.
+        fields["signed_by"] = _user_id(user)
+        fields["signed_by_name"] = await _resolve_name(db, _user_id(user))
+        fields["signed_at"] = datetime.now(timezone.utc)
+    elif "signature" in fields:
+        # Cleared on purpose — the drill is unsigned again, and leaving the
+        # name behind would show it as signed by somebody with nothing under it.
+        fields.update(signed_by=None, signed_by_name=None, signed_at=None)
+    return await crud.update_drill(db, drill, fields)
 
 
 @router.post("/drills/{drill_id}/evaluate", response_model=DrillOut)

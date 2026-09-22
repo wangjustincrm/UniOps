@@ -19,6 +19,9 @@ import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import { Link } from 'react-router-dom'
 import { usePermissions } from '@/hooks/usePermissions'
+import { SignaturePad } from '@/components/SignaturePad'
+import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
+import { DrillEvidence } from '@/components/DrillEvidence'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
   Card, Empty, ErrorNote, Field, PageHeader, Tabs,
@@ -36,6 +39,8 @@ interface Drill {
   all_accounted_for: boolean | null
   missing_note: string | null
   observations: string | null; what_worked: string | null; what_failed: string | null
+  root_cause_id: string | null; root_cause_label: string | null
+  signature: string | null; signed_by_name: string | null; signed_at: string | null
   status: string; evaluated_at: string | null; evaluated_by_name: string | null
   created_by_name: string | null
 }
@@ -296,7 +301,7 @@ function DrillDetail({ drill, mayRun }: { drill: Drill; mayRun: boolean }) {
       )}
       {drill.what_failed && (
         <p className="mb-1.5 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700">
-          <span className="font-semibold">Did not work:</span> {drill.what_failed}
+          <span className="font-semibold">Needs improvement:</span> {drill.what_failed}
         </p>
       )}
 
@@ -328,8 +333,19 @@ function DrillDetail({ drill, mayRun }: { drill: Drill; mayRun: boolean }) {
 
 function RecordPanel({ drill, onSaved }: { drill: Drill; onSaved: () => void }) {
   const [heldOn, setHeldOn] = useState(drill.held_on ?? '')
+  // Asked in minutes and seconds, stored in seconds. A drill takes minutes,
+  // and typing "255" for four and a quarter is how a mistyped digit becomes a
+  // trend line nobody questions. The column stays in seconds because the
+  // figures and the trend are drawn from it.
+  const [minutes, setMinutes] = useState(
+    drill.evacuation_seconds === null ? '' : String(Math.floor(drill.evacuation_seconds / 60)))
   const [seconds, setSeconds] = useState(
-    drill.evacuation_seconds === null ? '' : String(drill.evacuation_seconds))
+    drill.evacuation_seconds === null ? '' : String(drill.evacuation_seconds % 60))
+  const [rootCause, setRootCause] = useState<VocabItem | null>(
+    drill.root_cause_id
+      ? { id: drill.root_cause_id, label: drill.root_cause_label ?? '' } as VocabItem
+      : null)
+  const [signature, setSignature] = useState<string | null>(drill.signature)
   const [count, setCount] = useState(
     drill.participants_count === null ? '' : String(drill.participants_count))
   const [muster, setMuster] = useState(
@@ -343,12 +359,18 @@ function RecordPanel({ drill, onSaved }: { drill: Drill; onSaved: () => void }) 
   const save = useMutation({
     mutationFn: () => api.patch(`/api/v1/drills/${drill.id}`, {
       held_on: heldOn || null,
-      evacuation_seconds: seconds === '' ? null : Number(seconds),
+      evacuation_seconds: minutes === '' && seconds === ''
+        ? null
+        : (Number(minutes || 0) * 60) + Number(seconds || 0),
       participants_count: count === '' ? null : Number(count),
       all_accounted_for: muster === '' ? null : muster === 'yes',
       missing_note: missing || null,
       what_worked: worked || null,
       what_failed: failed || null,
+      root_cause_id: rootCause?.id ?? null,
+      root_cause_label: rootCause?.label ?? null,
+      // The name and time are stamped by the server, never sent from here.
+      signature,
     }),
     onSuccess: onSaved,
   })
@@ -370,9 +392,17 @@ function RecordPanel({ drill, onSaved }: { drill: Drill; onSaved: () => void }) 
           <input type="date" className={inputClass} value={heldOn}
                  onChange={(e) => setHeldOn(e.target.value)} />
         </Field>
-        <Field label="Seconds to evacuate" hint="Or leave the clock times to derive it">
-          <input className={inputClass} inputMode="numeric" value={seconds}
-                 onChange={(e) => setSeconds(e.target.value.replace(/[^0-9]/g, ''))} />
+        <Field label="Minutes to evacuate" hint="Or leave the clock times to derive it">
+          <span className="flex items-center gap-1.5">
+            <input className={inputClass} inputMode="numeric" value={minutes}
+                   aria-label="Minutes to evacuate"
+                   onChange={(e) => setMinutes(e.target.value.replace(/[^0-9]/g, ''))} />
+            <span className="text-xs text-neutral-500">min</span>
+            <input className={inputClass} inputMode="numeric" value={seconds}
+                   aria-label="Seconds on top of the minutes"
+                   onChange={(e) => setSeconds(e.target.value.replace(/[^0-9]/g, ''))} />
+            <span className="text-xs text-neutral-500">sec</span>
+          </span>
         </Field>
         <Field label="People out">
           <input className={inputClass} inputMode="numeric" value={count}
@@ -406,11 +436,33 @@ function RecordPanel({ drill, onSaved }: { drill: Drill; onSaved: () => void }) 
           <textarea className={`${inputClass} min-h-[60px] py-2`} value={worked}
                     onChange={(e) => setWorked(e.target.value)} />
         </Field>
-        <Field label="What did not"
+        <Field label="What needs improvement"
                hint="Kept separate so it does not get softened into the box beside it">
           <textarea className={`${inputClass} min-h-[60px] py-2`} value={failed}
                     onChange={(e) => setFailed(e.target.value)} />
         </Field>
+      </div>
+
+      <div className="mt-3">
+        <Field label="Root cause"
+               hint="The same list the incident investigations draw on, so a cause that keeps coming back is countable across both">
+          <VocabularySelect vocabulary="root_cause" value={rootCause?.id ?? null}
+                            onChange={setRootCause} />
+        </Field>
+      </div>
+
+      <DrillEvidence drillId={drill.id} />
+
+      <div className="mt-3">
+        <p className="mb-1 text-xs font-medium text-neutral-700">
+          Signed by whoever ran the drill
+        </p>
+        <SignaturePad value={signature} onChange={setSignature} />
+        {drill.signed_by_name && drill.signed_at && (
+          <p className="mt-1 text-xs text-neutral-500">
+            Signed by {drill.signed_by_name} on {formatDate(drill.signed_at)}.
+          </p>
+        )}
       </div>
 
       <div className="mt-3 rounded-lg border border-neutral-200 p-2.5">

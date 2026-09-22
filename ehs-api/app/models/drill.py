@@ -18,7 +18,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, ForeignKey, Integer, String, Text,
+    Boolean, Date, DateTime, ForeignKey, Integer, String, Text, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -68,6 +68,22 @@ class Drill(UUIDPrimaryKey, TimestampMixin, Base):
     what_failed: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # planned | held | evaluated
+    # Why it went the way it did, from the same list the incident
+    # investigations draw on, so a recurring cause shows up across both. Id and
+    # label together: the id is what a report groups on, the label keeps an old
+    # drill readable after the vocabulary entry is renamed.
+    root_cause_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    root_cause_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # Who says this is what happened. On the row rather than in file-api: a
+    # drill report that renders without its signature is not the document that
+    # was signed.
+    signature: Mapped[str | None] = mapped_column(Text, nullable=True)
+    signed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    signed_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     status: Mapped[str] = mapped_column(String(12), nullable=False,
                                         default="planned", server_default="planned",
                                         index=True)
@@ -102,3 +118,30 @@ class DrillParticipant(UUIDPrimaryKey, Base):
     capacity: Mapped[str] = mapped_column(String(20), nullable=False,
                                           default="participant", server_default="participant")
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+
+class DrillAttachment(UUIDPrimaryKey, Base):
+    """A photograph taken at a drill — the muster point, a blocked exit.
+
+    The bytes live in file-api; this row is the join, because file-api has no
+    "list by document" endpoint and the owning service is what knows which
+    files belong to which record. Same arrangement as incident attachments.
+    """
+
+    __tablename__ = "ehs_drill_attachments"
+
+    drill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_drills.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    storage_key: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    uploaded_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )

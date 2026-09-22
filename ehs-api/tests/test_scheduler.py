@@ -268,3 +268,89 @@ async def test_failing_an_ad_hoc_check_takes_the_item_out_of_service(hse_manager
 
     after = (await client.get(f"/api/v1/safety-assets/{asset['id']}")).json()
     assert after["status"] == "out_of_service"
+
+
+async def test_a_drill_records_its_cause_its_signature_and_its_actions(
+        hse_manager, db_session):
+    """What turns an evaluation into evidence.
+
+    Prose said what worked and what did not and stopped there. HSE asked for
+    the three things an inspector actually asks for: why it went that way,
+    drawn from the same root cause list the investigations use so a recurring
+    cause is countable across both; who says this is what happened; and
+    something to do about it.
+    """
+    import uuid as _uuid
+    from datetime import date
+
+    from app.models.vocabulary import Vocabulary, VocabularyItem
+
+    db_session.add(Vocabulary(code="root_cause", name="Root Cause", is_hierarchical=True))
+    await db_session.flush()
+    cause = _uuid.uuid4()
+    db_session.add(VocabularyItem(
+        id=cause, vocabulary_code="root_cause", code="no_drill_practice",
+        label="Procedure not practised", sort_order=10, path="Procedure not practised"))
+    await db_session.commit()
+
+    user, client = hse_manager
+    created = await client.post("/api/v1/drills", json={
+        "drill_type": "evacuation",
+        "scenario": "Fire in the dryer bay.",
+        "held_on": date.today().isoformat(),
+    })
+    assert created.status_code in (200, 201), created.text
+    drill_id = created.json()["id"]
+
+    saved = await client.patch(f"/api/v1/drills/{drill_id}", json={
+        # Four minutes fifteen, entered as minutes and seconds and stored as
+        # seconds — the trend and the figures are drawn from the column.
+        "evacuation_seconds": 4 * 60 + 15,
+        "all_accounted_for": True,
+        "what_failed": "The north fire exit was blocked by pallets.",
+        "root_cause_id": str(cause),
+        "root_cause_label": "Procedure not practised",
+        "signature": "data:image/png;base64,iVBORw0KGgo=",
+    })
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["evacuation_seconds"] == 255
+    assert body["root_cause_label"] == "Procedure not practised"
+    assert body["root_cause_id"] == str(cause)
+
+    # The name and the time come from the server. A signature carrying a name
+    # the client chose is not evidence of anything.
+    assert body["signed_at"] is not None
+    assert body["signed_by_name"] == user.full_name
+
+    raised = await client.post("/api/v1/actions", json={
+        "source_type": "drill", "source_id": drill_id,
+        "title": "Clear the pallets from the north fire exit",
+        "owner_id": str(user.id),
+        "due_date": date.today().isoformat(),
+    })
+    assert raised.status_code in (200, 201), raised.text
+
+    listed = (await client.get(
+        f"/api/v1/actions?source_type=drill&source_id={drill_id}")).json()
+    rows = listed if isinstance(listed, list) else listed.get("items", [])
+    assert any(r["title"].startswith("Clear the pallets") for r in rows), (
+        "an action raised from a drill has to come back against that drill — "
+        f"got {rows}")
+
+
+async def test_clearing_a_drill_signature_clears_who_signed_it(hse_manager):
+    """Otherwise it shows as signed by somebody with nothing under it."""
+    from datetime import date
+
+    _, client = hse_manager
+    drill_id = (await client.post("/api/v1/drills", json={
+        "drill_type": "evacuation", "scenario": "Spill in receiving.",
+        "held_on": date.today().isoformat(),
+    })).json()["id"]
+
+    await client.patch(f"/api/v1/drills/{drill_id}",
+                       json={"signature": "data:image/png;base64,iVBORw0KGgo="})
+    cleared = await client.patch(f"/api/v1/drills/{drill_id}", json={"signature": None})
+    assert cleared.json()["signed_by_name"] is None
+    assert cleared.json()["signed_at"] is None
