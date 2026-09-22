@@ -96,6 +96,13 @@ def _migrate():
             "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_use_tls boolean",
             "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_from varchar(255)",
             "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS logo_data_url text",
+            # ...and DROP the columns finance-api's OWN migrations add. The mirror
+            # model maps them (so app code can read them), create_all above
+            # therefore creates them, and then `alembic upgrade head` dies on
+            # DuplicateColumn — which failed every DB-backed test in this suite at
+            # setup with an opaque subprocess.CalledProcessError. Keep this list in
+            # step with `grep 'add_column("company_config"' alembic/versions/`.
+            "ALTER TABLE company_config DROP COLUMN IF EXISTS nc_ap_sync_interval_minutes",
         ):
             conn.execute(sa.text(stmt))
         conn.commit()
