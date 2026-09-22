@@ -89,6 +89,25 @@ interface BillsTotal {
   ignored_bills: number; ignored_bal: string; money_bal_after_ignored: string
 }
 interface DismissReason { code: string; label: string }
+
+/** One open bill, across every supplier — the population a bulk judgement acts on. */
+interface FlatBill {
+  bill_no: string; currency: string; bill_date: string | null
+  supplier_code: string | null; supplier_name: string | null
+  invoice_no: string | null; purchase_order: string | null; trade_type: string | null
+  money_cr: string; money_bal: string
+  dismissed: { reason: string; note: string | null; by: string | null; at: string | null } | null
+}
+interface BillsResp {
+  total: number; money_bal: string
+  dismissed_bills: number; dismissed_bal: string
+  items: FlatBill[]
+}
+interface ClusterRow {
+  bill_date: string; bills: number; suppliers: number
+  amount: string; dismissed_bills: number
+}
+interface ClustersResp { items: ClusterRow[] }
 interface PaymentsTotal { lines: number; money_de: string }
 interface DetailResp {
   supplier_code: string; currency: string
@@ -673,12 +692,288 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
   )
 }
 
+/**
+ * Open bills across every supplier, filtered by date — and judged in bulk.
+ *
+ * The supplier view answers "is this supplier's balance believable". This one
+ * answers the question the data kept raising instead: which DOCUMENTS are not
+ * real debt. They cluster by date, not by supplier — 88 CAD bills carrying
+ * 3,058,570.38 all dated 2020-08-31, NC's opening-balance load at go-live,
+ * spread across 44 suppliers. One supplier at a time that is a week of
+ * clicking; by date it is one filter.
+ *
+ * The cluster strip exists because nobody would think to type 2020-08-31. The
+ * date has to announce itself.
+ *
+ * Bulk is where this could do real damage, so the action states the exact
+ * count and amount, and the server refuses it if the set has moved since the
+ * screen was drawn.
+ */
+function BillsByDate({ currency }: { currency: string }) {
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [showIgnored, setShowIgnored] = useState(false)
+  const [picked, setPicked] = useState<string[]>([])
+  const [confirming, setConfirming] = useState<'picked' | 'all' | null>(null)
+  const qc = useQueryClient()
+
+  const qs = `currency=${currency}&include_dismissed=${showIgnored}` +
+    `${from ? `&date_from=${from}` : ''}${to ? `&date_to=${to}` : ''}`
+
+  const { data: clusters } = useQuery({
+    queryKey: ['ap-ledger-clusters', currency],
+    queryFn: () => financeApi.get<ClustersResp>(
+      `/ap-ledger-health/date-clusters?currency=${currency}&limit=10`),
+  })
+  const { data, isFetching, error } = useQuery({
+    queryKey: ['ap-ledger-bills', currency, from, to, showIgnored],
+    queryFn: () => financeApi.get<BillsResp>(`/ap-ledger-health/bills?${qs}&limit=1000`),
+  })
+
+  const refresh = () => {
+    setPicked([])
+    setConfirming(null)
+    for (const k of ['ap-ledger-bills', 'ap-ledger-clusters', 'ap-ledger-health-items',
+                     'ap-ledger-health-summary', 'ap-ledger-supplier', 'ap-ledger-dismissals'])
+      qc.invalidateQueries({ queryKey: [k] })
+  }
+  const dismissSome = useMutation({
+    mutationFn: (v: { bill_nos: string[]; reason: string; note: string }) =>
+      financeApi.post('/ap-ledger-health/dismiss', v),
+    onSuccess: refresh,
+  })
+  // The filter-wide action. Carries the count the screen showed, so a set that
+  // moved underneath is refused rather than silently over-applied.
+  const dismissAll = useMutation({
+    mutationFn: (v: { reason: string; note: string }) =>
+      financeApi.post('/ap-ledger-health/dismiss-matching', {
+        ...v, currency, date_from: from || null, date_to: to || null,
+        expected_bills: rows.filter((b) => !b.dismissed).length,
+      }),
+    onSuccess: refresh,
+  })
+  const restore = useMutation({
+    mutationFn: (bill_nos: string[]) => financeApi.post('/ap-ledger-health/restore', { bill_nos }),
+    onSuccess: refresh,
+  })
+
+  const rows = data?.items ?? []
+  const selectable = rows.filter((b) => !b.dismissed)
+  const pickedRows = rows.filter((b) => picked.includes(b.bill_no))
+  const pickedTotal = pickedRows.reduce((t, b) => t + Number(b.money_bal), 0)
+  const liveTotal = Number(data?.money_bal ?? 0) - Number(data?.dismissed_bal ?? 0)
+  const narrowed = !!(from || to)
+  // A filter matching more than one page cannot be judged from this screen —
+  // the server refuses it, and saying so here beats a 409 nobody expected.
+  const capped = (data?.total ?? 0) > rows.length
+  const err = dismissSome.error || dismissAll.error || restore.error
+
+  const pick = (d: ClusterRow) => { setFrom(d.bill_date); setTo(d.bill_date); setPicked([]) }
+
+  return (
+    <>
+      {/* Discovery. Nobody types 2020-08-31 from memory. */}
+      <div className="mb-3">
+        <p className="mb-1.5 text-xs text-neutral-500">
+          Dates carrying the most open balance. A single day held by dozens of suppliers is a
+          migration load, not trading.
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {(clusters?.items ?? []).map((c) => (
+            <button key={c.bill_date} onClick={() => pick(c)}
+                    className={cn('rounded-lg border px-2.5 py-1.5 text-left text-xs transition-colors',
+                                  from === c.bill_date && to === c.bill_date
+                                    ? 'border-[#085E5E] bg-primary-50/60'
+                                    : 'border-neutral-200 hover:bg-neutral-50')}>
+              <span className="font-mono">{c.bill_date}</span>
+              <span className="ml-2 font-mono tabular-nums font-semibold">{money(c.amount)}</span>
+              <span className="ml-2 text-neutral-400">
+                {c.bills} bills · {c.suppliers} suppliers
+                {c.dismissed_bills > 0 && <>, {c.dismissed_bills} ignored</>}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5">
+        <label className="text-xs text-neutral-600">
+          <span className="mb-1 block font-medium">Bill date from</span>
+          <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPicked([]) }}
+                 className="rounded-lg border border-neutral-300 px-2 py-1 text-sm" />
+        </label>
+        <label className="text-xs text-neutral-600">
+          <span className="mb-1 block font-medium">to</span>
+          <input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPicked([]) }}
+                 className="rounded-lg border border-neutral-300 px-2 py-1 text-sm" />
+        </label>
+        {narrowed && (
+          <button onClick={() => { setFrom(''); setTo(''); setPicked([]) }}
+                  className="pb-1 text-xs text-neutral-500 hover:text-neutral-700">clear dates</button>
+        )}
+        <label className="flex items-center gap-1.5 pb-1 text-xs text-neutral-600">
+          <input type="checkbox" checked={showIgnored}
+                 onChange={(e) => { setShowIgnored(e.target.checked); setPicked([]) }} />
+          Show bills already ignored
+        </label>
+        <div className="ml-auto pb-0.5 text-right text-xs">
+          <div className="font-mono tabular-nums text-base font-semibold text-neutral-800">
+            {money(String(liveTotal))} {currency}
+          </div>
+          <div className="text-neutral-500">
+            {(data?.total ?? 0) - (data?.dismissed_bills ?? 0)} bills match
+            {(data?.dismissed_bills ?? 0) > 0 && (
+              <span className="text-neutral-400"> · {data!.dismissed_bills} already ignored</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
+        {picked.length > 0 ? (
+          <>
+            <span className="font-medium text-neutral-700">
+              {picked.length} selected · {money(String(pickedTotal))} {currency}
+            </span>
+            <button onClick={() => setConfirming('picked')}
+                    className="inline-flex items-center gap-1 rounded border border-[#085E5E] px-1.5 py-0.5 font-medium text-[#085E5E] hover:bg-primary-50">
+              <EyeOff className="h-3 w-3" /> Ignore selected
+            </button>
+            <button onClick={() => setPicked([])} className="text-neutral-400 hover:text-neutral-600">clear</button>
+          </>
+        ) : narrowed && selectable.length > 0 ? (
+          <>
+            <span className="text-neutral-500">
+              Tick the bills that are not real debt, or judge the whole filter at once.
+            </span>
+            <button onClick={() => setConfirming('all')}
+                    className="inline-flex items-center gap-1 rounded border border-amber-600 px-1.5 py-0.5 font-medium text-amber-700 hover:bg-amber-50">
+              <EyeOff className="h-3 w-3" /> Ignore all {selectable.length} matching
+            </button>
+          </>
+        ) : (
+          <span className="text-neutral-500">
+            Pick a date above, or set a range, to judge a group of bills at once.
+          </span>
+        )}
+        {capped && (
+          <span className="text-amber-700">
+            Only the first {rows.length} of {data!.total} are shown — narrow the dates before
+            judging the whole filter.
+          </span>
+        )}
+        {err != null && (
+          <span className="font-medium text-red-600">
+            Could not save that: {String((err as Error).message ?? err)}
+          </span>
+        )}
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-neutral-200">
+        <table className="w-full min-w-[980px] text-sm">
+          <thead>
+            <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
+              <th className="w-8 px-2 py-2 text-left font-medium">
+                <input type="checkbox" aria-label="Select all shown"
+                       checked={selectable.length > 0 && picked.length === selectable.length}
+                       onChange={(e) => setPicked(
+                         e.target.checked ? selectable.map((b) => b.bill_no) : [])} />
+              </th>
+              <th className="px-3 py-2 text-left font-medium">Bill</th>
+              <th className="px-3 py-2 text-left font-medium">Date</th>
+              <th className="px-3 py-2 text-left font-medium">Supplier</th>
+              <th className="px-3 py-2 text-left font-medium">Invoice</th>
+              <th className="px-3 py-2 text-left font-medium">PO</th>
+              <th className="px-3 py-2 text-right font-medium">Billed</th>
+              <th className="px-3 py-2 text-right font-medium">Still open</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isFetching && !data ? (
+              <tr><td colSpan={8} className="px-3 py-8 text-center">
+                <Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></td></tr>
+            ) : error ? (
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-danger-700">
+                Could not load these bills: {String((error as Error).message ?? error)}
+              </td></tr>
+            ) : rows.length === 0 ? (
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-neutral-400">
+                No open bills match.</td></tr>
+            ) : rows.map((b) => {
+              const gone = !!b.dismissed
+              return (
+                <tr key={b.bill_no}
+                    className={cn('border-t border-neutral-100 hover:bg-neutral-50/60',
+                                  gone && 'text-neutral-400')}>
+                  <td className="px-2 py-2">
+                    {gone ? (
+                      <button onClick={() => restore.mutate([b.bill_no])}
+                              title="Put this bill back on the list"
+                              aria-label={`Restore ${b.bill_no}`}
+                              className="text-neutral-400 hover:text-[#085E5E]">
+                        <Undo2 className="h-3.5 w-3.5" />
+                      </button>
+                    ) : (
+                      <input type="checkbox" aria-label={`Select ${b.bill_no}`}
+                             checked={picked.includes(b.bill_no)}
+                             onChange={(e) => setPicked(
+                               e.target.checked ? [...picked, b.bill_no]
+                                                : picked.filter((x) => x !== b.bill_no))} />
+                    )}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {b.bill_no}
+                    {b.dismissed && (
+                      <span title={[b.dismissed.note, b.dismissed.by, b.dismissed.at?.slice(0, 10)]
+                              .filter(Boolean).join(' · ')}
+                            className="ml-1.5 rounded bg-neutral-200 px-1 py-0.5 text-[10px] font-medium text-neutral-500">
+                        ignored
+                      </span>
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-xs text-neutral-600">{day(b.bill_date)}</td>
+                  <td className="px-3 py-2">
+                    <div className={cn(gone ? 'text-neutral-400' : 'text-neutral-800')}>
+                      {b.supplier_name ?? '—'}
+                    </div>
+                    <div className="font-mono text-[11px] text-neutral-400">{b.supplier_code ?? '—'}</div>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs text-neutral-600">{b.invoice_no ?? '—'}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-neutral-500">{b.purchase_order ?? '—'}</td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-neutral-600">{money(b.money_cr)}</td>
+                  <td className={cn('px-3 py-2 text-right font-mono tabular-nums font-semibold',
+                                    gone && 'font-normal line-through')}>
+                    {money(b.money_bal)}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {confirming && (
+        <DismissDialog
+          billNos={confirming === 'picked' ? picked : selectable.map((b) => b.bill_no)}
+          total={confirming === 'picked'
+            ? pickedTotal
+            : selectable.reduce((t, b) => t + Number(b.money_bal), 0)}
+          currency={currency}
+          onCancel={() => setConfirming(null)}
+          onDone={(reason, note) => confirming === 'picked'
+            ? dismissSome.mutate({ bill_nos: picked, reason, note })
+            : dismissAll.mutate({ reason, note })} />
+      )}
+    </>
+  )
+}
+
 export default function ApLedgerHealthPage() {
   const { user } = useAuthStore()
   const [currency, setCurrency] = useState('CAD')
   // The approved payable is the page's subject. The abandoned documents are
   // not work — they are an exclusion that has to be declared, not worked.
-  const [view, setView] = useState<'suppliers' | 'abandoned'>('suppliers')
+  const [view, setView] = useState<'suppliers' | 'bills' | 'abandoned'>('suppliers')
   const [open, setOpen] = useState<{ code: string; name: string | null; gap: string | null } | null>(null)
 
   const { data: summary, isFetching: loadingSummary } = useQuery({
@@ -820,7 +1115,12 @@ export default function ApLedgerHealthPage() {
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <div className="inline-flex overflow-hidden rounded-lg border border-neutral-300">
-            {([['suppliers', 'Approved suppliers'], ['abandoned', 'Excluded documents']] as const).map(([k, label]) => (
+            {([['suppliers', 'Approved suppliers'],
+               // The same population as the first view, sliced by document
+               // instead of by supplier — because what is not real debt turned
+               // out to cluster by DATE, across dozens of suppliers at once.
+               ['bills', 'Bills by date'],
+               ['abandoned', 'Excluded documents']] as const).map(([k, label]) => (
               <button key={k} onClick={() => setView(k)}
                       className={cn('px-3 py-1.5 text-sm',
                                     view === k ? 'bg-[#085E5E] text-white' : 'bg-white text-neutral-700 hover:bg-neutral-50')}>
@@ -829,15 +1129,19 @@ export default function ApLedgerHealthPage() {
             ))}
           </div>
           <span className="text-sm text-neutral-500">
-            {currency} · {view === 'abandoned' ? `${abandoned?.total ?? 0} documents` : `${items?.total ?? 0} suppliers`}
+            {currency}
+            {view === 'abandoned' ? ` · ${abandoned?.total ?? 0} documents`
+              : view === 'suppliers' ? ` · ${items?.total ?? 0} suppliers` : ''}
           </span>
-          <button onClick={exportCsv}
+          {view !== 'bills' && <button onClick={exportCsv}
                   className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
             <Download className="h-4 w-4" /> Export CSV
-          </button>
+          </button>}
         </div>
 
-        {view === 'abandoned' ? (
+        {view === 'bills' ? (
+          <BillsByDate currency={currency} />
+        ) : view === 'abandoned' ? (
           <div className="overflow-x-auto rounded-lg border border-neutral-200">
             <table className="w-full min-w-[880px] text-sm">
               <thead>
