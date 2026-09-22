@@ -199,31 +199,45 @@ async def opening_balance(db: AsyncSession, nc_account_id: uuid.UUID, before: da
     return Decimal(row[0]) - Decimal(row[1])
 
 
-async def _contra_map(db: AsyncSession, jv_ids: list[uuid.UUID],
-                      cash_codes: list[str]) -> dict:
-    """jv_id -> [(account_code, account_name)] for the NON-bank lines of each
-    voucher — NC's 对方科目.
+async def _contra_map(db: AsyncSession, our_lines: list) -> dict:
+    """jv_line_id -> [(account_code, account_name)] — NC's 对方科目, per line.
 
-    Taken per VOUCHER, not per line: a voucher with one bank line and one payable
-    line has an unambiguous contra, and one with several gets all of them (the
-    caller renders that as "mixed" rather than picking one).
+    The contra is the OPPOSITE SIDE of the same voucher, not "the non-cash
+    accounts". That distinction is the whole internal-transfer case: a
+    bank-to-bank transfer posts BOTH its legs to 100201, so excluding cash
+    accounts leaves it with no contra at all and it classifies as "unknown" —
+    when the truth is that its contra is the other bank account, which is exactly
+    what makes it a transfer.
+
+    Opposite side also gives the right answer everywhere else: a vendor payment
+    is a credit on the bank whose contra is the debit to payables; a bank charge
+    is a credit whose contra is the debit to financial expenses.
     """
-    if not jv_ids:
+    if not our_lines:
         return {}
     from app.models.coa import ChartOfAccount
+    jv_ids = list({ln.jv_id for ln in our_lines})
     rows = (await db.execute(
-        select(JournalVoucherLine.jv_id, JournalVoucherLine.account_code,
-               ChartOfAccount.name)
+        select(JournalVoucherLine.id, JournalVoucherLine.jv_id,
+               JournalVoucherLine.account_code, JournalVoucherLine.local_debit,
+               JournalVoucherLine.local_credit, ChartOfAccount.name)
         .outerjoin(ChartOfAccount, ChartOfAccount.code == JournalVoucherLine.account_code)
-        .where(JournalVoucherLine.jv_id.in_(jv_ids),
-               JournalVoucherLine.account_code.not_in(cash_codes))
-        .distinct()
+        .where(JournalVoucherLine.jv_id.in_(jv_ids))
     )).all()
+    by_jv: dict = {}
+    for lid, jv_id, code, dr, cr, name in rows:
+        by_jv.setdefault(jv_id, []).append((lid, code, dr or ZERO, cr or ZERO, name))
+
     out: dict = {}
-    for jv_id, code, name in rows:
-        out.setdefault(jv_id, []).append((code, name))
-    for v in out.values():
-        v.sort(key=lambda cn: cn[0] or "")
+    for ln in our_lines:
+        we_debit = (ln.local_debit or ZERO) > ZERO
+        seen: dict = {}
+        for lid, code, dr, cr, name in by_jv.get(ln.jv_id, []):
+            if lid == ln.id:
+                continue
+            if ((dr > ZERO) if not we_debit else (cr > ZERO)):
+                seen[code] = name
+        out[ln.id] = sorted(seen.items(), key=lambda cn: cn[0] or "")
     return out
 
 
@@ -255,10 +269,10 @@ async def book_period(db: AsyncSession, account: BankAccount,
                   JournalVoucherLine.line_no)
     )).all()
 
-    contra = await _contra_map(db, [jv.id for _ln, jv in rows], codes)
+    contra = await _contra_map(db, [ln for ln, _jv in rows])
     lines = []
     for ln, jv in rows:
-        pairs = contra.get(jv.id, [])
+        pairs = contra.get(ln.id, [])
         lines.append(BookLine(
             jv_line_id=ln.id, nc_voucher_pk=jv.nc_source_pk, jv_number=jv.jv_number,
             voucher_date=jv.voucher_date, line_no=ln.line_no,
