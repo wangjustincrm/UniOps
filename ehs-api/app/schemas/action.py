@@ -29,6 +29,7 @@ class ActionCreate(BaseModel):
     due_date: date
     location_id: uuid.UUID | None = None
     department_id: uuid.UUID | None = None
+    work_request_no: str | None = Field(default=None, max_length=60)
 
     @model_validator(mode="after")
     def _source_needs_an_id(self):
@@ -45,6 +46,11 @@ class ActionUpdateIn(BaseModel):
     file_ids: list[uuid.UUID] = Field(default_factory=list)
     new_status: str | None = Field(
         default=None, pattern="^(open|in_progress|pending_verification)$")
+    # The maintenance work request, if one was raised. Carried on the update
+    # rather than a PATCH of its own so it arrives with the note that says what
+    # happened — "raised WR 44812" is the provenance, the number alone is not.
+    # Left out, it is unchanged; this never clears a number already recorded.
+    work_request_no: str | None = Field(default=None, max_length=60)
 
 
 class ActionVerifyIn(BaseModel):
@@ -94,6 +100,7 @@ class ActionOut(BaseModel):
     owner_id: uuid.UUID | None
     owner_name: str | None
     due_date: date
+    work_request_no: str | None
     escalation_level: int
     verified_at: datetime | None
     closed_at: datetime | None

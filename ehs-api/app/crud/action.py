@@ -62,6 +62,7 @@ async def create(
         location_id=payload.location_id,
         location_path=await _location_path(db, payload.location_id),
         department_id=payload.department_id,
+        work_request_no=payload.work_request_no,
         occurred_at=now,
     )
     db.add(action)
@@ -152,6 +153,10 @@ async def add_update(
         new_status=payload.new_status,
     )
     db.add(update)
+    # Set, never cleared: leaving the box empty on a later update means "no
+    # change", not "there is no work request any more".
+    if payload.work_request_no:
+        action.work_request_no = payload.work_request_no
     if payload.new_status:
         action.status = payload.new_status
         if payload.new_status == "pending_verification":

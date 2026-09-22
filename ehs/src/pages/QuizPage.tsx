@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Check, ClipboardList, Plus, QrCode, Trash2, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import { formatDate } from '@/lib/formatDate'
 import QrPanel from '@/components/QrPanel'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
@@ -508,6 +509,8 @@ export function EditQuizPage() {
         </Card>
       )}
 
+      <WhoTookIt quizId={id} />
+
       <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
         Questions
       </h2>
@@ -637,6 +640,59 @@ function Stat({ label, value }: { label: string; value: string }) {
  * question — the authoring page has the answers on it, and showing the code
  * from there showed the class the answer key.
  */
+interface AttemptRow {
+  id: string; user_id: string | null; user_name: string
+  submitted_at: string; score_percent: string; passed: boolean
+}
+
+/**
+ * Who took the quiz and how they did.
+ *
+ * The totals were on screen — how many passed, the average, the hardest
+ * questions — and who was behind them was not. HSE reported it plainly: they
+ * could not see the results of completed quizzes. The aggregate answers
+ * "did the training land"; this answers "who still needs it", which is the
+ * question that produces a training record.
+ *
+ * The endpoint has been there since the quiz was built and nothing called it.
+ */
+function WhoTookIt({ quizId }: { quizId: string }) {
+  const attempts = useQuery({
+    queryKey: ['quiz-attempts', quizId],
+    queryFn: () => api.get<AttemptRow[]>(`/api/v1/quizzes/${quizId}/attempts`),
+  })
+
+  if (!attempts.data?.length) return null
+
+  return (
+    <Card className="mb-4">
+      <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
+        Who took it
+      </h3>
+      <ul className="flex flex-col gap-1">
+        {attempts.data.map((a) => (
+          <li key={a.id} className="flex flex-wrap items-baseline gap-x-2.5 text-sm">
+            <span className="min-w-0 flex-1 text-neutral-800">{a.user_name}</span>
+            <span className="font-mono tabular-nums text-neutral-700">
+              {Number(a.score_percent)}%
+            </span>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              a.passed ? 'bg-success-50 text-success-700' : 'bg-danger-50 text-danger-700'}`}>
+              {a.passed ? 'Passed' : 'Did not pass'}
+            </span>
+            <span className="text-xs text-neutral-500">{formatDate(a.submitted_at)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs text-neutral-500">
+        Every attempt is kept, not only the best one — a pass on the third go is
+        a different training record from a pass on the first.
+      </p>
+    </Card>
+  )
+}
+
+
 function QuizCodeScreen({ quiz, onClose }: { quiz: Quiz; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }

@@ -29,6 +29,7 @@ interface ActionDetail {
   source_type: string; source_ref: string | null; status: string
   hierarchy_of_control: string | null; owner_name: string | null
   due_date: string; escalation_level: number; closed_at: string | null
+  work_request_no: string | null
   updates: Update[]; verifications: Verification[]
 }
 
@@ -44,6 +45,7 @@ export default function ActionDetailPage() {
   const { can } = usePermissions()
   const [note, setNote] = useState('')
   const [markDone, setMarkDone] = useState(false)
+  const [workRequest, setWorkRequest] = useState('')
   const [evidence, setEvidence] = useState('')
 
   const { data, isLoading, isError, error } = useQuery({
@@ -64,6 +66,9 @@ export default function ActionDetailPage() {
     mutationFn: () => api.post(`/api/v1/actions/${id}/updates`, {
       body: note,
       new_status: markDone ? 'pending_verification' : 'in_progress',
+      // Left blank it means "no change", never "there is no work request any
+      // more" — the server treats it the same way.
+      work_request_no: workRequest.trim() || null,
     }),
     onSuccess: () => { setNote(''); setMarkDone(false); invalidate() },
   })
@@ -98,7 +103,16 @@ export default function ActionDetailPage() {
       </div>
       <p className="mt-2 text-xs text-neutral-500">
         {a.source_ref ? `Raised from ${a.source_ref} · ` : ''}
-        Owner {a.owner_name ?? 'unassigned'} · due {formatDate(a.due_date)}
+        Owner {a.owner_name ?? 'unassigned'} · due{' '}
+        {/* The date is the thing people are chasing on this page, and it read
+            at the same weight as the words around it. */}
+        <span className={`font-bold ${(late ?? 0) > 0 ? "text-danger-700" : "text-neutral-900"}`}>
+          {formatDate(a.due_date)}
+        </span>
+        {a.work_request_no && (
+          <> · work request <span className="font-medium text-neutral-700">
+            {a.work_request_no}</span></>
+        )}
       </p>
       {a.description && <p className="mt-2 text-sm text-neutral-700">{a.description}</p>}
 
@@ -159,6 +173,20 @@ export default function ActionDetailPage() {
             <input type="checkbox" className="h-4 w-4" checked={markDone}
                    onChange={(e) => setMarkDone(e.target.checked)} />
             The work is done — hand over for verification
+          </label>
+
+          {/* Most physical corrective actions are done by maintenance under
+              their own work request. Without the number the two records cannot
+              be tied together, and "has it been done" gets answered by asking
+              somebody rather than by looking. */}
+          <label className="mt-1 block text-xs font-medium text-neutral-700">
+            Work request number
+            <input
+              className="mt-1 h-11 w-full rounded-lg border border-neutral-200 px-3 text-sm"
+              value={workRequest}
+              onChange={(e) => setWorkRequest(e.target.value)}
+              placeholder={a.work_request_no ?? 'If maintenance raised one'}
+            />
           </label>
           <button
             type="button"

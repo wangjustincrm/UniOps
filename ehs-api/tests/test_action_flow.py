@@ -371,3 +371,41 @@ async def test_handing_over_takes_it_off_your_list(hse_manager, worker):
 
     waiting = (await wclient.get("/api/v1/actions/mine/to-verify")).json()
     assert any(a["id"] == action["id"] for a in waiting), "but it is yours to judge"
+
+
+async def test_the_work_request_number_is_set_and_never_silently_cleared(
+        hse_manager, worker):
+    """Most physical corrective actions are done by maintenance.
+
+    Guard the pinch point, replace the eyewash, clear the exit — all of it goes
+    through maintenance under their own number, in their own system. Without it
+    recorded here the two records cannot be tied together and "has it been
+    done" is answered by asking somebody, which is what the CAPA then closes on.
+    """
+    from datetime import date, timedelta
+
+    _, client = hse_manager
+    owner, _ = worker
+    action = (await client.post("/api/v1/actions", json={
+        "source_type": "manual", "source_id": None,
+        "title": "Guard the case sealer infeed",
+        "owner_id": str(owner.id),
+        "due_date": (date.today() + timedelta(days=14)).isoformat(),
+    })).json()
+    assert action["work_request_no"] is None
+
+    await client.post(f"/api/v1/actions/{action['id']}/updates", json={
+        "body": "Raised with maintenance.",
+        "work_request_no": "WR-44812",
+    })
+    after = (await client.get(f"/api/v1/actions/{action['id']}")).json()
+    assert after["work_request_no"] == "WR-44812"
+
+    # A later note that says nothing about the work request must leave it
+    # alone. Blank means "no change", not "there is no work request any more".
+    await client.post(f"/api/v1/actions/{action['id']}/updates", json={
+        "body": "Guard on order, fitting Friday.",
+    })
+    later = (await client.get(f"/api/v1/actions/{action['id']}")).json()
+    assert later["work_request_no"] == "WR-44812", (
+        "an update that did not mention the work request must not clear it")

@@ -69,6 +69,11 @@ class Action(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
     )
 
     due_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # The maintenance work request this was raised as, where there is one.
+    # Most physical corrective actions are done by maintenance in their own
+    # system; without the number the two records cannot be tied together and
+    # "has it been done" is answered by asking somebody.
+    work_request_no: Mapped[str | None] = mapped_column(String(60), nullable=True)
     # open -> in_progress -> pending_verification -> closed | cancelled
     # (`status` and its default come from EhsCommonDims / __default_status__.)
     # 0 none, 1 reminded, 2 supervisor notified, 3 HSE Manager notified.
