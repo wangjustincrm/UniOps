@@ -794,3 +794,187 @@ async def dismissal_log(db: AsyncSession, currency: str | None = None,
         "restored_at": r["restored_at"].isoformat() if r["restored_at"] else None,
         "restored_by": r["restored_by_name"],
     } for r in rows]}
+
+
+# ---------------------------------------------------------------------------
+# Working the open bills directly, across every supplier.
+#
+# The supplier view answers "is this supplier's balance believable". This one
+# answers the other question the data kept raising: which DOCUMENTS are not
+# real debt. They turned out to cluster by date rather than by supplier — 90
+# CAD bills carrying 3,065,616.22 all dated 2020-08-31, NC's opening-balance
+# load at go-live, spread across dozens of suppliers. Reached one supplier at a
+# time that is a week of clicking; reached by date it is one filter.
+# ---------------------------------------------------------------------------
+
+_LIVE_DISMISSAL = """
+    left join nc_ap_bill_dismissals d
+      on d.bill_no = l.bill_no and d.restored_at is null
+"""
+
+
+def _bill_filters(currency: str | None, date_from, date_to,
+                  supplier_code: str | None,
+                  include_dismissed: bool) -> tuple[str, dict]:
+    where = [_EFFECTIVE, "l.money_bal <> 0"]
+    params: dict = {}
+    if currency:
+        where.append("b.currency = :ccy")
+        params["ccy"] = currency
+    if date_from:
+        where.append("l.bill_date::date >= :date_from")
+        params["date_from"] = date_from
+    if date_to:
+        where.append("l.bill_date::date <= :date_to")
+        params["date_to"] = date_to
+    if supplier_code:
+        where.append("l.supplier_code = :supplier_code")
+        params["supplier_code"] = supplier_code
+    if not include_dismissed:
+        where.append("d.bill_no is null")
+    return " and ".join(where), params
+
+
+async def date_clusters(db: AsyncSession, currency: str | None = None,
+                        limit: int = 12) -> dict:
+    """The bill dates carrying the most open balance.
+
+    Discovery, not decoration. Nobody would think to filter on 2020-08-31; the
+    cluster has to announce itself. A single date holding millions across many
+    suppliers is the signature of a migration load, and that is exactly the
+    population this page exists to let finance judge.
+    """
+    where, params = _bill_filters(currency, None, None, None, True)
+    params["limit"] = max(1, min(limit, 50))
+    rows = (await db.execute(text(f"""
+        select l.bill_date::date as bill_date,
+               count(distinct l.bill_no) as bills,
+               coalesce(sum(l.money_bal), 0) as amount,
+               count(distinct l.supplier_code) as suppliers,
+               count(distinct l.bill_no) filter (where d.bill_no is not null) as dismissed_bills
+          from nc_ap_bill_lines l
+          join nc_ap_bills b on b.id = l.bill_id
+          {_LIVE_DISMISSAL}
+         where {where} and l.bill_date is not null
+         group by l.bill_date::date
+         order by sum(l.money_bal) desc
+         limit :limit
+    """), params)).mappings().all()
+    return {"items": [{
+        "bill_date": r["bill_date"].isoformat(),
+        "bills": int(r["bills"]),
+        "suppliers": int(r["suppliers"]),
+        "amount": str(r["amount"]),
+        "dismissed_bills": int(r["dismissed_bills"]),
+    } for r in rows]}
+
+
+async def open_bills(db: AsyncSession, currency: str | None = None,
+                     date_from=None, date_to=None, supplier_code: str | None = None,
+                     include_dismissed: bool = False, min_amount=None,
+                     limit: int = 500, offset: int = 0) -> dict:
+    """Every open approved bill matching the filter, biggest first.
+
+    Returns the totals for the WHOLE match, not for the page — a bulk action
+    needs to state what it is about to affect, and "total of the rows that
+    happened to fit" is how a page starts lying at exactly the wrong moment.
+    """
+    where, params = _bill_filters(currency, date_from, date_to,
+                                  supplier_code, include_dismissed)
+    having = ""
+    if min_amount is not None:
+        having = " having abs(sum(l.money_bal)) >= :min_amount"
+        params["min_amount"] = min_amount
+
+    body = f"""
+      from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+      {_LIVE_DISMISSAL}
+     where {where}
+     group by l.bill_no, b.currency, d.bill_no, d.reason, d.note,
+              d.dismissed_by_name, d.dismissed_at
+     {having}
+    """
+    page = dict(params, limit=max(1, min(limit, 1000)), offset=max(0, offset))
+    rows = (await db.execute(text(f"""
+        select l.bill_no, b.currency,
+               min(l.bill_date)::date as bill_date,
+               min(l.supplier_code) as supplier_code,
+               min(l.supplier_name) as supplier_name,
+               min(l.invoice_no) as invoice_no,
+               min(l.purchase_order) as purchase_order,
+               min(b.trade_type) as trade_type,
+               sum(l.money_cr) as money_cr,
+               sum(l.money_bal) as money_bal,
+               d.reason as dismiss_reason, d.note as dismiss_note,
+               d.dismissed_by_name, d.dismissed_at
+        {body}
+         order by abs(sum(l.money_bal)) desc, l.bill_no
+         limit :limit offset :offset
+    """), page)).mappings().all()
+
+    tot = (await db.execute(text(f"""
+        select count(*) as bills,
+               coalesce(sum(money_bal), 0) as money_bal,
+               count(*) filter (where dismissed) as dismissed_bills,
+               coalesce(sum(money_bal) filter (where dismissed), 0) as dismissed_bal
+          from (
+            select sum(l.money_bal) as money_bal, d.bill_no is not null as dismissed
+            {body}
+          ) x
+    """), params)).mappings().one()
+
+    return {
+        "total": int(tot["bills"]),
+        "money_bal": str(tot["money_bal"]),
+        "dismissed_bills": int(tot["dismissed_bills"]),
+        "dismissed_bal": str(tot["dismissed_bal"]),
+        "items": [{
+            "bill_no": r["bill_no"],
+            "currency": r["currency"],
+            "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
+            "supplier_code": r["supplier_code"],
+            "supplier_name": r["supplier_name"],
+            "invoice_no": r["invoice_no"],
+            "purchase_order": r["purchase_order"],
+            "trade_type": r["trade_type"],
+            "money_cr": str(r["money_cr"]),
+            "money_bal": str(r["money_bal"]),
+            "dismissed": None if not r["dismiss_reason"] else {
+                "reason": r["dismiss_reason"],
+                "note": r["dismiss_note"],
+                "by": r["dismissed_by_name"],
+                "at": r["dismissed_at"].isoformat() if r["dismissed_at"] else None,
+            },
+        } for r in rows],
+    }
+
+
+async def dismiss_matching(db: AsyncSession, currency: str | None, date_from, date_to,
+                           supplier_code: str | None, min_amount,
+                           reason: str, note: str | None,
+                           user_id, user_name: str | None,
+                           expected_bills: int) -> dict:
+    """Ignore every bill matching a filter, in one decision.
+
+    `expected_bills` is not ceremony. The caller saw a count on screen before
+    it clicked; if the mirror has moved since — a sync landed, someone else
+    dismissed some — the set is no longer the one that was reviewed, and a bulk
+    write that silently covers more than was agreed to is the single worst
+    thing this feature could do. Mismatch is refused, not reconciled.
+    """
+    matching = await open_bills(db, currency=currency, date_from=date_from,
+                                date_to=date_to, supplier_code=supplier_code,
+                                include_dismissed=False, min_amount=min_amount,
+                                limit=1000)
+    if matching["total"] != expected_bills:
+        return {"applied": False, "reason": "changed",
+                "expected_bills": expected_bills, "actual_bills": matching["total"]}
+    # The page read is capped; a filter wider than the cap must not be applied
+    # from a screen that could only ever have shown part of it.
+    if matching["total"] > len(matching["items"]):
+        return {"applied": False, "reason": "too_many",
+                "actual_bills": matching["total"], "max_per_action": len(matching["items"])}
+    out = await dismiss_bills(db, [b["bill_no"] for b in matching["items"]],
+                              reason, note, user_id, user_name)
+    return {"applied": True, "money_bal": matching["money_bal"], **out}

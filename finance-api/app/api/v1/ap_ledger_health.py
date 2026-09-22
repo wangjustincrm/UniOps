@@ -7,6 +7,7 @@ payable is not real debt, which is the only thing on this page NC has nowhere
 to store. They never touch the mirror — see 0035_ap_bill_dismiss.
 """
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -143,3 +144,84 @@ async def restore(user: CurrentUser,
     if not bill_nos:
         raise HTTPException(status_code=422, detail="bill_nos must not be empty")
     return await svc.restore_bills(db, bill_nos, uid, name)
+
+
+@router.get("/date-clusters")
+async def date_clusters(user: CurrentUser,
+                        currency: str | None = Query(None),
+                        limit: int = Query(12, ge=1, le=50),
+                        db: AsyncSession = Depends(get_db)):
+    """The bill dates carrying the most open balance.
+
+    Discovery: nobody would think to filter on 2020-08-31, so the cluster has
+    to announce itself. A single date holding millions across dozens of
+    suppliers is the signature of a migration load.
+    """
+    return await svc.date_clusters(db, currency=currency, limit=limit)
+
+
+@router.get("/bills")
+async def bills(user: CurrentUser,
+                currency: str | None = Query(None),
+                date_from: date | None = Query(None),
+                date_to: date | None = Query(None),
+                supplier_code: str | None = Query(None),
+                include_dismissed: bool = Query(False),
+                min_amount: float | None = Query(None),
+                limit: int = Query(500, ge=1, le=1000),
+                offset: int = Query(0, ge=0),
+                db: AsyncSession = Depends(get_db)):
+    """Open approved bills across every supplier, filterable — the population
+    a bulk judgement acts on."""
+    return await svc.open_bills(db, currency=currency, date_from=date_from,
+                                date_to=date_to, supplier_code=supplier_code,
+                                include_dismissed=include_dismissed,
+                                min_amount=min_amount, limit=limit, offset=offset)
+
+
+@router.post("/dismiss-matching")
+async def dismiss_matching(user: CurrentUser,
+                           payload: dict = Body(...),
+                           db: AsyncSession = Depends(get_db)):
+    """Ignore every bill matching a filter, in one decision.
+
+    `expected_bills` must equal what the caller was shown. If the mirror has
+    moved in between — a sync landed, someone else judged some of them — the
+    set is no longer the one that was reviewed and the write is refused rather
+    than quietly covering more than was agreed to.
+    """
+    uid, name = await _authorize_judgement(db, user)
+    reason = str(payload.get("reason") or "").strip()
+    if reason not in DISMISS_REASONS:
+        raise HTTPException(status_code=422,
+                            detail=f"reason must be one of {sorted(DISMISS_REASONS)}")
+    note = (payload.get("note") or "").strip() or None
+    if reason == "other" and not note:
+        raise HTTPException(status_code=422, detail="a note is required when the reason is 'other'")
+    expected = payload.get("expected_bills")
+    if not isinstance(expected, int) or expected < 1:
+        raise HTTPException(status_code=422,
+                            detail="expected_bills must be the bill count you were shown")
+    # A filter with no bounds at all would take the entire payable off the
+    # books on one click. Refused outright — a bulk judgement has to be ABOUT
+    # something.
+    if not any(payload.get(k) for k in ("date_from", "date_to", "supplier_code", "min_amount")):
+        raise HTTPException(
+            status_code=422,
+            detail="narrow the filter first — a date range, a supplier or a minimum amount")
+
+    def _day(v):
+        return date.fromisoformat(v) if v else None
+
+    try:
+        date_from, date_to = _day(payload.get("date_from")), _day(payload.get("date_to"))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="dates must be YYYY-MM-DD")
+
+    result = await svc.dismiss_matching(
+        db, payload.get("currency"), date_from, date_to,
+        payload.get("supplier_code"), payload.get("min_amount"),
+        reason, note, uid, name, expected)
+    if not result["applied"]:
+        raise HTTPException(status_code=409, detail=result)
+    return result
