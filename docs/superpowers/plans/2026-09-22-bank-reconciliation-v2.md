@@ -244,6 +244,33 @@ closing). PDF via `reportlab` (already an epms-api dependency; add to finance-ap
 | 7 | Report PDF + xlsx | 6 |
 | 8 | Frontend rework: statement view ‖ book view, grouped match rows, advice drill-down, session header, report download | 5,6,7 |
 
+## 6b. What was built (2026-09-22)
+
+All of §6 except the production run itself. Measured end to end on the real July
+documents — the AI-read statement, the 19 payment files, and NC's own 260 ledger
+lines for RBC CAD:
+
+| | |
+|---|---|
+| statement | 37 lines, verified: 30 debits `1,269,496.36` / 7 credits `1,414,741.74` |
+| payment files | 19/19 tie, 237 vendor lines, `1,031,087.99` |
+| ladder | **37/37 statement lines and 260/260 ledger lines cleared**, 237/237 advice lines linked |
+| findings | 1 — correctly naming the statement line whose payment file was not supplied |
+
+Two things the evidence changed from the original design:
+
+- **The statement's signs are solved from the printed balances, not taken from
+  the model.** A whole-document read returned every date, description, magnitude
+  and running balance correctly and inverted the signs wholesale. Direction is a
+  column-position fact with no textual signal, so it is derived: inside each
+  balance segment the signs must sum to that segment's delta. No solution means a
+  magnitude is wrong (said so); several means the statement genuinely does not
+  say (said so).
+- **Reading is page by page.** A whole-document read dropped exactly one row — the
+  28,918.08 batch at the bottom of page 2, where a date group breaks across the
+  page boundary. Splitting the PDF removes the seam and the max_tokens cliff with
+  it.
+
 ## 7. Open risks
 
 ### 7.1 The `full` re-sync (decided)
@@ -273,7 +300,17 @@ needs a weaker gate, and that has to be an explicit, visible downgrade rather th
 The RBC statement's own `564,623.34` is the anchor, and the QB report agrees. The **book** opening for that account
 is only computable once §6.0 lands — it does not exist today.
 
-### 7.4 Shared AI quota
+### 7.4 The assistant can describe this module but not yet query it
+
+`modules.yaml` now lists reconciling a bank statement among what Finance does, so
+the guide layer answers "how does this work". An **ontology entity** over
+`bank_reconciliations` is deliberately NOT added yet: `test_ontology.py` checks
+entities against the real database and refuses one over an empty table — "an
+entity over a table with no rows answers every question with 'none'". Add it once
+a period has actually been reconciled in production, and the same test will then
+verify it.
+
+### 7.5 Shared AI quota
 
 The API key is shared with Claude Code ([project_uniops_ocr_shared_key_quota]). A month-end burst of statement parses
 competes with EPMS invoice OCR on the same key; §5.4's deterministic-first rule keeps the 19 payment files off the API
