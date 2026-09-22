@@ -38,6 +38,7 @@ async def summary(user: CurrentUser,
 async def items(user: CurrentUser,
                 currency: str = Query(...),
                 bucket: str | None = Query(None),
+                supplier_code: str | None = Query(None),
                 limit: int = Query(500, ge=1, le=2000),
                 offset: int = Query(0, ge=0),
                 db: AsyncSession = Depends(get_db)):
@@ -47,7 +48,8 @@ async def items(user: CurrentUser,
     if bucket is not None and bucket not in svc.BUCKET_KEYS:
         raise HTTPException(status_code=422,
                             detail=f"bucket must be one of {sorted(svc.BUCKET_KEYS)}")
-    return await svc.items(db, currency, bucket=bucket, limit=limit, offset=offset)
+    return await svc.items(db, currency, bucket=bucket, supplier_code=supplier_code,
+                           limit=limit, offset=offset)
 
 
 @router.get("/missing-terms")

@@ -102,23 +102,33 @@ export default function ApCashFlowPage() {
   const { user } = useAuthStore()
   const [currency, setCurrency] = useState('CAD')
   const [bucket, setBucket] = useState<string | null>(null)
+  // A selection can also be one supplier out of the undated list — every
+  // figure on this page has to be traceable back to the documents behind it.
+  const [supplier, setSupplier] = useState<{ code: string; name: string | null } | null>(null)
 
   const { data: summary, isFetching: loadingSummary } = useQuery({
     queryKey: ['ap-cash-flow-summary'],
     queryFn: () => financeApi.get<SummaryResp>('/ap-cash-flow/summary'),
   })
   const { data: items, isFetching: loadingItems, error: itemsError } = useQuery({
-    queryKey: ['ap-cash-flow-items', currency, bucket],
+    queryKey: ['ap-cash-flow-items', currency, bucket, supplier?.code],
     queryFn: () => financeApi.get<ItemsResp>(
       `/ap-cash-flow/items?currency=${currency}` +
-      `${bucket ? `&bucket=${bucket}` : ''}&limit=1000`),
-    enabled: !!bucket,
+      `${bucket ? `&bucket=${bucket}` : ''}` +
+      `${supplier ? `&supplier_code=${encodeURIComponent(supplier.code)}` : ''}&limit=1000`),
+    enabled: !!bucket || !!supplier,
   })
   const { data: missing } = useQuery({
     queryKey: ['ap-cash-flow-missing', currency],
     queryFn: () => financeApi.get<MissingResp>(`/ap-cash-flow/missing-terms?currency=${currency}`),
   })
 
+  const selected = bucket || supplier
+  const clearSelection = () => { setBucket(null); setSupplier(null) }
+  const pickBucket = (k: string) => {
+    setSupplier(null)
+    setBucket(bucket === k && !supplier ? null : k)
+  }
   const row = summary?.currencies.find((c) => c.currency === currency)
   const overdue = row?.buckets.filter((b) => b.overdue) ?? []
   const forward = row?.buckets.filter((b) => !b.overdue && b.key !== UNDATED) ?? []
@@ -223,8 +233,8 @@ export default function ApCashFlowPage() {
           <span className="text-sm text-neutral-500">
             {currency} · as of {summary?.as_of ?? '—'}
           </span>
-          {bucket && (
-            <button onClick={() => setBucket(null)}
+          {selected && (
+            <button onClick={clearSelection}
                     className="rounded-lg border border-neutral-300 px-2.5 py-1 text-xs text-neutral-600 hover:bg-neutral-50">
               Clear selection
             </button>
@@ -259,9 +269,9 @@ export default function ApCashFlowPage() {
                     </td></tr>
                   ) : forwardCumulative.filter((b) => b.bills > 0).map((b) => (
                     <tr key={b.key}
-                        onClick={() => setBucket(bucket === b.key ? null : b.key)}
+                        onClick={() => pickBucket(b.key)}
                         className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-50/60',
-                                      bucket === b.key && 'bg-primary-50/60')}>
+                                      bucket === b.key && !supplier && 'bg-primary-50/60')}>
                       <td className="px-3 py-2">
                         {b.label}
                         {b.first_due && (
@@ -306,9 +316,9 @@ export default function ApCashFlowPage() {
                     </td></tr>
                   ) : overdue.filter((b) => b.bills > 0).map((b) => (
                     <tr key={b.key}
-                        onClick={() => setBucket(bucket === b.key ? null : b.key)}
+                        onClick={() => pickBucket(b.key)}
                         className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-50/60',
-                                      bucket === b.key && 'bg-primary-50/60')}>
+                                      bucket === b.key && !supplier && 'bg-primary-50/60')}>
                       <td className="px-3 py-2">
                         {b.label}
                         {b.first_due && (
@@ -327,94 +337,22 @@ export default function ApCashFlowPage() {
           </div>
         </div>
 
-        {/* Declared, never defaulted. This is money the forecast cannot place,
-            and the fix for each row is one click in EPMS. */}
-        {undated && undated.bills > 0 && (
+        {selected && (
           <div className="mt-6">
-            <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-neutral-800">
-              <HelpCircle className="h-4 w-4 text-neutral-400" />
-              No payment term on file — {money(undated.amount)} {currency} the forecast cannot place
-            </h3>
-            <p className="mb-2 max-w-3xl text-[11px] leading-relaxed text-neutral-500">
-              NC bills these suppliers, but we hold no payment term for them, so there is no
-              due date to calculate. They are excluded from both tables above rather than
-              defaulted to Net 30.{' '}
-              {/* Two different fixes, and which one applies is mostly decided by
-                  the date. A single day carrying most of this is an opening-
-                  balance load, and setting those suppliers up in the vendor
-                  master would be work spent on money that should be judged. */}
-              {missing?.largest_single_date
-                && Number(missing.largest_single_date.amount) > Number(undated.amount) / 2 ? (
-                <>
-                  <strong>{missing.largest_single_date.bills} of these bills are all dated{' '}
-                  {day(missing.largest_single_date.bill_date)}</strong> and carry{' '}
-                  {money(missing.largest_single_date.amount)} — that is an opening-balance load,
-                  not suppliers waiting to be set up. Judge those on{' '}
-                  <a href="/finance/ap-ledger-health" className="text-[#085E5E] hover:underline">
-                    AP Subledger Health</a> instead. For the rest,{' '}
-                  <strong>create the vendor record</strong> (EPMS &rsquo;Vendors&rsquo; → From ERP) or set
-                  the term on the one that exists, and the balance moves into the forecast.
-                </>
-              ) : (
-                <>
-                  <strong>Create the vendor record</strong> (EPMS &rsquo;Vendors&rsquo; → From ERP), or set
-                  the term on the one that exists, and the balance moves into the forecast on
-                  the next load.
-                </>
-              )}
-            </p>
-            <div className="overflow-x-auto rounded-lg border border-neutral-200">
-              <table className="w-full min-w-[720px] text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
-                    <th className="px-3 py-2 text-left font-medium">Supplier</th>
-                    <th className="px-3 py-2 text-left font-medium">What is missing</th>
-                    <th className="px-3 py-2 text-right font-medium">Bills</th>
-                    <th className="px-3 py-2 text-right font-medium">Open balance</th>
-                    <th className="px-3 py-2 text-left font-medium">Bills dated</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(missing?.items.length ?? 0) === 0 ? (
-                    <tr><td colSpan={5} className="px-3 py-6 text-center text-neutral-400">
-                      Loading…
-                    </td></tr>
-                  ) : missing!.items.map((r) => (
-                    <tr key={(r.supplier_code ?? '') + r.currency} className="border-t border-neutral-100">
-                      <td className="px-3 py-2">
-                        <div className="text-neutral-800">{r.supplier_name ?? '—'}</div>
-                        <div className="font-mono text-[11px] text-neutral-400">{r.supplier_code ?? '—'}</div>
-                      </td>
-                      <td className="px-3 py-2 text-xs">
-                        {r.reason === 'no_vendor_record' ? (
-                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
-                            no vendor record
-                          </span>
-                        ) : (
-                          <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-600">
-                            term &ldquo;{r.payment_terms}&rdquo; not recognised
-                          </span>
-                        )}
-                      </td>
-                      <td className={cell}>{r.bills}</td>
-                      <td className={cn(cell, 'font-semibold')}>{money(r.amount)}</td>
-                      <td className="px-3 py-2 text-xs text-neutral-500">
-                        {day(r.oldest_bill)} – {day(r.newest_bill)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {bucket && (
-          <div className="mt-6">
+            {/* Sits directly under whatever was clicked, not at the foot of
+                the page: a detail table three screens below the selection
+                reads as "clicking did nothing". */}
             <h3 className="mb-2 text-sm font-semibold text-neutral-800">
-              {row?.buckets.find((b) => b.key === bucket)?.label}
+              {supplier
+                ? <>{supplier.name ?? supplier.code}
+                    <span className="ml-1.5 font-mono text-xs font-normal text-neutral-400">
+                      {supplier.code}</span></>
+                : row?.buckets.find((b) => b.key === bucket)?.label}
               <span className="ml-2 font-normal text-neutral-500">
                 {items?.total ?? 0} bills · {money(items?.amount)} {currency}
+              </span>
+              <span className="ml-2 text-xs font-normal text-neutral-400">
+                every document behind that figure
               </span>
             </h3>
             <div className="overflow-x-auto rounded-lg border border-neutral-200">
@@ -474,6 +412,102 @@ export default function ApCashFlowPage() {
             </div>
           </div>
         )}
+
+        {/* Declared, never defaulted. This is money the forecast cannot place,
+            and the fix for each row is one click in EPMS. */}
+        {undated && undated.bills > 0 && (
+          <div className="mt-6">
+            <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-neutral-800">
+              <HelpCircle className="h-4 w-4 text-neutral-400" />
+              No payment term on file — {money(undated.amount)} {currency} the forecast cannot place
+            </h3>
+            <p className="mb-2 max-w-3xl text-[11px] leading-relaxed text-neutral-500">
+              NC bills these suppliers, but we hold no payment term for them, so there is no
+              due date to calculate. They are excluded from both tables above rather than
+              defaulted to Net 30.{' '}
+              {/* Two different fixes, and which one applies is mostly decided by
+                  the date. A single day carrying most of this is an opening-
+                  balance load, and setting those suppliers up in the vendor
+                  master would be work spent on money that should be judged. */}
+              {missing?.largest_single_date
+                && Number(missing.largest_single_date.amount) > Number(undated.amount) / 2 ? (
+                <>
+                  <strong>{missing.largest_single_date.bills} of these bills are all dated{' '}
+                  {day(missing.largest_single_date.bill_date)}</strong> and carry{' '}
+                  {money(missing.largest_single_date.amount)} — that is an opening-balance load,
+                  not suppliers waiting to be set up. Judge those on{' '}
+                  <a href="/finance/ap-ledger-health" className="text-[#085E5E] hover:underline">
+                    AP Subledger Health</a> instead. For the rest,{' '}
+                  <strong>create the vendor record</strong> (EPMS &rsquo;Vendors&rsquo; → From ERP) or set
+                  the term on the one that exists, and the balance moves into the forecast.
+                </>
+              ) : (
+                <>
+                  <strong>Create the vendor record</strong> (EPMS &rsquo;Vendors&rsquo; → From ERP), or set
+                  the term on the one that exists, and the balance moves into the forecast on
+                  the next load.
+                </>
+              )}
+            </p>
+            <div className="overflow-x-auto rounded-lg border border-neutral-200">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
+                    <th className="px-3 py-2 text-left font-medium">Supplier</th>
+                    <th className="px-3 py-2 text-left font-medium">What is missing</th>
+                    <th className="px-3 py-2 text-right font-medium">Bills</th>
+                    <th className="px-3 py-2 text-right font-medium">Open balance</th>
+                    <th className="px-3 py-2 text-left font-medium">Bills dated</th>
+                    <th className="px-3 py-2 text-left font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(missing?.items.length ?? 0) === 0 ? (
+                    <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
+                      Loading…
+                    </td></tr>
+                  ) : missing!.items.map((r) => (
+                    <tr key={(r.supplier_code ?? '') + r.currency}
+                        onClick={() => {
+                          if (!r.supplier_code) return
+                          const same = supplier?.code === r.supplier_code
+                          setBucket(same ? null : UNDATED)
+                          setSupplier(same ? null : { code: r.supplier_code, name: r.supplier_name })
+                        }}
+                        className={cn('border-t border-neutral-100',
+                                      r.supplier_code && 'cursor-pointer hover:bg-neutral-50/60',
+                                      supplier?.code === r.supplier_code && 'bg-primary-50/60')}>
+                      <td className="px-3 py-2">
+                        <div className="text-neutral-800">{r.supplier_name ?? '—'}</div>
+                        <div className="font-mono text-[11px] text-neutral-400">{r.supplier_code ?? '—'}</div>
+                      </td>
+                      <td className="px-3 py-2 text-xs">
+                        {r.reason === 'no_vendor_record' ? (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                            no vendor record
+                          </span>
+                        ) : (
+                          <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-600">
+                            term &ldquo;{r.payment_terms}&rdquo; not recognised
+                          </span>
+                        )}
+                      </td>
+                      <td className={cell}>{r.bills}</td>
+                      <td className={cn(cell, 'font-semibold')}>{money(r.amount)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-xs text-neutral-500">
+                        {day(r.oldest_bill)} – {day(r.newest_bill)}
+                      </td>
+                      <td className="px-3 py-2 text-xs font-medium text-[#085E5E]">
+                        {r.supplier_code && 'Show bills'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
       </div>
     </PortalChromeLayout>
   )

@@ -180,15 +180,24 @@ async def summary(db: AsyncSession, currency: str | None = None) -> dict:
 
 
 async def items(db: AsyncSession, currency: str, bucket: str | None = None,
+                supplier_code: str | None = None,
                 limit: int = 500, offset: int = 0) -> dict:
     """The documents behind a bucket, soonest due first — which is also the
-    order they have to be paid in."""
+    order they have to be paid in.
+
+    Every figure on this page is clickable through to this, including a single
+    supplier in the undated list: a forecast nobody can trace back to documents
+    is a number people quietly stop believing.
+    """
     params: dict = {"ccy": currency, "limit": max(1, min(limit, 2000)),
                     "offset": max(0, offset)}
     where = ["currency = :ccy"]
     if bucket:
         where.append("bucket = :bucket")
         params["bucket"] = bucket
+    if supplier_code:
+        where.append("supplier_code = :supplier_code")
+        params["supplier_code"] = supplier_code
     clause = " where " + " and ".join(where)
     rows = (await db.execute(text(_BASE + f"""
         select bill_no, currency, bill_date, supplier_code, supplier_name,
