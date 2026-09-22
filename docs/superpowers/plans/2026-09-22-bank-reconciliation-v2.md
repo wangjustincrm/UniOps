@@ -334,3 +334,63 @@ statement, the 19 payment files, and running the ladder:
 
 Every one of these numbers was measured from the supplied documents while writing this doc, so a failing run means the
 implementation is wrong — not the baseline.
+
+
+## 9. Deploying this
+
+Four things this branch needs that a normal release does not.
+
+### 9.1 Two migrations, and finance-api already runs first
+
+`0036_nc_bank_acct_dim` → `0037_bank_recon_v2`, on top of `0035_ap_bill_dismiss`.
+Single head, verified. Both revision ids are well under the 32-character limit
+that has stopped `migrate-prod.sh` mid-run before. Everything they touch is
+finance-api-owned (`journal_voucher_lines`, `bank_accounts`, and the new tables),
+and finance-api is already first in `migrate-prod.sh`, so no ordering change.
+
+### 9.2 A full NC sync MUST follow — the migration only creates the structure
+
+0036 creates an empty `nc_bank_accounts` and a NULL `journal_voucher_lines.
+bank_account_id`. Until a `full` nc_sync runs, **every bank-scoped read returns
+nothing** and the workbench shows an empty ledger side. The sequence is:
+
+1. merge and deploy (0036 creates the table and the column)
+2. run a `full` NC sync
+3. link each bank account to its NC code in Bank Settings (RBC CAD is `1033760`)
+
+The sync is one transaction — delete, reload and status backfill all commit
+together — so readers see the previous snapshot throughout and no page goes blank
+mid-run. It is still a ~40k-voucher, ~200k-line delete-and-reinsert: run it in a
+window and `VACUUM` after.
+
+★ It also re-derives cost centres and income/expense items for the whole book, so
+any `budget_actual_cc_map` drift since the last full run surfaces in the same
+pass and will be blamed on this release unless a **before/after Budget Actual
+comparison** is taken first.
+
+### 9.3 New dependencies — finance-api's image must be built, never retagged
+
+`pypdf`, `cryptography`, `reportlab`, `anthropic` are new in
+`finance-api/requirements.txt`. `cryptography` is not optional: RBC ships
+statements AES-encrypted with an empty user password, and without it pypdf raises
+`DependencyError` rather than anything that reads as "encrypted".
+
+### 9.4 Two new environment variables on finance-api
+
+Already wired into `docker-compose.prod.yml`:
+
+- `FILE_SERVER_URL` — finance-api had no file storage at all before this. Without
+  it the statements, payment files and signed reports are not retained; the
+  figures still reconcile and the API says the document was not kept.
+- `BANK_ANTHROPIC_API_KEY` — falls back to `ANTHROPIC_API_KEY`, but exists so it
+  need not. That shared key also drives EPMS invoice OCR, and when it hit its
+  account limit every upload across the product answered "AI parsing failed". A
+  month-end burst of statement reads is exactly what does that.
+
+### 9.5 After any later full NC sync
+
+`POST /finance/v1/bank-recon/heal`. A full sync regenerates every
+`journal_voucher_lines.id`; the SET NULL foreign keys keep the match rows and the
+healer re-points them from NC's natural key. Finalized periods are skipped on
+purpose. Safe to run at any time — it reports `{orphans, healed, unresolved}` and
+does nothing when there is nothing to do.
