@@ -483,3 +483,68 @@ async def test_taking_somebody_off_a_position_and_putting_them_back(hse_manager,
     assert len(mine) == 1, (
         "the person holds the position once, not twice — a revived row, not a "
         f"duplicate: {mine}")
+
+
+async def test_one_person_signing_a_policy_does_not_sign_it_for_everybody(
+        hse_manager, worker, db_session):
+    """The inbox said the whole plant had read it.
+
+    Publishing a document that needs acknowledgement opens one task per person.
+    Closing them was scoped to the document and not to the person, so the first
+    signature closed every outstanding read-and-sign task on it: the policy
+    vanished from everyone's list, and the task inbox reported the plant as
+    having read something it had not seen. The acknowledgement rows — the
+    actual record — stayed correct, so the two disagreed, and the inbox was the
+    one people were reading.
+    """
+    from sqlalchemy import select
+
+    from app.models.mirrors import Task
+
+    hse_user, client = hse_manager
+    other, other_client = worker
+
+    created = await client.post("/api/v1/documents", json={
+        "title": "Working at Heights Policy",
+        "doc_type": "policy",
+        "requires_ack": True,
+    })
+    assert created.status_code in (200, 201), created.text
+    doc_id = created.json()["id"]
+
+    # Publishing refuses a document with nothing attached, which is right —
+    # there would be nothing to read. The upload goes to file-api, which is not
+    # running here, so the join is written straight onto the row.
+    from app.models.document import SafetyDocument
+
+    row = await db_session.get(SafetyDocument, uuid.UUID(doc_id))
+    row.file_id = uuid.uuid4()
+    await db_session.commit()
+
+    published = await client.post(f"/api/v1/documents/{doc_id}/publish", json={})
+    assert published.status_code == 200, published.text
+
+    async def open_tasks() -> list[Task]:
+        await db_session.commit()
+        return list((await db_session.execute(
+            select(Task).where(
+                Task.document_type == "ehs_doc",
+                Task.document_id == uuid.UUID(doc_id),
+                Task.is_completed.is_(False),
+            ))).scalars())
+
+    before = await open_tasks()
+    assert len(before) >= 2, (
+        "this proves nothing unless at least two people were asked to sign — "
+        f"got {len(before)}")
+    assert {t.assigned_user_id for t in before} >= {hse_user.id, other.id}
+
+    signed = await client.post(f"/api/v1/documents/{doc_id}/acknowledge",
+                               json={"signature": "data:image/png;base64,iVBORw0KGgo="})
+    assert signed.status_code in (200, 201), signed.text
+
+    after = await open_tasks()
+    remaining = {t.assigned_user_id for t in after}
+    assert hse_user.id not in remaining, "the signer's own task must close"
+    assert other.id in remaining, (
+        "somebody else's task must stay open — they have not read it")

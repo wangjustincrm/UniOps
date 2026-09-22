@@ -226,9 +226,13 @@ async def acknowledge(
         signature=signature,
     )
     db.add(ack)
+    # Only this person's. One signature is one person having read it, and
+    # closing the rest would tell the plant they had all read something they
+    # have not seen.
     await task_service.close_tasks_for(
         db, doc_type=DOC_DOCUMENT, doc_id=doc.id,
-        task_type=task_service.TASK_READ_SIGN, completed_by=user_id)
+        task_type=task_service.TASK_READ_SIGN,
+        assigned_user_id=user_id, completed_by=user_id)
     await db.flush()
     return ack
 

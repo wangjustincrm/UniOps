@@ -105,6 +105,7 @@ async def close_tasks_for(
     doc_type: str,
     doc_id: uuid.UUID,
     task_type: str | None = None,
+    assigned_user_id: uuid.UUID | None = None,
     completed_by: uuid.UUID | None = None,
     now: datetime | None = None,
 ) -> int:
@@ -113,6 +114,17 @@ async def close_tasks_for(
     Used when the work a task was chasing is done through the application
     rather than by someone ticking the task off — closing an action closes its
     "do this" task, and nobody should have to do both.
+
+    ★ Pass `assigned_user_id` whenever one document carries a task per person.
+    Without it this closes everybody's: the second acceptance round reported
+    that a published policy did not show up as something to do, and the reason
+    was that the first person to sign it closed the read-and-sign task for the
+    entire plant. The acknowledgement rows — the actual record — stayed
+    correct, so the inbox and the compliance report disagreed, and the inbox
+    was the one people were reading.
+
+    `completed_by` is who is stamped on the rows, never a filter. Those are
+    different questions and conflating them is what caused this.
     """
     stmt = select(Task).where(
         Task.document_type == doc_type,
@@ -121,6 +133,8 @@ async def close_tasks_for(
     )
     if task_type:
         stmt = stmt.where(Task.type == task_type)
+    if assigned_user_id:
+        stmt = stmt.where(Task.assigned_user_id == assigned_user_id)
     tasks = list((await db.execute(stmt)).scalars())
     stamp = now or datetime.now(timezone.utc)
     for task in tasks:
