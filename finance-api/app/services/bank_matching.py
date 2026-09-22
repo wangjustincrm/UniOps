@@ -83,6 +83,7 @@ M_CONFIRMATION = "confirmation_no"
 M_DIRECT = "direct"
 M_SUBSET_SUM = "subset_sum"
 M_BOOK_SUBSET = "book_subset"
+M_MANUAL = "manual"          # a person built the group by hand
 
 # Legal-form noise that differs between the bank's payee list and NC's summary
 # text ("Weldready Inc." vs "WeldreadyEFT-$476.94").

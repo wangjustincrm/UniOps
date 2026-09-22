@@ -244,6 +244,33 @@ closing). PDF via `reportlab` (already an epms-api dependency; add to finance-ap
 | 7 | Report PDF + xlsx | 6 |
 | 8 | Frontend rework: statement view ‖ book view, grouped match rows, advice drill-down, session header, report download | 5,6,7 |
 
+## 6b. What was built (2026-09-22)
+
+All of §6 except the production run itself. Measured end to end on the real July
+documents — the AI-read statement, the 19 payment files, and NC's own 260 ledger
+lines for RBC CAD:
+
+| | |
+|---|---|
+| statement | 37 lines, verified: 30 debits `1,269,496.36` / 7 credits `1,414,741.74` |
+| payment files | 19/19 tie, 237 vendor lines, `1,031,087.99` |
+| ladder | **37/37 statement lines and 260/260 ledger lines cleared**, 237/237 advice lines linked |
+| findings | 1 — correctly naming the statement line whose payment file was not supplied |
+
+Two things the evidence changed from the original design:
+
+- **The statement's signs are solved from the printed balances, not taken from
+  the model.** A whole-document read returned every date, description, magnitude
+  and running balance correctly and inverted the signs wholesale. Direction is a
+  column-position fact with no textual signal, so it is derived: inside each
+  balance segment the signs must sum to that segment's delta. No solution means a
+  magnitude is wrong (said so); several means the statement genuinely does not
+  say (said so).
+- **Reading is page by page.** A whole-document read dropped exactly one row — the
+  28,918.08 batch at the bottom of page 2, where a date group breaks across the
+  page boundary. Splitting the PDF removes the seam and the max_tokens cliff with
+  it.
+
 ## 7. Open risks
 
 ### 7.1 The `full` re-sync (decided)
@@ -273,7 +300,17 @@ needs a weaker gate, and that has to be an explicit, visible downgrade rather th
 The RBC statement's own `564,623.34` is the anchor, and the QB report agrees. The **book** opening for that account
 is only computable once §6.0 lands — it does not exist today.
 
-### 7.4 Shared AI quota
+### 7.4 The assistant can describe this module but not yet query it
+
+`modules.yaml` now lists reconciling a bank statement among what Finance does, so
+the guide layer answers "how does this work". An **ontology entity** over
+`bank_reconciliations` is deliberately NOT added yet: `test_ontology.py` checks
+entities against the real database and refuses one over an empty table — "an
+entity over a table with no rows answers every question with 'none'". Add it once
+a period has actually been reconciled in production, and the same test will then
+verify it.
+
+### 7.5 Shared AI quota
 
 The API key is shared with Claude Code ([project_uniops_ocr_shared_key_quota]). A month-end burst of statement parses
 competes with EPMS invoice OCR on the same key; §5.4's deterministic-first rule keeps the 19 payment files off the API
@@ -297,3 +334,63 @@ statement, the 19 payment files, and running the ladder:
 
 Every one of these numbers was measured from the supplied documents while writing this doc, so a failing run means the
 implementation is wrong — not the baseline.
+
+
+## 9. Deploying this
+
+Four things this branch needs that a normal release does not.
+
+### 9.1 Two migrations, and finance-api already runs first
+
+`0036_nc_bank_acct_dim` → `0037_bank_recon_v2`, on top of `0035_ap_bill_dismiss`.
+Single head, verified. Both revision ids are well under the 32-character limit
+that has stopped `migrate-prod.sh` mid-run before. Everything they touch is
+finance-api-owned (`journal_voucher_lines`, `bank_accounts`, and the new tables),
+and finance-api is already first in `migrate-prod.sh`, so no ordering change.
+
+### 9.2 A full NC sync MUST follow — the migration only creates the structure
+
+0036 creates an empty `nc_bank_accounts` and a NULL `journal_voucher_lines.
+bank_account_id`. Until a `full` nc_sync runs, **every bank-scoped read returns
+nothing** and the workbench shows an empty ledger side. The sequence is:
+
+1. merge and deploy (0036 creates the table and the column)
+2. run a `full` NC sync
+3. link each bank account to its NC code in Bank Settings (RBC CAD is `1033760`)
+
+The sync is one transaction — delete, reload and status backfill all commit
+together — so readers see the previous snapshot throughout and no page goes blank
+mid-run. It is still a ~40k-voucher, ~200k-line delete-and-reinsert: run it in a
+window and `VACUUM` after.
+
+★ It also re-derives cost centres and income/expense items for the whole book, so
+any `budget_actual_cc_map` drift since the last full run surfaces in the same
+pass and will be blamed on this release unless a **before/after Budget Actual
+comparison** is taken first.
+
+### 9.3 New dependencies — finance-api's image must be built, never retagged
+
+`pypdf`, `cryptography`, `reportlab`, `anthropic` are new in
+`finance-api/requirements.txt`. `cryptography` is not optional: RBC ships
+statements AES-encrypted with an empty user password, and without it pypdf raises
+`DependencyError` rather than anything that reads as "encrypted".
+
+### 9.4 Two new environment variables on finance-api
+
+Already wired into `docker-compose.prod.yml`:
+
+- `FILE_SERVER_URL` — finance-api had no file storage at all before this. Without
+  it the statements, payment files and signed reports are not retained; the
+  figures still reconcile and the API says the document was not kept.
+- `BANK_ANTHROPIC_API_KEY` — falls back to `ANTHROPIC_API_KEY`, but exists so it
+  need not. That shared key also drives EPMS invoice OCR, and when it hit its
+  account limit every upload across the product answered "AI parsing failed". A
+  month-end burst of statement reads is exactly what does that.
+
+### 9.5 After any later full NC sync
+
+`POST /finance/v1/bank-recon/heal`. A full sync regenerates every
+`journal_voucher_lines.id`; the SET NULL foreign keys keep the match rows and the
+healer re-points them from NC's natural key. Finalized periods are skipped on
+purpose. Safe to run at any time — it reports `{orphans, healed, unresolved}` and
+does nothing when there is nothing to do.

@@ -28,6 +28,10 @@ class AccountIn(BaseModel):
     account_masked: str | None = None
     currency: str = "CAD"
     ledger_account_code: str | None = None
+    # Which NC bank account this IS (BD_BANKACCSUB.CODE, e.g. '1033760'). The
+    # reconciliation reads its ledger side through this; unset means the account
+    # has no book side at all. See services/bank_book.py.
+    nc_bank_account_code: str | None = None
     is_active: bool = True
 
 

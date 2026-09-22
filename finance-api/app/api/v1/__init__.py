@@ -8,6 +8,7 @@ from app.api.v1.posting import router as posting_router
 from app.api.v1.periods import router as periods_router
 from app.api.v1.coa import router as coa_router
 from app.api.v1.bank import router as bank_router
+from app.api.v1.bank_recon import router as bank_recon_router
 from app.api.v1.taxreturn import router as taxreturn_router
 from app.api.v1.gl import router as gl_router
 from app.api.v1.journal_voucher import router as journal_voucher_router
@@ -36,6 +37,7 @@ api_router.include_router(posting_router)
 api_router.include_router(periods_router)
 api_router.include_router(coa_router)
 api_router.include_router(bank_router)
+api_router.include_router(bank_recon_router)
 api_router.include_router(taxreturn_router)
 api_router.include_router(gl_router)
 api_router.include_router(journal_voucher_router)

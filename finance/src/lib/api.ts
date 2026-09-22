@@ -271,6 +271,28 @@ export async function financeUploadFields<T>(
   return res.json()
 }
 
+/** POST several Files as multipart/form-data to Finance API (repeated `files`).
+ *  A month of payment files is ~20 documents; uploading them one at a time is
+ *  how they end up not being uploaded. */
+export async function financeUploadMany<T>(path: string, files: File[]): Promise<T> {
+  const form = new FormData()
+  for (const f of files) form.append('files', f)
+  const res = await fetch(`${FINANCE_API}/finance/v1${path}`, {
+    method: 'POST',
+    headers: authHeaders(),  // no Content-Type — browser sets multipart boundary
+    body: form,
+  })
+  if (res.status === 401 && getToken()) {
+    globalSignOut()
+    throw new Error('Session expired. Please log in again.')
+  }
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(extractDetail(b.detail, res.status))
+  }
+  return res.json()
+}
+
 /** GET a CSV from Finance API and trigger a browser download. */
 export async function financeDownload(path: string, filename: string): Promise<void> {
   const res = await fetch(`${FINANCE_API}/finance/v1${path}`, { headers: authHeaders() })

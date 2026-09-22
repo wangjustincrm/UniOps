@@ -26,6 +26,7 @@ interface Account {
   id: string; name: string; bank_name: string; kind: string
   account_masked: string | null; currency: string
   ledger_account_code: string | null; is_active: boolean
+  nc_bank_account_code: string | null
 }
 
 const KIND_LABEL: Record<string, string> = { bank: 'Bank Account', credit_card: 'Credit Card' }
@@ -104,17 +105,18 @@ export default function BankSettingsPage() {
                 <th className="px-3 py-2 w-24">Account</th>
                 <th className="px-3 py-2 w-16">Ccy</th>
                 <th className="px-3 py-2 w-28">GL Account</th>
+                <th className="px-3 py-2 w-44">NC bank account</th>
                 <th className="px-3 py-2 w-20">Status</th>
                 <th className="px-3 py-2 w-16" />
               </tr>
             </thead>
             <tbody>
               {isFetching && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
                   <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
               )}
               {!isFetching && rows.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">No accounts.</td></tr>
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">No accounts.</td></tr>
               )}
               {rows.map((a, i) => (
                 <tr key={a.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40', !a.is_active && 'opacity-50')}>
@@ -124,6 +126,11 @@ export default function BankSettingsPage() {
                   <td className="px-3 py-2 font-mono text-xs text-neutral-500">{a.account_masked ? `…${a.account_masked}` : '—'}</td>
                   <td className="px-3 py-2 text-xs text-neutral-500">{a.currency}</td>
                   <td className="px-3 py-2 font-mono text-xs">{a.ledger_account_code || <span className="text-amber-600">unmapped</span>}</td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {a.nc_bank_account_code
+                      ? a.nc_bank_account_code
+                      : <span className="text-amber-600" title="Without this the account has no ledger side to reconcile against">not linked</span>}
+                  </td>
                   <td className="px-3 py-2">
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium',
                       a.is_active ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500')}>
@@ -157,11 +164,26 @@ export default function BankSettingsPage() {
   )
 }
 
+interface NcAccount {
+  code: string; name: string | null; acc_num: string | null
+  bank_name: string | null; currency: string | null; label: string
+}
+
 function AccountModal({ initial, onClose, onSaved, onError }: {
   initial: Partial<Account>; onClose: () => void; onSaved: () => void; onError: (m: string) => void
 }) {
   const [f, setF] = useState<Partial<Account>>(initial)
   const [busy, setBusy] = useState(false)
+  // What NC's account 100201 actually carries. Empty until a full NC sync has run
+  // with the bank-account dimension in place, and the hint says so rather than
+  // leaving an unexplained empty picker.
+  const { data: nc } = useQuery({
+    queryKey: ['nc-bank-accounts'],
+    queryFn: () => financeApi.get<{ accounts: NcAccount[]; hint: string | null }>(
+      '/bank-recon/nc-accounts'),
+  })
+  const ncAccounts = nc?.accounts ?? []
+  const ncHint = nc?.hint ?? null
   const isNew = !initial.id
   const isCard = f.kind === 'credit_card'
   const set = (patch: Partial<Account>) => setF((p) => ({ ...p, ...patch }))
@@ -174,6 +196,7 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
         name: f.name, bank_name: f.bank_name, kind: f.kind || 'bank',
         account_masked: f.account_masked || null, currency: f.currency || 'CAD',
         ledger_account_code: f.ledger_account_code || null, is_active: f.is_active ?? true,
+        nc_bank_account_code: f.nc_bank_account_code || null,
       }
       if (isNew) await financeApi.post('/bank/accounts', body)
       else await financeApi.put(`/bank/accounts/${f.id}`, body)
@@ -225,6 +248,22 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
                      placeholder={isCard ? '2050 (liability)' : '1010 (cash)'} className={cn(inputCls, 'font-mono')} />
             </label>
           </div>
+          {!isCard && (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600">NC bank account</span>
+              <select value={f.nc_bank_account_code ?? ''}
+                      onChange={(e) => set({ nc_bank_account_code: e.target.value || null })}
+                      className={inputCls}>
+                <option value="">— not linked —</option>
+                {ncAccounts.map((n) => (
+                  <option key={n.code} value={n.code}>{n.label} · {n.currency}</option>
+                ))}
+              </select>
+              <span className="text-xs text-neutral-400">
+                {ncHint ?? 'Which account NC\u2019s 100201 calls this one. Bank Reconciliation reads the ledger side through it \u2014 without it there is nothing to reconcile against.'}
+              </span>
+            </label>
+          )}
           <p className="text-xs text-neutral-400">
             {isCard
               ? 'Card payments credit this liability (Credit Card Payable). Pay the card statement later from a bank account.'
