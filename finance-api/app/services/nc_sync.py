@@ -19,6 +19,14 @@ AUX_DEPT = "0001Z0100000000005CS"           # 部门 -> ORG_DEPT
 AUX_COSTCENTER = "1003Z31000000000SP6J"     # 成本中心 -> RESA_COSTCENTER
 AUX_IOITEM = "0001Z0100000000005CZ"         # 收支项目 -> BD_INOUTBUSICLASS
 AUX_BANKACCOUNT = "0001Z010000000001N98"    # 银行账户 -> BD_BANKACCSUB
+# NC's combined party archive: 客商 is the UNION of customers and suppliers, not a
+# master of its own (user, 2026-09-22) — a supplier can generate its customer twin
+# and vice versa, so one 客商 pk can resolve in BD_SUPPLIER, in BD_CUSTOMER, or in
+# both (17 of this book's 144, 5 of them under DIFFERENT codes per side).
+AUX_PARTNER = "0001Z0100000000005CV"        # 客商 -> BD_SUPPLIER ∪ BD_CUSTOMER
+AUX_ITEM = "0001Z0100000000005CX"           # 物料基本信息 -> BD_MATERIAL
+AUX_PROJECT = "0001Z0100000000005D1"        # 项目 -> BD_PROJECT
+AUX_EMPLOYEE = "0001Z0100000000005CT"       # 人员档案 -> BD_PSNDOC
 
 # BD_ACCASSITEM.CODE of 银行账户. Resolved by CODE, never by name — see
 # resolve_bank_account_type_pk.
@@ -75,6 +83,92 @@ def make_category_of(parent_map: dict):
     return category_of
 
 
+# ── 客商 (combined party) direction ────────────────────────────────────────────
+# Which side of the ledger names a CUSTOMER vs a SUPPLIER. Deliberately short and
+# curated: only the receivable/payable and revenue accounts carry an unambiguous
+# direction. Expense accounts are NOT listed on purpose — a 销售费用 line against
+# Walmart can be trade spend payable TO the customer, and guessing there is the
+# exact failure this whole change exists to remove.
+_CUSTOMER_SIDE_ACCOUNTS = frozenset({"1122", "2203", "6001", "6051"})
+_SUPPLIER_SIDE_ACCOUNTS = frozenset({"2202", "2201", "1123"})
+
+
+def make_partner_side_of(parent_map: dict):
+    """account_code -> 'customer' | 'supplier' | None, by walking
+    chart_of_accounts.parent_code. NEVER infers from a code prefix, for the same
+    reason make_category_of doesn't: a 660303 could sit under 6603 OR 6601."""
+    def side_of(code):
+        seen: set = set()
+        cur = code
+        while cur and cur not in seen:
+            if cur in _CUSTOMER_SIDE_ACCOUNTS:
+                return "customer"
+            if cur in _SUPPLIER_SIDE_ACCOUNTS:
+                return "supplier"
+            seen.add(cur)
+            cur = parent_map.get(cur)
+        return None
+    return side_of
+
+
+def resolve_partner(vpk, parties, side, uni_sup, uni_cust):
+    """A 客商 value pk -> (partner_id, partner_name, outcome).
+
+    NC has no standalone 客商 master: it is the union of BD_SUPPLIER and
+    BD_CUSTOMER (user, 2026-09-22), and because either can generate its twin, one
+    pk can resolve on both sides — under DIFFERENT codes (5 of this book's 17
+    two-sided parties). So this deliberately does NOT reuse the `sup or cust`
+    precedence the separate 供应商档案/客户档案 auxiliaries use: those two carry
+    their direction in the auxiliary TYPE, while 客商 does not, and supplier-first
+    would pick the wrong direction for the bulk of the data (2,398 receivable +
+    ~3,120 revenue lines of 9,625).
+
+    Rules, in order:
+      * an org-derived row is never a trading party — NC materialises the company
+        itself on both sides (BD_CUSTOMER 01010104 / BD_SUPPLIER 9900012, the only
+        PK_FINANCEORG-bearing row in each table). Those sides are dropped.
+      * resolves on exactly one side -> that side, disabled or not (the history is
+        real even when the master has since been retired).
+      * resolves on both -> the account's side decides.
+      * both, and the account carries no direction -> the one that is still
+        enabled, if exactly one is.
+      * still tied -> NO id. The NC code is kept as text and the line is counted
+        as ambiguous. Defaulting to supplier here would reinstate the bug.
+    """
+    rec = (parties or {}).get(vpk)
+    if not rec:
+        return None, (vpk or None), "unknown"
+    sup, cust = rec.get("supplier"), rec.get("customer")
+    if sup and sup.get("is_org"):
+        sup = None
+    if cust and cust.get("is_org"):
+        cust = None
+    if not sup and not cust:
+        return None, (rec.get("any_name") or vpk), "org"
+    pick = None
+    if sup and not cust:
+        pick = ("supplier", sup)
+    elif cust and not sup:
+        pick = ("customer", cust)
+    elif side == "customer":
+        pick = ("customer", cust)
+    elif side == "supplier":
+        pick = ("supplier", sup)
+    else:
+        live = [(k, v) for k, v in (("supplier", sup), ("customer", cust))
+                if v.get("enabled")]
+        if len(live) == 1:
+            pick = live[0]
+    if pick is None:
+        return None, (sup or cust).get("name") or vpk, "ambiguous"
+    kind, row = pick
+    idx = uni_sup if kind == "supplier" else uni_cust
+    hit = idx.get(row["code"])
+    if hit:
+        return hit[0], hit[1], kind
+    return None, row.get("name") or row["code"], kind + "_unmastered"
+
+
 class NcSyncError(ValueError):
     """An NC value we refuse to guess about. Aborts the run."""
 
@@ -101,50 +195,108 @@ class NcExtract:
     # nc_bank_accounts before the lines are written, so jv lines have an id to
     # point at. Default () keeps old fixtures constructible.
     bank_accounts: tuple = ()
+    # NC 客商 value pk -> {"supplier": {...}, "customer": {...}, "any_name": str}.
+    # Each side carries code/name/enabled/is_org. Built from BD_SUPPLIER and
+    # BD_CUSTOMER because 客商 has no master of its own. Default None keeps old
+    # fixtures constructible.
+    parties: dict | None = None
 
 
-_AUX_NAME_SLOTS = {
-    "department": "部门", "cost_center": "成本中心", "income_expense_item": "收支项目",
-    "supplier": "供应商", "customer": "客户",
-}
+# ── auxiliary (辅助核算) type resolution ───────────────────────────────────────
+# Keyed on BD_ACCASSITEM.CODE, never on the Chinese name. nc_coa_sync already
+# learned what substring matching does here (its AUX_ITEM_MAP comment: the old
+# NAME_MAP put both 项目类型 and 政府拨款项目 onto `project`), and the voucher
+# side had the same bug for a different type: resolve_aux_type_pks matched
+# 「供应商」/「客户」, and NC's combined party archive is called 客商 — which
+# contains neither. That silently dropped the party on 9,625 lines of this book.
+#
+# AUX_ITEM_MAP is THE catalog (code -> our dim_code); inverting it here keeps one
+# source of truth across the COA sync and the voucher sync. Measured 2026-09-22:
+# every code it uses resolves to exactly one BD_ACCASSITEM row on the live book.
+# Imported lazily inside _dim_to_code(): nc_coa_sync imports nc_configured from
+# THIS module at import time, so a module-level import here is a cycle.
+
+
+def _dim_to_code() -> dict:
+    from app.services.nc_coa_sync import AUX_ITEM_MAP
+    return {dim: code for code, dim in AUX_ITEM_MAP.items()}
+
+# The slots decode_aux_row fills. Each is (our dim_code) -> the GL_FREEVALUE
+# prefix we look for. Slots with no value-table lookup still land in
+# jv_line_dimensions as a raw code, which is what makes them queryable at all.
+AUX_SLOTS = (
+    "department", "cost_center", "income_expense_item",
+    "supplier", "customer", "partner", "bank_account",
+    "item", "item_category", "project", "employee",
+)
+
+# Frozen pks, validated against the catalog every run so a catalog change is a
+# loud failure rather than a silently empty dimension (same contract as
+# resolve_bank_account_type_pk).
 _AUX_CONSTANTS = {"department": AUX_DEPT, "cost_center": AUX_COSTCENTER,
-                  "income_expense_item": AUX_IOITEM}
+                  "income_expense_item": AUX_IOITEM, "bank_account": AUX_BANKACCOUNT,
+                  "partner": AUX_PARTNER, "item": AUX_ITEM, "project": AUX_PROJECT}
+
+# Slots whose unknown value pks are kept raw rather than dropped. A value whose
+# master row is gone still scopes/labels the line; dropping it would silently
+# merge it into "unassigned" (3 of 129 live bank values already do this).
+_KEEP_RAW_VPK = frozenset({"bank_account", "partner", "item", "project", "employee"})
 
 
-def resolve_aux_type_pks(items) -> dict:
-    """[(pk_accassitem, name)] -> {slot: set of pks}. Collects EVERY item whose
-    name contains the slot needle but not 分类 (classification types never
-    appear as GL_FREEVALUE prefixes; live NC carries e.g. both 客户基本分类 and
-    客户档案 — only the latter shows up in vouchers). Set-based because
-    multi-org NC catalogs can hold several 档案 rows per slot.
-    Validates the three frozen constants are AMONG their resolved sets."""
+def resolve_aux_types_by_code(items) -> dict:
+    """[(pk_accassitem, code, name)] -> {slot: pk}, resolved BY CODE.
+
+    Refuses to guess: a code that matches several catalog rows raises rather
+    than picking one, and every frozen constant must be the pk its code
+    resolved to. A slot whose code is absent from the catalog is simply missing
+    from the result — that dimension then decodes to empty instead of aborting
+    the run, because NC catalogs legitimately differ between orgs.
+    """
+    dim_to_code = _dim_to_code()
+    by_code: dict = {}
+    for pk, code, _name in items:
+        by_code.setdefault((code or "").strip(), []).append(pk)
     out: dict = {}
-    for slot, needle in _AUX_NAME_SLOTS.items():
-        out[slot] = {pk for pk, name in items
-                     if needle in (name or "") and "分类" not in (name or "")}
-    for slot, const in _AUX_CONSTANTS.items():
-        if out.get(slot) and const not in out[slot]:
+    for slot in AUX_SLOTS:
+        code = dim_to_code.get(slot)
+        if not code:
+            continue
+        hits = by_code.get(code) or []
+        if not hits:
+            continue
+        if len(set(hits)) > 1:
             raise RuntimeError(
-                f"aux type pk mismatch for {slot}: constant {const!r} not among "
-                f"resolved {sorted(out[slot])!r} — typevalue-prefix assumption broke")
+                f"BD_ACCASSITEM code {code!r} ({slot}) matches {len(set(hits))} rows "
+                f"{sorted(set(hits))!r} — refusing to guess which auxiliary it is")
+        out[slot] = hits[0]
+    for slot, const in _AUX_CONSTANTS.items():
+        if slot in out and out[slot] != const:
+            raise RuntimeError(
+                f"aux type pk mismatch for {slot}: constant {const!r} != catalog "
+                f"{out[slot]!r} — typevalue-prefix assumption broke")
     return out
 
 
-def decode_aux_row(typevalues, slots) -> tuple:
-    """One GL_FREEVALUE row's typevalue1..9 -> (dept, cc, io, sup, cust, bank) codes.
+def decode_aux_row(typevalues, slots) -> dict:
+    """One GL_FREEVALUE row's typevalue1..9 -> {slot: code}, for every slot present.
 
     `slots` carries the resolved type pks and their code lookups:
-      {"dept": (pk, {vpk: code}), "cc": ..., "io": ...,
-       "sup": (pkset, {...}), "cust": (pkset, {...}), "bank": (pk, {vpk: code})}
+      {"department": (pk, {vpk: code}), "partner": (pk, {vpk: code}), ...}
+    A slot's `want` may be a single pk or a set (a multi-org catalog can hold
+    several 档案 rows for one dimension).
 
-    Each typevalueN is <20-char type pk><20-char value pk>. Two NC quirks decide
-    the whole function: values shorter than 40 chars are absent, and '~' is NC's
-    blank sentinel — a '~' value pk must come back empty, not as the literal '~'.
-    Unknown bank value pks fall back to the raw pk rather than dropping the line's
-    bank: 3 of 129 live values point at BD_BANKACCSUB rows that no longer exist,
-    and dropping them would silently merge those banks into "unassigned".
+    Returns a DICT, not a positional tuple: this grew from 6 slots to 11 and a
+    tuple that long is a misalignment waiting to happen. A dict has no ordering
+    to get wrong, and callers name what they read.
+
+    Two NC quirks decide the body: values shorter than 40 chars are absent, and
+    '~' is NC's blank sentinel — a '~' value pk must come back empty, not as the
+    literal '~'. For slots in _KEEP_RAW_VPK an unknown value pk falls back to the
+    raw pk rather than dropping the dimension: 3 of 129 live bank values point at
+    BD_BANKACCSUB rows that no longer exist, and dropping them would silently
+    merge those banks into "unassigned". Slots outside that set decode to "".
     """
-    out = {"dept": "", "cc": "", "io": "", "sup": "", "cust": "", "bank": ""}
+    out = {slot: "" for slot in slots}
     for tv in typevalues:
         if not tv or len(tv) < 40:
             continue
@@ -156,10 +308,9 @@ def decode_aux_row(typevalues, slots) -> tuple:
             clean_vpk = _strip_char(vpk)
             if clean_vpk:
                 out[slot] = codes.get(clean_vpk, codes.get(vpk, "")) or (
-                    clean_vpk if slot == "bank" else "")
+                    clean_vpk if slot in _KEEP_RAW_VPK else "")
             break
-    return (out["dept"], out["cc"], out["io"], out["sup"], out["cust"], out["bank"])
-
+    return out
 
 def resolve_bank_account_type_pk(items) -> str:
     """[(pk_accassitem, code, name)] -> the 银行账户 type pk, resolved BY CODE.
@@ -202,6 +353,28 @@ def _tallied(tallydate) -> bool:
     values. Only real Oracle shows it. Strip before deciding.
     """
     return bool(tallydate) and tallydate.strip() not in ("", "~")
+
+
+def _voucher_state(discardflag, tempsaveflag, errmessage) -> str:
+    """NC's 凭证状态: 正常 / 错误 / 作废 / 暂存 -> our stored code.
+
+    These are three independent CHAR flags, NOT the VOUCHERKIND enum — that one
+    separates 期初/年结/成本结转 from ordinary vouchers and is stored alongside.
+    Measured on the live book 2026-09-22: 41,334 normal, 1 discarded, 0 error,
+    0 tempsave. The filter is near-useless on today's data and is built anyway,
+    because the discarded one is currently invisible: the sync drops it at the
+    source, so nothing downstream can even report that it exists.
+
+    Order matters: a discarded voucher that also carries an error message is
+    discarded first — it is out of the ledger either way.
+    """
+    if (discardflag or "").strip() == "Y":
+        return "discarded"
+    if (tempsaveflag or "").strip() == "Y":
+        return "tempsave"
+    if _strip_char(errmessage):
+        return "error"
+    return "normal"
 
 
 def _max_creationtime(values) -> str | None:
@@ -254,28 +427,38 @@ def _orig_side(dr: Decimal, cr: Decimal) -> tuple[Decimal, Decimal]:
 
 
 def _resolve_dims(assid, aux, cc_map_rows, category, uni_cc, uni_dept, uni_ba, uni_sup,
-                  uni_cust, uni_bank=None):
-    """-> (cc_id, dept_id, io_code, ba_id, partner_id, partner_name, nc_cc_code,
-           had_cc_hint, bank_id, bank_code).
+                  uni_cust, uni_bank=None, parties=None, side=None):
+    """-> dict of the resolved dimensions for one line.
 
     Cost center: for the 5 predreal categories (`category` is the category code)
     resolve ACCOUNT-AWARE via budget_actual_cc_map — an unmapped combo (e.g.
     engineering dept 0106 in 6602) returns None and surfaces as an exception. For
     every other account (`category is None`) keep the account-blind CC_BY_CODE/
-    CC_BY_DEPT fallback. Supplier wins over customer when both appear; a missing
-    master row -> partner_id None with the NC code kept as partner_name text.
+    CC_BY_DEPT fallback.
+
+    Party: the separate 供应商档案/客户档案 auxiliaries keep their long-standing
+    supplier-first precedence — their auxiliary TYPE already states the direction,
+    so there is nothing to disambiguate. The combined 客商 auxiliary is resolved
+    by resolve_partner() instead, which needs the account's side; it only fills in
+    when the two archives did not already name a party.
 
     Bank account: the code is kept even when nc_bank_accounts has no row for it
     (some GL_FREEVALUE values point at pks BD_BANKACCSUB no longer holds — 3 of
     129 on the live book). A code with no master still scopes a reconciliation;
     a dropped one would silently merge that bank into "unassigned"."""
     from app.services.cc_map_import import resolve_uniops_cc
-    d, c, io, sup, cust, bank = aux.get(assid, ("", "", "", "", "", ""))
+    a = aux.get(assid) or {}
+    d = a.get("department", "")
+    c = a.get("cost_center", "")
+    io = a.get("income_expense_item", "")
+    sup, cust = a.get("supplier", ""), a.get("customer", "")
+    bank = a.get("bank_account", "")
     if category is not None:
         uni_code = resolve_uniops_cc(cc_map_rows, category, d, c)
     else:
         uni_code = CC_BY_CODE.get(c) if c else CC_BY_DEPT.get(d)
     partner_id = partner_name = None
+    partner_outcome = None
     code = sup or cust
     if code:
         hit = (uni_sup.get(sup) if sup else None) or (uni_cust.get(cust) if cust else None)
@@ -283,27 +466,45 @@ def _resolve_dims(assid, aux, cc_map_rows, category, uni_cc, uni_dept, uni_ba, u
             partner_id, partner_name = hit
         else:
             partner_name = code
-    return (uni_cc.get(uni_code) if uni_code else None,
-            uni_dept.get(d) if d else None,
-            io or None,
-            uni_ba.get(io) if io else None,
-            partner_id, partner_name,
-            c or None,
-            bool(c or d),
-            (uni_bank or {}).get(bank) if bank else None,
-            bank or None)
-
+    elif a.get("partner"):
+        partner_id, partner_name, partner_outcome = resolve_partner(
+            a["partner"], parties, side, uni_sup, uni_cust)
+    return {
+        "cost_center_id": uni_cc.get(uni_code) if uni_code else None,
+        "department_id": uni_dept.get(d) if d else None,
+        "io_code": io or None,
+        "budget_account_id": uni_ba.get(io) if io else None,
+        "partner_id": partner_id,
+        "partner_name": partner_name,
+        "partner_outcome": partner_outcome,
+        "nc_cc_code": c or None,
+        "had_cc_hint": bool(c or d),
+        "bank_account_id": (uni_bank or {}).get(bank) if bank else None,
+        "bank_code": bank or None,
+        "aux": a,
+    }
 
 def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
               uni_sup: dict, uni_cust: dict, skip_pks: set,
               cc_map_rows: list | None = None, category_of=None,
-              uni_bank: dict | None = None) -> tuple[list, list, list, int]:
-    """NC rows -> (voucher dicts, line tuples, dim tuples, unmapped_cc count).
+              uni_bank: dict | None = None, side_of=None) -> tuple[list, list, list, int, dict]:
+    """NC rows -> (voucher dicts, line tuples, dim tuples, unmapped_cc, counters).
+
     Skips vouchers whose pk is in skip_pks (incremental pk-dedup). `category_of`
     (from make_category_of) maps a line's account to its predreal category; when
-    it (or cc_map_rows) is absent, cost centers fall back to CC_BY_CODE/CC_BY_DEPT."""
+    it (or cc_map_rows) is absent, cost centers fall back to CC_BY_CODE/CC_BY_DEPT.
+    `side_of` (from make_partner_side_of) gives the account's customer/supplier
+    direction, which is what disambiguates the combined 客商 auxiliary.
+
+    Every auxiliary the catalog knows lands in `dims` as one jv_line_dimensions
+    row, not just the two that had columns of their own. That is what makes the
+    Aux. Acctg column complete and the auxiliary filters queryable at all — NC
+    puts 物料基本信息 on 113,866 of this book's 323,740 lines, and every one of
+    them used to arrive empty."""
     pk2id, vouchers = {}, []
-    for pk, year, period, num, expl, pdate, _ctime, tallydate, pk_system in extract.vouchers:
+    for (pk, year, period, num, expl, pdate, _ctime, tallydate, pk_system,
+         vkind, discard, tempsave, errmsg, attach,
+         prepared, checked, manager, vtype) in extract.vouchers:
         if pk in skip_pks:
             continue
         jid = uuid.uuid4()
@@ -319,15 +520,30 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             # NC's TALLYDATE empty = not yet posted to NC's ledger. Mirror that:
             # the GL and Account Balance both read status == POSTED only, so an
             # un-tallied voucher must not colour reports (spec §14.4).
-            "status": "posted" if _tallied(tallydate) else "draft",
+            # A discarded/tempsave/error voucher is not a ledger entry, so it
+            # never reaches `posted` even if NC had tallied it before the flag
+            # was set — the GL and Account Balance read status == POSTED only.
+            "status": ("posted" if _tallied(tallydate)
+                       and _voucher_state(discard, tempsave, errmsg) == "normal"
+                       else "draft"),
             # NC PK_SYSTEM is CHAR (space-padded); an empty one comes back as the
             # same '~' blank-sentinel _tallied() strips off TALLYDATE. Store the
             # stripped raw code, or None for blank/sentinel.
             "source_subsystem": _strip_char(pk_system),
+            "nc_num": num_i,
+            "nc_voucher_kind": int(vkind) if vkind is not None else None,
+            "nc_voucher_state": _voucher_state(discard, tempsave, errmsg),
+            "nc_voucher_type_name": _strip_char(vtype),
+            "nc_prepared_name": _strip_char(prepared),
+            "nc_checked_name": _strip_char(checked),
+            "nc_manager_name": _strip_char(manager),
+            "nc_attachment_count": int(attach) if attach is not None else 0,
         })
 
     lines, dims, unmapped = [], [], 0
-    for pk, idx, acct, dr, cr, ldr, lcr, curr, rate, expl, assid in extract.details:
+    counters: dict = {}
+    for (pk, idx, acct, dr, cr, ldr, lcr, curr, rate, expl, assid,
+         dqty, cqty, price, unitname, oppsubj) in extract.details:
         jid = pk2id.get(pk)
         if jid is None:
             continue
@@ -335,27 +551,41 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
         ldr_, lcr_ = _orig_side(_d(ldr), _d(lcr))
         acct_s = (acct or "").strip() or None
         category = category_of(acct_s) if category_of else None
-        (cc_id, dept_id, io_code, ba_id, partner_id, partner_name, nc_cc_code, had_hint,
-         bank_id, bank_code) = _resolve_dims(
+        side = side_of(acct_s) if side_of else None
+        r = _resolve_dims(
             assid, extract.aux, cc_map_rows or [], category,
-            uni_cc, uni_dept, uni_ba, uni_sup, uni_cust, uni_bank)
-        if had_hint and cc_id is None:
+            uni_cc, uni_dept, uni_ba, uni_sup, uni_cust, uni_bank,
+            parties=extract.parties, side=side)
+        if r["had_cc_hint"] and r["cost_center_id"] is None:
             unmapped += 1
+        if r["partner_outcome"]:
+            counters[r["partner_outcome"]] = counters.get(r["partner_outcome"], 0) + 1
         ccy_code = extract.ccy.get(curr)
         if ccy_code is None:
             raise NcSyncError(f"voucher line {pk}/{idx}: currency pk {curr!r} not in "
                               f"BD_CURRTYPE — refusing to default it to CAD")
         lid = uuid.uuid4()
+        # NC keeps the quantity on whichever side the amount is on; one signed
+        # quantity is what the detail view and the unit price both need.
+        qty = _d(dqty) - _d(cqty)
         lines.append((
             lid, jid, int(idx or 0), acct_s,
             (expl or "")[:255], odr, ocr, ldr_, lcr_,
             ccy_code, _d(rate) if rate else Decimal("1"),
-            cc_id, dept_id, ba_id, partner_id, partner_name, nc_cc_code, bank_id))
-        if io_code:
-            dims.append((uuid.uuid4(), lid, "income_expense_item", ba_id, io_code))
-        if bank_code:
-            dims.append((uuid.uuid4(), lid, "bank_account", bank_id, bank_code))
-    return vouchers, lines, dims, unmapped
+            r["cost_center_id"], r["department_id"], r["budget_account_id"],
+            r["partner_id"], r["partner_name"], r["nc_cc_code"], r["bank_account_id"],
+            qty or None, _strip_char(unitname), _d(price) or None,
+            (_strip_char(oppsubj) or "")[:200] or None))
+        # Both of these keep their dedicated column too; the dimension rows are
+        # what the auxiliary filter and the Aux. Acctg column read.
+        for slot, code in (r["aux"] or {}).items():
+            if not code:
+                continue
+            value_id = {"income_expense_item": r["budget_account_id"],
+                        "bank_account": r["bank_account_id"],
+                        "partner": r["partner_id"]}.get(slot)
+            dims.append((uuid.uuid4(), lid, slot, value_id, code[:255]))
+    return vouchers, lines, dims, unmapped, counters
 
 
 def fetch_from_nc(watermark: str | None) -> NcExtract:
@@ -373,8 +603,7 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
 
         cur.execute("select pk_accassitem, code, name from NCSC.BD_ACCASSITEM")
         assitems = list(cur.fetchall())
-        type_pks = resolve_aux_type_pks([(pk, name) for pk, _code, name in assitems])
-        aux_sup_pks, aux_cust_pks = type_pks.get("supplier") or set(), type_pks.get("customer") or set()
+        type_pks = resolve_aux_types_by_code(assitems)
         aux_bank_pk = resolve_bank_account_type_pk(assitems)
 
         # BD_BANKACCSUB.PK_BANKACCSUB is CHAR, so Oracle blank-pads it; the
@@ -394,10 +623,35 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
                      for bpk, code, accnum, name, accname, pk_ccy, bank in cur]
         bank_codes = {r[0]: r[1] for r in bank_rows if r[0] and r[1]}
 
-        cur.execute("select pk_supplier, code from NCSC.BD_SUPPLIER")
-        sup_codes = {pk: code for pk, code in cur.fetchall()}
-        cur.execute("select pk_customer, code from NCSC.BD_CUSTOMER")
-        cust_codes = {pk: code for pk, code in cur.fetchall()}
+        # ENABLESTATE 2 = 已启用 (1 未启用, 3 已停用). PK_FINANCEORG is set on
+        # exactly one row per table and only on one: the organisation NC
+        # materialises as its own trading party (BD_CUSTOMER 01010104 /
+        # BD_SUPPLIER 9900012, both 加拿大皇家妙克). Those are not counterparties
+        # and resolve_partner drops them — user, 2026-09-22.
+        cur.execute("select pk_supplier, code, name, enablestate, pk_financeorg "
+                    "from NCSC.BD_SUPPLIER")
+        sup_rows = list(cur.fetchall())
+        cur.execute("select pk_customer, code, name, enablestate, pk_financeorg "
+                    "from NCSC.BD_CUSTOMER")
+        cust_rows = list(cur.fetchall())
+        sup_codes = {pk: code for pk, code, _n, _e, _f in sup_rows}
+        cust_codes = {pk: code for pk, code, _n, _e, _f in cust_rows}
+
+        def _party(code, name, enablestate, financeorg):
+            return {"code": (code or "").strip(), "name": (name or "").strip(),
+                    "enabled": enablestate == 2,
+                    "is_org": bool(_strip_char(financeorg))}
+        parties: dict = {}
+        for side, rows in (("supplier", sup_rows), ("customer", cust_rows)):
+            for pk, code, name, enablestate, financeorg in rows:
+                rec = parties.setdefault(pk, {})
+                rec[side] = _party(code, name, enablestate, financeorg)
+                rec.setdefault("any_name", (name or "").strip())
+
+        cur.execute("select pk_material, code from NCSC.BD_MATERIAL")
+        item_codes = {pk: code for pk, code in cur.fetchall()}
+        cur.execute("select pk_project, code from NCSC.BD_PROJECT")
+        proj_codes = {pk: code for pk, code in cur.fetchall()}
 
         cur.execute("select pk_dept, code from NCSC.ORG_DEPT")
         dept = {pk: code for pk, code in cur.fetchall()}
@@ -408,22 +662,47 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         cur.execute("select freevalueid, typevalue1, typevalue2, typevalue3, typevalue4, "
                     "typevalue5, typevalue6, typevalue7, typevalue8, typevalue9 "
                     "from NCSC.GL_FREEVALUE")
-        slots = {"dept": (AUX_DEPT, dept), "cc": (AUX_COSTCENTER, cc),
-                 "io": (AUX_IOITEM, io), "sup": (aux_sup_pks, sup_codes),
-                 "cust": (aux_cust_pks, cust_codes), "bank": (aux_bank_pk, bank_codes)}
+        # Every auxiliary the catalog knows, keyed by our dim_code. A slot whose
+        # type pk the catalog does not carry is simply absent, so the dimension
+        # decodes empty instead of aborting the run. `partner` deliberately has
+        # NO code lookup: 客商 spans two masters under possibly different codes,
+        # so the raw value pk is carried through and resolve_partner() picks the
+        # side once the line's account is known.
+        slots = {}
+        for slot, lookup in (("department", dept), ("cost_center", cc),
+                             ("income_expense_item", io), ("supplier", sup_codes),
+                             ("customer", cust_codes), ("bank_account", bank_codes),
+                             ("item", item_codes), ("project", proj_codes),
+                             ("partner", {})):
+            pk = type_pks.get(slot)
+            if pk:
+                slots[slot] = (pk, lookup)
         aux = {}
         for row in cur:
             aux[row[0]] = decode_aux_row(row[1:], slots)
-        used_bank_codes = {a[5] for a in aux.values() if a[5]}
+        used_bank_codes = {a.get("bank_account") for a in aux.values()
+                           if a.get("bank_account")}
 
-        # Discarded (作废) vouchers are not ledger entries. Measured 2026-07-17:
-        # exactly one on this book ($4,298.52) — it had been importing as posted.
-        vq = ("select pk_voucher, year, period, num, explanation, prepareddate, "
-              "creationtime, tallydate, pk_system from NCSC.GL_VOUCHER "
-              "where pk_accountingbook = :b "
-              "  and (discardflag is null or discardflag <> 'Y')")
+        # Discarded (作废) vouchers ARE fetched now and marked instead of dropped.
+        # Filtering them at the source made them invisible: nothing downstream
+        # could report that one exists, which is what the user hit. They never
+        # reach `posted` (see transform), so they still colour no report.
+        # 制单/审核/记账 come from SM_USER — PK_PREPARED/PK_CHECKED/PK_MANAGER are
+        # populated on 41,335/40,121/41,335 of this book's vouchers while
+        # PK_CASHER and APPROVER are empty, which is exactly what NC's own list
+        # shows. CHAR pks need trimming before they will join.
+        vq = ("select v.pk_voucher, v.year, v.period, v.num, v.explanation, "
+              "       v.prepareddate, v.creationtime, v.tallydate, v.pk_system, "
+              "       v.voucherkind, v.discardflag, v.tempsaveflag, v.errmessage, "
+              "       v.attachment, up.user_name, uc.user_name, um.user_name, bt.name "
+              "  from NCSC.GL_VOUCHER v "
+              "  left join NCSC.SM_USER up on up.cuserid = trim(v.pk_prepared) "
+              "  left join NCSC.SM_USER uc on uc.cuserid = trim(v.pk_checked) "
+              "  left join NCSC.SM_USER um on um.cuserid = trim(v.pk_manager) "
+              "  left join NCSC.BD_VOUCHERTYPE bt on bt.pk_vouchertype = trim(v.pk_vouchertype) "
+              " where v.pk_accountingbook = :b")
         if watermark:
-            cur.execute(vq + " and creationtime >= :wm", b=PK_BOOK, wm=watermark)
+            cur.execute(vq + " and v.creationtime >= :wm", b=PK_BOOK, wm=watermark)
         else:
             cur.execute(vq, b=PK_BOOK)
         vouchers = list(cur.fetchall())
@@ -433,15 +712,21 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         # watermark-limited. A voucher created in June and tallied in July keeps
         # its June creationtime, so the watermark would never bring it back and
         # it would sit at draft forever (spec §14.4.1). Two columns x ~40k rows.
-        cur.execute("select pk_voucher, tallydate from NCSC.GL_VOUCHER "
-                    "where pk_accountingbook = :b "
-                    "  and (discardflag is null or discardflag <> 'Y')", b=PK_BOOK)
-        tallied = {pk for pk, td in cur if _tallied(td)}
+        cur.execute("select pk_voucher, tallydate, discardflag, tempsaveflag, errmessage "
+                    "from NCSC.GL_VOUCHER where pk_accountingbook = :b", b=PK_BOOK)
+        tallied = {pk for pk, td, dis, tmp, err in cur
+                   if _tallied(td) and _voucher_state(dis, tmp, err) == "normal"}
 
         # details: fetch the whole book; transform() filters by pk2id membership.
+        # DEBITQUANTITY/CREDITQUANTITY are filled on 108,163 of this book's
+        # 323,740 lines, PRICE on 37,815 and UNITNAME on 22,031 — the model has
+        # had quantity/unit/price columns and the detail modal has rendered them
+        # since day one, but the sync never wrote any of it. OPPOSITESUBJ (对方科目,
+        # 313,444 lines) is what NC's own voucher query filters on.
         cur.execute(
             "select pk_voucher, detailindex, accountcode, debitamount, creditamount, "
-            "localdebitamount, localcreditamount, pk_currtype, excrate1, explanation, assid "
+            "localdebitamount, localcreditamount, pk_currtype, excrate1, explanation, assid, "
+            "debitquantity, creditquantity, price, unitname, oppositesubj "
             "from NCSC.GL_DETAIL where pk_accountingbook = :b", b=PK_BOOK)
         details = list(cur.fetchall())
     finally:
@@ -452,6 +737,7 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
                         for pk, code, accnum, name, accname, pk_ccy, bank in bank_rows
                         if code and code in used_bank_codes)
     return NcExtract(ccy=ccy, aux=aux, vouchers=vouchers, details=details,
+                     parties=parties,
                      max_creationtime=max_ct, tallied=tallied,
                      bank_accounts=bank_master)
 
@@ -618,7 +904,11 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
 
         # COA tree -> category resolver (leaf line account -> predreal category header)
         cur.execute("select code, parent_code from chart_of_accounts")
-        category_of = make_category_of({code: parent for code, parent in cur.fetchall()})
+        parent_map = {code: parent for code, parent in cur.fetchall()}
+        category_of = make_category_of(parent_map)
+        # The same tree, asked a different question: which side of the ledger does
+        # this account name? That is what disambiguates NC's combined 客商.
+        side_of = make_partner_side_of(parent_map)
         # budget_actual_cc_map (account-aware CC map); may not exist in minimal DBs
         try:
             sp = con.cursor()
@@ -662,9 +952,24 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                     run_id, bank_upserted, len(uni_bank))
 
         skip = existing if mode == "incremental" else set()
-        vouchers, lines, dims, unmapped = transform(
+        vouchers, lines, dims, unmapped, partner_counts = transform(
             extract, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust, skip,
-            cc_map_rows=cc_map_rows, category_of=category_of, uni_bank=uni_bank)
+            cc_map_rows=cc_map_rows, category_of=category_of, uni_bank=uni_bank,
+            side_of=side_of)
+
+        # 客商 outcomes. `ambiguous` and `org` are the two deliberate refusals:
+        # a party that resolves on both sides with nothing to separate them, and
+        # the organisation itself. Both keep the NC code as text and NO id —
+        # defaulting either one to supplier is the bug this replaced.
+        if partner_counts:
+            logger.info("nc_sync run %s: 客商 outcomes %s", run_id,
+                        ", ".join(f"{k}={v}" for k, v in sorted(partner_counts.items())))
+        for refusal in ("ambiguous", "org", "unknown"):
+            if partner_counts.get(refusal):
+                logger.warning(
+                    "nc_sync run %s: %d lines carry a 客商 value resolved as %r — "
+                    "partner_id left NULL, NC code kept as partner_name text",
+                    run_id, partner_counts[refusal], refusal)
 
         # A bank-account value NC has but BD_BANKACCSUB no longer does: the raw pk
         # survives in jv_line_dimensions.value_text, but the line scopes to no
@@ -691,16 +996,22 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
 
         v_rows = [(v["id"], v["jv_number"], "JV", v["vdate"], v["period"], v["summary"],
                    v["status"], "nc", "nc_voucher", v["jv_number"], v["nc_pk"], v["source_subsystem"],
+                   v["nc_num"], v["nc_voucher_kind"], v["nc_voucher_state"],
+                   v["nc_voucher_type_name"], v["nc_prepared_name"], v["nc_checked_name"],
+                   v["nc_manager_name"], v["nc_attachment_count"],
                    *(tot.get(v["id"], [Decimal("0")] * 4))) for v in vouchers]
         for i in range(0, len(v_rows), _CHUNK):
             execute_values(cur,
                 "insert into journal_vouchers "
                 "(id, jv_number, voucher_word, voucher_date, fiscal_period, summary, status, "
                 " source_service, source_doc_type, source_doc_number, nc_source_pk, source_subsystem, "
+                " nc_num, nc_voucher_kind, nc_voucher_state, nc_voucher_type_name, "
+                " nc_prepared_name, nc_checked_name, nc_manager_name, nc_attachment_count, "
                 " total_debit, total_credit, total_local_debit, total_local_credit, "
                 " created_at, updated_at) values %s",
                 v_rows[i:i + _CHUNK],
-                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
+                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                         "%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
             _mark(dsn, run_id, vouchers_inserted=min(i + _CHUNK, len(v_rows)))
         for i in range(0, len(lines), _CHUNK):
             execute_values(cur,
@@ -708,9 +1019,11 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                 "(id, jv_id, line_no, account_code, summary, orig_debit, orig_credit, "
                 " local_debit, local_credit, currency, fx_rate, cost_center_id, department_id, "
                 " income_expense_item_id, partner_id, partner_name, nc_cc_code, bank_account_id, "
+                " quantity, unit, price, opposite_subject, "
                 " created_at, updated_at) values %s",
                 lines[i:i + _CHUNK],
-                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
+                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                         "%s,%s,%s,%s, now(), now())")
             _mark(dsn, run_id, lines_inserted=min(i + _CHUNK, len(lines)))
         for i in range(0, len(dims), _CHUNK):
             execute_values(cur,

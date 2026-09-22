@@ -469,11 +469,17 @@ async def test_nc_sync_run_raises_the_task(db_session):
         # test would pass while proving the opposite of what it claims.
         return NcExtract(
             ccy={"CADPK": "CAD"},
-            aux={"A1": ("0104", "E09", "CRM00201", "", "", "")},   # 'E09' is in no map row
+            # 'E09' is in no map row. decode_aux_row returns a DICT since the
+            # auxiliaries grew from 6 to 11 — naming them beats counting commas.
+            aux={"A1": {"department": "0104", "cost_center": "E09",
+                        "income_expense_item": "CRM00201"}},
             vouchers=[("VALPK1", "2026", "07", 1, "v", "2026-07-10 09:00:00",
-                       "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
-            details=[("VALPK1", 1, "5101", 100, 0, 100, 0, "CADPK", 1, "x", "A1"),
-                     ("VALPK1", 2, "2202", 0, 100, 0, 100, "CADPK", 1, "x", "A1")],
+                       "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL",
+                       0, "N", "N", None, 0, "SUNQI", "LIUYUHONG", "LIUYUHONG", "记账凭证")],
+            details=[("VALPK1", 1, "5101", 100, 0, 100, 0, "CADPK", 1, "x", "A1",
+                      0, 0, 0, None, None),
+                     ("VALPK1", 2, "2202", 0, 100, 0, 100, "CADPK", 1, "x", "A1",
+                      0, 0, 0, None, None)],
             max_creationtime="2026-07-11 08:00:00", tallied={"VALPK1"})
 
     run_id = start_run("incremental", uuid.uuid4(),

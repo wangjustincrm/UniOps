@@ -63,6 +63,22 @@ class JournalVoucher(UUIDPrimaryKey, TimestampMixin, Base):
 
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     nc_source_pk: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # NC GL_VOUCHER header facts the mirror used to drop. Names, not ids: NC's
+    # SM_USER accounts are not UniOps users, so there is nothing to FK to — the
+    # list simply has to show what NC shows (制单 / 审核 / 记账).
+    nc_num: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    nc_prepared_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    nc_checked_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    nc_manager_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    nc_voucher_type_name: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    nc_attachment_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 正常 / 错误 / 作废 / 暂存 — three independent NC CHAR flags, collapsed by
+    # _voucher_state(). Only `normal` is ever allowed to reach status=posted.
+    nc_voucher_state: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
+    # NC VOUCHERKIND: 0 ordinary, 1 year-end adjustment, 2 opening, 3 cost
+    # carry-forward, 4 R&D carry-forward (measured on the live book). Distinct
+    # from nc_voucher_state — this one separates closing entries from ordinary ones.
+    nc_voucher_kind: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # NC GL_VOUCHER.PK_SYSTEM (GL/AP/AR/FA/CM/IA/EGL/OT/PLCF); null for go-forward JVs.
     source_subsystem: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
@@ -97,6 +113,9 @@ class JournalVoucherLine(UUIDPrimaryKey, TimestampMixin, Base):
     partner_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     partner_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     tax_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # NC GL_DETAIL.OPPOSITESUBJ (对方科目) — 313,444 of this book's lines carry it
+    # and NC's own voucher query filters on it.
+    opposite_subject: Mapped[str | None] = mapped_column(String(200), nullable=True)
     project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     income_expense_item_id: Mapped[uuid.UUID | None] = mapped_column(

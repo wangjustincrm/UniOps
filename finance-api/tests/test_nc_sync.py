@@ -40,18 +40,48 @@ def test_nc_configured_all_or_nothing(monkeypatch):
     assert nc_sync.nc_configured() is False
 
 
+def _vch(pk, year, period, num, expl, pdate, ctime, tallydate, pk_system,
+         kind=0, discard="N", tempsave="N", errmsg=None, attach=0,
+         prepared="SUNQI", checked="LIUYUHONG", manager="LIUYUHONG",
+         vtype="\u8bb0\u8d26\u51ed\u8bc1"):
+    """One GL_VOUCHER row in fetch_from_nc's column order.
+
+    A builder rather than a literal because the row grew from 9 columns to 18:
+    every fixture would otherwise have to restate the header facts it does not
+    care about, and any future column would silently shift them all."""
+    return (pk, year, period, num, expl, pdate, ctime, tallydate, pk_system,
+            kind, discard, tempsave, errmsg, attach, prepared, checked, manager, vtype)
+
+
+def _det(pk, idx, acct, dr, cr, ldr, lcr, curr, rate, expl, assid,
+         dqty=0, cqty=0, price=0, unitname=None, oppsubj=None):
+    """One GL_DETAIL row in fetch_from_nc's column order (11 -> 16 columns)."""
+    return (pk, idx, acct, dr, cr, ldr, lcr, curr, rate, expl, assid,
+            dqty, cqty, price, unitname, oppsubj)
+
+
+def _aux(department="", cost_center="", income_expense_item="", supplier="",
+         customer="", bank_account="", partner="", item="", project=""):
+    """A decode_aux_row() result. Keyword-only in effect: decode_aux_row returns
+    a dict precisely so 11 dimensions cannot be mis-ordered."""
+    return {"department": department, "cost_center": cost_center,
+            "income_expense_item": income_expense_item, "supplier": supplier,
+            "customer": customer, "bank_account": bank_account,
+            "partner": partner, "item": item, "project": project}
+
+
 def _mini_extract(tallydate="2026-07-11 09:00:00", pk_system="GL"):
     from app.services.nc_sync import NcExtract, _tallied
     # voucher 1: line 1 both-sided w/ cc+ioitem aux; line 2 payable w/ supplier aux
     return NcExtract(
         ccy={"CADPK": "CAD"},
-        aux={"ASS1": ("0104", "E01", "CRM004", "", "", ""),
-             "ASS2": ("", "", "", "SUP01", "", "")},
-        vouchers=[("NCPK1", "2026", "07", 12, "test voucher",
-                   "2026-07-10 09:00:00", "2026-07-11 08:00:00", tallydate, pk_system)],
+        aux={"ASS1": _aux("0104", "E01", "CRM004"),
+             "ASS2": _aux(supplier="SUP01")},
+        vouchers=[_vch("NCPK1", "2026", "07", 12, "test voucher",
+                       "2026-07-10 09:00:00", "2026-07-11 08:00:00", tallydate, pk_system)],
         details=[
-            ("NCPK1", 1, "5101", 150, 50, 150, 50, "CADPK", 1, "expense", "ASS1"),
-            ("NCPK1", 2, "2202", 0, 100, 0, 100, "CADPK", 1, "payable", "ASS2"),
+            _det("NCPK1", 1, "5101", 150, 50, 150, 50, "CADPK", 1, "expense", "ASS1"),
+            _det("NCPK1", 2, "2202", 0, 100, 0, 100, "CADPK", 1, "payable", "ASS2"),
         ],
         max_creationtime="2026-07-11 08:00:00",
         # Use the real _tallied() rather than a hand-rolled comparison — a
@@ -70,7 +100,7 @@ def test_transform_nets_only_both_positive_line():
     from app.services.nc_sync import transform
     cc_id, dept_id, ba_id = object(), object(), object()
     sup_id = object()
-    vouchers, lines, dims, unmapped = transform(
+    vouchers, lines, dims, unmapped, _ = transform(
         _mini_extract(), uni_cc={"MOH-0106-E01": cc_id},
         uni_dept={"0104": dept_id}, uni_ba={"CRM004": ba_id},
         uni_sup={"SUP01": (sup_id, "ACME Supplies")}, uni_cust={},
@@ -82,7 +112,17 @@ def test_transform_nets_only_both_positive_line():
     assert (l1[7], l1[8]) == (Decimal("100"), Decimal("0"))   # local likewise
     assert l1[11] is cc_id and l1[12] is dept_id
     assert l1[13] is ba_id            # promoted income/expense item column
-    assert len(dims) == 1 and dims[0][2] == "income_expense_item" and dims[0][3] is ba_id
+    # Every auxiliary on the line becomes a jv_line_dimensions row now, not just
+    # the one that had a promoted column. Before this change 部门/成本中心/供应商
+    # were decoded, used, and then thrown away — which is why the Aux. Acctg
+    # column was empty and nothing could be filtered by auxiliary at all.
+    by_code = {d[2]: d for d in dims}
+    assert set(by_code) == {"department", "cost_center", "income_expense_item", "supplier"}
+    assert by_code["income_expense_item"][3] is ba_id
+    assert by_code["income_expense_item"][4] == "CRM004"
+    assert by_code["department"][4] == "0104"
+    assert by_code["cost_center"][4] == "E01"
+    assert by_code["supplier"][4] == "SUP01"
     assert unmapped == 0
     l2 = next(l for l in lines if l[2] == 2)
     assert l2[14] is sup_id and l2[15] == "ACME Supplies"
@@ -98,17 +138,17 @@ def test_transform_keeps_red_entries_signed():
     from app.services.nc_sync import NcExtract, _tallied, transform
     e = NcExtract(
         ccy={"CADPK": "CAD"}, aux={},
-        vouchers=[("NCPK9", "2026", "06", 7, "red reversal",
-                   "2026-06-10 09:00:00", "2026-06-11 08:00:00",
-                   "2026-06-11 09:00:00", "GL")],
+        vouchers=[_vch("NCPK9", "2026", "06", 7, "red reversal",
+                       "2026-06-10 09:00:00", "2026-06-11 08:00:00",
+                       "2026-06-11 09:00:00", "GL")],
         details=[
             # a red credit: creditamount = -100 (localcredit = -100)
-            ("NCPK9", 1, "660101", 0, -100, 0, -100, "CADPK", 1, "", None),
+            _det("NCPK9", 1, "660101", 0, -100, 0, -100, "CADPK", 1, "", None),
             # its balancing normal debit
-            ("NCPK9", 2, "660101", 0, 100, 0, 100, "CADPK", 1, "", None),
+            _det("NCPK9", 2, "660101", 0, 100, 0, 100, "CADPK", 1, "", None),
         ],
         max_creationtime="2026-06-11 08:00:00", tallied={"NCPK9"})
-    _, lines, _, _ = transform(e, {}, {}, {}, {}, {}, set())
+    _, lines, _, _, _ = transform(e, {}, {}, {}, {}, {}, set())
     red = next(l for l in lines if l[2] == 1)
     # local_debit (l[7]) stays 0, local_credit (l[8]) stays the signed -100 —
     # NOT flipped to (debit=100, credit=0).
@@ -120,13 +160,13 @@ def test_transform_skips_existing_and_counts_unmapped():
     from app.services.nc_sync import NcExtract, transform
     ex = _mini_extract()
     # skip the only voucher -> nothing out
-    v, l, d, _ = transform(ex, {}, {}, {}, uni_sup={}, uni_cust={}, skip_pks={"NCPK1"})
+    v, l, d, _, _ = transform(ex, {}, {}, {}, uni_sup={}, uni_cust={}, skip_pks={"NCPK1"})
     assert v == [] and l == [] and d == []
     # unknown cc code -> unmapped counted (line still produced, cc_id None)
-    ex2 = NcExtract(ccy=ex.ccy, aux={"ASS1": ("", "ZZZ", "", "", "", "")},
+    ex2 = NcExtract(ccy=ex.ccy, aux={"ASS1": _aux("", "ZZZ")},
                     vouchers=ex.vouchers, details=ex.details[:1],
                     max_creationtime=ex.max_creationtime, tallied=ex.tallied)
-    v2, l2, _, unmapped2 = transform(ex2, {}, {}, {}, uni_sup={}, uni_cust={}, skip_pks=set())
+    v2, l2, _, unmapped2, _ = transform(ex2, {}, {}, {}, uni_sup={}, uni_cust={}, skip_pks=set())
     assert len(l2) == 1 and l2[0][11] is None and unmapped2 == 1
 
 
@@ -162,10 +202,10 @@ def test_transform_marks_untallied_vouchers_draft():
     # reports that filter on status == POSTED (spec §14.4).
     from app.services.nc_sync import transform
     e = _mini_extract()                      # its voucher has a tallydate
-    vs, _, _, _ = transform(e, {}, {}, {}, {}, {}, set())
+    vs, _, _, _, _ = transform(e, {}, {}, {}, {}, {}, set())
     assert vs[0]["status"] == "posted"
     e2 = _mini_extract(tallydate=None)       # not tallied in NC
-    vs2, _, _, _ = transform(e2, {}, {}, {}, {}, {}, set())
+    vs2, _, _, _, _ = transform(e2, {}, {}, {}, {}, {}, set())
     assert vs2[0]["status"] == "draft"
 
 
@@ -200,14 +240,13 @@ def test_transform_account_aware_for_predreal_and_stores_nc_cc():
     cc_id = object()
     e = NcExtract(
         ccy={"CADPK": "CAD"},
-        aux={"A1": ("0104", "E01", "", "", "", ""),
-             "A2": ("0106", "", "", "", "", "")},
-        vouchers=[("P1", "2026", "07", 1, "x", "2026-07-10 09:00:00",
-                   "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
-        details=[("P1", 1, "510101", 100, 0, 100, 0, "CADPK", 1, "", "A1"),
-                 ("P1", 2, "6602", 50, 0, 50, 0, "CADPK", 1, "", "A2")],
+        aux={"A1": _aux("0104", "E01"), "A2": _aux("0106")},
+        vouchers=[_vch("P1", "2026", "07", 1, "x", "2026-07-10 09:00:00",
+                       "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
+        details=[_det("P1", 1, "510101", 100, 0, 100, 0, "CADPK", 1, "", "A1"),
+                 _det("P1", 2, "6602", 50, 0, 50, 0, "CADPK", 1, "", "A2")],
         max_creationtime="2026-07-11 08:00:00", tallied={"P1"})
-    _, lines, _, unmapped = transform(
+    _, lines, _, unmapped, _ = transform(
         e, {"MOH-0106-E01": cc_id}, {}, {}, {}, {}, set(),
         cc_map_rows=cc_map_rows, category_of=category_of)
     l1 = next(l for l in lines if l[2] == 1)
@@ -225,12 +264,12 @@ def test_transform_non_predreal_keeps_dict_fallback():
     cc_id = object()
     e = NcExtract(
         ccy={"CADPK": "CAD"},
-        aux={"A1": ("0104", "", "", "", "", "")},     # dept 0104 -> CC_BY_DEPT
-        vouchers=[("P2", "2026", "07", 1, "x", "2026-07-10 09:00:00",
-                   "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
-        details=[("P2", 1, "2202", 0, 100, 0, 100, "CADPK", 1, "", "A1")],
+        aux={"A1": _aux("0104")},                      # dept 0104 -> CC_BY_DEPT
+        vouchers=[_vch("P2", "2026", "07", 1, "x", "2026-07-10 09:00:00",
+                       "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
+        details=[_det("P2", 1, "2202", 0, 100, 0, 100, "CADPK", 1, "", "A1")],
         max_creationtime="2026-07-11 08:00:00", tallied={"P2"})
-    _, lines, _, _ = transform(
+    _, lines, _, _, _ = transform(
         e, {"MOH-0104-P01": cc_id}, {}, {}, {}, {}, set(),
         cc_map_rows=[], category_of=category_of)   # CC_BY_DEPT["0104"] == "MOH-0104-P01"
     assert lines[0][11] is cc_id
@@ -263,7 +302,9 @@ async def test_start_run_incremental_inserts_and_sets_watermark(db_session):
                                fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
     rows = _pg("select status, vouchers_inserted, lines_inserted, dims_inserted, "
                "watermark_to from nc_sync_runs where id = %s", (run_id,))
-    assert rows[0] == ("success", 1, 2, 1, "2026-07-11 08:00:00")
+    # 4 dim rows, not 1: one per auxiliary across the two lines (line 1 carries
+    # 部门+成本中心+收支项目, line 2 carries 供应商).
+    assert rows[0] == ("success", 1, 2, 4, "2026-07-11 08:00:00")
     assert _pg("select count(*) from journal_vouchers where nc_source_pk = 'NCPK1'")[0][0] == 1
     assert _pg("select count(*) from journal_voucher_lines "
                "where income_expense_item_id is not null")[0][0] == 1
@@ -473,27 +514,46 @@ def test_transform_maps_and_strips_subsystem():
     # PK_SYSTEM is CHAR(padded); store the stripped raw code, empty -> None
     from app.services.nc_sync import transform
     e = _mini_extract(pk_system="GL                  ")   # 空格补位
-    vs, _, _, _ = transform(e, {}, {}, {}, {}, {}, set())
+    vs, _, _, _, _ = transform(e, {}, {}, {}, {}, {}, set())
     assert vs[0]["source_subsystem"] == "GL"
     e2 = _mini_extract(pk_system="~")
-    vs2, _, _, _ = transform(e2, {}, {}, {}, {}, {}, set())
+    vs2, _, _, _, _ = transform(e2, {}, {}, {}, {}, {}, set())
     assert vs2[0]["source_subsystem"] is None
 
 
-def test_resolve_aux_type_pks_validates_constants():
+def test_resolve_aux_types_by_code_finds_the_combined_party_archive():
+    """The bug this replaced: the old resolver matched Chinese names, and NC's
+    combined party archive is called 客商 — which contains neither 供应商 nor
+    客户. 9,625 lines of the live book lost their counterparty to that.
+    Resolving by BD_ACCASSITEM.CODE is what makes it visible."""
     from app.services.nc_sync import (AUX_COSTCENTER, AUX_DEPT, AUX_IOITEM,
-                                      resolve_aux_type_pks)
-    items = [(AUX_DEPT, "部门"), (AUX_COSTCENTER, "成本中心"), (AUX_IOITEM, "收支项目"),
-             ("CLSPK000000000000001"[:20], "供应商基本分类"),   # must be ignored
-             ("SUPPK000000000000001"[:20], "供应商档案"),
-             ("SUPPK000000000000002"[:20], "供应商档案"),       # multi-org duplicate
-             ("CUSPK000000000000001"[:20], "客户档案")]
-    got = resolve_aux_type_pks(items)
-    assert got["supplier"] == {"SUPPK000000000000001"[:20], "SUPPK000000000000002"[:20]}
-    assert "CLSPK000000000000001"[:20] not in got["supplier"]
-    assert got["customer"] == {"CUSPK000000000000001"[:20]}
-    assert AUX_DEPT in got["department"]
-    bad = [("WRONGPK0000000000001"[:20], "部门"), (AUX_COSTCENTER, "成本中心"),
-           (AUX_IOITEM, "收支项目")]
-    with pytest.raises(RuntimeError):
-        resolve_aux_type_pks(bad)
+                                      AUX_PARTNER, resolve_aux_types_by_code)
+    items = [(AUX_DEPT, "0001", "部门"), (AUX_COSTCENTER, "ra01", "成本中心"),
+             (AUX_IOITEM, "0008", "收支项目"),
+             (AUX_PARTNER, "0004", "客商"),
+             ("SUPPK000000000000001", "0019", "供应商档案"),
+             ("CUSPK000000000000001", "0017", "客户档案"),
+             ("CLSPK000000000000001", "D45", "项目类型")]
+    got = resolve_aux_types_by_code(items)
+    assert got["partner"] == AUX_PARTNER          # the whole point
+    assert got["supplier"] == "SUPPK000000000000001"
+    assert got["customer"] == "CUSPK000000000000001"
+    assert got["department"] == AUX_DEPT
+
+
+def test_resolve_aux_types_by_code_refuses_to_guess_and_pins_constants():
+    from app.services.nc_sync import (AUX_COSTCENTER, AUX_DEPT, AUX_IOITEM,
+                                      resolve_aux_types_by_code)
+    base = [(AUX_COSTCENTER, "ra01", "成本中心"), (AUX_IOITEM, "0008", "收支项目")]
+    # a code the catalog carries twice is ambiguous — picking one silently is
+    # exactly how a dimension ends up wired to the wrong archive
+    with pytest.raises(RuntimeError, match="refusing to guess"):
+        resolve_aux_types_by_code(base + [("PK1", "0001", "部门"),
+                                          ("PK2", "0001", "部门旧")])
+    # a frozen constant that no longer matches its code is a loud failure, not a
+    # silently empty dimension
+    with pytest.raises(RuntimeError, match="aux type pk mismatch"):
+        resolve_aux_types_by_code(base + [("WRONGPK0000000000001", "0001", "部门")])
+    # a code the catalog simply does not carry is absent, not fatal
+    got = resolve_aux_types_by_code(base + [(AUX_DEPT, "0001", "部门")])
+    assert "project" not in got and got["department"] == AUX_DEPT

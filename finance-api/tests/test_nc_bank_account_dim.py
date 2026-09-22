@@ -73,12 +73,12 @@ def test_duplicate_bank_account_item_refuses_to_guess():
 # ── GL_FREEVALUE row decoding ──────────────────────────────────────────────────
 
 def _slots():
-    return {"dept": (DEPT_PK, {"DEPTV": "0104"}),
-            "cc": ("CCPK0000000000000001"[:20], {}),
-            "io": ("IOPK0000000000000001"[:20], {}),
-            "sup": (set(), {}),
-            "cust": (set(), {}),
-            "bank": (BANK_PK, {RBC_VPK: "1033760"})}
+    return {"department": (DEPT_PK, {"DEPTV": "0104"}),
+            "cost_center": ("CCPK0000000000000001"[:20], {}),
+            "income_expense_item": ("IOPK0000000000000001"[:20], {}),
+            "supplier": (set(), {}),
+            "customer": (set(), {}),
+            "bank_account": (BANK_PK, {RBC_VPK: "1033760"})}
 
 
 def _tv(type_pk, value_pk):
@@ -93,7 +93,7 @@ def test_decodes_bank_code_from_any_slot():
     for slot in range(9):
         tvs = [None] * 9
         tvs[slot] = _tv(BANK_PK, RBC_VPK)
-        assert decode_aux_row(tvs, _slots())[5] == "1033760", f"slot {slot + 1}"
+        assert decode_aux_row(tvs, _slots())["bank_account"] == "1033760", f"slot {slot + 1}"
 
 
 def test_blank_sentinel_is_not_a_bank_code():
@@ -102,7 +102,7 @@ def test_blank_sentinel_is_not_a_bank_code():
     silently collects lines."""
     from app.services.nc_sync import decode_aux_row
     got = decode_aux_row([_tv(BANK_PK, "~")], _slots())
-    assert got[5] == ""
+    assert got["bank_account"] == ""
 
 
 def test_unknown_bank_value_keeps_the_raw_pk():
@@ -111,14 +111,14 @@ def test_unknown_bank_value_keeps_the_raw_pk():
     pk leaves the line recoverable and visible."""
     from app.services.nc_sync import decode_aux_row
     got = decode_aux_row([_tv(BANK_PK, "GONEPK00000000000001"[:20])], _slots())
-    assert got[5] == "GONEPK00000000000001"[:20]
+    assert got["bank_account"] == "GONEPK00000000000001"[:20]
 
 
 def test_short_typevalue_is_absent_not_truncated():
     from app.services.nc_sync import decode_aux_row
-    assert decode_aux_row([BANK_PK], _slots())[5] == ""      # 20 chars, no value pk
-    assert decode_aux_row([""], _slots())[5] == ""
-    assert decode_aux_row([None], _slots())[5] == ""
+    assert decode_aux_row([BANK_PK], _slots())["bank_account"] == ""      # 20 chars, no value pk
+    assert decode_aux_row([""], _slots())["bank_account"] == ""
+    assert decode_aux_row([None], _slots())["bank_account"] == ""
 
 
 def test_other_dimensions_still_decode():
@@ -126,8 +126,8 @@ def test_other_dimensions_still_decode():
     for everything would satisfy every "must be empty" test in this file."""
     from app.services.nc_sync import decode_aux_row
     got = decode_aux_row([_tv(DEPT_PK, "DEPTV"), _tv(BANK_PK, RBC_VPK)], _slots())
-    assert got[0] == "0104"          # dept
-    assert got[5] == "1033760"       # bank
+    assert got["department"] == "0104"
+    assert got["bank_account"] == "1033760"
 
 
 # ── transform() ────────────────────────────────────────────────────────────────
@@ -136,17 +136,19 @@ def _extract(bank_code):
     from app.services.nc_sync import NcExtract
     return NcExtract(
         ccy={"CADPK": "CAD"},
-        aux={"A1": ("", "", "", "", "", bank_code)},
+        aux={"A1": {"bank_account": bank_code}},
         vouchers=[("P1", "2026", "07", 1, "RBC payment run", "2026-07-02 09:00:00",
-                   "2026-07-03 08:00:00", "2026-07-03 09:00:00", "GL")],
-        details=[("P1", 1, "100201", 0, 48336.03, 0, 48336.03, "CADPK", 1, "", "A1")],
+                   "2026-07-03 08:00:00", "2026-07-03 09:00:00", "GL",
+                   0, "N", "N", None, 0, "SUNQI", "LIUYUHONG", "LIUYUHONG", "记账凭证")],
+        details=[("P1", 1, "100201", 0, 48336.03, 0, 48336.03, "CADPK", 1, "", "A1",
+                  0, 0, 0, None, None)],
         max_creationtime="2026-07-03 08:00:00", tallied={"P1"})
 
 
 def test_transform_sets_the_line_column_and_the_dim_row():
     from app.services.nc_sync import transform
     bank_id = uuid.uuid4()
-    _, lines, dims, _ = transform(
+    _, lines, dims, _, _ = transform(
         _extract("1033760"), {}, {}, {}, {}, {}, set(), uni_bank={"1033760": bank_id})
     assert lines[0][17] is bank_id                     # journal_voucher_lines.bank_account_id
     bank_dims = [d for d in dims if d[2] == "bank_account"]
@@ -157,7 +159,7 @@ def test_transform_sets_the_line_column_and_the_dim_row():
 
 def test_transform_keeps_the_code_when_the_master_is_missing():
     from app.services.nc_sync import transform
-    _, lines, dims, _ = transform(
+    _, lines, dims, _, _ = transform(
         _extract("1033760"), {}, {}, {}, {}, {}, set(), uni_bank={})
     assert lines[0][17] is None
     bank_dims = [d for d in dims if d[2] == "bank_account"]
@@ -166,7 +168,7 @@ def test_transform_keeps_the_code_when_the_master_is_missing():
 
 def test_transform_emits_nothing_when_there_is_no_bank_aux():
     from app.services.nc_sync import transform
-    _, lines, dims, _ = transform(
+    _, lines, dims, _, _ = transform(
         _extract(""), {}, {}, {}, {}, {}, set(), uni_bank={"1033760": uuid.uuid4()})
     assert lines[0][17] is None
     assert not [d for d in dims if d[2] == "bank_account"]
@@ -175,7 +177,7 @@ def test_transform_emits_nothing_when_there_is_no_bank_aux():
 def test_transform_without_uni_bank_does_not_crash():
     """nc_sync's CLI/emergency path and older callers pass no uni_bank."""
     from app.services.nc_sync import transform
-    _, lines, dims, _ = transform(_extract("1033760"), {}, {}, {}, {}, {}, set())
+    _, lines, dims, _, _ = transform(_extract("1033760"), {}, {}, {}, {}, {}, set())
     assert lines[0][17] is None
     assert [d[4] for d in dims if d[2] == "bank_account"] == ["1033760"]
 

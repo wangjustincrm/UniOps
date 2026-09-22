@@ -61,10 +61,14 @@ def load_aux(cur) -> dict:
     """freevalueid -> (dept_code, cc_code, ioitem_code, sup_code, cust_code) by parsing
     GL_FREEVALUE typevalues. Dynamically resolves all five aux type pks via BD_ACCASSITEM
     (supplier/customer) and the three curated constants (dept/cc/ioitem)."""
-    from app.services.nc_sync import resolve_aux_type_pks
-    cur.execute("select pk_accassitem, name from NCSC.BD_ACCASSITEM")
-    type_pks = resolve_aux_type_pks(list(cur.fetchall()))
-    aux_sup_pks, aux_cust_pks = type_pks.get("supplier") or set(), type_pks.get("customer") or set()
+    # Resolved BY CODE since 2026-09-22 — the name-matching version this used to
+    # call is gone (it could not see NC's combined 客商 archive at all). The sets
+    # are kept because the rest of this legacy script indexes them that way.
+    from app.services.nc_sync import resolve_aux_types_by_code
+    cur.execute("select pk_accassitem, code, name from NCSC.BD_ACCASSITEM")
+    type_pks = resolve_aux_types_by_code(list(cur.fetchall()))
+    aux_sup_pks = {type_pks["supplier"]} if type_pks.get("supplier") else set()
+    aux_cust_pks = {type_pks["customer"]} if type_pks.get("customer") else set()
 
     cur.execute("select pk_supplier, code from NCSC.BD_SUPPLIER")
     sup_codes = {pk: code for pk, code in cur.fetchall()}
