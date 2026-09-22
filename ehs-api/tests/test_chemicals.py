@@ -78,3 +78,49 @@ async def test_a_label_cannot_be_approved_without_its_pictogram(hse_manager, tes
     await client.patch(f"/api/v1/labels/{label['id']}", json={"pictograms": ["Corrosive"]})
     still = await client.post(f"/api/v1/labels/{label['id']}/approve", json={})
     assert still.status_code == 422, "the class name must resolve like its code does"
+
+
+async def test_the_label_wording_can_be_corrected_by_hand(hse_manager):
+    """Reading it off the data sheet is the fast path, not the only one.
+
+    A scanned sheet gives the reader nothing, a statement comes back
+    truncated, a hazard class is missed. Until the wording could be corrected
+    the only buttons were read, approve and print, so a label the reader got
+    wrong stayed wrong — and WHMIS is a standard about what the container
+    actually says.
+    """
+    _, client = hse_manager
+    chem = (await client.post("/api/v1/chemicals", json={
+        "name": "Caustic soda 50%", "signal_word": "Danger",
+    })).json()
+    label = (await client.post(f"/api/v1/chemicals/{chem['id']}/labels", json={})).json()
+
+    fixed = await client.patch(f"/api/v1/labels/{label['id']}", json={
+        "supplier": "Univar Solutions",
+        "signal_word": "Danger",
+        "hazard_statements": [
+            {"code": "H314", "text": "Causes severe skin burns and eye damage."}],
+        "precautionary_statements": [
+            {"code": "P280", "text": "Wear protective gloves and eye protection."}],
+        "first_aid": "Rinse with water for 15 minutes.",
+        "ppe_note": "Face shield and gauntlets.",
+    })
+    assert fixed.status_code == 200, fixed.text
+
+    # Read back, because the editor is filled from this response — a field the
+    # endpoint kept but did not return would open blank and be saved blank
+    # over what was there.
+    back = (await client.get(f"/api/v1/labels/{label['id']}")).json()
+    assert back["supplier"] == "Univar Solutions"
+    assert back["first_aid"] == "Rinse with water for 15 minutes."
+    assert back["ppe_note"] == "Face shield and gauntlets."
+    assert back["hazard_statements"][0]["code"] == "H314"
+    assert back["precautionary_statements"][0]["text"].startswith("Wear protective")
+
+    # Correcting one field leaves the others alone.
+    await client.patch(f"/api/v1/labels/{label['id']}",
+                       json={"supplier": "Brenntag Canada"})
+    after = (await client.get(f"/api/v1/labels/{label['id']}")).json()
+    assert after["supplier"] == "Brenntag Canada"
+    assert after["first_aid"] == "Rinse with water for 15 minutes.", (
+        "changing the supplier must not clear the first aid wording")

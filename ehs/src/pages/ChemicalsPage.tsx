@@ -51,7 +51,9 @@ interface Chemical {
 }
 interface Label {
   id: string; chemical_id: string; product_identifier: string
+  supplier: string | null
   signal_word: string | null; pictograms: string[]
+  first_aid: string | null; ppe_note: string | null
   hazard_statements: { code: string | null; text: string }[]
   precautionary_statements: { code: string | null; text: string }[]
   source: string; status: string; approved_by_name: string | null
@@ -482,9 +484,189 @@ function Detail({ chemical, mayManage }: { chemical: Chemical; mayManage: boolea
  * unavailable; what is not optional is the approval, which is why the print
  * button only appears once somebody has approved the draft.
  */
+/**
+ * Correcting a workplace label by hand.
+ *
+ * Reading it off the data sheet gets most of it and is the fast path, but it
+ * is a reading of a PDF: a scanned sheet gives nothing, a statement comes back
+ * truncated, a hazard class is missed. Until now there was no way to fix any
+ * of that — the only buttons were read, approve and print — so a label the
+ * reader got wrong was a label that stayed wrong, and WHMIS is a standard
+ * about what the container actually says.
+ *
+ * Draft only. An approved label is a record of wording somebody signed off;
+ * changing it means approving it again, which the status gate already
+ * enforces on the server.
+ */
+function LabelEditor({ label, onClose }: { label: Label; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [productIdentifier, setProductIdentifier] = useState(label.product_identifier)
+  const [supplier, setSupplier] = useState(label.supplier ?? '')
+  const [signalWord, setSignalWord] = useState(label.signal_word ?? '')
+  const [pictograms, setPictograms] = useState<string[]>(label.pictograms ?? [])
+  const [hazards, setHazards] = useState(label.hazard_statements ?? [])
+  const [precautions, setPrecautions] = useState(label.precautionary_statements ?? [])
+  const [firstAid, setFirstAid] = useState(label.first_aid ?? '')
+  const [ppe, setPpe] = useState(label.ppe_note ?? '')
+
+  const classes = useQuery({
+    queryKey: ['vocabulary', 'ghs_hazard_class'],
+    queryFn: () => api.get<{ id: string; code: string; label: string }[]>(
+      '/api/v1/settings/vocabularies/ghs_hazard_class/items'),
+  })
+
+  const save = useMutation({
+    mutationFn: () => api.patch(`/api/v1/labels/${label.id}`, {
+      product_identifier: productIdentifier,
+      supplier: supplier || null,
+      signal_word: signalWord || null,
+      pictograms,
+      // Blank rows are the ordinary result of adding one and changing your
+      // mind; sending them would put an empty bullet on a printed label.
+      hazard_statements: hazards.filter((h) => h.text.trim()),
+      precautionary_statements: precautions.filter((p) => p.text.trim()),
+      first_aid: firstAid || null,
+      ppe_note: ppe || null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chemical-labels', label.chemical_id] })
+      onClose()
+    },
+  })
+
+  return (
+    <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3.5">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-neutral-900">The wording on the label</h3>
+        <button type="button" onClick={onClose} aria-label="Close"
+                className="rounded p-1 text-neutral-400 hover:bg-neutral-50">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Product identifier"
+               hint="Has to match the name on the data sheet — that is what WHMIS ties together">
+          <input className={inputClass} value={productIdentifier}
+                 onChange={(e) => setProductIdentifier(e.target.value)} />
+        </Field>
+        <Field label="Supplier">
+          <input className={inputClass} value={supplier}
+                 onChange={(e) => setSupplier(e.target.value)} />
+        </Field>
+        <Field label="Signal word" hint="GHS allows only these two, or neither">
+          <select className={inputClass} value={signalWord}
+                  onChange={(e) => setSignalWord(e.target.value)}>
+            <option value="">None</option>
+            <option value="Danger">Danger</option>
+            <option value="Warning">Warning</option>
+          </select>
+        </Field>
+      </div>
+
+      <div className="mt-3">
+        <Field label="Pictograms"
+               hint="The artwork is uploaded once per class in Settings; a class with none cannot be approved">
+          <div className="flex flex-wrap gap-1.5">
+            {classes.data?.map((c) => {
+              const on = pictograms.some(
+                (p) => p.toLowerCase() === c.code.toLowerCase()
+                    || p.toLowerCase() === c.label.toLowerCase())
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setPictograms(on
+                    ? pictograms.filter((p) => p.toLowerCase() !== c.code.toLowerCase()
+                                            && p.toLowerCase() !== c.label.toLowerCase())
+                    : [...pictograms, c.code])}
+                  className={`min-h-[32px] rounded-full border px-2.5 text-xs font-medium ${
+                    on ? 'border-primary-300 bg-primary-50 text-primary-800'
+                       : 'border-neutral-200 bg-white text-neutral-600'}`}
+                >
+                  {c.label}
+                </button>
+              )
+            })}
+          </div>
+        </Field>
+      </div>
+
+      <StatementRows title="Hazard statements" rows={hazards} onChange={setHazards}
+                     placeholder="Causes severe skin burns and eye damage." />
+      <StatementRows title="Precautionary statements" rows={precautions}
+                     onChange={setPrecautions}
+                     placeholder="Wear protective gloves and eye protection." />
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Field label="First aid">
+          <textarea className={`${inputClass} min-h-[60px] py-2`} value={firstAid}
+                    onChange={(e) => setFirstAid(e.target.value)} />
+        </Field>
+        <Field label="PPE">
+          <textarea className={`${inputClass} min-h-[60px] py-2`} value={ppe}
+                    onChange={(e) => setPpe(e.target.value)} />
+        </Field>
+      </div>
+
+      <ErrorNote error={save.error} />
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
+        <button type="button" className={primaryButton}
+                disabled={!productIdentifier.trim() || save.isPending}
+                onClick={() => { if (!save.isPending) save.mutate() }}>
+          {save.isPending ? 'Saving…' : 'Save the wording'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** A GHS statement is a code and its text, and the code is optional — plenty
+ *  of workplace labels carry the sentence without the H-number. */
+function StatementRows({ title, rows, onChange, placeholder }: {
+  title: string
+  rows: { code: string | null; text: string }[]
+  onChange: (rows: { code: string | null; text: string }[]) => void
+  placeholder: string
+}) {
+  const set = (i: number, patch: Partial<{ code: string | null; text: string }>) =>
+    onChange(rows.map((r, k) => (k === i ? { ...r, ...patch } : r)))
+
+  return (
+    <div className="mt-3">
+      <p className="mb-1 text-xs font-medium text-neutral-700">{title}</p>
+      <div className="flex flex-col gap-1.5">
+        {rows.map((r, i) => (
+          <div key={i} className="flex gap-1.5">
+            <input className={`${inputClass} w-32 shrink-0`} value={r.code ?? ''}
+                   onChange={(e) => set(i, { code: e.target.value || null })}
+                   placeholder="H314" aria-label={`${title} code`} />
+            <input className={inputClass} value={r.text}
+                   onChange={(e) => set(i, { text: e.target.value })}
+                   placeholder={placeholder} aria-label={`${title} text`} />
+            <button type="button" aria-label="Remove"
+                    onClick={() => onChange(rows.filter((_, k) => k !== i))}
+                    className="shrink-0 rounded p-1 text-neutral-400 hover:bg-neutral-50">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button type="button"
+              onClick={() => onChange([...rows, { code: null, text: '' }])}
+              className="mt-1.5 text-xs font-semibold text-primary-700 hover:underline">
+        Add one
+      </button>
+    </div>
+  )
+}
+
 function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: boolean }) {
   const queryClient = useQueryClient()
   const [busy, setBusy] = useState(false)
+  const [editingLabel, setEditingLabel] = useState(false)
 
   const labels = useQuery({
     queryKey: ['chemical-labels', chemical.id],
@@ -593,10 +775,18 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
 
           <ErrorNote error={draft.error || read.error || approve.error} />
 
-          {mayManage && (
+          {mayManage && editingLabel && (
+            <LabelEditor label={current} onClose={() => setEditingLabel(false)} />
+          )}
+
+          {mayManage && !editingLabel && (
             <div className="mt-2 flex flex-wrap gap-2">
               {current.status === 'draft' && (
                 <>
+                  <button type="button" className={secondaryButton}
+                          onClick={() => setEditingLabel(true)}>
+                    Edit the wording
+                  </button>
                   <button type="button" className={secondaryButton}
                           disabled={read.isPending}
                           onClick={() => { if (!read.isPending) read.mutate(current.id) }}>

@@ -39,13 +39,22 @@ export default function QrPanel({ token, caption, sub, size = 132 }: Props) {
     // `<img src>` cannot send — so it comes back as text and is inlined.
     apiBlob(`/api/v1/qr/${encodeURIComponent(token)}/image?size=${size}`)
       .then((blob) => blob.text())
-      // Strip the width and height the server put on it. An SVG without them
-      // fills whatever box it is in, which is what both users of this want —
-      // a 132px card here, 55mm on paper. Carrying its own size is what made
-      // it overflow the card, cut off at the edge and sitting on the text
-      // beside it.
+      // Strip the width and height off the root element only, so the code
+      // takes the size of the box it is put in — 132 px on a card here, 55 mm
+      // on paper. Two things were wrong with doing it globally:
+      //
+      // the replacement also hit the background `<rect width="37" height="37">`
+      // inside the code, collapsing it to nothing; and an `<svg>` carrying
+      // neither dimension has no intrinsic size, so the browser falls back to
+      // its default for a replaced element — 150 px square once the square
+      // viewBox is fitted — which is larger than the 132 px box it sits in and
+      // clipped by it. That is the whole of "the QR code is not scaled
+      // properly and is cut off". The CSS below is what actually sizes it.
       .then((text) => {
-        if (!dropped) setSvg(text.replace(/\s(?:width|height)="\d+"/g, ''))
+        const sized = text.replace(
+          /^<svg\b[^>]*>/,
+          (tag) => tag.replace(/\s(?:width|height)="[^"]*"/g, ''))
+        if (!dropped) setSvg(sized)
       })
       .catch(() => { if (!dropped) setFailed(true) })
     return () => { dropped = true }
@@ -85,19 +94,12 @@ export default function QrPanel({ token, caption, sub, size = 132 }: Props) {
   }
 
   return (
-    <div className="flex flex-wrap items-start gap-3">
-      <div
-        // The box decides the size and the SVG fills it. It used to carry its
-        // own width of twice this, so it overflowed: cut off at the edge of
-        // the card and sitting on top of whatever was beside it. That is three
-        // of the four complaints about the codes in one line of CSS.
-        className="shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-white p-1.5"
-        style={{ width: size, height: size }}
-        // Our own server's SVG, fetched with the session token. Inlined rather
-        // than an object URL so it can be handed straight to the print window.
-        dangerouslySetInnerHTML={{ __html: svg ?? '' }}
-      />
-      <div className="min-w-0">
+    // The code sits to the right of what it is a code for, which is where HSE
+    // asked for it on every form that carries one. It was first in the flow
+    // and therefore on the left, pushing the wording across and, on a narrow
+    // card, wrapping on top of it.
+    <div className="flex flex-wrap-reverse items-start justify-end gap-3">
+      <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-neutral-800">{caption}</p>
         {sub && <p className="mt-0.5 text-xs text-neutral-500">{sub}</p>}
         <button
@@ -110,6 +112,17 @@ export default function QrPanel({ token, caption, sub, size = 132 }: Props) {
           Print at 55 mm
         </button>
       </div>
+
+      <div
+        // The box decides the size and the SVG is told, here, to fill it.
+        // Without that rule the code has no size of its own and the browser
+        // draws it at its own default, larger than this box and clipped by it.
+        className="shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-white p-1.5 [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+        style={{ width: size, height: size }}
+        // Our own server's SVG, fetched with the session token. Inlined rather
+        // than an object URL so it can be handed straight to the print window.
+        dangerouslySetInnerHTML={{ __html: svg ?? '' }}
+      />
     </div>
   )
 }
