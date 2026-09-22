@@ -759,6 +759,7 @@ function BillsByDate({ currency }: { currency: string }) {
 
   const rows = data?.items ?? []
   const selectable = rows.filter((b) => !b.dismissed)
+  const ignoredRows = rows.filter((b) => b.dismissed)
   const pickedRows = rows.filter((b) => picked.includes(b.bill_no))
   const pickedTotal = pickedRows.reduce((t, b) => t + Number(b.money_bal), 0)
   const liveTotal = Number(data?.money_bal ?? 0) - Number(data?.dismissed_bal ?? 0)
@@ -855,6 +856,15 @@ function BillsByDate({ currency }: { currency: string }) {
           <span className="text-neutral-500">
             Pick a date above, or set a range, to judge a group of bills at once.
           </span>
+        )}
+        {/* A bulk action with no bulk undo is a trap: 88 bills judged in one
+            click would otherwise take 88 clicks to take back. Only offered
+            while the ignored rows are actually on screen. */}
+        {showIgnored && ignoredRows.length > 0 && picked.length === 0 && (
+          <button onClick={() => restore.mutate(ignoredRows.map((b) => b.bill_no))}
+                  className="inline-flex items-center gap-1 rounded border border-neutral-300 px-1.5 py-0.5 font-medium text-neutral-600 hover:bg-neutral-50">
+            <Undo2 className="h-3 w-3" /> Restore all {ignoredRows.length} ignored
+          </button>
         )}
         {capped && (
           <span className="text-amber-700">
