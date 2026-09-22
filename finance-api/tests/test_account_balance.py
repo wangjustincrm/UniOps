@@ -330,13 +330,18 @@ async def test_dims_endpoint_config_and_fallback(client, db_session):
     await db_session.flush()
     r = await client.get("/finance/v1/gl/account-balance/5101/dims", headers=_h())
     dims = r.json()["dims"]
+    # configured dims keep their order; the rest of the registry appends after.
+    # bank_account joined the registry in migration 0036 — it is NC's 银行账户
+    # auxiliary, and it is what a bank reconciliation expands 100201 by.
     assert [d["dim_code"] for d in dims] == [
-        "cost_center", "supplier", "department", "income_expense_item", "customer", "partner"]
+        "cost_center", "supplier", "department", "income_expense_item", "customer",
+        "partner", "bank_account"]
     assert all(d["supported"] is True for d in dims)
     # unconfigured account falls back to the full supported registry
     r2 = await client.get("/finance/v1/gl/account-balance/9999/dims", headers=_h())
     assert {d["dim_code"] for d in r2.json()["dims"]} == {
-        "cost_center", "department", "income_expense_item", "supplier", "customer", "partner"}
+        "cost_center", "department", "income_expense_item", "supplier", "customer",
+        "partner", "bank_account"}
 
 
 async def test_expand_endpoint_dims_param(client, db_session):

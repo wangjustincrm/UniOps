@@ -18,6 +18,11 @@ FULL_CONFIRM = "FULL RELOAD"
 AUX_DEPT = "0001Z0100000000005CS"           # 部门 -> ORG_DEPT
 AUX_COSTCENTER = "1003Z31000000000SP6J"     # 成本中心 -> RESA_COSTCENTER
 AUX_IOITEM = "0001Z0100000000005CZ"         # 收支项目 -> BD_INOUTBUSICLASS
+AUX_BANKACCOUNT = "0001Z010000000001N98"    # 银行账户 -> BD_BANKACCSUB
+
+# BD_ACCASSITEM.CODE of 银行账户. Resolved by CODE, never by name — see
+# resolve_bank_account_type_pk.
+BANK_ACCOUNT_ITEM_CODE = "0011"
 
 # Curated NC -> EPMS cost-center map (user, 2026-07-12): code decides when present,
 # else classify by department.
@@ -82,7 +87,8 @@ def nc_configured() -> bool:
 class NcExtract:
     """Raw NC reads, pre-transform. Tests inject a fake one."""
     ccy: dict           # pk_currtype -> currency code
-    aux: dict           # freevalueid -> (dept_code, cc_code, io_code, sup_code, cust_code)
+    aux: dict           # freevalueid -> (dept_code, cc_code, io_code, sup_code, cust_code,
+                        #                 bank_code)
     vouchers: list      # (pk, year, period, num, explanation, prepareddate, creationtime,
                         #  tallydate, pk_system)
     details: list       # (pk_voucher, detailindex, accountcode, dr, cr, ldr, lcr,
@@ -90,6 +96,11 @@ class NcExtract:
     max_creationtime: str | None
     tallied: set        # EVERY tallied pk in the book (NOT watermark-limited) —
                         # drives the status backfill, see _sync_statuses
+    # BD_BANKACCSUB rows referenced by any voucher:
+    # (nc_pk, code, accnum, name, accname, currency, bank_name). Upserted into
+    # nc_bank_accounts before the lines are written, so jv lines have an id to
+    # point at. Default () keeps old fixtures constructible.
+    bank_accounts: tuple = ()
 
 
 _AUX_NAME_SLOTS = {
@@ -117,6 +128,67 @@ def resolve_aux_type_pks(items) -> dict:
                 f"aux type pk mismatch for {slot}: constant {const!r} not among "
                 f"resolved {sorted(out[slot])!r} — typevalue-prefix assumption broke")
     return out
+
+
+def decode_aux_row(typevalues, slots) -> tuple:
+    """One GL_FREEVALUE row's typevalue1..9 -> (dept, cc, io, sup, cust, bank) codes.
+
+    `slots` carries the resolved type pks and their code lookups:
+      {"dept": (pk, {vpk: code}), "cc": ..., "io": ...,
+       "sup": (pkset, {...}), "cust": (pkset, {...}), "bank": (pk, {vpk: code})}
+
+    Each typevalueN is <20-char type pk><20-char value pk>. Two NC quirks decide
+    the whole function: values shorter than 40 chars are absent, and '~' is NC's
+    blank sentinel — a '~' value pk must come back empty, not as the literal '~'.
+    Unknown bank value pks fall back to the raw pk rather than dropping the line's
+    bank: 3 of 129 live values point at BD_BANKACCSUB rows that no longer exist,
+    and dropping them would silently merge those banks into "unassigned".
+    """
+    out = {"dept": "", "cc": "", "io": "", "sup": "", "cust": "", "bank": ""}
+    for tv in typevalues:
+        if not tv or len(tv) < 40:
+            continue
+        tpk, vpk = tv[:20], tv[20:40]
+        for slot, (want, codes) in slots.items():
+            hit = tpk in want if isinstance(want, (set, frozenset)) else tpk == want
+            if not hit:
+                continue
+            clean_vpk = _strip_char(vpk)
+            if clean_vpk:
+                out[slot] = codes.get(clean_vpk, codes.get(vpk, "")) or (
+                    clean_vpk if slot == "bank" else "")
+            break
+    return (out["dept"], out["cc"], out["io"], out["sup"], out["cust"], out["bank"])
+
+
+def resolve_bank_account_type_pk(items) -> str:
+    """[(pk_accassitem, code, name)] -> the 银行账户 type pk, resolved BY CODE.
+
+    Deliberately NOT name-matched the way resolve_aux_type_pks matches the other
+    five. NC carries three auxiliaries whose names all start 银行 — 银行类别
+    (0022), 银行档案 (0023) and 银行账户 (0011) — and nc_coa_sync already learned
+    what substring matching does to that kind of set (its AUX_ITEM_MAP comment:
+    the old NAME_MAP put both 项目类型 and 政府拨款项目 onto `project`).
+    BD_ACCASSITEM.CODE is the stable key.
+
+    Validates against the frozen constant the same way resolve_aux_type_pks does,
+    so a catalog change is a loud failure rather than a silently empty dimension.
+    """
+    hits = {pk for pk, code, _name in items if (code or "").strip() == BANK_ACCOUNT_ITEM_CODE}
+    if not hits:
+        raise RuntimeError(
+            f"BD_ACCASSITEM has no row with code {BANK_ACCOUNT_ITEM_CODE!r} (银行账户) — "
+            "the bank-account auxiliary cannot be decoded, so account 100201 would "
+            "import with every bank mixed together")
+    if AUX_BANKACCOUNT not in hits:
+        raise RuntimeError(
+            f"bank-account aux type pk mismatch: constant {AUX_BANKACCOUNT!r} not among "
+            f"resolved {sorted(hits)!r} — typevalue-prefix assumption broke")
+    if len(hits) > 1:
+        raise RuntimeError(
+            f"BD_ACCASSITEM has {len(hits)} rows with code {BANK_ACCOUNT_ITEM_CODE!r}: "
+            f"{sorted(hits)!r} — refusing to guess which one vouchers use")
+    return AUX_BANKACCOUNT
 
 
 def _tallied(tallydate) -> bool:
@@ -181,17 +253,24 @@ def _orig_side(dr: Decimal, cr: Decimal) -> tuple[Decimal, Decimal]:
     return (dr, cr)
 
 
-def _resolve_dims(assid, aux, cc_map_rows, category, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust):
-    """-> (cc_id, dept_id, io_code, ba_id, partner_id, partner_name, nc_cc_code, had_cc_hint).
+def _resolve_dims(assid, aux, cc_map_rows, category, uni_cc, uni_dept, uni_ba, uni_sup,
+                  uni_cust, uni_bank=None):
+    """-> (cc_id, dept_id, io_code, ba_id, partner_id, partner_name, nc_cc_code,
+           had_cc_hint, bank_id, bank_code).
 
     Cost center: for the 5 predreal categories (`category` is the category code)
     resolve ACCOUNT-AWARE via budget_actual_cc_map — an unmapped combo (e.g.
     engineering dept 0106 in 6602) returns None and surfaces as an exception. For
     every other account (`category is None`) keep the account-blind CC_BY_CODE/
     CC_BY_DEPT fallback. Supplier wins over customer when both appear; a missing
-    master row -> partner_id None with the NC code kept as partner_name text."""
+    master row -> partner_id None with the NC code kept as partner_name text.
+
+    Bank account: the code is kept even when nc_bank_accounts has no row for it
+    (some GL_FREEVALUE values point at pks BD_BANKACCSUB no longer holds — 3 of
+    129 on the live book). A code with no master still scopes a reconciliation;
+    a dropped one would silently merge that bank into "unassigned"."""
     from app.services.cc_map_import import resolve_uniops_cc
-    d, c, io, sup, cust = aux.get(assid, ("", "", "", "", ""))
+    d, c, io, sup, cust, bank = aux.get(assid, ("", "", "", "", "", ""))
     if category is not None:
         uni_code = resolve_uniops_cc(cc_map_rows, category, d, c)
     else:
@@ -210,12 +289,15 @@ def _resolve_dims(assid, aux, cc_map_rows, category, uni_cc, uni_dept, uni_ba, u
             uni_ba.get(io) if io else None,
             partner_id, partner_name,
             c or None,
-            bool(c or d))
+            bool(c or d),
+            (uni_bank or {}).get(bank) if bank else None,
+            bank or None)
 
 
 def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
               uni_sup: dict, uni_cust: dict, skip_pks: set,
-              cc_map_rows: list | None = None, category_of=None) -> tuple[list, list, list, int]:
+              cc_map_rows: list | None = None, category_of=None,
+              uni_bank: dict | None = None) -> tuple[list, list, list, int]:
     """NC rows -> (voucher dicts, line tuples, dim tuples, unmapped_cc count).
     Skips vouchers whose pk is in skip_pks (incremental pk-dedup). `category_of`
     (from make_category_of) maps a line's account to its predreal category; when
@@ -253,9 +335,10 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
         ldr_, lcr_ = _orig_side(_d(ldr), _d(lcr))
         acct_s = (acct or "").strip() or None
         category = category_of(acct_s) if category_of else None
-        cc_id, dept_id, io_code, ba_id, partner_id, partner_name, nc_cc_code, had_hint = _resolve_dims(
+        (cc_id, dept_id, io_code, ba_id, partner_id, partner_name, nc_cc_code, had_hint,
+         bank_id, bank_code) = _resolve_dims(
             assid, extract.aux, cc_map_rows or [], category,
-            uni_cc, uni_dept, uni_ba, uni_sup, uni_cust)
+            uni_cc, uni_dept, uni_ba, uni_sup, uni_cust, uni_bank)
         if had_hint and cc_id is None:
             unmapped += 1
         ccy_code = extract.ccy.get(curr)
@@ -267,9 +350,11 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             lid, jid, int(idx or 0), acct_s,
             (expl or "")[:255], odr, ocr, ldr_, lcr_,
             ccy_code, _d(rate) if rate else Decimal("1"),
-            cc_id, dept_id, ba_id, partner_id, partner_name, nc_cc_code))
+            cc_id, dept_id, ba_id, partner_id, partner_name, nc_cc_code, bank_id))
         if io_code:
             dims.append((uuid.uuid4(), lid, "income_expense_item", ba_id, io_code))
+        if bank_code:
+            dims.append((uuid.uuid4(), lid, "bank_account", bank_id, bank_code))
     return vouchers, lines, dims, unmapped
 
 
@@ -286,9 +371,28 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         cur.execute("select pk_currtype, code from NCSC.BD_CURRTYPE")
         ccy = {pk: code for pk, code in cur.fetchall()}
 
-        cur.execute("select pk_accassitem, name from NCSC.BD_ACCASSITEM")
-        type_pks = resolve_aux_type_pks(list(cur.fetchall()))
+        cur.execute("select pk_accassitem, code, name from NCSC.BD_ACCASSITEM")
+        assitems = list(cur.fetchall())
+        type_pks = resolve_aux_type_pks([(pk, name) for pk, _code, name in assitems])
         aux_sup_pks, aux_cust_pks = type_pks.get("supplier") or set(), type_pks.get("customer") or set()
+        aux_bank_pk = resolve_bank_account_type_pk(assitems)
+
+        # BD_BANKACCSUB.PK_BANKACCSUB is CHAR, so Oracle blank-pads it; the
+        # GL_FREEVALUE slice is a bare 20 chars. rtrim both sides or every bank
+        # lookup misses and 100201 imports with no bank at all (same class of bug
+        # as TALLYDATE's '~' padding — see _tallied).
+        # NAME is the label NC's own 科目余额表 prints ("RBC加拿大元活期户");
+        # ACCNAME is the holder ("RBC") and repeats across accounts. Join out to
+        # BD_BANKDOC for the bank itself ("RBC-York Street").
+        cur.execute("select sub.pk_bankaccsub, sub.code, sub.accnum, sub.name, sub.accname, "
+                    "       sub.pk_currtype, doc.name "
+                    "  from NCSC.BD_BANKACCSUB sub "
+                    "  left join NCSC.BD_BANKACCBAS bas on bas.pk_bankaccbas = sub.pk_bankaccbas "
+                    "  left join NCSC.BD_BANKDOC doc on doc.pk_bankdoc = bas.pk_bankdoc")
+        bank_rows = [(_strip_char(bpk), _strip_char(code), _strip_char(accnum),
+                      _strip_char(name), _strip_char(accname), pk_ccy, _strip_char(bank))
+                     for bpk, code, accnum, name, accname, pk_ccy, bank in cur]
+        bank_codes = {r[0]: r[1] for r in bank_rows if r[0] and r[1]}
 
         cur.execute("select pk_supplier, code from NCSC.BD_SUPPLIER")
         sup_codes = {pk: code for pk, code in cur.fetchall()}
@@ -304,25 +408,13 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         cur.execute("select freevalueid, typevalue1, typevalue2, typevalue3, typevalue4, "
                     "typevalue5, typevalue6, typevalue7, typevalue8, typevalue9 "
                     "from NCSC.GL_FREEVALUE")
+        slots = {"dept": (AUX_DEPT, dept), "cc": (AUX_COSTCENTER, cc),
+                 "io": (AUX_IOITEM, io), "sup": (aux_sup_pks, sup_codes),
+                 "cust": (aux_cust_pks, cust_codes), "bank": (aux_bank_pk, bank_codes)}
         aux = {}
         for row in cur:
-            fid, tvs = row[0], row[1:]
-            dcode = ccode = iocode = supcode = custcode = ""
-            for tv in tvs:
-                if not tv or len(tv) < 40:
-                    continue
-                tpk, vpk = tv[:20], tv[20:40]
-                if tpk == AUX_DEPT:
-                    dcode = dept.get(vpk, "")
-                elif tpk == AUX_COSTCENTER:
-                    ccode = cc.get(vpk, "")
-                elif tpk == AUX_IOITEM:
-                    iocode = io.get(vpk, "")
-                elif tpk in aux_sup_pks:
-                    supcode = sup_codes.get(vpk, "")
-                elif tpk in aux_cust_pks:
-                    custcode = cust_codes.get(vpk, "")
-            aux[fid] = (dcode, ccode, iocode, supcode, custcode)
+            aux[row[0]] = decode_aux_row(row[1:], slots)
+        used_bank_codes = {a[5] for a in aux.values() if a[5]}
 
         # Discarded (作废) vouchers are not ledger entries. Measured 2026-07-17:
         # exactly one on this book ($4,298.52) — it had been importing as posted.
@@ -354,8 +446,14 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         details = list(cur.fetchall())
     finally:
         con.close()
+    # Only the accounts vouchers actually reference — BD_BANKACCSUB holds 13k rows
+    # for the whole FeiHe group, of which this book uses ~129.
+    bank_master = tuple((pk, code, accnum, name, accname, ccy.get(pk_ccy), bank)
+                        for pk, code, accnum, name, accname, pk_ccy, bank in bank_rows
+                        if code and code in used_bank_codes)
     return NcExtract(ccy=ccy, aux=aux, vouchers=vouchers, details=details,
-                     max_creationtime=max_ct, tallied=tallied)
+                     max_creationtime=max_ct, tallied=tallied,
+                     bank_accounts=bank_master)
 
 
 # ── run lifecycle (worker) ─────────────────────────────────────────────────────────
@@ -538,20 +636,58 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                            "center until it is imported — run scripts/import_cc_map.py")
             cc_map_rows = []
 
+        # nc_bank_accounts is written HERE, before transform, because every jv line
+        # needs an id to point at. Upsert (never delete-and-reload): a code that
+        # stops appearing in vouchers still has reconciliation matches hanging off
+        # it. Keyed on nc_pk — NC lets a code be re-typed, and the pk is what the
+        # voucher aux actually carries.
+        bank_upserted = 0
+        if extract.bank_accounts:
+            execute_values(cur,
+                "insert into nc_bank_accounts "
+                "(id, nc_pk, code, acc_num, name, acc_name, bank_name, currency, "
+                " created_at, updated_at) "
+                "values %s on conflict (nc_pk) do update set "
+                " code = excluded.code, acc_num = excluded.acc_num, "
+                " name = excluded.name, acc_name = excluded.acc_name, "
+                " bank_name = excluded.bank_name, currency = excluded.currency, "
+                " updated_at = now()",
+                [(uuid.uuid4(), pk, code, accnum, name, accname, bank, bccy)
+                 for pk, code, accnum, name, accname, bccy, bank in extract.bank_accounts],
+                template="(%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
+            bank_upserted = cur.rowcount
+        cur.execute("select code, id from nc_bank_accounts")
+        uni_bank = dict(cur.fetchall())
+        logger.info("nc_sync run %s: %d bank accounts upserted, %d known",
+                    run_id, bank_upserted, len(uni_bank))
+
         skip = existing if mode == "incremental" else set()
         vouchers, lines, dims, unmapped = transform(
             extract, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust, skip,
-            cc_map_rows=cc_map_rows, category_of=category_of)
+            cc_map_rows=cc_map_rows, category_of=category_of, uni_bank=uni_bank)
+
+        # A bank-account value NC has but BD_BANKACCSUB no longer does: the raw pk
+        # survives in jv_line_dimensions.value_text, but the line scopes to no
+        # bank, so it silently leaves every reconciliation. Say so.
+        unresolved_bank = sum(1 for d in dims if d[2] == "bank_account" and d[3] is None)
+        if unresolved_bank:
+            logger.warning(
+                "nc_sync run %s: %d lines carry a bank-account value with no "
+                "BD_BANKACCSUB master row — those lines scope to NO bank account "
+                "(raw NC pk kept in jv_line_dimensions.value_text)",
+                run_id, unresolved_bank)
 
         deleted = 0
         if mode == "full":
             cur.execute("delete from journal_vouchers where nc_source_pk is not null")
             deleted = cur.rowcount
 
+        # Indexed, not a positional unpack: the line tuple has grown twice now and
+        # a `_`-padded unpack silently mis-binds every column after the new one.
         tot: dict = {}
-        for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _, _, _, _, _, _ in lines:
-            t = tot.setdefault(jid, [Decimal("0")] * 4)
-            t[0] += dr; t[1] += crr; t[2] += ldr; t[3] += lcr
+        for ln in lines:
+            t = tot.setdefault(ln[1], [Decimal("0")] * 4)
+            t[0] += ln[5]; t[1] += ln[6]; t[2] += ln[7]; t[3] += ln[8]
 
         v_rows = [(v["id"], v["jv_number"], "JV", v["vdate"], v["period"], v["summary"],
                    v["status"], "nc", "nc_voucher", v["jv_number"], v["nc_pk"], v["source_subsystem"],
@@ -571,9 +707,10 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                 "insert into journal_voucher_lines "
                 "(id, jv_id, line_no, account_code, summary, orig_debit, orig_credit, "
                 " local_debit, local_credit, currency, fx_rate, cost_center_id, department_id, "
-                " income_expense_item_id, partner_id, partner_name, nc_cc_code, created_at, updated_at) values %s",
+                " income_expense_item_id, partner_id, partner_name, nc_cc_code, bank_account_id, "
+                " created_at, updated_at) values %s",
                 lines[i:i + _CHUNK],
-                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
+                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
             _mark(dsn, run_id, lines_inserted=min(i + _CHUNK, len(lines)))
         for i in range(0, len(dims), _CHUNK):
             execute_values(cur,

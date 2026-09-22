@@ -469,7 +469,7 @@ async def test_nc_sync_run_raises_the_task(db_session):
         # test would pass while proving the opposite of what it claims.
         return NcExtract(
             ccy={"CADPK": "CAD"},
-            aux={"A1": ("0104", "E09", "CRM00201", "", "")},   # 'E09' is in no map row
+            aux={"A1": ("0104", "E09", "CRM00201", "", "", "")},   # 'E09' is in no map row
             vouchers=[("VALPK1", "2026", "07", 1, "v", "2026-07-10 09:00:00",
                        "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
             details=[("VALPK1", 1, "5101", 100, 0, 100, 0, "CADPK", 1, "x", "A1"),

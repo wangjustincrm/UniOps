@@ -45,8 +45,8 @@ def _mini_extract(tallydate="2026-07-11 09:00:00", pk_system="GL"):
     # voucher 1: line 1 both-sided w/ cc+ioitem aux; line 2 payable w/ supplier aux
     return NcExtract(
         ccy={"CADPK": "CAD"},
-        aux={"ASS1": ("0104", "E01", "CRM004", "", ""),
-             "ASS2": ("", "", "", "SUP01", "")},
+        aux={"ASS1": ("0104", "E01", "CRM004", "", "", ""),
+             "ASS2": ("", "", "", "SUP01", "", "")},
         vouchers=[("NCPK1", "2026", "07", 12, "test voucher",
                    "2026-07-10 09:00:00", "2026-07-11 08:00:00", tallydate, pk_system)],
         details=[
@@ -123,7 +123,7 @@ def test_transform_skips_existing_and_counts_unmapped():
     v, l, d, _ = transform(ex, {}, {}, {}, uni_sup={}, uni_cust={}, skip_pks={"NCPK1"})
     assert v == [] and l == [] and d == []
     # unknown cc code -> unmapped counted (line still produced, cc_id None)
-    ex2 = NcExtract(ccy=ex.ccy, aux={"ASS1": ("", "ZZZ", "", "", "")},
+    ex2 = NcExtract(ccy=ex.ccy, aux={"ASS1": ("", "ZZZ", "", "", "", "")},
                     vouchers=ex.vouchers, details=ex.details[:1],
                     max_creationtime=ex.max_creationtime, tallied=ex.tallied)
     v2, l2, _, unmapped2 = transform(ex2, {}, {}, {}, uni_sup={}, uni_cust={}, skip_pks=set())
@@ -200,8 +200,8 @@ def test_transform_account_aware_for_predreal_and_stores_nc_cc():
     cc_id = object()
     e = NcExtract(
         ccy={"CADPK": "CAD"},
-        aux={"A1": ("0104", "E01", "", "", ""),
-             "A2": ("0106", "", "", "", "")},
+        aux={"A1": ("0104", "E01", "", "", "", ""),
+             "A2": ("0106", "", "", "", "", "")},
         vouchers=[("P1", "2026", "07", 1, "x", "2026-07-10 09:00:00",
                    "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
         details=[("P1", 1, "510101", 100, 0, 100, 0, "CADPK", 1, "", "A1"),
@@ -225,7 +225,7 @@ def test_transform_non_predreal_keeps_dict_fallback():
     cc_id = object()
     e = NcExtract(
         ccy={"CADPK": "CAD"},
-        aux={"A1": ("0104", "", "", "", "")},         # dept 0104 -> CC_BY_DEPT
+        aux={"A1": ("0104", "", "", "", "", "")},     # dept 0104 -> CC_BY_DEPT
         vouchers=[("P2", "2026", "07", 1, "x", "2026-07-10 09:00:00",
                    "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
         details=[("P2", 1, "2202", 0, 100, 0, 100, "CADPK", 1, "", "A1")],

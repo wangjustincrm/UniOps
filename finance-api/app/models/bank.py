@@ -34,6 +34,10 @@ class BankAccount(UUIDPrimaryKey, TimestampMixin, Base):
     # A3 workbench: reusable CSV column mapping for this account's statement export
     # {date, description, reference?, amount? | debit?+credit?, date_format?, default_year?}
     import_mapping: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Which NC bank account (BD_BANKACCSUB.CODE, e.g. '1033760' = RBC CAD) this
+    # row IS. The book side of a reconciliation is GL 100201 filtered by this
+    # code; unset means the account cannot be reconciled against the ledger.
+    nc_bank_account_code: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 

@@ -225,8 +225,15 @@ def _dimensions():
     and the voucher sync already folds supplier-or-customer into this very
     column (_resolve_dims), so the union is what the column actually holds.
     Its master is resolved in _resolve_dim, not here — hence the Nones.
+
+    bank_account (NC 银行账户, BD_ACCASS 0011) arrived with migration 0036. It is
+    the expansion the bank reconciliation reads: 100201 is one postable account,
+    so this dimension is the only thing that separates RBC from Bank of China.
+    Rows only exist for vouchers imported since that sync — a `full` nc_sync is
+    what backfills history.
     """
     from app.models.mirrors import BudgetAccount, CostCenter, Department, ErpSupplier
+    from app.models.nc_bank_account import NcBankAccount
     from app.models.nc_customer import NcCustomer
     return {
         "cost_center": (JournalVoucherLine.cost_center_id, CostCenter, "code", "name"),
@@ -235,6 +242,7 @@ def _dimensions():
         "supplier": (JournalVoucherLine.partner_id, ErpSupplier, "erp_supplier_code", "supplier_name"),
         "customer": (JournalVoucherLine.partner_id, NcCustomer, "code", "name"),
         "partner": (JournalVoucherLine.partner_id, None, None, None),   # union — see _resolve_dim
+        "bank_account": (JournalVoucherLine.bank_account_id, NcBankAccount, "code", "name"),
     }
 
 
@@ -285,6 +293,7 @@ DIM_LABELS = {
     "cost_center": "Cost Center", "department": "Department",
     "income_expense_item": "Income/Expense Item", "supplier": "Supplier",
     "customer": "Customer", "partner": "Partner (Vendor/Customer)",
+    "bank_account": "Bank Account",
     # carried from NC BD_ACCASS but not expandable — jv_lines has no column for
     # them (spec §3.4). Listed so "NC configured it, we can't expand it" is visible.
     "employee": "Employee",
@@ -292,7 +301,7 @@ DIM_LABELS = {
     "government_grant_project": "Government Grant Project",
     "item": "Item / Material", "item_category": "Item Category",
     "asset_category": "Asset Category", "tax_code": "VAT Tax Code / Rate",
-    "bank": "Bank", "bank_account": "Bank Account",
+    "bank": "Bank",
     "bank_category": "Bank Category", "country_region": "Country / Region",
     "sales_type": "Sales Type", "credit_card": "Credit Card",
 }

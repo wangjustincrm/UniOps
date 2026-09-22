@@ -101,6 +101,12 @@ class JournalVoucherLine(UUIDPrimaryKey, TimestampMixin, Base):
     item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     income_expense_item_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True)  # 收支项目提列 (multi-dim expand)
+    # 银行账户 (BD_ACCASSITEM '0011') -> nc_bank_accounts.id. Account 100201 is a
+    # single postable account, so this column is the ONLY thing separating one
+    # bank from another — including the two sides of an internal transfer, which
+    # both land on 100201 and net to zero without it.
+    bank_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True)
 
 
 class JvLineDimension(UUIDPrimaryKey, TimestampMixin, Base):
