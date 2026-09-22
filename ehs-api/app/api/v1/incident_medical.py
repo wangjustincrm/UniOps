@@ -30,6 +30,23 @@ class TimelineEntry(BaseModel):
     event: str = Field(default="", max_length=1000)
 
 
+class VitalsReading(BaseModel):
+    """One set of observations, at one time.
+
+    Everything but the pain score is free text on purpose: a blood pressure is
+    written "120/80" and a pulse is sometimes "110 weak", and a numeric field
+    would make a first aider drop the word that mattered.
+    """
+
+    at: str = Field(default="", max_length=50)
+    pulse: str = Field(default="", max_length=20)
+    respirations: str = Field(default="", max_length=20)
+    blood_pressure: str = Field(default="", max_length=20)
+    pain_level: int | None = Field(default=None, ge=0, le=10)
+    pain_location: str = Field(default="", max_length=255)
+    other: str = Field(default="", max_length=2000)
+
+
 class MedicalIn(BaseModel):
     # ★ This endpoint writes every field it is given and blanks the ones it is
     # not: the screen sends the whole section each time, which is the right
@@ -64,6 +81,7 @@ class MedicalIn(BaseModel):
     pain_level: int | None = Field(default=None, ge=0, le=10)
     pain_location: str | None = Field(default=None, max_length=255)
     vitals_other: str | None = None
+    vitals_series: list[VitalsReading] = Field(default_factory=list)
 
     timeline: list[TimelineEntry] = Field(default_factory=list)
 
@@ -105,6 +123,12 @@ async def upsert_medical(
 
     data = payload.model_dump()
     data["timeline"] = [t for t in data["timeline"] if t.get("time") or t.get("event")]
+    # A reading with nothing in it is the ordinary result of adding a row and
+    # changing your mind, not an observation that everything was blank.
+    data["vitals_series"] = [
+        v for v in data["vitals_series"]
+        if any(str(x).strip() for x in v.values() if x is not None)
+    ]
     for field, value in data.items():
         setattr(row, field, value)
 

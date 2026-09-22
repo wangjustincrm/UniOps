@@ -36,6 +36,16 @@ interface Investigation {
   signed_by_name: string | null
 }
 
+interface VitalsReading {
+  at: string; pulse: string; respirations: string; blood_pressure: string
+  pain_level: number | null; pain_location: string; other: string
+}
+
+const EMPTY_READING: VitalsReading = {
+  at: '', pulse: '', respirations: '', blood_pressure: '',
+  pain_level: null, pain_location: '', other: '',
+}
+
 interface Medical {
   supervisor_id: string | null; supervisor_name: string | null
   /** Superseded by the injured person's nature of injury, which is a list.
@@ -49,6 +59,7 @@ interface Medical {
   blood_pressure: string | null; pain_level: number | null
   pain_location: string | null; vitals_other: string | null
   timeline: { time: string; event: string }[]
+  vitals_series: VitalsReading[]
 }
 
 interface Cause {
@@ -235,6 +246,7 @@ export default function InvestigationPage() {
           pain_location: med.pain_location ?? null,
           vitals_other: med.vitals_other ?? null,
           timeline: (med.timeline ?? []).filter((t) => t.time || t.event),
+          vitals_series: med.vitals_series ?? [],
         })
       }
       if (showMedical && injuredPerson && (bodyPart || natureOfInjury)) {
@@ -445,34 +457,81 @@ export default function InvestigationPage() {
           <h3 className="mb-2 mt-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
             Vitals
           </h3>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Time"><input className={inputClass} value={med.vitals_at_text ?? ''}
-              onChange={(e) => setMed({ ...med, vitals_at_text: e.target.value })} /></Field>
-            <Field label="Pulse"><input className={inputClass} value={med.pulse ?? ''}
-              onChange={(e) => setMed({ ...med, pulse: e.target.value })} /></Field>
-            <Field label="Respirations"><input className={inputClass} value={med.respirations ?? ''}
-              onChange={(e) => setMed({ ...med, respirations: e.target.value })} /></Field>
-            <Field label="Blood pressure"><input className={inputClass} value={med.blood_pressure ?? ''}
-              onChange={(e) => setMed({ ...med, blood_pressure: e.target.value })} /></Field>
-            <Field label="Pain level (0–10)">
-              <input type="number" min={0} max={10} className={inputClass}
-                     value={med.pain_level ?? ''}
-                     onChange={(e) => setMed({ ...med,
-                       pain_level: e.target.value === '' ? null : Number(e.target.value) })} />
-            </Field>
-            <Field label="Where is the pain"><input className={inputClass} value={med.pain_location ?? ''}
-              onChange={(e) => setMed({ ...med, pain_location: e.target.value })} /></Field>
-          </div>
+          {/* Taken more than once, because the trend is what decides whether
+              somebody goes to hospital: a pulse of 110 reads one way on its own
+              and another beside the 90 from five minutes earlier. The form used
+              to hold exactly one set. */}
+          {(med.vitals_series ?? []).map((v, i) => {
+            const setReading = (patch: Partial<VitalsReading>) =>
+              setMed({ ...med, vitals_series: (med.vitals_series ?? []).map(
+                (x, j) => (j === i ? { ...x, ...patch } : x)) })
+            return (
+              <div key={i} className="mb-3 rounded-lg border border-neutral-200 p-2.5">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-xs font-medium text-neutral-600">
+                    Reading {i + 1}
+                  </span>
+                  <button type="button"
+                          onClick={() => setMed({ ...med,
+                            vitals_series: (med.vitals_series ?? []).filter((_, j) => j !== i) })}
+                          className="flex min-h-[32px] min-w-[32px] items-center justify-center text-neutral-400">
+                    <Trash2 className="h-4 w-4" aria-hidden />
+                    <span className="sr-only">Remove reading {i + 1}</span>
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Time">
+                    {/* A picker, not free text: these are compared against each
+                        other and against the timeline, and "10:06 am" beside
+                        "1006" cannot be. */}
+                    <input type="time" className={inputClass} value={v.at}
+                           onChange={(e) => setReading({ at: e.target.value })} />
+                  </Field>
+                  <Field label="Pulse"><input className={inputClass} value={v.pulse}
+                    onChange={(e) => setReading({ pulse: e.target.value })} /></Field>
+                  <Field label="Respirations"><input className={inputClass} value={v.respirations}
+                    onChange={(e) => setReading({ respirations: e.target.value })} /></Field>
+                  <Field label="Blood pressure"><input className={inputClass} value={v.blood_pressure}
+                    onChange={(e) => setReading({ blood_pressure: e.target.value })} /></Field>
+                  <Field label="Pain level (0–10)">
+                    <input type="number" min={0} max={10} className={inputClass}
+                           value={v.pain_level ?? ''}
+                           onChange={(e) => setReading({
+                             pain_level: e.target.value === '' ? null : Number(e.target.value) })} />
+                  </Field>
+                  <Field label="Where is the pain"><input className={inputClass} value={v.pain_location}
+                    onChange={(e) => setReading({ pain_location: e.target.value })} /></Field>
+                  <div className="col-span-2">
+                    <Field label="Anything else observed">
+                      <input className={inputClass} value={v.other}
+                             onChange={(e) => setReading({ other: e.target.value })} />
+                    </Field>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+          <button type="button"
+                  onClick={() => setMed({ ...med,
+                    vitals_series: [...(med.vitals_series ?? []), { ...EMPTY_READING }] })}
+                  className="mb-2 flex min-h-[38px] items-center gap-1.5 text-sm font-medium text-primary-700">
+            <Plus className="h-4 w-4" aria-hidden />
+            {(med.vitals_series ?? []).length === 0 ? 'Record vitals' : 'Record vitals again'}
+          </button>
 
           <h3 className="mb-2 mt-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
             Timeline
           </h3>
           {(med.timeline ?? []).map((t, i) => (
+            // `min-w-0` on the event box below is what stops this row being
+            // wider than the panel: a flex item will not shrink past its
+            // content by default, so the event text was pushed off the edge.
             <div key={i} className="mb-2 flex gap-2">
-              <input className={`${inputClass} w-28 shrink-0`} value={t.time} placeholder="10:06 am"
+              <input type="time" className={`${inputClass} w-32 shrink-0`} value={t.time}
+                     aria-label="Time"
                      onChange={(e) => setMed({ ...med, timeline: (med.timeline ?? []).map(
                        (x, j) => j === i ? { ...x, time: e.target.value } : x) })} />
-              <input className={inputClass} value={t.event} placeholder="What happened"
+              <input className={`${inputClass} min-w-0`} value={t.event} placeholder="What happened"
                      onChange={(e) => setMed({ ...med, timeline: (med.timeline ?? []).map(
                        (x, j) => j === i ? { ...x, event: e.target.value } : x) })} />
               <button type="button"

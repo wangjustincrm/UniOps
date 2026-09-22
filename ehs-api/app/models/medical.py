@@ -50,6 +50,15 @@ class IncidentMedical(UUIDPrimaryKey, TimestampMixin, Base):
     pain_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     vitals_other: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Vitals are taken more than once, and the trend is what decides whether
+    # somebody goes to hospital: a pulse of 110 reads one way alone and another
+    # beside the 90 from five minutes earlier. The seven columns above are the
+    # first reading, backfilled into this list by migration 0031 and no longer
+    # written; they are kept because dropping columns on live injury records is
+    # a risk with no upside.
+    vitals_series: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]")
+
     timeline: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
                                            server_default="[]")
 

@@ -99,7 +99,7 @@ export default function CourseSessionPage() {
           </Detail>
           <Detail label="Where">{s.location_text ?? '—'}</Detail>
           <Detail label="Run by">{s.coordinator_name ?? 'Not assigned'}</Detail>
-          <Detail label="Taught by">{s.instructor_name ?? 'Not recorded yet'}</Detail>
+          <Detail label="Instructor">{s.instructor_name ?? 'Not recorded yet'}</Detail>
         </dl>
         {s.notes && <p className="mt-2 text-sm text-neutral-700">{s.notes}</p>}
         {mayWrite && open && <InstructorField session={s} onSaved={invalidate} />}

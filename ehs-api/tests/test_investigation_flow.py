@@ -296,3 +296,53 @@ async def test_the_investigation_can_correct_the_body_part(hse_manager, worker, 
         f"/api/v1/incidents/{other.json()['id']}/persons/{person_id}",
         json={"body_part_label": "Elbow"})
     assert stray.status_code == 404, "a person must not be editable through another incident"
+
+
+async def test_vitals_are_a_series_not_a_single_reading(hse_manager, worker):
+    """Taken again is the point of taking them.
+
+    A pulse of 110 reads one way on its own and another beside the 90 from
+    five minutes earlier, and the trend is what decides whether somebody goes
+    to hospital. The form held exactly one set.
+    """
+    from datetime import datetime, timezone
+
+    _, client = hse_manager
+    injured, _ = worker
+    incident_id = (await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Faint in the dryer bay",
+        "incident_type": "medical_aid",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "description": "Went down beside the packer.",
+        "persons": [{"role": "injured", "person_name": injured.full_name or "Test Worker",
+                     "user_id": str(injured.id)}],
+    })).json()["id"]
+    await client.post(f"/api/v1/incidents/{incident_id}/submit")
+
+    saved = await client.put(f"/api/v1/incidents/{incident_id}/medical", json={
+        "vitals_series": [
+            {"at": "10:06", "pulse": "110 weak", "respirations": "24",
+             "blood_pressure": "100/60", "pain_level": 3},
+            {"at": "10:11", "pulse": "90", "respirations": "18",
+             "blood_pressure": "115/70", "pain_level": 2},
+        ],
+    })
+    assert saved.status_code == 200, saved.text
+
+    back = (await client.get(f"/api/v1/incidents/{incident_id}/medical")).json()
+    assert len(back["vitals_series"]) == 2, back["vitals_series"]
+    assert back["vitals_series"][0]["pulse"] == "110 weak", (
+        "free text on purpose — a numeric field would make a first aider drop "
+        "the word that mattered")
+    assert back["vitals_series"][1]["pain_level"] == 2
+
+    # A row somebody added and thought better of is not an observation that
+    # everything was blank.
+    trimmed = await client.put(f"/api/v1/incidents/{incident_id}/medical", json={
+        "vitals_series": [
+            {"at": "10:06", "pulse": "110 weak"},
+            {"at": "", "pulse": "", "respirations": "", "blood_pressure": "",
+             "pain_level": None, "pain_location": "", "other": ""},
+        ],
+    })
+    assert len(trimmed.json()["vitals_series"]) == 1
