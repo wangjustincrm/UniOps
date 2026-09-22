@@ -908,7 +908,14 @@ function BillsByDate({ currency }: { currency: string }) {
               </td></tr>
             ) : rows.length === 0 ? (
               <tr><td colSpan={8} className="px-3 py-8 text-center text-neutral-400">
-                No open bills match.</td></tr>
+                {/* An emptied list after a bulk judgement must say what
+                    happened to the money, not just go blank. */}
+                {(data?.dismissed_bills ?? 0) > 0
+                  ? <>All {data!.dismissed_bills} bills matching this filter have been
+                      ignored — {money(data!.dismissed_bal)} {currency}. Tick
+                      &lsquo;Show bills already ignored&rsquo; to see or undo them.</>
+                  : <>No open bills match.</>}
+              </td></tr>
             ) : rows.map((b) => {
               const gone = !!b.dismissed
               return (

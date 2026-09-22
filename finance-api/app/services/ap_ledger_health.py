@@ -814,8 +814,14 @@ _LIVE_DISMISSAL = """
 
 
 def _bill_filters(currency: str | None, date_from, date_to,
-                  supplier_code: str | None,
-                  include_dismissed: bool) -> tuple[str, dict]:
+                  supplier_code: str | None) -> tuple[str, dict]:
+    """The filter WITHOUT the dismissed predicate.
+
+    Deliberately separate: the totals are always counted over the whole
+    matching population, and only the ROWS are filtered. Counting them
+    together meant that ignoring 88 bills left the page reading "0 bills
+    match" with nothing to say what had just happened to 3M.
+    """
     where = [_EFFECTIVE, "l.money_bal <> 0"]
     params: dict = {}
     if currency:
@@ -830,8 +836,6 @@ def _bill_filters(currency: str | None, date_from, date_to,
     if supplier_code:
         where.append("l.supplier_code = :supplier_code")
         params["supplier_code"] = supplier_code
-    if not include_dismissed:
-        where.append("d.bill_no is null")
     return " and ".join(where), params
 
 
@@ -844,7 +848,7 @@ async def date_clusters(db: AsyncSession, currency: str | None = None,
     suppliers is the signature of a migration load, and that is exactly the
     population this page exists to let finance judge.
     """
-    where, params = _bill_filters(currency, None, None, None, True)
+    where, params = _bill_filters(currency, None, None, None)
     params["limit"] = max(1, min(limit, 50))
     rows = (await db.execute(text(f"""
         select l.bill_date::date as bill_date,
@@ -879,18 +883,18 @@ async def open_bills(db: AsyncSession, currency: str | None = None,
     needs to state what it is about to affect, and "total of the rows that
     happened to fit" is how a page starts lying at exactly the wrong moment.
     """
-    where, params = _bill_filters(currency, date_from, date_to,
-                                  supplier_code, include_dismissed)
+    where, params = _bill_filters(currency, date_from, date_to, supplier_code)
     having = ""
     if min_amount is not None:
         having = " having abs(sum(l.money_bal)) >= :min_amount"
         params["min_amount"] = min_amount
 
-    body = f"""
+    def body(hide_dismissed: bool) -> str:
+        return f"""
       from nc_ap_bill_lines l
       join nc_ap_bills b on b.id = l.bill_id
       {_LIVE_DISMISSAL}
-     where {where}
+     where {where}{' and d.bill_no is null' if hide_dismissed else ''}
      group by l.bill_no, b.currency, d.bill_no, d.reason, d.note,
               d.dismissed_by_name, d.dismissed_at
      {having}
@@ -908,7 +912,7 @@ async def open_bills(db: AsyncSession, currency: str | None = None,
                sum(l.money_bal) as money_bal,
                d.reason as dismiss_reason, d.note as dismiss_note,
                d.dismissed_by_name, d.dismissed_at
-        {body}
+        {body(not include_dismissed)}
          order by abs(sum(l.money_bal)) desc, l.bill_no
          limit :limit offset :offset
     """), page)).mappings().all()
@@ -920,15 +924,17 @@ async def open_bills(db: AsyncSession, currency: str | None = None,
                coalesce(sum(money_bal) filter (where dismissed), 0) as dismissed_bal
           from (
             select sum(l.money_bal) as money_bal, d.bill_no is not null as dismissed
-            {body}
+            {body(False)}
           ) x
     """), params)).mappings().one()
 
     return {
+        # Over the WHOLE match, dismissed included — see _bill_filters.
         "total": int(tot["bills"]),
         "money_bal": str(tot["money_bal"]),
         "dismissed_bills": int(tot["dismissed_bills"]),
         "dismissed_bal": str(tot["dismissed_bal"]),
+        "showing_dismissed": include_dismissed,
         "items": [{
             "bill_no": r["bill_no"],
             "currency": r["currency"],
@@ -967,14 +973,18 @@ async def dismiss_matching(db: AsyncSession, currency: str | None, date_from, da
                                 date_to=date_to, supplier_code=supplier_code,
                                 include_dismissed=False, min_amount=min_amount,
                                 limit=1000)
-    if matching["total"] != expected_bills:
+    # `total` now spans the whole match, already-ignored included, so the
+    # comparison has to be against the LIVE ones — the same figure the screen
+    # showed next to the button.
+    live = matching["total"] - matching["dismissed_bills"]
+    if live != expected_bills:
         return {"applied": False, "reason": "changed",
-                "expected_bills": expected_bills, "actual_bills": matching["total"]}
+                "expected_bills": expected_bills, "actual_bills": live}
     # The page read is capped; a filter wider than the cap must not be applied
     # from a screen that could only ever have shown part of it.
-    if matching["total"] > len(matching["items"]):
+    if live > len(matching["items"]):
         return {"applied": False, "reason": "too_many",
-                "actual_bills": matching["total"], "max_per_action": len(matching["items"])}
+                "actual_bills": live, "max_per_action": len(matching["items"])}
     out = await dismiss_bills(db, [b["bill_no"] for b in matching["items"]],
                               reason, note, user_id, user_name)
     return {"applied": True, "money_bal": matching["money_bal"], **out}
