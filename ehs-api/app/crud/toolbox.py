@@ -39,14 +39,13 @@ async def create_talk(
     db: AsyncSession, *, title: str, topic: str | None, period_month: date,
     creator_id: uuid.UUID,
 ) -> ToolboxTalk:
+    # A month may carry more than one topic. It was one, on the assumption that
+    # the monthly talk is the monthly talk — and the second acceptance round
+    # said plainly that it is not: a near miss in week two is talked about in
+    # week two, not deferred to the next month or pushed into the sheet already
+    # issued. Nothing downstream counted on one per month; completion is
+    # measured per talk, and the chaser walks deliveries, not months.
     period = month_start(period_month)
-    clash = (await db.execute(
-        select(ToolboxTalk).where(ToolboxTalk.period_month == period))).scalar_one_or_none()
-    if clash is not None:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"There is already a toolbox talk for {period:%B %Y} ({clash.talk_no})",
-        )
     talk = ToolboxTalk(
         id=uuid.uuid4(), talk_no=await next_number(db, "toolbox_talk"),
         title=title, topic=topic, period_month=period, created_by=creator_id,
@@ -72,6 +71,20 @@ async def supervisors_for_talks(db: AsyncSession) -> list[User]:
     return await notify.by_roles(db, SUPERVISORY_ROLES)
 
 
+async def all_staff(db: AsyncSession) -> list[User]:
+    """Everybody a talk could be handed to, supervisor or not.
+
+    A lead hand runs a crew and holds no supervisory role, which is why the
+    supervisor list alone was not enough to hand them the sheet.
+
+    Active accounts only: a leaver on the list is a delivery nobody runs and a
+    completion percentage that can never reach a hundred.
+    """
+    return list((await db.execute(
+        select(User).where(User.is_active.is_(True)).order_by(User.full_name)
+    )).scalars().all())
+
+
 async def publish_talk(
     db: AsyncSession, talk: ToolboxTalk, *, only_to: list[uuid.UUID] | None = None,
 ) -> list[TbtDelivery]:
@@ -81,14 +94,21 @@ async def publish_talk(
     separately, and completion is measured per team. Idempotent — publishing
     twice does not double anyone's list.
 
-    `only_to` narrows it. Everybody is the right default — the talk is monthly
-    and plant-wide — but a topic that concerns two crews sent to forty people
-    trains thirty-eight of them to ignore the next one.
+    `only_to` names who instead. Every supervisor is the right default — the
+    talk is monthly and plant-wide — but a topic that concerns two crews sent
+    to forty people trains thirty-eight of them to ignore the next one.
+
+    It used to narrow the supervisors rather than replace them, so the only
+    people who could be given a talk were the ones already holding a
+    supervisory role. The second acceptance round asked for all staff, and the
+    reason is the shop floor: a lead hand runs a crew and holds no such role,
+    and HSE could not hand them the sheet. Naming somebody means naming them.
     """
-    supervisors = await supervisors_for_talks(db)
     if only_to:
-        wanted = set(only_to)
-        supervisors = [s for s in supervisors if s.id in wanted]
+        supervisors = list((await db.execute(
+            select(User).where(User.id.in_(list(only_to))))).scalars().all())
+    else:
+        supervisors = await supervisors_for_talks(db)
 
     existing = {
         d.supervisor_id for d in (await db.execute(

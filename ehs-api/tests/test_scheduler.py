@@ -354,3 +354,59 @@ async def test_clearing_a_drill_signature_clears_who_signed_it(hse_manager):
     cleared = await client.patch(f"/api/v1/drills/{drill_id}", json={"signature": None})
     assert cleared.json()["signed_by_name"] is None
     assert cleared.json()["signed_at"] is None
+
+
+async def test_a_month_can_carry_more_than_one_toolbox_talk(hse_manager):
+    """A near miss in week two is talked about in week two.
+
+    One topic per month was the original assumption and the second acceptance
+    round said plainly that it is wrong: HSE could not add a second topic
+    without either waiting for the next month or overwriting the sheet already
+    issued. Nothing downstream counted on one per month — completion is
+    measured per talk and the chaser walks deliveries.
+    """
+    from datetime import date
+
+    _, client = hse_manager
+    month = date.today().replace(day=1).isoformat()
+
+    first = await client.post("/api/v1/toolbox-talks", json={
+        "title": "Ladders", "period_month": month})
+    assert first.status_code in (200, 201), first.text
+
+    second = await client.post("/api/v1/toolbox-talks", json={
+        "title": "Near miss at the case sealer", "period_month": month})
+    assert second.status_code in (200, 201), (
+        f"a second topic in the same month must be allowed: {second.text}")
+    assert second.json()["talk_no"] != first.json()["talk_no"]
+
+    listed = (await client.get("/api/v1/toolbox-talks")).json()
+    same_month = [t for t in listed if t["period_month"] == month]
+    assert len(same_month) >= 2, same_month
+
+
+async def test_a_talk_can_be_handed_to_somebody_who_is_not_a_supervisor(
+        hse_manager, worker):
+    """A lead hand runs a crew and holds no supervisory role.
+
+    Naming people used to narrow the supervisor list rather than replace it, so
+    naming somebody outside it sent the talk to nobody at all — silently, since
+    an empty audience is not an error.
+    """
+    from datetime import date
+
+    _, client = hse_manager
+    plain, _ = worker
+    talk = (await client.post("/api/v1/toolbox-talks", json={
+        "title": "Housekeeping", "period_month": date.today().replace(day=1).isoformat(),
+    })).json()
+
+    sent = await client.post(f"/api/v1/toolbox-talks/{talk['id']}/publish",
+                             json={"supervisor_ids": [str(plain.id)]})
+    assert sent.status_code in (200, 201), sent.text
+
+    deliveries = (await client.get("/api/v1/toolbox-talks/deliveries")).json()
+    mine = [d for d in deliveries if d["talk_id"] == talk["id"]]
+    assert len(mine) == 1, f"the person named must get it: {mine}"
+    assert mine[0]["supervisor_name"] == plain.full_name
+    assert mine[0]["created_at"], "when it was handed over is half of 'is this late'"

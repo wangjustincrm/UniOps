@@ -24,7 +24,8 @@ interface Talk {
 }
 interface Delivery {
   id: string; talk_id: string; supervisor_name: string | null
-  department_name: string | null; status: string; held_at: string | null
+  department_name: string | null; status: string
+  created_at: string; held_at: string | null
   expected_attendees: number; signed_count: number
 }
 interface Signer { user_id: string | null; person_name: string; person_role: string | null; signature: string }
@@ -52,6 +53,10 @@ export default function ToolboxTalksPage() {
   })
 
   const [sending, setSending] = useState<Talk | null>(null)
+  // HSE could see a completion percentage and nothing behind it: not who the
+  // talk went to, when it was handed over, who has signed or when. A number
+  // with nobody's name beside it cannot be chased.
+  const [showingState, setShowingState] = useState<string | null>(null)
 
   const mine = (deliveries.data ?? []).filter((d) => d.status === 'pending')
   const done = (deliveries.data ?? []).filter((d) => d.status === 'delivered')
@@ -111,7 +116,21 @@ export default function ToolboxTalksPage() {
                 </span>
               </span>
               {t.is_published
-                ? <Completion talkId={t.id} />
+                ? (
+                  <span className="flex shrink-0 items-center gap-2">
+                    <Completion talkId={t.id} />
+                    {isHse && (
+                      <button
+                        type="button"
+                        onClick={() => setShowingState(showingState === t.id ? null : t.id)}
+                        aria-expanded={showingState === t.id}
+                        className="min-h-[32px] rounded-md px-1.5 text-xs font-semibold text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900"
+                      >
+                        Who has it
+                      </button>
+                    )}
+                  </span>
+                )
                 : isHse && (
                   <button type="button" onClick={() => setSending(t)}
                           className="min-h-[36px] rounded-lg bg-primary-600 px-3 text-xs font-semibold text-white">
@@ -126,6 +145,7 @@ export default function ToolboxTalksPage() {
                 Sheet: {t.material_filename}
               </p>
             )}
+            {showingState === t.id && <TalkState talkId={t.id} />}
           </li>
         ))}
       </ul>
@@ -346,6 +366,85 @@ function MaterialRow({ talk }: { talk: Talk }) {
 }
 
 /**
+ * Where one talk has got to, delivery by delivery.
+ *
+ * The completion percentage answered "how much of the plant", and HSE asked
+ * for the half that lets them do something about it: which crews have it, how
+ * long they have had it, and who in the room has actually put their name to it.
+ */
+function TalkState({ talkId }: { talkId: string }) {
+  const deliveries = useQuery({
+    queryKey: ['tbt-deliveries', 'talk', talkId],
+    queryFn: () => api.get<Delivery[]>('/api/v1/toolbox-talks/deliveries'),
+    select: (rows) => rows.filter((d) => d.talk_id === talkId),
+  })
+  const [openSigs, setOpenSigs] = useState<string | null>(null)
+
+  if (!deliveries.data?.length) {
+    return (
+      <p className="mt-2 border-t border-neutral-100 pt-2 text-xs text-neutral-500">
+        Not handed to anybody yet.
+      </p>
+    )
+  }
+
+  return (
+    <ul className="mt-2 flex flex-col gap-1.5 border-t border-neutral-100 pt-2">
+      {deliveries.data.map((d) => (
+        <li key={d.id} className="text-xs">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="min-w-0 flex-1 text-neutral-800">
+              {d.department_name ?? d.supervisor_name ?? 'Unassigned'}
+            </span>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              d.status === 'delivered' ? 'bg-success-50 text-success-700'
+                                       : 'bg-warning-50 text-warning-700'}`}>
+              {d.status === 'delivered' ? 'Delivered' : 'Outstanding'}
+            </span>
+            <span className="text-neutral-500">
+              assigned {formatDateTime(d.created_at)}
+              {d.held_at && ` · held ${formatDateTime(d.held_at)}`}
+            </span>
+            {d.signed_count > 0 && (
+              <button type="button"
+                      onClick={() => setOpenSigs(openSigs === d.id ? null : d.id)}
+                      aria-expanded={openSigs === d.id}
+                      className="font-semibold text-primary-700 hover:underline">
+                {d.signed_count} signed
+              </button>
+            )}
+          </div>
+          {openSigs === d.id && <Signatures deliveryId={d.id} />}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function Signatures({ deliveryId }: { deliveryId: string }) {
+  const sigs = useQuery({
+    queryKey: ['tbt-signatures', deliveryId],
+    queryFn: () => api.get<{ id: string; person_name: string; person_role: string | null
+                             signed_at: string }[]>(
+      `/api/v1/toolbox-talks/deliveries/${deliveryId}/signatures`),
+  })
+  if (!sigs.data?.length) return null
+  return (
+    <ul className="mt-1 flex flex-col gap-0.5 pl-3">
+      {sigs.data.map((sig) => (
+        <li key={sig.id} className="flex flex-wrap gap-x-2 text-neutral-600">
+          <span className="text-neutral-800">{sig.person_name}</span>
+          {sig.person_role && (
+            <span className="text-neutral-400">{sig.person_role.replace(/_/g, ' ')}</span>
+          )}
+          <span>{formatDateTime(sig.signed_at)}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
  * Who this month's talk goes to.
  *
  * Everybody is the default and usually right — it is monthly and plant-wide —
@@ -355,10 +454,14 @@ function MaterialRow({ talk }: { talk: Talk }) {
 function SendDialog({ talk, onClose }: { talk: Talk; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [chosen, setChosen] = useState<string[]>([])
+  // A lead hand runs a crew and holds no supervisory role. The list offered
+  // supervisors only, so there was no way to hand them the sheet.
+  const [everyone, setEveryone] = useState(false)
+  const [search, setSearch] = useState('')
   const supervisors = useQuery({
-    queryKey: ['toolbox-supervisors'],
+    queryKey: ['toolbox-supervisors', everyone],
     queryFn: () => api.get<{ id: string; full_name: string; role: string }[]>(
-      '/api/v1/toolbox-talks/supervisors'),
+      `/api/v1/toolbox-talks/supervisors${everyone ? '?everyone=true' : ''}`),
   })
   const send = useMutation({
     mutationFn: () => api.post(`/api/v1/toolbox-talks/${talk.id}/publish`,
@@ -370,16 +473,38 @@ function SendDialog({ talk, onClose }: { talk: Talk; onClose: () => void }) {
     },
   })
 
-  const all = supervisors.data ?? []
+  const loaded = supervisors.data ?? []
+  // Ninety names is a scroll, not a list. Anybody already ticked stays visible
+  // while searching, or narrowing the list would look like losing them.
+  const all = search.trim()
+    ? loaded.filter((s2) => chosen.includes(s2.id)
+        || s2.full_name.toLowerCase().includes(search.trim().toLowerCase()))
+    : loaded
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
       <div role="dialog" aria-modal="true" aria-label="Send this talk"
            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-4 sm:rounded-2xl">
         <h2 className="text-sm font-semibold text-neutral-900">Send “{talk.title}”</h2>
         <p className="mt-1 text-xs text-neutral-500">
-          Leave everyone unticked to send it to all {all.length} supervisors, which
-          is the usual thing to do.
+          Leave everyone unticked to send it to all supervisors, which is the
+          usual thing to do.
         </p>
+
+        <label className="mt-2 flex items-center gap-2 text-xs text-neutral-600">
+          <input type="checkbox" checked={everyone}
+                 onChange={(e) => { setEveryone(e.target.checked); setSearch('') }} />
+          Show everybody, not only supervisors
+        </label>
+
+        {everyone && (
+          <input
+            className="mt-2 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name"
+            aria-label="Search staff by name"
+          />
+        )}
         <ul className="mt-3 flex flex-col gap-1">
           {all.map((s) => (
             <li key={s.id}>

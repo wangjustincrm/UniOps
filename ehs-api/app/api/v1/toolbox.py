@@ -41,6 +41,10 @@ class DeliveryOut(BaseModel):
     supervisor_name: str | None
     department_name: str | None
     status: str
+    # When it was handed over, which is the other half of "is this late":
+    # a delivery outstanding for a day and one outstanding for six weeks read
+    # the same without it.
+    created_at: datetime
     held_at: datetime | None
     expected_attendees: int
     signed_count: int
@@ -116,16 +120,25 @@ async def publish(
 
 
 @router.get("/supervisors", response_model=list[SupervisorOut])
-async def list_supervisors(db: SessionDep, user: CanManageSettings):  # noqa: ARG001
+async def list_supervisors(
+    db: SessionDep, user: CanManageSettings,  # noqa: ARG001
+    everyone: bool = False,
+):
     """Who a talk can be sent to, so it can be sent to some of them.
 
-    Everybody is the right default — the talk is monthly and plant-wide — but a
-    topic that concerns two crews sent to forty people trains thirty-eight of
-    them to ignore the next one.
+    Every supervisor is the right default — the talk is monthly and plant-wide
+    — but a topic that concerns two crews sent to forty people trains
+    thirty-eight of them to ignore the next one.
+
+    `everyone` offers the whole staff list instead. A lead hand runs a crew and
+    holds no supervisory role, and until the second acceptance round asked for
+    it there was no way to hand them the sheet.
     """
+    people = (await crud.all_staff(db)) if everyone else (
+        await crud.supervisors_for_talks(db))
     return [
         SupervisorOut(id=u.id, full_name=u.full_name, role=u.role)
-        for u in await crud.supervisors_for_talks(db)
+        for u in people
     ]
 
 
