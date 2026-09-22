@@ -12,6 +12,7 @@ import JvValidationPage from '@/pages/finance/JvValidationPage'
 import PaymentsPage from '@/pages/finance/PaymentsPage'
 import PaymentBatchPage from '@/pages/finance/PaymentBatchPage'
 import BankReconciliationPage from '@/pages/finance/BankReconciliationPage'
+import BankStatementCsvPage from '@/pages/finance/BankStatementCsvPage'
 import CoaConfigPage from '@/pages/finance/CoaConfigPage'
 import TaxSettingsPage from '@/pages/finance/TaxSettingsPage'
 import BankSettingsPage from '@/pages/finance/BankSettingsPage'
@@ -38,6 +39,10 @@ export const financeRoutes: RouteDef[] = [
   { path: '/finance/payments', element: <PaymentsPage />, tab: { title: 'Payments', icon: 'Wallet', keyStrategy: 'static' } },
   { path: '/finance/payment-batches', element: <PaymentBatchPage />, tab: { title: 'Payment Batches', icon: 'Banknote', keyStrategy: 'static' } },
   { path: '/finance/bank', element: <BankReconciliationPage />, tab: { title: 'Bank Reconciliation', icon: 'Landmark', keyStrategy: 'static' } },
+  // The CSV importer the v2 workbench replaced. Not in the sidebar — reachable
+  // from the workbench, because a bank whose PDF we cannot read yet still has
+  // to be importable.
+  { path: '/finance/bank/csv-import', element: <BankStatementCsvPage />, tab: { title: 'Statement Import (CSV)', icon: 'Landmark', keyStrategy: 'static' } },
   { path: '/finance/qbo', element: <QboMirrorPage />, tab: { title: 'QuickBooks', icon: 'RefreshCw', keyStrategy: 'static' } },
   // Throwaway: delete with QboCreditImportPage when QuickBooks is retired.
   { path: '/finance/qbo-credit-import', element: <QboCreditImportPage />, tab: { title: 'QBO Credit Import', icon: 'Download', keyStrategy: 'static' } },

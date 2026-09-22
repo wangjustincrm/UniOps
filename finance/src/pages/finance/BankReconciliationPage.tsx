@@ -1,27 +1,38 @@
 /**
- * Bank Reconciliation workbench (Phase a A3 UI)
+ * Bank Reconciliation workbench (v2).
  *
- * - Account picker (the 11 real CRM accounts: Chase US+Toronto, Bank of China,
- *   ICBC, RBC; CAD/USD/CNY) + create/edit (incl. GL account code mapping)
- * - Statement import with a column-mapping modal: every bank's export differs
- *   (debit/credit split, date formats, RBC '01 May'), so the user maps columns
- *   once per account; the mapping is saved server-side and reused next month
- * - Transaction list with status filter; auto-match, manual match (pick a
- *   payment), exclude (bank fees / interest / internal FX transfers)
- * - Discrepancy panel: unmatched statement lines vs unreconciled payments
+ * The screen reproduces what finance does by hand, side by side:
  *
- * Styling follows the Portal convention (CoaConfigPage): neutral palette,
- * zebra rows, code chips, status pills, #085E5E primary.
+ *   left   the bank statement, in the order the bank printed it
+ *   right  NC's ledger for that bank account — 100201 expanded by the
+ *          bank-account auxiliary, which is the only thing separating RBC from
+ *          Bank of China
+ *
+ * A statement line is usually a MERGED payment ("Direct Deposits (PDS) service
+ * total 48,336.03" is 18 vendor payments), so matches are groups: N statement
+ * lines against M ledger lines, explained where possible by the payment file the
+ * bank hands back. Clicking a cleared line highlights the whole group on both
+ * sides, which is the question the page exists to answer — what is this one line
+ * actually made of.
+ *
+ * The number that matters is Difference. It is the statement's closing balance
+ * minus the ledger's, NOT a total of what has been matched, so it cannot be
+ * driven to zero by matching things wrongly.
+ *
+ * Styling follows the Portal convention (CoaConfigPage): neutral palette, zebra
+ * rows, code chips, status pills, #085E5E primary.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { useMemo, useRef, useState } from 'react'
+import { Link, Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Ban, Check, Landmark, Link2, Loader2, Plus, RefreshCw,
-  Undo2, Upload, X,
+  AlertTriangle, CheckCircle2, Download, FileText, Landmark, Link2, Loader2,
+  Lock, LockOpen, Sparkles, Undo2, Upload,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { financeApi, financeUploadFields } from '@/lib/api'
+import {
+  financeApi, financeDownload, financeUpload, financeUploadMany,
+} from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
@@ -31,76 +42,121 @@ const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral
 
 interface Account {
   id: string; name: string; bank_name: string; account_masked: string | null
-  currency: string; ledger_account_code: string | null; is_active: boolean
-  import_mapping: ColumnMapping | null
+  currency: string; nc_bank_account_code: string | null
 }
-interface Txn {
-  id: string; txn_date: string; description: string; reference: string | null
-  amount: string; currency: string; status: string; matched_payment_id: string | null
+interface Summary {
+  statement_opening: string | null; statement_closing: string | null
+  statement_verified: boolean
+  book_opening: string; book_closing: string
+  cleared_debit_total: string; cleared_credit_total: string
+  cleared_debit_count: number; cleared_credit_count: number
+  outstanding_bank_lines: number; outstanding_book_lines: number
+  difference: string; bank_account: string; status: string
 }
-interface DuePayment {
-  payment_record_id: string; doc_number: string | null; amount: string
-  currency: string; payment_date: string
+interface BankLine {
+  id: string; txn_date: string; description: string; amount: string
+  running_balance: string | null; sort_seq: number | null; cleared: boolean
 }
-interface Recon {
-  account: { id: string; name: string; currency: string }
-  inflow: string; outflow: string; matched_total: string; unmatched_count: number
-  unmatched_transactions: { id: string; txn_date: string; description: string; amount: string }[]
-  unreconciled_payments: DuePayment[]
+interface BookLine {
+  jv_line_id: string; jv_number: string; voucher_date: string; summary: string | null
+  amount: string; contra_kind: string; contra_label: string; contra_codes: string[]
+  cleared: boolean
 }
-interface ColumnMapping {
-  date: string; description: string; reference?: string
-  amount?: string; debit?: string; credit?: string
-  debit_sign?: 'negative' | 'positive'
-  date_format?: string; default_year?: number
+interface MatchGroup {
+  id: string; method: string; amount: string; note: string | null
+  advice_id: string | null; bank_ids: string[]
+  book_lines: { jv_line_id: string | null; nc_voucher_pk: string | null; amount: string }[]
 }
-
-const DATE_FORMATS: { value: string; label: string }[] = [
-  { value: '', label: 'ISO (2026-05-06)' },
-  { value: '%m/%d/%y', label: 'MM/DD/YY (05/06/26)' },
-  { value: '%m/%d/%Y', label: 'MM/DD/YYYY (05/06/2026)' },
-  { value: '%d %b', label: 'DD Mon, no year (06 May)' },
-  { value: '%d-%b-%Y', label: 'DD-Mon-YYYY (06-May-2026)' },
-  { value: '%d/%m/%Y', label: 'DD/MM/YYYY (06/05/2026)' },
-]
-
-function fmtMoney(v: string, ccy?: string): string {
-  const n = Number(v)
-  const s = n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  return ccy ? `${s} ${ccy}` : s
+interface Period {
+  id: string; status: string; period_start: string; period_end: string; currency: string
+  summary: Summary; bank_lines: BankLine[]; book_lines: BookLine[]; matches: MatchGroup[]
 }
-
-function StatusPill({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    matched: 'bg-green-50 text-green-700', unmatched: 'bg-amber-50 text-amber-700',
-    excluded: 'bg-neutral-100 text-neutral-500',
-  }
-  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-neutral-100 text-neutral-600')}>{status}</span>
+interface Finding {
+  kind: string; message: string; bank_ids: string[]; advice_ids: string[]; book_ids: string[]
+}
+interface AutoResult {
+  matched_groups: number; bank_lines_cleared: number; book_lines_cleared: number
+  by_method: Record<string, number>; findings: Finding[]; summary: Summary
+}
+interface AdviceLine {
+  id: string; seq: number; payee_code: string | null; payee_name: string | null
+  amount: string; matched_jv_line_id: string | null
 }
 
-// ── header-row parse (tolerant of quoted commas) ─────────────────────────────────
-function parseHeader(line: string): string[] {
-  const out: string[] = []
-  let cur = '', inQ = false
-  for (const ch of line) {
-    if (ch === '"') inQ = !inQ
-    else if (ch === ',' && !inQ) { out.push(cur.trim()); cur = '' }
-    else cur += ch
-  }
-  out.push(cur.trim())
-  return out.filter((h) => h.length > 0)
+/** How a group was cleared, in words a reviewer can act on. */
+const METHOD_LABEL: Record<string, string> = {
+  advice_total: 'Payment file',
+  advice_combo: 'Several payment files',
+  confirmation_no: 'Confirmation number',
+  direct: 'One to one',
+  subset_sum: 'Split across ledger lines',
+  book_subset: 'Inferred — no payment file',
+  manual: 'Matched by hand',
+}
+
+const KIND_TONE: Record<string, string> = {
+  ap: 'bg-neutral-100 text-neutral-600',
+  bank_transfer: 'bg-blue-50 text-blue-700',
+  payroll: 'bg-purple-50 text-purple-700',
+  credit_card: 'bg-amber-50 text-amber-700',
+  other_payable: 'bg-neutral-100 text-neutral-600',
+  bank_fee: 'bg-neutral-100 text-neutral-500',
+  mixed: 'bg-amber-50 text-amber-700',
+}
+
+function money(v: string | number | null | undefined): string {
+  if (v === null || v === undefined || v === '') return '—'
+  return Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** Dates arrive as plain YYYY-MM-DD. Never through `new Date()` — that reads
+ *  them as UTC midnight and shows the previous day west of Greenwich. */
+function shortDate(iso: string): string {
+  const [, m, d] = iso.split('-')
+  return `${d}/${m}`
+}
+
+function Pill({ children, tone }: { children: React.ReactNode; tone?: string }) {
+  return (
+    <span className={cn('whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium',
+      tone ?? 'bg-neutral-100 text-neutral-600')}>{children}</span>
+  )
+}
+
+function Stat({ label, value, tone, hint }: {
+  label: string; value: string; tone?: 'pos' | 'neg' | 'warn'; hint?: string
+}) {
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2">
+      <div className="text-[11px] uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className={cn('font-mono text-sm font-semibold tabular-nums',
+        tone === 'neg' && 'text-red-600', tone === 'pos' && 'text-green-700',
+        tone === 'warn' && 'text-amber-600')}>{value}</div>
+      {hint && <div className="mt-0.5 text-[11px] text-neutral-400">{hint}</div>}
+    </div>
+  )
 }
 
 export default function BankReconciliationPage() {
   const { user } = useAuthStore()
   const qc = useQueryClient()
-  const [accountId, setAccountId] = useState<string>('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [accountId, setAccountId] = useState('')
+  const [periodStart, setPeriodStart] = useState('')
+  const [periodEnd, setPeriodEnd] = useState('')
+  const [reconId, setReconId] = useState('')
+  const [pickedBank, setPickedBank] = useState<Set<string>>(new Set())
+  const [pickedBook, setPickedBook] = useState<Set<string>>(new Set())
+  const [focusGroup, setFocusGroup] = useState<string | null>(null)
+  const [openAdvice, setOpenAdvice] = useState<string | null>(null)
+  const [findings, setFindings] = useState<Finding[]>([])
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
-  const [importFile, setImportFile] = useState<File | null>(null)
-  const [editAccount, setEditAccount] = useState<Partial<Account> | null>(null)
-  const [matchFor, setMatchFor] = useState<Txn | null>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
+  const stmtInput = useRef<HTMLInputElement>(null)
+  const adviceInput = useRef<HTMLInputElement>(null)
+
+  const flash = (kind: 'ok' | 'err', text: string) => {
+    setBanner({ kind, text })
+    if (kind === 'ok') setTimeout(() => setBanner(null), 6000)
+  }
 
   const { data: perms } = useQuery({
     queryKey: ['coa-permissions'],
@@ -114,550 +170,561 @@ export default function BankReconciliationPage() {
   })
   const account = accounts.find((a) => a.id === accountId) ?? null
 
-  const { data: txns = [], isFetching: txnsLoading } = useQuery({
-    queryKey: ['bank-txns', accountId, statusFilter],
-    queryFn: () => financeApi.get<Txn[]>(
-      `/bank/${accountId}/transactions${statusFilter ? `?status=${statusFilter}` : ''}`),
-    enabled: !!accountId,
+  const { data: period, isFetching: periodLoading } = useQuery({
+    queryKey: ['bank-recon-period', reconId],
+    queryFn: () => financeApi.get<Period>(`/bank-recon/reconciliations/${reconId}`),
+    enabled: !!reconId,
   })
 
-  const { data: recon } = useQuery({
-    queryKey: ['bank-recon', accountId],
-    queryFn: () => financeApi.get<Recon>(`/bank/reconciliation?account_id=${accountId}`),
-    enabled: !!accountId,
+  const { data: adviceLines = [] } = useQuery({
+    queryKey: ['bank-advice-lines', openAdvice],
+    queryFn: () => financeApi.get<AdviceLine[]>(`/bank-recon/advices/${openAdvice}/lines`),
+    enabled: !!openAdvice,
   })
 
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['bank-txns', accountId] })
-    qc.invalidateQueries({ queryKey: ['bank-recon', accountId] })
-  }
-  const flash = (kind: 'ok' | 'err', text: string) => {
-    setBanner({ kind, text }); setTimeout(() => setBanner(null), 5000)
-  }
+  const refresh = () => qc.invalidateQueries({ queryKey: ['bank-recon-period', reconId] })
+  const clearPicks = () => { setPickedBank(new Set()); setPickedBook(new Set()) }
+
+  const openPeriod = useMutation({
+    mutationFn: () => financeApi.post<{ id: string; summary: Summary }>(
+      `/bank-recon/${accountId}/reconciliations`,
+      { period_start: periodStart, period_end: periodEnd }),
+    onSuccess: (r) => { setReconId(r.id); setFindings([]); clearPicks() },
+    onError: (e: Error) => flash('err', e.message),
+  })
+
+  const importStatement = useMutation({
+    mutationFn: (file: File) =>
+      financeUpload<{ verified: boolean; verify_errors: string[]; lines: number; imported: number; retention_warning: string | null }>(
+        `/bank-recon/${accountId}/statements`, file),
+    onSuccess: (r) => {
+      const head = `Statement read: ${r.lines} lines (${r.imported} new).`
+      if (!r.verified) {
+        flash('err', `${head} It does NOT tie to its own printed totals, so it cannot be reconciled yet — ${r.verify_errors.join(' ')}`)
+      } else {
+        flash('ok', `${head} Verified against the statement's own totals.${r.retention_warning ? ` ${r.retention_warning}` : ''}`)
+      }
+      refresh()
+    },
+    onError: (e: Error) => flash('err', e.message),
+  })
+
+  const importAdvices = useMutation({
+    mutationFn: (files: File[]) =>
+      financeUploadMany<{ imported: number; duplicates: number; failed: number; results: { filename: string; error?: string; tie_ok?: boolean; tie_error?: string }[] }>(
+        `/bank-recon/${accountId}/advices`, files),
+    onSuccess: (r) => {
+      const bad = r.results.filter((x) => x.error || x.tie_ok === false)
+      const head = `${r.imported} payment file(s) imported, ${r.duplicates} already there.`
+      if (bad.length) {
+        flash('err', `${head} ${bad.length} could not be used: ${bad.map((b) => `${b.filename} — ${b.error ?? b.tie_error}`).join(' · ')}`)
+      } else {
+        flash('ok', head)
+      }
+      refresh()
+    },
+    onError: (e: Error) => flash('err', e.message),
+  })
 
   const autoMatch = useMutation({
-    mutationFn: () => financeApi.post<{ matched: number; ambiguous: number; scanned: number }>(
-      `/bank/match/auto?account_id=${accountId}`, {}),
-    onSuccess: (r) => { flash('ok', `Auto-match: ${r.matched} matched, ${r.ambiguous} ambiguous (left for review), ${r.scanned} scanned`); refresh() },
+    mutationFn: () => financeApi.post<AutoResult>(
+      `/bank-recon/reconciliations/${reconId}/auto-match`, {}),
+    onSuccess: (r) => {
+      setFindings(r.findings)
+      const rungs = Object.entries(r.by_method).map(([m, n]) => `${METHOD_LABEL[m] ?? m} ${n}`).join(' · ')
+      flash('ok', `Cleared ${r.bank_lines_cleared} statement line(s) against ${r.book_lines_cleared} ledger line(s)${rungs ? ` — ${rungs}` : ''}. ${r.summary.outstanding_bank_lines} statement and ${r.summary.outstanding_book_lines} ledger line(s) still open.`)
+      clearPicks()
+      refresh()
+    },
     onError: (e: Error) => flash('err', e.message),
   })
 
-  const exclude = useMutation({
-    mutationFn: ({ id, excluded }: { id: string; excluded: boolean }) =>
-      financeApi.post(`/bank/transactions/${id}/exclude`, { excluded }),
-    onSuccess: () => refresh(),
+  const matchByHand = useMutation({
+    mutationFn: () => financeApi.post(`/bank-recon/reconciliations/${reconId}/matches`, {
+      bank_transaction_ids: [...pickedBank], jv_line_ids: [...pickedBook],
+    }),
+    onSuccess: () => { flash('ok', 'Matched.'); clearPicks(); refresh() },
     onError: (e: Error) => flash('err', e.message),
   })
+
   const unmatch = useMutation({
-    mutationFn: (id: string) => financeApi.post(`/bank/transactions/${id}/unmatch`, {}),
-    onSuccess: () => refresh(),
+    mutationFn: (id: string) =>
+      financeApi.delete(`/bank-recon/reconciliations/${reconId}/matches/${id}`),
+    onSuccess: () => { setFocusGroup(null); refresh() },
     onError: (e: Error) => flash('err', e.message),
   })
+
+  const finalize = useMutation({
+    mutationFn: () => financeApi.post<{ status: string; retention_warning: string | null }>(
+      `/bank-recon/reconciliations/${reconId}/finalize`, {}),
+    onSuccess: (r) => {
+      flash('ok', `Signed off.${r.retention_warning ? ` ${r.retention_warning}` : ''}`)
+      refresh()
+    },
+    onError: (e: Error) => flash('err', e.message),
+  })
+
+  const reopen = useMutation({
+    mutationFn: () => financeApi.post(`/bank-recon/reconciliations/${reconId}/reopen`, {}),
+    onSuccess: () => { flash('ok', 'Reopened.'); refresh() },
+    onError: (e: Error) => flash('err', e.message),
+  })
+
+  const download = useMutation({
+    mutationFn: (fmt: 'pdf' | 'xlsx') => financeDownload(
+      `/bank-recon/reconciliations/${reconId}/report?fmt=${fmt}`,
+      `bank-reconciliation-${period?.period_end ?? ''}.${fmt}`),
+    onError: (e: Error) => flash('err', e.message),
+  })
+
+  // Which group a line belongs to — powers the "what is this line made of" highlight.
+  const groupOfBank = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const g of period?.matches ?? []) for (const id of g.bank_ids) m[id] = g.id
+    return m
+  }, [period])
+  const groupOfBook = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const g of period?.matches ?? []) {
+      for (const b of g.book_lines) if (b.jv_line_id) m[b.jv_line_id] = g.id
+    }
+    return m
+  }, [period])
+  const focused = period?.matches.find((g) => g.id === focusGroup) ?? null
+
+  const pickedBankTotal = useMemo(
+    () => (period?.bank_lines ?? []).filter((b) => pickedBank.has(b.id))
+      .reduce((s, b) => s + Number(b.amount), 0), [period, pickedBank])
+  const pickedBookTotal = useMemo(
+    () => (period?.book_lines ?? []).filter((b) => pickedBook.has(b.jv_line_id))
+      .reduce((s, b) => s + Number(b.amount), 0), [period, pickedBook])
+  const picksBalance = pickedBank.size > 0 && pickedBook.size > 0
+    && Math.abs(pickedBankTotal - pickedBookTotal) < 0.005
 
   if (!user) return <Navigate to="/login" replace />
 
-  const byBank = useMemo(() => {
-    const groups: Record<string, Account[]> = {}
-    for (const a of accounts) (groups[a.bank_name] ??= []).push(a)
-    return groups
-  }, [accounts])
+  const s = period?.summary
+  const frozen = period?.status === 'finalized'
+  const busy = autoMatch.isPending || matchByHand.isPending || finalize.isPending
+    || reopen.isPending || importStatement.isPending || importAdvices.isPending
+
+  const toggle = (set: Set<string>, id: string, apply: (s: Set<string>) => void) => {
+    const next = new Set(set)
+    next.has(id) ? next.delete(id) : next.add(id)
+    apply(next)
+  }
 
   return (
     <PortalChromeLayout
       activeKey="portal:/finance/bank"
       title="Bank Reconciliation"
-      subtitle="Import statements, match against payments, and clear discrepancies — per bank account"
+      subtitle="The statement beside NC's ledger, joined by the bank's own payment files"
     >
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-[1600px]">
         {banner && (
-          <div className={cn('mb-3 rounded-md px-3 py-2 text-sm',
+          <div className={cn('mb-3 flex items-start gap-2 rounded-md px-3 py-2 text-sm',
             banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
-            {banner.text}
+            {banner.kind === 'err' ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
+            <span>{banner.text}</span>
+            <button onClick={() => setBanner(null)} className="ml-auto text-xs underline">dismiss</button>
           </div>
         )}
 
-        {/* account bar */}
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <Landmark className="h-5 w-5 text-neutral-400" />
-          <select value={accountId} onChange={(e) => setAccountId(e.target.value)}
-                  className={cn(inputCls, 'w-80')}>
-            <option value="">Select a bank account…</option>
-            {Object.entries(byBank).map(([bank, accts]) => (
-              <optgroup key={bank} label={bank}>
-                {accts.map((a) => (
+        {/* ── account + period ─────────────────────────────────────────── */}
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div>
+            <label className="mb-1 block text-[11px] uppercase tracking-wide text-neutral-500">Bank account</label>
+            <div className="flex items-center gap-2">
+              <Landmark className="h-4 w-4 text-neutral-400" />
+              <select value={accountId} className={cn(inputCls, 'w-72')}
+                      onChange={(e) => { setAccountId(e.target.value); setReconId(''); clearPicks() }}>
+                <option value="">Select an account…</option>
+                {accounts.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.name} · {a.currency}{a.account_masked ? ` · …${a.account_masked}` : ''}
+                    {a.bank_name} · {a.name} · {a.currency}
+                    {a.nc_bank_account_code ? '' : '  (not linked to NC)'}
                   </option>
                 ))}
-              </optgroup>
-            ))}
-          </select>
-          {account && (
-            <span className="text-xs text-neutral-500">
-              GL: {account.ledger_account_code || '— not mapped —'}
-            </span>
-          )}
-          <div className="ml-auto flex gap-2">
-            {canManage && (
-              <button onClick={() => setEditAccount({ currency: 'CAD', is_active: true })}
-                      className={secondaryBtn}>
-                <Plus className="h-4 w-4" /> New Account
-              </button>
-            )}
-            {account && canManage && (
-              <button onClick={() => setEditAccount(account)} className={secondaryBtn}>
-                Edit
-              </button>
-            )}
+              </select>
+            </div>
           </div>
+          <div>
+            <label className="mb-1 block text-[11px] uppercase tracking-wide text-neutral-500">Period</label>
+            <div className="flex items-center gap-2">
+              <input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)}
+                     className={cn(inputCls, 'w-40')} />
+              <span className="text-neutral-400">to</span>
+              <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)}
+                     className={cn(inputCls, 'w-40')} />
+            </div>
+          </div>
+          <button onClick={() => openPeriod.mutate()}
+                  disabled={!accountId || !periodStart || !periodEnd || openPeriod.isPending}
+                  className={primaryBtn}>
+            {openPeriod.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Open period
+          </button>
+          <Link to="/finance/bank/csv-import"
+                className="ml-auto text-xs text-neutral-500 underline hover:text-neutral-700">
+            Import a statement as CSV instead →
+          </Link>
         </div>
 
-        {!account ? (
-          <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500">
-            Select a bank account to view statement lines and reconciliation.
+        {account && !account.nc_bank_account_code && (
+          <div className="mb-4 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              This account is not linked to an NC bank account, so it has no ledger
+              side to reconcile against. Set its NC bank account code in{' '}
+              <Link to="/finance/bank-settings" className="underline">Bank Settings</Link> —
+              NC shows it on account 100201, expanded by bank account (e.g. 1033760).
+            </span>
           </div>
-        ) : (
+        )}
+
+        {!reconId ? (
+          <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500">
+            Pick an account and a period, then Open period.
+          </div>
+        ) : periodLoading && !period ? (
+          <div className="p-10 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-neutral-400" /></div>
+        ) : !period ? null : (
           <>
-            {/* summary cards */}
-            {recon && (
-              <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <SummaryCard label="Inflow" value={fmtMoney(recon.inflow, account.currency)} tone="pos" />
-                <SummaryCard label="Outflow" value={fmtMoney(recon.outflow, account.currency)} tone="neg" />
-                <SummaryCard label="Matched" value={fmtMoney(recon.matched_total, account.currency)} />
-                <SummaryCard label="Unmatched lines" value={String(recon.unmatched_count)}
-                             tone={recon.unmatched_count ? 'warn' : undefined} />
+            {/* ── the numbers ───────────────────────────────────────────── */}
+            <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-6">
+              <Stat label="Statement opening" value={money(s?.statement_opening)} />
+              <Stat label="Statement closing" value={money(s?.statement_closing)}
+                    hint={s?.statement_verified ? 'verified' : 'not verified'}
+                    tone={s?.statement_verified ? undefined : 'warn'} />
+              <Stat label="Ledger opening" value={money(s?.book_opening)} />
+              <Stat label="Ledger closing" value={money(s?.book_closing)} />
+              <Stat label="Cleared"
+                    value={`${(s?.cleared_debit_count ?? 0) + (s?.cleared_credit_count ?? 0)} lines`}
+                    hint={`${money(s?.cleared_debit_total)} out · ${money(s?.cleared_credit_total)} in`} />
+              <Stat label="Difference" value={money(s?.difference)}
+                    tone={Number(s?.difference ?? 0) === 0 ? 'pos' : 'neg'}
+                    hint={Number(s?.difference ?? 0) === 0 ? 'reconciled' : 'must be 0.00 to sign off'} />
+            </div>
+
+            {/* ── actions ───────────────────────────────────────────────── */}
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              {canManage && !frozen && (
+                <>
+                  <input ref={stmtInput} type="file" accept="application/pdf" className="hidden"
+                         onChange={(e) => {
+                           const f = e.target.files?.[0]
+                           if (f) importStatement.mutate(f)
+                           e.target.value = ''
+                         }} />
+                  <button onClick={() => stmtInput.current?.click()} disabled={busy}
+                          className={secondaryBtn}>
+                    {importStatement.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Upload className="h-4 w-4" />}
+                    Import statement (PDF)
+                  </button>
+
+                  <input ref={adviceInput} type="file" accept="application/pdf" multiple className="hidden"
+                         onChange={(e) => {
+                           const fs = Array.from(e.target.files ?? [])
+                           if (fs.length) importAdvices.mutate(fs)
+                           e.target.value = ''
+                         }} />
+                  <button onClick={() => adviceInput.current?.click()} disabled={busy}
+                          className={secondaryBtn}>
+                    {importAdvices.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <FileText className="h-4 w-4" />}
+                    Import payment files
+                  </button>
+
+                  <button onClick={() => autoMatch.mutate()} disabled={busy} className={primaryBtn}>
+                    {autoMatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Sparkles className="h-4 w-4" />}
+                    Match
+                  </button>
+                </>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                <button onClick={() => download.mutate('pdf')} disabled={download.isPending}
+                        className={secondaryBtn}>
+                  <Download className="h-4 w-4" /> Report (PDF)
+                </button>
+                <button onClick={() => download.mutate('xlsx')} disabled={download.isPending}
+                        className={secondaryBtn}>
+                  <Download className="h-4 w-4" /> Excel
+                </button>
+                {canManage && (frozen ? (
+                  <button onClick={() => reopen.mutate()} disabled={busy} className={secondaryBtn}>
+                    {reopen.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <LockOpen className="h-4 w-4" />}
+                    Reopen
+                  </button>
+                ) : (
+                  <button onClick={() => finalize.mutate()} disabled={busy} className={primaryBtn}>
+                    {finalize.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Lock className="h-4 w-4" />}
+                    Sign off
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {frozen && (
+              <div className="mb-3 flex items-center gap-2 rounded-md bg-neutral-100 px-3 py-2 text-sm text-neutral-600">
+                <Lock className="h-4 w-4" />
+                This period is signed off. The report comes from the snapshot taken at
+                sign-off, so it keeps saying what it said. Reopen to change anything.
               </div>
             )}
 
-            {/* toolbar */}
-            <div className="mb-3 flex flex-wrap items-center gap-3">
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-                      className={cn(inputCls, 'w-40')}>
-                <option value="">All statuses</option>
-                <option value="unmatched">Unmatched</option>
-                <option value="matched">Matched</option>
-                <option value="excluded">Excluded</option>
-              </select>
-              <div className="ml-auto flex gap-2">
-                {canManage && (
-                  <>
-                    <button onClick={() => autoMatch.mutate()} disabled={autoMatch.isPending}
-                            className={secondaryBtn}>
-                      {autoMatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                      Auto-match
-                    </button>
-                    <input ref={fileInput} type="file" accept=".csv,text/csv" className="hidden"
-                           onChange={(e) => e.target.files?.[0] && setImportFile(e.target.files[0])} />
-                    <button onClick={() => fileInput.current?.click()} className={primaryBtn}>
-                      <Upload className="h-4 w-4" /> Import Statement
-                    </button>
-                  </>
-                )}
+            {findings.length > 0 && (
+              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-800">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Needs a look ({findings.length})
+                </div>
+                <ul className="space-y-1 text-sm text-amber-900">
+                  {findings.map((f, i) => <li key={i}>· {f.message}</li>)}
+                </ul>
               </div>
+            )}
+
+            {/* ── the manual-match bar, only while a selection is live ──── */}
+            {(pickedBank.size > 0 || pickedBook.size > 0) && !frozen && (
+              <div className="sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-[#085E5E]/30 bg-[#F2F8F7] px-3 py-2 text-sm">
+                <span className="font-medium text-neutral-700">
+                  {pickedBank.size} statement · {pickedBook.size} ledger
+                </span>
+                <span className="font-mono tabular-nums text-neutral-600">
+                  {money(pickedBankTotal)} vs {money(pickedBookTotal)}
+                </span>
+                <span className={cn('font-mono text-xs tabular-nums',
+                  picksBalance ? 'text-green-700' : 'text-red-600')}>
+                  {picksBalance ? 'balances'
+                    : `off by ${money(pickedBankTotal - pickedBookTotal)}`}
+                </span>
+                <div className="ml-auto flex gap-2">
+                  <button onClick={clearPicks} className={secondaryBtn}>Clear</button>
+                  <button onClick={() => matchByHand.mutate()}
+                          disabled={!picksBalance || matchByHand.isPending || busy}
+                          className={primaryBtn}>
+                    {matchByHand.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Link2 className="h-4 w-4" />}
+                    Match these
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── the two sides ─────────────────────────────────────────── */}
+            <div className="grid gap-3 lg:grid-cols-2">
+              <Side title={`Bank statement · ${period.bank_lines.length} lines`}
+                    subtitle={s?.bank_account}>
+                <table className="w-full text-sm">
+                  <thead className="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500">
+                    <tr>
+                      <th className="w-10 px-2 py-2" />
+                      <th className="w-14 px-2 py-2">Date</th>
+                      <th className="px-2 py-2">Description</th>
+                      <th className="w-28 px-2 py-2 text-right">Amount</th>
+                      <th className="w-28 px-2 py-2 text-right">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {period.bank_lines.length === 0 && (
+                      <tr><td colSpan={5} className="px-3 py-8 text-center text-neutral-400">
+                        No statement lines yet — import the statement PDF.</td></tr>
+                    )}
+                    {period.bank_lines.map((b, i) => {
+                      const gid = groupOfBank[b.id]
+                      const inFocus = !!focusGroup && gid === focusGroup
+                      return (
+                        <tr key={b.id}
+                            onClick={() => (b.cleared ? setFocusGroup(gid === focusGroup ? null : gid)
+                              : !frozen && toggle(pickedBank, b.id, setPickedBank))}
+                            className={cn('cursor-pointer border-t border-neutral-100',
+                              i % 2 && 'bg-neutral-50/40',
+                              inFocus && 'bg-[#E4EFEC]',
+                              pickedBank.has(b.id) && 'bg-[#F2F8F7] ring-1 ring-inset ring-[#085E5E]/30')}>
+                          <td className="px-2 py-1.5">
+                            {b.cleared
+                              ? <CheckCircle2 className="h-4 w-4 text-green-600" />
+                              : <input type="checkbox" readOnly checked={pickedBank.has(b.id)}
+                                       className="h-3.5 w-3.5 accent-[#085E5E]" />}
+                          </td>
+                          <td className="px-2 py-1.5 font-mono text-xs text-neutral-500">{shortDate(b.txn_date)}</td>
+                          <td className="px-2 py-1.5">{b.description}</td>
+                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
+                            Number(b.amount) < 0 ? 'text-red-600' : 'text-green-700')}>
+                            {money(b.amount)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono text-xs tabular-nums text-neutral-400">
+                            {b.running_balance ? money(b.running_balance) : ''}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </Side>
+
+              <Side title={`NC ledger · ${period.book_lines.length} lines`}
+                    subtitle="Account 100201, expanded by bank account">
+                <table className="w-full text-sm">
+                  <thead className="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500">
+                    <tr>
+                      <th className="w-10 px-2 py-2" />
+                      <th className="w-14 px-2 py-2">Date</th>
+                      <th className="px-2 py-2">Summary</th>
+                      <th className="w-36 px-2 py-2">Contra</th>
+                      <th className="w-28 px-2 py-2 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {period.book_lines.length === 0 && (
+                      <tr><td colSpan={5} className="px-3 py-8 text-center text-neutral-400">
+                        No ledger lines for this account and period. If NC has them,
+                        the bank-account dimension has not been synced yet.</td></tr>
+                    )}
+                    {period.book_lines.map((b, i) => {
+                      const gid = groupOfBook[b.jv_line_id]
+                      const inFocus = !!focusGroup && gid === focusGroup
+                      return (
+                        <tr key={b.jv_line_id}
+                            onClick={() => (b.cleared ? setFocusGroup(gid === focusGroup ? null : gid)
+                              : !frozen && toggle(pickedBook, b.jv_line_id, setPickedBook))}
+                            className={cn('cursor-pointer border-t border-neutral-100',
+                              i % 2 && 'bg-neutral-50/40',
+                              inFocus && 'bg-[#E4EFEC]',
+                              pickedBook.has(b.jv_line_id) && 'bg-[#F2F8F7] ring-1 ring-inset ring-[#085E5E]/30')}>
+                          <td className="px-2 py-1.5">
+                            {b.cleared
+                              ? <CheckCircle2 className="h-4 w-4 text-green-600" />
+                              : <input type="checkbox" readOnly checked={pickedBook.has(b.jv_line_id)}
+                                       className="h-3.5 w-3.5 accent-[#085E5E]" />}
+                          </td>
+                          <td className="px-2 py-1.5 font-mono text-xs text-neutral-500">{shortDate(b.voucher_date)}</td>
+                          <td className="px-2 py-1.5">
+                            <div className="truncate" title={b.summary ?? ''}>{b.summary || '—'}</div>
+                            <div className="font-mono text-[11px] text-neutral-400">{b.jv_number}</div>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <Pill tone={KIND_TONE[b.contra_kind]}>{b.contra_label}</Pill>
+                          </td>
+                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
+                            Number(b.amount) < 0 ? 'text-red-600' : 'text-green-700')}>
+                            {money(b.amount)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </Side>
             </div>
 
-            {/* transactions */}
-            <div className="overflow-hidden rounded-lg border border-neutral-200">
-              <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
-                  <tr>
-                    <th className="px-3 py-2 w-28">Date</th>
-                    <th className="px-3 py-2">Description</th>
-                    <th className="px-3 py-2 w-40">Reference</th>
-                    <th className="px-3 py-2 w-36 text-right">Amount</th>
-                    <th className="px-3 py-2 w-24">Status</th>
-                    <th className="px-3 py-2 w-44" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {txnsLoading && (
-                    <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
-                      <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
-                  )}
-                  {!txnsLoading && txns.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
-                      No statement lines. Import a statement to begin.</td></tr>
-                  )}
-                  {txns.map((t, i) => {
-                    const amt = Number(t.amount)
-                    return (
-                      <tr key={t.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
-                        <td className="px-3 py-2 font-mono text-xs text-neutral-600">{t.txn_date}</td>
-                        <td className="px-3 py-2">{t.description}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-500">{t.reference || '—'}</td>
-                        <td className={cn('px-3 py-2 text-right font-mono', amt < 0 ? 'text-red-600' : 'text-green-700')}>
-                          {fmtMoney(t.amount)}
-                        </td>
-                        <td className="px-3 py-2"><StatusPill status={t.status} /></td>
-                        <td className="px-3 py-2">
-                          {canManage && (
-                            <div className="flex justify-end gap-1.5">
-                              {t.status === 'matched' ? (
-                                <button onClick={() => unmatch.mutate(t.id)} title="Unmatch"
-                                        className="rounded p-1 text-neutral-400 hover:text-amber-600">
-                                  <Undo2 className="h-4 w-4" /></button>
-                              ) : t.status === 'excluded' ? (
-                                <button onClick={() => exclude.mutate({ id: t.id, excluded: false })}
-                                        title="Re-include" className="rounded p-1 text-neutral-400 hover:text-[#085E5E]">
-                                  <Undo2 className="h-4 w-4" /></button>
-                              ) : (
-                                <>
-                                  {amt < 0 && (
-                                    <button onClick={() => setMatchFor(t)} title="Match to payment"
-                                            className="rounded p-1 text-neutral-400 hover:text-[#085E5E]">
-                                      <Link2 className="h-4 w-4" /></button>
-                                  )}
-                                  <button onClick={() => exclude.mutate({ id: t.id, excluded: true })}
-                                          title="Exclude (fee / interest / internal transfer)"
-                                          className="rounded p-1 text-neutral-400 hover:text-neutral-700">
-                                    <Ban className="h-4 w-4" /></button>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* discrepancy: payments not seen on the bank */}
-            {recon && recon.unreconciled_payments.length > 0 && (
-              <div className="mt-6">
-                <h3 className="mb-2 text-sm font-semibold text-neutral-700">
-                  Payments not yet seen on any statement ({recon.unreconciled_payments.length})
-                </h3>
-                <div className="overflow-hidden rounded-lg border border-neutral-200">
+            {/* ── what a cleared line is made of ────────────────────────── */}
+            {focused && (
+              <div className="mt-4 rounded-lg border border-[#085E5E]/30 bg-white p-3">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <Pill tone="bg-[#E4EFEC] text-[#085E5E]">
+                    {METHOD_LABEL[focused.method] ?? focused.method}
+                  </Pill>
+                  <span className="font-mono text-sm tabular-nums">{money(focused.amount)}</span>
+                  <span className="text-xs text-neutral-500">
+                    {focused.bank_ids.length} statement line(s) ↔ {focused.book_lines.length} ledger line(s)
+                  </span>
+                  {focused.note && <span className="text-xs text-neutral-500">· {focused.note}</span>}
+                  <div className="ml-auto flex gap-2">
+                    {focused.advice_id && (
+                      <button className={secondaryBtn}
+                              onClick={() => setOpenAdvice(openAdvice === focused.advice_id ? null : focused.advice_id)}>
+                        <FileText className="h-4 w-4" />
+                        {openAdvice === focused.advice_id ? 'Hide' : 'Show'} the payment file
+                      </button>
+                    )}
+                    {canManage && !frozen && (
+                      <button onClick={() => unmatch.mutate(focused.id)} disabled={unmatch.isPending || busy}
+                              className={secondaryBtn}>
+                        {unmatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <Undo2 className="h-4 w-4" />}
+                        Undo this match
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {openAdvice === focused.advice_id && (
                   <table className="w-full text-sm">
-                    <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                    <thead className="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500">
                       <tr>
-                        <th className="px-3 py-2 w-28">Date</th>
-                        <th className="px-3 py-2">Document</th>
-                        <th className="px-3 py-2 w-36 text-right">Amount</th>
+                        <th className="w-10 px-2 py-1.5">#</th>
+                        <th className="px-2 py-1.5">Payee</th>
+                        <th className="w-32 px-2 py-1.5 text-right">Amount</th>
+                        <th className="w-32 px-2 py-1.5">Ledger line</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {recon.unreconciled_payments.map((p) => (
-                        <tr key={p.payment_record_id} className="border-t border-neutral-100">
-                          <td className="px-3 py-2 font-mono text-xs text-neutral-600">{p.payment_date}</td>
-                          <td className="px-3 py-2">{p.doc_number || p.payment_record_id.slice(0, 8)}</td>
-                          <td className="px-3 py-2 text-right font-mono">{fmtMoney(p.amount, p.currency)}</td>
+                      {adviceLines.map((l) => (
+                        <tr key={l.id} className="border-t border-neutral-100">
+                          <td className="px-2 py-1 font-mono text-xs text-neutral-400">{l.seq}</td>
+                          <td className="px-2 py-1">
+                            {l.payee_name}
+                            {l.payee_code && <span className="ml-2 rounded bg-neutral-100 px-1 font-mono text-[11px] text-neutral-500">{l.payee_code}</span>}
+                          </td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{money(l.amount)}</td>
+                          <td className="px-2 py-1">
+                            {l.matched_jv_line_id
+                              ? <Pill tone="bg-green-50 text-green-700">matched</Pill>
+                              : <Pill tone="bg-amber-50 text-amber-700">not found</Pill>}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                )}
+              </div>
+            )}
+
+            {/* ── every group, for review ───────────────────────────────── */}
+            {period.matches.length > 0 && (
+              <div className="mt-4">
+                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  Cleared groups ({period.matches.length})
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {period.matches.map((g) => (
+                    <button key={g.id}
+                            onClick={() => setFocusGroup(g.id === focusGroup ? null : g.id)}
+                            className={cn('rounded-lg border px-2 py-1 text-xs',
+                              g.id === focusGroup
+                                ? 'border-[#085E5E] bg-[#E4EFEC] text-[#085E5E]'
+                                : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50')}>
+                      <span className="font-mono tabular-nums">{money(g.amount)}</span>
+                      <span className="ml-1.5 text-neutral-400">
+                        {g.bank_ids.length}↔{g.book_lines.length}
+                      </span>
+                      <span className="ml-1.5">{METHOD_LABEL[g.method] ?? g.method}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
           </>
         )}
       </div>
-
-      {importFile && account && (
-        <ImportMappingModal
-          account={account} file={importFile}
-          onClose={() => setImportFile(null)}
-          onDone={(r) => {
-            setImportFile(null)
-            flash('ok', `Imported ${r.imported}, ${r.duplicates} duplicates, ${r.skipped} skipped${r.errors.length ? `, ${r.errors.length} errors` : ''}`)
-            refresh()
-            qc.invalidateQueries({ queryKey: ['bank-accounts'] })
-          }}
-          onError={(m) => flash('err', m)}
-        />
-      )}
-
-      {editAccount && (
-        <AccountModal
-          initial={editAccount}
-          onClose={() => setEditAccount(null)}
-          onSaved={() => { setEditAccount(null); qc.invalidateQueries({ queryKey: ['bank-accounts'] }); flash('ok', 'Account saved') }}
-          onError={(m) => flash('err', m)}
-        />
-      )}
-
-      {matchFor && account && (
-        <ManualMatchModal
-          txn={matchFor} candidates={recon?.unreconciled_payments ?? []}
-          onClose={() => setMatchFor(null)}
-          onMatched={() => { setMatchFor(null); refresh(); flash('ok', 'Matched') }}
-          onError={(m) => flash('err', m)}
-        />
-      )}
     </PortalChromeLayout>
   )
 }
 
-function SummaryCard({ label, value, tone }: { label: string; value: string; tone?: 'pos' | 'neg' | 'warn' }) {
-  const c = tone === 'pos' ? 'text-green-700' : tone === 'neg' ? 'text-red-600' : tone === 'warn' ? 'text-amber-600' : 'text-neutral-800'
-  return (
-    <div className="rounded-lg border border-neutral-200 bg-white px-4 py-3">
-      <div className="text-xs text-neutral-500">{label}</div>
-      <div className={cn('mt-0.5 font-mono text-lg', c)}>{value}</div>
-    </div>
-  )
-}
-
-// ── Import + column mapping modal ────────────────────────────────────────────────
-function ImportMappingModal({ account, file, onClose, onDone, onError }: {
-  account: Account; file: File; onClose: () => void
-  onDone: (r: { imported: number; duplicates: number; skipped: number; errors: string[] }) => void
-  onError: (m: string) => void
-}) {
-  const [headers, setHeaders] = useState<string[]>([])
-  const saved = account.import_mapping
-  const [m, setM] = useState<ColumnMapping>(saved ?? { date: '', description: '' })
-  const [amountMode, setAmountMode] = useState<'signed' | 'split'>(saved?.amount ? 'signed' : saved ? 'split' : 'signed')
-  const [busy, setBusy] = useState(false)
-
-  // read header row once
-  useEffect(() => {
-    file.text().then((txt) => {
-      const first = txt.replace(/^﻿/, '').split(/\r?\n/)[0] ?? ''
-      setHeaders(parseHeader(first))
-    })
-  }, [file])
-
-  const set = (patch: Partial<ColumnMapping>) => setM((p) => ({ ...p, ...patch }))
-  const colSelect = (key: keyof ColumnMapping, label: string, required = false) => (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-neutral-600">{label}{required && <span className="text-red-500"> *</span>}</span>
-      <select value={(m[key] as string) ?? ''} onChange={(e) => set({ [key]: e.target.value || undefined } as Partial<ColumnMapping>)}
-              className={inputCls}>
-        <option value="">— none —</option>
-        {headers.map((h) => <option key={h} value={h}>{h}</option>)}
-      </select>
-    </label>
-  )
-
-  const submit = async () => {
-    // build clean mapping
-    const map: ColumnMapping = {
-      date: m.date, description: m.description, reference: m.reference,
-      date_format: m.date_format || undefined, default_year: m.default_year || undefined,
-    }
-    if (amountMode === 'signed') map.amount = m.amount
-    else { map.debit = m.debit; map.credit = m.credit; map.debit_sign = m.debit_sign || 'negative' }
-    if (!map.date || !map.description) return onError('Date and Description columns are required')
-    if (amountMode === 'signed' && !map.amount) return onError('Pick the signed Amount column')
-    if (amountMode === 'split' && !map.debit && !map.credit) return onError('Pick at least a Debit or Credit column')
-    setBusy(true)
-    try {
-      const r = await financeUploadFields<{ imported: number; duplicates: number; skipped: number; errors: string[] }>(
-        `/bank/${account.id}/import`, file, { mapping: JSON.stringify(map), save_mapping: 'true' })
-      onDone(r)
-    } catch (e) {
-      onError((e as Error).message)
-    } finally { setBusy(false) }
-  }
-
-  return (
-    <Modal title={`Import statement — ${account.name}`} onClose={onClose} wide>
-      <p className="mb-3 text-xs text-neutral-500">
-        File: <span className="font-mono">{file.name}</span> · map the columns from this bank's export.
-        {saved && ' Pre-filled from this account’s saved mapping.'}
-      </p>
-      <div className="grid grid-cols-2 gap-3">
-        {colSelect('date', 'Date column', true)}
-        {colSelect('description', 'Description column', true)}
-        {colSelect('reference', 'Reference column')}
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Date format</span>
-          <select value={m.date_format ?? ''} onChange={(e) => set({ date_format: e.target.value || undefined })}
-                  className={inputCls}>
-            {DATE_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-          </select>
-        </label>
-        {m.date_format === '%d %b' && (
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">Statement year (date has no year)</span>
-            <input type="number" value={m.default_year ?? ''} placeholder="2026"
-                   onChange={(e) => set({ default_year: e.target.value ? Number(e.target.value) : undefined })}
-                   className={inputCls} />
-          </label>
-        )}
-      </div>
-
-      <div className="mt-4 rounded-lg border border-neutral-200 p-3">
-        <div className="mb-2 flex gap-4 text-sm">
-          <label className="flex items-center gap-1.5">
-            <input type="radio" checked={amountMode === 'signed'} onChange={() => setAmountMode('signed')} />
-            One signed amount column
-          </label>
-          <label className="flex items-center gap-1.5">
-            <input type="radio" checked={amountMode === 'split'} onChange={() => setAmountMode('split')} />
-            Separate debit / credit columns
-          </label>
-        </div>
-        {amountMode === 'signed' ? (
-          <div className="grid grid-cols-2 gap-3">{colSelect('amount', 'Amount column (negative = outflow)', true)}</div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {colSelect('debit', 'Debit column (outflow)')}
-            {colSelect('credit', 'Credit column (inflow)')}
-          </div>
-        )}
-      </div>
-
-      <div className="mt-5 flex justify-end gap-2">
-        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-        <button onClick={submit} disabled={busy || headers.length === 0} className={primaryBtn}>
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Import
-        </button>
-      </div>
-    </Modal>
-  )
-}
-
-// ── Account create/edit modal ────────────────────────────────────────────────────
-function AccountModal({ initial, onClose, onSaved, onError }: {
-  initial: Partial<Account>; onClose: () => void; onSaved: () => void; onError: (m: string) => void
-}) {
-  const [f, setF] = useState<Partial<Account>>(initial)
-  const [busy, setBusy] = useState(false)
-  const isNew = !initial.id
-  const set = (patch: Partial<Account>) => setF((p) => ({ ...p, ...patch }))
-
-  const save = async () => {
-    if (!f.name || !f.bank_name) return onError('Name and bank are required')
-    setBusy(true)
-    try {
-      const body = {
-        name: f.name, bank_name: f.bank_name, account_masked: f.account_masked || null,
-        currency: f.currency || 'CAD', ledger_account_code: f.ledger_account_code || null,
-        is_active: f.is_active ?? true,
-      }
-      if (isNew) await financeApi.post('/bank/accounts', body)
-      else await financeApi.put(`/bank/accounts/${f.id}`, body)
-      onSaved()
-    } catch (e) { onError((e as Error).message) } finally { setBusy(false) }
-  }
-
-  return (
-    <Modal title={isNew ? 'New bank account' : 'Edit bank account'} onClose={onClose}>
-      <div className="grid gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Name</span>
-          <input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })} className={inputCls} />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Bank</span>
-          <input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })} className={inputCls} />
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">Account (last 4)</span>
-            <input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">Currency</span>
-            <select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
-              {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
-            </select>
-          </label>
-        </div>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">GL account code (COA bank account)</span>
-          <input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
-                 placeholder="e.g. 1010" className={inputCls} />
-        </label>
-        <label className="flex items-center gap-1.5 text-sm text-neutral-600">
-          <input type="checkbox" checked={f.is_active ?? true} onChange={(e) => set({ is_active: e.target.checked })} />
-          Active
-        </label>
-      </div>
-      <div className="mt-5 flex justify-end gap-2">
-        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-        <button onClick={save} disabled={busy} className={primaryBtn}>
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save
-        </button>
-      </div>
-    </Modal>
-  )
-}
-
-// ── Manual match modal ───────────────────────────────────────────────────────────
-function ManualMatchModal({ txn, candidates, onClose, onMatched, onError }: {
-  txn: Txn; candidates: DuePayment[]; onClose: () => void; onMatched: () => void; onError: (m: string) => void
-}) {
-  const [busy, setBusy] = useState<string | null>(null)
-  const target = Math.abs(Number(txn.amount))
-  const sameCcy = candidates.filter((c) => c.currency === txn.currency)
-  // exact-amount candidates first, then the rest
-  const sorted = [...sameCcy].sort((a, b) =>
-    Math.abs(Number(a.amount) - target) - Math.abs(Number(b.amount) - target))
-
-  const match = async (paymentId: string) => {
-    setBusy(paymentId)
-    try {
-      await financeApi.post(`/bank/transactions/${txn.id}/match`, { payment_record_id: paymentId })
-      onMatched()
-    } catch (e) { onError((e as Error).message) } finally { setBusy(null) }
-  }
-
-  return (
-    <Modal title="Match statement line to a payment" onClose={onClose} wide>
-      <div className="mb-3 rounded-md bg-neutral-50 px-3 py-2 text-sm">
-        <span className="font-mono text-xs text-neutral-500">{txn.txn_date}</span> · {txn.description} ·
-        <span className="ml-1 font-mono text-red-600">{fmtMoney(txn.amount)} {txn.currency}</span>
-      </div>
-      {sorted.length === 0 ? (
-        <p className="py-6 text-center text-sm text-neutral-400">
-          No unreconciled {txn.currency} payments to match. Use Exclude if this is a fee or internal transfer.
-        </p>
-      ) : (
-        <div className="max-h-80 overflow-y-auto rounded-lg border border-neutral-200">
-          <table className="w-full text-sm">
-            <tbody>
-              {sorted.map((c) => {
-                const exact = Math.abs(Number(c.amount) - target) < 0.005
-                return (
-                  <tr key={c.payment_record_id} className="border-t border-neutral-100 first:border-t-0">
-                    <td className="px-3 py-2 font-mono text-xs text-neutral-500">{c.payment_date}</td>
-                    <td className="px-3 py-2">{c.doc_number || c.payment_record_id.slice(0, 8)}</td>
-                    <td className="px-3 py-2 text-right font-mono">
-                      {fmtMoney(c.amount, c.currency)}
-                      {exact && <span className="ml-2 rounded bg-green-50 px-1.5 py-0.5 text-xs text-green-700">exact</span>}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button onClick={() => match(c.payment_record_id)} disabled={!!busy}
-                              className={cn(secondaryBtn, 'ml-auto')}>
-                        {busy === c.payment_record_id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-                        Match
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <p className="mt-3 text-xs text-neutral-400">
-        Amount mismatches are allowed (bank fees etc.) — the actor is recorded on the match.
-      </p>
-    </Modal>
-  )
-}
-
-// ── shared modal shell ───────────────────────────────────────────────────────────
-function Modal({ title, children, onClose, wide }: {
-  title: string; children: React.ReactNode; onClose: () => void; wide?: boolean
+function Side({ title, subtitle, children }: {
+  title: string; subtitle?: string; children: React.ReactNode
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className={cn('w-full rounded-xl bg-white p-5 shadow-xl', wide ? 'max-w-2xl' : 'max-w-md')}
-           onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-800">{title}</h2>
-          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        {children}
+    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+      <div className="border-b border-neutral-200 bg-neutral-50/60 px-3 py-2">
+        <div className="text-sm font-semibold text-neutral-700">{title}</div>
+        {subtitle && <div className="text-[11px] text-neutral-500">{subtitle}</div>}
       </div>
+      <div className="max-h-[30rem] overflow-auto">{children}</div>
     </div>
   )
 }
