@@ -28,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Download, EyeOff, Loader2, Undo2, X } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
+import { invalidateApJudgement } from '@/lib/apJudgement'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
@@ -269,14 +270,9 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
   const bills = hideIgnored ? allBills.filter((b) => !b.dismissed) : allBills
   const pays = data?.payments ?? []
 
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['ap-ledger-supplier', code, currency] })
-    // The supplier list and the currency cards both carry the ignored figure,
-    // so they go stale the moment this changes.
-    qc.invalidateQueries({ queryKey: ['ap-ledger-health-items'] })
-    qc.invalidateQueries({ queryKey: ['ap-ledger-health-summary'] })
-    qc.invalidateQueries({ queryKey: ['ap-ledger-dismissals'] })
-  }
+  // Everything built on the open balance goes stale here, not just this modal
+  // — AP Cash Flow included. See lib/apJudgement.
+  const refresh = () => invalidateApJudgement(qc)
   const dismiss = useMutation({
     mutationFn: (v: { bill_nos: string[]; reason: string; note: string }) =>
       financeApi.post('/ap-ledger-health/dismiss', v),
@@ -733,9 +729,7 @@ function BillsByDate({ currency }: { currency: string }) {
   const refresh = () => {
     setPicked([])
     setConfirming(null)
-    for (const k of ['ap-ledger-bills', 'ap-ledger-clusters', 'ap-ledger-health-items',
-                     'ap-ledger-health-summary', 'ap-ledger-supplier', 'ap-ledger-dismissals'])
-      qc.invalidateQueries({ queryKey: [k] })
+    invalidateApJudgement(qc)
   }
   const dismissSome = useMutation({
     mutationFn: (v: { bill_nos: string[]; reason: string; note: string }) =>
