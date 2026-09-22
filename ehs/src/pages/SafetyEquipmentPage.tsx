@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { AlertTriangle, ClipboardCheck, Plus, QrCode, X } from 'lucide-react'
+import { AlertTriangle, ClipboardCheck, History, Plus, QrCode, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import QrPanel from '@/components/QrPanel'
 import { formatDate } from '@/lib/formatDate'
@@ -256,6 +256,12 @@ function RegisterTab({
 }) {
   const queryClient = useQueryClient()
   const [codeFor, setCodeFor] = useState<string | null>(null)
+  // "Record a check is not logged anywhere once complete." It was logged —
+  // the row is written and the asset's last-checked date moves — but the only
+  // list on this screen asks for what is still due, so a completed check left
+  // that list and appeared nowhere. A check nobody can see afterwards is not
+  // evidence, and evidence is the whole point of the register.
+  const [historyFor, setHistoryFor] = useState<string | null>(null)
   // A check somebody did, whether or not one was due. Recording was only
   // possible against an occurrence the sweep had raised, and with nothing due
   // on anything, pressing the button saved nothing.
@@ -349,6 +355,16 @@ function RegisterTab({
                     </button>
                   )}
 
+                  <button
+                    type="button"
+                    onClick={() => setHistoryFor(historyFor === a.id ? null : a.id)}
+                    aria-expanded={historyFor === a.id}
+                    className="flex min-h-[32px] shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800"
+                  >
+                    <History className="h-3.5 w-3.5" aria-hidden />
+                    Checks
+                  </button>
+
                   {a.qr_token && (
                     <button
                       type="button"
@@ -381,6 +397,7 @@ function RegisterTab({
                     </span>
                   )}
                 </div>
+                {historyFor === a.id && <CheckHistory assetId={a.id} />}
                 {codeFor === a.id && (
                   <div className="mt-3 border-t border-neutral-100 pt-3">
                     <QrPanel
@@ -413,6 +430,56 @@ function RegisterTab({
  * register, each with its own QR label, and a coverage count that says the
  * plant has more extinguishers than it has.
  */
+/**
+ * Every check done on one item, most recent first.
+ *
+ * Read-only and deliberately plain: this is what somebody is pointed at when
+ * they ask whether the extinguisher by the dryer has actually been looked at
+ * this year, and an auditor asks it in exactly those words.
+ */
+function CheckHistory({ assetId }: { assetId: string }) {
+  const checks = useQuery({
+    queryKey: ['asset-inspections', assetId],
+    queryFn: () => api.get<Inspection[]>(
+      `/api/v1/safety-assets/inspections?asset_id=${assetId}`),
+  })
+
+  if (checks.isLoading) {
+    return <p className="mt-3 border-t border-neutral-100 pt-3 text-xs text-neutral-500">Loading…</p>
+  }
+
+  const done = (checks.data ?? []).filter((c) => c.performed_on)
+
+  return (
+    <div className="mt-3 border-t border-neutral-100 pt-3">
+      {done.length === 0 ? (
+        <p className="text-xs text-neutral-500">
+          No check has been recorded against this item yet.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {done.map((c) => (
+            <li key={c.id} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+              <span className="font-medium tabular-nums text-neutral-800">
+                {formatDate(c.performed_on)}
+              </span>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${
+                c.result === 'failed' ? 'bg-danger-50 text-danger-700'
+                                      : 'bg-success-50 text-success-700'}`}>
+                {c.result === 'failed' ? 'Failed' : 'Passed'}
+              </span>
+              {c.performed_by_name && (
+                <span className="text-neutral-500">by {c.performed_by_name}</span>
+              )}
+              {c.notes && <span className="min-w-0 text-neutral-600">— {c.notes}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function AssetForm({ existing, onClose }: { existing?: Asset; onClose: () => void }) {
   const queryClient = useQueryClient()
   const editing = Boolean(existing)

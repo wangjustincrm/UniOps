@@ -446,3 +446,40 @@ async def test_a_requester_sees_the_permits_they_raised(hse_manager, test_engine
         assert (await theirs.get(f"/api/v1/permits/{other['id']}")).status_code == 403
         listed = (await theirs.get("/api/v1/permits")).json()
         assert all(p["id"] != other["id"] for p in listed)
+
+
+async def test_taking_somebody_off_a_position_and_putting_them_back(hse_manager, worker):
+    """Removed and re-added the same day is a correction, not two spells.
+
+    The assignment row is unique on (person, position, start date) and removal
+    ends the row rather than deleting it — a job history is worth keeping. So
+    putting the same person back on the same day collided with their own ended
+    row and answered 500, which is what the second acceptance round hit:
+    "removing staff and then adding them back returns server error msg".
+    """
+    _, client = hse_manager
+    person, _ = worker
+
+    created = await client.post("/api/v1/positions", json={"code": "FORKLIFT", "name": "Forklift Operator"})
+    assert created.status_code in (200, 201), created.text
+    position_id = created.json()["id"]
+
+    first = await client.post(f"/api/v1/positions/{position_id}/holders",
+                              json={"user_id": str(person.id)})
+    assert first.status_code in (200, 201), first.text
+    assignment_id = first.json()["assignment_id"]
+
+    removed = await client.delete(
+        f"/api/v1/positions/{position_id}/holders/{assignment_id}")
+    assert removed.status_code in (200, 204), removed.text
+
+    again = await client.post(f"/api/v1/positions/{position_id}/holders",
+                              json={"user_id": str(person.id)})
+    assert again.status_code in (200, 201), (
+        f"re-adding the same person the same day must not fail: {again.text}")
+
+    holders = (await client.get(f"/api/v1/positions/{position_id}/holders")).json()
+    mine = [h for h in holders if h["user_id"] == str(person.id)]
+    assert len(mine) == 1, (
+        "the person holds the position once, not twice — a revived row, not a "
+        f"duplicate: {mine}")

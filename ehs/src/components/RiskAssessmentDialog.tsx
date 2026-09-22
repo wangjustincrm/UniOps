@@ -15,6 +15,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { consequenceLabel, describedConsequenceTypes } from '@/lib/riskMatrix'
 
 interface Likelihood {
   code: string; label: string; qualitative: string | null
@@ -112,8 +113,9 @@ export function RiskAssessmentDialog({
         </p>
         <select className={inputClass} value={consequence}
                 onChange={(e) => setConsequence(e.target.value)}>
-          {matrix.data?.consequence_types.map((c) => (
-            <option key={c} value={c}>{CONSEQUENCE_LABELS[c] ?? c}</option>
+          {describedConsequenceTypes(
+            matrix.data?.consequence_types, matrix.data?.severity).map((c) => (
+            <option key={c} value={c}>{CONSEQUENCE_LABELS[c] ?? consequenceLabel(c)}</option>
           ))}
         </select>
 

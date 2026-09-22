@@ -15,6 +15,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldAlert, Plus, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import { consequenceLabel, describedConsequenceTypes } from '@/lib/riskMatrix'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { LocationSelect } from '@/components/LocationSelect'
@@ -80,6 +81,12 @@ export default function HazardsPage() {
   const mayWrite = can('ehs.action.write')
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Hazard | null>(null)
+  // "Can not view the risk register once created." The scoring was kept — the
+  // likelihood, the severity, which consequence it was judged on, who judged
+  // it and when — and the only thing that ever came back to the screen was a
+  // coloured word. A rating with no working shown is not something an auditor
+  // can take, and it is not something the next assessor can disagree with.
+  const [scoringFor, setScoringFor] = useState<string | null>(null)
   const [assessing, setAssessing] = useState<Hazard | null>(null)
   const [showEliminated, setShowEliminated] = useState(false)
 
@@ -184,6 +191,14 @@ export default function HazardsPage() {
                     )}
                     {mayWrite && (
                       <span className="flex items-center gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setScoringFor(scoringFor === h.id ? null : h.id)}
+                          aria-expanded={scoringFor === h.id}
+                          className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 hover:underline"
+                        >
+                          Scoring
+                        </button>
                         <button type="button" onClick={() => setEditing(h)}
                                 className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 hover:underline">
                           Edit
@@ -196,6 +211,7 @@ export default function HazardsPage() {
                     )}
                   </span>
                 </div>
+                {scoringFor === h.id && <ScoringHistory hazardId={h.id} />}
               </Card>
             </li>
           ))}
@@ -220,6 +236,80 @@ export default function HazardsPage() {
  * reading as though it has two of them. One form, and `existing` decides
  * whether it records or corrects.
  */
+interface Assessment {
+  id: string; consequence_type: string
+  likelihood_code: string; likelihood_label: string | null
+  severity_level: number; severity_label: string | null
+  rating: string; controls: string | null
+  residual_likelihood_code: string | null; residual_severity_level: number | null
+  residual_rating: string | null
+  assessed_by_name: string | null; assessed_at: string
+}
+
+/**
+ * How a hazard came to be rated what it is rated.
+ *
+ * Every scoring, most recent first, with the words beside the numbers. "2"
+ * says nothing on its own — the second acceptance round asked it outright,
+ * "is 2 bad or good?" — and the matrix scores severity differently depending
+ * on which consequence it was judged against, so the answer is meaningless
+ * without saying which.
+ */
+function ScoringHistory({ hazardId }: { hazardId: string }) {
+  const scorings = useQuery({
+    queryKey: ['risk-assessments', hazardId],
+    queryFn: () => api.get<Assessment[]>(
+      `/api/v1/risk/assessments?source_type=hazard&source_id=${hazardId}`),
+  })
+
+  if (scorings.isLoading) {
+    return <p className="mt-3 border-t border-neutral-100 pt-3 text-xs text-neutral-500">Loading…</p>
+  }
+  if (!scorings.data?.length) {
+    return (
+      <p className="mt-3 border-t border-neutral-100 pt-3 text-xs text-neutral-500">
+        This hazard has not been scored against the matrix yet.
+      </p>
+    )
+  }
+
+  return (
+    <ul className="mt-3 flex flex-col gap-2.5 border-t border-neutral-100 pt-3">
+      {scorings.data.map((a) => (
+        <li key={a.id} className="text-xs">
+          <span className="flex flex-wrap items-center gap-2">
+            <RatingBadge rating={a.rating} />
+            <span className="text-neutral-500">
+              judged on <span className="capitalize">{a.consequence_type.replace('_', ' ')}</span>
+            </span>
+            <span className="text-neutral-400">·</span>
+            <span className="text-neutral-600">
+              {a.assessed_by_name ?? 'Unknown'}, {formatDate(a.assessed_at)}
+            </span>
+          </span>
+          <span className="mt-1 block text-neutral-700">
+            Likelihood {a.likelihood_code}
+            {a.likelihood_label && ` — ${a.likelihood_label}`}
+            {' · '}
+            Severity {a.severity_level}
+            {a.severity_label && ` — ${a.severity_label}`}
+          </span>
+          {a.residual_rating && (
+            <span className="mt-0.5 block text-neutral-500">
+              Once the controls are in: <span className="capitalize">{a.residual_rating}</span>
+              {a.residual_likelihood_code && ` (${a.residual_likelihood_code}`}
+              {a.residual_severity_level !== null && `/${a.residual_severity_level})`}
+            </span>
+          )}
+          {a.controls && (
+            <span className="mt-0.5 block text-neutral-600">Controls: {a.controls}</span>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => void }) {
   const queryClient = useQueryClient()
   const editing = Boolean(existing)
@@ -384,8 +474,9 @@ function AssessDialog({ hazard, onClose }: { hazard: Hazard; onClose: () => void
                hint="The matrix scores severity differently for each of these, so it has to be said which">
           <select className={inputClass} value={consequence}
                   onChange={(e) => setConsequence(e.target.value)}>
-            {matrix.data?.consequence_types.map((c) => (
-              <option key={c} value={c}>{c.replace('_', ' ')}</option>
+            {describedConsequenceTypes(
+              matrix.data?.consequence_types, matrix.data?.severity).map((c) => (
+              <option key={c} value={c}>{consequenceLabel(c)}</option>
             ))}
           </select>
         </Field>
