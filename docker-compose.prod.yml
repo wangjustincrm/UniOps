@@ -203,6 +203,12 @@ services:
       NC_PASSWORD: ${NC65_PASSWORD:-}
       # Where the client reads QBO creds inside the container (see the volume below).
       QBO_CONN_ENV: /run/qbo_conn.env
+      # Bank Reconciliation v2: statement/advice PDFs live in file-api, and the
+      # statement read goes through Claude Haiku. Unset key = PDF import is
+      # unavailable and says so; CSV import is unaffected.
+      FILE_SERVER_URL: ${FILE_SERVER_INTERNAL_URL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      BANK_ANTHROPIC_API_KEY: ${BANK_ANTHROPIC_API_KEY:-}
     ports: ["8004:8004"]
     # QBO credentials for the QuickBooks Sync button. Place qbo_conn.env on the app
     # server and set QBO_CONN_ENV_HOST in the (gitignored) .env to its path;
