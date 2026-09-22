@@ -37,7 +37,10 @@ interface Investigation {
 }
 
 interface Medical {
-  supervisor_name: string | null; type_of_injury: string | null
+  supervisor_id: string | null; supervisor_name: string | null
+  /** Superseded by the injured person's nature of injury, which is a list.
+   *  Still read so an older record keeps showing what was typed into it. */
+  type_of_injury: string | null
   assessed_at_text: string | null; signs_symptoms: string | null
   allergies: string | null; medicines: string | null
   past_medical_history: string | null; last_meal: string | null
@@ -97,9 +100,16 @@ export default function InvestigationPage() {
 
   const incident = useQuery({
     queryKey: ['incident', id],
-    queryFn: () => api.get<{ incident_no: string; title: string; form_kind: string }>(
-      `/api/v1/incidents/${id}`),
+    queryFn: () => api.get<{
+      incident_no: string; title: string; form_kind: string
+      persons: {
+        id: string; role: string; person_name: string
+        body_part_id: string | null; body_part_label: string | null
+        nature_of_injury_id: string | null; nature_of_injury_label: string | null
+      }[]
+    }>(`/api/v1/incidents/${id}`),
   })
+  const injuredPerson = incident.data?.persons?.find((p) => p.role === 'injured') ?? null
   const existing = useQuery({
     queryKey: ['incident', id, 'investigation'],
     queryFn: () => api.get<Investigation | null>(`/api/v1/incidents/${id}/investigation`),
@@ -128,11 +138,33 @@ export default function InvestigationPage() {
   const [causes, setCauses] = useState<Cause[]>([])
   const [signature, setSignature] = useState<string | null>(null)
   const [med, setMed] = useState<Partial<Medical>>({ timeline: [] })
+  // What was recorded about the injury itself, which lives on the injured
+  // person rather than in Section B. Seeded from the report and corrected
+  // here — see the note on the PATCH above.
+  const [bodyPart, setBodyPart] = useState<VocabItem | null>(null)
+  const [natureOfInjury, setNatureOfInjury] = useState<VocabItem | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Load once. Re-running on every fetch would discard edits the moment a
   // background refetch resolved.
   const [loaded, setLoaded] = useState(false)
+  // Seeded from what the reporter recorded, so opening the investigation and
+  // saving it without touching these does not wipe them. Runs once per load:
+  // once somebody has changed a picker, the record is not re-read over it.
+  const [injurySeeded, setInjurySeeded] = useState(false)
+  useEffect(() => {
+    if (injurySeeded || !injuredPerson) return
+    if (injuredPerson.body_part_id) {
+      setBodyPart({ id: injuredPerson.body_part_id,
+                    label: injuredPerson.body_part_label ?? '' } as VocabItem)
+    }
+    if (injuredPerson.nature_of_injury_id) {
+      setNatureOfInjury({ id: injuredPerson.nature_of_injury_id,
+                          label: injuredPerson.nature_of_injury_label ?? '' } as VocabItem)
+    }
+    setInjurySeeded(true)
+  }, [injurySeeded, injuredPerson])
+
   useEffect(() => {
     if (loaded || existing.isLoading || tree.isLoading) return
     const inv = existing.data
@@ -179,10 +211,40 @@ export default function InvestigationPage() {
           })),
       })
       if (showMedical) {
+        // Built field by field rather than spread from what the GET returned:
+        // the response carries its own id, incident id and recorded-by name,
+        // and the endpoint now refuses fields it does not recognise — which
+        // is the protection that stops a misspelled key reading as "cleared".
         await api.put(`/api/v1/incidents/${id}/medical`, {
-          ...med,
+          supervisor_id: med.supervisor_id ?? null,
+          supervisor_name: med.supervisor_name ?? null,
+          type_of_injury: med.type_of_injury ?? null,
+          assessed_at_text: med.assessed_at_text ?? null,
+          signs_symptoms: med.signs_symptoms ?? null,
+          allergies: med.allergies ?? null,
+          medicines: med.medicines ?? null,
+          past_medical_history: med.past_medical_history ?? null,
+          last_meal: med.last_meal ?? null,
+          events_prior: med.events_prior ?? null,
+          general_comments: med.general_comments ?? null,
+          vitals_at_text: med.vitals_at_text ?? null,
+          pulse: med.pulse ?? null,
+          respirations: med.respirations ?? null,
+          blood_pressure: med.blood_pressure ?? null,
           pain_level: med.pain_level ?? null,
+          pain_location: med.pain_location ?? null,
+          vitals_other: med.vitals_other ?? null,
           timeline: (med.timeline ?? []).filter((t) => t.time || t.event),
+        })
+      }
+      if (showMedical && injuredPerson && (bodyPart || natureOfInjury)) {
+        // The reporter names the body part from memory, often within minutes.
+        // Whoever assesses the injury is who knows, and that is this step.
+        await api.patch(`/api/v1/incidents/${id}/persons/${injuredPerson.id}`, {
+          body_part_id: bodyPart?.id ?? null,
+          body_part_label: bodyPart?.label ?? null,
+          nature_of_injury_id: natureOfInjury?.id ?? null,
+          nature_of_injury_label: natureOfInjury?.label ?? null,
         })
       }
       if (opts.sign && signature) {
@@ -316,17 +378,42 @@ export default function InvestigationPage() {
 
       {showMedical && (
         <Section title="Section B — injury detail (required by WSIB)">
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Supervisor">
-              <input className={inputClass} value={med.supervisor_name ?? ''}
-                     onChange={(e) => setMed({ ...med, supervisor_name: e.target.value })} />
+          <Field label="Supervisor"
+                 help="The follow-up goes to this person, so it has to be a name the system knows.">
+            <PersonPicker
+              value={med.supervisor_id || med.supervisor_name
+                ? { ...EMPTY_PERSON, userId: med.supervisor_id ?? null,
+                    name: med.supervisor_name ?? '' }
+                : EMPTY_PERSON}
+              onChange={(v) => setMed({
+                ...med, supervisor_id: v.userId, supervisor_name: v.name || null })}
+              allowExternal={false}
+            />
+          </Field>
+
+          {/* Recorded against the injured person, not Section B: the injury
+              register and WSIB Form 7 both read them from there, and a second
+              copy typed here would be a second answer to the same question.
+              Free text until now, which is why the body-part figure could not
+              be grouped. */}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Field label="What part of the body?">
+              <VocabularySelect vocabulary="body_part" value={bodyPart?.id ?? null}
+                                onChange={setBodyPart} />
             </Field>
-            <Field label="Type of injury">
-              <input className={inputClass} value={med.type_of_injury ?? ''}
-                     onChange={(e) => setMed({ ...med, type_of_injury: e.target.value })}
-                     placeholder="cut to finger" />
+            <Field label="What kind of injury?">
+              <VocabularySelect vocabulary="nature_of_injury"
+                                value={natureOfInjury?.id ?? null}
+                                onChange={setNatureOfInjury} />
             </Field>
           </div>
+
+          {med.type_of_injury && (
+            <p className="mb-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+              Typed on this record before these became lists:
+              <span className="font-medium"> {med.type_of_injury}</span>
+            </p>
+          )}
 
           {/* SAMPLE: signs, allergies, medicines, past history, last meal,
               events. This is the order a first aider is trained to ask in —

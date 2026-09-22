@@ -16,6 +16,7 @@ from app.core.deps import SessionDep
 from app.core.permissions import (
     CanClassifyIncident,
     CanCloseIncident,
+    CanInvestigate,
     CanManageStatutory,
     CanReadIncident,
     CanReportIncident,
@@ -24,7 +25,7 @@ from app.models.incident import IncidentPerson
 from sqlalchemy import select
 from uniops_authz import has_permission
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.services import incident_type
 from app.crud import incident as crud
@@ -35,6 +36,7 @@ from app.schemas.incident import (
     IncidentCreate,
     IncidentListItem,
     IncidentOut,
+    IncidentPersonOut,
     MolReportFiledIn,
 )
 from app.schemas.wsib import Form7FiledIn, Form7Package
@@ -306,6 +308,45 @@ async def _cause_tree(db, incident) -> CauseTreeOut:
 
 
 # ── WSIB Form 7 ─────────────────────────────────────────────────────────────
+
+
+class PersonInjuryPatch(BaseModel):
+    """Correcting what was recorded about an injury.
+
+    The reporter names the body part from memory, often within minutes and
+    sometimes from the other end of a radio. The person who knows is whoever
+    assesses the injury afterwards, which is the investigation step — so the
+    fields captured on the report have to be correctable there, or the figures
+    keep the first guess forever.
+
+    Ids and labels move together: the label is the snapshot that keeps the
+    record readable after the vocabulary is renamed, the id is what the
+    injury figures group on.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    body_part_id: uuid.UUID | None = None
+    body_part_label: str | None = Field(default=None, max_length=200)
+    nature_of_injury_id: uuid.UUID | None = None
+    nature_of_injury_label: str | None = Field(default=None, max_length=200)
+    treatment: str | None = None
+
+
+@router.patch("/{incident_id}/persons/{person_id}", response_model=IncidentPersonOut)
+async def update_person_injury(
+    incident_id: uuid.UUID, person_id: uuid.UUID,
+    payload: PersonInjuryPatch, db: SessionDep, user: CanInvestigate,  # noqa: ARG001
+):
+    incident = await crud.get(db, incident_id)
+    # Same gate as the investigation itself: a closed incident is a closed
+    # record, and correcting one means reopening it on purpose.
+    crud.assert_open(incident, "the injury detail")
+    person = await crud.get_person(db, incident_id, person_id)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(person, field, value)
+    await db.flush()
+    return person
 
 
 @router.post("/{incident_id}/mol-report/filed", response_model=IncidentOut)

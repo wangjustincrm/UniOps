@@ -350,3 +350,24 @@ async def close(db: AsyncSession, incident: Incident) -> Incident:
     incident.closed_at = datetime.now(timezone.utc)
     await db.flush()
     return incident
+
+
+async def get_person(
+    db: AsyncSession, incident_id: uuid.UUID, person_id: uuid.UUID,
+) -> IncidentPerson:
+    """One person on one incident.
+
+    Scoped by incident as well as by id on purpose: an id from another
+    incident would otherwise be edited through this incident's permission
+    check, which is the quiet way a record gets changed by somebody who was
+    never allowed near it.
+    """
+    person = (await db.execute(
+        select(IncidentPerson).where(
+            IncidentPerson.id == person_id,
+            IncidentPerson.incident_id == incident_id,
+        )
+    )).scalar_one_or_none()
+    if person is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nobody by that id on this incident")
+    return person

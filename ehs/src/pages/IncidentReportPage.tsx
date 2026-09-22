@@ -21,6 +21,7 @@ import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { PhotoCapture } from '@/components/PhotoCapture'
 import { SignaturePad } from '@/components/SignaturePad'
+import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import { useMyProfile } from '@/hooks/useMyProfile'
 
 type Kind = 'medical' | 'equipment' | 'near_miss'
@@ -68,6 +69,15 @@ interface FormState {
   injuryClass: string
   description: string
   injured: PersonValue
+  // Two vocabularies the reporting form has never offered, though both were
+  // populated in Settings and accepted by the API from the start. Nothing has
+  // ever written them, which is why the body-part chart on the dashboard can
+  // only ever be empty and the WSIB pre-fill is missing two of its required
+  // fields. (The incident category is not here on purpose: the server derives
+  // it from the twelve incident types, and a second place to set it would be
+  // a second answer to the same question.)
+  bodyPart: VocabItem | null
+  natureOfInjury: VocabItem | null
   talkedToOperator: '' | 'yes' | 'no' | 'na'
   whyNot: string
   anonymous: boolean
@@ -77,7 +87,8 @@ interface FormState {
 const EMPTY: FormState = {
   kind: null, title: '', date: '', time: '', locationId: '', incidentType: '',
   injuryClass: '', description: '',
-  injured: EMPTY_PERSON, talkedToOperator: '', whyNot: '', anonymous: false, signature: null,
+  injured: EMPTY_PERSON, bodyPart: null, natureOfInjury: null,
+  talkedToOperator: '', whyNot: '', anonymous: false, signature: null,
 }
 
 const DRAFT_KIND = 'incident'
@@ -149,6 +160,10 @@ export default function IncidentReportPage() {
           user_id: form.injured.userId,
           external_company: form.injured.externalCompany,
           department_id: form.injured.departmentId,
+          body_part_id: form.bodyPart?.id ?? null,
+          body_part_label: form.bodyPart?.label ?? null,
+          nature_of_injury_id: form.natureOfInjury?.id ?? null,
+          nature_of_injury_label: form.natureOfInjury?.label ?? null,
         }]
         // The department of the person hurt is the department of the incident.
         // HSE asked for this so nobody picks a name and then picks the
@@ -337,6 +352,21 @@ export default function IncidentReportPage() {
       >
           <PersonPicker value={form.injured} onChange={(v) => set('injured', v)} />
         </Field>
+      )}
+
+      {form.kind === 'medical' && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="What part of the body?"
+                 help="Grouped the way WSIB groups them, so Form 7 can be filled from this.">
+            <VocabularySelect vocabulary="body_part" value={form.bodyPart?.id ?? null}
+                              onChange={(v) => set('bodyPart', v)} />
+          </Field>
+          <Field label="What kind of injury?">
+            <VocabularySelect vocabulary="nature_of_injury"
+                              value={form.natureOfInjury?.id ?? null}
+                              onChange={(v) => set('natureOfInjury', v)} />
+          </Field>
+        </div>
       )}
 
       {form.kind === 'near_miss' && (

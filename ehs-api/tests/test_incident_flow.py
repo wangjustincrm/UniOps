@@ -460,3 +460,65 @@ async def test_a_talk_can_go_to_some_supervisors_rather_than_all(hse_manager, te
     got = {d["supervisor_name"] for d in sent.json()}
     assert "Chosen Supervisor" in got
     assert "Other Supervisor" not in got, "it went to somebody who was not chosen"
+
+
+async def test_body_part_and_nature_reach_the_injury_figures(hse_manager, worker, db_session):
+    """What the reporting form never asked for.
+
+    Both fields have been accepted by this endpoint since launch and both
+    vocabularies were populated in Settings, but no screen offered them — so
+    the body-part figure on the dashboard had one entry in twenty-four
+    records, typed as free text with no vocabulary id behind it, and WSIB
+    Form 7 was short two of its required fields.
+
+    Grouping is by label because that is what reads on the chart; the id is
+    what makes the grouping trustworthy, so both are asserted.
+    """
+    from datetime import datetime, timezone
+
+    _, client = hse_manager
+    injured, _ = worker
+
+    # Seeded here rather than read from Settings: the test database is built by
+    # create_all, so it has the tables the migrations create but none of the
+    # content they insert. A test that read the vocabulary would be asserting
+    # against an empty list and passing for the wrong reason.
+    import uuid as _uuid
+
+    from app.models.vocabulary import Vocabulary, VocabularyItem
+
+    db_session.add(Vocabulary(code="body_part", name="Body Part"))
+    await db_session.flush()
+    hand_id = _uuid.uuid4()
+    db_session.add(VocabularyItem(
+        id=hand_id, vocabulary_code="body_part", code="hand",
+        label="Hand", sort_order=10, path="Hand"))
+    await db_session.commit()
+    hand = {"id": str(hand_id), "label": "Hand"}
+
+    created = await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Caught in the case sealer",
+        "incident_type": "first_aid",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "description": "Reached past the guard.",
+        "persons": [{
+            "role": "injured",
+            "person_name": injured.full_name or "Test Worker",
+            "user_id": str(injured.id),
+            "body_part_id": hand["id"],
+            "body_part_label": hand["label"],
+        }],
+    })
+    assert created.status_code in (200, 201), created.text
+
+    detail = (await client.get(f"/api/v1/incidents/{created.json()['id']}")).json()
+    person = next(p for p in detail["persons"] if p["role"] == "injured")
+    assert person["body_part_label"] == hand["label"]
+    assert person["body_part_id"] == hand["id"], (
+        "the label alone cannot be grouped: it is a snapshot, and two spellings "
+        "of the same part would count as two")
+
+    figures = (await client.get("/api/v1/dashboard")).json()
+    assert any(row["label"] == hand["label"] for row in figures["body_parts"]), (
+        "a body part recorded on the form has to reach the figure that is "
+        "supposed to be showing it")

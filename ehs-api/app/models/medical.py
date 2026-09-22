@@ -22,6 +22,11 @@ class IncidentMedical(UUIDPrimaryKey, TimestampMixin, Base):
         nullable=False, unique=True,
     )
 
+    # Both halves. The id is who the follow-up goes to; the name is the
+    # snapshot that keeps the record readable once that person has left and
+    # the FK has gone to NULL.
+    supervisor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     supervisor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     type_of_injury: Mapped[str | None] = mapped_column(String(255), nullable=True)
 

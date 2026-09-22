@@ -31,6 +31,18 @@ class TimelineEntry(BaseModel):
 
 
 class MedicalIn(BaseModel):
+    # ★ This endpoint writes every field it is given and blanks the ones it is
+    # not: the screen sends the whole section each time, which is the right
+    # shape for a PUT but leaves no defence against a key that is not
+    # recognised. Dropping one quietly is how this module destroyed an
+    # investigation — an unknown key looked like "the user cleared it". This
+    # table holds allergies, medicines and past medical history, so the same
+    # mistake here loses health information nobody can reconstruct.
+    model_config = ConfigDict(extra="forbid")
+
+    # Who the follow-up goes to. Both halves: the id is the link, the name is
+    # the snapshot that survives the person leaving.
+    supervisor_id: uuid.UUID | None = None
     supervisor_name: str | None = Field(default=None, max_length=255)
     type_of_injury: str | None = Field(default=None, max_length=255)
 

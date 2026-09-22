@@ -143,7 +143,14 @@ class IncidentPersonOut(BaseModel):
     user_id: uuid.UUID | None
     person_name: str
     external_company: str | None
+    # Ids alongside the labels. The label is the snapshot that keeps a record
+    # readable after somebody renames the vocabulary entry; the id is what the
+    # figures group on and what puts a picker back on the right row when the
+    # record is reopened. This is the third place in the module that returned
+    # the label alone — see the same note on hazards and safety equipment.
+    body_part_id: uuid.UUID | None
     body_part_label: str | None
+    nature_of_injury_id: uuid.UUID | None
     nature_of_injury_label: str | None
     treatment: str | None
 

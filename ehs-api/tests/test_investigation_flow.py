@@ -202,3 +202,97 @@ async def test_an_auditor_can_read_the_tree_but_not_edit_it(worker, hse_manager,
     assert (await aclient.get(f"/api/v1/incidents/{incident['id']}/cause-tree")).status_code == 200
     assert (await aclient.put(f"/api/v1/incidents/{incident['id']}/causes",
                               json=CAUSES)).status_code == 403
+
+
+async def test_section_b_refuses_a_field_it_does_not_know(hse_manager, worker):
+    """The medical section writes every field it is given and blanks the rest.
+
+    That is the right shape for a PUT of a whole form, but it left no defence
+    against a key that is not recognised: it was dropped in silence and the
+    record saved around it. This is the exact mechanism that destroyed an
+    investigation on this module, and this table holds allergies, medicines
+    and past medical history — information nobody can reconstruct.
+    """
+    from datetime import datetime, timezone
+
+    _, client = hse_manager
+    injured, _ = worker
+    created = await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Burn from a steam line",
+        "incident_type": "medical_aid",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "description": "Reached across an unlagged line.",
+        "persons": [{"role": "injured", "person_name": injured.full_name or "Test Worker",
+                     "user_id": str(injured.id)}],
+    })
+    incident_id = created.json()["id"]
+    await client.post(f"/api/v1/incidents/{incident_id}/submit")
+
+    good = await client.put(f"/api/v1/incidents/{incident_id}/medical", json={
+        "allergies": "Penicillin", "medicines": "None",
+    })
+    assert good.status_code == 200, good.text          # the admitting half
+
+    bad = await client.put(f"/api/v1/incidents/{incident_id}/medical", json={
+        "allergy": "Penicillin",                        # singular — wrong
+    })
+    assert bad.status_code == 422, (
+        "an unknown field must be refused, not dropped: accepting it would "
+        "also have blanked the allergies that were there")
+
+    # And the good record is untouched by the rejected call.
+    after = (await client.get(f"/api/v1/incidents/{incident_id}/medical")).json()
+    assert after["allergies"] == "Penicillin"
+
+
+async def test_the_investigation_can_correct_the_body_part(hse_manager, worker, db_session):
+    """The reporter guesses; whoever assesses the injury knows.
+
+    Without a way to correct it the first guess is what the injury figures and
+    WSIB Form 7 carry forever.
+    """
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    from app.models.vocabulary import Vocabulary, VocabularyItem
+
+    db_session.add(Vocabulary(code="body_part", name="Body Part"))
+    await db_session.flush()
+    wrist = _uuid.uuid4()
+    db_session.add(VocabularyItem(id=wrist, vocabulary_code="body_part", code="wrist",
+                                  label="Wrist", sort_order=10, path="Wrist"))
+    await db_session.commit()
+
+    _, client = hse_manager
+    injured, _ = worker
+    created = await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Fall from a step",
+        "incident_type": "first_aid",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "description": "Landed awkwardly.",
+        "persons": [{"role": "injured", "person_name": injured.full_name or "Test Worker",
+                     "user_id": str(injured.id),
+                     "body_part_label": "hand"}],       # what the reporter said
+    })
+    incident_id = created.json()["id"]
+    await client.post(f"/api/v1/incidents/{incident_id}/submit")
+    person_id = created.json()["persons"][0]["id"]
+
+    fixed = await client.patch(
+        f"/api/v1/incidents/{incident_id}/persons/{person_id}",
+        json={"body_part_id": str(wrist), "body_part_label": "Wrist"})
+    assert fixed.status_code == 200, fixed.text
+    assert fixed.json()["body_part_id"] == str(wrist)
+
+    # Scoped by incident: an id from somewhere else is not reachable through
+    # this incident's permission check.
+    other = await client.post("/api/v1/incidents", json={
+        "form_kind": "near_miss", "title": "Pallet wobbled",
+        "incident_type": "near_miss",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "description": "Nobody underneath.", "talked_to_operator": "yes",
+    })
+    stray = await client.patch(
+        f"/api/v1/incidents/{other.json()['id']}/persons/{person_id}",
+        json={"body_part_label": "Elbow"})
+    assert stray.status_code == 404, "a person must not be editable through another incident"
