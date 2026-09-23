@@ -163,6 +163,11 @@ class IncidentPerson(UUIDPrimaryKey, TimestampMixin, Base):
     nature_of_injury_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     nature_of_injury_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
     treatment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # What the first aid register used to hold, on the person rather than the
+    # incident: one incident can hurt two people differently, and "sent off
+    # site" is true of a person, not of an event.
+    sent_offsite: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    follow_up: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class IncidentInvestigation(UUIDPrimaryKey, TimestampMixin, Base):

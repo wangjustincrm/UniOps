@@ -144,3 +144,60 @@ async def escalate(
     entry.incident_id = incident.id
     await db.flush()
     return incident
+
+
+async def first_aid_from_incidents(
+    db: AsyncSession, *,
+    injured_user_id: uuid.UUID | None = None,
+    location_id: uuid.UUID | None = None,
+    limit: int = 100,
+) -> list:
+    """First aid recorded on an injury form, shaped like a register entry.
+
+    Regulation 1101 asks for a record of every treatment, not for it to live in
+    one table. Since first aid moved onto the incident form the register has to
+    read both, or it silently stops being the register.
+
+    Shaped rather than stored: these are incidents, and copying them into the
+    old table would put the same event in two places again — which is the
+    thing the merge was for.
+    """
+    from app.schemas.first_aid import FirstAidOut
+
+    stmt = (
+        select(Incident, IncidentPerson)
+        .join(IncidentPerson, IncidentPerson.incident_id == Incident.id)
+        .where(
+            Incident.injury_class == "first_aid",
+            IncidentPerson.role == "injured",
+            Incident.status != "draft",
+        )
+        .order_by(Incident.occurred_at.desc())
+        .limit(limit)
+    )
+    if injured_user_id:
+        stmt = stmt.where(IncidentPerson.user_id == injured_user_id)
+    if location_id:
+        stmt = stmt.where(Incident.location_id == location_id)
+
+    out = []
+    for incident, person in (await db.execute(stmt)).all():
+        out.append(FirstAidOut(
+            id=person.id,
+            log_no=incident.incident_no,
+            incident_id=incident.id,
+            occurred_at=incident.occurred_at,
+            location_id=incident.location_id,
+            location_path=incident.location_path,
+            injured_user_id=person.user_id,
+            injured_name=person.person_name,
+            first_aider_name=None,
+            body_part_label=person.body_part_label,
+            # Required on the register and optional on the incident: an entry
+            # with nothing written is still a record that treatment happened.
+            treatment_given=person.treatment or "—",
+            sent_offsite=bool(person.sent_offsite),
+            follow_up=person.follow_up,
+            created_at=incident.created_at,
+        ))
+    return out

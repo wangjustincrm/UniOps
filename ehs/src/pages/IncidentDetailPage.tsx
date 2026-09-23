@@ -13,6 +13,7 @@ import { AlertCircle, FileText, Plus } from 'lucide-react'
 import { api, apiBlob, ApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/formatDate'
 import { Countdown } from '@/components/Countdown'
+import { ChangeHistory } from '@/components/ChangeHistory'
 import { InjuryBadge, MolBadge, StatusBadge } from '@/components/StatusBadge'
 import { usePermissions } from '@/hooks/usePermissions'
 import { CommunicationLog } from '@/components/CommunicationLog'
@@ -609,9 +610,14 @@ export default function IncidentDetailPage() {
               Sits with the statutory panel rather than in the narrative: it
               answers "were they told", which is the same kind of question. */}
           <CommunicationLog docType="ehs_inc" docId={id} />
+
+          {/* Every field ever changed on this incident. Beside the
+              communications log because both answer the auditor's question
+              rather than the investigator's. */}
+          <ChangeHistory table="ehs_incidents" rowId={id} />
         </section>
       </div>
-    </div>
+</div>
   )
 }
 

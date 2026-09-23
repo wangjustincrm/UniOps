@@ -24,7 +24,19 @@ def _user_id(payload: dict) -> uuid.UUID:
 
 @router.post("", response_model=FirstAidOut, status_code=status.HTTP_201_CREATED)
 async def record_treatment(payload: FirstAidIn, db: SessionDep, user: CanWriteFirstAid):  # noqa: ARG001
-    return FirstAidOut.model_validate(await crud.create(db, payload))
+    """Closed. First aid is recorded on the injured-worker form.
+
+    Two places recording the same event meant the same cut finger was entered
+    twice, or once in whichever the person happened to open. Refused rather
+    than removed, so a caller still pointed here is told where to go instead of
+    getting a 404 and guessing.
+    """
+    raise HTTPException(
+        status.HTTP_409_CONFLICT,
+        "First aid is now recorded on the injury form: report an incident and "
+        "set its type to First Aid. The entries already in this register stay "
+        "and are still listed here.",
+    )
 
 
 @router.get("", response_model=list[FirstAidOut])
@@ -39,9 +51,23 @@ async def list_register(
     limit: int = Query(default=100, le=500),
     offset: int = 0,
 ):
+    """The Regulation 1101 register: both what was entered here and what has
+    been recorded on an injury form since.
+
+    ★ Reading only this table would have made the statutory register stop
+    being complete at the moment first aid moved onto the incident form — a
+    compliance regression caused by a usability fix. The older entries keep
+    their own numbers and dates; they were deliberately not rewritten into
+    incidents, because renumbering twelve statutory records to tidy a screen
+    is not a trade worth making.
+    """
     rows = await crud.list_(db, injured_user_id=injured_user_id, location_id=location_id,
                             escalated=escalated, limit=limit, offset=offset)
-    return [FirstAidOut.model_validate(r) for r in rows]
+    entries = [FirstAidOut.model_validate(r) for r in rows]
+    entries.extend(await crud.first_aid_from_incidents(
+        db, injured_user_id=injured_user_id, location_id=location_id, limit=limit))
+    entries.sort(key=lambda e: e.occurred_at, reverse=True)
+    return entries[:limit]
 
 
 @router.get("/{entry_id}", response_model=FirstAidOut)

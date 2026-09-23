@@ -21,6 +21,7 @@ import { formatDate, formatDateTime } from '@/lib/formatDate'
 import { useMyProfile } from '@/hooks/useMyProfile'
 import { usePermissions } from '@/hooks/usePermissions'
 import { SignaturePad } from '@/components/SignaturePad'
+import { ChangeHistory } from '@/components/ChangeHistory'
 import {
   Card, Empty, ErrorNote, PageHeader, primaryButton, secondaryButton,
 } from '@/components/ui'
@@ -110,6 +111,8 @@ export default function DocumentDetailPage() {
       {d.requires_ack && d.status !== 'draft' && <SigningPanel doc={d} />}
 
       {mayManage && d.status === 'published' && <PublishedControls doc={d} onChanged={invalidate} />}
+
+      <ChangeHistory table="ehs_documents" rowId={id} />
     </div>
   )
 }
@@ -119,7 +122,7 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
     <div>
       <dt className="text-xs text-neutral-500">{label}</dt>
       <dd className="text-sm text-neutral-900">{children}</dd>
-    </div>
+</div>
   )
 }
 

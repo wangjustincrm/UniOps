@@ -78,6 +78,12 @@ interface FormState {
   // a second answer to the same question.)
   bodyPart: VocabItem | null
   natureOfInjury: VocabItem | null
+  // What the separate first aid register used to hold. It is the same event,
+  // and two places to record it meant the same cut finger was entered twice —
+  // or once, in whichever the person happened to open.
+  treatment: string
+  sentOffsite: boolean
+  followUp: string
   talkedToOperator: '' | 'yes' | 'no' | 'na'
   whyNot: string
   anonymous: boolean
@@ -88,6 +94,7 @@ const EMPTY: FormState = {
   kind: null, title: '', date: '', time: '', locationId: '', incidentType: '',
   injuryClass: '', description: '',
   injured: EMPTY_PERSON, bodyPart: null, natureOfInjury: null,
+  treatment: '', sentOffsite: false, followUp: '',
   talkedToOperator: '', whyNot: '', anonymous: false, signature: null,
 }
 
@@ -164,6 +171,9 @@ export default function IncidentReportPage() {
           body_part_label: form.bodyPart?.label ?? null,
           nature_of_injury_id: form.natureOfInjury?.id ?? null,
           nature_of_injury_label: form.natureOfInjury?.label ?? null,
+          treatment: form.treatment || null,
+          sent_offsite: form.sentOffsite,
+          follow_up: form.followUp || null,
         }]
         // The department of the person hurt is the department of the incident.
         // HSE asked for this so nobody picks a name and then picks the
@@ -367,6 +377,31 @@ export default function IncidentReportPage() {
                               onChange={(v) => set('natureOfInjury', v)} />
           </Field>
         </div>
+      )}
+
+      {form.kind === 'medical' && (
+        <>
+          {/* The first aid register, on the form rather than beside it.
+              Regulation 1101 wants a record of the treatment; it does not
+              want it in a second place. */}
+          <Field label="What treatment was given?"
+                 help="Written at the time by whoever gave it — this is the Regulation 1101 record.">
+            <textarea className={`${inputClass} min-h-[70px] py-2`} value={form.treatment}
+                      onChange={(e) => set('treatment', e.target.value)}
+                      placeholder="Cleaned and dressed a shallow cut to the left index finger." />
+          </Field>
+
+          <label className="flex items-center gap-2 text-sm text-neutral-700">
+            <input type="checkbox" checked={form.sentOffsite}
+                   onChange={(e) => set('sentOffsite', e.target.checked)} />
+            They were sent off site for treatment
+          </label>
+
+          <Field label="Anything owed afterwards?" help="A dressing to check, a follow-up call.">
+            <input className={inputClass} value={form.followUp}
+                   onChange={(e) => set('followUp', e.target.value)} />
+          </Field>
+        </>
       )}
 
       {form.kind === 'near_miss' && (

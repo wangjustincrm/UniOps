@@ -4,10 +4,17 @@
  * A standing record of every treatment given, most of which never becomes an
  * incident. Entries are written once and never edited, so there is no edit
  * control here by design.
+ *
+ * ★ Treatment is recorded on the injury form now, not here: two places for the
+ * same event meant the same cut finger was entered twice, or once in whichever
+ * the person happened to open. The entries written here before are kept as
+ * they are — they are the statutory record as it stands — and this list reads
+ * both sources, so the register is still the register.
  */
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { ArrowUpRight, Plus } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/formatDate'
@@ -20,39 +27,16 @@ interface Entry {
 }
 
 export default function FirstAidLogPage() {
-  const queryClient = useQueryClient()
   const { can } = usePermissions()
   const canWrite = can('ehs.firstaid.write')
   const [escalating, setEscalating] = useState<{ id: string; log_no: string; injured_name: string } | null>(null)
-  const [adding, setAdding] = useState(false)
-  const [form, setForm] = useState({
-    injured_name: '', body_part_label: '', treatment_given: '',
-    date: new Date().toISOString().slice(0, 10),
-    time: new Date().toTimeString().slice(0, 5),
-    sent_offsite: false,
-  })
 
   const { data, isLoading } = useQuery({
     queryKey: ['first-aid'],
     queryFn: () => api.get<Entry[]>('/api/v1/first-aid'),
   })
 
-  const create = useMutation({
-    mutationFn: () => api.post('/api/v1/first-aid', {
-      occurred_at: new Date(`${form.date}T${form.time}`).toISOString(),
-      injured_name: form.injured_name,
-      body_part_label: form.body_part_label || null,
-      treatment_given: form.treatment_given,
-      sent_offsite: form.sent_offsite,
-    }),
-    onSuccess: () => {
-      setAdding(false)
-      setForm({ ...form, injured_name: '', body_part_label: '', treatment_given: '' })
-      queryClient.invalidateQueries({ queryKey: ['first-aid'] })
-    },
-  })
 
-  const input = 'w-full min-h-[44px] rounded-lg border border-neutral-300 px-3 py-2 text-sm'
 
   return (
     <div className="p-4">
@@ -63,55 +47,31 @@ export default function FirstAidLogPage() {
             Regulation 1101 — every treatment given, kept for at least five years.
           </p>
         </div>
-        {can('ehs.firstaid.write') && (
-          <button
-            type="button"
-            onClick={() => setAdding((v) => !v)}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-primary-600 px-3.5 text-sm font-semibold text-white"
+        {canWrite && (
+          <Link
+            to="/incidents/new?kind=medical"
+            className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg bg-primary-600 px-3.5 text-sm font-semibold text-white"
           >
             <Plus className="h-4 w-4" aria-hidden />
-            Record
-          </button>
+            Record a treatment
+          </Link>
         )}
       </div>
 
-      {adding && (
-        <form
-          className="mb-4 rounded-xl border border-neutral-200 bg-white p-3.5"
-          onSubmit={(e) => { e.preventDefault(); if (!create.isPending) create.mutate() }}
-        >
-          <div className="grid grid-cols-2 gap-2">
-            <input type="date" className={input} value={form.date}
-                   onChange={(e) => setForm({ ...form, date: e.target.value })} />
-            <input type="time" className={input} value={form.time}
-                   onChange={(e) => setForm({ ...form, time: e.target.value })} />
-          </div>
-          <input className={`${input} mt-2`} placeholder="Who was treated"
-                 value={form.injured_name}
-                 onChange={(e) => setForm({ ...form, injured_name: e.target.value })} />
-          <input className={`${input} mt-2`} placeholder="Part of body (optional)"
-                 value={form.body_part_label}
-                 onChange={(e) => setForm({ ...form, body_part_label: e.target.value })} />
-          <textarea className={`${input} mt-2`} rows={2} placeholder="Treatment given"
-                    value={form.treatment_given}
-                    onChange={(e) => setForm({ ...form, treatment_given: e.target.value })} />
-          <label className="mt-2 flex min-h-[44px] items-center gap-2.5 text-sm text-neutral-700">
-            <input type="checkbox" className="h-4 w-4" checked={form.sent_offsite}
-                   onChange={(e) => setForm({ ...form, sent_offsite: e.target.checked })} />
-            Sent off site for further treatment
-          </label>
-          {create.isError && (
-            <p className="mt-1.5 text-xs text-danger-700">{(create.error as ApiError).message}</p>
-          )}
-          <button
-            type="submit"
-            disabled={create.isPending || !form.injured_name.trim() || !form.treatment_given.trim()}
-            className="mt-2 min-h-[44px] w-full rounded-lg bg-primary-600 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {create.isPending ? 'Saving…' : 'Save entry'}
-          </button>
-        </form>
-      )}
+      {/* First aid is recorded on the injury form now. Two places recording
+          the same event meant the same cut finger was entered twice, or once
+          in whichever the person happened to open.
+
+          ★ The entries below that were written here are kept exactly as they
+          are. They are the Regulation 1101 record as it stands, and
+          renumbering statutory entries to tidy a screen is not a trade worth
+          making — so this list reads both, and only the way in has changed. */}
+      <p className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+        New treatment is recorded on the injury form — report an incident and
+        set its type to First Aid. Everything entered here before stays, and
+        this register lists both.
+      </p>
+
 
       {isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
       {data?.length === 0 && (

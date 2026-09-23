@@ -34,25 +34,84 @@ def _entry(**kw) -> dict:
     return body
 
 
+async def _legacy_entry(db_session, **kw):
+    """A register row as the existing ones exist: written before first aid
+    moved onto the injury form.
+
+    Seeded directly rather than through the endpoint, because that endpoint is
+    closed now. These rows are the Regulation 1101 record as it stands and were
+    deliberately not migrated — so the behaviour they still need (listing,
+    filtering, escalating) has to keep being covered.
+    """
+    import uuid as _uuid
+
+    from app.models.first_aid import FirstAidLog
+
+    seq = len((await db_session.execute(
+        __import__("sqlalchemy").select(FirstAidLog))).scalars().all()) + 1
+    row = FirstAidLog(
+        id=_uuid.uuid4(),
+        log_no=kw.pop("log_no", f"FA-2026-{seq:04d}"),
+        occurred_at=kw.pop("occurred_at", TREATED_AT),
+        injured_name=kw.pop("injured_name", "Dario Okafor"),
+        treatment_given=kw.pop("treatment_given",
+                               "Cleaned and dressed a shallow cut."),
+        **kw,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    return row
+
+
 # ── The register ────────────────────────────────────────────────────────────
 
-async def test_recording_a_treatment(hse_manager):
+async def test_recording_a_treatment_goes_through_the_injury_form(hse_manager, worker):
+    """First aid is an injury of class `first_aid`, recorded once.
+
+    Two places recording the same event meant the same cut finger was entered
+    twice, or once in whichever the person happened to open.
+    """
+    from datetime import datetime, timezone
+
     _, client = hse_manager
-    r = await client.post("/api/v1/first-aid", json=_entry())
-    assert r.status_code == 201
-    body = r.json()
-    assert body["log_no"].startswith("FA-2026-")
-    assert body["incident_id"] is None
+    injured, _ = worker
+    created = await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Shallow cut to the left index finger",
+        "incident_type": "first_aid",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "description": "Caught a lid edge.",
+        "persons": [{"role": "injured",
+                     "person_name": injured.full_name or "Test Worker",
+                     "user_id": str(injured.id),
+                     "treatment": "Cleaned and dressed."}],
+    })
+    assert created.status_code in (200, 201), created.text
+    await client.post(f"/api/v1/incidents/{created.json()['id']}/submit")
+
+    register = (await client.get("/api/v1/first-aid")).json()
+    assert any(e["incident_id"] == created.json()["id"] for e in register)
 
 
-async def test_a_first_aider_can_record_treatment(worker, test_engine, db_session):
-    """The person who gave the treatment writes the entry — requiring an HSE
-    Manager for that would mean the register is written from memory later."""
+async def test_a_first_aider_can_record_the_treatment_they_gave(
+        worker, test_engine, db_session):
+    """The person who gave the treatment writes it down.
+
+    Requiring an HSE Manager would mean the register is written from memory
+    later. It is the incident form now, so the thing to check is that a first
+    aider can file one.
+    """
+    from datetime import datetime, timezone
+
     from tests.conftest import authed_client, make_token, make_user
     aider = await make_user(test_engine, role="first_aider")
     async with authed_client(make_token(aider.id, aider.role), db_session) as client:
-        r = await client.post("/api/v1/first-aid", json=_entry())
-        assert r.status_code == 201
+        r = await client.post("/api/v1/incidents", json={
+            "form_kind": "medical", "title": "Grazed knuckle",
+            "incident_type": "first_aid",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "description": "Caught on a bolt head.",
+        })
+        assert r.status_code in (200, 201), r.text
 
 
 async def test_a_worker_cannot_write_the_register(worker):
@@ -67,11 +126,13 @@ async def test_occurred_at_must_carry_a_timezone(hse_manager):
     assert r.status_code == 422
 
 
-async def test_the_register_can_be_filtered_by_whether_it_escalated(hse_manager):
+async def test_the_register_can_be_filtered_by_whether_it_escalated(
+        hse_manager, db_session):
     _, client = hse_manager
-    plain = (await client.post("/api/v1/first-aid", json=_entry())).json()
-    escalating = (await client.post("/api/v1/first-aid",
-                                    json=_entry(injured_name="Sam Reid"))).json()
+    plain_row = await _legacy_entry(db_session)
+    escalating_row = await _legacy_entry(db_session, injured_name="Sam Reid")
+    plain = {"id": str(plain_row.id)}
+    escalating = {"id": str(escalating_row.id)}
     await client.post(f"/api/v1/first-aid/{escalating['id']}/escalate",
                       json={"title": "Cut needed stitches"})
 
@@ -84,11 +145,12 @@ async def test_the_register_can_be_filtered_by_whether_it_escalated(hse_manager)
 
 # ── Escalation ──────────────────────────────────────────────────────────────
 
-async def test_escalating_inherits_the_time_of_injury_not_today(hse_manager):
+async def test_escalating_inherits_the_time_of_injury_not_today(hse_manager, db_session):
     """The injury happened when it happened. If this later turns out to be a
     critical injury, the MOL clock runs from that instant."""
     _, client = hse_manager
-    entry = (await client.post("/api/v1/first-aid", json=_entry())).json()
+    row = await _legacy_entry(db_session)
+    entry = {"id": str(row.id)}
 
     incident = (await client.post(f"/api/v1/first-aid/{entry['id']}/escalate",
                                   json={"title": "Cut required stitches"})).json()
@@ -98,10 +160,10 @@ async def test_escalating_inherits_the_time_of_injury_not_today(hse_manager):
     assert incident["form_kind"] == "medical"
 
 
-async def test_escalating_carries_the_injured_person_across(hse_manager):
+async def test_escalating_carries_the_injured_person_across(hse_manager, db_session):
     _, client = hse_manager
-    entry = (await client.post("/api/v1/first-aid",
-                               json=_entry(body_part_label="Left index finger"))).json()
+    row = await _legacy_entry(db_session, body_part_label="Left index finger")
+    entry = {"id": str(row.id)}
     incident = (await client.post(f"/api/v1/first-aid/{entry['id']}/escalate",
                                   json={"title": "Cut required stitches"})).json()
     injured = [p for p in incident["persons"] if p["role"] == "injured"]
@@ -110,20 +172,22 @@ async def test_escalating_carries_the_injured_person_across(hse_manager):
     assert injured[0]["body_part_label"] == "Left index finger"
 
 
-async def test_employer_awareness_defaults_to_now_not_to_the_injury(hse_manager):
+async def test_employer_awareness_defaults_to_now_not_to_the_injury(hse_manager, db_session):
     """The WSIB clock starts when the employer learns it is more than first
     aid, which is later than the treatment."""
     _, client = hse_manager
-    entry = (await client.post("/api/v1/first-aid", json=_entry())).json()
+    row = await _legacy_entry(db_session)
+    entry = {"id": str(row.id)}
     incident = (await client.post(f"/api/v1/first-aid/{entry['id']}/escalate",
                                   json={"title": "Needed stitches"})).json()
     aware = datetime.fromisoformat(incident["employer_aware_at"])
     assert aware > TREATED_AT
 
 
-async def test_escalating_twice_is_refused(hse_manager):
+async def test_escalating_twice_is_refused(hse_manager, db_session):
     _, client = hse_manager
-    entry = (await client.post("/api/v1/first-aid", json=_entry())).json()
+    row = await _legacy_entry(db_session)
+    entry = {"id": str(row.id)}
     await client.post(f"/api/v1/first-aid/{entry['id']}/escalate", json={"title": "One"})
     again = await client.post(f"/api/v1/first-aid/{entry['id']}/escalate",
                               json={"title": "Two"})
@@ -134,7 +198,8 @@ async def test_the_register_entry_survives_escalation(hse_manager, db_session):
     """The entry stays the contemporaneous record of what was done at the
     time — escalation links it, it does not consume it."""
     _, client = hse_manager
-    entry = (await client.post("/api/v1/first-aid", json=_entry())).json()
+    row = await _legacy_entry(db_session)
+    entry = {"id": str(row.id), "treatment_given": row.treatment_given}
     await client.post(f"/api/v1/first-aid/{entry['id']}/escalate", json={"title": "x"})
 
     after = (await client.get(f"/api/v1/first-aid/{entry['id']}")).json()
@@ -357,3 +422,70 @@ async def test_an_incident_owing_the_ministry_nothing_refuses_the_filing(hse_man
     r = await client.post(f"/api/v1/incidents/{incident['id']}/mol-report/filed",
                           json={"reference": "should not be accepted"})
     assert r.status_code == 409
+
+
+async def test_the_register_still_lists_everything_after_first_aid_moved(
+        hse_manager, worker):
+    """Regulation 1101 asks for a record of every treatment.
+
+    First aid is recorded on the injury form now — two places recording the
+    same event meant the same cut finger was entered twice, or once in
+    whichever the person happened to open. But reading only the old table
+    would have made the statutory register stop being complete at the moment
+    of that change: a compliance regression caused by a usability fix.
+    """
+    from datetime import datetime, timezone
+
+    _, client = hse_manager
+    injured, _ = worker
+
+    before = (await client.get("/api/v1/first-aid")).json()
+
+    created = await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Cut finger on a burr",
+        "incident_type": "first_aid",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "description": "Caught the edge of a lid.",
+        "persons": [{
+            "role": "injured",
+            "person_name": injured.full_name or "Test Worker",
+            "user_id": str(injured.id),
+            "treatment": "Cleaned and dressed.",
+            "sent_offsite": False,
+            "follow_up": "Check the dressing tomorrow.",
+        }],
+    })
+    assert created.status_code in (200, 201), created.text
+    incident_id = created.json()["id"]
+    await client.post(f"/api/v1/incidents/{incident_id}/submit")
+
+    after = (await client.get("/api/v1/first-aid")).json()
+    assert len(after) == len(before) + 1, (
+        "a first aid treatment recorded on the injury form has to appear in "
+        "the register, or the register is no longer the register")
+
+    entry = next(e for e in after if e.get("incident_id") == incident_id)
+    assert entry["treatment_given"] == "Cleaned and dressed."
+    assert entry["follow_up"] == "Check the dressing tomorrow."
+    assert entry["injured_name"] == (injured.full_name or "Test Worker")
+
+
+async def test_the_old_register_no_longer_takes_new_entries(hse_manager, worker):
+    """Refused rather than removed, so a caller still pointed here is told
+    where to go instead of getting a 404 and guessing."""
+    from datetime import datetime, timezone
+
+    _, client = hse_manager
+    injured, _ = worker
+    refused = await client.post("/api/v1/first-aid", json={
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "injured_name": injured.full_name or "Test Worker",
+        "treatment_given": "Plaster.",
+    })
+    assert refused.status_code == 409, refused.text
+    assert "injury form" in refused.json()["detail"]
+
+    # And the entries already there are still readable — they were not
+    # migrated, on purpose.
+    listed = await client.get("/api/v1/first-aid")
+    assert listed.status_code == 200

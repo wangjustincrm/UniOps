@@ -331,6 +331,8 @@ class PersonInjuryPatch(BaseModel):
     nature_of_injury_id: uuid.UUID | None = None
     nature_of_injury_label: str | None = Field(default=None, max_length=200)
     treatment: str | None = None
+    sent_offsite: bool | None = None
+    follow_up: str | None = None
 
 
 @router.patch("/{incident_id}/persons/{person_id}", response_model=IncidentPersonOut)

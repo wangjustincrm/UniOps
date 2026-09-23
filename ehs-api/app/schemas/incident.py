@@ -26,7 +26,11 @@ class IncidentPersonIn(BaseModel):
     body_part_label: str | None = Field(default=None, max_length=200)
     nature_of_injury_id: uuid.UUID | None = None
     nature_of_injury_label: str | None = Field(default=None, max_length=200)
+    # What the first aid register held. On the person, because one incident can
+    # hurt two people differently.
     treatment: str | None = None
+    sent_offsite: bool | None = None
+    follow_up: str | None = None
 
 
 class IncidentCreate(BaseModel):
@@ -153,6 +157,8 @@ class IncidentPersonOut(BaseModel):
     nature_of_injury_id: uuid.UUID | None
     nature_of_injury_label: str | None
     treatment: str | None
+    sent_offsite: bool | None
+    follow_up: str | None
 
 
 class IncidentOut(BaseModel):

@@ -14,6 +14,7 @@ import { ShieldCheck } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { daysOverdue, formatDate, formatDateTime } from '@/lib/formatDate'
 import { StatusBadge } from '@/components/StatusBadge'
+import { ChangeHistory } from '@/components/ChangeHistory'
 import { usePermissions } from '@/hooks/usePermissions'
 
 interface Update {
@@ -242,6 +243,8 @@ export default function ActionDetailPage() {
           )}
         </>
       )}
-    </div>
+
+      <ChangeHistory table="ehs_actions" rowId={id} />
+</div>
   )
 }
