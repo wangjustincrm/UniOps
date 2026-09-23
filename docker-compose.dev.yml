@@ -398,6 +398,7 @@ services:
       ALLOWED_ORIGINS: '["http://${LAN_HOST:-localhost}:${EPMS_PORT:-5173}","http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}","http://${LAN_HOST:-localhost}:${OA_PORT:-5175}","http://${LAN_HOST:-localhost}:${VMS_PORT:-5176}","http://${LAN_HOST:-localhost}:${FINANCE_PORT:-5177}","http://${LAN_HOST:-localhost}:${BOOKING_PORT:-5178}","http://${LAN_HOST:-localhost}:${MRP_PORT:-5179}"]'
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
+      FINANCE_API_URL: http://finance-api:8004
     command: uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8007/health').status==200 else 1)"]

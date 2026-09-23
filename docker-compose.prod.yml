@@ -264,6 +264,7 @@ services:
       API_V1_PREFIX: /api/v1
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
+      FINANCE_API_URL: http://finance-api:8004
     ports: ["8007:8007"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8007
     healthcheck:

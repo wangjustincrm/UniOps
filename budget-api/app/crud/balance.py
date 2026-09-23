@@ -1,4 +1,5 @@
 """Balance and actuals aggregation queries."""
+import logging
 import uuid
 from decimal import Decimal
 
@@ -17,6 +18,9 @@ from app.schemas.actual import (
     MonthlyActualsSummaryResponse,
 )
 from app.schemas.balance import BalanceResponse
+from app.services import finance_client
+
+logger = logging.getLogger(__name__)
 
 
 async def get_annual_budget(
@@ -47,14 +51,48 @@ async def get_balance(
     cost_center_id: uuid.UUID,
     account_id: uuid.UUID,
     fiscal_year: int,
+    *,
+    bearer_token: str | None = None,
 ) -> BalanceResponse:
+    """Remaining balance for one (cost center × account × year).
+
+    `actual_spent` is NC's posted actual, read from finance-api — the same
+    figure the Budget Dashboard shows. It is NOT this service's `budget_ledger`:
+    nothing ever writes the purchase chain into that table (commit / release /
+    actualize have no callers anywhere in the repo), so it holds only the
+    2026-07-07 opening import, and serving that back made a PR's over-budget
+    test compare this year's request against last year's opening balance.
+
+    `committed` stays on the ledger and stays 0 — `commit` has no writers
+    either. Until in-flight commitment is derived from the documents
+    themselves, the same budget can pass this test for any number of PRs while
+    NC has yet to post them. That is a known gap, not an oversight, and it is
+    no worse than the behaviour this replaces.
+
+    Falls back to the ledger figure when finance-api can't be reached, which
+    preserves the old (wrong, but non-zero) number rather than silently
+    treating "unknown" as "nothing spent" — the latter would report the full
+    annual budget as available and wave every PR through.
+    """
     acct = await db.get(BudgetAccount, account_id)
     if acct is None:
         # Surface 404 to caller via API layer
         raise LookupError(f"Account {account_id} not found")
     annual = await get_annual_budget(db, cost_center_id, account_id, fiscal_year)
     committed = await get_committed(db, cost_center_id, account_id, fiscal_year)
-    actual = await get_actual_spent(db, cost_center_id, account_id, fiscal_year)
+    actual = await finance_client.nc_actual_for_budget_check(
+        bearer_token=bearer_token,
+        cost_center_id=cost_center_id,
+        account_id=account_id,
+        fiscal_year=fiscal_year,
+    )
+    if actual is None:
+        actual = await get_actual_spent(db, cost_center_id, account_id, fiscal_year)
+        logger.warning(
+            "balance cc=%s account=%s fy=%s: finance-api unavailable, actual_spent "
+            "fell back to the budget_ledger figure (opening import only)",
+            cost_center_id, account_id, fiscal_year,
+        )
     available = annual - committed - actual
     return BalanceResponse(
         cost_center_id=cost_center_id,
