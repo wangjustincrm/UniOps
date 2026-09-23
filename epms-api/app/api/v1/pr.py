@@ -1,4 +1,5 @@
 """Purchase Request endpoints."""
+import logging
 import uuid
 from typing import Annotated
 
@@ -135,6 +136,22 @@ async def budget_check(
     Reuses the exact computation the create path runs (crud.pr.compute_budget_check),
     so the frontend can stop double-computing over_budget.
     """
+    # A caller naming a cost centre and a non-zero amount but no budget_code is
+    # asking something compute_budget_check cannot answer: it opens with
+    # `if not budget_code: return False, None`, so the reply is a flat "not over
+    # budget" indistinguishable from a real one. The Create form sent exactly
+    # that body for as long as this endpoint existed — its query key listed the
+    # account, its body left it out — which left the over-budget banner, the
+    # justification requirement and the hard_block gate dead on that page while
+    # create() went on persisting the real verdict from the real budget_code.
+    # It surfaced nowhere, because a PR within budget and a PR never checked
+    # look identical. Log it: the caller is malformed, not the data.
+    if not body.budget_code and body.cost_center_id is not None and body.amount > 0:
+        logging.getLogger(__name__).warning(
+            "budget-check called with no budget_code (cost_center=%s amount=%s) — "
+            "answering not-over-budget without checking anything",
+            body.cost_center_id, body.amount,
+        )
     over_budget, available = await pr_crud.compute_budget_check(
         body.budget_code, body.cost_center_id, body.amount, bearer_token=token,
     )

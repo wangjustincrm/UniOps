@@ -27,3 +27,42 @@ export function budgetAccountError(
   if (!costCenterId || !budgetCode) return BUDGET_ACCOUNT_REQUIRED_MESSAGE
   return null
 }
+
+/**
+ * Body for `POST /pr/budget-check`.
+ *
+ * Exists to be testable. The call is the authoritative over-budget verdict —
+ * the Create form prefers its answer over the local subtraction, and that one
+ * boolean drives the warning banner, whether an Over-Budget Justification is
+ * demanded, and whether a `hard_block` Budget Config disables Submit.
+ *
+ * ★ It all turns on `budget_code`. The server's compute_budget_check opens with
+ * `if not budget_code ... return False, None`, and BudgetCheckRequest defaults
+ * the field to None — so a body that omits it does not fail, it answers "not
+ * over budget", every time. That is exactly what shipped: the query key listed
+ * the account, the body did not, and the endpoint had been replying false to
+ * the Create page for as long as it existed. Nothing looked broken, because a
+ * PR that is within budget and a PR nobody checked render identically.
+ *
+ * Built here, and asserted on, so the next edit to this payload cannot drop the
+ * field in silence again.
+ */
+export interface BudgetCheckArgs {
+  costCenterId: string
+  budgetCode: string
+  amount: number
+  departmentId?: string | null
+  factorCombo?: Record<string, string> | null
+  projectCode?: string | null
+}
+
+export function budgetCheckPayload(args: BudgetCheckArgs): Record<string, unknown> {
+  return {
+    cost_center_id: args.costCenterId,
+    budget_code: args.budgetCode,
+    department_id: args.departmentId ?? undefined,
+    factor_combo: args.factorCombo ?? undefined,
+    project_code: args.projectCode || undefined,
+    amount: args.amount,
+  }
+}
