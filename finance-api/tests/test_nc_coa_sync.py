@@ -270,9 +270,15 @@ import os
 import psycopg2
 from app.services.nc_coa_sync import AuxDiff, NcCoaExtract, apply, build
 
+# The database name must come from the same knob conftest uses. Hardcoding
+# `finance_test` here made TEST_FINANCE_DB a lie for this one file: a run against
+# any other database failed all ten of these with
+# `FATAL: database "finance_test" does not exist` — which reads like a product
+# bug and is really a test that ignored where the schema was built.
 _TEST_DSN = (f"host={os.getenv('TEST_PG_HOST', 'localhost')} "
              f"port={os.getenv('TEST_PG_PORT', '5432')} "
-             f"dbname=finance_test user={os.getenv('TEST_PG_USER', 'epms')} "
+             f"dbname={os.getenv('TEST_FINANCE_DB', 'finance_test')} "
+             f"user={os.getenv('TEST_PG_USER', 'epms')} "
              f"password={os.getenv('TEST_PG_PASSWORD', 'epms_dev')}")
 
 def _pg(sql, args=None):
