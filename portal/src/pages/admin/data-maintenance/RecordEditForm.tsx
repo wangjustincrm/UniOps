@@ -24,6 +24,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
   const [refLists, setRefLists] = useState<Record<string, RefListItem[]>>({})
   const [refListDirty, setRefListDirty] = useState<Record<string, boolean>>({})
   const [lines, setLines] = useState<LineRow[]>([])
+  const [linesDirty, setLinesDirty] = useState(false)
   const [regenPo, setRegenPo] = useState(true)
   const [vendorChanged, setVendorChanged] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -35,6 +36,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
     setRefLabels(Object.fromEntries(schema.fields.filter((f) => f.type === 'reference')
       .map((f) => [f.name, f.ref_name_field ? String(full[f.ref_name_field] ?? '') : String(full[f.name] ?? '')])))
     setLines((full.line_items as LineRow[] | undefined) ?? [])
+    setLinesDirty(false)
     // Labels are resolved server-side (service._ref_list_labels) — an id that
     // resolves to nothing still comes back, labelled, so a Save never silently
     // drops a link other services are still reading.
@@ -68,7 +70,15 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
       else if (f.type === 'bool') patch[f.name] = form[f.name] === 'true'
       else patch[f.name] = form[f.name] === '' ? null : form[f.name]
     }
-    if (schema.child) patch.line_items = lines
+    // Same rule as the reference_list fields above: send it only when the
+    // operator actually touched it. The array is not inert — the backend
+    // recomputes the header from whatever arrives (admin/service.py
+    // _apply_line_items), so sending an untouched one makes every save a
+    // recompute. On a record with no line items that recompute reads an
+    // empty array and zeroes the header: 91 of production's 6,478 PAs carry
+    // no lines (the agreement route never creates any), and editing a title
+    // on one of those would wipe its subtotal and payment amount.
+    if (schema.child && linesDirty) patch.line_items = lines
     setSaving(true)
     try {
       const res = await adminApi.editWithOptions(schema.system, schema.key, id, patch,
@@ -142,7 +152,8 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
 
         {schema.child && (
           <section className="mb-5">
-            <LineItemsEditor child={schema.child} rows={lines} onChange={setLines} />
+            <LineItemsEditor child={schema.child} rows={lines}
+              onChange={(rows) => { setLines(rows); setLinesDirty(true) }} />
           </section>
         )}
 

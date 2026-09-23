@@ -268,6 +268,65 @@ async def test_edit_line_items_deletes_dropped_rows(test_engine):
 
 
 @pytest.mark.asyncio
+async def test_edit_without_line_items_leaves_a_lineless_pa_intact(test_engine):
+    """A PA carrying no line items must survive an edit that is not about lines.
+
+    91 of production's 6,478 PAs have no line items — the agreement route never
+    creates any. `line_items` is not inert: any array that arrives drives a full
+    header recompute, and on one of these an empty array recomputes the subtotal
+    to 0 and the payment amount with it. So the edit dialog now sends the array
+    only when the operator actually touched the line editor; this pins the half
+    of that contract the backend owns.
+    """
+    from app.models.user import User
+    from app.models.pa import PaymentApplication
+    from app.models.vendor import Vendor
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); vid = uuid.uuid4(); pa_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"pa-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C", role="requester"))
+        db.add(Vendor(id=vid, code=f"V-PA-{vid.hex[:4]}", name="V", category="supplier",
+                      contact_name="A", contact_email="a@x.com"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PaymentApplication(
+            id=pa_id, pa_number="PA-NOLINES-1", title="Agreement payment",
+            status="in_review", pa_type="regular", currency="CAD",
+            subtotal=Decimal("500.00"), tax_amount=Decimal("65.00"),
+            shipping_amount=Decimal("0"), other_charges=Decimal("0"),
+            payment_amount=Decimal("565.00"),
+            vendor_id=vid, vendor_name="V", created_by=creator,
+            invoice_ids=[], gr_ids=[]))
+        await db.commit()
+
+    # The dialog's ordinary case: a field edit, line editor untouched.
+    async with factory() as db:
+        await service.edit_record(db, "pa", pa_id, {"title": "Retitled"},
+                                  actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+
+    async with factory() as db:
+        pa = (await db.execute(select(PaymentApplication).where(PaymentApplication.id == pa_id))).scalar_one()
+        assert pa.title == "Retitled"
+        assert pa.subtotal == Decimal("500.00")
+        assert pa.payment_amount == Decimal("565.00")
+
+    # The other half, so the test above cannot pass on a backend that simply
+    # ignores line_items: an array that IS sent still recomputes the header.
+    async with factory() as db:
+        await service.edit_record(db, "pa", pa_id, {"line_items": []},
+                                  actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+
+    async with factory() as db:
+        pa = (await db.execute(select(PaymentApplication).where(PaymentApplication.id == pa_id))).scalar_one()
+        assert pa.subtotal == Decimal("0.00")
+
+
+@pytest.mark.asyncio
 async def test_get_record_includes_line_items(test_engine):
     from app.models.user import User
     from app.models.pr import PurchaseRequest, PrLineItem
