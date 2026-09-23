@@ -110,7 +110,11 @@ export function PersonPicker({
     setOpen(false)
   }
 
-  const useTypedName = () => {
+  // Not `use…`: it is an ordinary callback, and the name made the hook rules
+  // report it as a hook called inside a callback — a false alarm in the one
+  // check that catches the real thing. A rule that cries wolf is a rule people
+  // stop reading.
+  const takeTypedName = () => {
     // A written-in contractor or visitor has no department in our directory.
     onChange({
       userId: null, name: query.trim(), externalCompany: value.externalCompany,
@@ -174,7 +178,7 @@ export function PersonPicker({
             if (e.key === 'Enter') {
               e.preventDefault()
               if (people.length === 1) pickEmployee(people[0])
-              else if (typedMatchesNobody) useTypedName()
+              else if (typedMatchesNobody) takeTypedName()
             }
           }}
           role="combobox"
@@ -221,7 +225,7 @@ export function PersonPicker({
           {typedMatchesNobody && (
             <button
               type="button"
-              onClick={useTypedName}
+              onClick={takeTypedName}
               className="flex w-full min-h-[44px] items-center gap-2 border-t border-neutral-100 px-3 py-2 text-left hover:bg-neutral-50"
             >
               <UserPlus className="h-4 w-4 shrink-0 text-warning-600" aria-hidden />

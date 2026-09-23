@@ -131,18 +131,6 @@ export default function DashboardPage() {
       `/api/v1/dashboard${hours ? `?hours_worked=${hours}` : ''}`),
   })
 
-  if (isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
-  if (!data) return null
-
-  const h = data.headline
-  const monthMax = Math.max(1, ...data.medical_events.map(
-    (r) => r.first_aid + r.medical_aid + r.lost_time))
-  const nearMax = Math.max(1, ...data.near_misses.flatMap((r) => [r.this_year, r.last_year]))
-  const nearThis = data.near_misses.reduce((n, r) => n + r.this_year, 0)
-  const nearLast = data.near_misses.reduce((n, r) => n + r.last_year, 0)
-  const partMax = Math.max(1, ...data.participation.map(
-    (p) => p.toolbox_talk + p.good_catch + p.hazard_assessment))
-
   // Which panels this person wants, and in what order. HSE asked for the
   // dashboard to be configurable and chose "pick from the library and arrange
   // it" when the PRD asked how — this is that, kept to what it says. The
@@ -161,6 +149,22 @@ export default function DashboardPage() {
       api.put('/api/v1/dashboard/layout', { panels }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dashboard-layout'] }),
   })
+
+  // ★ Every hook above the two early returns below. These were underneath
+  // them: while the figures were loading the component ran six hooks, and the
+  // render after they arrived ran ten — which is the one thing React cannot
+  // recover from, and it took the whole tab down rather than the panel.
+  if (isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
+  if (!data) return null
+
+  const h = data.headline
+  const monthMax = Math.max(1, ...data.medical_events.map(
+    (r) => r.first_aid + r.medical_aid + r.lost_time))
+  const nearMax = Math.max(1, ...data.near_misses.flatMap((r) => [r.this_year, r.last_year]))
+  const nearThis = data.near_misses.reduce((n, r) => n + r.this_year, 0)
+  const nearLast = data.near_misses.reduce((n, r) => n + r.last_year, 0)
+  const partMax = Math.max(1, ...data.participation.map(
+    (p) => p.toolbox_talk + p.good_catch + p.hazard_assessment))
 
   const panels: Record<string, React.ReactNode> = {
     injuries_by_month: (
