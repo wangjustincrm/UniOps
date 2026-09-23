@@ -587,14 +587,24 @@ def _effective_budget_account(fn_codes, by_item, by_code):
 
 
 async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
-                             cost_center_id=None, cc_ids=None) -> dict:
+                             cost_center_id=None, cc_ids=None,
+                             account_id=None) -> dict:
     """NC posted actual per (income_expense_item_id, month) across the 5 predreal
     category subtrees for `fiscal_year`, optionally scoped to one cost center
     (`cost_center_id`) or a set of cost centers (`cc_ids`). Feeds the EPMS Budget
     Dashboard's NC-actual line, keyed by budget account — the line's
     income-expense item, or for the 6603 subtree the account itself (see
     `_effective_budget_account`).
-    actual = period gross DEBIT. Returns {account_id: {month:int -> amount:str}}."""
+    actual = period gross DEBIT. Returns {account_id: {month:int -> amount:str}}.
+
+    `account_id` narrows the same query to a single budget account. It exists so
+    the per-account read behind a PR's over-budget test
+    (`/gl/nc-actual-for-budget-check`) can run this function rather than a
+    lookalike of it: the dashboard's number and the number a PR is judged
+    against have to be one definition, or they will drift apart the first time
+    either is touched. It is a filter on the result, not on the rule — every
+    exclusion and every account-resolution branch above still applies.
+    """
     if cc_ids is not None and len(cc_ids) == 0:
         return {"fiscal_year": fiscal_year, "accounts": {}}
     from sqlalchemy.orm import aliased
@@ -628,6 +638,8 @@ async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
     elif cc_ids:
         q = q.where(JournalVoucherLine.cost_center_id.in_(cc_ids))
+    if account_id is not None:
+        q = q.where(acct_id == account_id)
     out: dict = {}
     for aid, mm, dr in (await db.execute(q)).all():
         out.setdefault(str(aid), {})[int(mm)] = _s(Decimal(dr))

@@ -2,6 +2,7 @@
 posted + not-yet-tallied ones when `include_unposted` is set (NC's
 包含未记账凭证 toggle)."""
 import uuid
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -380,3 +381,42 @@ async def budget_actual_partner_export(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@router.get("/nc-actual-for-budget-check")
+async def nc_actual_for_budget_check(
+        _: CurrentUser, db: AsyncSession = Depends(get_db),
+        fiscal_year: int = Query(...),
+        cost_center_id: uuid.UUID = Query(...),
+        account_id: uuid.UUID = Query(...)):
+    """NC posted actual for ONE (cost center × budget account × year), as the
+    year total — budget-api's `/balance` calls this so a PR's over-budget test
+    is decided on the same number the Budget Dashboard shows.
+
+    ★ Deliberately NOT scoped by `_cc_scope`, unlike every other NC read here.
+    Those are reports: showing a reader less than the whole company is right,
+    and returning nothing when scope can't be resolved is a safe default. This
+    one is a *criterion*. Clamping it would not hide a number from anybody — it
+    would silently answer 0 for a cost center outside the caller's department
+    (a dept_admin raising a PR for another department, a user with no
+    department at all), `available` would come back as the full annual budget,
+    and every such PR would sail through as within budget. A fail-closed report
+    becomes a fail-open control. The criterion has to see the facts.
+
+    The exposure this adds is one aggregate for a (cc, account) the caller
+    already names — the same call chain's `/balance` hands back that pair's
+    annual_budget and committed with no scoping at all. Voucher-level reads
+    (`/nc-partner-vouchers` and friends) keep their `_cc_scope` clamp.
+    """
+    # Same CRUD the dashboard's NC line runs, so the two can never drift: one
+    # definition of "NC posted actual", asked here for a single account.
+    data = await crud.nc_actuals_monthly(
+        db, fiscal_year, cost_center_id=cost_center_id, account_id=account_id)
+    months = (data.get("accounts") or {}).get(str(account_id)) or {}
+    total = sum((Decimal(str(v)) for v in months.values()), Decimal("0"))
+    return {
+        "fiscal_year": fiscal_year,
+        "cost_center_id": str(cost_center_id),
+        "account_id": str(account_id),
+        "actual": str(total),
+    }
