@@ -14,7 +14,7 @@ import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { ProcurementTypeSelector } from '@/components/pr/ProcurementTypeSelector'
 import { BudgetBalanceWidget, OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
-import { budgetAccountError, requiresBudgetAccount } from '@/lib/prBudget'
+import { budgetAccountError, requiresBudgetAccount, budgetCheckPayload } from '@/lib/prBudget'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
 import { useBudgetOverview, useFactors, useBalance } from '@/hooks/useBudget'
@@ -306,14 +306,29 @@ export default function PrCreatePage() {
       getValues('projectCode') || null,
       estimatedAmount,
     ],
-    queryFn: () =>
-      api.post<{ over_budget: boolean; available: string }>('/pr/budget-check', {
-        cost_center_id: selectedCostCenterId,
-        department_id: user?.department_id ?? undefined,
-        factor_combo: accountFactors.length > 0 ? factorCombo : undefined,
-        project_code: getValues('projectCode') || undefined,
-        amount: estimatedAmount,
-      }),
+    queryFn: () => {
+      // `enabled` already guarantees both, so this never throws today. It is
+      // here because the failure it guards against is silent: the server reads
+      // a missing cost_center_id exactly as it reads a missing budget_code —
+      // `return False, None`, i.e. "not over budget" — so loosening the enabled
+      // condition later would not break this call, it would quietly make every
+      // answer a false negative. Which is the bug this whole payload exists to
+      // have fixed. Fail loudly instead.
+      if (!selectedCostCenterId || !selectedL2) {
+        throw new Error('budget-check needs both a cost center and a budget account')
+      }
+      return api.post<{ over_budget: boolean; available: string }>(
+        '/pr/budget-check',
+        budgetCheckPayload({
+          costCenterId: selectedCostCenterId,
+          budgetCode: selectedL2,
+          amount: estimatedAmount,
+          departmentId: user?.department_id,
+          factorCombo: accountFactors.length > 0 ? factorCombo : undefined,
+          projectCode: getValues('projectCode'),
+        }),
+      )
+    },
     enabled: budgetCheckEnabled,
   })
   const isOverBudget = selectedBudgetAccount

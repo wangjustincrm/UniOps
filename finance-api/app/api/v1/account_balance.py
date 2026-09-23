@@ -2,6 +2,7 @@
 posted + not-yet-tallied ones when `include_unposted` is set (NC's
 包含未记账凭证 toggle)."""
 import uuid
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -380,3 +381,76 @@ async def budget_actual_partner_export(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@router.get("/nc-actual-for-budget-check")
+async def nc_actual_for_budget_check(
+        _: CurrentUser, db: AsyncSession = Depends(get_db),
+        fiscal_year: int = Query(...),
+        cost_center_id: uuid.UUID = Query(...),
+        account_id: uuid.UUID = Query(...)):
+    """NC posted actual for ONE (cost center × budget account × year), as the
+    year total — budget-api's `/balance` calls this so a PR's over-budget test
+    is decided on the same number the Budget Dashboard shows.
+
+    ★ Deliberately NOT scoped by `_cc_scope`, unlike every other NC read here.
+    Those are reports: showing a reader less than the whole company is right,
+    and returning nothing when scope can't be resolved is a safe default. This
+    one is a *criterion*. Clamping it would not hide a number from anybody — it
+    would silently answer 0 for a cost center outside the caller's department
+    (a dept_admin raising a PR for another department, a user with no
+    department at all), `available` would come back as the full annual budget,
+    and every such PR would sail through as within budget. A fail-closed report
+    becomes a fail-open control. The criterion has to see the facts.
+
+    The exposure this adds is one aggregate for a (cc, account) the caller
+    already names — the same call chain's `/balance` hands back that pair's
+    annual_budget and committed with no scoping at all, and budget-api is
+    published on its own public hostname exactly as this service is.
+    Voucher-level reads (`/nc-partner-vouchers` and friends) keep their clamp.
+
+    ★★ READ THIS BEFORE GATING THIS ROUTER (`fix/finance-authz-and-ap-status`)
+
+    That branch puts a `FinanceRead` dependency on 43 reads here, and leaves
+    four `/gl/nc-*` routes open on a stated ground: "these already clamp rows
+    to the caller's department via _cc_scope". **That ground does not hold for
+    this endpoint** — it is deliberately unclamped (above) — so it cannot be
+    waved through on the same sentence, and neither of the two obvious moves
+    is right on its own:
+
+      * Gate it with `FinanceRead` and an ordinary requester raising a PR gets
+        403 here. budget-api treats that as "unknown" and falls back to the
+        ledger, which is the very opening-balance bug this endpoint exists to
+        fix — restored silently, for everyone without a finance role.
+      * Leave it off the list and it is ungated AND unclamped: strictly wider
+        than the four routes that list does name.
+
+    The resolution this wants is the service token that branch already records
+    as owed ("These still need a service token — tracked, not fixed here", on
+    POST /ap/invoices): budget-api should call this with a service identity
+    instead of forwarding the end user's token, and then it can be closed to
+    end users entirely. Until that exists, a caller-agnostic answer and an open
+    door are the same decision, and the over-budget gate is what depends on it.
+    A new permission key is NOT a cheap substitute: it needs an identity
+    migration, and production runs only migrate-prod.sh, so the key would not
+    exist there and every caller would 403.
+
+    Also load-bearing, and easy to lose: the CRUD below counts only
+    `JournalVoucher.status == POSTED`. Voided / draft / errored NC vouchers are
+    imported and marked now rather than dropped at sync, and they are held at
+    `draft` — so they stay out of this figure because of that filter and for no
+    other reason. Any future rewrite that reaches the lines without it starts
+    charging cancelled vouchers against people's budgets.
+    """
+    # Same CRUD the dashboard's NC line runs, so the two can never drift: one
+    # definition of "NC posted actual", asked here for a single account.
+    data = await crud.nc_actuals_monthly(
+        db, fiscal_year, cost_center_id=cost_center_id, account_id=account_id)
+    months = (data.get("accounts") or {}).get(str(account_id)) or {}
+    total = sum((Decimal(str(v)) for v in months.values()), Decimal("0"))
+    return {
+        "fiscal_year": fiscal_year,
+        "cost_center_id": str(cost_center_id),
+        "account_id": str(account_id),
+        "actual": str(total),
+    }
