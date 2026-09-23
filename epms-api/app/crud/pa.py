@@ -326,22 +326,37 @@ async def update(
             if pa.pa_type == "prepayment":
                 await _complete_create_prepayment_pa_tasks(db, link_po_id)
 
-    for field in ("title", "notes", "other_charges_note",
-                  "prepayment_pct", "expected_settlement_date", "tax_code", "tax_rate"):
+    # "Clear this field" and "leave this field alone" are different requests, and
+    # both arrive as null. Which one a null means depends on the column: a NOT
+    # NULL column has no cleared state to ask for, so there a null can only mean
+    # "unchanged"; a nullable column does, so there a SENT null is an explicit
+    # clear and `is not None` silently discarded it.
+    #
+    # That discard is how PA-20260917-0001 ended up holding tax_rate=0.1300 and
+    # tax_code=HST_ON next to tax_amount=0.00: the edit screen sent all three
+    # together (0 / null / null) when the operator zeroed the tax, and only the
+    # amount survived. The PA then advertised a 13% rate while paying no tax —
+    # and the Data Maintenance recompute, which derives tax from that stale
+    # rate, is the only thing that can still write tax_amount.
+    sent = payload.model_fields_set
+
+    # NOT NULL columns — null still means "unchanged".
+    for field in ("title", "subtotal", "tax_amount", "shipping_amount", "other_charges"):
         val = getattr(payload, field)
         if val is not None:
             setattr(pa, field, val)
+
+    # Nullable columns — a sent null clears the field.
+    for field in ("notes", "other_charges_note", "prepayment_pct",
+                  "expected_settlement_date", "tax_code", "tax_rate",
+                  "prepayment_applied"):
+        if field in sent:
+            setattr(pa, field, getattr(payload, field))
 
     if payload.invoice_ids is not None:
         pa.invoice_ids = [str(i) for i in payload.invoice_ids]
     if payload.gr_ids is not None:
         pa.gr_ids = [str(i) for i in payload.gr_ids]
-
-    # Recompute payment amount if financials changed
-    for field in ("subtotal", "tax_amount", "shipping_amount", "other_charges", "prepayment_applied"):
-        val = getattr(payload, field)
-        if val is not None:
-            setattr(pa, field, val)
 
     applied = pa.prepayment_applied or Decimal("0")
     net = pa.subtotal + pa.tax_amount + pa.shipping_amount + pa.other_charges - applied

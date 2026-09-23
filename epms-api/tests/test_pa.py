@@ -256,6 +256,55 @@ async def test_update_pa(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_update_pa_clears_the_tax_snapshot_when_the_tax_is_zeroed(admin_client):
+    """Zeroing the tax must clear the rate/code that described it.
+
+    PA-20260917-0001 is what happens when it does not: the edit screen sent
+    tax_amount=0 with tax_rate=null and tax_code=null, the backend applied only
+    the amount, and the PA went on advertising a 13% HST_ON rate while paying no
+    tax — which the Data Maintenance recompute then reads back as 13 of tax.
+    """
+    v = await _make_vendor(admin_client, "VND-PA-TAXCLR-01")
+    po = await _make_po(admin_client, v["id"])
+    pa = await _create_pa(admin_client, po["id"], tax_rate="0.13", tax_code="HST_ON",
+                          receipt_override=True, receipt_override_reason="tax clear test setup")
+    assert pa["tax_rate"] is not None and pa["tax_code"] == "HST_ON"   # admission
+
+    r = await admin_client.patch(f"{PA_URL}/{pa['id']}", json={
+        "subtotal": "400.00", "tax_amount": "0", "tax_rate": None, "tax_code": None,
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert float(body["tax_amount"]) == 0.0
+    assert body["tax_rate"] is None
+    assert body["tax_code"] is None
+    assert float(body["payment_amount"]) == 400.00
+
+
+@pytest.mark.asyncio
+async def test_update_pa_leaves_unsent_fields_alone(admin_client):
+    """The other half of the contract: a field the body OMITS is untouched.
+
+    Without this, "a sent null clears it" could be satisfied by a backend that
+    simply wipes every nullable field on any edit.
+    """
+    v = await _make_vendor(admin_client, "VND-PA-TAXKEEP-01")
+    po = await _make_po(admin_client, v["id"])
+    pa = await _create_pa(admin_client, po["id"],
+                          tax_rate="0.13", tax_code="HST_ON", notes="keep me",
+                          receipt_override=True, receipt_override_reason="tax keep test setup")
+
+    r = await admin_client.patch(f"{PA_URL}/{pa['id']}", json={"title": "Retitled"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["title"] == "Retitled"
+    assert body["tax_code"] == "HST_ON"
+    assert float(body["tax_rate"]) == 0.13
+    assert body["notes"] == "keep me"
+    assert float(body["tax_amount"]) == 52.00
+
+
+@pytest.mark.asyncio
 async def test_create_pa_invalid_po(admin_client):
     r = await admin_client.post(PA_URL, json=_pa_payload("00000000-0000-0000-0000-000000000000"))
     assert r.status_code == 404

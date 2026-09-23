@@ -263,8 +263,11 @@ export default function PaEditPage() {
           tax_amount: taxNum,
           tax_code: taxNum > 0 ? paTaxCode ?? undefined : null,
           tax_rate: taxNum > 0 ? paTaxRate : null,
-          shipping_amount: shippingNum || undefined,
-          other_charges: otherNum || undefined,
+          // Sent even when zero. `|| undefined` would drop the field, and a
+          // field the body omits is a field the backend leaves alone — so
+          // clearing a charge back to 0 would silently keep the old amount.
+          shipping_amount: shippingNum,
+          other_charges: otherNum,
           invoice_ids: Array.from(selectedInvoiceIds),
           // Omitted entirely on the agreement route rather than sent empty:
           // there is no PO line and no goods receipt to carry, and `[]` is a
