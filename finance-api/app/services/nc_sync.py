@@ -711,8 +711,6 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         aux = {}
         for row in cur:
             aux[row[0]] = decode_aux_row(row[1:], slots)
-        used_bank_codes = {a.get("bank_account") for a in aux.values()
-                           if a.get("bank_account")}
 
         # Discarded (作废) vouchers ARE fetched now and marked instead of dropped.
         # Filtering them at the source made them invisible: nothing downstream
@@ -760,10 +758,26 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
             "debitquantity, creditquantity, price, unitname, oppositesubj "
             "from NCSC.GL_DETAIL where pk_accountingbook = :b", b=PK_BOOK)
         details = list(cur.fetchall())
+
+        # Bank accounts THIS BOOK uses, not every bank in the GL_FREEVALUE table.
+        # GL_FREEVALUE is group-wide, so deriving the list from it handed the
+        # account picker 123 entries — 100 of them the group's Chinese accounts,
+        # which both buried Canada Royal Milk's own accounts and (because the
+        # option labels are full Chinese branch names) widened the dialog.
+        # Scoping to the assids this book's lines actually carry gives 22, which
+        # is exactly the set a reconciliation could ever have a ledger side for.
+        #
+        # ★ Deliberately NOT filtered on ACCNAME = 'Canada Royal Milk ULC'. NC's
+        # 户名 is the company on the BOC/HSBC/ICBC/CCB accounts but the BANK on
+        # RBC and JPMorgan's — so that filter would drop 1033760 (RBC加拿大元活期户),
+        # the main reconciliation account, along with six others.
+        book_assids = {d[10] for d in details if d[10]}
+        used_bank_codes = {aux[a]["bank_account"] for a in book_assids
+                           if a in aux and aux[a]["bank_account"]}
     finally:
         con.close()
-    # Only the accounts vouchers actually reference — BD_BANKACCSUB holds 13k rows
-    # for the whole FeiHe group, of which this book uses ~129.
+    # Only the accounts THIS BOOK's vouchers reference — BD_BANKACCSUB holds 13k
+    # rows for the whole FeiHe group, of which this book uses 22.
     bank_master = tuple((pk, code, accnum, name, accname, ccy.get(pk_ccy), bank)
                         for pk, code, accnum, name, accname, pk_ccy, bank in bank_rows
                         if code and code in used_bank_codes)
