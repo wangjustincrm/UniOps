@@ -15,13 +15,20 @@ interface Config {
   cert_warn_days: number[]
   allow_anonymous_report: boolean
   statutory_scan_interval_minutes: number
+  jhsc_minutes_template_code: string | null
 }
+
+interface Template { id: string; code: string; name: string; category: string }
 
 export default function RulesPage() {
   const queryClient = useQueryClient()
   const { data } = useQuery({
     queryKey: ['settings', 'config'],
     queryFn: () => api.get<Config>('/api/v1/settings/config'),
+  })
+  const templates = useQuery({
+    queryKey: ['form-templates'],
+    queryFn: () => api.get<Template[]>('/api/v1/forms/templates'),
   })
   const [form, setForm] = useState<Config | null>(null)
   useEffect(() => { if (data) setForm(data) }, [data])
@@ -75,6 +82,24 @@ export default function RulesPage() {
           <input type="number" min={0} max={1440} className={num}
                  value={form.statutory_scan_interval_minutes}
                  onChange={(e) => setForm({ ...form, statutory_scan_interval_minutes: +e.target.value })} />
+        </Row>
+
+        {/* The minutes are a form, built in Forms like any other, so the
+            headings can change as the committee's practice does without a
+            release. Meetings already written keep the wording they were
+            written on — changing this changes the next meeting, not the last. */}
+        <Row label="The form JHSC minutes are written on">
+          <select
+            className="h-10 min-w-0 rounded-lg border border-neutral-300 px-2 text-sm"
+            value={form.jhsc_minutes_template_code ?? ''}
+            onChange={(e) => setForm({
+              ...form, jhsc_minutes_template_code: e.target.value })}
+          >
+            <option value="">A plain text box (what it was)</option>
+            {templates.data?.map((t) => (
+              <option key={t.id} value={t.code}>{t.name}</option>
+            ))}
+          </select>
         </Row>
       </section>
 

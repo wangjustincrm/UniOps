@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.api.v1.incidents import _user_id
 from app.core.deps import SessionDep
 from app.core.permissions import CanManageJhsc, CanReadJhsc
+from app.crud import form as forms_crud
 from app.crud import jhsc as crud
 
 router = APIRouter(prefix="/jhsc")
@@ -125,6 +126,9 @@ class MeetingOut(BaseModel):
     location_text: str | None
     agenda: str | None
     minutes: str | None
+    # The minutes as a filled-in form, where a template is configured. Older
+    # meetings carry the free-text above and nothing here.
+    minutes_submission_id: uuid.UUID | None
     inspection_department_name: str | None
     status: str
     published_at: datetime | None
@@ -240,6 +244,34 @@ async def list_recommendations(
 ):
     return await crud.list_recommendations(
         db, meeting_id=meeting_id, outstanding_only=outstanding)
+
+
+class MinutesFormIn(BaseModel):
+    """Attaching the filled-in minutes form to the meeting."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    submission_id: uuid.UUID
+
+
+@router.post("/meetings/{meeting_id}/minutes-form", response_model=MeetingOut)
+async def attach_minutes_form(
+    meeting_id: uuid.UUID, payload: MinutesFormIn, db: SessionDep, user: CanManageJhsc,  # noqa: ARG001
+):
+    """The minutes, written on whichever form Settings says.
+
+    HSE asked for the format to be configurable "to allow for configuration and
+    readability changes that happen over time" — so it is a form template
+    rather than a second layout engine beside the one that exists.
+
+    The pointer is replaced, not appended: one meeting has one set of minutes,
+    and a second submission means the first was wrong.
+    """
+    meeting = await crud.get_meeting(db, meeting_id)
+    submission = await forms_crud.get_submission(db, payload.submission_id)
+    meeting.minutes_submission_id = submission.id
+    await db.flush()
+    return MeetingOut.model_validate(meeting)
 
 
 @router.post("/meetings/{meeting_id}/recommendations", response_model=RecommendationOut,

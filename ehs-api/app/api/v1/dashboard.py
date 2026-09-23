@@ -3,16 +3,22 @@
 One endpoint rather than eight: the page draws all of it at once, and eight
 round trips on a phone is eight chances to render half a dashboard.
 """
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.core.deps import SessionDep
 from app.core.permissions import CanReadIncident
+from app.models.dashboard_layout import DashboardLayout
 from app.services import dashboard as svc
 
 router = APIRouter(prefix="/dashboard")
+
+
+def _user_id(payload: dict) -> uuid.UUID:
+    return uuid.UUID(payload["sub"])
 
 
 class Headline(BaseModel):
@@ -101,4 +107,69 @@ async def get_dashboard(
         injured_departments=await svc.injured_by_department(db, year=year),
         participation=await svc.participation(db, year=year),
         jhsc=await svc.jhsc_attendance(db, year=year),
+    )
+
+
+# ── Which panels a person wants, and in what order ──────────────────────────
+
+# The library. Kept on the server so that a panel added to the product appears
+# in everybody's chooser without each of them being handed a new frontend.
+PANELS: tuple[tuple[str, str], ...] = (
+    ("injuries_by_month", "Injuries by month"),
+    ("near_misses", "Near misses and good catches"),
+    ("participation", "Safety participation"),
+    ("injured_departments", "Where people are getting hurt"),
+    ("body_parts", "Part of the body affected"),
+    ("jhsc_attendance", "JHSC meeting attendance"),
+)
+DEFAULT_PANELS = [key for key, _ in PANELS]
+
+
+class PanelOut(BaseModel):
+    key: str
+    label: str
+
+
+class LayoutOut(BaseModel):
+    panels: list[str]
+    available: list[PanelOut]
+
+
+class LayoutIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    panels: list[str]
+
+
+@router.get("/layout", response_model=LayoutOut)
+async def get_layout(db: SessionDep, user: CanReadIncident):
+    """Mine. An empty stored list means the default order, which is also what
+    a person who has never touched this gets."""
+    row = await db.get(DashboardLayout, _user_id(user))
+    chosen = [p for p in (row.panels if row else []) if p in DEFAULT_PANELS]
+    return LayoutOut(
+        panels=chosen or DEFAULT_PANELS,
+        available=[PanelOut(key=k, label=l) for k, l in PANELS],
+    )
+
+
+@router.put("/layout", response_model=LayoutOut)
+async def set_layout(payload: LayoutIn, db: SessionDep, user: CanReadIncident):
+    """Unknown keys are dropped rather than refused.
+
+    A layout saved before a panel was retired would otherwise become
+    unsaveable, and the person would be stuck with an error on a screen they
+    were only rearranging.
+    """
+    wanted = [p for p in payload.panels if p in DEFAULT_PANELS]
+    row = await db.get(DashboardLayout, _user_id(user))
+    if row is None:
+        row = DashboardLayout(user_id=_user_id(user), panels=wanted)
+        db.add(row)
+    else:
+        row.panels = wanted
+    await db.flush()
+    return LayoutOut(
+        panels=wanted or DEFAULT_PANELS,
+        available=[PanelOut(key=k, label=l) for k, l in PANELS],
     )

@@ -28,8 +28,8 @@
  * Charts are divs. All of them are bars, a charting library would be the
  * largest dependency in the app, and these print.
  */
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { Fragment, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, TrendingUp } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
@@ -142,6 +142,182 @@ export default function DashboardPage() {
   const partMax = Math.max(1, ...data.participation.map(
     (p) => p.toolbox_talk + p.good_catch + p.hazard_assessment))
 
+  // Which panels this person wants, and in what order. HSE asked for the
+  // dashboard to be configurable and chose "pick from the library and arrange
+  // it" when the PRD asked how — this is that, kept to what it says. The
+  // library lives on the server so a panel added later appears in everybody's
+  // chooser without handing each of them a new frontend.
+  const queryClient = useQueryClient()
+  const layout = useQuery({
+    queryKey: ['dashboard-layout'],
+    queryFn: () => api.get<{ panels: string[]; available: { key: string; label: string }[] }>(
+      '/api/v1/dashboard/layout'),
+  })
+  const [choosing, setChoosing] = useState(false)
+  const order = layout.data?.panels ?? []
+  const saveLayout = useMutation({
+    mutationFn: (panels: string[]) =>
+      api.put('/api/v1/dashboard/layout', { panels }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dashboard-layout'] }),
+  })
+
+  const panels: Record<string, React.ReactNode> = {
+    injuries_by_month: (
+<Panel title="Injuries by month" className="lg:col-span-2">
+          {/* items-stretch, not items-end. The bars are sized with percentage
+              heights, and a percentage resolves against a parent with a
+              definite height — which `items-end` denies it, leaving every
+              column auto-height and every bar computing to zero. The chart was
+              not empty; it was invisible. */}
+          <div className="flex h-32 items-stretch gap-1.5">
+            {data.medical_events.map((r, i) => {
+              const total = r.first_aid + r.medical_aid + r.lost_time
+              return (
+                <div key={r.month} className="flex flex-1 flex-col items-center gap-1.5">
+                  <div className="flex w-full flex-1 flex-col justify-end"
+                       title={`${MONTH_NAMES[i]}: ${total}`}>
+                    <div className="flex w-full flex-col-reverse"
+                         style={{ height: `${(total / monthMax) * 100}%` }}>
+                      {SEVERITY.map(({ key, cls }) => r[key] > 0 && (
+                        <div key={key} className={cls}
+                             style={{ height: `${(r[key] / Math.max(total, 1)) * 100}%` }} />
+                      ))}
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-neutral-400">{MONTHS[i]}</span>
+                </div>
+              )
+            })}
+          </div>
+          <Legend items={SEVERITY} />
+        </Panel>
+    ),
+    near_misses: (
+<Panel title="Near misses and good catches"
+               note="A rising line here is good — it means people are reporting what nearly happened.">
+          <div className="flex h-28 items-stretch gap-1.5">
+            {data.near_misses.map((r, i) => (
+              <div key={r.month} className="flex flex-1 flex-col items-center gap-1.5">
+                <div className="relative flex w-full flex-1 items-end"
+                     title={`${MONTH_NAMES[i]}: ${r.this_year} (last year ${r.last_year})`}>
+                  <div className="absolute inset-x-0 bottom-0 rounded-sm bg-neutral-200"
+                       style={{ height: `${(r.last_year / nearMax) * 100}%` }} />
+                  <div className="relative w-full rounded-sm bg-primary-500"
+                       style={{ height: `${(r.this_year / nearMax) * 100}%` }} />
+                </div>
+                <span className="text-[10px] text-neutral-400">{MONTHS[i]}</span>
+              </div>
+            ))}
+          </div>
+          <Legend items={[{ label: 'This year', cls: 'bg-primary-500' },
+                          { label: 'Last year', cls: 'bg-neutral-200' }]} />
+        </Panel>
+    ),
+    participation: (
+<Panel title="Safety participation"
+               note="Toolbox talks delivered, good catches reported, risk assessments completed.">
+          {data.participation.length === 0 ? (
+            <EmptyNote>Nothing recorded yet this year.</EmptyNote>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {data.participation.map((p) => {
+                const total = p.toolbox_talk + p.good_catch + p.hazard_assessment
+                return (
+                  <li key={p.person} className="flex items-center gap-2">
+                    <span className="w-24 shrink-0 truncate text-right text-xs text-neutral-600">
+                      {p.person}
+                    </span>
+                    <span className="flex h-4 flex-1 overflow-hidden rounded-sm bg-neutral-100">
+                      {([['toolbox_talk', 'bg-primary-500', 'Toolbox talks'],
+                         ['good_catch', 'bg-warning-400', 'Good catches'],
+                         ['hazard_assessment', 'bg-neutral-400', 'Risk assessments']] as const)
+                        .map(([k, cls, label]) => p[k] > 0 && (
+                          <span key={k} className={cls}
+                                style={{ width: `${(p[k] / partMax) * 100}%` }}
+                                title={`${label}: ${p[k]}`} />
+                        ))}
+                    </span>
+                    <span className="w-5 text-xs font-semibold tabular-nums text-neutral-800">
+                      {total}
+                    </span>
+                  </li>
+                )
+              })}
+              <li>
+                <Legend items={[{ label: 'Toolbox talks', cls: 'bg-primary-500' },
+                                { label: 'Good catches', cls: 'bg-warning-400' },
+                                { label: 'Risk assessments', cls: 'bg-neutral-400' }]} />
+              </li>
+            </ul>
+          )}
+        </Panel>
+    ),
+    injured_departments: (
+<Panel title="Where people are getting hurt">
+          {data.injured_departments.length === 0 ? (
+            <EmptyNote>No injuries recorded this year.</EmptyNote>
+          ) : (
+            <Bars rows={data.injured_departments} />
+          )}
+        </Panel>
+    ),
+    body_parts: (
+<Panel title="Part of the body affected">
+          {data.body_parts.length === 0 ? (
+            <EmptyNote>
+              No body parts recorded. These are entered in Section B of an injury report.
+            </EmptyNote>
+          ) : (
+            <Bars rows={data.body_parts} />
+          )}
+        </Panel>
+    ),
+    jhsc_attendance: (
+<Panel title="JHSC meeting attendance" className="lg:col-span-2"
+               note="OHSA s.9 wants the committee meeting and a record of who was there.">
+          {/* The months were always in the response and only the "nothing to
+              show" branch was ever written, so a committee that had met twice
+              still read as having no data. */}
+          {data.jhsc.available && (data.jhsc.months?.length ?? 0) > 0 ? (
+            <ul className="flex flex-col gap-2">
+              {data.jhsc.months!.map((m) => {
+                const invited = Math.max(m.invited, 1)
+                const pct = Math.round((m.present / invited) * 100)
+                return (
+                  <li key={m.month} className="flex items-center gap-2">
+                    <span className="w-24 shrink-0 text-right text-xs text-neutral-600">
+                      {MONTH_NAMES[Number(m.month) - 1] ?? m.month}
+                      {m.held_on && (
+                        <span className="block text-[10px] text-neutral-400">
+                          {formatDate(m.held_on)}
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex h-4 flex-1 overflow-hidden rounded-sm bg-neutral-100">
+                      <span className={pct >= 50 ? 'bg-success-500' : 'bg-warning-400'}
+                            style={{ width: `${(m.present / invited) * 100}%` }}
+                            title={`${m.present} of ${m.invited} attended`} />
+                    </span>
+                    <span className="w-16 text-xs font-semibold tabular-nums text-neutral-800">
+                      {m.present}/{m.invited}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <div className="flex items-start gap-2.5 rounded-lg border border-dashed border-neutral-300 p-4">
+              <TrendingUp className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" aria-hidden />
+              <p className="text-sm text-neutral-600">
+                {data.jhsc.reason ?? 'No meeting has been recorded yet this year.'}
+              </p>
+            </div>
+          )}
+        </Panel>
+    ),
+  }
+
+
   return (
     <div className="p-4">
       <header className="mb-4 flex flex-wrap items-baseline gap-x-3">
@@ -222,158 +398,66 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {/* ── Trend ──────────────────────────────────────────────────────── */}
-        <Panel title="Injuries by month" className="lg:col-span-2">
-          {/* items-stretch, not items-end. The bars are sized with percentage
-              heights, and a percentage resolves against a parent with a
-              definite height — which `items-end` denies it, leaving every
-              column auto-height and every bar computing to zero. The chart was
-              not empty; it was invisible. */}
-          <div className="flex h-32 items-stretch gap-1.5">
-            {data.medical_events.map((r, i) => {
-              const total = r.first_aid + r.medical_aid + r.lost_time
+      <div className="mb-2 flex justify-end">
+        <button type="button" onClick={() => setChoosing(!choosing)}
+                aria-expanded={choosing}
+                className="min-h-[32px] rounded-md px-1.5 text-xs font-semibold text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900">
+          {choosing ? 'Done' : 'Choose what is on this page'}
+        </button>
+      </div>
+
+      {choosing && (
+        <div className="mb-3 rounded-xl border border-neutral-200 bg-white p-3.5">
+          <p className="mb-2 max-w-[68ch] text-xs text-neutral-600">
+            Yours only — everybody keeps their own. Use the arrows to put the
+            one you look at first at the top.
+          </p>
+          <ul className="flex flex-col gap-1">
+            {layout.data?.available.map((panel) => {
+              const at = order.indexOf(panel.key)
+              const on = at !== -1
               return (
-                <div key={r.month} className="flex flex-1 flex-col items-center gap-1.5">
-                  <div className="flex w-full flex-1 flex-col justify-end"
-                       title={`${MONTH_NAMES[i]}: ${total}`}>
-                    <div className="flex w-full flex-col-reverse"
-                         style={{ height: `${(total / monthMax) * 100}%` }}>
-                      {SEVERITY.map(({ key, cls }) => r[key] > 0 && (
-                        <div key={key} className={cls}
-                             style={{ height: `${(r[key] / Math.max(total, 1)) * 100}%` }} />
-                      ))}
-                    </div>
-                  </div>
-                  <span className="text-[10px] text-neutral-400">{MONTHS[i]}</span>
-                </div>
+                <li key={panel.key} className="flex items-center gap-2 text-sm">
+                  <label className="flex min-h-[32px] min-w-0 flex-1 items-center gap-2 text-neutral-800">
+                    <input type="checkbox" checked={on}
+                           onChange={() => saveLayout.mutate(on
+                             ? order.filter((k) => k !== panel.key)
+                             : [...order, panel.key])} />
+                    {panel.label}
+                  </label>
+                  {on && (
+                    <>
+                      <button type="button" aria-label={`Move ${panel.label} up`}
+                              disabled={at === 0 || saveLayout.isPending}
+                              onClick={() => {
+                                const next = [...order]
+                                ;[next[at - 1], next[at]] = [next[at], next[at - 1]]
+                                saveLayout.mutate(next)
+                              }}
+                              className="min-h-[32px] px-1.5 text-neutral-400 hover:text-neutral-800 disabled:opacity-30">
+                        ↑
+                      </button>
+                      <button type="button" aria-label={`Move ${panel.label} down`}
+                              disabled={at === order.length - 1 || saveLayout.isPending}
+                              onClick={() => {
+                                const next = [...order]
+                                ;[next[at], next[at + 1]] = [next[at + 1], next[at]]
+                                saveLayout.mutate(next)
+                              }}
+                              className="min-h-[32px] px-1.5 text-neutral-400 hover:text-neutral-800 disabled:opacity-30">
+                        ↓
+                      </button>
+                    </>
+                  )}
+                </li>
               )
             })}
-          </div>
-          <Legend items={SEVERITY} />
-        </Panel>
+          </ul>
+        </div>
+      )}
 
-        {/* ── Near misses ────────────────────────────────────────────────── */}
-        <Panel title="Near misses and good catches"
-               note="A rising line here is good — it means people are reporting what nearly happened.">
-          <div className="flex h-28 items-stretch gap-1.5">
-            {data.near_misses.map((r, i) => (
-              <div key={r.month} className="flex flex-1 flex-col items-center gap-1.5">
-                <div className="relative flex w-full flex-1 items-end"
-                     title={`${MONTH_NAMES[i]}: ${r.this_year} (last year ${r.last_year})`}>
-                  <div className="absolute inset-x-0 bottom-0 rounded-sm bg-neutral-200"
-                       style={{ height: `${(r.last_year / nearMax) * 100}%` }} />
-                  <div className="relative w-full rounded-sm bg-primary-500"
-                       style={{ height: `${(r.this_year / nearMax) * 100}%` }} />
-                </div>
-                <span className="text-[10px] text-neutral-400">{MONTHS[i]}</span>
-              </div>
-            ))}
-          </div>
-          <Legend items={[{ label: 'This year', cls: 'bg-primary-500' },
-                          { label: 'Last year', cls: 'bg-neutral-200' }]} />
-        </Panel>
-
-        {/* ── Participation ──────────────────────────────────────────────── */}
-        <Panel title="Safety participation"
-               note="Toolbox talks delivered, good catches reported, risk assessments completed.">
-          {data.participation.length === 0 ? (
-            <EmptyNote>Nothing recorded yet this year.</EmptyNote>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {data.participation.map((p) => {
-                const total = p.toolbox_talk + p.good_catch + p.hazard_assessment
-                return (
-                  <li key={p.person} className="flex items-center gap-2">
-                    <span className="w-24 shrink-0 truncate text-right text-xs text-neutral-600">
-                      {p.person}
-                    </span>
-                    <span className="flex h-4 flex-1 overflow-hidden rounded-sm bg-neutral-100">
-                      {([['toolbox_talk', 'bg-primary-500', 'Toolbox talks'],
-                         ['good_catch', 'bg-warning-400', 'Good catches'],
-                         ['hazard_assessment', 'bg-neutral-400', 'Risk assessments']] as const)
-                        .map(([k, cls, label]) => p[k] > 0 && (
-                          <span key={k} className={cls}
-                                style={{ width: `${(p[k] / partMax) * 100}%` }}
-                                title={`${label}: ${p[k]}`} />
-                        ))}
-                    </span>
-                    <span className="w-5 text-xs font-semibold tabular-nums text-neutral-800">
-                      {total}
-                    </span>
-                  </li>
-                )
-              })}
-              <li>
-                <Legend items={[{ label: 'Toolbox talks', cls: 'bg-primary-500' },
-                                { label: 'Good catches', cls: 'bg-warning-400' },
-                                { label: 'Risk assessments', cls: 'bg-neutral-400' }]} />
-              </li>
-            </ul>
-          )}
-        </Panel>
-
-        {/* ── Where and what ─────────────────────────────────────────────── */}
-        <Panel title="Where people are getting hurt">
-          {data.injured_departments.length === 0 ? (
-            <EmptyNote>No injuries recorded this year.</EmptyNote>
-          ) : (
-            <Bars rows={data.injured_departments} />
-          )}
-        </Panel>
-
-        <Panel title="Part of the body affected">
-          {data.body_parts.length === 0 ? (
-            <EmptyNote>
-              No body parts recorded. These are entered in Section B of an injury report.
-            </EmptyNote>
-          ) : (
-            <Bars rows={data.body_parts} />
-          )}
-        </Panel>
-
-        {/* ── The gap, stated ────────────────────────────────────────────── */}
-        <Panel title="JHSC meeting attendance" className="lg:col-span-2"
-               note="OHSA s.9 wants the committee meeting and a record of who was there.">
-          {/* The months were always in the response and only the "nothing to
-              show" branch was ever written, so a committee that had met twice
-              still read as having no data. */}
-          {data.jhsc.available && (data.jhsc.months?.length ?? 0) > 0 ? (
-            <ul className="flex flex-col gap-2">
-              {data.jhsc.months!.map((m) => {
-                const invited = Math.max(m.invited, 1)
-                const pct = Math.round((m.present / invited) * 100)
-                return (
-                  <li key={m.month} className="flex items-center gap-2">
-                    <span className="w-24 shrink-0 text-right text-xs text-neutral-600">
-                      {MONTH_NAMES[Number(m.month) - 1] ?? m.month}
-                      {m.held_on && (
-                        <span className="block text-[10px] text-neutral-400">
-                          {formatDate(m.held_on)}
-                        </span>
-                      )}
-                    </span>
-                    <span className="flex h-4 flex-1 overflow-hidden rounded-sm bg-neutral-100">
-                      <span className={pct >= 50 ? 'bg-success-500' : 'bg-warning-400'}
-                            style={{ width: `${(m.present / invited) * 100}%` }}
-                            title={`${m.present} of ${m.invited} attended`} />
-                    </span>
-                    <span className="w-16 text-xs font-semibold tabular-nums text-neutral-800">
-                      {m.present}/{m.invited}
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
-          ) : (
-            <div className="flex items-start gap-2.5 rounded-lg border border-dashed border-neutral-300 p-4">
-              <TrendingUp className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" aria-hidden />
-              <p className="text-sm text-neutral-600">
-                {data.jhsc.reason ?? 'No meeting has been recorded yet this year.'}
-              </p>
-            </div>
-          )}
-        </Panel>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {order.map((key) => <Fragment key={key}>{panels[key]}</Fragment>)}
       </div>
     </div>
   )

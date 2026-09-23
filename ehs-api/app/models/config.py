@@ -24,6 +24,11 @@ class EhsConfig(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
 
+    # Which form template the JHSC minutes are written on. Null means the
+    # free-text box, which is what every meeting used before this existed.
+    jhsc_minutes_template_code: Mapped[str | None] = mapped_column(
+        String(40), nullable=True)
+
     # ── Corrective action escalation (HSE Manager's schedule) ───────────────
     capa_remind_before_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=3, server_default="3",

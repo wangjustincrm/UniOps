@@ -71,6 +71,9 @@ class ConfigOut(BaseModel):
     incident_notify_groups: dict
     email_templates: dict
     lost_time_rules: dict
+    # Null until somebody picks one — every meeting before that used the
+    # free-text box, and still does.
+    jhsc_minutes_template_code: str | None
 
 
 class ConfigUpdate(BaseModel):
@@ -84,6 +87,9 @@ class ConfigUpdate(BaseModel):
     incident_notify_groups: dict | None = None
     email_templates: dict | None = None
     lost_time_rules: dict | None = None
+    # The form the JHSC minutes are written on. Empty string clears it back to
+    # the free-text box; null means "not mentioned in this request".
+    jhsc_minutes_template_code: str | None = Field(default=None, max_length=40)
 
     @model_validator(mode="after")
     def _ladder_must_ascend(self):

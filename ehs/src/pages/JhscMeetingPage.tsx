@@ -76,6 +76,7 @@ function SendForm({ recId, onDone, onCancel }: {
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { useParams } from 'react-router-dom'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
@@ -91,6 +92,7 @@ import { ReplyBadge, type Recommendation } from '@/pages/JhscPage'
 interface Meeting {
   id: string; meeting_no: string; title: string | null; held_on: string
   location_text: string | null; agenda: string | null; minutes: string | null
+  minutes_submission_id: string | null
   status: string; published_at: string | null; inspection_department_name: string | null
 }
 interface Attendance {
@@ -426,6 +428,17 @@ function MinutesPanel(
   const [agenda, setAgenda] = useState(meeting.agenda ?? '')
   const [minutes, setMinutes] = useState(meeting.minutes ?? '')
 
+  // Which form the minutes are written on, if Settings names one. A meeting
+  // written before a template was chosen keeps its text box and still reads:
+  // choosing one changes the next meeting, not the last.
+  const config = useQuery({
+    queryKey: ['settings', 'config'],
+    queryFn: () => api.get<{ jhsc_minutes_template_code: string | null }>(
+      '/api/v1/settings/config'),
+  })
+  const templateCode = config.data?.jhsc_minutes_template_code || null
+  const onAForm = Boolean(templateCode) && !meeting.minutes
+
   const save = useMutation({
     mutationFn: () => api.patch(`/api/v1/jhsc/meetings/${meeting.id}`,
                                 { agenda: agenda || null, minutes: minutes || null,
@@ -460,11 +473,31 @@ function MinutesPanel(
           <textarea className={`${inputClass} min-h-[70px] py-2`} value={agenda}
                     onChange={(e) => setAgenda(e.target.value)} />
         </Field>
-        <Field label="Minutes"
-               hint="These are what goes on the noticeboard and to the Ministry if asked">
-          <textarea className={`${inputClass} min-h-[140px] py-2`} value={minutes}
-                    onChange={(e) => setMinutes(e.target.value)} />
-        </Field>
+        {onAForm ? (
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+            <p className="text-xs font-medium text-neutral-700">Minutes</p>
+            <p className="mt-1 max-w-[68ch] text-xs text-neutral-600">
+              These are written on the <span className="font-medium">{templateCode}</span>{' '}
+              form, so the headings can change as the committee's practice does.
+              Fill it in under Forms and attach it here.
+            </p>
+            <Link to={`/forms?template=${encodeURIComponent(templateCode ?? '')}`}
+                  className="mt-2 inline-block text-xs font-semibold text-primary-700 hover:underline">
+              Open the minutes form
+            </Link>
+            {meeting.minutes_submission_id && (
+              <p className="mt-1.5 text-xs text-success-700">
+                A filled-in form is attached to this meeting.
+              </p>
+            )}
+          </div>
+        ) : (
+          <Field label="Minutes"
+                 hint="These are what goes on the noticeboard and to the Ministry if asked">
+            <textarea className={`${inputClass} min-h-[140px] py-2`} value={minutes}
+                      onChange={(e) => setMinutes(e.target.value)} />
+          </Field>
+        )}
       </div>
       <ErrorNote error={save.error || publish.error} />
       <div className="mt-3 flex flex-wrap justify-end gap-2">

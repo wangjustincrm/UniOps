@@ -87,6 +87,13 @@ class JhscMeeting(UUIDPrimaryKey, TimestampMixin, Base):
     published_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     minutes_file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # The minutes as a filled-in form, when a template is configured. Older
+    # meetings keep the free-text `minutes` above and still read: configuring a
+    # template changes what the next meeting is offered, not what the last one
+    # recorded.
+    minutes_submission_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_form_submissions.id", ondelete="SET NULL"),
+        nullable=True)
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
