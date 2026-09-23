@@ -97,17 +97,24 @@ async def get_balance(
         # decision makes get_actual_spent() raise or return a constant 0, and
         # the over-budget gate changes behaviour with nobody having touched it.
         #
-        # Settle the outage semantics BEFORE removing the table, because this
-        # fallback is not the safe default it looks like: where a (cc, account)
-        # has no opening row the ledger is already 0, so available comes back as
-        # the whole annual budget and the gate silently passes everything. It is
-        # strict where an opening import happens to exist and absent where it
-        # does not. Kept anyway, for now, because the alternative on this side
-        # is worse: epms-api's budget_client fails open by design
-        # (crud/pr.py — `if data is None: return False, None`), so raising here
-        # lets the PR through AND hides the budget panel. Making the gate truly
-        # fail-closed is a change to epms-api and a product call about what an
-        # outage should do, not something to decide while deleting a table.
+        # Know what this fallback is before you remove what it falls back to.
+        # It is not the safe default it resembles: where a (cc, account) has no
+        # opening row the ledger is already 0, so available comes back as the
+        # whole annual budget and the gate passes everything. It is strict where
+        # an opening import happens to exist and absent where it does not.
+        #
+        # ★ That it stays that way is a decision, not an oversight. Asked
+        # directly on 2026-09-23 what should happen to a PR when this figure
+        # cannot be had, the user chose to keep passing it. The alternative was
+        # priced honestly: an outage would otherwise put two extra approvals on
+        # every PR raised during it, and approvals cannot be withdrawn once the
+        # workflow has them — somebody has to go clear them by hand. Raising
+        # from here would not even buy fail-closed, since epms-api's
+        # budget_client fails open by design (crud/pr.py — `if data is None:
+        # return False, None`); it would let the PR through AND blank the budget
+        # panel. Making the gate genuinely fail-closed means changing epms-api,
+        # and that is the change the user declined. Do not quietly "fix" this
+        # into raising or into a hard zero.
         actual = await get_actual_spent(db, cost_center_id, account_id, fiscal_year)
         logger.warning(
             "balance cc=%s account=%s fy=%s: finance-api unavailable, actual_spent "
