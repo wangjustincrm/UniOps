@@ -18,7 +18,9 @@ import { CalendarCheck, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
-import { Card, ErrorNote, Field, inputClass, primaryButton, secondaryButton } from '@/components/ui'
+import {
+  Card, ErrorNote, Field, inputClass, primaryButton, secondaryButton, SectionTitle,
+} from '@/components/ui'
 
 interface Plan {
   id: string; incident_id: string; worker_user_id: string | null; worker_name: string
@@ -65,9 +67,7 @@ export function ReturnToWorkPanel({ incidentId }: { incidentId: string }) {
   return (
     <section className="mt-6">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-          Return to work
-        </h2>
+        <SectionTitle>Return to work</SectionTitle>
         {rows.length === 0 && !creating && (
           <button type="button" className={secondaryButton} onClick={() => setCreating(true)}>
             <Plus className="h-4 w-4" aria-hidden />
@@ -135,7 +135,7 @@ function PlanCard({ plan, incidentId }: { plan: Plan; incidentId: string }) {
               {plan.actual_end_date && ` · ended ${formatDate(plan.actual_end_date)}`}
             </p>
           </div>
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
             open ? 'bg-warning-50 text-warning-700' : 'bg-success-50 text-success-700'}`}>
             {open ? 'On modified duties' : 'Back on full duties'}
           </span>

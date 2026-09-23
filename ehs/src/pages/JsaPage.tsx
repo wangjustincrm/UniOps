@@ -23,7 +23,7 @@ import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { SignaturePad } from '@/components/SignaturePad'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
 } from '@/components/ui'
 import { CONTROL_LEVELS, RatingBadge, type Hazard } from '@/pages/HazardsPage'
 
@@ -113,7 +113,7 @@ function StatusPill({ status }: { status: string }) {
   const label = status === 'active' ? 'In use'
     : status === 'retired' ? 'Superseded' : 'Draft'
   return (
-    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone}`}>
+    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${tone}`}>
       {label}
     </span>
   )
@@ -262,9 +262,7 @@ export function JsaDetailPage() {
 
       {/* ── Who has signed ───────────────────────────────────────────────── */}
       <div className="mt-6 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-          Signed before work
-        </h2>
+        <SectionTitle>Signed before work</SectionTitle>
         {j.status === 'active' && (
           <button type="button" className={secondaryButton} onClick={() => setSigning(true)}>
             Sign for today&rsquo;s job
@@ -287,7 +285,7 @@ export function JsaDetailPage() {
                 <ul className="mt-1 flex flex-wrap gap-1.5">
                   {crew.map((s) => (
                     <li key={s.id}
-                        className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
+                        className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">
                       {s.person_name}
                       {s.is_supervisor && (
                         <span className="ml-1 font-semibold text-primary-700">supervisor</span>
@@ -339,9 +337,7 @@ function StepEditor(
   if (!editable) {
     return (
       <>
-        <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-          Steps
-        </h2>
+        <SectionTitle className="mb-2">Steps</SectionTitle>
         {steps.length === 0 ? (
           <Empty>No steps written.</Empty>
         ) : (
@@ -380,9 +376,7 @@ function StepEditor(
 
   return (
     <>
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Steps
-      </h2>
+      <SectionTitle className="mb-2">Steps</SectionTitle>
       <ol className="flex flex-col gap-2">
         {draft.map((s, i) => (
           <li key={i}>

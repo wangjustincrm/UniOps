@@ -155,7 +155,7 @@ function RosterTab({ mayManage }: { mayManage: boolean }) {
                     </span>
                   </span>
                   <span className={
-                    'rounded-full px-2 py-0.5 text-[11px] font-semibold ' +
+                    'rounded-full px-2.5 py-0.5 text-[11px] font-semibold ' +
                     (m.representation === 'worker'
                       ? 'bg-primary-50 text-primary-700'
                       : 'bg-neutral-100 text-neutral-600')
@@ -333,7 +333,7 @@ function MeetingsTab({ mayManage }: { mayManage: boolean }) {
                   </span>
                 </span>
                 <span className={
-                  'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ' +
+                  'shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ' +
                   (m.status === 'published'
                     ? 'bg-success-50 text-success-700'
                     : 'bg-neutral-100 text-neutral-600')
@@ -466,7 +466,7 @@ export function ReplyBadge({ rec }: { rec: Recommendation }) {
       ? 'bg-neutral-100 text-neutral-600'
       : 'bg-success-50 text-success-700'
     return (
-      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone}`}>
+      <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${tone}`}>
         {rec.outcome === 'accepted' ? 'Accepted'
           : rec.outcome === 'declined' ? 'Declined' : 'Deferred'}
       </span>
@@ -479,7 +479,7 @@ export function ReplyBadge({ rec }: { rec: Recommendation }) {
   const overdue = days < 0
   return (
     <span className={
-      'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ' +
+      'shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ' +
       (overdue ? 'bg-danger-600 text-white'
         : days <= 5 ? 'bg-warning-50 text-warning-700'
         : 'bg-neutral-100 text-neutral-600')

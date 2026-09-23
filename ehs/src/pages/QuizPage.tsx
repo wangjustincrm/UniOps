@@ -22,8 +22,7 @@ import { formatDate } from '@/lib/formatDate'
 import QrPanel from '@/components/QrPanel'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader,
-  inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
 } from '@/components/ui'
 
 interface Quiz {
@@ -361,9 +360,7 @@ function ResultView({ attempt, quizId }: { attempt: Attempt; quizId: string }) {
 
       {wrong.length > 0 && (
         <>
-          <h2 className="mb-2 mt-5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            What to look at again
-          </h2>
+          <SectionTitle className="mb-2 mt-5">What to look at again</SectionTitle>
           <ul className="flex flex-col gap-2">
             {wrong.map((m) => (
               <li key={m.question_id}>
@@ -488,9 +485,7 @@ export function EditQuizPage() {
             <Stat label="Average" value={`${results.data?.average_score ?? '—'}%`} />
             <Stat label="Attempts" value={String(results.data?.total_attempts ?? 0)} />
           </div>
-          <h3 className="mb-1 mt-3 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Hardest questions
-          </h3>
+          <SectionTitle className="mb-1 mt-3">Hardest questions</SectionTitle>
           <ul className="flex flex-col gap-1">
             {results.data?.by_question.slice(0, 3).map((row) => (
               <li key={row.question_id} className="flex items-baseline gap-2 text-sm">
@@ -511,9 +506,7 @@ export function EditQuizPage() {
 
       <WhoTookIt quizId={id} />
 
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Questions
-      </h2>
+      <SectionTitle className="mb-2">Questions</SectionTitle>
 
       {rows.length === 0 && (
         <Empty>No questions yet. Add one below.</Empty>
@@ -666,9 +659,7 @@ function WhoTookIt({ quizId }: { quizId: string }) {
 
   return (
     <Card className="mb-4">
-      <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Who took it
-      </h3>
+      <SectionTitle className="mb-2">Who took it</SectionTitle>
       <ul className="flex flex-col gap-1">
         {attempts.data.map((a) => (
           <li key={a.id} className="flex flex-wrap items-baseline gap-x-2.5 text-sm">
@@ -676,7 +667,7 @@ function WhoTookIt({ quizId }: { quizId: string }) {
             <span className="font-mono tabular-nums text-neutral-700">
               {Number(a.score_percent)}%
             </span>
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
               a.passed ? 'bg-success-50 text-success-700' : 'bg-danger-50 text-danger-700'}`}>
               {a.passed ? 'Passed' : 'Did not pass'}
             </span>

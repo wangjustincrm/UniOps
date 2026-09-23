@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, Eye, Wrench } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { PageHeader } from '@/components/ui'
 import { discardDraft, loadDraft, saveDraft } from '@/lib/draftStore'
 import type { CompressedImage } from '@/lib/imageCompress'
 import { LocationSelect } from '@/components/LocationSelect'
@@ -229,9 +230,7 @@ export default function IncidentReportPage() {
   if (!form.kind) {
     return (
       <div className="flex flex-col gap-2 p-4">
-        <h1 className="pb-1 text-lg font-bold tracking-tight text-neutral-900">
-          What happened?
-        </h1>
+      <PageHeader title="What happened?" />
         {restored && (
           <p className="mb-1 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
             You have an unfinished report. Choosing a type below starts a new one.

@@ -326,7 +326,7 @@ function PeopleField({
         <ul className="mt-2 flex flex-wrap gap-1.5">
           {chosen.map((c) => (
             <li key={c.id}
-                className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
+                className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">
               {c.label}
               <button type="button" aria-label={`Remove ${c.label}`}
                       onClick={() => onChange(chosen.filter((x) => x.id !== c.id))}

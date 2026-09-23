@@ -23,7 +23,9 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, Printer } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
-import { Card, PageHeader, inputClass, secondaryButton } from '@/components/ui'
+import {
+  Card, inputClass, PageHeader, secondaryButton, SectionTitle,
+} from '@/components/ui'
 
 interface Breach {
   kind: string; regulation: string | null; reference: string | null
@@ -243,9 +245,7 @@ function Statutory({ statutory }: { statutory: Pack['statutory'] }) {
 
   return (
     <section className="mb-6">
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Statutory deadlines
-      </h2>
+      <SectionTitle className="mb-2">Statutory deadlines</SectionTitle>
 
       {statutory.total === 0 ? (
         <Card>
@@ -307,9 +307,7 @@ function Statutory({ statutory }: { statutory: Pack['statutory'] }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-5">
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        {title}
-      </h2>
+      <SectionTitle className="mb-2">{title}</SectionTitle>
       <Card>{children}</Card>
     </section>
   )

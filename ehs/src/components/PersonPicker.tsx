@@ -131,7 +131,7 @@ export function PersonPicker({
       <div>
         <div className="flex min-h-[44px] items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2">
           <span className="min-w-0 flex-1 truncate text-sm text-neutral-900">{value.name}</span>
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
+          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
             value.userId ? 'bg-primary-50 text-primary-700' : 'bg-warning-50 text-warning-700'}`}>
             {value.userId ? 'Employee' : 'Not an employee'}
           </span>

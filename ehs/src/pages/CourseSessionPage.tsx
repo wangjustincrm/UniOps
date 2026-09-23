@@ -21,7 +21,7 @@ import { formatDate, formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
 } from '@/components/ui'
 
 interface Session {
@@ -181,9 +181,7 @@ function RosterPanel({
   return (
     <>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-          Roster
-        </h2>
+        <SectionTitle>Roster</SectionTitle>
         <span className="text-xs text-neutral-500">
           {roster.length} enrolled{session.passed ? ` · ${session.passed} certified` : ''}
         </span>

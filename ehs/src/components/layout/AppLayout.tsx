@@ -49,46 +49,99 @@ interface NavItem {
   labelWithoutPermission?: string
 }
 
+/**
+ * Twenty entries in one list is a list nobody reads — they scan for the word
+ * they want and miss it. Grouped by the work rather than by the part of the
+ * system it lives in: somebody looking for the chemical inventory is thinking
+ * "what is in the plant", not "the documents subsystem".
+ *
+ * A group with nothing visible in it is not drawn at all, so a worker sees
+ * four headings and a supervisor sees seven — the shape of the menu says what
+ * the role is for.
+ */
+interface NavGroup {
+  /** Shown above the group. Replaced by a rule when the sidebar is collapsed,
+   *  because a heading with no room for its word is just noise. */
+  title: string
+  items: NavItem[]
+}
+
 // Reporting and my own actions carry no permission: every role holds
 // ehs.incident.report, because filing one is the reason a production worker
 // opens this module at all.
-const NAV: NavItem[] = [
-  { label: 'Dashboard',          href: '/dashboard',     icon: BarChart3,       permission: 'ehs.incident.read' },
-  { label: 'Report an Incident', href: '/report',        icon: TriangleAlert },
-  { label: 'My Actions',         href: '/actions/mine',  icon: ClipboardCheck },
-  // No permission: every role holds ehs.incident.report, and filling in an
-  // inspection is the same kind of act as filing one.
-  { label: 'Forms',              href: '/forms',         icon: ClipboardList },
-  { label: 'Incidents',          href: '/incidents',     icon: TriangleAlert,   permission: 'ehs.incident.read', labelWithoutPermission: 'My Reports' },
-  { label: 'First Aid Register', href: '/first-aid',     icon: HeartPulse,      permission: 'ehs.incident.read' },
-  { label: 'Compliance Calendar', href: '/calendar',     icon: CalendarClock,   permission: 'ehs.incident.read' },
-  { label: 'Reports',            href: '/reports',       icon: BarChart3,       permission: 'ehs.incident.read' },
-  // No permission: a supervisor delivers these and everyone signs one.
-  { label: 'Toolbox Talks',      href: '/toolbox-talks', icon: Users },
-  { label: 'Training',           href: '/training',      icon: GraduationCap,   permission: 'ehs.training.read' },
-  // No permission: taking a quiz is something every worker does, usually by
-  // scanning a code the trainer put on the screen.
-  { label: 'Quizzes',            href: '/quizzes',       icon: ClipboardList },
-  // Every active role holds ehs.document.read: a policy that cannot be opened
-  // cannot be acknowledged, which is what Read & Sign asks people to do.
-  { label: 'Hazard Register',    href: '/hazards',       icon: ShieldAlert,     permission: 'ehs.action.read' },
-  // No permission: the crew signing a job analysis before starting is every
-  // worker, and the list is what they open to find theirs.
-  { label: 'Job Analyses',       href: '/jsa',           icon: ClipboardList },
-  { label: 'Documents',          href: '/documents',     icon: FileText,        permission: 'ehs.document.read' },
-  // Same key as the document library, and every active role holds it: WHMIS
-  // makes a worker's access to the data sheet for what they handle a right.
-  { label: 'Chemicals',          href: '/chemicals',     icon: FlaskConical,    permission: 'ehs.document.read' },
-  // Every active role holds ehs.permit.request: the person who needs a tank
-  // cleaned is not the person authorised to allow entry into it, and the
-  // requester has to be able to raise one.
-  { label: 'Work Permits',       href: '/permits',       icon: ShieldCheck,     permission: 'ehs.permit.request' },
-  { label: 'Emergency',          href: '/emergency',     icon: Siren,           permission: 'ehs.incident.read' },
-  // The built-in auditor role already holds ehs.incident.read along with read
-  // access to everything this counts, which is what that role is for.
-  { label: 'Audit Evidence',     href: '/audit',         icon: ClipboardCheck,  permission: 'ehs.incident.read' },
-  { label: 'Safety Equipment',   href: '/equipment',     icon: Wrench,          permission: 'ehs.asset.read' },
-  { label: 'Committee',          href: '/jhsc',          icon: Users,           permission: 'ehs.jhsc.read' },
+const NAV: NavGroup[] = [
+  {
+    // What somebody opens this module to do, in the order they do it. None of
+    // the first three carry a permission: every role holds
+    // ehs.incident.report, because filing one is the reason a production
+    // worker opens this at all.
+    title: 'Day to day',
+    items: [
+      { label: 'Dashboard',          href: '/dashboard',     icon: BarChart3,       permission: 'ehs.incident.read' },
+      { label: 'Report an Incident', href: '/report',        icon: TriangleAlert },
+      { label: 'My Actions',         href: '/actions/mine',  icon: ClipboardCheck },
+      // No permission: filling in an inspection is the same kind of act as
+      // filing a report.
+      { label: 'Forms',              href: '/forms',         icon: ClipboardList },
+    ],
+  },
+  {
+    title: 'Incidents and injuries',
+    items: [
+      { label: 'Incidents',          href: '/incidents',     icon: TriangleAlert,   permission: 'ehs.incident.read', labelWithoutPermission: 'My Reports' },
+      { label: 'First Aid Register', href: '/first-aid',     icon: HeartPulse,      permission: 'ehs.incident.read' },
+    ],
+  },
+  {
+    title: 'Risk and permits',
+    items: [
+      { label: 'Hazard Register',    href: '/hazards',       icon: ShieldAlert,     permission: 'ehs.action.read' },
+      // No permission: the crew signing a job analysis before starting is
+      // every worker, and the list is what they open to find theirs.
+      { label: 'Job Analyses',       href: '/jsa',           icon: ClipboardList },
+      // Every active role holds ehs.permit.request: the person who needs a
+      // tank cleaned is not the person authorised to allow entry into it, and
+      // the requester has to be able to raise one.
+      { label: 'Work Permits',       href: '/permits',       icon: ShieldCheck,     permission: 'ehs.permit.request' },
+    ],
+  },
+  {
+    title: 'Training and talks',
+    items: [
+      // No permission: a supervisor delivers these and everyone signs one.
+      { label: 'Toolbox Talks',      href: '/toolbox-talks', icon: Users },
+      { label: 'Training',           href: '/training',      icon: GraduationCap,   permission: 'ehs.training.read' },
+      // No permission: taking a quiz is something every worker does, usually
+      // by scanning a code the trainer put on the screen.
+      { label: 'Quizzes',            href: '/quizzes',       icon: ClipboardList },
+    ],
+  },
+  {
+    title: 'The plant',
+    items: [
+      // Same key as the document library, and every active role holds it:
+      // WHMIS makes a worker's access to the data sheet for what they handle
+      // a right.
+      { label: 'Chemicals',          href: '/chemicals',     icon: FlaskConical,    permission: 'ehs.document.read' },
+      { label: 'Safety Equipment',   href: '/equipment',     icon: Wrench,          permission: 'ehs.asset.read' },
+      { label: 'Emergency',          href: '/emergency',     icon: Siren,           permission: 'ehs.incident.read' },
+    ],
+  },
+  {
+    title: 'Records and compliance',
+    items: [
+      { label: 'Compliance Calendar', href: '/calendar',     icon: CalendarClock,   permission: 'ehs.incident.read' },
+      // Every active role holds ehs.document.read: a policy that cannot be
+      // opened cannot be acknowledged, which is what Read & Sign asks people
+      // to do.
+      { label: 'Documents',          href: '/documents',     icon: FileText,        permission: 'ehs.document.read' },
+      { label: 'Committee',          href: '/jhsc',          icon: Users,           permission: 'ehs.jhsc.read' },
+      { label: 'Reports',            href: '/reports',       icon: BarChart3,       permission: 'ehs.incident.read' },
+      // The built-in auditor role already holds ehs.incident.read along with
+      // read access to everything this counts, which is what that role is for.
+      { label: 'Audit Evidence',     href: '/audit',         icon: ClipboardCheck,  permission: 'ehs.incident.read' },
+    ],
+  },
 ]
 
 const SETTINGS_NAV: NavItem[] = [
@@ -136,12 +189,28 @@ function Sidebar({
       return []
     })
   const settings = visible(SETTINGS_NAV)
+  const groups = NAV
+    .map((g) => ({ ...g, items: visible(g.items) }))
+    .filter((g) => g.items.length > 0)
 
   const navLinkCls = (isActive: boolean) => cn(
     'flex items-center gap-2.5 rounded-md px-2 py-2.5 text-sm transition-colors min-h-[44px]',
     isActive ? 'bg-white/15 text-white font-medium' : 'text-white/70 hover:bg-white/10 hover:text-white/95',
     collapsed && 'justify-center px-0',
   )
+
+  // One heading style, used by every group including Settings. Collapsed, the
+  // heading becomes a rule: the grouping is still legible without the word.
+  const renderHeading = (title: string, first = false) => (collapsed
+    ? <div className={cn('border-t border-white/10', first ? 'mb-3' : 'my-3')} />
+    : (
+      <p className={cn(
+        'mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-white/40',
+        !first && 'mt-4',
+      )}>
+        {title}
+      </p>
+    ))
 
   const renderLink = ({ label, href, icon: Icon }: NavItem) => (
     <NavLink
@@ -179,7 +248,7 @@ function Sidebar({
             )}
             <div className="min-w-0">
               <p className="truncate text-sm font-bold leading-tight text-white/95">{brandName}</p>
-              <p className="truncate text-[10px] leading-tight text-white/45">{brandTagline}</p>
+              <p className="truncate text-[11px] leading-tight text-white/45">{brandTagline}</p>
             </div>
           </div>
         )}
@@ -204,23 +273,21 @@ function Sidebar({
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2 py-4">
-        {!collapsed && (
-          <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
-            Safety
-          </p>
-        )}
-        {visible(NAV).map(renderLink)}
+        {/* A group with nothing visible in it is not drawn, heading and all —
+            otherwise a worker meets five empty headings and reads the menu as
+            broken rather than as shorter. */}
+        {groups.map((group, i) => (
+          <div key={group.title}>
+            {renderHeading(group.title, i === 0)}
+            {group.items.map(renderLink)}
+          </div>
+        ))}
 
         {settings.length > 0 && (
-          <>
-            {!collapsed && (
-              <p className="mb-1 mt-4 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
-                Settings
-              </p>
-            )}
-            {collapsed && <div className="my-3 border-t border-white/10" />}
+          <div>
+            {renderHeading('Settings')}
             {settings.map(renderLink)}
-          </>
+          </div>
         )}
       </nav>
 

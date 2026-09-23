@@ -8,6 +8,9 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import {
+  PageHeader, SectionTitle,
+} from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
 import { Countdown } from '@/components/Countdown'
 import type { Deadline } from '@/lib/types'
@@ -38,10 +41,7 @@ export default function ComplianceCalendarPage() {
 
   return (
     <div className="p-4">
-      <h1 className="text-lg font-bold tracking-tight text-neutral-900">Compliance calendar</h1>
-      <p className="mb-4 text-xs text-neutral-500">
-        Statutory notifications, certificate expiries and periodic reviews.
-      </p>
+      <PageHeader title="Compliance calendar" subtitle="Statutory notifications, certificate expiries and periodic reviews." />
 
       <Section title="Running now" rows={running} empty="Nothing is due in the next month." />
       <Section title="Later" rows={later} empty="Nothing further scheduled." />
@@ -54,9 +54,7 @@ function Section({ title, rows, empty }: {
 }) {
   return (
     <>
-      <h2 className="mb-2 mt-4 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        {title}
-      </h2>
+      <SectionTitle className="mb-2 mt-4">{title}</SectionTitle>
       {rows.length === 0 ? (
         <p className="text-sm text-neutral-500">{empty}</p>
       ) : (

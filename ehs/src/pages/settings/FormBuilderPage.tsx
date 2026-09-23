@@ -16,6 +16,7 @@ import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { PageHeader } from '@/components/ui'
 
 interface QuestionType {
   code: string
@@ -153,9 +154,7 @@ export default function FormBuilderPage() {
         {/* Which form this is. The page said "Form builder" and nothing else,
             so with four similarly-named ladder inspections open in tabs there
             was no way to tell them apart. */}
-        <h1 className="text-lg font-bold tracking-tight text-neutral-900">
-          {template.data?.name ?? 'Form builder'}
-        </h1>
+      <PageHeader title="{template.data?.name ?? 'Form builder'}" />
         {template.data && (
           <p className="text-xs text-neutral-500">
             <span className="font-mono">{template.data.code}</span>

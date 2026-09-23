@@ -28,8 +28,7 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { LocationSelect } from '@/components/LocationSelect'
 import { VocabularyMultiSelect } from '@/components/VocabularyPicker'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, Tabs,
-  inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
 } from '@/components/ui'
 
 interface Sheet {
@@ -266,7 +265,7 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
                       <span className="mt-1.5 flex flex-wrap gap-1">
                         {c.signal_word && (
                           <span className={
-                            'rounded-full px-2 py-0.5 text-[11px] font-bold uppercase ' +
+                            'rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase ' +
                             (c.signal_word === 'Danger'
                               ? 'bg-danger-600 text-white'
                               : 'bg-warning-50 text-warning-700')
@@ -276,7 +275,7 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
                         )}
                         {c.hazard_classes.map((h) => (
                           <span key={h.label}
-                                className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-700">
+                                className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
                             {h.label}
                           </span>
                         ))}
@@ -307,7 +306,7 @@ function SheetPill({ sheet }: { sheet: Sheet | null }) {
   const overdue = sheet.review_due_on && new Date(sheet.review_due_on + 'T00:00:00') < new Date()
   return (
     <span className={
-      'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ' +
+      'shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ' +
       (overdue ? 'bg-warning-50 text-warning-700' : 'bg-success-50 text-success-700')
     }>
       {overdue ? 'Review overdue' : `Rev ${sheet.revision ?? '—'}`}
@@ -416,9 +415,7 @@ function Detail({ chemical, mayManage }: { chemical: Chemical; mayManage: boolea
         </p>
       )}
 
-      <h3 className="mb-1.5 mt-4 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Data sheets
-      </h3>
+      <SectionTitle className="mb-1.5 mt-4">Data sheets</SectionTitle>
       {sheets.data?.length === 0 ? (
         <p className="text-sm text-neutral-500">None filed.</p>
       ) : (
@@ -709,9 +706,7 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
 
   return (
     <div className="mt-4">
-      <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Workplace label
-      </h3>
+      <SectionTitle className="mb-1.5">Workplace label</SectionTitle>
 
       {!current ? (
         <>
@@ -735,7 +730,7 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
               {current.product_identifier}
             </span>
             <span className={
-              'rounded-full px-2 py-0.5 text-[11px] font-semibold ' +
+              'rounded-full px-2.5 py-0.5 text-[11px] font-semibold ' +
               (current.status === 'draft' ? 'bg-warning-50 text-warning-700'
                 : 'bg-success-50 text-success-700')
             }>

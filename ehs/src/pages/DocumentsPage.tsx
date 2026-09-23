@@ -16,7 +16,7 @@ import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, Tabs, inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
 } from '@/components/ui'
 
 export interface SafetyDoc {
@@ -134,9 +134,7 @@ function LibraryTab({ statuses, mayManage }: { statuses: string[]; mayManage: bo
       ) : (
         [...byCategory.entries()].map(([category, list]) => (
           <section key={category} className="mb-5">
-            <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-              {CATEGORY_LABELS[category] ?? category}
-            </h2>
+            <SectionTitle className="mb-2">{CATEGORY_LABELS[category] ?? category}</SectionTitle>
             <ul className="flex flex-col gap-2">
               {list.map((d) => (
                 <li key={d.id}>
@@ -152,7 +150,7 @@ function LibraryTab({ statuses, mayManage }: { statuses: string[]; mayManage: bo
                       </span>
                     </span>
                     {d.status === 'retired' && (
-                      <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-500">
+                      <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
                         Superseded
                       </span>
                     )}

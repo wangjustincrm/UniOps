@@ -13,6 +13,9 @@ import { useState, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Users, Paperclip } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import {
+  PageHeader, SectionTitle,
+} from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { SignaturePad } from '@/components/SignaturePad'
@@ -63,8 +66,7 @@ export default function ToolboxTalksPage() {
 
   return (
     <div className="p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h1 className="text-lg font-bold tracking-tight text-neutral-900">Toolbox talks</h1>
+      <PageHeader title="Toolbox talks">
         {isHse && (
           <button type="button" onClick={() => setCreating(true)}
                   className="flex min-h-[40px] items-center gap-1.5 rounded-lg bg-primary-600 px-3 text-sm font-semibold text-white">
@@ -72,13 +74,11 @@ export default function ToolboxTalksPage() {
             New topic
           </button>
         )}
-      </div>
+      </PageHeader>
 
       {mine.length > 0 && (
         <>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            To deliver
-          </h2>
+          <SectionTitle className="mb-2">To deliver</SectionTitle>
           <ul className="mb-6 flex flex-col gap-2">
             {mine.map((d) => (
               <li key={d.id}>
@@ -101,9 +101,7 @@ export default function ToolboxTalksPage() {
         </>
       )}
 
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Topics
-      </h2>
+      <SectionTitle className="mb-2">Topics</SectionTitle>
       <ul className="flex flex-col gap-2">
         {talks.data?.map((t) => (
           <li key={t.id} className="rounded-xl border border-neutral-200 bg-white p-3.5">
@@ -152,9 +150,7 @@ export default function ToolboxTalksPage() {
 
       {done.length > 0 && (
         <>
-          <h2 className="mb-2 mt-6 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Delivered
-          </h2>
+          <SectionTitle className="mb-2 mt-6">Delivered</SectionTitle>
           <ul className="flex flex-col gap-2">
             {done.map((d) => (
               <li key={d.id} className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white p-3 text-sm">
@@ -188,7 +184,7 @@ function Completion({ talkId }: { talkId: string }) {
   })
   if (!data) return null
   return (
-    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
       data.percent === 100 ? 'bg-primary-50 text-primary-700' : 'bg-warning-50 text-warning-700'}`}>
       {data.delivered}/{data.total} teams · {data.percent}%
     </span>
@@ -396,7 +392,7 @@ function TalkState({ talkId }: { talkId: string }) {
             <span className="min-w-0 flex-1 text-neutral-800">
               {d.department_name ?? d.supervisor_name ?? 'Unassigned'}
             </span>
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
               d.status === 'delivered' ? 'bg-success-50 text-success-700'
                                        : 'bg-warning-50 text-warning-700'}`}>
               {d.status === 'delivered' ? 'Delivered' : 'Outstanding'}

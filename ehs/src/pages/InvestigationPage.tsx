@@ -17,6 +17,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { useTabTitle } from '@uniops/shell'
 import { api, ApiError } from '@/lib/api'
+import {
+  PageHeader, SectionTitle,
+} from '@/components/ui'
 import { ehsRoutes } from '@/app/routes'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { SignaturePad } from '@/components/SignaturePad'
@@ -95,9 +98,7 @@ function Field({ label, help, children }: {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-6 rounded-xl border border-neutral-200 bg-white p-4">
-      <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        {title}
-      </h2>
+      <SectionTitle className="mb-3">{title}</SectionTitle>
       {children}
     </section>
   )
@@ -331,7 +332,7 @@ export default function InvestigationPage() {
     <div className="p-4 pb-24">
       <header className="mb-4">
         <p className="font-mono text-xs text-neutral-500">{incident.data?.incident_no}</p>
-        <h1 className="text-lg font-bold tracking-tight text-neutral-900">Investigation</h1>
+      <PageHeader title="Investigation" />
         <p className="mt-0.5 text-sm text-neutral-600">{incident.data?.title}</p>
       </header>
 
@@ -430,9 +431,7 @@ export default function InvestigationPage() {
           {/* SAMPLE: signs, allergies, medicines, past history, last meal,
               events. This is the order a first aider is trained to ask in —
               re-sorting the screen makes them skip one. */}
-          <h3 className="mb-2 mt-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Medical information
-          </h3>
+          <SectionTitle className="mb-2 mt-2">Medical information</SectionTitle>
           <Field label="Time of assessment">
             <input className={inputClass} value={med.assessed_at_text ?? ''}
                    onChange={(e) => setMed({ ...med, assessed_at_text: e.target.value })}
@@ -454,9 +453,7 @@ export default function InvestigationPage() {
             </Field>
           ))}
 
-          <h3 className="mb-2 mt-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Vitals
-          </h3>
+          <SectionTitle className="mb-2 mt-2">Vitals</SectionTitle>
           {/* Taken more than once, because the trend is what decides whether
               somebody goes to hospital: a pulse of 110 reads one way on its own
               and another beside the 90 from five minutes earlier. The form used
@@ -519,9 +516,7 @@ export default function InvestigationPage() {
             {(med.vitals_series ?? []).length === 0 ? 'Record vitals' : 'Record vitals again'}
           </button>
 
-          <h3 className="mb-2 mt-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Timeline
-          </h3>
+          <SectionTitle className="mb-2 mt-2">Timeline</SectionTitle>
           {(med.timeline ?? []).map((t, i) => (
             // `min-w-0` on the event box below is what stops this row being
             // wider than the panel: a flex item will not shrink past its

@@ -19,7 +19,9 @@ import { ChevronRight, Pencil, Plus, QrCode, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import QrPanel from '@/components/QrPanel'
 import { usePermissions } from '@/hooks/usePermissions'
-import { Card, ErrorNote, Field, inputClass, primaryButton, secondaryButton } from '@/components/ui'
+import {
+  Card, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton,
+} from '@/components/ui'
 
 interface Node {
   id: string; code: string; name: string; level: string; path: string
@@ -62,22 +64,17 @@ export default function LocationsPage() {
 
   return (
     <div className="p-4">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h1 className="text-lg font-bold tracking-tight text-neutral-900">Plant areas</h1>
-          <p className="max-w-[68ch] text-xs text-neutral-500">
-            Every incident, inspection and corrective action is filed against one
-            of these. Renaming an area updates the tree; records already filed
-            keep the wording they were filed under.
-          </p>
-        </div>
+      <PageHeader
+        title="Plant areas"
+        subtitle="Every incident, inspection and corrective action is filed against one of these. Renaming an area updates the tree; records already filed keep the wording they were filed under."
+      >
         {mayEdit && (
           <button type="button" className={primaryButton} onClick={() => setAddingUnder(null)}>
             <Plus className="h-4 w-4" aria-hidden />
             Add a top-level area
           </button>
         )}
-      </div>
+      </PageHeader>
 
       {showing && (
         <div className="mb-3 rounded-xl border border-neutral-200 bg-white p-3.5">
@@ -125,12 +122,12 @@ function TreeNode({ node, mayEdit, onShowCode, onEdit, onAddChild }: {
           node.is_active ? 'text-neutral-800' : 'text-neutral-400 line-through'}`}>
           {node.name}
         </span>
-        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500">
+        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
           {LEVEL_LABEL[node.level] ?? node.level}
         </span>
         {!node.is_selectable && (
           <span title="A heading only — nothing can be filed against it directly"
-                className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500">
+                className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
             Heading
           </span>
         )}

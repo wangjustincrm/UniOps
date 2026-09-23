@@ -23,7 +23,7 @@ import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
 } from '@/components/ui'
 
 interface Position {
@@ -228,9 +228,7 @@ function RequirementsEditor(
 
   return (
     <>
-      <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Training this position requires
-      </h3>
+      <SectionTitle className="mb-1.5">Training this position requires</SectionTitle>
       <ul className="flex flex-col gap-1">
         {courses.data?.map((c) => (
           <li key={c.id}>
@@ -294,9 +292,7 @@ function HoldersEditor({ position, mayWrite }: { position: Position; mayWrite: b
 
   return (
     <div className="mt-4">
-      <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Who holds it
-      </h3>
+      <SectionTitle className="mb-1.5">Who holds it</SectionTitle>
 
       {holders.data?.length === 0 ? (
         <p className="text-sm text-neutral-500">Nobody yet.</p>
@@ -304,7 +300,7 @@ function HoldersEditor({ position, mayWrite }: { position: Position; mayWrite: b
         <ul className="flex flex-wrap gap-1.5">
           {holders.data?.map((h) => (
             <li key={h.assignment_id}
-                className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
+                className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">
               {h.user_name}
               <span className="text-neutral-400">since {formatDate(h.effective_from)}</span>
               {mayWrite && (

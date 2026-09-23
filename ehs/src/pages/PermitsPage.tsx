@@ -32,8 +32,7 @@ import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { SignaturePad } from '@/components/SignaturePad'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, Tabs,
-  inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
 } from '@/components/ui'
 
 interface Precaution { key: string; label: string; help?: string }
@@ -342,9 +341,7 @@ function PrecautionList(
 
   return (
     <>
-      <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Before work starts
-      </h3>
+      <SectionTitle className="mb-1.5">Before work starts</SectionTitle>
       <ul className="flex flex-col gap-1">
         {type.precautions.map((p) => (
           <li key={p.key}>
@@ -406,10 +403,8 @@ function GasPanel(
 
   return (
     <div className="mt-4">
-      <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        <Gauge className="h-3.5 w-3.5" aria-hidden />
-        Atmosphere
-      </h3>
+      <SectionTitle className="mb-1.5"><Gauge className="h-3.5 w-3.5" aria-hidden />
+        Atmosphere</SectionTitle>
 
       {readings.length === 0 ? (
         <p className="text-sm text-neutral-500">No test recorded.</p>
@@ -549,16 +544,14 @@ function SignaturePanel(
           />
         </div>
       )}
-      <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Signatures
-      </h3>
+      <SectionTitle className="mb-1.5">Signatures</SectionTitle>
       {signatures.length === 0 ? (
         <p className="text-sm text-neutral-500">Nobody has signed yet.</p>
       ) : (
         <ul className="flex flex-wrap gap-1.5">
           {signatures.map((s) => (
             <li key={s.id}
-                className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
+                className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">
               <span className="font-semibold">{CAPACITY_LABELS[s.capacity] ?? s.capacity}</span>
               {' · '}{s.person_name}
               {s.phase === 'close' && <span className="ml-1 text-neutral-400">at close</span>}

@@ -392,7 +392,7 @@ function RegisterTab({
                       )}
                     </span>
                   ) : a.status === 'retired' && (
-                    <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-500">
+                    <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
                       Retired
                     </span>
                   )}
@@ -463,7 +463,7 @@ function CheckHistory({ assetId }: { assetId: string }) {
               <span className="font-medium tabular-nums text-neutral-800">
                 {formatDate(c.performed_on)}
               </span>
-              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${
+              <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize ${
                 c.result === 'failed' ? 'bg-danger-50 text-danger-700'
                                       : 'bg-success-50 text-success-700'}`}>
                 {c.result === 'failed' ? 'Failed' : 'Passed'}

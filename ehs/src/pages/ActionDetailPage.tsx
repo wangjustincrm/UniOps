@@ -12,6 +12,9 @@ import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
 import { ShieldCheck } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import {
+  PageHeader, SectionTitle,
+} from '@/components/ui'
 import { daysOverdue, formatDate, formatDateTime } from '@/lib/formatDate'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ChangeHistory } from '@/components/ChangeHistory'
@@ -88,7 +91,7 @@ export default function ActionDetailPage() {
   return (
     <div className="p-4">
       <p className="font-mono text-xs text-neutral-500">{a.action_no}</p>
-      <h1 className="mt-0.5 text-lg font-bold tracking-tight text-neutral-900">{a.title}</h1>
+      <PageHeader title="{a.title}" />
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <StatusBadge status={a.status} />
         {late !== null && late > 0 && a.status !== 'closed' && (
@@ -126,9 +129,7 @@ export default function ActionDetailPage() {
       )}
 
       {/* ── History ─────────────────────────────────────────────────────── */}
-      <h2 className="mb-2 mt-5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Progress
-      </h2>
+      <SectionTitle className="mb-2 mt-5">Progress</SectionTitle>
       {a.updates.length === 0 && a.verifications.length === 0 && (
         <p className="text-sm text-neutral-500">Nothing recorded yet.</p>
       )}
@@ -160,9 +161,7 @@ export default function ActionDetailPage() {
       {/* ── Doing the work ──────────────────────────────────────────────── */}
       {a.status !== 'closed' && (
         <>
-          <h2 className="mb-2 mt-5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Report progress
-          </h2>
+          <SectionTitle className="mb-2 mt-5">Report progress</SectionTitle>
           <textarea
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
             rows={3}
@@ -206,9 +205,7 @@ export default function ActionDetailPage() {
       {/* ── Verification — a different job, by a different person ───────── */}
       {a.status === 'pending_verification' && can('ehs.action.verify') && (
         <>
-          <h2 className="mb-2 mt-5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Verify
-          </h2>
+          <SectionTitle className="mb-2 mt-5">Verify</SectionTitle>
           <p className="mb-2 text-xs text-neutral-500">
             Confirm the control actually works — not that the work was done.
             Saying it is not effective reopens the action.

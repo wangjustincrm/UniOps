@@ -11,6 +11,9 @@ import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, FileText, Plus } from 'lucide-react'
 import { api, apiBlob, ApiError } from '@/lib/api'
+import {
+  PageHeader, SectionTitle,
+} from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
 import { Countdown } from '@/components/Countdown'
 import { ChangeHistory } from '@/components/ChangeHistory'
@@ -247,12 +250,7 @@ export default function IncidentDetailPage() {
     <div className="min-w-0">
       <header className="border-b border-neutral-200 bg-white p-4">
         <p className="font-mono text-xs text-neutral-500">{inc.incident_no}</p>
-        <h1 className="mt-0.5 text-lg font-bold tracking-tight text-neutral-900">{inc.title}</h1>
-        <p className="mt-1 text-xs text-neutral-500">
-          {inc.location_path ?? 'No area recorded'}
-          {inc.occurred_at ? ` · ${formatDateTime(inc.occurred_at)}` : ''}
-          {inc.is_anonymous ? ' · reported anonymously' : inc.reported_by_name ? ` · ${inc.reported_by_name}` : ''}
-        </p>
+      <PageHeader title="{inc.title}" subtitle={<>{inc.location_path ?? 'No area recorded'} {inc.occurred_at ? ` · ${formatDateTime(inc.occurred_at)}` : ''} {inc.is_anonymous ? ' · reported anonymously' : inc.reported_by_name ? ` · ${inc.reported_by_name}` : ''}</>} />
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <InjuryBadge injuryClass={inc.injury_class} />
           <MolBadge reportable={inc.mol_reportable} />
@@ -267,9 +265,7 @@ export default function IncidentDetailPage() {
         <div className="min-w-0">
         {/* ── What was reported ─────────────────────────────────────────── */}
         <section className="p-4">
-          <h2 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            What was reported
-          </h2>
+          <SectionTitle className="mb-2.5">What was reported</SectionTitle>
           <dl className="rounded-lg border border-neutral-200 bg-white p-3.5">
             <Row label="Type" value={KIND_LABELS[inc.form_kind] ?? inc.form_kind} />
             <Row label="Description" value={inc.description} block />
@@ -304,9 +300,7 @@ export default function IncidentDetailPage() {
         {/* ── Photographs ───────────────────────────────────────────────── */}
         {photos.data && photos.data.length > 0 && (
           <section className="px-4 pb-4">
-            <h2 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-              Photographs
-            </h2>
+            <SectionTitle className="mb-2.5">Photographs</SectionTitle>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {photos.data.map((a) => <Photo key={a.id} incidentId={id} att={a} />)}
             </div>
@@ -336,9 +330,7 @@ export default function IncidentDetailPage() {
             <RiskAssessmentDialog sourceType="incident" sourceId={id}
                                   onClose={() => setAssessing(false)} />
           )}
-          <h2 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Root causes and what is being done
-          </h2>
+          <SectionTitle className="mb-2.5">Root causes and what is being done</SectionTitle>
           {tree.isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
           {tree.data && tree.data.immediate.length === 0 && tree.data.root.length === 0 && (
             <p className="rounded-lg border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
@@ -371,9 +363,7 @@ export default function IncidentDetailPage() {
         <section className="border-t border-neutral-200 bg-neutral-50 p-4 lg:border-l lg:border-t-0">
           {canClose && inc.status !== 'closed' && (
             <div className="mb-4 rounded-lg border border-neutral-200 bg-white p-3">
-              <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-                Closing this incident
-              </h2>
+              <SectionTitle className="mb-2">Closing this incident</SectionTitle>
               {inc.status === 'closed' ? (
                 <>
                   <p className="text-xs text-neutral-500">
@@ -437,9 +427,7 @@ export default function IncidentDetailPage() {
             </div>
           )}
 
-          <h2 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Timeline
-          </h2>
+          <SectionTitle className="mb-2.5">Timeline</SectionTitle>
           <dl className="mb-4 rounded-lg border border-neutral-200 bg-white p-3.5">
             <Row label="Occurred" value={fmt(inc.occurred_at)} />
             {/* Kept distinct from `occurred` on purpose: the WSIB clock runs
@@ -461,9 +449,7 @@ export default function IncidentDetailPage() {
             <Row label="Closed" value={fmt(inc.closed_at)} />
           </dl>
 
-          <h2 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            People
-          </h2>
+          <SectionTitle className="mb-2.5">People</SectionTitle>
           {inc.persons.length === 0 ? (
             <p className="text-sm text-neutral-500">Nobody recorded.</p>
           ) : (
@@ -486,9 +472,7 @@ export default function IncidentDetailPage() {
             </ul>
           )}
 
-          <h2 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Statutory
-          </h2>
+          <SectionTitle className="mb-2.5">Statutory</SectionTitle>
           {inc.deadlines.length === 0 ? (
             <p className="text-sm text-neutral-500">
               Nothing is owed to a regulator — this has not been classified as a
@@ -628,7 +612,7 @@ function CauseCard({ cause, incidentId, canRaise }: {
 
   return (
     <article className="mb-2 rounded-lg border border-neutral-200 bg-white p-3">
-      <p className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">
+      <p className="font-mono text-[11px] uppercase tracking-wider text-neutral-400">
         {cause.cause_type === 'root' ? 'Root cause' : 'Immediate cause'}
       </p>
       <p className="mt-0.5 text-sm text-neutral-900">{cause.label}</p>

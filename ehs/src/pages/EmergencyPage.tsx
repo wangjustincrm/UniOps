@@ -24,8 +24,7 @@ import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import { DrillEvidence } from '@/components/DrillEvidence'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, Tabs,
-  inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
 } from '@/components/ui'
 
 interface Drill {
@@ -226,10 +225,8 @@ function EvacuationTrend({ rows }: { rows: TrendRow[] }) {
   return (
     <Card className="mb-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-neutral-400">
-          <Timer className="h-3.5 w-3.5" aria-hidden />
-          Time to evacuate
-        </h2>
+        <SectionTitle><Timer className="h-3.5 w-3.5" aria-hidden />
+          Time to evacuate</SectionTitle>
         {previous && (
           <span className={`text-xs font-semibold ${
             change > 0 ? 'text-danger-700' : change < 0 ? 'text-success-700' : 'text-neutral-500'}`}>
@@ -309,7 +306,7 @@ function DrillDetail({ drill, mayRun }: { drill: Drill; mayRun: boolean }) {
         <ul className="mb-2 flex flex-wrap gap-1.5">
           {participants.data?.map((p) => (
             <li key={p.id}
-                className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
+                className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">
               <span className="font-semibold">
                 {CAPACITIES.find((c) => c.key === p.capacity)?.label ?? p.capacity}
               </span>

@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, ClipboardList, Plus } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { PageHeader } from '@/components/ui'
 
 interface Template {
   id: string; code: string; name: string; description: string | null
@@ -46,14 +47,13 @@ export default function FormTemplatesPage() {
 
   return (
     <div className="p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h1 className="text-lg font-bold tracking-tight text-neutral-900">Forms</h1>
+      <PageHeader title="Forms">
         <button type="button" onClick={() => setAdding(true)}
                 className="flex min-h-[40px] items-center gap-1.5 rounded-lg bg-primary-600 px-3 text-sm font-semibold text-white">
           <Plus className="h-4 w-4" aria-hidden />
           New form
         </button>
-      </div>
+      </PageHeader>
 
       {templates.data?.length === 0 && (
         <p className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">

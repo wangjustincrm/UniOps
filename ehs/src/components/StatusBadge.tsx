@@ -27,7 +27,7 @@ const STATUS_LABELS: Record<string, string> = {
   pending_verification: 'Awaiting verification',
 }
 
-const base = 'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold'
+const base = 'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold'
 
 export function InjuryBadge({ injuryClass }: { injuryClass: string | null }) {
   if (!injuryClass) return null

@@ -349,7 +349,7 @@ function SigningPanel({ doc }: { doc: SafetyDoc }) {
           <ul className="flex flex-wrap gap-1.5">
             {s.outstanding.map((p) => (
               <li key={p.user_id}
-                  className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
+                  className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">
                 {p.user_name}
               </li>
             ))}

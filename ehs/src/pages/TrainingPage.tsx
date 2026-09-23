@@ -15,7 +15,7 @@ import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, Tabs, inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
 } from '@/components/ui'
 import TrainingGapsPanel from '@/pages/TrainingGapsPage'
 
@@ -111,9 +111,7 @@ function SessionsTab({ mayWrite }: { mayWrite: boolean }) {
 
       {upcoming.length > 0 && (
         <>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Coming up
-          </h2>
+          <SectionTitle className="mb-2">Coming up</SectionTitle>
           <ul className="mb-6 flex flex-col gap-2">
             {upcoming.map((s) => (
               <SessionRow key={s.id} session={s}
@@ -125,9 +123,7 @@ function SessionsTab({ mayWrite }: { mayWrite: boolean }) {
 
       {past.length > 0 && (
         <>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Held
-          </h2>
+          <SectionTitle className="mb-2">Held</SectionTitle>
           <ul className="flex flex-col gap-2">
             {past.map((s) => (
               <SessionRow key={s.id} session={s}
@@ -275,7 +271,7 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
           <ul className="mt-2 flex flex-wrap gap-1.5">
             {learners.map((l) => (
               <li key={l.userId ?? l.name}
-                  className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
+                  className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">
                 {l.name}
                 <button type="button" aria-label={`Remove ${l.name}`}
                         onClick={() => setLearners(learners.filter((x) => x.userId !== l.userId))}

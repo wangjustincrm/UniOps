@@ -17,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ArrowUpRight, Plus } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { PageHeader } from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 
@@ -40,13 +41,10 @@ export default function FirstAidLogPage() {
 
   return (
     <div className="p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-bold tracking-tight text-neutral-900">First-aid register</h1>
-          <p className="text-xs text-neutral-500">
-            Regulation 1101 — every treatment given, kept for at least five years.
-          </p>
-        </div>
+      <PageHeader
+        title="First-aid register"
+        subtitle="Regulation 1101 — every treatment given, kept for at least five years."
+      >
         {canWrite && (
           <Link
             to="/incidents/new?kind=medical"
@@ -56,7 +54,7 @@ export default function FirstAidLogPage() {
             Record a treatment
           </Link>
         )}
-      </div>
+      </PageHeader>
 
       {/* First aid is recorded on the injury form now. Two places recording
           the same event meant the same cut finger was entered twice, or once

@@ -32,6 +32,9 @@ import { Fragment, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, TrendingUp } from 'lucide-react'
 import { api } from '@/lib/api'
+import {
+  PageHeader, SectionTitle,
+} from '@/components/ui'
 import { formatDate } from '@/lib/formatDate'
 
 interface Headline {
@@ -79,9 +82,7 @@ function Panel({ title, children, note, className = '' }: {
 }) {
   return (
     <section className={`rounded-xl border border-neutral-200 bg-white p-4 ${className}`}>
-      <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        {title}
-      </h2>
+      <SectionTitle className="mb-3">{title}</SectionTitle>
       {children}
       {note && <p className="mt-2.5 text-[11px] leading-relaxed text-neutral-400">{note}</p>}
     </section>
@@ -184,7 +185,7 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   </div>
-                  <span className="text-[10px] text-neutral-400">{MONTHS[i]}</span>
+                  <span className="text-[11px] text-neutral-400">{MONTHS[i]}</span>
                 </div>
               )
             })}
@@ -205,7 +206,7 @@ export default function DashboardPage() {
                   <div className="relative w-full rounded-sm bg-primary-500"
                        style={{ height: `${(r.this_year / nearMax) * 100}%` }} />
                 </div>
-                <span className="text-[10px] text-neutral-400">{MONTHS[i]}</span>
+                <span className="text-[11px] text-neutral-400">{MONTHS[i]}</span>
               </div>
             ))}
           </div>
@@ -288,7 +289,7 @@ export default function DashboardPage() {
                     <span className="w-24 shrink-0 text-right text-xs text-neutral-600">
                       {MONTH_NAMES[Number(m.month) - 1] ?? m.month}
                       {m.held_on && (
-                        <span className="block text-[10px] text-neutral-400">
+                        <span className="block text-[11px] text-neutral-400">
                           {formatDate(m.held_on)}
                         </span>
                       )}
@@ -321,9 +322,7 @@ export default function DashboardPage() {
   return (
     <div className="p-4">
       <header className="mb-4 flex flex-wrap items-baseline gap-x-3">
-        <h1 className="text-lg font-bold tracking-tight text-neutral-900">
-          HSE dashboard
-        </h1>
+      <PageHeader title="HSE dashboard" />
         <span className="text-sm text-neutral-500">{h.year}</span>
       </header>
 

@@ -14,6 +14,9 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { TrendingDown, TrendingUp } from 'lucide-react'
 import { api } from '@/lib/api'
+import {
+  PageHeader, SectionTitle,
+} from '@/components/ui'
 
 interface Entity { key: string; label: string; dimensions: string[] }
 interface GroupRow { value: string | null; label: string | null; count: number }
@@ -93,13 +96,11 @@ export default function ReportsPage() {
 
   return (
     <div className="p-4">
-      <h1 className="mb-4 text-lg font-bold tracking-tight text-neutral-900">Reports</h1>
+      <PageHeader title="Reports" />
 
       {/* ── Injury rates ─────────────────────────────────────────────────── */}
       <section className="mb-6 rounded-xl border border-neutral-200 bg-white p-4">
-        <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-neutral-400">
-          Injury rates
-        </h2>
+        <SectionTitle className="mb-3">Injury rates</SectionTitle>
         <div className="grid grid-cols-3 gap-3">
           {([['TRIR', rates.data?.trir], ['Lost time', rates.data?.lost_time_rate],
              ['DART', rates.data?.dart_rate]] as const).map(([label, value]) => (

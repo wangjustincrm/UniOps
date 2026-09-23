@@ -305,7 +305,7 @@ function PersonView({ rows }: { rows: Gap[] }) {
 function ReasonTag({ gap, withCourse = false }: { gap: Gap; withCourse?: boolean }) {
   const expired = gap.reason === 'expired'
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs ${
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] ${
       expired ? 'bg-warning-50 text-warning-700' : 'bg-danger-50 text-danger-700'}`}>
       {withCourse && <span className="font-mono text-[11px] opacity-80">{gap.course_code}</span>}
       <span className="font-semibold">

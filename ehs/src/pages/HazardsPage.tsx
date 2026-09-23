@@ -22,7 +22,7 @@ import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
 } from '@/components/ui'
 
 export interface Hazard {
@@ -63,14 +63,14 @@ export const CONTROL_LEVELS = [
 export function RatingBadge({ rating }: { rating: string | null }) {
   if (!rating) {
     return (
-      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-500">
+      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
         Not assessed
       </span>
     )
   }
   const tone = RATING_TONE[rating.toLowerCase()] ?? 'bg-neutral-100 text-neutral-600'
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${tone}`}>
+    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize ${tone}`}>
       {rating}
     </span>
   )
@@ -481,9 +481,7 @@ function AssessDialog({ hazard, onClose }: { hazard: Hazard; onClose: () => void
           </select>
         </Field>
 
-        <p className="mb-1 mt-3 text-xs font-bold uppercase tracking-wider text-neutral-400">
-          As it stands
-        </p>
+        <SectionTitle className="mb-1 mt-3">As it stands</SectionTitle>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="How likely">
             <select className={inputClass} value={likelihood}
@@ -514,9 +512,7 @@ function AssessDialog({ hazard, onClose }: { hazard: Hazard; onClose: () => void
           </Field>
         </div>
 
-        <p className="mb-1 mt-3 text-xs font-bold uppercase tracking-wider text-neutral-400">
-          Once those controls are in
-        </p>
+        <SectionTitle className="mb-1 mt-3">Once those controls are in</SectionTitle>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="How likely then">
             <select className={inputClass} value={residualLikelihood}

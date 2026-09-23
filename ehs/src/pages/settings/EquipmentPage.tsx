@@ -10,6 +10,7 @@ import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, Upload } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { PageHeader } from '@/components/ui'
 
 interface Equipment {
   id: string; asset_no: string | null; name: string; equipment_type: string | null
@@ -45,7 +46,7 @@ export default function EquipmentPage() {
 
   return (
     <div className="p-4">
-      <h1 className="mb-1 text-lg font-bold tracking-tight text-neutral-900">Equipment</h1>
+      <PageHeader title="Equipment" />
       <p className="mb-4 text-sm text-neutral-600">
         Picking a machine on a form fills in its area and department from here.
       </p>

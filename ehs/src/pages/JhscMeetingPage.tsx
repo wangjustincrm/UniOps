@@ -85,7 +85,7 @@ import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
 } from '@/components/ui'
 import { ReplyBadge, type Recommendation } from '@/pages/JhscPage'
 
@@ -160,9 +160,7 @@ export default function JhscMeetingPage() {
 
       {/* ── Attendance ──────────────────────────────────────────────────── */}
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-          Attendance
-        </h2>
+        <SectionTitle>Attendance</SectionTitle>
         <span className="text-xs text-neutral-500">
           {present} of {rows.length} present
         </span>
@@ -178,18 +176,14 @@ export default function JhscMeetingPage() {
       )}
 
       {/* ── Recommendations ─────────────────────────────────────────────── */}
-      <h2 className="mb-2 mt-6 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Recommendations
-      </h2>
+      <SectionTitle className="mb-2 mt-6">Recommendations</SectionTitle>
       <RecommendationList
         meetingId={id} rows={recommendations.data ?? []} mayManage={mayManage}
         onChanged={invalidate}
       />
 
       {/* ── Agenda and minutes ──────────────────────────────────────────── */}
-      <h2 className="mb-2 mt-6 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Minutes
-      </h2>
+      <SectionTitle className="mb-2 mt-6">Minutes</SectionTitle>
       <MinutesPanel meeting={m} editable={mayManage && !published} onSaved={invalidate} />
     </div>
   )
@@ -243,7 +237,7 @@ function AttendanceList({
                     </div>
                   ) : (
                     <span className={
-                      'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ' +
+                      'shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ' +
                       (a.attendance === 'present'
                         ? 'bg-success-50 text-success-700'
                         : 'bg-neutral-100 text-neutral-600')

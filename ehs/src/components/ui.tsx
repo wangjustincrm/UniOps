@@ -7,6 +7,20 @@
  */
 import type { ReactNode } from 'react'
 
+/**
+ * The scale. Three sizes below the body text and no more:
+ *
+ *   text-sm    (14px)  body, controls, table cells
+ *   text-xs    (12px)  labels, hints, secondary lines
+ *   text-[11px]        a badge or a column heading, and nothing longer
+ *
+ * Anything smaller was in here — 9px and 10px, on text people were expected to
+ * read — and is gone. The rounding scale is as short: `rounded-md` on a
+ * control, `rounded-lg` on an input or button, `rounded-xl` on a card,
+ * `rounded-full` on a pill. Six radii were in use, which reads as carelessness
+ * long before anyone can name why.
+ */
+
 export const inputClass =
   'min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm ' +
   'text-neutral-900 focus:border-primary-400 focus:outline-none'
@@ -21,7 +35,10 @@ export const secondaryButton =
 export const dangerButton = `${buttonClass} bg-danger-600 text-white hover:bg-danger-700`
 
 export function PageHeader(
-  { title, subtitle, children }: { title: string; subtitle?: string; children?: ReactNode },
+  // `subtitle` takes a node, not a string: several pages put a link or a
+  // piece of regulation in it, and a string prop pushed them into hand-rolling
+  // the whole header rather than using this.
+  { title, subtitle, children }: { title: string; subtitle?: ReactNode; children?: ReactNode },
 ) {
   return (
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -111,5 +128,83 @@ export function ErrorNote({ error }: { error: unknown }) {
     'Something went wrong.'
   return (
     <p className="mt-2 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{message}</p>
+  )
+}
+
+
+/**
+ * The heading above a group of things on a page.
+ *
+ * Forty-eight copies of the same four utility classes were in the pages, which
+ * is how a heading ends up one weight lighter on one screen than another and
+ * nobody can say which is right.
+ */
+export function SectionTitle({ children, className = '' }: {
+  children: ReactNode; className?: string
+}) {
+  return (
+    <h2 className={`mb-2 text-[11px] font-bold uppercase tracking-wider text-neutral-400 ${className}`}>
+      {children}
+    </h2>
+  )
+}
+
+/**
+ * A status pill.
+ *
+ * `tone` names what it means rather than what colour it is, so the same state
+ * reads the same on every page — and so a theme change is one file. Colour is
+ * never the only signal: every pill carries its own words.
+ */
+const PILL_TONE = {
+  neutral: 'bg-neutral-100 text-neutral-600',
+  ok: 'bg-success-50 text-success-700',
+  warn: 'bg-warning-50 text-warning-700',
+  bad: 'bg-danger-50 text-danger-700',
+  info: 'bg-info-50 text-info-700',
+  /** Reserved for the one state that starts a statutory clock. */
+  urgent: 'bg-danger-600 text-white',
+} as const
+
+export function Pill({ tone = 'neutral', children, className = '' }: {
+  tone?: keyof typeof PILL_TONE; children: ReactNode; className?: string
+}) {
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${PILL_TONE[tone]} ${className}`}>
+      {children}
+    </span>
+  )
+}
+
+/**
+ * A button that reads as a link.
+ *
+ * A real `<button>`, not an anchor with no href: the nine hand-rolled copies
+ * of this were a mix of both, and the anchors could not be reached by keyboard
+ * or fired by the space bar. The minimum height keeps it a touch target on a
+ * phone even though it looks like text.
+ */
+export function LinkButton({ onClick, children, tone = 'primary', disabled, className = '', ...rest }: {
+  onClick: () => void
+  children: ReactNode
+  tone?: 'primary' | 'quiet' | 'danger'
+  disabled?: boolean
+  className?: string
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'className'>) {
+  const tones = {
+    primary: 'text-primary-700 hover:underline',
+    quiet: 'text-neutral-500 hover:text-neutral-900 hover:underline',
+    danger: 'text-danger-700 hover:underline',
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex min-h-[32px] items-center gap-1 text-xs font-semibold disabled:opacity-40 ${tones[tone]} ${className}`}
+      {...rest}
+    >
+      {children}
+    </button>
   )
 }

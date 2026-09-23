@@ -15,6 +15,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Mail } from 'lucide-react'
 import { api } from '@/lib/api'
+import { SectionTitle } from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
 
 interface Communication {
@@ -43,9 +44,7 @@ export function CommunicationLog({ docType, docId }: { docType: string; docId: s
 
   return (
     <section className="mt-6">
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-        Notifications sent
-      </h2>
+      <SectionTitle className="mb-2">Notifications sent</SectionTitle>
       <ul className="flex flex-col gap-1.5">
         {rows.map((c) => (
           <li key={c.id}>

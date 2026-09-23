@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '@/lib/api'
+import { PageHeader } from '@/components/ui'
 
 interface Config {
   capa_remind_before_days: number
@@ -43,12 +44,7 @@ export default function RulesPage() {
 
   return (
     <div className="p-4">
-      <h1 className="text-lg font-bold tracking-tight text-neutral-900">Rules</h1>
-      <p className="mb-4 text-xs text-neutral-500">
-        When the module chases things. The 48-hour, three-business-day and 21-day
-        limits are set in law and are not editable — only the holiday list the
-        business-day count depends on is maintained, and that is done centrally.
-      </p>
+      <PageHeader title="Rules" subtitle="When the module chases things. The 48-hour, three-business-day and 21-day limits are set in law and are not editable — only the holiday list the business-day count depends on is maintained, and that is done centrally." />
 
       <section className="mb-4 rounded-xl border border-neutral-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-neutral-900">Corrective actions</h2>

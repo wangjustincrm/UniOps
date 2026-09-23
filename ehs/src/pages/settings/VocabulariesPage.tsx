@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Lock, Plus } from 'lucide-react'
 import { api, apiBlob, ApiError } from '@/lib/api'
+import { PageHeader } from '@/components/ui'
 
 interface Vocabulary {
   code: string; name: string; description: string | null
@@ -69,11 +70,7 @@ export default function VocabulariesPage() {
 
   return (
     <div className="p-4">
-      <h1 className="text-lg font-bold tracking-tight text-neutral-900">Lists</h1>
-      <p className="mb-3 text-xs text-neutral-500">
-        The choices that appear on forms. Entries are retired, never deleted —
-        a record that used one has to keep making sense.
-      </p>
+      <PageHeader title="Lists" subtitle="The choices that appear on forms. Entries are retired, never deleted — a record that used one has to keep making sense." />
 
       <div className="mb-3 flex flex-wrap gap-1.5">
         {vocabs.data?.map((v) => (
@@ -226,7 +223,7 @@ function PictogramSlot({ code, item }: { code: string; item: Item }) {
           className="h-9 w-9 rounded border border-neutral-200 bg-white object-contain"
         />
       ) : (
-        <span className="flex h-9 w-9 items-center justify-center rounded border border-dashed border-warning-500 text-[9px] leading-tight text-warning-700">
+        <span className="flex h-9 w-9 items-center justify-center rounded border border-dashed border-warning-500 text-[11px] leading-tight text-warning-700">
           none
         </span>
       )}
