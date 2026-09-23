@@ -677,7 +677,11 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
 
         cur.execute("select pk_material, code from NCSC.BD_MATERIAL")
         item_codes = {pk: code for pk, code in cur.fetchall()}
-        cur.execute("select pk_project, code from NCSC.BD_PROJECT")
+        # ★ PROJECT_CODE, not CODE. BD_MATERIAL uses CODE and BD_PROJECT does not,
+        # and assuming the two matched cost a production sync run (ORA-00904 on
+        # 2026-09-23). Every column this module names has since been checked
+        # against ALL_TAB_COLUMNS; this was the only wrong one.
+        cur.execute("select pk_project, project_code from NCSC.BD_PROJECT")
         proj_codes = {pk: code for pk, code in cur.fetchall()}
 
         cur.execute("select pk_dept, code from NCSC.ORG_DEPT")
