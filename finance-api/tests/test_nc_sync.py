@@ -60,14 +60,14 @@ def _det(pk, idx, acct, dr, cr, ldr, lcr, curr, rate, expl, assid,
             dqty, cqty, price, unitname, oppsubj)
 
 
-def _aux(department="", cost_center="", income_expense_item="", supplier="",
-         customer="", bank_account="", partner="", item="", project=""):
-    """A decode_aux_row() result. Keyword-only in effect: decode_aux_row returns
-    a dict precisely so 11 dimensions cannot be mis-ordered."""
-    return {"department": department, "cost_center": cost_center,
-            "income_expense_item": income_expense_item, "supplier": supplier,
-            "customer": customer, "bank_account": bank_account,
-            "partner": partner, "item": item, "project": project}
+def _aux(department="", cost_center="", income_expense_item="", **rest):
+    """A decode_aux_row() result: EVERY slot present, exactly as the real one
+    returns. Built from _BLANK_AUX rather than a hand-written key list — a
+    fixture that carried only some slots would hide the very drift that
+    _resolve_dims' subscript reads exist to catch."""
+    from app.services.nc_sync import _BLANK_AUX
+    return dict(_BLANK_AUX, department=department, cost_center=cost_center,
+                income_expense_item=income_expense_item, **rest)
 
 
 def _mini_extract(tallydate="2026-07-11 09:00:00", pk_system="GL"):
@@ -521,20 +521,26 @@ def test_transform_maps_and_strips_subsystem():
     assert vs2[0]["source_subsystem"] is None
 
 
+def _catalog(extra=()):
+    """BD_ACCASSITEM as (pk, code, name), carrying every REQUIRED auxiliary —
+    anything less now raises, by design."""
+    from app.services.nc_sync import (AUX_BANKACCOUNT, AUX_COSTCENTER, AUX_DEPT,
+                                      AUX_IOITEM, AUX_PARTNER)
+    return [(AUX_DEPT, "0001", "部门"), (AUX_COSTCENTER, "ra01", "成本中心"),
+            (AUX_IOITEM, "0008", "收支项目"), (AUX_PARTNER, "0004", "客商"),
+            (AUX_BANKACCOUNT, "0011", "银行账户"),
+            ("SUPPK000000000000001", "0019", "供应商档案"),
+            ("CUSPK000000000000001", "0017", "客户档案"), *extra]
+
+
 def test_resolve_aux_types_by_code_finds_the_combined_party_archive():
     """The bug this replaced: the old resolver matched Chinese names, and NC's
     combined party archive is called 客商 — which contains neither 供应商 nor
     客户. 9,625 lines of the live book lost their counterparty to that.
     Resolving by BD_ACCASSITEM.CODE is what makes it visible."""
-    from app.services.nc_sync import (AUX_COSTCENTER, AUX_DEPT, AUX_IOITEM,
-                                      AUX_PARTNER, resolve_aux_types_by_code)
-    items = [(AUX_DEPT, "0001", "部门"), (AUX_COSTCENTER, "ra01", "成本中心"),
-             (AUX_IOITEM, "0008", "收支项目"),
-             (AUX_PARTNER, "0004", "客商"),
-             ("SUPPK000000000000001", "0019", "供应商档案"),
-             ("CUSPK000000000000001", "0017", "客户档案"),
-             ("CLSPK000000000000001", "D45", "项目类型")]
-    got = resolve_aux_types_by_code(items)
+    from app.services.nc_sync import (AUX_DEPT, AUX_PARTNER,
+                                      resolve_aux_types_by_code)
+    got = resolve_aux_types_by_code(_catalog() + [("CLSPK000000000000001", "D45", "项目类型")])
     assert got["partner"] == AUX_PARTNER          # the whole point
     assert got["supplier"] == "SUPPK000000000000001"
     assert got["customer"] == "CUSPK000000000000001"
@@ -542,18 +548,30 @@ def test_resolve_aux_types_by_code_finds_the_combined_party_archive():
 
 
 def test_resolve_aux_types_by_code_refuses_to_guess_and_pins_constants():
-    from app.services.nc_sync import (AUX_COSTCENTER, AUX_DEPT, AUX_IOITEM,
-                                      resolve_aux_types_by_code)
-    base = [(AUX_COSTCENTER, "ra01", "成本中心"), (AUX_IOITEM, "0008", "收支项目")]
+    from app.services.nc_sync import AUX_DEPT, resolve_aux_types_by_code
+    others = [r for r in _catalog() if r[1] != "0001"]
     # a code the catalog carries twice is ambiguous — picking one silently is
     # exactly how a dimension ends up wired to the wrong archive
     with pytest.raises(RuntimeError, match="refusing to guess"):
-        resolve_aux_types_by_code(base + [("PK1", "0001", "部门"),
-                                          ("PK2", "0001", "部门旧")])
+        resolve_aux_types_by_code(others + [("PK1", "0001", "部门"),
+                                            ("PK2", "0001", "部门旧")])
     # a frozen constant that no longer matches its code is a loud failure, not a
     # silently empty dimension
     with pytest.raises(RuntimeError, match="aux type pk mismatch"):
-        resolve_aux_types_by_code(base + [("WRONGPK0000000000001", "0001", "部门")])
-    # a code the catalog simply does not carry is absent, not fatal
-    got = resolve_aux_types_by_code(base + [(AUX_DEPT, "0001", "部门")])
+        resolve_aux_types_by_code(others + [("WRONGPK0000000000001", "0001", "部门")])
+    # an INFORMATIONAL dimension the catalog lacks is absent, not fatal: NC
+    # catalogs legitimately differ between orgs
+    got = resolve_aux_types_by_code(_catalog())
     assert "project" not in got and got["department"] == AUX_DEPT
+
+
+def test_a_missing_required_auxiliary_is_loud_not_an_empty_dimension():
+    """The failure this guards: a dimension whose catalog row is gone decodes to
+    empty on every line and reads as "this book does not use it" — which is
+    exactly how the bank auxiliary stayed missing, and how 客商 went unread on
+    9,625 lines. Informational dimensions may be absent; consumed ones may not."""
+    from app.services.nc_sync import resolve_aux_types_by_code
+    for drop in ("0004", "0019", "0011", "ra01"):
+        catalog = [r for r in _catalog() if r[1] != drop]
+        with pytest.raises(RuntimeError, match="no row for the required auxiliaries"):
+            resolve_aux_types_by_code(catalog)

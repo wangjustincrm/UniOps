@@ -459,7 +459,7 @@ async def test_nc_sync_run_raises_the_task(db_session):
     """start_run -> the standing task exists, written in the run's own
     transaction. Guards the wiring, not the rules: a correct validator that the
     sync never calls leaves the inbox as silent as before."""
-    from app.services.nc_sync import NcExtract, start_run
+    from app.services.nc_sync import _BLANK_AUX, NcExtract, start_run
 
     _exec("delete from tasks")
 
@@ -471,8 +471,8 @@ async def test_nc_sync_run_raises_the_task(db_session):
             ccy={"CADPK": "CAD"},
             # 'E09' is in no map row. decode_aux_row returns a DICT since the
             # auxiliaries grew from 6 to 11 — naming them beats counting commas.
-            aux={"A1": {"department": "0104", "cost_center": "E09",
-                        "income_expense_item": "CRM00201"}},
+            aux={"A1": dict(_BLANK_AUX, department="0104", cost_center="E09",
+                            income_expense_item="CRM00201")},
             vouchers=[("VALPK1", "2026", "07", 1, "v", "2026-07-10 09:00:00",
                        "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL",
                        0, "N", "N", None, 0, "SUNQI", "LIUYUHONG", "LIUYUHONG", "记账凭证")],

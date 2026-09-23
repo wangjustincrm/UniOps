@@ -230,6 +230,22 @@ AUX_SLOTS = (
     "item", "item_category", "project", "employee",
 )
 
+# Slots _resolve_dims actually consumes. Their absence from NC's catalog is a
+# LOUD failure, not an empty dimension: a dimension that quietly decodes to
+# nothing is exactly how the bank auxiliary stayed missing for years, and how
+# 客商 went unread on 9,625 lines. The rest of AUX_SLOTS is informational — it
+# only ever becomes a jv_line_dimensions row — so a catalog that lacks it is fine.
+_REQUIRED_AUX_SLOTS = frozenset({
+    "department", "cost_center", "income_expense_item",
+    "supplier", "customer", "bank_account", "partner",
+})
+
+# Every decode_aux_row result carries EVERY slot, so _resolve_dims can subscript
+# rather than .get(..., "") — a typo or a renamed slot then raises instead of
+# silently emptying that dimension for every line. Built from AUX_SLOTS, never
+# hand-copied, so the two cannot drift.
+_BLANK_AUX = dict.fromkeys(AUX_SLOTS, "")
+
 # Frozen pks, validated against the catalog every run so a catalog change is a
 # loud failure rather than a silently empty dimension (same contract as
 # resolve_bank_account_type_pk).
@@ -274,6 +290,13 @@ def resolve_aux_types_by_code(items) -> dict:
             raise RuntimeError(
                 f"aux type pk mismatch for {slot}: constant {const!r} != catalog "
                 f"{out[slot]!r} — typevalue-prefix assumption broke")
+    missing = sorted(s for s in _REQUIRED_AUX_SLOTS if s not in out)
+    if missing:
+        raise RuntimeError(
+            f"BD_ACCASSITEM carries no row for the required auxiliaries {missing} "
+            f"(codes {[dim_to_code.get(m) for m in missing]}) — decoding would leave "
+            f"those dimensions empty on every line, which reads as 'this book does "
+            f"not use them' and is indistinguishable from the bug this check exists for")
     return out
 
 
@@ -296,7 +319,7 @@ def decode_aux_row(typevalues, slots) -> dict:
     BD_BANKACCSUB rows that no longer exist, and dropping them would silently
     merge those banks into "unassigned". Slots outside that set decode to "".
     """
-    out = {slot: "" for slot in slots}
+    out = dict(_BLANK_AUX)      # every slot, always — see _BLANK_AUX
     for tv in typevalues:
         if not tv or len(tv) < 40:
             continue
@@ -447,12 +470,16 @@ def _resolve_dims(assid, aux, cc_map_rows, category, uni_cc, uni_dept, uni_ba, u
     129 on the live book). A code with no master still scopes a reconciliation;
     a dropped one would silently merge that bank into "unassigned"."""
     from app.services.cc_map_import import resolve_uniops_cc
-    a = aux.get(assid) or {}
-    d = a.get("department", "")
-    c = a.get("cost_center", "")
-    io = a.get("income_expense_item", "")
-    sup, cust = a.get("supplier", ""), a.get("customer", "")
-    bank = a.get("bank_account", "")
+    # Subscripts, not .get(..., ""): decode_aux_row fills every slot, so a missing
+    # key means the slot name here and in AUX_SLOTS have drifted — and that must
+    # raise. `.get` with a default would empty that dimension on every line and
+    # say nothing, which is the failure mode this whole change is undoing.
+    a = aux.get(assid) or _BLANK_AUX
+    d = a["department"]
+    c = a["cost_center"]
+    io = a["income_expense_item"]
+    sup, cust = a["supplier"], a["customer"]
+    bank = a["bank_account"]
     if category is not None:
         uni_code = resolve_uniops_cc(cc_map_rows, category, d, c)
     else:
@@ -466,7 +493,7 @@ def _resolve_dims(assid, aux, cc_map_rows, category, uni_cc, uni_dept, uni_ba, u
             partner_id, partner_name = hit
         else:
             partner_name = code
-    elif a.get("partner"):
+    elif a["partner"]:
         partner_id, partner_name, partner_outcome = resolve_partner(
             a["partner"], parties, side, uni_sup, uni_cust)
     return {

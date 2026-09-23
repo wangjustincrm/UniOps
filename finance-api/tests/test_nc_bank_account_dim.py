@@ -133,10 +133,12 @@ def test_other_dimensions_still_decode():
 # ── transform() ────────────────────────────────────────────────────────────────
 
 def _extract(bank_code):
-    from app.services.nc_sync import NcExtract
+    from app.services.nc_sync import _BLANK_AUX, NcExtract
     return NcExtract(
         ccy={"CADPK": "CAD"},
-        aux={"A1": {"bank_account": bank_code}},
+        # every slot present, as decode_aux_row really returns — _resolve_dims
+        # subscripts them so that drift raises instead of emptying a dimension
+        aux={"A1": dict(_BLANK_AUX, bank_account=bank_code)},
         vouchers=[("P1", "2026", "07", 1, "RBC payment run", "2026-07-02 09:00:00",
                    "2026-07-03 08:00:00", "2026-07-03 09:00:00", "GL",
                    0, "N", "N", None, 0, "SUNQI", "LIUYUHONG", "LIUYUHONG", "记账凭证")],
