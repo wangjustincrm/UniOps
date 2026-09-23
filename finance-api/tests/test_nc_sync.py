@@ -575,3 +575,71 @@ def test_a_missing_required_auxiliary_is_loud_not_an_empty_dimension():
         catalog = [r for r in _catalog() if r[1] != drop]
         with pytest.raises(RuntimeError, match="no row for the required auxiliaries"):
             resolve_aux_types_by_code(catalog)
+
+
+# ── unmapped-cost-centre counting ─────────────────────────────────────────────
+
+def test_cc_gap_exempt_covers_the_three_families_and_the_carry_forwards():
+    """The count and jv_validation must answer the same question. Before this,
+    the sync reported 1,520 unresolved cost centres on the live book while the
+    real gap was ~40 lines / −438 CAD: payroll, depreciation and shut-down loss
+    are excluded by decision, and a Carry-forward voucher reverses line for line
+    what an ordinary voucher booked, so counting it reports the gap twice."""
+    from app.services.nc_sync import _cc_gap_is_exempt
+    for io in ("CRM004", "CRM00401", "CRM007", "CRM00712", "CRM09912"):
+        assert _cc_gap_is_exempt(io, 0) is True, io
+    for kind in (1, 2, 3, 4):                       # year-end / opening / carry-forwards
+        assert _cc_gap_is_exempt("CRM00104", kind) is True, kind
+
+
+def test_cc_gap_exempt_still_counts_an_ordinary_line():
+    """The positive half. A rule that exempted everything would satisfy every
+    assertion above — this is the line that must still be reported, because it is
+    the only kind anyone can act on."""
+    from app.services.nc_sync import _cc_gap_is_exempt
+    assert _cc_gap_is_exempt("CRM00104", 0) is False      # ordinary voucher, ordinary item
+    assert _cc_gap_is_exempt(None, 0) is False            # no income-expense item at all
+    assert _cc_gap_is_exempt("", 0) is False
+    assert _cc_gap_is_exempt("CRM0041", None) is True     # prefix match, kind unknown
+    # CRM0099 is NOT CRM09912 — a prefix rule must not swallow its neighbours
+    assert _cc_gap_is_exempt("CRM0099", 0) is False
+
+
+def test_transform_does_not_count_an_exempt_line_as_unmapped():
+    """End to end through transform: same line, same missing cost centre, counted
+    or not purely on the income-expense item."""
+    from app.services.nc_sync import NcExtract, transform
+
+    def _ex(io_code):
+        return NcExtract(
+            ccy={"CADPK": "CAD"},
+            # dept 9999 is in no map -> had_cc_hint true, cost_center_id None
+            aux={"A1": _aux("9999", "", io_code)},
+            vouchers=[_vch("PK1", "2026", "07", 1, "x", "2026-07-10 09:00:00",
+                           "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
+            details=[_det("PK1", 1, "6602", 100, 0, 100, 0, "CADPK", 1, "", "A1")],
+            max_creationtime="2026-07-11 08:00:00", tallied={"PK1"})
+
+    _, _, _, ordinary, _ = transform(_ex("CRM00104"), {}, {}, {}, {}, {}, set())
+    _, _, _, depreciation, _ = transform(_ex("CRM004"), {}, {}, {}, {}, {}, set())
+    assert ordinary == 1        # actionable: somebody must say where it belongs
+    assert depreciation == 0    # excluded by decision, nothing to act on
+
+
+def test_transform_does_not_count_a_carry_forward_line_as_unmapped():
+    from app.services.nc_sync import NcExtract, transform
+
+    def _ex(kind):
+        return NcExtract(
+            ccy={"CADPK": "CAD"},
+            aux={"A1": _aux("9999", "", "CRM00104")},
+            vouchers=[_vch("PK1", "2026", "07", 1, "Carry forward",
+                           "2026-07-10 09:00:00", "2026-07-11 08:00:00",
+                           "2026-07-11 09:00:00", "GL", kind=kind)],
+            details=[_det("PK1", 1, "6602", 0, 100, 0, 100, "CADPK", 1, "", "A1")],
+            max_creationtime="2026-07-11 08:00:00", tallied={"PK1"})
+
+    _, _, _, ordinary, _ = transform(_ex(0), {}, {}, {}, {}, {}, set())
+    _, _, _, carried, _ = transform(_ex(4), {}, {}, {}, {}, {}, set())
+    assert ordinary == 1
+    assert carried == 0

@@ -511,6 +511,37 @@ def _resolve_dims(assid, aux, cc_map_rows, category, uni_cc, uni_dept, uni_ba, u
         "aux": a,
     }
 
+# NC VOUCHERKIND values that are not ordinary business entries. Measured on the
+# live book: 1 = year-end adjustment, 2 = opening (period 00, zero amount),
+# 3 = cost carry-forward, 4 = R&D / monthly carry-forward. A carry-forward
+# voucher reverses, line for line, what an ordinary voucher booked earlier in the
+# month, so holding its lines to the cost-centre map means reporting the same
+# placement gap twice — once per side.
+_NON_OPERATING_KINDS = frozenset({1, 2, 3, 4})
+
+
+def _cc_gap_is_exempt(io_code: str | None, voucher_kind: int | None) -> bool:
+    """Should a line WITHOUT a cost centre be counted as an unresolved one?
+
+    The run's `unmapped_cc_count` used to count every such line, while
+    jv_validation had long since excluded payroll / depreciation / shut-down loss
+    by decision (user, 2026-09-17). One question, two answers: the sync reported
+    1,520 lines against a live book where the reconstructible gap was ~40 lines
+    and −438 CAD net. A number that large and that wrong is worse than none —
+    the first reader checks it, finds it hollow, and stops reading it.
+
+    Measured 2026-09-23 on the 1,116 reconstructible lines: 387 were the three
+    excluded income-expense families, 400 sat on Carry-forward vouchers or the
+    entries they reverse, 32 were opening vouchers at zero, and every remaining
+    year's gross debit equalled its gross credit to the cent.
+    """
+    from app.crud.account_balance import EXCLUDED_IO_PREFIXES   # avoid an import cycle
+    if voucher_kind in _NON_OPERATING_KINDS:
+        return True
+    code = (io_code or "").strip()
+    return bool(code) and code.startswith(tuple(EXCLUDED_IO_PREFIXES))
+
+
 def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
               uni_sup: dict, uni_cust: dict, skip_pks: set,
               cc_map_rows: list | None = None, category_of=None,
@@ -528,7 +559,7 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
     Aux. Acctg column complete and the auxiliary filters queryable at all — NC
     puts 物料基本信息 on 113,866 of this book's 323,740 lines, and every one of
     them used to arrive empty."""
-    pk2id, vouchers = {}, []
+    pk2id, pk2kind, vouchers = {}, {}, []
     for (pk, year, period, num, expl, pdate, _ctime, tallydate, pk_system,
          vkind, discard, tempsave, errmsg, attach,
          prepared, checked, manager, vtype) in extract.vouchers:
@@ -536,6 +567,7 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             continue
         jid = uuid.uuid4()
         pk2id[pk] = jid
+        pk2kind[pk] = int(vkind) if vkind is not None else None
         vdate = (pdate[:10] if pdate and len(pdate) >= 10 else f"{year}-{period}-01")
         num_i = int(num) if num is not None else 0
         vouchers.append({
@@ -583,7 +615,8 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             assid, extract.aux, cc_map_rows or [], category,
             uni_cc, uni_dept, uni_ba, uni_sup, uni_cust, uni_bank,
             parties=extract.parties, side=side)
-        if r["had_cc_hint"] and r["cost_center_id"] is None:
+        if (r["had_cc_hint"] and r["cost_center_id"] is None
+                and not _cc_gap_is_exempt(r["io_code"], pk2kind.get(pk))):
             unmapped += 1
         if r["partner_outcome"]:
             counters[r["partner_outcome"]] = counters.get(r["partner_outcome"], 0) + 1
