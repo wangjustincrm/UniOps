@@ -495,3 +495,203 @@ async def test_a_reader_cannot_change_a_reconciliation(client, scene):
     ok = await client.get(f"/finance/v1/bank-recon/reconciliations/{rid}",
                           headers=_h(role="ap_clerk"))
     assert ok.status_code == 200, "a reader must still be able to READ it"
+
+
+# ── the import endpoints ──────────────────────────────────────────────────────
+#
+# The parsers have their own tests and are measured against the real July files by
+# scripts/validate_bank_docs.py. What was untested is the HOP: multipart upload ->
+# crud -> database -> file retention -> response. That is the first thing anyone
+# touches, so it gets covered here with the parse stubbed — patching the
+# module-bound name the crud actually calls, not the definition site.
+
+from datetime import date as _date  # noqa: E402
+from decimal import Decimal as _D  # noqa: E402
+
+
+def _parsed_statement(verified=True, errors=None):
+    from app.services.bank_statement_parse import ParsedStatement, StatementLine
+    return ParsedStatement(
+        period_start=_date(2026, 6, 30), period_end=_date(2026, 7, 31),
+        opening_balance=_D("1000.00"), closing_balance=_D("968.36"),
+        lines=[StatementLine(seq=1, txn_date=_date(2026, 7, 2),
+                             description="Bill payment - 8642 ZETA PROP",
+                             amount=_D("-31.64"), running_balance=_D("968.36"))],
+        currency="CAD", account_no="02705 103-376-0",
+        printed_total_debits=_D("31.64"), printed_total_credits=_D("0"),
+        printed_debit_count=1, printed_credit_count=0,
+        parse_method="ai", parse_model="claude-haiku-4-5-20251001",
+        verified=verified, verify_errors=errors or [],
+        raw_payload={"stub": True})
+
+
+def _parsed_advice(tie_ok=True):
+    from app.services.bank_advice_parse import AdviceLine, ParsedAdvice
+    return ParsedAdvice(
+        kind="pds_batch", advice_date=_date(2026, 7, 2), currency="CAD",
+        lines=[AdviceLine(seq=1, payee_code="ALPHA", payee_name="Alpha Supply",
+                          currency="CAD", amount=_D("340.75"))],
+        client_number="9804420000", printed_total=_D("340.75"), printed_count=1,
+        tie_ok=tie_ok, tie_error=None if tie_ok else "lines sum to 340.75 but the file prints 999.00",
+    )
+
+
+async def test_uploading_a_statement_stores_it_and_its_lines(client, scene, monkeypatch):
+    from app.services import bank_statement_parse
+    monkeypatch.setattr(bank_statement_parse, "parse_statement",
+                        lambda data, filename="": _parsed_statement())
+    r = await client.post(
+        f"/finance/v1/bank-recon/{scene['account'].id}/statements",
+        files={"file": ("RBC.pdf", b"%PDF-1.4 stub", "application/pdf")}, headers=_h())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["verified"] is True and body["lines"] == 1 and body["imported"] == 1
+    # No file server in the test environment: retention fails, is REPORTED, and does
+    # not take the import down with it.
+    assert body["retention_warning"]
+
+    listed = (await client.get(f"/finance/v1/bank-recon/{scene['account'].id}/statements",
+                               headers=_h())).json()
+    assert len(listed) == 1
+    assert listed[0]["opening_balance"] == "1000.00"
+    assert listed[0]["has_document"] is False       # honest about what was kept
+
+
+async def test_an_unverified_statement_is_kept_with_its_reasons(client, scene, monkeypatch):
+    """Storing it is the point: the errors name the line to fix, and throwing the
+    parse away would leave a human with "it failed" and nothing to look at. The
+    reconciliation is what refuses to use it."""
+    from app.services import bank_statement_parse
+    monkeypatch.setattr(
+        bank_statement_parse, "parse_statement",
+        lambda data, filename="": _parsed_statement(
+            verified=False, errors=["Line 5 (BR TO BR): the statement shows 530858.97 here"]))
+    r = await client.post(
+        f"/finance/v1/bank-recon/{scene['account'].id}/statements",
+        files={"file": ("RBC.pdf", b"%PDF-1.4 stub", "application/pdf")}, headers=_h())
+    assert r.status_code == 200, r.text
+    assert r.json()["verified"] is False
+    assert "BR TO BR" in r.json()["verify_errors"][0]
+
+
+async def test_re_importing_a_period_supersedes_rather_than_duplicating(
+        client, scene, monkeypatch):
+    from app.services import bank_statement_parse
+    monkeypatch.setattr(bank_statement_parse, "parse_statement",
+                        lambda data, filename="": _parsed_statement())
+    url = f"/finance/v1/bank-recon/{scene['account'].id}/statements"
+    first = (await client.post(url, files={"file": ("a.pdf", b"%PDF-1", "application/pdf")},
+                               headers=_h())).json()
+    second = (await client.post(url, files={"file": ("b.pdf", b"%PDF-2", "application/pdf")},
+                                headers=_h())).json()
+    assert second["superseded"] == first["statement_id"]
+    # the line is re-pointed, not duplicated — so matches made against it survive
+    assert second["imported"] == 0 and second["reused"] == 1
+    live = [s for s in (await client.get(url, headers=_h())).json()
+            if s["status"] == "imported"]
+    assert len(live) == 1
+
+
+async def test_an_unreadable_statement_is_a_422_not_a_500(client, scene, monkeypatch):
+    from app.services import bank_statement_parse
+    from app.services.bank_statement_parse import StatementUnparseable
+
+    def boom(data, filename=""):
+        raise StatementUnparseable("Could not read this statement PDF.")
+    monkeypatch.setattr(bank_statement_parse, "parse_statement", boom)
+    r = await client.post(
+        f"/finance/v1/bank-recon/{scene['account'].id}/statements",
+        files={"file": ("x.pdf", b"not a pdf", "application/pdf")}, headers=_h())
+    assert r.status_code == 422
+    assert "Could not read" in r.json()["detail"]
+
+
+async def test_an_ai_outage_is_a_503_and_says_it_is_not_your_file(client, scene, monkeypatch):
+    """The distinction that mattered in 2026-09: an account-level limit told a
+    clerk their document was unreadable when nothing was wrong with it."""
+    from app.services import bank_statement_parse
+
+    def limit(data, filename=""):
+        raise RuntimeError("Statement reading is temporarily unavailable — the AI "
+                           "service account has reached a usage or billing limit. "
+                           "This is NOT a problem with your file.")
+    monkeypatch.setattr(bank_statement_parse, "parse_statement", limit)
+    r = await client.post(
+        f"/finance/v1/bank-recon/{scene['account'].id}/statements",
+        files={"file": ("x.pdf", b"%PDF", "application/pdf")}, headers=_h())
+    assert r.status_code == 503
+    assert "NOT a problem with your file" in r.json()["detail"]
+
+
+async def test_uploading_many_payment_files_at_once(client, scene, monkeypatch):
+    """A month is ~20 files. One at a time is how they end up not uploaded."""
+    from app.services import bank_advice_parse
+    monkeypatch.setattr(bank_advice_parse, "parse_advice",
+                        lambda data: _parsed_advice())
+    r = await client.post(
+        f"/finance/v1/bank-recon/{scene['account'].id}/advices",
+        files=[("files", ("7.2.pdf", b"%PDF-A", "application/pdf")),
+               ("files", ("7.6.pdf", b"%PDF-B", "application/pdf"))], headers=_h())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["imported"] == 2 and body["failed"] == 0
+
+
+async def test_the_same_payment_file_twice_is_one_advice(client, scene, monkeypatch):
+    from app.services import bank_advice_parse
+    monkeypatch.setattr(bank_advice_parse, "parse_advice", lambda data: _parsed_advice())
+    url = f"/finance/v1/bank-recon/{scene['account'].id}/advices"
+    await client.post(url, files=[("files", ("7.2.pdf", b"%PDF-SAME", "application/pdf"))],
+                      headers=_h())
+    again = (await client.post(
+        url, files=[("files", ("7.2-renamed.pdf", b"%PDF-SAME", "application/pdf"))],
+        headers=_h())).json()
+    assert again["duplicates"] == 1 and again["imported"] == 0
+
+
+async def test_a_payment_file_that_does_not_tie_is_flagged_not_silently_used(
+        client, scene, monkeypatch):
+    from app.services import bank_advice_parse
+    monkeypatch.setattr(bank_advice_parse, "parse_advice",
+                        lambda data: _parsed_advice(tie_ok=False))
+    r = await client.post(
+        f"/finance/v1/bank-recon/{scene['account'].id}/advices",
+        files=[("files", ("bad.pdf", b"%PDF", "application/pdf"))], headers=_h())
+    body = r.json()
+    assert len(body["not_tied"]) == 1
+    assert "prints" in body["not_tied"][0]["tie_error"]
+
+
+async def test_one_bad_file_does_not_lose_the_rest_of_the_batch(client, scene, monkeypatch):
+    from app.services import bank_advice_parse
+    from app.services.bank_advice_parse import AdviceUnparseable
+    seen = {"n": 0}
+
+    def sometimes(data):
+        seen["n"] += 1
+        if seen["n"] == 1:
+            raise AdviceUnparseable("This does not look like a bank payment file.")
+        return _parsed_advice()
+    monkeypatch.setattr(bank_advice_parse, "parse_advice", sometimes)
+    r = await client.post(
+        f"/finance/v1/bank-recon/{scene['account'].id}/advices",
+        files=[("files", ("junk.pdf", b"%PDF-1", "application/pdf")),
+               ("files", ("good.pdf", b"%PDF-2", "application/pdf"))], headers=_h())
+    body = r.json()
+    assert body["failed"] == 1 and body["imported"] == 1
+    bad = next(x for x in body["results"] if x.get("error"))
+    assert bad["filename"] == "junk.pdf"
+
+
+async def test_an_empty_upload_is_refused(client, scene):
+    r = await client.post(
+        f"/finance/v1/bank-recon/{scene['account'].id}/statements",
+        files={"file": ("empty.pdf", b"", "application/pdf")}, headers=_h())
+    assert r.status_code == 422
+
+
+async def test_a_reader_cannot_import(client, scene):
+    r = await client.post(
+        f"/finance/v1/bank-recon/{scene['account'].id}/statements",
+        files={"file": ("x.pdf", b"%PDF", "application/pdf")}, headers=_h(role="ap_clerk"))
+    assert r.status_code == 403
