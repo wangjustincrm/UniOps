@@ -18,7 +18,12 @@ import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+// w-full + min-w-0 on the labels below: the NC bank-account picker's options are
+// full Chinese bank branch names, and a grid item's default `min-width: auto`
+// refuses to shrink below its content's min-content width — so that one select
+// widened the whole column and every field in the dialog overflowed the
+// max-w-md panel. Invisible until a full NC sync put real rows in the picker.
+const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
 
@@ -212,48 +217,48 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
           <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700"><X className="h-5 w-5" /></button>
         </div>
         <div className="grid gap-3">
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-neutral-600">Type</span>
             <select value={f.kind ?? 'bank'} onChange={(e) => set({ kind: e.target.value })} className={inputCls}>
               <option value="bank">Bank Account</option>
               <option value="credit_card">Credit Card</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-neutral-600">{isCard ? 'Card name' : 'Account name'}</span>
             <input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })}
                    placeholder={isCard ? 'e.g. Amex Corporate' : 'e.g. RBC Operating'} className={inputCls} />
           </label>
           <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-sm">
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-neutral-600">{isCard ? 'Card issuer' : 'Bank'}</span>
               <input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })}
                      placeholder={isCard ? 'Visa / MC / Amex' : 'Royal Bank of Canada'} className={inputCls} />
             </label>
-            <label className="flex flex-col gap-1 text-sm">
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-neutral-600">{isCard ? 'Card last 4' : 'Account last 4'}</span>
               <input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
             </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-sm">
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-neutral-600">Currency</span>
               <select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
                 {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-sm">
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-neutral-600">GL account code</span>
               <input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
                      placeholder={isCard ? '2050 (liability)' : '1010 (cash)'} className={cn(inputCls, 'font-mono')} />
             </label>
           </div>
           {!isCard && (
-            <label className="flex flex-col gap-1 text-sm">
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-neutral-600">NC bank account</span>
               <select value={f.nc_bank_account_code ?? ''}
                       onChange={(e) => set({ nc_bank_account_code: e.target.value || null })}
-                      className={inputCls}>
+                      className={cn(inputCls, 'truncate')}>
                 <option value="">— not linked —</option>
                 {ncAccounts.map((n) => (
                   <option key={n.code} value={n.code}>{n.label} · {n.currency}</option>
