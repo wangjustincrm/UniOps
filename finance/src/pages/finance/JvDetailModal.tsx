@@ -15,6 +15,17 @@ const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
 const dangerBtn = 'flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50'
 
+// NC's auxiliary names, keyed by the dim_code the sync writes. An unlisted code
+// shows raw rather than being guessed at.
+const DIM_LABELS: Record<string, string> = {
+  department: 'Department', cost_center: 'Cost Center',
+  income_expense_item: 'Income/Expense Item', supplier: 'Supplier',
+  customer: 'Customer', partner: 'Partner', bank_account: 'Bank Account',
+  item: 'Item', item_category: 'Item Category', project: 'Project',
+  employee: 'Employee',
+}
+function dimLabel(code: string) { return DIM_LABELS[code] ?? code }
+
 function money(v: string | null | undefined) {
   const n = Number(v ?? 0)
   return n ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
@@ -33,6 +44,14 @@ export interface JvHeader {
   posted_by_name?: string | null; posted_at?: string | null
   nc_source_pk?: string | null
   source_subsystem?: string | null; source_subsystem_label?: string | null
+  // NC header facts. Names, not ids: NC's SM_USER accounts are not UniOps users,
+  // so there is nothing to link to — the point is to show what NC shows.
+  nc_num?: number | null
+  nc_prepared_name?: string | null; nc_checked_name?: string | null
+  nc_manager_name?: string | null; nc_voucher_type_name?: string | null
+  nc_attachment_count?: number | null
+  nc_voucher_state?: string | null
+  nc_voucher_kind?: number | null; nc_voucher_kind_label?: string | null
 }
 interface JvLine {
   line_no: number; account_code: string | null; account_name: string | null
@@ -132,9 +151,36 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
                 <span className="font-medium text-neutral-600">Source:</span>{' '}
                 {v.source_doc_type ? `${v.source_doc_type} · ${v.source_doc_number ?? v.source_doc_id}` : (v.nc_source_pk ? `NC65 import · ${v.nc_source_pk}` : '—')}
               </div>
-              <Stamp label="Prepared" name={v.prepared_by_name} at={v.prepared_at} />
-              <Stamp label="Reviewed" name={v.reviewed_by_name} at={v.reviewed_at} />
-              <Stamp label="Posted" name={v.posted_by_name} at={v.posted_at} />
+              {/* NC-sourced vouchers have NO UniOps lifecycle stamps — their
+                  status mirrors NC's tally and the crud verbs reject any
+                  hand-change — so showing three empty ones was all this said
+                  about 40k+ vouchers. Show NC's own 制单/审核/记账 instead. */}
+              {v.nc_source_pk ? (
+                <>
+                  <Stamp label="Prepared (NC)" name={v.nc_prepared_name} />
+                  <Stamp label="Checked (NC)" name={v.nc_checked_name} />
+                  <Stamp label="Posted (NC)" name={v.nc_manager_name} />
+                </>
+              ) : (
+                <>
+                  <Stamp label="Prepared" name={v.prepared_by_name} at={v.prepared_at} />
+                  <Stamp label="Reviewed" name={v.reviewed_by_name} at={v.reviewed_at} />
+                  <Stamp label="Posted" name={v.posted_by_name} at={v.posted_at} />
+                </>
+              )}
+              {(v.nc_voucher_type_name || v.nc_voucher_kind_label
+                || (v.nc_voucher_state && v.nc_voucher_state !== 'normal')) && (
+                <div className="text-xs text-neutral-500 md:col-span-3">
+                  <span className="font-medium text-neutral-600">NC:</span>{' '}
+                  {[v.nc_voucher_type_name,
+                    v.nc_num != null ? `No. ${v.nc_num}` : null,
+                    v.nc_voucher_kind_label,
+                    v.nc_voucher_state && v.nc_voucher_state !== 'normal'
+                      ? v.nc_voucher_state.toUpperCase() : null,
+                    v.nc_attachment_count ? `${v.nc_attachment_count} attachment(s)` : null,
+                  ].filter(Boolean).join(' · ')}
+                </div>
+              )}
             </div>
 
             {err && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
@@ -167,7 +213,13 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
                           {l.department_code && <Dim label={`Dept ${l.department_code}`} title={l.department_name} />}
                           {l.partner_name && <Dim label={l.partner_name} />}
                           {l.tax_code && <Dim label={`Tax ${l.tax_code}`} />}
-                          {l.dims.map((d, j) => <Dim key={j} label={`${d.dim_code}: ${d.value_text ?? ''}`} />)}
+                          {/* Reads like NC's own Aux. Acctg cell
+                              (【物料基本信息：CR0017】). Every auxiliary lands here
+                              now — before 0038 only 收支项目 did, so a line whose
+                              only dimension was 物料 showed nothing at all. */}
+                          {l.dims.map((d, j) => (
+                            <Dim key={j} label={`${dimLabel(d.dim_code)}: ${d.value_text ?? ''}`} />
+                          ))}
                           {l.currency !== 'CAD' && <Dim label={`${l.currency} @ ${l.fx_rate}`} />}
                           {l.quantity && <Dim label={`${l.quantity} ${l.unit ?? ''} @ ${l.price ?? ''}`} />}
                         </div>
