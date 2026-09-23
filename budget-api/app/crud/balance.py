@@ -87,6 +87,27 @@ async def get_balance(
         fiscal_year=fiscal_year,
     )
     if actual is None:
+        # ★ TO WHOEVER DELETES budget_ledger: this line is one of its consumers,
+        # and the only one that is not a display. The table was declared dead on
+        # 2026-09-20 (the purchase chain is never being wired to it); the
+        # consumers counted at the time — the Total Committed card, the export's
+        # actual(docs) row, lineage's operation mix — all merely show a number,
+        # so removing the table makes something go blank. This one decides
+        # whether a PR needs two more approvals, so removing it without a
+        # decision makes get_actual_spent() raise or return a constant 0, and
+        # the over-budget gate changes behaviour with nobody having touched it.
+        #
+        # Settle the outage semantics BEFORE removing the table, because this
+        # fallback is not the safe default it looks like: where a (cc, account)
+        # has no opening row the ledger is already 0, so available comes back as
+        # the whole annual budget and the gate silently passes everything. It is
+        # strict where an opening import happens to exist and absent where it
+        # does not. Kept anyway, for now, because the alternative on this side
+        # is worse: epms-api's budget_client fails open by design
+        # (crud/pr.py — `if data is None: return False, None`), so raising here
+        # lets the PR through AND hides the budget panel. Making the gate truly
+        # fail-closed is a change to epms-api and a product call about what an
+        # outage should do, not something to decide while deleting a table.
         actual = await get_actual_spent(db, cost_center_id, account_id, fiscal_year)
         logger.warning(
             "balance cc=%s account=%s fy=%s: finance-api unavailable, actual_spent "
