@@ -19,6 +19,8 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 import sqlalchemy
 from httpx import ASGITransport, AsyncClient
+
+from app.services import change_log
 from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -248,6 +250,11 @@ def make_token(user_id: uuid.UUID | str, role: str) -> str:
 
 
 def authed_client(token: str, session: AsyncSession | None = None) -> AsyncClient:
+    # The change-log listener is registered by the app's lifespan, and
+    # ASGITransport does not run one. Registering it here is what the running
+    # service does at startup; `install()` is idempotent, so the repetition
+    # across fixtures is harmless.
+    change_log.install()
     app = create_app()
     if session is not None:
         app.dependency_overrides[get_session] = make_session_override(session)

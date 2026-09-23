@@ -5,6 +5,7 @@ docker-compose healthcheck, Portal module card) treats Safety like any other
 UniOps microservice.
 """
 import logging
+import uuid
 import time
 from contextlib import asynccontextmanager
 
@@ -18,11 +19,19 @@ from app.core.config import settings
 from app.db.session import engine
 from app.tasks import scheduler
 
+from app.core import actor
+from app.core.security import decode_token
+from app.services import change_log
+
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
+    # Registered before anything writes. Every field change on every form in
+    # this module is recorded from here rather than from each write path —
+    # see app/services/change_log.py for why.
+    change_log.install()
     logger.info(
         "Starting up %s v%s [%s]",
         settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT,
@@ -86,6 +95,35 @@ def create_app() -> FastAPI:
                     request.method, request.url.path, status_code, duration_ms,
                 )
 
+    class _ActorMiddleware:
+        """Put the caller in a context variable for the change log.
+
+        Best effort and deliberately no gate: a bad token is somebody else's
+        401 further down, and refusing here would turn an auth decision into
+        two places to keep in step. A change made with no readable token is
+        still recorded, with the actor blank.
+        """
+
+        def __init__(self, app: ASGIApp) -> None:
+            self.app = app
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+            actor.set_actor(None, None)
+            header = Request(scope).headers.get("authorization", "")
+            if header.lower().startswith("bearer "):
+                try:
+                    payload = decode_token(header.split(" ", 1)[1])
+                    raw = payload.get("sub") or payload.get("user_id")
+                    actor.set_actor(uuid.UUID(str(raw)) if raw else None,
+                                    payload.get("full_name") or payload.get("name"))
+                except Exception:      # noqa: BLE001 — see the docstring
+                    pass
+            await self.app(scope, receive, send)
+
+    app.add_middleware(_ActorMiddleware)
     app.add_middleware(_LoggingMiddleware)
 
     @app.exception_handler(Exception)
