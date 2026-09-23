@@ -1,4 +1,67 @@
 /**
+ * Recording who a recommendation was put in front of.
+ *
+ * ★ Sending does not start or move the twenty-one day clock — that runs from
+ * when the recommendation was made. If it moved, not sending would extend a
+ * statutory deadline indefinitely.
+ */
+function SendForm({ recId, onDone, onCancel }: {
+  recId: string; onDone: () => void; onCancel: () => void
+}) {
+  const [chosen, setChosen] = useState<string[]>([])
+  const [search, setSearch] = useState('')
+  const people = useQuery({
+    queryKey: ['toolbox-supervisors', true],
+    queryFn: () => api.get<{ id: string; full_name: string; role: string }[]>(
+      '/api/v1/toolbox-talks/supervisors?everyone=true'),
+  })
+  const send = useMutation({
+    mutationFn: () => api.post(`/api/v1/jhsc/recommendations/${recId}/send`,
+                               { user_ids: chosen }),
+    onSuccess: onDone,
+  })
+
+  const loaded = people.data ?? []
+  const shown = search.trim()
+    ? loaded.filter((p) => chosen.includes(p.id)
+        || p.full_name.toLowerCase().includes(search.trim().toLowerCase()))
+    : loaded.slice(0, 12)
+
+  return (
+    <div className="mt-2 rounded-lg border border-neutral-200 p-2.5">
+      <p className="mb-1.5 text-xs font-medium text-neutral-700">
+        Who is this being put in front of?
+      </p>
+      <input className={`${inputClass} mb-1.5`} value={search}
+             onChange={(e) => setSearch(e.target.value)}
+             placeholder="Search by name" aria-label="Search people" />
+      <ul className="mb-2 flex max-h-40 flex-col gap-0.5 overflow-y-auto">
+        {shown.map((p) => (
+          <li key={p.id}>
+            <label className="flex min-h-[32px] items-center gap-2 text-sm text-neutral-800">
+              <input type="checkbox" checked={chosen.includes(p.id)}
+                     onChange={(e) => setChosen(e.target.checked
+                       ? [...chosen, p.id]
+                       : chosen.filter((x) => x !== p.id))} />
+              {p.full_name}
+            </label>
+          </li>
+        ))}
+      </ul>
+      <ErrorNote error={send.error} />
+      <div className="flex justify-end gap-2">
+        <button type="button" className={secondaryButton} onClick={onCancel}>Cancel</button>
+        <button type="button" className={primaryButton}
+                disabled={chosen.length === 0 || send.isPending}
+                onClick={() => { if (!send.isPending) send.mutate() }}>
+          {send.isPending ? 'Sending…' : 'Send it'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
  * One committee meeting: who came, what was recommended, and the minutes.
  *
  * Attendance is a pre-seeded list of the current committee rather than an empty
@@ -213,6 +276,9 @@ function RecommendationList({
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState('')
   const [replyTo, setReplyTo] = useState<string | null>(null)
+  // Who it was put in front of. Without it the committee could see that
+  // nobody had answered and not who had failed to.
+  const [sendingTo, setSendingTo] = useState<string | null>(null)
 
   const create = useMutation({
     mutationFn: () => api.post(`/api/v1/jhsc/meetings/${meetingId}/recommendations`,
@@ -238,6 +304,24 @@ function RecommendationList({
                 <span className="min-w-0 flex-1 text-sm text-neutral-900">{r.recommendation}</span>
                 <ReplyBadge rec={r} />
               </div>
+              {r.sent_at ? (
+                <p className="mt-1.5 text-xs text-neutral-500">
+                  Sent to {r.sent_to.map((p) => p.name).join(', ') || 'nobody recorded'}
+                  {' '}on {formatDate(r.sent_at)}
+                  {r.sent_by_name && ` by ${r.sent_by_name}`}
+                </p>
+              ) : mayManage && (
+                sendingTo === r.id
+                  ? <SendForm recId={r.id} onDone={() => { setSendingTo(null); onChanged() }}
+                              onCancel={() => setSendingTo(null)} />
+                  : (
+                    <button type="button" onClick={() => setSendingTo(r.id)}
+                            className="mt-1.5 text-xs font-semibold text-neutral-500 hover:text-neutral-900 hover:underline">
+                      Record who this was sent to
+                    </button>
+                  )
+              )}
+
               {r.response ? (
                 <p className="mt-2 border-l-2 border-neutral-200 pl-2.5 text-sm text-neutral-700">
                   {r.response}

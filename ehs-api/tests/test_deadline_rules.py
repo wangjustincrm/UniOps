@@ -99,3 +99,49 @@ def test_nothing_starts_without_an_occurrence_time():
     assert clocks_for_incident(_incident(
         injury_class="lost_time", mol_reportable=True,
         occurred_at=None, employer_aware_at=None)) == []
+
+
+async def test_sending_a_recommendation_records_who_and_when_without_moving_the_clock(
+        hse_manager, worker):
+    """The committee could see that nobody had answered, not who had failed to.
+
+    And the clock must not move. OHSA s.9(20) runs twenty-one days from the
+    recommendation being made; if sending started it, not sending would extend
+    a statutory deadline indefinitely — an omission that looks like compliance
+    is the one outcome this module must never produce.
+    """
+    from datetime import date
+
+    from sqlalchemy import select
+
+    from app.models.statutory import StatutoryDeadline
+
+    _, client = hse_manager
+    manager, _ = worker
+
+    meeting = (await client.post("/api/v1/jhsc/meetings", json={
+        "held_on": date.today().isoformat(), "title": "Monthly"})).json()
+    rec = (await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations",
+                             json={"recommendation": "Guard the case sealer infeed."})).json()
+    assert rec["sent_at"] is None and rec["sent_to"] == []
+
+    listed = (await client.get("/api/v1/deadlines")).json()
+    rows = listed if isinstance(listed, list) else listed.get("items", [])
+    before = [d for d in rows if d.get("source_id") == rec["id"]]
+    assert before, "the twenty-one day clock should already be running"
+    due_before = before[0]["due_at"]
+
+    sent = await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/send",
+                             json={"user_ids": [str(manager.id)]})
+    assert sent.status_code == 200, sent.text
+    body = sent.json()
+    assert body["sent_at"] is not None
+    assert [p["name"] for p in body["sent_to"]] == [manager.full_name]
+    assert body["sent_by_name"]
+
+    after = (await client.get("/api/v1/deadlines")).json()
+    rows = after if isinstance(after, list) else after.get("items", [])
+    due_after = [d for d in rows if d.get("source_id") == rec["id"]][0]["due_at"]
+    assert due_after == due_before, (
+        "sending must not move the statutory deadline — otherwise not sending "
+        "extends it forever")

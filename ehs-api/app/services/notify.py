@@ -306,6 +306,35 @@ async def jhsc_recommendation(db: AsyncSession, meeting, recommendation) -> None
     )
 
 
+async def jhsc_recommendation_sent(
+    db: AsyncSession, meeting, recommendation, people,
+) -> None:
+    """Named recipients, rather than whoever holds a role.
+
+    The role-based notice above goes out when the recommendation is raised.
+    This is the committee putting it in front of particular people and
+    recording that they did — which is what makes an unanswered recommendation
+    somebody's to answer rather than nobody's.
+    """
+    addressable = await mail.recipients(db, [p.id for p in people])
+    if not addressable:
+        return
+    await mail.queue(
+        db,
+        to=[u.email for u in addressable],
+        subject=f"JHSC recommendation {meeting.meeting_no} #{recommendation.seq} "
+                "— a written response is owed",
+        body=(f"{recommendation.recommendation}\n\n"
+              "OHSA s.9(20) requires a written response within twenty-one days "
+              "of the recommendation being made."),
+        doc_type=task_service.DOC_JHSC,
+        doc_id=meeting.id,
+        template_key="jhsc_recommendation_sent",
+        link=mail.module_link(f"/jhsc/meetings/{meeting.id}"),
+        link_label="Open the meeting",
+    )
+
+
 async def jhsc_minutes_published(db: AsyncSession, meeting, member_ids: list[uuid.UUID]) -> None:
     """HSE: minutes go to management and to every member."""
     people = await mail.recipients(

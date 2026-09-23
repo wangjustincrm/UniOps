@@ -311,3 +311,33 @@ async def respond(
             db, doc_type=DOC_JHSC, doc_id=rec.meeting_id,
             task_type=task_service.TASK_JHSC_REPLY, completed_by=user_id)
     return rec
+
+
+async def send_recommendation(
+    db: AsyncSession, rec: JhscRecommendation, *,
+    user_ids: list[uuid.UUID], sender_id: uuid.UUID,
+) -> JhscRecommendation:
+    """Record who the recommendation was put in front of, and tell them.
+
+    Names are stored alongside the ids so the record still reads after
+    somebody leaves and the user row is gone.
+
+    Sending again replaces the list rather than appending: a recommendation
+    redirected to the right manager should read as having gone to them, not as
+    having gone to both.
+    """
+    people = list((await db.execute(
+        select(User).where(User.id.in_(user_ids)))).scalars().all())
+    if not people:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "None of those people could be found")
+
+    meeting = await get_meeting(db, rec.meeting_id)
+    rec.sent_to = [{"id": str(p.id), "name": p.full_name} for p in people]
+    rec.sent_at = datetime.now(timezone.utc)
+    rec.sent_by = sender_id
+    rec.sent_by_name = await _name(db, sender_id)
+    await db.flush()
+
+    await notify.jhsc_recommendation_sent(db, meeting, rec, people)
+    return rec

@@ -43,6 +43,8 @@ export interface Recommendation {
   id: string; meeting_id: string; seq: number; recommendation: string
   raised_by_name: string | null; response: string | null; outcome: string | null
   responded_at: string | null; responded_by_name: string | null
+  sent_at: string | null; sent_by_name: string | null
+  sent_to: { id: string; name: string }[]
   action_id: string | null; created_at: string
 }
 

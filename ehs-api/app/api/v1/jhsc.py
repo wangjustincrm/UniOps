@@ -221,6 +221,11 @@ class RecommendationOut(BaseModel):
     raised_by_name: str | None
     response: str | None
     outcome: str | None
+    # Who it was put in front of, and when. Without it the committee could see
+    # that nobody had answered and not who had failed to.
+    sent_at: datetime | None
+    sent_by_name: str | None
+    sent_to: list
     responded_at: datetime | None
     responded_by_name: str | None
     action_id: uuid.UUID | None
@@ -246,6 +251,30 @@ async def add_recommendation(
     meeting = await crud.get_meeting(db, meeting_id)
     return await crud.add_recommendation(
         db, meeting, text=payload.recommendation, raised_by_name=payload.raised_by_name)
+
+
+class SendRecommendationIn(BaseModel):
+    """Who the recommendation is being put in front of."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+@router.post("/recommendations/{rec_id}/send", response_model=RecommendationOut)
+async def send_recommendation(
+    rec_id: uuid.UUID, payload: SendRecommendationIn, db: SessionDep, user: CanManageJhsc,
+):
+    """Record who it went to, and tell them.
+
+    ★ This does not start the twenty-one day clock. That runs from when the
+    recommendation was recorded — if sending started it, not sending would
+    extend a statutory deadline indefinitely, which is the one thing this
+    module must never make possible.
+    """
+    rec = await crud.get_recommendation(db, rec_id)
+    return await crud.send_recommendation(
+        db, rec, user_ids=payload.user_ids, sender_id=_user_id(user))
 
 
 @router.post("/recommendations/{rec_id}/respond", response_model=RecommendationOut)

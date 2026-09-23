@@ -18,7 +18,7 @@ from datetime import date, datetime
 from sqlalchemy import (
     Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -130,6 +130,21 @@ class JhscRecommendation(UUIDPrimaryKey, TimestampMixin, Base):
     seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     recommendation: Mapped[str] = mapped_column(Text, nullable=False)
     raised_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Who it was put in front of, and when. The committee could see that
+    # nobody had answered and not who had failed to.
+    #
+    # ★ This does not start the twenty-one day clock — that runs from when the
+    # recommendation is recorded. If sending started it, not sending would
+    # extend a statutory deadline indefinitely.
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    sent_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # [{id, name}] — names as well as ids, so the record stays readable after
+    # somebody leaves.
+    sent_to: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]")
 
     response: Mapped[str | None] = mapped_column(Text, nullable=True)
     responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
