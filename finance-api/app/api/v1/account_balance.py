@@ -405,8 +405,42 @@ async def nc_actual_for_budget_check(
 
     The exposure this adds is one aggregate for a (cc, account) the caller
     already names — the same call chain's `/balance` hands back that pair's
-    annual_budget and committed with no scoping at all. Voucher-level reads
-    (`/nc-partner-vouchers` and friends) keep their `_cc_scope` clamp.
+    annual_budget and committed with no scoping at all, and budget-api is
+    published on its own public hostname exactly as this service is.
+    Voucher-level reads (`/nc-partner-vouchers` and friends) keep their clamp.
+
+    ★★ READ THIS BEFORE GATING THIS ROUTER (`fix/finance-authz-and-ap-status`)
+
+    That branch puts a `FinanceRead` dependency on 43 reads here, and leaves
+    four `/gl/nc-*` routes open on a stated ground: "these already clamp rows
+    to the caller's department via _cc_scope". **That ground does not hold for
+    this endpoint** — it is deliberately unclamped (above) — so it cannot be
+    waved through on the same sentence, and neither of the two obvious moves
+    is right on its own:
+
+      * Gate it with `FinanceRead` and an ordinary requester raising a PR gets
+        403 here. budget-api treats that as "unknown" and falls back to the
+        ledger, which is the very opening-balance bug this endpoint exists to
+        fix — restored silently, for everyone without a finance role.
+      * Leave it off the list and it is ungated AND unclamped: strictly wider
+        than the four routes that list does name.
+
+    The resolution this wants is the service token that branch already records
+    as owed ("These still need a service token — tracked, not fixed here", on
+    POST /ap/invoices): budget-api should call this with a service identity
+    instead of forwarding the end user's token, and then it can be closed to
+    end users entirely. Until that exists, a caller-agnostic answer and an open
+    door are the same decision, and the over-budget gate is what depends on it.
+    A new permission key is NOT a cheap substitute: it needs an identity
+    migration, and production runs only migrate-prod.sh, so the key would not
+    exist there and every caller would 403.
+
+    Also load-bearing, and easy to lose: the CRUD below counts only
+    `JournalVoucher.status == POSTED`. Voided / draft / errored NC vouchers are
+    imported and marked now rather than dropped at sync, and they are held at
+    `draft` — so they stay out of this figure because of that filter and for no
+    other reason. Any future rewrite that reaches the lines without it starts
+    charging cancelled vouchers against people's budgets.
     """
     # Same CRUD the dashboard's NC line runs, so the two can never drift: one
     # definition of "NC posted actual", asked here for a single account.
