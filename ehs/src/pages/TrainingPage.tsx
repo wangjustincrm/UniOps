@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CalendarDays, Plus, Upload, X, Paperclip } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, apiBlob } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
@@ -34,6 +34,7 @@ interface Session {
 interface Record_ {
   id: string; user_name: string; course_label: string; completed_on: string
   expires_on: string | null; delivery: string; recorded_by_name: string | null
+  certificate_file_id: string | null
 }
 
 const TABS = [
@@ -310,9 +311,25 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
   // parameter is cleared as it is consumed so that closing the form and
   // reopening the tab does not put it back.
   const [adding, setAdding] = useState(Boolean(openForCourse && mayWrite))
+  // "Who has done this course", "what has this person done" and "what happened
+  // in March" are three questions of the same list, and it answered none of
+  // them on screen.
+  const [search, setSearch] = useState('')
+  const [order, setOrder] = useState<'date' | 'person' | 'topic'>('date')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+
+  const query = [
+    search.trim() ? `search=${encodeURIComponent(search.trim())}` : '',
+    order !== 'date' ? `order=${order}` : '',
+    from ? `completed_from=${from}` : '',
+    to ? `completed_to=${to}` : '',
+  ].filter(Boolean).join('&')
+
   const records = useQuery({
-    queryKey: ['training-records'],
-    queryFn: () => api.get<Record_[]>('/api/v1/training/records'),
+    queryKey: ['training-records', search.trim(), order, from, to],
+    queryFn: () => api.get<Record_[]>(
+      `/api/v1/training/records${query ? `?${query}` : ''}`),
   })
 
   return (
@@ -332,6 +349,32 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
           onClose={() => { setAdding(false); onConsumed?.() }}
         />
       )}
+
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <input
+          className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 text-sm"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by person or course"
+          aria-label="Search training records"
+        />
+        <select className="h-10 rounded-lg border border-neutral-200 px-2 text-sm"
+                value={order} onChange={(e) => setOrder(e.target.value as typeof order)}
+                aria-label="Group the records by">
+          <option value="date">Newest first</option>
+          <option value="person">By person</option>
+          <option value="topic">By course</option>
+        </select>
+        <span className="flex items-center gap-1.5">
+          <input type="date" className="h-10 rounded-lg border border-neutral-200 px-2 text-sm"
+                 value={from} onChange={(e) => setFrom(e.target.value)}
+                 aria-label="Completed on or after" />
+          <span className="text-xs text-neutral-400">to</span>
+          <input type="date" className="h-10 rounded-lg border border-neutral-200 px-2 text-sm"
+                 value={to} onChange={(e) => setTo(e.target.value)}
+                 aria-label="Completed on or before" />
+        </span>
+      </div>
 
       {records.data?.length === 0 && !adding ? (
         <Empty>
@@ -357,6 +400,7 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
                   {r.expires_on ? ` · expires ${formatDate(r.expires_on)}` : ' · does not expire'}
                   {r.recorded_by_name && ` · entered by ${r.recorded_by_name}`}
                 </p>
+                <Certificate record={r} mayWrite={mayWrite} />
               </Card>
             </li>
           ))}
@@ -563,22 +607,56 @@ function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
   )
 }
 
-function CourseMaterial({ course, mayWrite }: { course: Course; mayWrite: boolean }) {
+/**
+ * The ticket from a course taken outside.
+ *
+ * The record has carried a column for it since it was built and the endpoint
+ * accepted a file id at create time — which meant a caller had to already know
+ * one, and there was no way to produce one. So the certificate, which is the
+ * thing a record of external training exists to hold, could not be attached at
+ * all. Anybody can see it; only training staff can put it there.
+ */
+function Certificate({ record, mayWrite }: { record: Record_; mayWrite: boolean }) {
   const queryClient = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
+  const [opening, setOpening] = useState(false)
+
+  const open = async () => {
+    if (opening) return
+    setOpening(true)
+    try {
+      const blob = await apiBlob(`/api/v1/training/records/${record.id}/certificate`)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } finally {
+      setOpening(false)
+    }
+  }
   const upload = useMutation({
     mutationFn: (file: File) => {
       const body = new FormData()
       body.append('file', file)
-      return api.upload(`/api/v1/training/courses/${course.id}/material`, body)
+      return api.upload(`/api/v1/training/records/${record.id}/certificate`, body)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['training-courses'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['training-records'] }),
   })
-  if (!mayWrite && !course.material_filename) return null
+
+  if (!record.certificate_file_id && !mayWrite) return null
+
   return (
-    <span className="flex items-center gap-1.5 text-xs text-neutral-600">
-      <Paperclip className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
-      {course.material_filename ?? 'No material'}
+    <p className="mt-1 flex items-center gap-1.5 text-xs">
+      <Paperclip className="h-3.5 w-3.5 shrink-0 text-neutral-400" aria-hidden />
+      {record.certificate_file_id ? (
+        // Fetched with the session token and handed to the browser as a blob.
+        // A plain link cannot carry the header and would come back a 401.
+        <button type="button" disabled={opening} onClick={open}
+                className="font-medium text-primary-700 hover:underline disabled:opacity-40">
+          {opening ? 'Opening…' : 'Certificate'}
+        </button>
+      ) : (
+        <span className="text-neutral-500">No certificate on file</span>
+      )}
       {mayWrite && (
         <>
           <input ref={inputRef} type="file" className="hidden"
@@ -590,8 +668,87 @@ function CourseMaterial({ course, mayWrite }: { course: Course; mayWrite: boolea
                  }} />
           <button type="button" disabled={upload.isPending}
                   onClick={() => inputRef.current?.click()}
-                  className="rounded-md px-1.5 font-medium text-primary-700 disabled:opacity-40">
-            {upload.isPending ? '…' : course.material_filename ? 'Replace' : 'Attach'}
+                  className="font-medium text-primary-700 disabled:opacity-40">
+            {upload.isPending ? 'Uploading…'
+              : record.certificate_file_id ? 'Replace' : 'Attach'}
+          </button>
+        </>
+      )}
+    </p>
+  )
+}
+
+interface Material {
+  id: string; filename: string; content_type: string; file_size: number
+  uploaded_by_name: string | null; created_at: string
+}
+
+/**
+ * Everything attached to a course.
+ *
+ * It held one file, and uploading a second replaced the first with nothing on
+ * screen saying so. A course is rarely one file — the deck, the handout, the
+ * sign-off sheet, last year's revision — which is what the second acceptance
+ * round asked for.
+ */
+function CourseMaterial({ course, mayWrite }: { course: Course; mayWrite: boolean }) {
+  const queryClient = useQueryClient()
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const materials = useQuery({
+    queryKey: ['course-materials', course.id],
+    queryFn: () => api.get<Material[]>(`/api/v1/training/courses/${course.id}/materials`),
+  })
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: ['course-materials', course.id] })
+
+  const upload = useMutation({
+    mutationFn: (file: File) => {
+      const body = new FormData()
+      body.append('file', file)
+      return api.upload(`/api/v1/training/courses/${course.id}/materials`, body)
+    },
+    onSuccess: refresh,
+  })
+  const remove = useMutation({
+    mutationFn: (materialId: string) =>
+      api.del(`/api/v1/training/courses/${course.id}/materials/${materialId}`),
+    onSuccess: refresh,
+  })
+
+  const files = materials.data ?? []
+  if (!mayWrite && files.length === 0) return null
+
+  return (
+    <span className="flex flex-col gap-0.5 text-xs text-neutral-600">
+      {files.length === 0 && <span className="text-neutral-500">No material</span>}
+      {files.map((m) => (
+        <span key={m.id} className="flex items-center gap-1.5">
+          <Paperclip className="h-3.5 w-3.5 shrink-0 text-neutral-400" aria-hidden />
+          <span className="min-w-0 truncate">{m.filename}</span>
+          {mayWrite && (
+            <button type="button" aria-label={`Remove ${m.filename}`}
+                    disabled={remove.isPending}
+                    onClick={() => { if (!remove.isPending) remove.mutate(m.id) }}
+                    className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-50">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </span>
+      ))}
+      {mayWrite && (
+        <>
+          <input ref={inputRef} type="file" className="hidden"
+                 accept="application/pdf,image/png,image/jpeg,image/webp"
+                 onChange={(e) => {
+                   const file = e.target.files?.[0]
+                   if (file) upload.mutate(file)
+                   e.target.value = ''
+                 }} />
+          <button type="button" disabled={upload.isPending}
+                  onClick={() => inputRef.current?.click()}
+                  className="self-start rounded-md font-medium text-primary-700 disabled:opacity-40">
+            {upload.isPending ? 'Uploading…' : 'Attach a file'}
           </button>
         </>
       )}

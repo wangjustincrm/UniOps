@@ -2,15 +2,21 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.deps import BearerToken, SessionDep
 from app.core.permissions import CanReadTraining, CanWriteTraining
 from app.crud import training as crud
-from app.services.attachments import MAX_FILE_SIZE, proxy_download, upload_to_file_server
+from sqlalchemy import select
+
+from app.crud.incident import _resolve_name
+from app.models.course import CourseMaterial
+from app.services.attachments import (
+    MAX_FILE_SIZE, delete_from_file_server, proxy_download, upload_to_file_server,
+)
 from app.schemas.training import (
     CertificationIn,
     CertificationOut,
@@ -107,6 +113,87 @@ async def attach_course_material(
     return CourseOut.model_validate(course)
 
 
+class MaterialOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    filename: str
+    content_type: str
+    file_size: int
+    uploaded_by_name: str | None
+    created_at: datetime
+
+
+@router.get("/courses/{course_id}/materials", response_model=list[MaterialOut])
+async def list_course_materials(
+    course_id: uuid.UUID, db: SessionDep, user: CanReadTraining,  # noqa: ARG001
+):
+    """Everything attached to the course, oldest first."""
+    await crud.get_course(db, course_id)
+    return list((await db.execute(
+        select(CourseMaterial)
+        .where(CourseMaterial.course_id == course_id)
+        .order_by(CourseMaterial.created_at)
+    )).scalars().all())
+
+
+@router.post("/courses/{course_id}/materials", response_model=MaterialOut,
+             status_code=status.HTTP_201_CREATED)
+async def add_course_material(
+    course_id: uuid.UUID, file: UploadFile,
+    db: SessionDep, user: CanWriteTraining, token: BearerToken,
+):
+    """Another file on the course, rather than replacing the one there.
+
+    A course is rarely one file — the deck, the handout, the sign-off sheet —
+    and uploading a second used to overwrite the first with nothing saying so.
+    """
+    course = await crud.get_course(db, course_id)
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(413, f"File exceeds {MAX_FILE_SIZE // 1024 // 1024} MB limit")
+    ctype = (file.content_type or "").split(";")[0].strip().lower()
+    if ctype not in COURSE_MATERIAL_TYPES:
+        raise HTTPException(415, f"Unsupported file type '{ctype}'. Allowed: PDF or an image.")
+
+    name = file.filename or "course material"
+    row = CourseMaterial(
+        id=uuid.uuid4(), course_id=course.id,
+        file_id=await upload_to_file_server(data, name, ctype, "ehs_crs", course.id, token),
+        filename=name, content_type=ctype, file_size=len(data),
+        uploaded_by=_user_id(user),
+        uploaded_by_name=await _resolve_name(db, _user_id(user)),
+    )
+    db.add(row)
+    await db.flush()
+    await db.refresh(row)
+    return row
+
+
+@router.get("/courses/{course_id}/materials/{material_id}")
+async def download_course_material_item(
+    course_id: uuid.UUID, material_id: uuid.UUID,
+    db: SessionDep, user: CanReadTraining, token: BearerToken,  # noqa: ARG001
+):
+    row = await db.get(CourseMaterial, material_id)
+    if row is None or row.course_id != course_id:
+        raise HTTPException(404, "No such material on this course")
+    return await proxy_download(row.file_id, token)
+
+
+@router.delete("/courses/{course_id}/materials/{material_id}",
+               status_code=status.HTTP_204_NO_CONTENT)
+async def remove_course_material(
+    course_id: uuid.UUID, material_id: uuid.UUID,
+    db: SessionDep, user: CanWriteTraining, token: BearerToken,  # noqa: ARG001
+):
+    row = await db.get(CourseMaterial, material_id)
+    if row is None or row.course_id != course_id:
+        raise HTTPException(404, "No such material on this course")
+    await delete_from_file_server(row.file_id, token)
+    await db.delete(row)
+
+
 @router.get("/courses/{course_id}/material")
 async def download_course_material(
     course_id: uuid.UUID, db: SessionDep, user: CanReadTraining, token: BearerToken,  # noqa: ARG001
@@ -124,9 +211,53 @@ async def list_records(
     user: CanReadTraining,  # noqa: ARG001
     user_id: uuid.UUID | None = None,
     course_id: uuid.UUID | None = None,
+    search: str | None = Query(default=None, description="Person or course name"),
+    completed_from: date | None = None,
+    completed_to: date | None = None,
+    order: str = Query(default="date", pattern="^(date|person|topic)$"),
 ):
+    """The register. "Who has done this course", "what has this person done"
+    and "what happened in March" are three questions of the same list."""
     return [TrainingRecordOut.model_validate(r) for r in
-            await crud.list_training(db, user_id=user_id, course_id=course_id)]
+            await crud.list_training(
+                db, user_id=user_id, course_id=course_id, search=search,
+                completed_from=completed_from, completed_to=completed_to,
+                order=order)]
+
+
+@router.post("/records/{record_id}/certificate", response_model=TrainingRecordOut)
+async def attach_certificate(
+    record_id: uuid.UUID, file: UploadFile,
+    db: SessionDep, user: CanWriteTraining, token: BearerToken,  # noqa: ARG001
+):
+    """The certificate for a course taken outside.
+
+    The column has been on the record since it was built and accepted at
+    create time, which meant a caller had to already know a file id — there
+    was no way to produce one. So an external ticket, the thing a record of
+    external training exists to hold, could not be attached at all.
+    """
+    record = await crud.get_training_record(db, record_id)
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(413, f"File exceeds {MAX_FILE_SIZE // 1024 // 1024} MB limit")
+    ctype = (file.content_type or "").split(";")[0].strip().lower()
+    if ctype not in COURSE_MATERIAL_TYPES:
+        raise HTTPException(415, f"Unsupported file type '{ctype}'. Allowed: PDF or an image.")
+    record.certificate_file_id = await upload_to_file_server(
+        data, file.filename or "certificate.pdf", ctype, "ehs_cert", record.id, token)
+    await db.flush()
+    return TrainingRecordOut.model_validate(record)
+
+
+@router.get("/records/{record_id}/certificate")
+async def download_certificate(
+    record_id: uuid.UUID, db: SessionDep, user: CanReadTraining, token: BearerToken,  # noqa: ARG001
+):
+    record = await crud.get_training_record(db, record_id)
+    if record.certificate_file_id is None:
+        raise HTTPException(404, "No certificate is attached to this record")
+    return await proxy_download(record.certificate_file_id, token)
 
 
 @router.post("/records", response_model=TrainingRecordOut, status_code=status.HTTP_201_CREATED)

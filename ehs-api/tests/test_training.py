@@ -412,3 +412,79 @@ async def test_taking_somebody_off_a_position_and_putting_them_back(hse_manager,
         "  FROM ehs_worker_positions WHERE user_id = :u AND position_id = :p"),
         {"u": person.id, "p": position["id"]})).one()
     assert rows == (1, 1), "one row, in force — not a second spell in the same job"
+
+
+async def test_a_course_can_hold_more_than_one_file(hse_manager):
+    """A course is rarely one file.
+
+    The deck, the handout, the sign-off sheet, last year's revision. It held
+    one, and uploading a second replaced the first with nothing on screen
+    saying so.
+    """
+    _, client = hse_manager
+    course = (await client.post("/api/v1/training/courses", json={
+        "code": "WAH", "name": "Working at Heights"})).json()
+
+    listed = await client.get(f"/api/v1/training/courses/{course['id']}/materials")
+    assert listed.status_code == 200, listed.text
+    assert listed.json() == []
+
+
+async def test_the_training_register_answers_more_than_one_question(hse_manager, worker):
+    """"Who has done this course", "what has this person done" and "what
+    happened in March" are three questions of the same list."""
+    from datetime import date, timedelta
+
+    _, client = hse_manager
+    person, _ = worker
+    course = (await client.post("/api/v1/training/courses", json={
+        "code": "WHMIS2", "name": "WHMIS Refresher"})).json()
+    old_day = date.today() - timedelta(days=400)
+
+    for when in (old_day, date.today()):
+        created = await client.post("/api/v1/training/records", json={
+            "user_id": str(person.id), "course_id": course["id"],
+            "completed_on": when.isoformat(), "delivery": "external",
+        })
+        assert created.status_code in (200, 201), created.text
+
+    everything = (await client.get("/api/v1/training/records")).json()
+    assert len(everything) >= 2
+
+    # By name — the way it gets asked standing in front of somebody.
+    found = (await client.get("/api/v1/training/records?search=WHMIS Refresher")).json()
+    assert found and all("WHMIS" in r["course_label"] for r in found), found
+
+    # And by when, which is what a date range is for.
+    recent = (await client.get(
+        f"/api/v1/training/records?completed_from={date.today().isoformat()}")).json()
+    assert all(r["completed_on"] >= date.today().isoformat() for r in recent)
+    assert len(recent) < len(everything), (
+        "a range that excludes the older record must return fewer rows — "
+        "otherwise the filter is not applied and this test proves nothing")
+
+
+async def test_a_certificate_from_outside_can_be_attached(hse_manager, worker):
+    """The column was there and no endpoint could fill it.
+
+    A record of external training exists to hold the ticket, and the ticket
+    could not be attached: creating a record accepted a file id, which meant
+    the caller had to already know one, and nothing produced one.
+    """
+    from datetime import date
+
+    _, client = hse_manager
+    person, _ = worker
+    course = (await client.post("/api/v1/training/courses", json={
+        "code": "FORK", "name": "Forklift"})).json()
+    record = (await client.post("/api/v1/training/records", json={
+        "user_id": str(person.id), "course_id": course["id"],
+        "completed_on": date.today().isoformat(), "delivery": "external",
+    })).json()
+
+    assert "certificate_file_id" in record, (
+        "the screen decides whether to offer 'attach' or 'replace' from this")
+    assert record["certificate_file_id"] is None
+
+    missing = await client.get(f"/api/v1/training/records/{record['id']}/certificate")
+    assert missing.status_code == 404

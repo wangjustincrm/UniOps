@@ -21,7 +21,9 @@ issued. Re-marking someone who already passed does not issue a second one.
 import uuid
 from datetime import date, datetime, time
 
-from sqlalchemy import Date, DateTime, ForeignKey, String, Text, Time, UniqueConstraint
+from sqlalchemy import (
+    Date, DateTime, ForeignKey, Integer, String, Text, Time, UniqueConstraint, func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -107,3 +109,31 @@ class CourseEnrolment(UUIDPrimaryKey, TimestampMixin, Base):
     training_record_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ehs_training_records.id", ondelete="SET NULL"),
         nullable=True)
+
+
+class CourseMaterial(UUIDPrimaryKey, Base):
+    """One file attached to a course.
+
+    A course is rarely one file — the deck, the handout, the sign-off sheet,
+    last year's revision — and the single `material_file_id` on the course row
+    could only ever hold the last one uploaded. That column stays, backfilled
+    into this table as the first item, so nothing already attached was lost.
+    """
+
+    __tablename__ = "ehs_course_materials"
+
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_courses.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    uploaded_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )

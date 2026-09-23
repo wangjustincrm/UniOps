@@ -11,7 +11,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mirrors import Department, User
@@ -112,14 +112,48 @@ async def record_training(
 
 
 async def list_training(
-    db: AsyncSession, *, user_id: uuid.UUID | None = None, course_id: uuid.UUID | None = None
+    db: AsyncSession, *,
+    user_id: uuid.UUID | None = None,
+    course_id: uuid.UUID | None = None,
+    search: str | None = None,
+    completed_from: date | None = None,
+    completed_to: date | None = None,
+    order: str = "date",
 ) -> list[TrainingRecord]:
+    """The register, narrowed and ordered the way somebody is reading it.
+
+    "Who has done this course", "what has this person done", "what happened in
+    March" are three different questions asked of the same list, and the list
+    only ever answered the first two and only by exact id. A name typed into a
+    search box is how the third gets asked on the floor.
+    """
     stmt = select(TrainingRecord)
     if user_id:
         stmt = stmt.where(TrainingRecord.user_id == user_id)
     if course_id:
         stmt = stmt.where(TrainingRecord.course_id == course_id)
-    return list((await db.execute(stmt.order_by(TrainingRecord.completed_on.desc()))).scalars())
+    if search:
+        like = f"%{search.strip()}%"
+        stmt = stmt.where(or_(
+            TrainingRecord.user_name.ilike(like),
+            TrainingRecord.course_label.ilike(like),
+        ))
+    if completed_from:
+        stmt = stmt.where(TrainingRecord.completed_on >= completed_from)
+    if completed_to:
+        stmt = stmt.where(TrainingRecord.completed_on <= completed_to)
+
+    # Grouping on a list this size is ordering: the rows sit under the heading
+    # the reader is scanning for, without a second shape to build and test.
+    if order == "person":
+        stmt = stmt.order_by(TrainingRecord.user_name,
+                             TrainingRecord.completed_on.desc())
+    elif order == "topic":
+        stmt = stmt.order_by(TrainingRecord.course_label,
+                             TrainingRecord.completed_on.desc())
+    else:
+        stmt = stmt.order_by(TrainingRecord.completed_on.desc())
+    return list((await db.execute(stmt)).scalars())
 
 
 async def add_certification(
@@ -295,3 +329,12 @@ async def training_gaps(db: AsyncSession, *, today: date | None = None) -> GapRe
             key=lambda c: (-(c.missing + c.expired), c.course_name),
         ),
     )
+
+
+async def get_training_record(db: AsyncSession, record_id: uuid.UUID) -> TrainingRecord:
+    record = (await db.execute(
+        select(TrainingRecord).where(TrainingRecord.id == record_id)
+    )).scalar_one_or_none()
+    if record is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such training record")
+    return record
