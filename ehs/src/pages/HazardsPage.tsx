@@ -15,6 +15,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldAlert, Plus, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import { consequenceLabel, describedConsequenceTypes } from '@/lib/riskMatrix'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -99,6 +100,10 @@ export default function HazardsPage() {
     queryKey: ['hazard-summary'],
     queryFn: () => api.get<RatingCount[]>('/api/v1/hazards/summary'),
   })
+  const list = useListView(hazards.data, (h) => [
+    h.hazard_no, h.title, h.description, h.location_path, h.owner_name,
+    h.hazard_type_label, h.current_rating, h.status,
+  ])
 
   return (
     <div className="p-4">
@@ -137,6 +142,9 @@ export default function HazardsPage() {
         Include hazards that have been eliminated
       </label>
 
+      <SearchBox value={list.query} onChange={list.setQuery}
+                 placeholder="Search by number, what it is, area, owner or rating" />
+
       {hazards.data?.length === 0 && !creating ? (
         <Empty>
           Nothing on the register. A hazard recorded here is a standing fact
@@ -145,7 +153,7 @@ export default function HazardsPage() {
         </Empty>
       ) : (
         <ul className="flex flex-col gap-2">
-          {hazards.data?.map((h) => (
+          {list.pageRows.map((h) => (
             <li key={h.id}>
               <Card>
                 <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
@@ -217,6 +225,9 @@ export default function HazardsPage() {
           ))}
         </ul>
       )}
+
+      <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
+                  onPage={list.setPage} noun="hazards" />
 
       {assessing && (
         <AssessDialog hazard={assessing} onClose={() => setAssessing(null)} />

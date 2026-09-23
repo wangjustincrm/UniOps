@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Check, ClipboardList, Plus, QrCode, Trash2, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import { formatDate } from '@/lib/formatDate'
 import QrPanel from '@/components/QrPanel'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -65,6 +66,7 @@ export default function QuizPage() {
     queryKey: ['quizzes'],
     queryFn: () => api.get<Quiz[]>('/api/v1/quizzes'),
   })
+  const list = useListView(quizzes.data, (q) => [q.title, q.intro])
 
   return (
     <div className="p-4">
@@ -80,6 +82,12 @@ export default function QuizPage() {
 
       {creating && <NewQuizForm onClose={() => setCreating(false)} />}
 
+
+      <SearchBox value={list.query} onChange={list.setQuery}
+
+                 placeholder="Search by title" />
+
+
       {quizzes.data?.length === 0 && !creating ? (
         <Empty>
           None yet. A quiz is attached to a course, and passing it puts a record
@@ -87,7 +95,7 @@ export default function QuizPage() {
         </Empty>
       ) : (
         <ul className="flex flex-col gap-2">
-          {quizzes.data?.map((q) => (
+          {list.pageRows.map((q) => (
             <li key={q.id}>
               <Card>
                 <div className="flex flex-wrap items-start gap-3">
@@ -118,6 +126,9 @@ export default function QuizPage() {
           ))}
         </ul>
       )}
+
+      <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
+                  onPage={list.setPage} noun="quizzes" />
     </div>
   )
 }

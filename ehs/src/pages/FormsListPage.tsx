@@ -10,6 +10,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ClipboardList, Plus } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import { formatDateTime } from '@/lib/formatDate'
 import { LocationSelect } from '@/components/LocationSelect'
 import { StatusBadge } from '@/components/StatusBadge'
@@ -70,6 +71,14 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
     queryKey: ['form-submissions'],
     queryFn: () => api.get<SubmissionItem[]>('/api/v1/forms/submissions'),
   })
+  // Two lists on this page grow: what is owed and what has been filed. The
+  // template list is a handful of forms and stays one screen.
+  const dueList = useListView(runs.data, (r) => [
+    r.department_name, r.status, r.due_on,
+  ])
+  const filedList = useListView(submissions.data, (x) => [
+    x.submission_no, x.location_path, x.submitted_by_name, x.status,
+  ])
 
   const names = new Map((templates.data ?? []).map((t) => [t.id, t.name]))
 
@@ -97,13 +106,16 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
 
       {tab === 'due' && (
         <>
+          <SearchBox value={dueList.query} onChange={dueList.setQuery}
+                     placeholder="Search by department or due date" />
+
           {runs.data?.length === 0 && (
             <p className="p-8 text-center text-sm text-neutral-500">
               Nothing scheduled is outstanding.
             </p>
           )}
           <ul className="flex flex-col gap-2">
-            {runs.data?.map((r) => {
+            {dueList.pageRows.map((r) => {
               const late = r.status === 'missed'
               return (
                 <li key={r.id}>
@@ -136,6 +148,9 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
               )
             })}
           </ul>
+
+          <Pagination page={dueList.page} pageCount={dueList.pageCount}
+                      total={dueList.total} onPage={dueList.setPage} noun="due forms" />
         </>
       )}
 
@@ -172,11 +187,14 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
 
       {tab === 'done' && (
         <>
+          <SearchBox value={filedList.query} onChange={filedList.setQuery}
+                     placeholder="Search by number, area or who filed it" />
+
           {submissions.data?.length === 0 && (
             <p className="p-8 text-center text-sm text-neutral-500">Nothing filled in yet.</p>
           )}
           <ul className="flex flex-col gap-2">
-            {submissions.data?.map((s) => (
+            {filedList.pageRows.map((s) => (
               <li key={s.id}>
                 <Link to={`/forms/submissions/${s.id}`}
                       className="block rounded-xl border border-neutral-200 bg-white p-3.5 transition-colors hover:border-primary-300 hover:bg-primary-50/40">
@@ -201,6 +219,9 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
               </li>
             ))}
           </ul>
+
+          <Pagination page={filedList.page} pageCount={filedList.pageCount}
+                      total={filedList.total} onPage={filedList.setPage} noun="submissions" />
         </>
       )}
 

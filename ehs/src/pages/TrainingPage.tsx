@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CalendarDays, Plus, Upload, X, Paperclip } from 'lucide-react'
 import { api, apiBlob } from '@/lib/api'
+import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
@@ -186,6 +187,7 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
     queryKey: ['courses'],
     queryFn: () => api.get<Course[]>('/api/v1/training/courses'),
   })
+  const courseList = useListView(courses.data, (c) => [c.code, c.name])
 
   const create = useMutation({
     mutationFn: async () => {
@@ -227,7 +229,9 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
           <select className={inputClass} value={courseId}
                   onChange={(e) => setCourseId(e.target.value)}>
             <option value="">Select…</option>
-            {courses.data?.map((c) => (
+          <SearchBox value={courseList.query} onChange={courseList.setQuery}
+                     placeholder="Search courses by code or name" />
+            {courseList.pageRows.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}{c.is_statutory ? ' (required)' : ''}
               </option>
@@ -280,8 +284,11 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
                 </button>
               </li>
             ))}
-          </ul>
-        )}
+          </ul>        )}
+
+
+          <Pagination page={courseList.page} pageCount={courseList.pageCount}
+                      total={courseList.total} onPage={courseList.setPage} noun="courses" />
       </div>
 
       <ErrorNote error={create.error} />
@@ -327,6 +334,9 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
     queryFn: () => api.get<Record_[]>(
       `/api/v1/training/records${query ? `?${query}` : ''}`),
   })
+  // The records list already carries its own search and date range, which go
+  // to the server. Only the pager is client side, over what came back.
+  const recordPage = useListView(records.data, () => [])
 
   return (
     <>
@@ -379,7 +389,7 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
         </Empty>
       ) : (
         <ul className="flex flex-col gap-2">
-          {records.data?.map((r) => (
+          {recordPage.pageRows.map((r) => (
             <li key={r.id}>
               <Card>
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -400,8 +410,11 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
               </Card>
             </li>
           ))}
-        </ul>
-      )}
+        </ul>      )}
+
+
+      <Pagination page={recordPage.page} pageCount={recordPage.pageCount}
+                  total={recordPage.total} onPage={recordPage.setPage} noun="records" />
     </>
   )
 }

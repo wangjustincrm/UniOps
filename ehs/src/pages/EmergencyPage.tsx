@@ -16,6 +16,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, HeartPulse, Plus, Siren, Timer, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import { formatDate } from '@/lib/formatDate'
 import { Link } from 'react-router-dom'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -114,6 +115,12 @@ function DrillsTab({ mayRun }: { mayRun: boolean }) {
     queryKey: ['drills'],
     queryFn: () => api.get<Drill[]>('/api/v1/drills'),
   })
+  const list = useListView(drills.data, (d) => [
+    d.drill_no, d.scenario, d.drill_type, d.status,
+    // The areas are a list; flattened so searching "packaging" finds a drill
+    // that covered it.
+    ...d.areas.map((a) => a.path),
+  ])
   const trend = useQuery({
     queryKey: ['drill-trend'],
     queryFn: () => api.get<TrendRow[]>('/api/v1/drills/trend?drill_type=fire'),
@@ -133,6 +140,9 @@ function DrillsTab({ mayRun }: { mayRun: boolean }) {
       )}
       {creating && <NewDrillForm onClose={() => setCreating(false)} />}
 
+      <SearchBox value={list.query} onChange={list.setQuery}
+                 placeholder="Search drills by number, scenario, type or area" />
+
       {drills.data?.length === 0 && !creating ? (
         <Empty>
           No drills recorded. A drill is worth recording for two numbers: how
@@ -141,7 +151,7 @@ function DrillsTab({ mayRun }: { mayRun: boolean }) {
         </Empty>
       ) : (
         <ul className="flex flex-col gap-2">
-          {drills.data?.map((d) => (
+          {list.pageRows.map((d) => (
             <li key={d.id}>
               <Card className={'!p-0 ' + (d.all_accounted_for === false
                 ? '!border-danger-400' : '')}>
@@ -177,6 +187,9 @@ function DrillsTab({ mayRun }: { mayRun: boolean }) {
           ))}
         </ul>
       )}
+
+      <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
+                  onPage={list.setPage} noun="drills" />
     </>
   )
 }

@@ -13,6 +13,7 @@ import { useState, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Users, Paperclip } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import {
   PageHeader, SectionTitle,
 } from '@/components/ui'
@@ -64,6 +65,13 @@ export default function ToolboxTalksPage() {
   const mine = (deliveries.data ?? []).filter((d) => d.status === 'pending')
   const done = (deliveries.data ?? []).filter((d) => d.status === 'delivered')
 
+  // Three lists, three searches. One box filtering all three would hide what
+  // it was doing: a hit in Delivered while you are looking at what is still
+  // owed reads as the filter having failed.
+  const toDeliver = useListView(mine, (d) => [d.department_name, d.supervisor_name])
+  const topics = useListView(talks.data, (t) => [t.talk_no, t.title, t.topic])
+  const delivered = useListView(done, (d) => [d.department_name, d.supervisor_name])
+
   return (
     <div className="p-4">
       <PageHeader title="Toolbox talks">
@@ -79,8 +87,10 @@ export default function ToolboxTalksPage() {
       {mine.length > 0 && (
         <>
           <SectionTitle className="mb-2">To deliver</SectionTitle>
+          <SearchBox value={toDeliver.query} onChange={toDeliver.setQuery}
+                     placeholder="Search by crew or supervisor" />
           <ul className="mb-6 flex flex-col gap-2">
-            {mine.map((d) => (
+            {toDeliver.pageRows.map((d) => (
               <li key={d.id}>
                 <button type="button" onClick={() => setSigning(d)}
                         className="flex w-full items-center gap-3 rounded-xl border border-neutral-200 bg-white p-3.5 text-left transition-colors hover:border-primary-300">
@@ -98,12 +108,17 @@ export default function ToolboxTalksPage() {
               </li>
             ))}
           </ul>
+
+          <Pagination page={toDeliver.page} pageCount={toDeliver.pageCount}
+                      total={toDeliver.total} onPage={toDeliver.setPage} noun="to deliver" />
         </>
       )}
 
       <SectionTitle className="mb-2">Topics</SectionTitle>
+      <SearchBox value={topics.query} onChange={topics.setQuery}
+                 placeholder="Search topics by number, title or subject" />
       <ul className="flex flex-col gap-2">
-        {talks.data?.map((t) => (
+        {topics.pageRows.map((t) => (
           <li key={t.id} className="rounded-xl border border-neutral-200 bg-white p-3.5">
             <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
               <span className="min-w-0 flex-1">
@@ -148,11 +163,16 @@ export default function ToolboxTalksPage() {
         ))}
       </ul>
 
+      <Pagination page={topics.page} pageCount={topics.pageCount}
+                  total={topics.total} onPage={topics.setPage} noun="topics" />
+
       {done.length > 0 && (
         <>
           <SectionTitle className="mb-2 mt-6">Delivered</SectionTitle>
+          <SearchBox value={delivered.query} onChange={delivered.setQuery}
+                     placeholder="Search delivered by crew or supervisor" />
           <ul className="flex flex-col gap-2">
-            {done.map((d) => (
+            {delivered.pageRows.map((d) => (
               <li key={d.id} className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white p-3 text-sm">
                 <Check className="h-4 w-4 shrink-0 text-primary-600" aria-hidden />
                 <span className="min-w-0 flex-1 text-neutral-800">
@@ -164,6 +184,9 @@ export default function ToolboxTalksPage() {
               </li>
             ))}
           </ul>
+
+          <Pagination page={delivered.page} pageCount={delivered.pageCount}
+                      total={delivered.total} onPage={delivered.setPage} noun="deliveries" />
         </>
       )}
 

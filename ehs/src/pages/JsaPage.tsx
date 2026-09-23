@@ -16,6 +16,7 @@ import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
 import { ClipboardList, Plus, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useMyProfile } from '@/hooks/useMyProfile'
@@ -61,6 +62,10 @@ export default function JsaPage() {
     queryKey: ['jsa'],
     queryFn: () => api.get<Jsa[]>('/api/v1/jsa?status=draft&status=active'),
   })
+  const list = useListView(jsas.data, (j) => [
+    j.jsa_no, j.title, j.job_description, j.location_path, j.department_name,
+    j.required_ppe, j.status, j.created_by_name,
+  ])
 
   return (
     <div className="p-4">
@@ -74,6 +79,9 @@ export default function JsaPage() {
         )}
       </PageHeader>
 
+      <SearchBox value={list.query} onChange={list.setQuery}
+                 placeholder="Search by number, job, area, PPE or who wrote it" />
+
       {creating && <NewJsaForm onClose={() => setCreating(false)} />}
 
       {jsas.data?.length === 0 && !creating ? (
@@ -84,7 +92,7 @@ export default function JsaPage() {
         </Empty>
       ) : (
         <ul className="flex flex-col gap-2">
-          {jsas.data?.map((j) => (
+          {list.pageRows.map((j) => (
             <li key={j.id}>
               <button type="button" onClick={() => navigate(`/jsa/${j.id}`)}
                       className="flex w-full items-start gap-3 rounded-xl border border-neutral-200 bg-white p-3.5 text-left transition-colors hover:border-primary-300">
@@ -102,6 +110,9 @@ export default function JsaPage() {
           ))}
         </ul>
       )}
+
+      <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
+                  onPage={list.setPage} noun="analyses" />
     </div>
   )
 }

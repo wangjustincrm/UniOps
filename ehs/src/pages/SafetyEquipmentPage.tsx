@@ -16,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { AlertTriangle, ClipboardCheck, History, Plus, QrCode, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import QrPanel from '@/components/QrPanel'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -269,6 +270,9 @@ function RegisterTab({
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Asset | null>(null)
   const shown = focusedId ? assets.filter((a) => a.id === focusedId) : assets
+  const list = useListView(shown, (a) => [
+    a.asset_no, a.name, a.asset_type_label, a.serial_no, a.location_path, a.status,
+  ])
 
   const restore = useMutation({
     mutationFn: (assetId: string) =>
@@ -304,6 +308,9 @@ function RegisterTab({
       {adding && <AssetForm onClose={() => setAdding(false)} />}
       {editing && <AssetForm existing={editing} onClose={() => setEditing(null)} />}
 
+      <SearchBox value={list.query} onChange={list.setQuery}
+                 placeholder="Search by number, what it is, serial or area" />
+
       {shown.length === 0 && !adding ? (
         <Empty>
           {focusedId
@@ -312,7 +319,7 @@ function RegisterTab({
         </Empty>
       ) : (
         <ul className="flex flex-col gap-2">
-          {shown.map((a) => (
+          {list.pageRows.map((a) => (
             <li key={a.id}>
               <Card className={a.status === 'out_of_service' ? '!border-danger-300' : ''}>
                 <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
@@ -412,6 +419,9 @@ function RegisterTab({
           ))}
         </ul>
       )}
+
+      <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
+                  onPage={list.setPage} noun="items" />
       {checkingNow && (
         <AdHocCheck asset={checkingNow} onClose={() => setCheckingNow(null)} />
       )}

@@ -24,6 +24,7 @@ import {
   AlertTriangle, Check, ClipboardCheck, Gauge, Plus, ShieldCheck, X,
 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import QrPanel from '@/components/QrPanel'
 import { formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -111,6 +112,13 @@ export default function PermitsPage() {
   const expiredOpen = rows.filter((p) => p.status === 'expired' && !p.closed_at)
 
   const shown = tab === 'live' ? live : tab === 'preparing' ? preparing : history
+  // Searched within the tab rather than across all of them: somebody on
+  // "Being prepared" is asking about those, and a hit from the history would
+  // read as the filter having failed.
+  const list = useListView(shown, (x) => [
+    x.permit_no, x.type_label, x.work_description, x.location_path,
+    x.contractor_company, x.requested_by_name, x.status,
+  ])
   const tabs = TABS.map((t) => ({
     ...t,
     count: t.key === 'live' ? live.length
@@ -147,6 +155,12 @@ export default function PermitsPage() {
 
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
+
+      <SearchBox value={list.query} onChange={list.setQuery}
+
+                 placeholder="Search by number, type, work, area or contractor" />
+
+
       {shown.length === 0 ? (
         <Empty>
           {tab === 'live'
@@ -157,7 +171,7 @@ export default function PermitsPage() {
         </Empty>
       ) : (
         <ul className="flex flex-col gap-2">
-          {shown.map((p) => (
+          {list.pageRows.map((p) => (
             <li key={p.id}>
               <Card className={'!p-0 ' + (p.status === 'expired' && !p.closed_at
                 ? '!border-danger-400' : p.status === 'suspended' ? '!border-warning-400' : '')}>
@@ -197,6 +211,9 @@ export default function PermitsPage() {
           ))}
         </ul>
       )}
+
+      <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
+                  onPage={list.setPage} noun="permits" />
     </div>
   )
 }

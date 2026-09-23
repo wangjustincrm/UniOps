@@ -22,6 +22,7 @@ import {
   AlertTriangle, Download, FileText, FlaskConical, Plus, Printer,
   Search, Sparkles, Upload, X, QrCode } from 'lucide-react'
 import { api, apiBlob } from '@/lib/api'
+import { Pagination, useListView } from '@/components/ListView'
 import QrPanel from '@/components/QrPanel'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -209,6 +210,9 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
     queryKey: ['chemicals', search.trim(), locationId, showRetired],
     queryFn: () => api.get<Chemical[]>(`/api/v1/chemicals${query ? `?${query}` : ''}`),
   })
+  // Search and the area filter go to the server; the pager is over what came
+  // back, which is the whole list at this plant's scale.
+  const page = useListView(chemicals.data, () => [])
 
   return (
     <>
@@ -248,7 +252,7 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
         </Empty>
       ) : (
         <ul className="flex flex-col gap-2">
-          {chemicals.data?.map((c) => (
+          {page.pageRows.map((c) => (
             <li key={c.id}>
               <Card className="!p-0">
                 <button type="button" onClick={() => setOpen(open === c.id ? null : c.id)}
@@ -289,8 +293,11 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
               </Card>
             </li>
           ))}
-        </ul>
-      )}
+        </ul>      )}
+
+
+        <Pagination page={page.page} pageCount={page.pageCount}
+                    total={page.total} onPage={page.setPage} noun="products" />
     </>
   )
 }

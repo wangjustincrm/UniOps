@@ -17,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ArrowUpRight, Plus } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import { PageHeader } from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -36,6 +37,10 @@ export default function FirstAidLogPage() {
     queryKey: ['first-aid'],
     queryFn: () => api.get<Entry[]>('/api/v1/first-aid'),
   })
+  const list = useListView(data, (e) => [
+    e.log_no, e.injured_name, e.first_aider_name, e.body_part_label,
+    e.treatment_given, e.location_path,
+  ])
 
 
 
@@ -71,12 +76,15 @@ export default function FirstAidLogPage() {
       </p>
 
 
+      <SearchBox value={list.query} onChange={list.setQuery}
+                 placeholder="Search by number, who was treated, body part or treatment" />
+
       {isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
       {data?.length === 0 && (
         <p className="p-8 text-center text-sm text-neutral-500">No treatments recorded yet.</p>
       )}
       <ul className="flex flex-col gap-2">
-        {data?.map((e) => (
+        {list.pageRows.map((e) => (
           <li key={e.id} className="rounded-xl border border-neutral-200 bg-white p-3.5">
             <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
               <span className="font-mono text-xs text-neutral-500">{e.log_no}</span>
@@ -119,6 +127,9 @@ export default function FirstAidLogPage() {
           </li>
         ))}
       </ul>
+
+      <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
+                  onPage={list.setPage} noun="entries" />
 
       {escalating && (
         <EscalateDialog entry={escalating} onClose={() => setEscalating(null)} />
