@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, FileText, CreditCard, Filter, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
+import { Plus, Search, FileText, CreditCard, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { CurrentStepHint } from '@/components/ui/CurrentStepHint'
 import { Pagination } from '@/components/ui/Pagination'
@@ -145,41 +146,38 @@ export default function PaListPage() {
 
       {/* Filters */}
       <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between gap-4 border-b border-neutral-200 px-5 py-3">
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-neutral-400" />
-            <select
-              value={statusFilter}
-              onChange={(e) => handleFilterChange(e.target.value)}
-              className="h-9 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
-            >
-              {STATUS_FILTER_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            <select
-              value={deptFilter}
-              onChange={(e) => { setDeptFilter(e.target.value); setPage(1) }}
-              className="h-9 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
-            >
-              <option value="all">All Departments</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-            <span className="text-sm text-neutral-400">
-              {isPending ? 'Loading…' : `${total} result${total !== 1 ? 's' : ''}`}
-            </span>
-          </div>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2 h-4 w-4 text-neutral-400" />
-            <input
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+        <div className="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-5 py-3">
+          <div className="relative flex-1 min-w-48">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <Input
               placeholder="Search PA #, vendor, PO…"
-              className="h-8 pl-8 pr-3 rounded-lg border border-neutral-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 w-56"
+              value={search}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => { setSearch(e.target.value); setPage(1) }}
+              className="pl-9"
             />
           </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => handleFilterChange(e.target.value)}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+          >
+            {STATUS_FILTER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <select
+            value={deptFilter}
+            onChange={(e) => { setDeptFilter(e.target.value); setPage(1) }}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+          >
+            <option value="all">All Departments</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          <span className="text-sm text-neutral-400">
+            {isPending ? 'Loading…' : `${total} result${total !== 1 ? 's' : ''}`}
+          </span>
         </div>
 
         {isPending || (isFetching && pas.length === 0) ? (
