@@ -20,7 +20,9 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, Search, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
-import { Empty, ErrorNote, inputClass } from '@/components/ui'
+import {
+  Empty, ErrorNote, inputClass, inputSized,
+} from '@/components/ui'
 
 interface Gap {
   user_id: string; user_name: string; course_id: string; course_code: string
@@ -125,7 +127,7 @@ export default function TrainingGapsPanel() {
               </div>
 
               <select value={course} onChange={(e) => setCourse(e.target.value)}
-                      aria-label="Course" className={`${inputClass} w-auto`}>
+                      aria-label="Course" className={inputSized('w-auto')}>
                 <option value="">All courses</option>
                 {data.courses.map((c) => (
                   <option key={c.course_id} value={c.course_id}>{c.course_name}</option>
@@ -133,7 +135,7 @@ export default function TrainingGapsPanel() {
               </select>
 
               <select value={department} onChange={(e) => setDepartment(e.target.value)}
-                      aria-label="Department" className={`${inputClass} w-auto`}>
+                      aria-label="Department" className={inputSized('w-auto')}>
                 <option value="">All departments</option>
                 {departments.map((d) => (
                   <option key={d} value={d}>{d === NO_DEPARTMENT ? 'No department' : d}</option>

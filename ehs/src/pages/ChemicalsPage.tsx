@@ -29,7 +29,7 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { LocationSelect } from '@/components/LocationSelect'
 import { VocabularyMultiSelect } from '@/components/VocabularyPicker'
 import {
-  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
+  Card, Empty, ErrorNote, Field, inputClass, inputSized, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
 } from '@/components/ui'
 
 interface Sheet {
@@ -644,7 +644,7 @@ function StatementRows({ title, rows, onChange, placeholder }: {
       <div className="flex flex-col gap-1.5">
         {rows.map((r, i) => (
           <div key={i} className="flex gap-1.5">
-            <input className={`${inputClass} w-32 shrink-0`} value={r.code ?? ''}
+            <input className={`${inputSized('w-32')} shrink-0`} value={r.code ?? ''}
                    onChange={(e) => set(i, { code: e.target.value || null })}
                    placeholder="H314" aria-label={`${title} code`} />
             <input className={inputClass} value={r.text}

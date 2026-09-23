@@ -15,7 +15,7 @@ import { useQuery } from '@tanstack/react-query'
 import { TrendingDown, TrendingUp } from 'lucide-react'
 import { api } from '@/lib/api'
 import {
-  PageHeader, SectionTitle,
+  inputSized, PageHeader, SectionTitle,
 } from '@/components/ui'
 
 interface Entity { key: string; label: string; dimensions: string[] }
@@ -114,7 +114,7 @@ export default function ReportsPage() {
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <label className="text-xs text-neutral-600">Hours worked this year</label>
-          <input className={`${inputClass} w-32`} inputMode="numeric" value={hours}
+          <input className={inputSized('w-32')} inputMode="numeric" value={hours}
                  onChange={(e) => setHours(e.target.value.replace(/[^0-9]/g, ''))}
                  placeholder="from payroll" />
           <span className="text-xs text-neutral-500">

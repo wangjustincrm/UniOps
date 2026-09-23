@@ -25,6 +25,19 @@ export const inputClass =
   'min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm ' +
   'text-neutral-900 focus:border-primary-400 focus:outline-none'
 
+/**
+ * The same input at a fixed width.
+ *
+ * ★ Appending `w-40` to `inputClass` does nothing. Tailwind decides between
+ * two width utilities by where they land in the generated stylesheet, not by
+ * the order they appear in the string, and `w-full` is emitted after the
+ * numbered widths — so it wins every time. Nine places in this module were
+ * quietly full width because of it, which is why the two date pickers on the
+ * audit pack stacked instead of sitting beside the Print button.
+ */
+export const inputSized = (width: string) =>
+  `${inputClass.replace('w-full ', '')} ${width}`
+
 export const buttonClass =
   'flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-semibold ' +
   'transition-colors disabled:cursor-not-allowed disabled:opacity-50'

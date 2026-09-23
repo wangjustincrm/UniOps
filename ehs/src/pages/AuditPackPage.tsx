@@ -24,7 +24,7 @@ import { AlertTriangle, Check, Printer } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import {
-  Card, inputClass, PageHeader, secondaryButton, SectionTitle,
+  Card, inputSized, PageHeader, secondaryButton, SectionTitle,
 } from '@/components/ui'
 
 interface Breach {
@@ -80,9 +80,9 @@ export default function AuditPackPage() {
         title="Audit evidence"
         subtitle="Everything a COR, ISO 45001 or Ministry audit asks for, over a period"
       >
-        <input type="date" className={`${inputClass} w-40`} value={from}
+        <input type="date" className={inputSized('w-40')} value={from}
                onChange={(e) => setFrom(e.target.value)} aria-label="From" />
-        <input type="date" className={`${inputClass} w-40`} value={to}
+        <input type="date" className={inputSized('w-40')} value={to}
                onChange={(e) => setTo(e.target.value)} aria-label="To" />
         <button type="button" className={secondaryButton} data-print="hide"
                 onClick={() => window.print()}>

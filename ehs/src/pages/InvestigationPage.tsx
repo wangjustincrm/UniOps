@@ -18,7 +18,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useTabTitle } from '@uniops/shell'
 import { api, ApiError } from '@/lib/api'
 import {
-  PageHeader, SectionTitle,
+  inputSized, PageHeader, SectionTitle,
 } from '@/components/ui'
 import { ehsRoutes } from '@/app/routes'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
@@ -522,7 +522,7 @@ export default function InvestigationPage() {
             // wider than the panel: a flex item will not shrink past its
             // content by default, so the event text was pushed off the edge.
             <div key={i} className="mb-2 flex gap-2">
-              <input type="time" className={`${inputClass} w-32 shrink-0`} value={t.time}
+              <input type="time" className={`${inputSized('w-32')} shrink-0`} value={t.time}
                      aria-label="Time"
                      onChange={(e) => setMed({ ...med, timeline: (med.timeline ?? []).map(
                        (x, j) => j === i ? { ...x, time: e.target.value } : x) })} />

@@ -19,7 +19,7 @@ import { api } from '@/lib/api'
 import { formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
-  Card, ErrorNote, PageHeader, inputClass, primaryButton,
+  Card, ErrorNote, inputSized, PageHeader, primaryButton,
 } from '@/components/ui'
 
 interface MonthRow {
@@ -73,7 +73,7 @@ export default function HoursWorkedPage() {
         title="Hours worked"
         subtitle="One figure a month, from payroll. Every injury rate is divided by this."
       >
-        <select className={`${inputClass} w-28`} value={year}
+        <select className={inputSized('w-28')} value={year}
                 onChange={(e) => setYear(Number(e.target.value))}>
           {[thisYear + 1, thisYear, thisYear - 1, thisYear - 2].map((y) => (
             <option key={y} value={y}>{y}</option>
@@ -108,7 +108,7 @@ export default function HoursWorkedPage() {
                     {name}
                   </span>
                   <input
-                    className={`${inputClass} w-40`}
+                    className={inputSized('w-40')}
                     inputMode="decimal"
                     disabled={!mayWrite}
                     value={value}
