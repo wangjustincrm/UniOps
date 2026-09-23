@@ -150,3 +150,49 @@ async def test_http_error_status_is_also_unknown_not_zero(monkeypatch):
     got = await finance_client.nc_actual_for_budget_check(
         bearer_token="t", cost_center_id=CC, account_id=uuid.uuid4(), fiscal_year=FY)
     assert got is None
+
+
+# ── An account with no budget at all ─────────────────────────────────────────
+
+async def test_an_account_with_no_plan_leaves_nothing_available(db_session, monkeypatch):
+    """A budget account nobody budgeted for must not quietly fund anything.
+
+    `available` is the whole input to the over-budget test — epms-api's
+    compute_budget_check is `amount > available` and nothing else — so an
+    account with no approved plan line has to come back at zero or below, and
+    then every PR against it is over budget and picks up the two extra
+    approvals. Pinned because the three terms are computed separately and a
+    future change to any of them (a default, a coalesce, an outer join that
+    invents a row) could make "no budget" read as "budget not yet used".
+    """
+    db = db_session
+    l1 = BudgetL1(code="L1", name="IT", sort_order=0)
+    db.add(l1)
+    await db.flush()
+    acct = BudgetAccount(code="CRM00399", name="Unbudgeted", l1_id=l1.id, sort_order=0)
+    db.add(acct)
+    await db.flush()
+    _finance_returns(monkeypatch, Decimal("0"))   # NC has posted nothing either
+
+    res = await balance_crud.get_balance(db, CC, acct.id, FY, bearer_token="t")
+
+    assert res.annual_budget == Decimal("0")
+    assert res.available <= Decimal("0")
+
+
+async def test_no_plan_but_nc_has_spent_goes_negative(db_session, monkeypatch):
+    """Same account, money already posted against it — available must go
+    negative rather than floor at zero, so the overage a PR reports is the real
+    one and not understated."""
+    db = db_session
+    l1 = BudgetL1(code="L1", name="IT", sort_order=0)
+    db.add(l1)
+    await db.flush()
+    acct = BudgetAccount(code="CRM00399", name="Unbudgeted", l1_id=l1.id, sort_order=0)
+    db.add(acct)
+    await db.flush()
+    _finance_returns(monkeypatch, Decimal("500"))
+
+    res = await balance_crud.get_balance(db, CC, acct.id, FY, bearer_token="t")
+
+    assert res.available == Decimal("-500")
