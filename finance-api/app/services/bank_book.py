@@ -164,6 +164,27 @@ def _posted_filter(include_unposted: bool):
     return sa_true() if include_unposted else (JournalVoucher.status == POSTED)
 
 
+# NC VOUCHERKIND 2 — the opening voucher it writes into period 00 to carry a
+# year's closing balance into the next one. It is a restatement, not a movement,
+# so summing it ALONGSIDE the transactions it summarises counts the same money
+# twice. On RBC 1033760 that inflated the July 2026 opening by 820,087.14 =
+# 245,567.79 (the 2025 opening voucher, equal to all of 2024) + 574,519.35 (the
+# 2026 one, equal to 2024 + 2025) — and the period itself reconciled to the cent,
+# so Sign off refused over a difference that was entirely in the carry-in.
+#
+# Only kind 2. Kinds 1/3/4 (year-end adjustment, cost and R&D carry-forward) are
+# real postings that move cash; excluding them would break the number the other
+# way. Measured: with kind 2 out and the rest in, the opening is 564,623.34 —
+# the balance the RBC statement prints.
+_OPENING_VOUCHER_KIND = 2
+
+
+def _excludes_opening_vouchers():
+    """NULL kind = a go-forward UniOps JV, which has no NC voucher kind and is a
+    real movement — it must stay in."""
+    return func.coalesce(JournalVoucher.nc_voucher_kind, 0) != _OPENING_VOUCHER_KIND
+
+
 def sa_true():
     from sqlalchemy import true
     return true()
@@ -192,6 +213,7 @@ async def opening_balance(db: AsyncSession, nc_account_id: uuid.UUID, before: da
                func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
         .where(_posted_filter(include_unposted),
+               _excludes_opening_vouchers(),
                JournalVoucherLine.account_code.in_(codes),
                JournalVoucherLine.bank_account_id == nc_account_id,
                JournalVoucher.voucher_date < before)
@@ -261,6 +283,11 @@ async def book_period(db: AsyncSession, account: BankAccount,
         select(JournalVoucherLine, JournalVoucher)
         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
         .where(_posted_filter(include_unposted),
+               # Same exclusion as the opening: an opening voucher dated inside the
+               # window would restate the carry-in as if it were a movement, and the
+               # closing would drift by that amount instead. None fall in July 2026
+               # on RBC, but nothing stops NC dating one there.
+               _excludes_opening_vouchers(),
                JournalVoucherLine.account_code.in_(codes),
                JournalVoucherLine.bank_account_id == nc.id,
                JournalVoucher.voucher_date >= date_from,

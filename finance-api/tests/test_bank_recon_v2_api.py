@@ -749,3 +749,53 @@ async def test_nc_account_picker_offers_only_this_book_and_what_is_linked(
     assert "1060" in codes
     # ★ the one that must NOT be there
     assert "23050162515100000035" not in codes
+
+
+# ── the opening balance ───────────────────────────────────────────────────────
+
+async def test_opening_excludes_ncs_opening_voucher_but_keeps_real_postings(db_session):
+    """Sign off refused on RBC July 2026 over a difference of −820,087.14 while
+    every one of the 260 ledger lines was matched — because the difference was
+    not in the period at all. It was the carry-in.
+
+    NC writes an opening voucher (VOUCHERKIND 2) into period 00 to carry a year's
+    closing forward. Summing it alongside the transactions it summarises counts
+    the same money twice: 245,567.79 (the 2025 one, equal to all of 2024) plus
+    574,519.35 (the 2026 one, equal to 2024 + 2025) — exactly the difference.
+    """
+    from app.models.nc_bank_account import NcBankAccount
+    from app.services.bank_book import opening_balance
+
+    db_session.add_all([
+        ChartOfAccount(code="1002", name="Cash on Bank", account_type="asset",
+                       normal_balance="debit", is_postable=False),
+        ChartOfAccount(code="100201", name="Checking", account_type="asset",
+                       normal_balance="debit", is_postable=True, parent_code="1002"),
+    ])
+    nc = NcBankAccount(nc_pk="NCOPEN1", code="9999", name="Opening test", currency="CAD")
+    db_session.add(nc)
+    await db_session.flush()
+
+    async def line(num, day, dr, cr, kind):
+        jv = JournalVoucher(jv_number=f"JV-202601-{num:04d}", voucher_word="JV",
+                            voucher_date=date(2026, 1, day), fiscal_period="2026-01",
+                            status=POSTED, nc_source_pk=f"OPK{num}", source_service="nc",
+                            nc_voucher_kind=kind)
+        db_session.add(jv)
+        await db_session.flush()
+        db_session.add(JournalVoucherLine(
+            jv_id=jv.id, line_no=1, account_code="100201",
+            orig_debit=D(dr), orig_credit=D(cr), local_debit=D(dr), local_credit=D(cr),
+            currency="CAD", bank_account_id=nc.id))
+        await db_session.flush()
+
+    await line(1, 5, "100.00", "0", 0)     # ordinary movement
+    await line(2, 6, "0", "30.00", 0)      # ordinary movement
+    await line(3, 7, "7.00", "0", 4)       # ★ R&D carry-forward — a real posting
+    await line(4, 8, "70.00", "0", 2)      # ★ NC's opening voucher — a restatement
+
+    got = await opening_balance(db_session, nc.id, date(2026, 2, 1))
+
+    # 100 − 30 + 7 = 77. The kind-2 restatement of 70 must NOT be added on top;
+    # kinds other than 2 must still count, or the number breaks the other way.
+    assert got == D("77.00")
