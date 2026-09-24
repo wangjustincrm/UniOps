@@ -290,13 +290,32 @@ async def list_periods(account_id: uuid.UUID, _: CurrentUser,
         select(BankReconciliation)
         .where(BankReconciliation.bank_account_id == account_id)
         .order_by(BankReconciliation.period_end.desc()))).scalars().all()
-    return [{"id": str(r.id), "period_start": r.period_start.isoformat(),
-             "period_end": r.period_end.isoformat(), "status": r.status,
-             "difference": str(r.difference),
-             "statement_closing": str(r.statement_closing) if r.statement_closing else None,
-             "book_closing": str(r.book_closing) if r.book_closing else None,
-             "finalized_at": r.finalized_at.isoformat() if r.finalized_at else None,
-             "has_report": r.report_storage_key is not None} for r in rows]
+    def _figures(r: BankReconciliation) -> tuple[str, str | None, str | None]:
+        """A finalized row reports from its snapshot, exactly as the detail view
+        does — the stored columns are what an earlier read last wrote there, and a
+        signed-off July kept showing −255,207.81 in this list while its own cards
+        showed 0.00, because the column had been overwritten by a later statement
+        and is no longer refreshed now that finalized periods are not recomputed.
+        One number, one source."""
+        snap = r.snapshot if isinstance(r.snapshot, dict) else None
+        stored = (snap or {}).get("summary") if r.status == FINALIZED else None
+        if isinstance(stored, dict) and stored.get("difference") is not None:
+            return (str(stored["difference"]), stored.get("statement_closing"),
+                    stored.get("book_closing"))
+        return (str(r.difference),
+                str(r.statement_closing) if r.statement_closing else None,
+                str(r.book_closing) if r.book_closing else None)
+
+    out = []
+    for r in rows:
+        diff, stmt_closing, book_closing = _figures(r)
+        out.append({"id": str(r.id), "period_start": r.period_start.isoformat(),
+                    "period_end": r.period_end.isoformat(), "status": r.status,
+                    "difference": diff,
+                    "statement_closing": stmt_closing, "book_closing": book_closing,
+                    "finalized_at": r.finalized_at.isoformat() if r.finalized_at else None,
+                    "has_report": r.report_storage_key is not None})
+    return out
 
 
 @router.get("/reconciliations/{recon_id}")

@@ -905,3 +905,62 @@ async def test_a_signed_off_period_is_not_recomputed_when_read(db_session):
     assert s["difference"] == "0.00"
     assert rec.difference == D("0.00")
     assert rec.statement_closing == D("200.00")
+
+
+async def test_the_period_list_reports_a_signed_off_row_from_its_snapshot(
+        client, db_session):
+    """The detail cards and the history row must not disagree. They did: the
+    cards read the snapshot and showed 0.00 while the list read the stored
+    column and showed −255,207.81, because a later statement had overwritten the
+    column and finalized periods are no longer recomputed to correct it."""
+    from app.models.bank import BankAccount
+    from app.models.bank_recon import FINALIZED, BankReconciliation
+    from app.models.nc_bank_account import NcBankAccount
+
+    nc = NcBankAccount(nc_pk="NCSNAP1", code="6666", name="Snap test", currency="CAD")
+    acct = BankAccount(name="Snap CAD", bank_name="T", currency="CAD",
+                       ledger_account_code="100201", nc_bank_account_code="6666")
+    db_session.add_all([nc, acct])
+    await db_session.flush()
+
+    db_session.add(BankReconciliation(
+        bank_account_id=acct.id, period_start=date(2026, 7, 1),
+        period_end=date(2026, 7, 31), currency="CAD", status=FINALIZED,
+        finalized_at=datetime(2026, 9, 24, tzinfo=timezone.utc),
+        # what a later read wrote over the row …
+        difference=D("-255207.81"), statement_closing=D("454660.91"),
+        book_closing=D("709868.72"),
+        # … and what was actually signed off
+        snapshot={"summary": {"difference": "0.00", "statement_closing": "709868.72",
+                              "book_closing": "709868.72"}}))
+    await db_session.flush()
+
+    r = await client.get(f"/finance/v1/bank-recon/{acct.id}/reconciliations", headers=_h())
+    assert r.status_code == 200, r.text
+    row = r.json()[0]
+    assert row["difference"] == "0.00"
+    assert row["statement_closing"] == "709868.72"
+
+
+async def test_an_open_period_still_reports_live_figures(client, db_session):
+    """The positive half: only FINALIZED rows come from a snapshot. An open period
+    has no signed-off truth to preserve, and freezing it would hide the very
+    number the reconciliation exists to drive to zero."""
+    from app.models.bank import BankAccount
+    from app.models.bank_recon import BankReconciliation
+    from app.models.nc_bank_account import NcBankAccount
+
+    nc = NcBankAccount(nc_pk="NCSNAP2", code="5555", name="Open test", currency="CAD")
+    acct = BankAccount(name="Open CAD", bank_name="T", currency="CAD",
+                       ledger_account_code="100201", nc_bank_account_code="5555")
+    db_session.add_all([nc, acct])
+    await db_session.flush()
+    db_session.add(BankReconciliation(
+        bank_account_id=acct.id, period_start=date(2026, 8, 1),
+        period_end=date(2026, 8, 31), currency="CAD",
+        difference=D("-42.00"),
+        snapshot={"summary": {"difference": "0.00"}}))   # must be ignored while open
+    await db_session.flush()
+
+    r = await client.get(f"/finance/v1/bank-recon/{acct.id}/reconciliations", headers=_h())
+    assert r.json()[0]["difference"] == "-42.00"
