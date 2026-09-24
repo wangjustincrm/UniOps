@@ -8,7 +8,7 @@ narrowly.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -110,6 +110,8 @@ async def list_incidents(
     status_in: list[str] | None = Query(default=None, alias="status"),
     form_kind: str | None = None,
     location_id: uuid.UUID | None = None,
+    occurred_from: date | None = None,
+    occurred_to: date | None = None,
     limit: int = Query(default=50, le=200),
     offset: int = 0,
 ):
@@ -120,6 +122,7 @@ async def list_incidents(
     rows = await crud.list_(
         db, statuses=status_in, form_kind=form_kind,
         location_id=location_id, limit=limit, offset=offset,
+        occurred_from=occurred_from, occurred_to=occurred_to,
         reported_by=_user_id(user) if mine_only else None,
     )
     return [IncidentListItem.model_validate(r) for r in rows]

@@ -24,7 +24,7 @@ import {
   AlertTriangle, Check, ClipboardCheck, Gauge, Plus, ShieldCheck, X,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import { Pagination, SearchBox, useListView } from '@/components/ListView'
+import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import QrPanel from '@/components/QrPanel'
 import { formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -96,6 +96,14 @@ export default function PermitsPage() {
   const [creating, setCreating] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
 
+  // `list_permits` caps at 200 with no parameter to raise it.
+  //
+  // ★ It truncates by `created_at` while this page filters by `valid_from`.
+  // The two are not the same field, so at the cap the date range would be
+  // reading a set chosen on a different date — which is exactly the kind of
+  // thing nobody would see. The pager says when the list came back full.
+  const PERMIT_LIMIT = 200
+
   const permits = useQuery({
     queryKey: ['permits'],
     queryFn: () => api.get<Permit[]>('/api/v1/permits'),
@@ -118,7 +126,7 @@ export default function PermitsPage() {
   const list = useListView(shown, (x) => [
     x.permit_no, x.type_label, x.work_description, x.location_path,
     x.contractor_company, x.requested_by_name, x.status,
-  ])
+  ], { dateOf: (x) => x.valid_from ?? x.issued_at })
   const tabs = TABS.map((t) => ({
     ...t,
     count: t.key === 'live' ? live.length
@@ -158,7 +166,9 @@ export default function PermitsPage() {
 
       <SearchBox value={list.query} onChange={list.setQuery}
 
-                 placeholder="Search by number, type, work, area or contractor" />
+                 placeholder="Search by number, type, work, area or contractor">
+        <DateRangeFilter {...list.dateFilter} />
+      </SearchBox>
 
 
       {shown.length === 0 ? (
@@ -213,7 +223,9 @@ export default function PermitsPage() {
       )}
 
       <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
-                  onPage={list.setPage} noun="permits" />
+                  onPage={list.setPage} noun="permits"
+                  capped={(permits.data ?? []).length >= PERMIT_LIMIT}
+                  loaded={(permits.data ?? []).length} />
     </div>
   )
 }

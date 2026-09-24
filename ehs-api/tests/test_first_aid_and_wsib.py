@@ -489,3 +489,49 @@ async def test_the_old_register_no_longer_takes_new_entries(hse_manager, worker)
     # migrated, on purpose.
     listed = await client.get("/api/v1/first-aid")
     assert listed.status_code == 200
+
+
+# ── The register's date range ───────────────────────────────────────────────
+
+async def test_the_range_reaches_both_halves_of_the_register(hse_manager, db_session):
+    """★ The range has to filter what is stored here *and* what comes from the
+    injury form, or the statutory register answers a month with half of it.
+
+    The list is served a hundred rows at a time, so this cannot be a filter
+    applied to whatever arrived: a March asked for after a busy year would come
+    back empty and read as a March with no treatments.
+    """
+    _, client = hse_manager
+    legacy = await _legacy_entry(
+        db_session, occurred_at=datetime(2026, 5, 12, 9, 15, tzinfo=ET),
+        injured_name="Older register row")
+    old = await _legacy_entry(
+        db_session, occurred_at=datetime(2026, 1, 8, 9, 15, tzinfo=ET),
+        injured_name="Well before the range")
+
+    created = await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Grazed knuckle",
+        "incident_type": "first_aid",
+        "occurred_at": datetime(2026, 5, 31, 21, 40, tzinfo=ET).isoformat(),
+        "description": "Caught a lid edge.",
+        "persons": [{"role": "injured", "person_name": "Dario Okafor",
+                     "treatment": "Cleaned and dressed."}],
+    })
+    assert created.status_code in (200, 201), created.text
+    await client.post(f"/api/v1/incidents/{created.json()['id']}/submit")
+
+    may = await client.get("/api/v1/first-aid?occurred_from=2026-05-01&occurred_to=2026-05-31")
+    assert may.status_code == 200, may.text
+    rows = may.json()
+    assert str(legacy.id) in {e["id"] for e in rows}
+    # 9:40pm on the 31st: UTC calls it June, Ontario does not.
+    assert created.json()["id"] in {e["incident_id"] for e in rows}
+    assert str(old.id) not in {e["id"] for e in rows}
+
+    # And a range wide enough to hold January has it again, so the assertion
+    # above is about the range and not about a row having gone missing. Asked
+    # without a range this would depend on how many entries the rest of the
+    # suite had already written, which is the truncation this work is about.
+    whole_year = await client.get(
+        "/api/v1/first-aid?occurred_from=2026-01-01&occurred_to=2026-12-31")
+    assert str(old.id) in {e["id"] for e in whole_year.json()}

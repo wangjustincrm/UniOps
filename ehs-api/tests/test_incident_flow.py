@@ -522,3 +522,57 @@ async def test_body_part_and_nature_reach_the_injury_figures(hse_manager, worker
     assert any(row["label"] == hand["label"] for row in figures["body_parts"]), (
         "a body part recorded on the form has to reach the figure that is "
         "supposed to be showing it")
+
+
+# ── The register's date range ───────────────────────────────────────────────
+
+async def test_a_late_evening_incident_belongs_to_the_day_it_happened(hse_manager):
+    """★ 10pm on 31 August is 02:00 on 1 September in UTC.
+
+    Filtering on the stored instant against a bare date would file this one
+    under September, and the August range an inspector asked for would come
+    back one incident short — with nothing on screen to say so.
+    """
+    _, client = hse_manager
+    late = datetime(2026, 8, 31, 22, 10, tzinfo=ET)
+    incident = (await client.post("/api/v1/incidents", json=_payload(
+        title="Late shift, last day of the month",
+        occurred_at=late.isoformat()))).json()
+
+    august = await client.get(
+        "/api/v1/incidents?occurred_from=2026-08-01&occurred_to=2026-08-31")
+    assert august.status_code == 200, august.text
+    assert incident["id"] in {r["id"] for r in august.json()}
+
+    september = await client.get(
+        "/api/v1/incidents?occurred_from=2026-09-01&occurred_to=2026-09-30")
+    assert incident["id"] not in {r["id"] for r in september.json()}
+
+
+async def test_the_range_admits_as_well_as_excludes(hse_manager):
+    """A filter that returns nothing would pass the test above on its own."""
+    _, client = hse_manager
+    inside = (await client.post("/api/v1/incidents", json=_payload(
+        title="Inside the range",
+        occurred_at=datetime(2026, 7, 15, 9, 0, tzinfo=ET).isoformat()))).json()
+    outside = (await client.post("/api/v1/incidents", json=_payload(
+        title="Well outside it",
+        occurred_at=datetime(2026, 3, 2, 9, 0, tzinfo=ET).isoformat()))).json()
+
+    rows = await client.get(
+        "/api/v1/incidents?occurred_from=2026-07-01&occurred_to=2026-07-31")
+    ids = {r["id"] for r in rows.json()}
+    assert inside["id"] in ids
+    assert outside["id"] not in ids
+
+    # And a range wide enough to hold both returns both — the assertion above
+    # is about the range, not about a row having gone missing.
+    #
+    # ★ Asked without a range this would be flaky, and flaky for exactly the
+    # reason this feature exists: the register answers with the fifty most
+    # recent, the suite shares one database, and most of its incidents are
+    # dated "now" — so March 2026 falls off the end once enough tests have
+    # run before this one.
+    whole_year = await client.get(
+        "/api/v1/incidents?occurred_from=2026-01-01&occurred_to=2026-12-31&limit=200")
+    assert {inside["id"], outside["id"]} <= {r["id"] for r in whole_year.json()}

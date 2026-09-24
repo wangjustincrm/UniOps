@@ -22,7 +22,13 @@ def month_start(day: date) -> date:
     return day.replace(day=1)
 
 
-async def list_talks(db: AsyncSession, *, limit: int = 24) -> list[ToolboxTalk]:
+async def list_talks(db: AsyncSession, *, limit: int = 120) -> list[ToolboxTalk]:
+    """Every topic, newest first. One a month, so this is a decade of them.
+
+    The cap was two years, which the screen never showed and the date filter
+    would have turned into a lie: asked for 2026 it would have answered with
+    the twenty-four most recent talks and found none.
+    """
     return list((await db.execute(
         select(ToolboxTalk).order_by(ToolboxTalk.period_month.desc()).limit(limit)
     )).scalars().all())

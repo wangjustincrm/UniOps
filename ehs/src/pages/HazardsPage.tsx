@@ -15,7 +15,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldAlert, Plus, X } from 'lucide-react'
 import { api } from '@/lib/api'
-import { Pagination, SearchBox, useListView } from '@/components/ListView'
+import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import { consequenceLabel, describedConsequenceTypes } from '@/lib/riskMatrix'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -92,6 +92,9 @@ export default function HazardsPage() {
   const [showEliminated, setShowEliminated] = useState(false)
 
   const query = showEliminated ? '' : '?status=open&status=controlled'
+  // `list_hazards` caps at 300 with no parameter to raise it.
+  const HAZARD_LIMIT = 300
+
   const hazards = useQuery({
     queryKey: ['hazards', showEliminated],
     queryFn: () => api.get<Hazard[]>(`/api/v1/hazards${query}`),
@@ -103,7 +106,7 @@ export default function HazardsPage() {
   const list = useListView(hazards.data, (h) => [
     h.hazard_no, h.title, h.description, h.location_path, h.owner_name,
     h.hazard_type_label, h.current_rating, h.status,
-  ])
+  ], { dateOf: (h) => h.identified_on })
 
   return (
     <div className="p-4">
@@ -143,7 +146,9 @@ export default function HazardsPage() {
       </label>
 
       <SearchBox value={list.query} onChange={list.setQuery}
-                 placeholder="Search by number, what it is, area, owner or rating" />
+                 placeholder="Search by number, what it is, area, owner or rating">
+        <DateRangeFilter {...list.dateFilter} />
+      </SearchBox>
 
       {hazards.data?.length === 0 && !creating ? (
         <Empty>
@@ -227,7 +232,9 @@ export default function HazardsPage() {
       )}
 
       <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
-                  onPage={list.setPage} noun="hazards" />
+                  onPage={list.setPage} noun="hazards"
+                  capped={(hazards.data ?? []).length >= HAZARD_LIMIT}
+                  loaded={(hazards.data ?? []).length} />
 
       {assessing && (
         <AssessDialog hazard={assessing} onClose={() => setAssessing(null)} />

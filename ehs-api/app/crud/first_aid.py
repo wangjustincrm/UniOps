@@ -9,7 +9,7 @@ that can be edited afterwards is not evidence of anything.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -20,6 +20,7 @@ from app.models.incident import Incident, IncidentPerson
 from app.models.mirrors import Location, User
 from app.schemas.first_aid import EscalateIn, FirstAidIn
 from app.services.numbering import next_number
+from app.services.day_range import day_bounds
 
 
 async def _name(db: AsyncSession, user_id: uuid.UUID | None) -> str | None:
@@ -74,6 +75,8 @@ async def list_(
     injured_user_id: uuid.UUID | None = None,
     location_id: uuid.UUID | None = None,
     escalated: bool | None = None,
+    occurred_from: date | None = None,
+    occurred_to: date | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[FirstAidLog]:
@@ -86,6 +89,15 @@ async def list_(
         stmt = stmt.where(FirstAidLog.incident_id.is_not(None))
     elif escalated is False:
         stmt = stmt.where(FirstAidLog.incident_id.is_(None))
+    # In SQL, not in the browser: the register is capped at a hundred rows, and
+    # a range applied afterwards would answer "nothing in March" with a
+    # straight face for a March that simply was not fetched. This one is kept
+    # for five years under Regulation 1101 and read by inspectors.
+    start, end = day_bounds(occurred_from, occurred_to)
+    if start:
+        stmt = stmt.where(FirstAidLog.occurred_at >= start)
+    if end:
+        stmt = stmt.where(FirstAidLog.occurred_at < end)
     stmt = stmt.order_by(FirstAidLog.occurred_at.desc()).limit(limit).offset(offset)
     return list((await db.execute(stmt)).scalars())
 
@@ -150,6 +162,8 @@ async def first_aid_from_incidents(
     db: AsyncSession, *,
     injured_user_id: uuid.UUID | None = None,
     location_id: uuid.UUID | None = None,
+    occurred_from: date | None = None,
+    occurred_to: date | None = None,
     limit: int = 100,
 ) -> list:
     """First aid recorded on an injury form, shaped like a register entry.
@@ -175,6 +189,11 @@ async def first_aid_from_incidents(
         .order_by(Incident.occurred_at.desc())
         .limit(limit)
     )
+    start, end = day_bounds(occurred_from, occurred_to)
+    if start:
+        stmt = stmt.where(Incident.occurred_at >= start)
+    if end:
+        stmt = stmt.where(Incident.occurred_at < end)
     if injured_user_id:
         stmt = stmt.where(IncidentPerson.user_id == injured_user_id)
     if location_id:

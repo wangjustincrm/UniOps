@@ -10,7 +10,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ClipboardList, Plus } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
-import { Pagination, SearchBox, useListView } from '@/components/ListView'
+import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import { formatDateTime } from '@/lib/formatDate'
 import { LocationSelect } from '@/components/LocationSelect'
 import { StatusBadge } from '@/components/StatusBadge'
@@ -56,9 +56,18 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
   })
   // Overdue and upcoming inspections. Ordered by due date server-side, so the
   // late ones are simply first.
+  // ★ The limits are asked for explicitly, and at the endpoint's maximum. The
+  // defaults are 100 due runs and 50 submissions, which the date filter would
+  // quietly turn into a lie: a range over rows that were never fetched finds
+  // nothing and looks like a month in which nothing was filled in. The pager
+  // says so when a list comes back full.
+  const RUNS_LIMIT = 300
+  const SUBMISSIONS_LIMIT = 200
+
   const runs = useQuery({
     queryKey: ['form-runs'],
-    queryFn: () => api.get<Run[]>('/api/v1/forms/runs?status=pending&status=missed'),
+    queryFn: () => api.get<Run[]>(
+      `/api/v1/forms/runs?status=pending&status=missed&limit=${RUNS_LIMIT}`),
   })
 
   const startRun = useMutation({
@@ -69,16 +78,17 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
 
   const submissions = useQuery({
     queryKey: ['form-submissions'],
-    queryFn: () => api.get<SubmissionItem[]>('/api/v1/forms/submissions'),
+    queryFn: () => api.get<SubmissionItem[]>(
+      `/api/v1/forms/submissions?limit=${SUBMISSIONS_LIMIT}`),
   })
   // Two lists on this page grow: what is owed and what has been filed. The
   // template list is a handful of forms and stays one screen.
   const dueList = useListView(runs.data, (r) => [
     r.department_name, r.status, r.due_on,
-  ])
+  ], { dateOf: (r) => r.due_on })
   const filedList = useListView(submissions.data, (x) => [
     x.submission_no, x.location_path, x.submitted_by_name, x.status,
-  ])
+  ], { dateOf: (x) => x.occurred_at })
 
   const names = new Map((templates.data ?? []).map((t) => [t.id, t.name]))
 
@@ -107,7 +117,9 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
       {tab === 'due' && (
         <>
           <SearchBox value={dueList.query} onChange={dueList.setQuery}
-                     placeholder="Search by department or due date" />
+                     placeholder="Search by department or due date">
+            <DateRangeFilter {...dueList.dateFilter} />
+          </SearchBox>
 
           {runs.data?.length === 0 && (
             <p className="p-8 text-center text-sm text-neutral-500">
@@ -150,7 +162,9 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
           </ul>
 
           <Pagination page={dueList.page} pageCount={dueList.pageCount}
-                      total={dueList.total} onPage={dueList.setPage} noun="due forms" />
+                      total={dueList.total} onPage={dueList.setPage} noun="due forms"
+                      capped={(runs.data ?? []).length >= RUNS_LIMIT}
+                      loaded={(runs.data ?? []).length} />
         </>
       )}
 
@@ -188,7 +202,9 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
       {tab === 'done' && (
         <>
           <SearchBox value={filedList.query} onChange={filedList.setQuery}
-                     placeholder="Search by number, area or who filed it" />
+                     placeholder="Search by number, area or who filed it">
+            <DateRangeFilter {...filedList.dateFilter} />
+          </SearchBox>
 
           {submissions.data?.length === 0 && (
             <p className="p-8 text-center text-sm text-neutral-500">Nothing filled in yet.</p>
@@ -221,7 +237,9 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
           </ul>
 
           <Pagination page={filedList.page} pageCount={filedList.pageCount}
-                      total={filedList.total} onPage={filedList.setPage} noun="submissions" />
+                      total={filedList.total} onPage={filedList.setPage} noun="submissions"
+                      capped={(submissions.data ?? []).length >= SUBMISSIONS_LIMIT}
+                      loaded={(submissions.data ?? []).length} />
         </>
       )}
 

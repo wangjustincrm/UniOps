@@ -16,7 +16,7 @@ import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
 import { ClipboardList, Plus, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
-import { Pagination, SearchBox, useListView } from '@/components/ListView'
+import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useMyProfile } from '@/hooks/useMyProfile'
@@ -58,6 +58,11 @@ export default function JsaPage() {
   const mayWrite = can('ehs.action.write')
   const [creating, setCreating] = useState(false)
 
+  // `list_jsa` caps at 200 with no way to ask for more; the pager says so if
+  // the list ever comes back full, because a date range over a truncated list
+  // finds nothing and looks like a year with no analyses.
+  const JSA_LIMIT = 200
+
   const jsas = useQuery({
     queryKey: ['jsa'],
     queryFn: () => api.get<Jsa[]>('/api/v1/jsa?status=draft&status=active'),
@@ -65,7 +70,7 @@ export default function JsaPage() {
   const list = useListView(jsas.data, (j) => [
     j.jsa_no, j.title, j.job_description, j.location_path, j.department_name,
     j.required_ppe, j.status, j.created_by_name,
-  ])
+  ], { dateOf: (j) => j.created_at })
 
   return (
     <div className="p-4">
@@ -80,7 +85,9 @@ export default function JsaPage() {
       </PageHeader>
 
       <SearchBox value={list.query} onChange={list.setQuery}
-                 placeholder="Search by number, job, area, PPE or who wrote it" />
+                 placeholder="Search by number, job, area, PPE or who wrote it">
+        <DateRangeFilter {...list.dateFilter} />
+      </SearchBox>
 
       {creating && <NewJsaForm onClose={() => setCreating(false)} />}
 
@@ -112,7 +119,9 @@ export default function JsaPage() {
       )}
 
       <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
-                  onPage={list.setPage} noun="analyses" />
+                  onPage={list.setPage} noun="analyses"
+                  capped={(jsas.data ?? []).length >= JSA_LIMIT}
+                  loaded={(jsas.data ?? []).length} />
     </div>
   )
 }

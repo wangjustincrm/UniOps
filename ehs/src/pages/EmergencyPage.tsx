@@ -16,7 +16,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, HeartPulse, Plus, Siren, Timer, X } from 'lucide-react'
 import { api } from '@/lib/api'
-import { Pagination, SearchBox, useListView } from '@/components/ListView'
+import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import { formatDate } from '@/lib/formatDate'
 import { Link } from 'react-router-dom'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -111,6 +111,11 @@ function DrillsTab({ mayRun }: { mayRun: boolean }) {
   const [creating, setCreating] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
 
+  // What the server will send at most: `list_drills` caps at 200 and no
+  // parameter raises it. Far above this plant's volume, but the pager says so
+  // rather than letting a date range read as "no drills that year".
+  const DRILL_LIMIT = 200
+
   const drills = useQuery({
     queryKey: ['drills'],
     queryFn: () => api.get<Drill[]>('/api/v1/drills'),
@@ -120,7 +125,7 @@ function DrillsTab({ mayRun }: { mayRun: boolean }) {
     // The areas are a list; flattened so searching "packaging" finds a drill
     // that covered it.
     ...d.areas.map((a) => a.path),
-  ])
+  ], { dateOf: (d) => d.held_on ?? d.planned_for })
   const trend = useQuery({
     queryKey: ['drill-trend'],
     queryFn: () => api.get<TrendRow[]>('/api/v1/drills/trend?drill_type=fire'),
@@ -141,7 +146,9 @@ function DrillsTab({ mayRun }: { mayRun: boolean }) {
       {creating && <NewDrillForm onClose={() => setCreating(false)} />}
 
       <SearchBox value={list.query} onChange={list.setQuery}
-                 placeholder="Search drills by number, scenario, type or area" />
+                 placeholder="Search drills by number, scenario, type or area">
+        <DateRangeFilter {...list.dateFilter} />
+      </SearchBox>
 
       {drills.data?.length === 0 && !creating ? (
         <Empty>
@@ -189,7 +196,9 @@ function DrillsTab({ mayRun }: { mayRun: boolean }) {
       )}
 
       <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
-                  onPage={list.setPage} noun="drills" />
+                  onPage={list.setPage} noun="drills"
+                  capped={(drills.data ?? []).length >= DRILL_LIMIT}
+                  loaded={(drills.data ?? []).length} />
     </>
   )
 }

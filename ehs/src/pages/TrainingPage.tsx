@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CalendarDays, Plus, Upload, X, Paperclip } from 'lucide-react'
 import { api, apiBlob , openFile } from '@/lib/api'
-import { Pagination, SearchBox, useListView } from '@/components/ListView'
+import { Pagination, SearchBox, useListView, DateRangeFilter, useDateFilter } from '@/components/ListView'
 import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
@@ -82,6 +82,11 @@ function SessionsTab({ mayWrite }: { mayWrite: boolean }) {
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
 
+  // `list_sessions` caps at 100 with no parameter to raise it. This tab has no
+  // pager to carry the usual note, so it says so in a line of its own — past
+  // sessions are what accumulate, and they are the half that would drop off.
+  const SESSION_LIMIT = 100
+
   const sessions = useQuery({
     queryKey: ['course-sessions'],
     queryFn: () => api.get<Session[]>('/api/v1/course-sessions'),
@@ -89,6 +94,7 @@ function SessionsTab({ mayWrite }: { mayWrite: boolean }) {
 
   const upcoming = (sessions.data ?? []).filter((s) => s.status === 'scheduled')
   const past = (sessions.data ?? []).filter((s) => s.status !== 'scheduled')
+  const capped = (sessions.data ?? []).length >= SESSION_LIMIT
 
   return (
     <>
@@ -108,6 +114,13 @@ function SessionsTab({ mayWrite }: { mayWrite: boolean }) {
           No course sessions yet. Scheduling one is how a course gets a date, a
           room, and a register of who attended.
         </Empty>
+      )}
+
+      {capped && (
+        <p className="mb-3 text-xs text-warning-700">
+          Only the {SESSION_LIMIT} most recent sessions were loaded; older ones are
+          not in this list.
+        </p>
       )}
 
       {upcoming.length > 0 && (
@@ -319,8 +332,11 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
   // them on screen.
   const [search, setSearch] = useState('')
   const [order, setOrder] = useState<'date' | 'person' | 'topic'>('date')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  // The same range control the registers use, but the bounds go to the server:
+  // this list is filtered in SQL, so a narrow range reaches records older than
+  // the page would otherwise have been sent.
+  const dateFilter = useDateFilter()
+  const { from, to } = dateFilter.range
 
   const query = [
     search.trim() ? `search=${encodeURIComponent(search.trim())}` : '',
@@ -334,8 +350,9 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
     queryFn: () => api.get<Record_[]>(
       `/api/v1/training/records${query ? `?${query}` : ''}`),
   })
-  // The records list already carries its own search and date range, which go
-  // to the server. Only the pager is client side, over what came back.
+  // The search and the range go to the server; only the pager is client side,
+  // over what came back. Filtering the same rows again here would narrow a set
+  // that was already narrowed, and hide rows for a reason nobody could see.
   const recordPage = useListView(records.data, () => [])
 
   return (
@@ -371,15 +388,7 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
           <option value="person">By person</option>
           <option value="topic">By course</option>
         </select>
-        <span className="flex items-center gap-1.5">
-          <input type="date" className="h-10 rounded-lg border border-neutral-200 px-2 text-sm"
-                 value={from} onChange={(e) => setFrom(e.target.value)}
-                 aria-label="Completed on or after" />
-          <span className="text-xs text-neutral-400">to</span>
-          <input type="date" className="h-10 rounded-lg border border-neutral-200 px-2 text-sm"
-                 value={to} onChange={(e) => setTo(e.target.value)}
-                 aria-label="Completed on or before" />
-        </span>
+        <DateRangeFilter {...dateFilter} />
       </div>
 
       {records.data?.length === 0 && !adding ? (

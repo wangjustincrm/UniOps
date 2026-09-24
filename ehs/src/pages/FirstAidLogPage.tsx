@@ -13,11 +13,11 @@
  */
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ArrowUpRight, Plus } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
-import { Pagination, SearchBox, useListView } from '@/components/ListView'
+import { Pagination, SearchBox, useListView, DateRangeFilter, useDateFilter } from '@/components/ListView'
 import { PageHeader } from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -33,14 +33,28 @@ export default function FirstAidLogPage() {
   const canWrite = can('ehs.firstaid.write')
   const [escalating, setEscalating] = useState<{ id: string; log_no: string; injured_name: string } | null>(null)
 
+  // ★ The range is a query parameter, not a filter over what arrived. The
+  // register is served a hundred rows at a time and is kept for five years;
+  // narrowing after the fact would answer "nothing in that month" with the
+  // hundred most recent treatments in hand.
+  const dateFilter = useDateFilter()
+  const { from, to } = dateFilter.range
+  const params = [
+    from ? `occurred_from=${from}` : '',
+    to ? `occurred_to=${to}` : '',
+  ].filter(Boolean).join('&')
+
   const { data, isLoading } = useQuery({
-    queryKey: ['first-aid'],
-    queryFn: () => api.get<Entry[]>('/api/v1/first-aid'),
+    queryKey: ['first-aid', from, to],
+    queryFn: () => api.get<Entry[]>(`/api/v1/first-aid${params ? `?${params}` : ''}`),
+    // Keep the rows on screen while the new range loads, so the date inputs
+    // are not torn down and rebuilt under the person typing into them.
+    placeholderData: keepPreviousData,
   })
   const list = useListView(data, (e) => [
     e.log_no, e.injured_name, e.first_aider_name, e.body_part_label,
     e.treatment_given, e.location_path,
-  ])
+  ], { resetKey: `${from}|${to}` })
 
 
 
@@ -77,11 +91,17 @@ export default function FirstAidLogPage() {
 
 
       <SearchBox value={list.query} onChange={list.setQuery}
-                 placeholder="Search by number, who was treated, body part or treatment" />
+                 placeholder="Search by number, who was treated, body part or treatment">
+        <DateRangeFilter {...dateFilter} />
+      </SearchBox>
 
       {isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
       {data?.length === 0 && (
-        <p className="p-8 text-center text-sm text-neutral-500">No treatments recorded yet.</p>
+        <p className="p-8 text-center text-sm text-neutral-500">
+          {dateFilter.preset === 'all'
+            ? 'No treatments recorded yet.'
+            : 'No treatments in this date range.'}
+        </p>
       )}
       <ul className="flex flex-col gap-2">
         {list.pageRows.map((e) => (

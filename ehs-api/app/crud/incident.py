@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, text
@@ -16,6 +16,7 @@ from app.services import incident_type
 from app.schemas.incident import IncidentClassify, IncidentCreate
 from app.services import deadlines as deadline_service
 from app.services.numbering import next_number
+from app.services.day_range import day_bounds
 
 # Editing is allowed while an incident is still a draft. Once submitted it is
 # part of the record: corrections happen through the investigation and the
@@ -185,12 +186,23 @@ async def list_(
     form_kind: str | None = None,
     location_id: uuid.UUID | None = None,
     reported_by: uuid.UUID | None = None,
+    occurred_from: date | None = None,
+    occurred_to: date | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[Incident]:
     stmt = select(Incident)
     if reported_by:
         stmt = stmt.where(Incident.reported_by == reported_by)
+    # The date range is applied here rather than in the browser. The list is
+    # capped at fifty by default, so a range filtered after the fact would be
+    # a range over the fifty newest incidents and would show nothing at all for
+    # last spring — while looking exactly like a spring with no incidents.
+    start, end = day_bounds(occurred_from, occurred_to)
+    if start:
+        stmt = stmt.where(Incident.occurred_at >= start)
+    if end:
+        stmt = stmt.where(Incident.occurred_at < end)
     if statuses:
         stmt = stmt.where(Incident.status.in_(statuses))
     if form_kind:

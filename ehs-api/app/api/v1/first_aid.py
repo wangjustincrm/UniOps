@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -48,6 +49,8 @@ async def list_register(
     escalated: bool | None = Query(
         default=None,
         description="Entries that did (true) or did not (false) become incidents."),
+    occurred_from: date | None = None,
+    occurred_to: date | None = None,
     limit: int = Query(default=100, le=500),
     offset: int = 0,
 ):
@@ -62,10 +65,12 @@ async def list_register(
     is not a trade worth making.
     """
     rows = await crud.list_(db, injured_user_id=injured_user_id, location_id=location_id,
-                            escalated=escalated, limit=limit, offset=offset)
+                            escalated=escalated, limit=limit, offset=offset,
+                            occurred_from=occurred_from, occurred_to=occurred_to)
     entries = [FirstAidOut.model_validate(r) for r in rows]
     entries.extend(await crud.first_aid_from_incidents(
-        db, injured_user_id=injured_user_id, location_id=location_id, limit=limit))
+        db, injured_user_id=injured_user_id, location_id=location_id, limit=limit,
+        occurred_from=occurred_from, occurred_to=occurred_to))
     entries.sort(key=lambda e: e.occurred_at, reverse=True)
     return entries[:limit]
 

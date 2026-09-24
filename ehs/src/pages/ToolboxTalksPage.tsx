@@ -13,7 +13,7 @@ import { useState, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Users, Paperclip } from 'lucide-react'
 import { api, ApiError, openFile } from '@/lib/api'
-import { Pagination, SearchBox, useListView } from '@/components/ListView'
+import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import {
   PageHeader, SectionTitle,
 } from '@/components/ui'
@@ -71,9 +71,12 @@ export default function ToolboxTalksPage() {
   // Three lists, three searches. One box filtering all three would hide what
   // it was doing: a hit in Delivered while you are looking at what is still
   // owed reads as the filter having failed.
-  const toDeliver = useListView(mine, (d) => [d.department_name, d.supervisor_name])
-  const topics = useListView(talks.data, (t) => [t.talk_no, t.title, t.topic])
-  const delivered = useListView(done, (d) => [d.department_name, d.supervisor_name])
+  const toDeliver = useListView(mine, (d) => [d.department_name, d.supervisor_name],
+    { dateOf: (d) => d.held_at ?? d.created_at })
+  const topics = useListView(talks.data, (t) => [t.talk_no, t.title, t.topic],
+    { dateOf: (t) => t.period_month })
+  const delivered = useListView(done, (d) => [d.department_name, d.supervisor_name],
+    { dateOf: (d) => d.held_at ?? d.created_at })
 
   return (
     <div className="p-4">
@@ -91,7 +94,9 @@ export default function ToolboxTalksPage() {
         <>
           <SectionTitle className="mb-2">To deliver</SectionTitle>
           <SearchBox value={toDeliver.query} onChange={toDeliver.setQuery}
-                     placeholder="Search by crew or supervisor" />
+                     placeholder="Search by crew or supervisor">
+            <DateRangeFilter {...toDeliver.dateFilter} />
+          </SearchBox>
           <ul className="mb-6 flex flex-col gap-2">
             {toDeliver.pageRows.map((d) => (
               <li key={d.id}>
@@ -119,7 +124,9 @@ export default function ToolboxTalksPage() {
 
       <SectionTitle className="mb-2">Topics</SectionTitle>
       <SearchBox value={topics.query} onChange={topics.setQuery}
-                 placeholder="Search topics by number, title or subject" />
+                 placeholder="Search topics by number, title or subject">
+        <DateRangeFilter {...topics.dateFilter} />
+      </SearchBox>
       <ul className="flex flex-col gap-2">
         {topics.pageRows.map((t) => (
           <li key={t.id} className="rounded-xl border border-neutral-200 bg-white p-3.5">
@@ -182,7 +189,9 @@ export default function ToolboxTalksPage() {
         <>
           <SectionTitle className="mb-2 mt-6">Delivered</SectionTitle>
           <SearchBox value={delivered.query} onChange={delivered.setQuery}
-                     placeholder="Search delivered by crew or supervisor" />
+                     placeholder="Search delivered by crew or supervisor">
+            <DateRangeFilter {...delivered.dateFilter} />
+          </SearchBox>
           <ul className="flex flex-col gap-2">
             {delivered.pageRows.map((d) => (
               <li key={d.id} className="rounded-xl border border-neutral-200 bg-white p-3 text-sm">

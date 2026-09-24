@@ -69,9 +69,29 @@ export function countdown(dueAt: string | null | undefined, now: Date = new Date
  * inspector finds rather than we do.
  */
 export function todayForInput(): string {
-  const d = new Date()
+  return dayOf(new Date())
+}
+
+/** A Date's own calendar day, as `yyyy-mm-dd`. */
+export function dayOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${
     String(d.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * The calendar day a stored value falls on, as `yyyy-mm-dd`, for comparing
+ * against a date range the person picked.
+ *
+ * A date-only string is already a calendar day and is returned untouched —
+ * parsing it through `Date` is the repository's oldest date bug. A timestamp
+ * is converted to the day it happened *here*: a 9pm incident is stored as the
+ * next day in UTC, and it must not fall outside a range that includes today.
+ */
+export function localDay(value: string | null | undefined): string | null {
+  if (!value) return null
+  if (!value.includes('T')) return value.slice(0, 10)
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? value.slice(0, 10) : dayOf(d)
 }
 
 export function nowForInput(): string {
