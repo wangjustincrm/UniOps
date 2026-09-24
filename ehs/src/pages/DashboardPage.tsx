@@ -30,6 +30,7 @@
  */
 import { Fragment, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { CalendarClock, TrendingUp } from 'lucide-react'
 import { api } from '@/lib/api'
 import {
@@ -46,7 +47,7 @@ interface Headline {
 }
 interface MonthRow { month: string; first_aid: number; medical_aid: number; lost_time: number }
 interface NearMissRow { month: string; this_year: number; last_year: number }
-interface CountRow { label: string; count: number }
+interface CountRow { label: string; count: number; id?: string | null }
 interface ParticipationRow {
   person: string; toolbox_talk: number; good_catch: number; hazard_assessment: number
 }
@@ -77,6 +78,60 @@ const SEVERITY = [
   { key: 'lost_time', label: 'Lost time', cls: 'bg-danger-500' },
 ] as const
 
+/**
+ * A link from a figure to the records it was counted from.
+ *
+ * ★ The parameters are the server's own, and they say the same thing the
+ * figure's own query says — same year boundary, same definition of
+ * "recordable", same null department. A drill-down that lands on a list
+ * filtered by something merely *near* the number is worse than none: the
+ * reader counts the rows, gets a different answer, and stops trusting both.
+ *
+ * `via` is what the list says it is showing. It travels in the URL so the page
+ * showing it does not have to reconstruct a description from the filters.
+ */
+function drillTo(year: number, via: string, params: Record<string, string | undefined>): string {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) if (v) q.append(k, v)
+  q.set('occurred_from', `${year}-01-01`)
+  q.set('occurred_to', `${year}-12-31`)
+  q.set('via', via)
+  return `/incidents?${q.toString()}`
+}
+
+/**
+ * The same, for one month of a year.
+ *
+ * ★ The month's last day is computed as day 0 of the next one, which gets
+ * February right without a table — and the range is written in local calendar
+ * days, which is how the server reads it. The charts group months in Ontario
+ * time, so anything else would put the last evening of a month in the wrong
+ * bar when it was opened.
+ */
+function monthDrill(year: number, monthIndex: number, via: string,
+                    params: Record<string, string | undefined>): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const last = new Date(year, monthIndex + 1, 0).getDate()
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) if (v) q.append(k, v)
+  q.set('occurred_from', `${year}-${pad(monthIndex + 1)}-01`)
+  q.set('occurred_to', `${year}-${pad(monthIndex + 1)}-${pad(last)}`)
+  q.set('via', `${via} ${year}`)
+  return `/incidents?${q.toString()}`
+}
+
+/** A figure that can be opened. Anything not worth opening stays plain text. */
+function DrillLink({ to, children, className = '' }: {
+  to: string; children: React.ReactNode; className?: string
+}) {
+  return (
+    <Link to={to}
+          className={`rounded-sm underline decoration-transparent underline-offset-2 transition-colors hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500 ${className}`}>
+      {children}
+    </Link>
+  )
+}
+
 function Panel({ title, children, note, className = '' }: {
   title: string; children: React.ReactNode; note?: string; className?: string
 }) {
@@ -89,16 +144,27 @@ function Panel({ title, children, note, className = '' }: {
   )
 }
 
-function Stat({ value, label, sub }: {
+function Stat({ value, label, sub, to, subTo }: {
   value: string | number; label: string; sub?: string
+  /** Where the figure's own records are, when it has some. */
+  to?: string
+  /** Where the smaller figure underneath leads, when that is the countable
+   *  one — the recordable rate is a rate, but "12 recordable" is a list. */
+  subTo?: string
 }) {
   return (
     <div>
-      <p className="text-xl font-bold tabular-nums leading-none text-neutral-900">{value}</p>
+      <p className="text-xl font-bold tabular-nums leading-none text-neutral-900">
+        {to ? <DrillLink to={to}>{value}</DrillLink> : value}
+      </p>
       <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-neutral-500">
         {label}
       </p>
-      {sub && <p className="mt-0.5 text-[11px] text-neutral-400">{sub}</p>}
+      {sub && (
+        <p className="mt-0.5 text-[11px] text-neutral-400">
+          {subTo ? <DrillLink to={subTo}>{sub}</DrillLink> : sub}
+        </p>
+      )}
     </div>
   )
 }
@@ -178,9 +244,12 @@ export default function DashboardPage() {
             {data.medical_events.map((r, i) => {
               const total = r.first_aid + r.medical_aid + r.lost_time
               return (
-                <div key={r.month} className="flex flex-1 flex-col items-center gap-1.5">
-                  <div className="flex w-full flex-1 flex-col justify-end"
-                       title={`${MONTH_NAMES[i]}: ${total}`}>
+                <Link key={r.month}
+                      to={monthDrill(data.headline.year, i, `injuries in ${MONTH_NAMES[i]}`,
+                                     { injured_only: 'true' })}
+                      className="flex flex-1 flex-col items-center gap-1.5 rounded-sm hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
+                      title={`${MONTH_NAMES[i]}: ${total} — open these`}>
+                  <div className="flex w-full flex-1 flex-col justify-end">
                     <div className="flex w-full flex-col-reverse"
                          style={{ height: `${(total / monthMax) * 100}%` }}>
                       {SEVERITY.map(({ key, cls }) => r[key] > 0 && (
@@ -190,7 +259,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <span className="text-[11px] text-neutral-400">{MONTHS[i]}</span>
-                </div>
+                </Link>
               )
             })}
           </div>
@@ -202,16 +271,20 @@ export default function DashboardPage() {
                note="A rising line here is good — it means people are reporting what nearly happened.">
           <div className="flex h-28 items-stretch gap-1.5">
             {data.near_misses.map((r, i) => (
-              <div key={r.month} className="flex flex-1 flex-col items-center gap-1.5">
-                <div className="relative flex w-full flex-1 items-end"
-                     title={`${MONTH_NAMES[i]}: ${r.this_year} (last year ${r.last_year})`}>
+              <Link key={r.month}
+                    to={monthDrill(data.headline.year, i,
+                                   `near misses in ${MONTH_NAMES[i]}`,
+                                   { form_kind: 'near_miss' })}
+                    className="flex flex-1 flex-col items-center gap-1.5 rounded-sm hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
+                    title={`${MONTH_NAMES[i]}: ${r.this_year} (last year ${r.last_year}) — open this year's`}>
+                <div className="relative flex w-full flex-1 items-end">
                   <div className="absolute inset-x-0 bottom-0 rounded-sm bg-neutral-200"
                        style={{ height: `${(r.last_year / nearMax) * 100}%` }} />
                   <div className="relative w-full rounded-sm bg-primary-500"
                        style={{ height: `${(r.this_year / nearMax) * 100}%` }} />
                 </div>
                 <span className="text-[11px] text-neutral-400">{MONTHS[i]}</span>
-              </div>
+              </Link>
             ))}
           </div>
           <Legend items={[{ label: 'This year', cls: 'bg-primary-500' },
@@ -262,7 +335,18 @@ export default function DashboardPage() {
           {data.injured_departments.length === 0 ? (
             <EmptyNote>No injuries recorded this year.</EmptyNote>
           ) : (
-            <Bars rows={data.injured_departments} />
+            <Bars
+              rows={data.injured_departments}
+              linkFor={(r) => drillTo(
+                h.year, `injuries in ${r.label}`,
+                // The id decides, not the label: "Not recorded" is this
+                // chart's name for a null department, and a row without an id
+                // has to ask for exactly that rather than for a department
+                // that happens to be called "Not recorded".
+                r.id
+                  ? { injured_only: 'true', department_id: r.id }
+                  : { injured_only: 'true', no_department: 'true' })}
+            />
           )}
         </Panel>
     ),
@@ -273,7 +357,11 @@ export default function DashboardPage() {
               No body parts recorded. These are entered in Section B of an injury report.
             </EmptyNote>
           ) : (
-            <Bars rows={data.body_parts} />
+            <Bars
+              rows={data.body_parts}
+              linkFor={(r) => drillTo(h.year, `injuries to the ${r.label.toLowerCase()}`,
+                                      { body_part_label: r.label })}
+            />
           )}
         </Panel>
     ),
@@ -336,7 +424,15 @@ export default function DashboardPage() {
           <CalendarClock className="h-8 w-8 shrink-0 text-primary-600" aria-hidden />
           <div>
             <p className="text-5xl font-bold tabular-nums leading-none text-primary-800">
-              {h.days_since_last_incident ?? '—'}
+              {h.days_since_last_incident !== null ? (
+                // Opens the injuries newest first, so the one this count runs
+                // from is the row at the top. There is no "the last injury"
+                // link to give: the figure is a distance, not a record.
+                <DrillLink to={drillTo(h.year, `injuries in ${h.year}, newest first`,
+                                       { injured_only: 'true' })}>
+                  {h.days_since_last_incident}
+                </DrillLink>
+              ) : '—'}
             </p>
             <p className="mt-1.5 text-xs font-semibold uppercase tracking-wide text-primary-700">
               Days since the last medical incident
@@ -346,9 +442,10 @@ export default function DashboardPage() {
 
         <div className="rounded-xl border border-neutral-200 bg-white p-5">
           <div className="flex items-baseline gap-2.5">
-            <span className="text-4xl font-bold tabular-nums leading-none text-neutral-900">
+            <DrillLink to={drillTo(h.year, `injuries in ${h.year}`, { injured_only: 'true' })}
+                       className="text-4xl font-bold tabular-nums leading-none text-neutral-900">
               {h.injuries}
-            </span>
+            </DrillLink>
             <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
               injuries this year
             </span>
@@ -361,11 +458,14 @@ export default function DashboardPage() {
                 {SEVERITY.map(({ key, cls, label }) => {
                   const n = h[key === 'medical_aid' ? 'medical' : key] as number
                   return n > 0 && (
-                    <div key={key} className={`${cls} flex items-center justify-center`}
-                         style={{ width: `${(n / h.injuries) * 100}%` }}
-                         title={`${label}: ${n}`}>
+                    <Link key={key}
+                          to={drillTo(h.year, `${label.toLowerCase()} injuries in ${h.year}`,
+                                      { injury_class: key })}
+                          className={`${cls} flex items-center justify-center`}
+                          style={{ width: `${(n / h.injuries) * 100}%` }}
+                          title={`${label}: ${n} — open these`}>
                       <span className="text-[11px] font-bold text-white">{n}</span>
-                    </div>
+                    </Link>
                   )
                 })}
               </div>
@@ -380,7 +480,11 @@ export default function DashboardPage() {
       {/* ── Everything else, at the weight it deserves ────────────────────── */}
       <div className="mb-3 grid grid-cols-2 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-4">
         <Stat value={h.rir ?? '—'} label="Recordable incident rate"
-              sub={h.rir === null ? 'needs hours worked' : `${h.recordable} recordable`} />
+              sub={h.rir === null ? 'needs hours worked' : `${h.recordable} recordable`}
+              subTo={h.recordable > 0
+                ? drillTo(h.year, `the ${h.recordable} recordable incidents of ${h.year}`,
+                          { recordable_only: 'true' })
+                : undefined} />
         <Stat value={h.lost_time_hours || '—'} label="Lost time hours" />
         <Stat value={h.cost_total ? `$${h.cost_total.toLocaleString()}` : '—'}
               label="Incident cost"
@@ -388,7 +492,11 @@ export default function DashboardPage() {
                 ? `avg $${h.cost_average} of ${h.cost_known_count} costed`
                 : 'none costed yet'} />
         <Stat value={nearThis} label="Near misses reported"
-              sub={nearLast > 0 ? `${nearLast} last year` : undefined} />
+              sub={nearLast > 0 ? `${nearLast} last year` : undefined}
+              to={nearThis > 0
+                ? drillTo(h.year, `near misses reported in ${h.year}`,
+                          { form_kind: 'near_miss' })
+                : undefined} />
       </div>
 
       {h.rir_note && (
@@ -467,21 +575,40 @@ export default function DashboardPage() {
 }
 
 /** Ranked horizontal bars — the shape of the answer to "which is worst". */
-function Bars({ rows }: { rows: CountRow[] }) {
+function Bars({ rows, linkFor }: {
+  rows: CountRow[]
+  /** Where this row's records are, when they can be reached. */
+  linkFor?: (row: CountRow) => string
+}) {
   const max = Math.max(1, ...rows.map((r) => r.count))
   return (
     <ul className="flex flex-col gap-1.5">
-      {rows.map((r) => (
-        <li key={r.label} className="flex items-center gap-2">
-          <span className="w-28 shrink-0 truncate text-right text-xs text-neutral-600"
-                title={r.label}>
-            {r.label}
-          </span>
-          <span className="h-4 shrink-0 rounded-sm bg-primary-500"
-                style={{ width: `${Math.max(3, (r.count / max) * 62)}%` }} />
-          <span className="text-xs font-semibold tabular-nums text-neutral-800">{r.count}</span>
-        </li>
-      ))}
+      {rows.map((r) => {
+        const bar = (
+          <>
+            <span className="w-28 shrink-0 truncate text-right text-xs text-neutral-600"
+                  title={r.label}>
+              {r.label}
+            </span>
+            <span className="h-4 shrink-0 rounded-sm bg-primary-500"
+                  style={{ width: `${Math.max(3, (r.count / max) * 62)}%` }} />
+            <span className="text-xs font-semibold tabular-nums text-neutral-800">{r.count}</span>
+          </>
+        )
+        return (
+          <li key={r.label}>
+            {linkFor ? (
+              <Link to={linkFor(r)}
+                    className="flex items-center gap-2 rounded-sm py-0.5 hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
+                    title={`${r.label}: ${r.count} — open these`}>
+                {bar}
+              </Link>
+            ) : (
+              <span className="flex items-center gap-2 py-0.5">{bar}</span>
+            )}
+          </li>
+        )
+      })}
     </ul>
   )
 }

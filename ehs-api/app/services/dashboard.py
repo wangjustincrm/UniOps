@@ -19,7 +19,9 @@ than filled with something plausible:
 
 Everything else is real. The year is the calendar year in Ontario local time —
 a report filed at 20:00 on 31 December belongs to that year, not to the next one
-it already is in UTC.
+it already is in UTC. ★ That is now true: `_year_bounds` converts through
+`day_bounds`, where before it handed Postgres two bare dates and got the UTC
+year back.
 """
 from __future__ import annotations
 
@@ -31,6 +33,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import hours as hours_service
+from app.services.day_range import day_bounds
 
 ONTARIO = ZoneInfo("America/Toronto")
 OSHA_BASE_HOURS = 200_000
@@ -40,8 +43,17 @@ OSHA_BASE_HOURS = 200_000
 PARTICIPATION = ("toolbox_talk", "good_catch", "hazard_assessment")
 
 
-def _year_bounds(year: int) -> tuple[date, date]:
-    return date(year, 1, 1), date(year + 1, 1, 1)
+def _year_bounds(year: int) -> tuple[datetime, datetime]:
+    """The year, as the instants that bound it here.
+
+    ★ It used to return two bare dates. Postgres compares a date against a
+    timestamptz by reading the date in the session's timezone, and that session
+    is UTC — so the year was the UTC year, and an injury at 8pm on 31 December
+    was counted in the following one. The docstring at the top of this file
+    claimed otherwise, which is how it survived: the comment described the
+    intention and nobody checked it against the comparison.
+    """
+    return day_bounds(date(year, 1, 1), date(year, 12, 31))
 
 
 async def headline(db: AsyncSession, *, year: int, hours_worked: float | None) -> dict:  # noqa: PLR0914
@@ -132,7 +144,15 @@ async def medical_events_by_month(db: AsyncSession, *, year: int) -> list[dict]:
 
 
 async def near_misses_by_month(db: AsyncSession, *, year: int) -> list[dict]:
-    """Near misses and good catches per month, this year against last."""
+    """Near misses and good catches per month, this year against last.
+
+    ★ Two years wide, and bounded the same way one year is. It used to pass two
+    bare dates, which Postgres read in UTC while the months below are grouped in
+    Ontario time — so the window and the grouping disagreed at both ends and the
+    January and December bars were each short by whatever fell in the four hours
+    between them.
+    """
+    start, end = day_bounds(date(year - 1, 1, 1), date(year, 12, 31))
     rows = (await db.execute(text("""
         select extract(year  from timezone('America/Toronto', occurred_at))::int as y,
                to_char(timezone('America/Toronto', occurred_at), 'MM')          as m,
@@ -141,7 +161,7 @@ async def near_misses_by_month(db: AsyncSession, *, year: int) -> list[dict]:
          where form_kind = 'near_miss'
            and occurred_at >= :start and occurred_at < :end
       group by 1, 2
-    """), {"start": date(year - 1, 1, 1), "end": date(year + 1, 1, 1)})).all()
+    """), {"start": start, "end": end})).all()
 
     out = {f"{m:02d}": {"month": f"{m:02d}", "this_year": 0, "last_year": 0}
            for m in range(1, 13)}
@@ -151,16 +171,23 @@ async def near_misses_by_month(db: AsyncSession, *, year: int) -> list[dict]:
 
 
 async def body_parts(db: AsyncSession, *, year: int) -> list[dict]:
-    """Which parts of the body were hurt — their table beside the figure."""
+    """Which parts of the body were hurt — their table beside the figure.
+
+    ★ Incidents, not injured people: `count(*)` over the persons table counted
+    an incident twice when two people hurt the same part, and every other chart
+    on this page counts incidents. It also has to agree with what opening the
+    bar shows, or the reader counts the rows, gets a smaller number and stops
+    believing both.
+    """
     start, end = _year_bounds(year)
     rows = (await db.execute(text("""
-        select p.body_part_label, count(*)
+        select p.body_part_label, count(distinct i.id)
           from ehs_incident_persons p
           join ehs_incidents i on i.id = p.incident_id
          where i.occurred_at >= :start and i.occurred_at < :end
            and p.body_part_label is not null
       group by 1
-      order by count(*) desc, 1
+      order by count(distinct i.id) desc, 1
     """), {"start": start, "end": end})).all()
     return [{"label": label, "count": n} for label, n in rows]
 
@@ -170,16 +197,20 @@ async def injured_by_department(db: AsyncSession, *, year: int) -> list[dict]:
     the chart answers "where are people getting hurt", not "list every
     department"."""
     start, end = _year_bounds(year)
+    # The id travels with the label so the bar can be opened onto the records
+    # behind it. Grouped by id as well, because two departments may share a
+    # name and a chart that merged them would open onto only one of them.
     rows = (await db.execute(text("""
-        select coalesce(d.name, 'Not recorded'), count(*)
+        select i.department_id, coalesce(d.name, 'Not recorded'), count(*)
           from ehs_incidents i
           left join departments d on d.id = i.department_id
          where i.occurred_at >= :start and i.occurred_at < :end
            and i.injury_class is not null
-      group by 1
-      order by count(*) desc, 1
+      group by 1, 2
+      order by count(*) desc, 2
     """), {"start": start, "end": end})).all()
-    return [{"label": label, "count": n} for label, n in rows]
+    return [{"id": str(dept_id) if dept_id else None, "label": label, "count": n}
+            for dept_id, label, n in rows]
 
 
 async def participation(db: AsyncSession, *, year: int) -> list[dict]:

@@ -112,6 +112,19 @@ async def list_incidents(
     location_id: uuid.UUID | None = None,
     occurred_from: date | None = None,
     occurred_to: date | None = None,
+    injury_class: list[str] | None = Query(default=None),
+    department_id: uuid.UUID | None = None,
+    no_department: bool = Query(
+        default=False,
+        description="Incidents with no department — what the dashboard calls "
+                    "'Not recorded'."),
+    body_part_label: str | None = None,
+    injured_only: bool = Query(
+        default=False, description="Only those where somebody was hurt."),
+    recordable_only: bool = Query(
+        default=False,
+        description="What the recordable rate counts: medical aid, lost time, "
+                    "or reportable to the Ministry."),
     limit: int = Query(default=50, le=200),
     offset: int = 0,
 ):
@@ -123,6 +136,9 @@ async def list_incidents(
         db, statuses=status_in, form_kind=form_kind,
         location_id=location_id, limit=limit, offset=offset,
         occurred_from=occurred_from, occurred_to=occurred_to,
+        injury_classes=injury_class, department_id=department_id,
+        no_department=no_department, body_part_label=body_part_label,
+        injured_only=injured_only, recordable_only=recordable_only,
         reported_by=_user_id(user) if mine_only else None,
     )
     return [IncidentListItem.model_validate(r) for r in rows]

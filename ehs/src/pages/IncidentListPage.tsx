@@ -7,7 +7,7 @@
  * — "no incidents at the plant" and "you have not filed one" are very
  * different statements to put in front of a worker.
  */
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -22,6 +22,12 @@ const KIND_LABELS: Record<string, string> = {
   near_miss: 'Near miss',
 }
 
+/** What a dashboard link may narrow this list by, in the server's own words. */
+const DRILL_KEYS = [
+  'injury_class', 'injured_only', 'recordable_only', 'form_kind',
+  'department_id', 'no_department', 'body_part_label', 'location_id',
+] as const
+
 export default function IncidentListPage() {
   const { can } = usePermissions()
   const isRegister = can('ehs.incident.read')
@@ -33,15 +39,32 @@ export default function IncidentListPage() {
   // applied here would be a range over those fifty, so "March 2025" would come
   // back empty and read as a March with no incidents. This register is what an
   // inspector is shown.
-  const dateFilter = useDateFilter()
+  // ★ A figure on the dashboard opens this page with the filter it was counted
+  // from. The parameters are passed to the server untouched rather than
+  // re-derived here: the drill-down is only worth anything if the rows are the
+  // same ones the number counted, and two places deciding what "recordable"
+  // means is how they stop agreeing.
+  const [search] = useSearchParams()
+  const drill = DRILL_KEYS
+    .flatMap((k) => search.getAll(k).map((v) => `${k}=${encodeURIComponent(v)}`))
+  const cameFrom = search.get('via')
+  // A figure counts a whole year; asked for the default fifty the list would
+  // show the newest of them and the two would not agree.
+  const limit = drill.length ? 200 : 50
+
+  const dateFilter = useDateFilter(undefined, {
+    from: search.get('occurred_from'), to: search.get('occurred_to'),
+  })
   const { from, to } = dateFilter.range
   const params = [
+    ...drill,
     from ? `occurred_from=${from}` : '',
     to ? `occurred_to=${to}` : '',
+    `limit=${limit}`,
   ].filter(Boolean).join('&')
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['incidents', from, to],
+    queryKey: ['incidents', params],
     queryFn: () => api.get<IncidentListItem[]>(
       `/api/v1/incidents${params ? `?${params}` : ''}`),
     // The previous range's rows stay on screen while the new ones are fetched.
@@ -52,7 +75,7 @@ export default function IncidentListPage() {
 
   const list = useListView(data, (i) => [
     i.incident_no, i.title, i.location_path, i.status, KIND_LABELS[i.form_kind],
-  ], { resetKey: `${from}|${to}` })
+  ], { resetKey: params })
 
   // Only the first load takes the whole page; a range change keeps what is
   // already on screen (see `keepPreviousData` above).
@@ -63,9 +86,10 @@ export default function IncidentListPage() {
 
   const incidents = data ?? []
   const heading = isRegister ? 'Incidents' : 'My Reports'
-  // The endpoint returns the fifty most recent within the chosen range. Say so
-  // rather than letting the count read as the whole register.
-  const capped = incidents.length >= 50
+  // Say when the list came back full, against what was actually asked for —
+  // a note that names fifty while two hundred were requested is worse than
+  // none, and it would fire on every drill-down of more than fifty records.
+  const capped = incidents.length >= limit
 
   // ★ The empty state keeps the filter bar. It used to return early, which was
   // harmless when nothing could narrow the list — now a range that matches
@@ -76,6 +100,22 @@ export default function IncidentListPage() {
     <div className="p-4">
       <h1 className="mb-3 text-base font-semibold text-neutral-900">{heading}</h1>
 
+      {/* What this list has been narrowed to, and the way back out. A filter
+          that is doing something but says nothing is how somebody reads a
+          drilled-down register as the whole register. */}
+      {drill.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-primary-50 px-3 py-2">
+          <p className="min-w-0 flex-1 text-xs text-primary-900">
+            Showing {cameFrom ?? 'a selection from the dashboard'} — {incidents.length}
+            {incidents.length === 1 ? ' record' : ' records'}.
+          </p>
+          <Link to="/incidents"
+                className="shrink-0 text-xs font-semibold text-primary-700 underline">
+            Show the whole register
+          </Link>
+        </div>
+      )}
+
       <SearchBox value={list.query} onChange={list.setQuery}
                  placeholder="Search by number, title, area or status">
         <DateRangeFilter {...dateFilter} />
@@ -83,7 +123,9 @@ export default function IncidentListPage() {
 
       {incidents.length === 0 && (
         <p className="p-10 text-center text-sm text-neutral-500">
-          {filtering
+          {drill.length > 0
+            ? `Nothing matches ${cameFrom ?? 'that selection'}.`
+            : filtering
             ? `No incidents in this date range — showing ${dateFilter.label.toLowerCase().replace('…', '')}.`
             : isRegister
               ? 'No incidents recorded yet.'

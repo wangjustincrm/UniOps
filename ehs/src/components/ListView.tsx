@@ -95,10 +95,31 @@ export interface DateFilter {
  * asks the server instead reads `range.from` / `range.to` into its query — same
  * control, same presets, same words on screen, one implementation.
  */
-export function useDateFilter(onChange?: () => void): DateFilter {
-  const [preset, setPresetState] = useState<RangePreset>('all')
-  const [from, setFromState] = useState('')
-  const [to, setToState] = useState('')
+export function useDateFilter(
+  onChange?: () => void,
+  /** Where the filter starts — a link that already names a range, typically a
+   *  figure opened from the dashboard. Read once, then the control owns it. */
+  initial?: { from?: string | null; to?: string | null },
+): DateFilter {
+  const [preset, setPresetState] = useState<RangePreset>(
+    initial?.from || initial?.to ? 'custom' : 'all')
+  const [from, setFromState] = useState(initial?.from ?? '')
+  const [to, setToState] = useState(initial?.to ?? '')
+
+  // ★ The range follows `initial` whenever `initial` changes, not only on the
+  // first render. These pages live in a keep-alive tab keyed by path, so
+  // arriving a second time with a different range in the URL does not remount
+  // anything: read once, the control would keep June while the rest of the
+  // page had moved on to the whole year, and the list would be the overlap of
+  // two filters the reader never asked for together.
+  const wanted = `${initial?.from ?? ''}|${initial?.to ?? ''}`
+  const [lastWanted, setLastWanted] = useState(wanted)
+  if (wanted !== lastWanted) {
+    setLastWanted(wanted)
+    setPresetState(initial?.from || initial?.to ? 'custom' : 'all')
+    setFromState(initial?.from ?? '')
+    setToState(initial?.to ?? '')
+  }
 
   // `today` is a dependency, not decoration: these tabs stay mounted for days,
   // and a "Today" filter still showing yesterday's rows after midnight is the

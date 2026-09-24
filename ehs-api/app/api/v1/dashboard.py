@@ -56,6 +56,10 @@ class NearMissRow(BaseModel):
 class CountRow(BaseModel):
     label: str
     count: int
+    # Present where the bar can be opened onto the records it counted and the
+    # label alone would not select them — a department, whose name is not what
+    # the register filters by.
+    id: str | None = None
 
 
 class ParticipationRow(BaseModel):

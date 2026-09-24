@@ -602,3 +602,135 @@ async def test_the_types_say_which_ones_want_the_injury_detail(hse_manager):
     # near miss about its allergies.
     assert not wants & {"report_only", "near_miss", "property_damage",
                         "environmental", "security", "drug_alcohol"}
+
+
+# ── The dashboard, and opening a figure to see what it counted ──────────────
+
+async def test_new_years_eve_belongs_to_the_year_it_happened_in(hse_manager, db_session):
+    """★ 8pm on 31 December in Ontario is already January in UTC.
+
+    The dashboard compared `occurred_at` against a bare date, which Postgres
+    reads in the session's timezone — UTC — while the month grouping beside it
+    used Ontario time. So the last evening of December counted towards the next
+    year, in a figure headed with this one. The file said otherwise at the top,
+    which is how it survived: the comment described the intention and nobody
+    checked it against the comparison.
+    """
+    from sqlalchemy import text as sql_text
+
+    _, client = hse_manager
+    year = datetime.now(ET).year
+
+    # Measured as a difference, not as a count: other tests file injuries too,
+    # and an assertion that December is non-empty would pass under the old
+    # boundary as soon as any of them landed there.
+    before = (await client.get(
+        f"/api/v1/dashboard?year={year}")).json()["medical_events"][11]["first_aid"]
+
+    late = datetime(year, 12, 31, 20, 30, tzinfo=ET)
+    incident = (await client.post("/api/v1/incidents", json=_payload(
+        title="Last evening of the year", incident_type="first_aid",
+        occurred_at=late.isoformat()))).json()
+    await client.post(f"/api/v1/incidents/{incident['id']}/submit")
+
+    figures = (await client.get(f"/api/v1/dashboard?year={year}")).json()
+    assert figures["medical_events"][11]["first_aid"] == before + 1, (
+        "an injury at 8:30pm on 31 December belongs to that December, not to "
+        "the January it already is in UTC")
+
+    # And the headline agrees with the month it is drawn from — the two used
+    # different boundaries, so this is the assertion that keeps them together.
+    counted = (await db_session.execute(sql_text(
+        "select count(*) from ehs_incidents "
+        " where injury_class = 'first_aid'"
+        "   and timezone('America/Toronto', occurred_at) >= :s"
+        "   and timezone('America/Toronto', occurred_at) < :e"),
+        {"s": datetime(year, 1, 1), "e": datetime(year + 1, 1, 1)})).scalar()
+    assert figures["headline"]["first_aid"] == counted
+
+
+async def test_a_figure_can_be_opened_and_shows_what_it_counted(hse_manager):
+    """The drill-down filters have to select the same records the dashboard
+    counted, or the reader counts the rows, gets a different number, and stops
+    believing both."""
+    _, client = hse_manager
+    when = datetime(2026, 6, 10, 9, 0, tzinfo=ET)
+    hurt = (await client.post("/api/v1/incidents", json=_payload(
+        title="Sprain on the line", incident_type="lost_time",
+        occurred_at=when.isoformat()))).json()
+    unhurt = (await client.post("/api/v1/incidents", json=_payload(
+        title="Nobody hurt", incident_type="report_only",
+        occurred_at=when.isoformat()))).json()
+
+    rows = await client.get(
+        "/api/v1/incidents?injured_only=true&injury_class=lost_time"
+        "&occurred_from=2026-06-01&occurred_to=2026-06-30&limit=200")
+    assert rows.status_code == 200, rows.text
+    ids = {r["id"] for r in rows.json()}
+    assert hurt["id"] in ids
+    assert unhurt["id"] not in ids, (
+        "'Report Only / No Injury' carries no injury class and must not appear "
+        "behind an injury figure")
+
+    # Recordable is its own question: medical aid, lost time, or reportable to
+    # the Ministry. Lost time is in it; a first-aid injury is not.
+    first_aid = (await client.post("/api/v1/incidents", json=_payload(
+        title="Grazed knuckle", incident_type="first_aid",
+        occurred_at=when.isoformat()))).json()
+    recordable = await client.get(
+        "/api/v1/incidents?recordable_only=true"
+        "&occurred_from=2026-06-01&occurred_to=2026-06-30&limit=200")
+    rec_ids = {r["id"] for r in recordable.json()}
+    assert hurt["id"] in rec_ids
+    assert first_aid["id"] not in rec_ids
+
+
+async def test_two_people_hurt_in_one_incident_count_once(hse_manager, db_session):
+    """★ The body-part chart counts incidents, not injured people.
+
+    It used to count rows in the persons table, so an incident that hurt two
+    people's hands read as two — while opening the bar showed one record.
+    Whichever number the reader trusted, the other one made them stop trusting
+    the page.
+    """
+    # Seeded directly: the test database comes from `create_all`, so it has the
+    # vocabulary tables but none of the content the migrations put in them.
+    from app.models.vocabulary import Vocabulary, VocabularyItem
+
+    _, client = hse_manager
+    if not (await db_session.get(Vocabulary, "body_part")):
+        db_session.add(Vocabulary(code="body_part", name="Body Part"))
+        await db_session.flush()
+    knee_id = uuid.uuid4()
+    db_session.add(VocabularyItem(
+        id=knee_id, vocabulary_code="body_part", code="knee-two-people",
+        label="Knee", sort_order=20, path="Knee"))
+    await db_session.commit()
+    hand = {"id": str(knee_id), "label": "Knee"}
+    year = datetime.now(ET).year
+    before = next(
+        (r["count"] for r in (await client.get(f"/api/v1/dashboard?year={year}")).json()
+         ["body_parts"] if r["label"] == hand["label"]), 0)
+
+    created = await client.post("/api/v1/incidents", json=_payload(
+        title="Two hands in one incident", incident_type="first_aid",
+        occurred_at=datetime.now(ET).isoformat(),
+        persons=[
+            {"role": "injured", "person_name": "One Worker",
+             "body_part_id": hand["id"], "body_part_label": hand["label"]},
+            {"role": "injured", "person_name": "Another Worker",
+             "body_part_id": hand["id"], "body_part_label": hand["label"]},
+        ]))
+    assert created.status_code in (200, 201), created.text
+    await client.post(f"/api/v1/incidents/{created.json()['id']}/submit")
+
+    after = next(
+        r["count"] for r in (await client.get(f"/api/v1/dashboard?year={year}")).json()
+        ["body_parts"] if r["label"] == hand["label"])
+    assert after == before + 1, "two people, one incident, one on the chart"
+
+    # And the bar opens onto exactly that one record.
+    rows = await client.get(
+        f"/api/v1/incidents?body_part_label={hand['label']}&limit=200")
+    assert rows.status_code == 200, rows.text
+    assert sum(1 for r in rows.json() if r["id"] == created.json()["id"]) == 1

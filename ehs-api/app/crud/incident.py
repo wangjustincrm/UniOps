@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -188,12 +188,46 @@ async def list_(
     reported_by: uuid.UUID | None = None,
     occurred_from: date | None = None,
     occurred_to: date | None = None,
+    injury_classes: list[str] | None = None,
+    department_id: uuid.UUID | None = None,
+    no_department: bool = False,
+    body_part_label: str | None = None,
+    injured_only: bool = False,
+    recordable_only: bool = False,
     limit: int = 50,
     offset: int = 0,
 ) -> list[Incident]:
     stmt = select(Incident)
     if reported_by:
         stmt = stmt.where(Incident.reported_by == reported_by)
+    # ★ These four exist so a figure on the dashboard can be opened and show
+    # the records it was counted from. A drill-down that lands on a list
+    # filtered by something *near* the figure is worse than none: the reader
+    # counts what is on screen, gets a different number, and stops trusting
+    # both. Each one therefore matches how `services/dashboard.py` groups —
+    # including by body-part *label*, which is the snapshot the chart groups
+    # by, and including the null department that the chart calls "Not
+    # recorded".
+    if injury_classes:
+        stmt = stmt.where(Incident.injury_class.in_(injury_classes))
+    if injured_only:
+        stmt = stmt.where(Incident.injury_class.is_not(None))
+    if recordable_only:
+        # The same OR the recordable tile counts. Injury class alone would miss
+        # an incident that is only MOL-reportable, and the rate on the
+        # dashboard would then be higher than the list behind it.
+        stmt = stmt.where(
+            or_(Incident.injury_class.in_(("medical_aid", "lost_time")),
+                Incident.mol_reportable.is_(True)))
+    if no_department:
+        stmt = stmt.where(Incident.department_id.is_(None))
+    elif department_id:
+        stmt = stmt.where(Incident.department_id == department_id)
+    if body_part_label:
+        stmt = stmt.where(
+            Incident.id.in_(
+                select(IncidentPerson.incident_id)
+                .where(IncidentPerson.body_part_label == body_part_label)))
     # The date range is applied here rather than in the browser. The list is
     # capped at fifty by default, so a range filtered after the fact would be
     # a range over the fifty newest incidents and would show nothing at all for
