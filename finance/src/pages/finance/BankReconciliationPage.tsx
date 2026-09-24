@@ -726,8 +726,12 @@ export default function BankReconciliationPage() {
                     <tr>
                       <th className="w-10 px-2 py-2" />
                       <th className="w-14 px-2 py-2">Date</th>
-                      <th className="px-2 py-2">Description</th>
+                      {/* Amount in the same column position as the ledger side: the
+                          two tables are read against each other, and an amount that
+                          sits in a different place on each is work the reader has to
+                          do on every line. */}
                       <th className="w-28 px-2 py-2 text-right">Amount</th>
+                      <th className="px-2 py-2">Description</th>
                       <th className="w-28 px-2 py-2 text-right">Balance</th>
                     </tr>
                   </thead>
@@ -758,11 +762,11 @@ export default function BankReconciliationPage() {
                                        className="h-3.5 w-3.5 accent-[#085E5E]" />}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-xs text-neutral-500">{shortDate(b.txn_date)}</td>
-                          <td className="px-2 py-1.5">{b.description}</td>
                           <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
                             Number(b.amount) < 0 ? 'text-red-600' : 'text-green-700')}>
                             {money(b.amount)}
                           </td>
+                          <td className="px-2 py-1.5">{b.description}</td>
                           <td className="px-2 py-1.5 text-right font-mono text-xs tabular-nums text-neutral-400">
                             {b.running_balance ? money(b.running_balance) : ''}
                           </td>
@@ -780,9 +784,13 @@ export default function BankReconciliationPage() {
                     <tr>
                       <th className="w-10 px-2 py-2" />
                       <th className="w-14 px-2 py-2">Date</th>
+                      {/* Amount before Summary: Summary is the only elastic column, so
+                          it took every spare pixel and pushed Amount past the right
+                          edge — the one number you scan a ledger for was behind a
+                          horizontal scroll. */}
+                      <th className="w-28 px-2 py-2 text-right">Amount</th>
                       <th className="px-2 py-2">Summary</th>
                       <th className="w-36 px-2 py-2">Contra</th>
-                      <th className="w-28 px-2 py-2 text-right">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -810,16 +818,16 @@ export default function BankReconciliationPage() {
                                        className="h-3.5 w-3.5 accent-[#085E5E]" />}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-xs text-neutral-500">{shortDate(b.voucher_date)}</td>
+                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
+                            Number(b.amount) < 0 ? 'text-red-600' : 'text-green-700')}>
+                            {money(b.amount)}
+                          </td>
                           <td className="px-2 py-1.5">
                             <div className="truncate" title={b.summary ?? ''}>{b.summary || '—'}</div>
                             <div className="font-mono text-[11px] text-neutral-400">{b.jv_number}</div>
                           </td>
                           <td className="px-2 py-1.5">
                             <Pill tone={KIND_TONE[b.contra_kind]}>{b.contra_label}</Pill>
-                          </td>
-                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
-                            Number(b.amount) < 0 ? 'text-red-600' : 'text-green-700')}>
-                            {money(b.amount)}
                           </td>
                         </tr>
                       )
