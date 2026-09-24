@@ -26,7 +26,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertTriangle, CheckCircle2, Download, FileText, Landmark, Link2, Loader2,
+  AlertTriangle, CheckCircle2, Download, FileText, History, Landmark, Link2, Loader2,
   Lock, LockOpen, Sparkles, Undo2, Upload,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
@@ -67,6 +67,13 @@ interface MatchGroup {
   advice_id: string | null; bank_ids: string[]
   book_lines: { jv_line_id: string | null; nc_voucher_pk: string | null; amount: string }[]
 }
+/** A row of `GET /bank-recon/{account}/reconciliations` — the history the backend
+ *  has always served and nothing ever asked for. */
+interface PeriodRow {
+  id: string; period_start: string; period_end: string; status: string
+  difference: string; statement_closing: string | null; book_closing: string | null
+  finalized_at: string | null; has_report: boolean
+}
 interface Period {
   id: string; status: string; period_start: string; period_end: string; currency: string
   summary: Summary; bank_lines: BankLine[]; book_lines: BookLine[]; matches: MatchGroup[]
@@ -84,6 +91,31 @@ interface AdviceLine {
 }
 
 /** How a group was cleared, in words a reviewer can act on. */
+// How much a match is worth, not just what it is called. `confirmation_no` is the
+// bank's own reference on both sides; `advice_*` is a payment file whose total and
+// per-payee lines both reconcile; `book_subset` is nothing but "these amounts add
+// up", which is why it is the one the findings call out. Rendering all seven the
+// same weight let the weakest read like the strongest.
+const METHOD_TRUST: Record<string, 'evidence' | 'amounts' | 'manual'> = {
+  confirmation_no: 'evidence',
+  advice_total: 'evidence',
+  advice_combo: 'evidence',
+  direct: 'amounts',
+  subset_sum: 'amounts',
+  book_subset: 'amounts',
+  manual: 'manual',
+}
+const TRUST_CHIP: Record<string, string> = {
+  evidence: 'border-green-300 bg-green-50 text-green-800',
+  amounts: 'border-amber-300 bg-amber-50 text-amber-800',
+  manual: 'border-sky-300 bg-sky-50 text-sky-800',
+}
+const TRUST_WORD: Record<string, string> = {
+  evidence: 'backed by a document',
+  amounts: 'amounts only — no document',
+  manual: 'matched by a person',
+}
+
 const METHOD_LABEL: Record<string, string> = {
   advice_total: 'Payment file',
   advice_combo: 'Several payment files',
@@ -182,7 +214,18 @@ export default function BankReconciliationPage() {
     enabled: !!openAdvice,
   })
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ['bank-recon-period', reconId] })
+  // Every period this account has ever had. Signed-off ones keep their snapshot
+  // and their PDF, so the history is the audit trail — it just had no way in.
+  const { data: history = [] } = useQuery({
+    queryKey: ['bank-recon-history', accountId],
+    enabled: !!accountId,
+    queryFn: () => financeApi.get<PeriodRow[]>(`/bank-recon/${accountId}/reconciliations`),
+  })
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['bank-recon-period', reconId] })
+    qc.invalidateQueries({ queryKey: ['bank-recon-history', accountId] })
+  }
   const clearPicks = () => { setPickedBank(new Set()); setPickedBook(new Set()) }
 
   const openPeriod = useMutation({
@@ -388,6 +431,60 @@ export default function BankReconciliationPage() {
           </Link>
         </div>
 
+        {/* ── every period this account has had ────────────────────────── */}
+        {/* Without this the only way back to a signed-off July was to already know
+            its id. The reconciliations a period produces ARE the audit record —
+            each keeps its own frozen snapshot and PDF — so they need a way in. */}
+        {accountId && history.length > 0 && (
+          <div className="mb-4 rounded-lg border border-neutral-200 bg-white">
+            <div className="flex items-center gap-2 border-b border-neutral-100 px-3 py-2">
+              <History className="h-4 w-4 text-neutral-400" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Periods for this account ({history.length})
+              </span>
+            </div>
+            <div className="max-h-44 overflow-y-auto">
+              <table className="w-full text-sm">
+                <tbody>
+                  {history.map((h, i) => (
+                    <tr key={h.id}
+                        onClick={() => { setReconId(h.id); setFindings([]); clearPicks() }}
+                        className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-50',
+                          i % 2 && 'bg-neutral-50/40',
+                          h.id === reconId && 'bg-[#E4EFEC]')}>
+                      <td className="w-56 px-3 py-1.5 font-mono text-xs">
+                        {h.period_start} → {h.period_end}
+                      </td>
+                      <td className="w-28 px-3 py-1.5">
+                        {h.status === 'finalized'
+                          ? <Pill tone="bg-green-50 text-green-700">signed off</Pill>
+                          : <Pill tone="bg-amber-50 text-amber-700">open</Pill>}
+                      </td>
+                      <td className="w-36 px-3 py-1.5 text-right font-mono text-xs tabular-nums">
+                        {/* The number that decides whether it could be signed off */}
+                        <span className={Number(h.difference) === 0 ? 'text-neutral-400' : 'text-red-600'}>
+                          {money(h.difference)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-neutral-500">
+                        {h.finalized_at
+                          ? `signed off ${h.finalized_at.slice(0, 10)}`
+                          : 'not signed off'}
+                      </td>
+                      <td className="w-32 px-3 py-1.5 text-right">
+                        {h.has_report && (
+                          <span className="text-xs text-neutral-400">report kept</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+
         {account && !account.nc_bank_account_code && (
           <div className="mb-4 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -555,6 +652,37 @@ export default function BankReconciliationPage() {
               </div>
             )}
 
+            {/* ── how to read the two sides ─────────────────────────────── */}
+            {/* The same cell is a checkbox before a line is matched and a tick
+                after, and nothing on the page said so. Everything here is a fact
+                about the UI a first-time reader cannot deduce from the data. */}
+            <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg
+                            border border-neutral-200 bg-neutral-50/70 px-3 py-2 text-xs text-neutral-600">
+              <span className="font-medium text-neutral-500">How to read this</span>
+              <span className="flex items-center gap-1">
+                <CheckCircle2 className="h-4 w-4 text-green-600" /> matched — click to see its group
+              </span>
+              <span className="flex items-center gap-1">
+                <input type="checkbox" readOnly className="h-3.5 w-3.5 accent-[#085E5E]" />
+                not matched — tick both sides, then Match
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-3 w-3 rounded-sm bg-[#BFE3DA] ring-1 ring-[#085E5E]" />
+                the group you are looking at
+              </span>
+              <span className="ml-auto flex items-center gap-2">
+                <span className={cn('rounded border px-1.5 py-0.5', TRUST_CHIP.evidence)}>
+                  backed by a document
+                </span>
+                <span className={cn('rounded border px-1.5 py-0.5', TRUST_CHIP.amounts)}>
+                  amounts only
+                </span>
+                <span className={cn('rounded border px-1.5 py-0.5', TRUST_CHIP.manual)}>
+                  by a person
+                </span>
+              </span>
+            </div>
+
             {/* ── the two sides ─────────────────────────────────────────── */}
             <div className="grid gap-3 lg:grid-cols-2">
               <Side title={`Bank statement · ${period.bank_lines.length} lines`}
@@ -671,9 +799,12 @@ export default function BankReconciliationPage() {
             {focused && (
               <div className="mt-4 rounded-lg border border-[#085E5E]/30 bg-white p-3">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <Pill tone="bg-[#E4EFEC] text-[#085E5E]">
+                  <Pill tone={TRUST_CHIP[METHOD_TRUST[focused.method] ?? 'manual']}>
                     {METHOD_LABEL[focused.method] ?? focused.method}
                   </Pill>
+                  <span className="text-xs text-neutral-500">
+                    {TRUST_WORD[METHOD_TRUST[focused.method] ?? 'manual']}
+                  </span>
                   <span className="font-mono text-sm tabular-nums">{money(focused.amount)}</span>
                   <span className="text-xs text-neutral-500">
                     {focused.bank_ids.length} statement line(s) ↔ {focused.book_lines.length} ledger line(s)
@@ -743,11 +874,13 @@ export default function BankReconciliationPage() {
                     <button key={g.id}
                             onClick={() => setFocusGroup(g.id === focusGroup ? null : g.id)}
                             title={`${g.bank_ids.length} statement line(s) matched against `
-                              + `${g.book_lines.length} ledger line(s)`}
+                              + `${g.book_lines.length} ledger line(s) — `
+                              + `${TRUST_WORD[METHOD_TRUST[g.method] ?? 'manual']}`}
                             className={cn('rounded-lg border px-2 py-1 text-left text-xs',
                               g.id === focusGroup
-                                ? 'border-[#085E5E] bg-[#BFE3DA] text-[#085E5E]'
-                                : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50')}>
+                                ? 'border-[#085E5E] bg-[#BFE3DA] text-[#085E5E] ring-1 ring-[#085E5E]'
+                                : TRUST_CHIP[METHOD_TRUST[g.method] ?? 'manual']
+                                  ?? 'border-neutral-200 bg-white text-neutral-600')}>
                       {/* Stacked and left-aligned: in a fixed column the three parts
                           on one line push each other around and nothing lines up
                           between rows. */}
