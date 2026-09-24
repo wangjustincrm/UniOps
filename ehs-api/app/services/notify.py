@@ -63,6 +63,24 @@ async def by_roles(db: AsyncSession, roles: tuple[str, ...]) -> list[User]:
     return [u for u in rows if u.role in roles or u.id in extra]
 
 
+async def roles_held_by(db: AsyncSession, user_id: uuid.UUID, primary: str) -> set[str]:
+    """Every role this person holds — the one on their record and the ones
+    granted alongside it.
+
+    The mirror of `by_roles`, asked from the other end. Same reason: a role
+    held in addition to somebody's job is how a JHSC member or a first aider
+    holds theirs, and reading only the primary role misses all of them.
+    """
+    from sqlalchemy import text
+
+    extra = set((await db.execute(
+        text("SELECT ur.role_code FROM user_roles ur "
+             " JOIN role_defs rd ON rd.code = ur.role_code AND rd.is_active "
+             " WHERE ur.user_id = :uid"),
+        {"uid": user_id})).scalars().all())
+    return extra | ({primary} if primary else set())
+
+
 async def _config(db: AsyncSession) -> EhsConfig | None:
     return (await db.execute(select(EhsConfig).where(EhsConfig.id == 1))).scalar_one_or_none()
 

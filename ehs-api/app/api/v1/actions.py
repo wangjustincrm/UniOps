@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, false, not_, or_, select
 
 from app.core.deps import SessionDep
 from uniops_authz import has_permission
@@ -16,7 +16,9 @@ from app.core.permissions import (
 )
 from app.crud import action as crud
 from app.models.mirrors import Task
+from app.models.action import Action
 from app.services import tasks as task_service
+from app.services import notify
 from app.schemas.action import (
     ActionCreate,
     ActionDetail,
@@ -147,8 +149,11 @@ class AssignedTaskOut(BaseModel):
 # Where each kind of work is actually done. A task whose type is not here is
 # still listed — it says what it is and who it is for — but without a link,
 # which is better than a link that goes nowhere.
+# ★ Where a task opens. The id goes in the path wherever the screen can use
+# it: a task that lands on a register is a task that has told somebody to go
+# and find their own work, which is the thing an inbox is for.
 TASK_PATHS: dict[str, str] = {
-    "ehs_tbt": "/toolbox-talks",
+    "ehs_tbt": "/toolbox-talks?delivery={id}",
     "ehs_run": "/forms",
     "ehs_doc": "/documents/{id}",
     "ehs_crs": "/training",
@@ -171,14 +176,37 @@ async def my_tasks(db: SessionDep, user: CanReportIncident):
     toolbox talk: the tasks were created correctly, eleven of them, and the
     supervisor had no screen that showed them.
     """
+    # ★ Named to me, or given to a role I hold and to nobody in particular.
+    #
+    # Only the first half existed, and `assigned_role` was written by every
+    # caller in the module and read by none of them — so a task raised for "the
+    # HSE Manager" rather than for a person reached no screen at all. On the
+    # test database that was 78 open tasks invisible to everybody: thirty-four
+    # incidents awaiting review, twenty-two inspections due, six SDS reviews,
+    # four JHSC items. Each of them is the failure this page exists to prevent,
+    # and the page was the one hiding them.
+    mine = _user_id(user)
+    roles = await notify.roles_held_by(db, mine, user.get("role", ""))
+
+    # ★ The actions already listed above this, so their own task is not shown
+    # twice. It used to drop every task on a corrective action, which also
+    # dropped the one that matters most to somebody who is not the owner: the
+    # overdue escalation. A supervisor is sent "Overdue 12d: …" about their
+    # report's action, is not the owner, and so had it excluded from the only
+    # page that would have told them.
+    owned = set((await db.execute(
+        select(Action.id).where(Action.owner_id == mine,
+                                Action.status != "closed"))).scalars().all())
+
     rows = (await db.execute(
         select(Task).where(
-            Task.assigned_user_id == _user_id(user),
+            or_(Task.assigned_user_id == mine,
+                and_(Task.assigned_user_id.is_(None),
+                     Task.assigned_role.in_(roles) if roles else false())),
             Task.is_completed.is_(False),
             Task.document_type.like("ehs%"),
-            # Not corrective actions: those are the list this sits under, and
-            # showing the same work twice is its own kind of wrong.
-            Task.document_type != task_service.DOC_ACTION,
+            not_(and_(Task.document_type == task_service.DOC_ACTION,
+                      Task.document_id.in_(owned) if owned else false())),
         ).order_by(Task.created_at.desc())
     )).scalars().all()
 

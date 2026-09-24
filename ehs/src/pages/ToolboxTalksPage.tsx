@@ -9,10 +9,12 @@
  * A supervisor sees only their own team's delivery; HSE sees the completion rate
  * across all of them, which is the number the management dashboard shows.
  */
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Plus, Users, Paperclip } from 'lucide-react'
+import { Check, FileText, Plus, Users, Paperclip } from 'lucide-react'
 import { api, ApiError, openFile } from '@/lib/api'
+import { todayForInput } from '@/lib/formatDate'
 import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import {
   PageHeader, SectionTitle,
@@ -44,6 +46,12 @@ export default function ToolboxTalksPage() {
   const isHse = can('ehs.settings.manage')
   const [signing, setSigning] = useState<Delivery | null>(null)
   const [creating, setCreating] = useState(false)
+  // ★ Arriving from My Actions, on the talk that was handed to me. The task
+  // used to open this page at the top of the topic list and leave the
+  // supervisor to find their own crew's row — an inbox that says "go and look"
+  // is not an inbox.
+  const [params, setParams] = useSearchParams()
+  const openDelivery = params.get('delivery')
 
   const talks = useQuery({
     queryKey: ['toolbox-talks'],
@@ -64,6 +72,24 @@ export default function ToolboxTalksPage() {
   // Which delivery's signatures are open. On the page rather than inside the
   // HSE panel, because the person who collected them needs it too.
   const [openSigs, setOpenSigs] = useState<string | null>(null)
+
+  // Opened once, when the delivery the task named has arrived, and the flag is
+  // spent as it is used: these pages live in a keep-alive tab, so a remembered
+  // "already opened this one" would stop the same supervisor opening the same
+  // talk again next month.
+  const named = openDelivery
+    ? (deliveries.data ?? []).find((d) => d.id === openDelivery)
+    : undefined
+  useEffect(() => {
+    if (!named) return
+    setSigning(named)
+    const next = new URLSearchParams(params)
+    next.delete('delivery')
+    setParams(next, { replace: true })
+    // `params` and `setParams` change identity every render; the delivery that
+    // arrived is what decides this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [named?.id])
 
   const mine = (deliveries.data ?? []).filter((d) => d.status === 'pending')
   const done = (deliveries.data ?? []).filter((d) => d.status === 'delivered')
@@ -229,7 +255,9 @@ export default function ToolboxTalksPage() {
         </>
       )}
 
-      {signing && <SignRoomDialog delivery={signing} onClose={() => setSigning(null)}
+      {signing && <SignRoomDialog delivery={signing}
+                    talk={talks.data?.find((t) => t.id === signing.talk_id)}
+                    onClose={() => setSigning(null)}
                                   onDone={() => queryClient.invalidateQueries({ queryKey: ['tbt-deliveries'] })} />}
       {sending && <SendDialog talk={sending} onClose={() => setSending(null)} />}
       {creating && <NewTopicDialog onClose={() => setCreating(false)}
@@ -254,8 +282,15 @@ function Completion({ talkId }: { talkId: string }) {
 }
 
 /** The phone going round the room. */
-function SignRoomDialog({ delivery, onClose, onDone }: {
-  delivery: Delivery; onClose: () => void; onDone: () => void
+function SignRoomDialog({ delivery, talk, onClose, onDone }: {
+  delivery: Delivery
+  /** The talk being delivered. The sheet is what the crew is signing against,
+   *  so the person running the meeting has to be able to read it from here —
+   *  it was only reachable from the topic list, which is not the screen they
+   *  are on. */
+  talk?: Talk
+  onClose: () => void
+  onDone: () => void
 }) {
   const [signers, setSigners] = useState<Signer[]>([])
   const [person, setPerson] = useState<PersonValue>(EMPTY_PERSON)
@@ -290,6 +325,25 @@ function SignRoomDialog({ delivery, onClose, onDone }: {
         <p className="mt-0.5 text-xs text-neutral-500">
           Pass the phone round — add each person, then finish.
         </p>
+
+        {talk && (
+          <div className="mt-2.5 rounded-lg bg-neutral-50 px-3 py-2">
+            <p className="text-sm font-semibold text-neutral-800">{talk.title}</p>
+            {talk.topic && <p className="mt-0.5 text-xs text-neutral-600">{talk.topic}</p>}
+            {talk.material_filename ? (
+              <button type="button"
+                      onClick={() => openFile(
+                        `/api/v1/toolbox-talks/${talk.id}/material`,
+                        talk.material_filename ?? 'sheet')}
+                      className="mt-1.5 flex min-h-[32px] items-center gap-1.5 text-xs font-semibold text-primary-700 hover:underline">
+                <FileText className="h-3.5 w-3.5" aria-hidden />
+                Open the sheet
+              </button>
+            ) : (
+              <p className="mt-1 text-xs text-neutral-500">No sheet was attached.</p>
+            )}
+          </div>
+        )}
 
         {signers.length > 0 && (
           <ul className="mb-3 mt-3 flex flex-col gap-1">
@@ -344,14 +398,48 @@ function SignRoomDialog({ delivery, onClose, onDone }: {
 function NewTopicDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [title, setTitle] = useState('')
   const [topic, setTopic] = useState('')
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  // ★ The local month. `toISOString` would name the next one for anybody west
+  // of UTC on the last evening of a month, which at UTC-4 is every month.
+  const [month, setMonth] = useState(() => todayForInput().slice(0, 7))
   const [error, setError] = useState<string | null>(null)
+  // ★ Chosen before the talk exists. The sheet could only be attached to a
+  // saved talk, so writing one meant create, find it in the list, attach —
+  // three steps for one thing, and the sheet *is* the talk.
+  const [sheet, setSheet] = useState<File | null>(null)
+  const sheetRef = useRef<HTMLInputElement>(null)
 
   const create = useMutation({
-    mutationFn: () => api.post('/api/v1/toolbox-talks', {
-      title, topic: topic || null, period_month: `${month}-01`,
-    }),
-    onSuccess: () => { onDone(); onClose() },
+    mutationFn: async () => {
+      const talk = await api.post<{ id: string }>('/api/v1/toolbox-talks', {
+        title, topic: topic || null, period_month: `${month}-01`,
+      })
+      let sheetFailed = false
+      if (sheet) {
+        // The upload needs an id, so it follows rather than accompanies — and
+        // ★ a failure here must not fail the whole thing. The talk already
+        // exists by then; throwing would leave the form open with Create live,
+        // and the next press would make a second talk with the same title and
+        // send every supervisor two of them. The sheet can be attached from
+        // the list, and this says so.
+        const body = new FormData()
+        body.append('file', sheet)
+        try {
+          await api.upload(`/api/v1/toolbox-talks/${talk.id}/material`, body)
+        } catch {
+          sheetFailed = true
+        }
+      }
+      return { ...talk, sheetFailed }
+    },
+    onSuccess: (talk) => {
+      if (talk.sheetFailed) {
+        window.alert(
+          'The talk was created, but the sheet did not upload. Open it in the '
+          + 'list and attach the sheet before sending it out.')
+      }
+      onDone()
+      onClose()
+    },
     onError: (e: unknown) => setError(e instanceof ApiError ? e.message : String(e)),
   })
 
@@ -368,6 +456,21 @@ function NewTopicDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
         <label className="mb-1 mt-3 block text-sm font-medium text-neutral-800">Talking points</label>
         <textarea rows={4} className={`${inputClass} py-2`} value={topic}
                   onChange={(e) => setTopic(e.target.value)} />
+
+        <label className="mb-1 mt-3 block text-sm font-medium text-neutral-800">Sheet</label>
+        <input ref={sheetRef} type="file" className="hidden"
+               accept="application/pdf,image/png,image/jpeg,image/webp"
+               onChange={(e) => setSheet(e.target.files?.[0] ?? null)} />
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => sheetRef.current?.click()}
+                  className="flex min-h-[38px] items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-700">
+            <Paperclip className="h-4 w-4" aria-hidden />
+            {sheet ? 'Choose a different file' : 'Attach the sheet'}
+          </button>
+          {sheet && (
+            <span className="min-w-0 flex-1 truncate text-xs text-neutral-600">{sheet.name}</span>
+          )}
+        </div>
         {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         <div className="mt-4 flex gap-2">
           <button type="button" onClick={onClose}

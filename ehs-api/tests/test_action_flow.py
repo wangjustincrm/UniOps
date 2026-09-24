@@ -449,3 +449,118 @@ async def test_an_action_with_no_numbered_source_says_nothing_rather_than_guessi
     action = (await client.post("/api/v1/actions", json=_payload(owner.id))).json()
     assert action["source_type"] == "manual"
     assert action["source_ref"] is None
+
+
+async def test_a_task_given_to_a_role_reaches_the_people_holding_it(hse_manager, db_session):
+    """★ `assigned_role` was written by every caller in this module and read by
+    none of them.
+
+    A task raised for "the HSE Manager" rather than for a named person went to
+    the `tasks` table and appeared on nobody's screen. On the test database
+    that was seventy-eight open tasks nobody could see — incidents awaiting
+    review, inspections due, SDS reviews — which is precisely the failure this
+    page exists to prevent.
+    """
+    import uuid as _uuid
+
+    from app.services import tasks as task_service
+
+    manager, client = hse_manager
+    doc_id = _uuid.uuid4()
+    await task_service.open_task(
+        db_session,
+        task_type="ehs_do_action",
+        doc_type="ehs_jhsc",
+        doc_id=doc_id,
+        doc_number="JHSC-2026-0001",
+        title="Answer the committee's recommendation",
+        assigned_role=manager.role,
+        assigned_user_id=None,
+        description="Twenty-one days from the date it was raised.",
+    )
+    await db_session.commit()
+
+    mine = await client.get("/api/v1/actions/mine/tasks")
+    assert mine.status_code == 200, mine.text
+    assert str(doc_id) in {t["document_id"] for t in mine.json()}
+
+
+async def test_a_role_task_does_not_reach_somebody_who_holds_another(worker, db_session):
+    """And it reaches the role it was given to, not everybody.
+
+    Without this the admission above would be satisfied by a page that shows
+    every unassigned task in the plant to whoever opens it.
+    """
+    import uuid as _uuid
+
+    from app.services import tasks as task_service
+
+    _, client = worker
+    doc_id = _uuid.uuid4()
+    await task_service.open_task(
+        db_session,
+        task_type="ehs_do_action",
+        doc_type="ehs_jhsc",
+        doc_id=doc_id,
+        doc_number="JHSC-2026-0002",
+        title="For the HSE Manager only",
+        assigned_role="ehs_manager",
+        assigned_user_id=None,
+    )
+    await db_session.commit()
+
+    mine = await client.get("/api/v1/actions/mine/tasks")
+    assert mine.status_code == 200, mine.text
+    assert str(doc_id) not in {t["document_id"] for t in mine.json()}
+
+
+async def test_a_supervisor_sees_the_escalation_about_somebody_elses_action(
+        hse_manager, worker, db_session):
+    """★ The overdue notice a supervisor is sent reached no screen.
+
+    My Actions listed corrective actions by owner, and dropped every task on a
+    corrective action underneath on the grounds that they were already in that
+    list. A supervisor is not the owner, so "Overdue 12d: …" was excluded from
+    the one page it was supposed to arrive on.
+    """
+    import uuid as _uuid
+
+    from app.services import tasks as task_service
+
+    owner, _ = worker
+    supervisor, client = hse_manager
+    action = (await client.post("/api/v1/actions", json=_payload(owner.id))).json()
+
+    await task_service.open_task(
+        db_session,
+        task_type=task_service.TASK_DO_ACTION,
+        doc_type=task_service.DOC_ACTION,
+        doc_id=_uuid.UUID(action["id"]),
+        doc_number=action["action_no"],
+        title="Overdue 12d: Fit an interlocked guard to the capping head",
+        assigned_role="area_supervisor",
+        assigned_user_id=supervisor.id,
+        description="The owner has not closed this.",
+        priority="high",
+    )
+    await db_session.commit()
+
+    mine = await client.get("/api/v1/actions/mine/tasks")
+    assert mine.status_code == 200, mine.text
+    assert action["id"] in {t["document_id"] for t in mine.json()}, (
+        "the escalation is about somebody else's action, so nothing else on "
+        "this page is showing it")
+
+
+async def test_the_owner_does_not_see_their_own_action_twice(worker, hse_manager):
+    """And the reason the exclusion exists still holds: an action you own is
+    listed once, above, not again underneath as a task."""
+    owner, owner_client = worker
+    _, client = hse_manager
+    action = (await client.post("/api/v1/actions", json=_payload(owner.id))).json()
+
+    listed = (await owner_client.get("/api/v1/actions/mine")).json()
+    assert action["id"] in {a["id"] for a in listed}, "it is theirs to do"
+
+    tasks = (await owner_client.get("/api/v1/actions/mine/tasks")).json()
+    assert action["id"] not in {t["document_id"] for t in tasks}
