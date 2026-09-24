@@ -379,6 +379,21 @@ async def recompute(db: AsyncSession, rec: BankReconciliation,
     rec.outstanding_debit_total = -sum((t.amount for t in outstanding if t.amount < ZERO), ZERO)
     rec.outstanding_credit_total = sum((t.amount for t in outstanding if t.amount > ZERO), ZERO)
     rec.difference = ((statement.closing_balance if statement else ZERO) - period.closing)
+
+    # Split the difference into where it came from. They sum to `difference`, and
+    # which one is non-zero says what to do about it:
+    #   opening  — the two sides disagreed BEFORE this period started. Nothing you
+    #              match inside it can move this number; the carry-in is wrong, or
+    #              a previous period was never reconciled.
+    #   movement — the period's own debits and credits disagree. That is what
+    #              matching is for.
+    # July 2026 on RBC read as "the ledger does not reconcile" when in fact the
+    # movement matched to the cent and the entire gap was carry-in — and with all
+    # 260 lines ticked, the only reading left was "something is unmatched".
+    stmt_opening = statement.opening_balance if statement else ZERO
+    opening_difference = stmt_opening - period.opening
+    movement_difference = rec.difference - opening_difference
+
     await db.flush()
     return {
         "statement_opening": str(rec.statement_opening) if statement else None,
@@ -392,6 +407,8 @@ async def recompute(db: AsyncSession, rec: BankReconciliation,
         "outstanding_bank_lines": len(outstanding),
         "outstanding_book_lines": len(uncleared_book),
         "difference": str(rec.difference),
+        "opening_difference": str(opening_difference),
+        "movement_difference": str(movement_difference),
         "bank_account": period.bank_account_label,
         "status": rec.status,
     }
@@ -494,10 +511,27 @@ async def finalize(db: AsyncSession, rec: BankReconciliation, account: BankAccou
     statement — those are the two ways a reconciliation can look done and not be."""
     summary = await recompute(db, rec, account)
     if rec.difference != ZERO:
+        # Name WHICH half is off. The old wording gave two closing balances and a
+        # difference, and a reader whose lines were all matched could only read it
+        # as "something is still unmatched" — which was not what it meant and not
+        # what was wrong (user, 2026-09-23).
+        opening_gap = Decimal(summary["opening_difference"])
+        movement_gap = Decimal(summary["movement_difference"])
+        if opening_gap and not movement_gap:
+            why = (f"the period's own movements agree to the cent, but the two sides "
+                   f"start {opening_gap} apart. Nothing you match inside this period "
+                   f"can change that — the opening balance is wrong, or an earlier "
+                   f"period was never reconciled.")
+        elif movement_gap and not opening_gap:
+            why = (f"the opening balances agree, and this period's movements are "
+                   f"{movement_gap} apart. That is what matching is for.")
+        else:
+            why = (f"{opening_gap} of it was already there at the opening and "
+                   f"{movement_gap} arose inside the period.")
         raise ValueError(
-            f"This period does not reconcile: the statement closes at "
-            f"{rec.statement_closing} and the ledger at {rec.book_closing}, a "
-            f"difference of {rec.difference}. Clear that before signing off.")
+            f"This period does not reconcile by {rec.difference}: {why} "
+            f"(statement closes at {rec.statement_closing}, ledger at "
+            f"{rec.book_closing}.)")
     if not summary.get("statement_verified"):
         raise ValueError(
             "The statement for this period has not been verified against its own "

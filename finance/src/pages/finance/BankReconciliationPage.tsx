@@ -51,7 +51,8 @@ interface Summary {
   cleared_debit_total: string; cleared_credit_total: string
   cleared_debit_count: number; cleared_credit_count: number
   outstanding_bank_lines: number; outstanding_book_lines: number
-  difference: string; bank_account: string; status: string
+  difference: string; opening_difference: string; movement_difference: string
+  bank_account: string; status: string
 }
 interface BankLine {
   id: string; txn_date: string; description: string; amount: string
@@ -520,6 +521,39 @@ export default function BankReconciliationPage() {
                     tone={Number(s?.difference ?? 0) === 0 ? 'pos' : 'neg'}
                     hint={Number(s?.difference ?? 0) === 0 ? 'reconciled' : 'must be 0.00 to sign off'} />
             </div>
+
+            {/* Where the difference came from. The two halves sum to Difference and
+                they call for opposite actions: a carry-in gap cannot be closed by
+                matching anything inside this period, and saying only "the ledger
+                closes at X" left a reader whose lines were all ticked to conclude
+                something was unmatched. */}
+            {Number(s?.difference ?? 0) !== 0 && (
+              <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border
+                              border-neutral-200 bg-neutral-50/70 px-3 py-2 text-xs">
+                <span className="font-medium text-neutral-500">Where the difference is</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-neutral-500">Carried in (before this period)</span>
+                  <span className={cn('font-mono tabular-nums',
+                    Number(s?.opening_difference ?? 0) === 0 ? 'text-neutral-400' : 'text-red-600')}>
+                    {money(s?.opening_difference)}
+                  </span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-neutral-500">This period&rsquo;s movements</span>
+                  <span className={cn('font-mono tabular-nums',
+                    Number(s?.movement_difference ?? 0) === 0 ? 'text-neutral-400' : 'text-red-600')}>
+                    {money(s?.movement_difference)}
+                  </span>
+                </span>
+                <span className="text-neutral-500">
+                  {Number(s?.movement_difference ?? 0) === 0
+                    ? 'Matching inside this period cannot change a carried-in gap — check the opening balance or an earlier period.'
+                    : Number(s?.opening_difference ?? 0) === 0
+                      ? 'The opening balances agree; the gap is in this period, which is what matching is for.'
+                      : 'Both halves are off — fix the carry-in first, then match what remains.'}
+                </span>
+              </div>
+            )}
 
             {/* ── actions ───────────────────────────────────────────────── */}
             <div className="mb-3 flex flex-wrap items-center gap-2">

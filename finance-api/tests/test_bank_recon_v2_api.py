@@ -799,3 +799,33 @@ async def test_opening_excludes_ncs_opening_voucher_but_keeps_real_postings(db_s
     # 100 − 30 + 7 = 77. The kind-2 restatement of 70 must NOT be added on top;
     # kinds other than 2 must still count, or the number breaks the other way.
     assert got == D("77.00")
+
+
+async def test_difference_says_whether_it_was_carried_in_or_arose_this_period(
+        client, scene, db_session):
+    """"This period does not reconcile" was read as "some lines are unmatched"
+    when every line was ticked — because with two closing balances and one number
+    between them, that is the only reading left. The halves say which.
+
+    They must also sum to the whole: a split that does not add up is worse than
+    no split, because each half then looks actionable on its own.
+    """
+    from decimal import Decimal as Dc
+
+    acct_id = scene["account"].id
+    opened = await client.post(f"/finance/v1/bank-recon/{acct_id}/reconciliations",
+                               json={"period_start": "2026-07-01", "period_end": "2026-07-31"},
+                               headers=_h())
+    assert opened.status_code == 200, opened.text
+    r = await client.get(
+        f"/finance/v1/bank-recon/reconciliations/{opened.json()['id']}", headers=_h())
+    assert r.status_code == 200, r.text
+    s = r.json()["summary"]
+
+    total = Dc(s["difference"])
+    opening = Dc(s["opening_difference"])
+    movement = Dc(s["movement_difference"])
+    assert opening + movement == total
+
+    # And the halves are derived from the right sides, not from each other
+    assert opening == Dc(s["statement_opening"] or "0") - Dc(s["book_opening"])
