@@ -62,6 +62,12 @@ export default function SafetyEquipmentPage() {
   // of it wants — not a list of four hundred.
   const [params, setParams] = useSearchParams()
   const focused = params.get('asset')
+  // ★ And whether the scan was somebody standing at the item about to check
+  // it. "Record a check" on the code's landing screen used to open the whole
+  // register — four hundred rows, on a phone, at the top of a ladder — which
+  // is what the third round reported as scanning not recording a check. The
+  // camera knows which item it is; the screen should not ask again.
+  const checkNow = params.get('check') === '1'
   const [tab, setTab] = useState<TabKey>(focused ? 'register' : 'due')
   useEffect(() => { if (focused) setTab('register') }, [focused])
   const { can } = usePermissions()
@@ -115,6 +121,18 @@ export default function SafetyEquipmentPage() {
         <RegisterTab
           assets={assets.data ?? []} mayManage={mayManage} mayInspect={mayInspect}
           focusedId={focused}
+          checkOnOpen={checkNow}
+          onCheckConsumed={() => {
+            // ★ The flag is spent as it is used. These pages live in a
+            // keep-alive tab, so remembering "already opened for this asset"
+            // in component state would mean the second scan of the same
+            // extinguisher — which is the daily round, the main path — did
+            // nothing at all. Taking it out of the URL instead means arriving
+            // with it set always opens, and returning to the tab never does.
+            const next = new URLSearchParams(params)
+            next.delete('check')
+            setParams(next, { replace: true })
+          }}
           onClearFocus={() => setParams({}, { replace: true })}
         />
       )}
@@ -250,10 +268,11 @@ function RecordDialog(
 }
 
 function RegisterTab({
-  assets, mayManage, mayInspect, focusedId, onClearFocus,
+  assets, mayManage, mayInspect, focusedId, checkOnOpen, onCheckConsumed, onClearFocus,
 }: {
   assets: Asset[]; mayManage: boolean; mayInspect: boolean
-  focusedId?: string | null; onClearFocus?: () => void
+  focusedId?: string | null; checkOnOpen?: boolean
+  onCheckConsumed?: () => void; onClearFocus?: () => void
 }) {
   const queryClient = useQueryClient()
   const [codeFor, setCodeFor] = useState<string | null>(null)
@@ -270,6 +289,23 @@ function RegisterTab({
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Asset | null>(null)
   const shown = focusedId ? assets.filter((a) => a.id === focusedId) : assets
+
+  // The item a code was just scanned on, once it has arrived from the server.
+  const scanned = checkOnOpen && focusedId && mayInspect
+    ? shown.find((a) => a.id === focusedId)
+    : undefined
+  // Said in words rather than by silence: a scan that opens nothing looks
+  // like a scan that failed, and "this one is out of service" is the answer.
+  const [blocked, setBlocked] = useState<Asset | null>(null)
+  useEffect(() => {
+    if (!scanned) return
+    if (scanned.status === 'in_service') setCheckingNow(scanned)
+    else setBlocked(scanned)
+    onCheckConsumed?.()
+    // `onCheckConsumed` is written inline by the caller and would change every
+    // render; the asset that arrived is what decides this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanned?.id, scanned?.status])
   const list = useListView(shown, (a) => [
     a.asset_no, a.name, a.asset_type_label, a.serial_no, a.location_path, a.status,
   ])
@@ -285,6 +321,13 @@ function RegisterTab({
 
   return (
     <>
+      {blocked && (
+        <p className="mb-3 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700">
+          {blocked.name} is out of service, so a check cannot be recorded against
+          it. Put it back in service first, or report what you found.
+        </p>
+      )}
+
       {focusedId && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-neutral-100 px-3 py-2">
           <span className="text-xs text-neutral-600">

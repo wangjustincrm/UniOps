@@ -108,7 +108,12 @@ export default function QrLandingPage() {
           {t.kind === 'document' ? 'Open it' : 'Open the record'}
         </button>
         {t.actions.includes('record_inspection') && (
-          <button type="button" className={secondaryButton} onClick={() => navigate('/equipment')}>
+          // ★ Straight to a check on *this* item. It used to open the register
+          // — every asset in the plant — which is not recording a check on the
+          // thing the camera was just pointed at.
+          <button type="button" className={secondaryButton}
+                  onClick={() => navigate(
+                    `${t.path}${t.path.includes('?') ? '&' : '?'}check=1`)}>
             <ClipboardCheck className="h-4 w-4" aria-hidden />
             Record a check
           </button>
