@@ -444,7 +444,7 @@ export default function BankReconciliationPage() {
                 Periods for this account ({history.length})
               </span>
             </div>
-            <div className="max-h-44 overflow-y-auto">
+            <div className="max-h-60 overflow-y-auto">
               <table className="w-full text-sm">
                 <tbody>
                   {history.map((h, i) => (
@@ -453,28 +453,28 @@ export default function BankReconciliationPage() {
                         className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-50',
                           i % 2 && 'bg-neutral-50/40',
                           h.id === reconId && 'bg-[#E4EFEC]')}>
-                      <td className="w-56 px-3 py-1.5 font-mono text-xs">
+                      <td className="w-56 px-3 py-2 font-mono text-sm">
                         {h.period_start} → {h.period_end}
                       </td>
-                      <td className="w-28 px-3 py-1.5">
+                      <td className="w-28 px-3 py-2">
                         {h.status === 'finalized'
                           ? <Pill tone="bg-green-50 text-green-700">signed off</Pill>
                           : <Pill tone="bg-amber-50 text-amber-700">open</Pill>}
                       </td>
-                      <td className="w-36 px-3 py-1.5 text-right font-mono text-xs tabular-nums">
+                      <td className="w-36 px-3 py-2 text-right font-mono text-sm tabular-nums">
                         {/* The number that decides whether it could be signed off */}
                         <span className={Number(h.difference) === 0 ? 'text-neutral-400' : 'text-red-600'}>
                           {money(h.difference)}
                         </span>
                       </td>
-                      <td className="px-3 py-1.5 text-xs text-neutral-500">
+                      <td className="px-3 py-2 text-sm text-neutral-500">
                         {h.finalized_at
                           ? `signed off ${h.finalized_at.slice(0, 10)}`
                           : 'not signed off'}
                       </td>
-                      <td className="w-32 px-3 py-1.5 text-right">
+                      <td className="w-32 px-3 py-2 text-right">
                         {h.has_report && (
-                          <span className="text-xs text-neutral-400">report kept</span>
+                          <span className="text-sm text-neutral-400">report kept</span>
                         )}
                       </td>
                     </tr>
