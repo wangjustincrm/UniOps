@@ -342,6 +342,36 @@ async def auto_match(db: AsyncSession, rec: BankReconciliation, account: BankAcc
     }
 
 
+def _summary_from_stored(rec: BankReconciliation, account) -> dict:
+    """What was signed off, read back from the row — never recalculated.
+
+    Shapes identically to recompute()'s return so every caller keeps working; the
+    two line counts come from the snapshot, which is the only place they were
+    ever kept after sign-off.
+    """
+    snap = rec.snapshot or {}
+    stored = snap.get("summary") if isinstance(snap, dict) else None
+    if isinstance(stored, dict) and stored.get("difference") is not None:
+        return stored
+    opening_difference = (rec.statement_opening or ZERO) - (rec.book_opening or ZERO)
+    return {
+        "statement_opening": str(rec.statement_opening) if rec.statement_opening is not None else None,
+        "statement_closing": str(rec.statement_closing) if rec.statement_closing is not None else None,
+        "statement_verified": True,      # it could not have been signed off otherwise
+        "book_opening": str(rec.book_opening), "book_closing": str(rec.book_closing),
+        "cleared_debit_total": str(rec.cleared_debit_total),
+        "cleared_credit_total": str(rec.cleared_credit_total),
+        "cleared_debit_count": rec.cleared_debit_count,
+        "cleared_credit_count": rec.cleared_credit_count,
+        "outstanding_bank_lines": 0, "outstanding_book_lines": 0,
+        "difference": str(rec.difference),
+        "opening_difference": str(opening_difference),
+        "movement_difference": str(rec.difference - opening_difference),
+        "bank_account": account.name,
+        "status": rec.status,
+    }
+
+
 async def recompute(db: AsyncSession, rec: BankReconciliation,
                     account: BankAccount) -> dict:
     """Refresh the session's totals from what is actually stored.
@@ -350,16 +380,41 @@ async def recompute(db: AsyncSession, rec: BankReconciliation,
     statement closing minus (book opening + everything the ledger did this
     period). It is NOT computed from the cleared lines — that would define away
     the discrepancy it is supposed to expose.
+
+    ★ A finalized period is NOT recomputed. Sign-off freezes the snapshot for the
+    report, but every read still ran this and overwrote the stored figures, so a
+    signed-off July went from 0.00 to −255,207.81 the moment August was imported
+    (production, 2026-09-24). "Frozen" that only protects the PDF is not frozen:
+    what the auditor is shown on screen has to be what was signed.
     """
+    if rec.status == FINALIZED:
+        return _summary_from_stored(rec, account)
     period = await bank_book.book_period(db, account, rec.period_start, rec.period_end)
-    statement = (await db.execute(
+
+    # The statement for THIS period is the one that overlaps it most, not the
+    # latest that touches it. A bank dates each statement from the previous
+    # closing date, so consecutive months share an endpoint: August runs
+    # 07-31 → 08-31 and so "overlaps" a July reconciliation by exactly one day.
+    # Ordering by period_end desc then handed July the August statement, and the
+    # moment August was imported a July period that had been signed off at 0.00
+    # started reporting a difference of −255,207.81 (production, 2026-09-24).
+    overlapping = (await db.execute(
         select(BankStatement).where(
             BankStatement.bank_account_id == account.id,
             BankStatement.status == IMPORTED,
             BankStatement.period_start <= rec.period_end,
             BankStatement.period_end >= rec.period_start)
-        .order_by(BankStatement.period_end.desc())
-    )).scalars().first()
+    )).scalars().all()
+
+    def _overlap_days(st: BankStatement) -> int:
+        start = max(st.period_start, rec.period_start)
+        end = min(st.period_end, rec.period_end)
+        return (end - start).days
+
+    # Tie-break on the later period_end only among equally-overlapping ones, so a
+    # genuine re-import of the same month still wins over the original.
+    statement = max(overlapping, key=lambda st: (_overlap_days(st), st.period_end),
+                    default=None)
 
     claimed_txn, claimed_book = await _claimed(db, rec)
     txns = await _period_txns(db, rec)

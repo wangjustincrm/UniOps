@@ -86,6 +86,13 @@ interface AutoResult {
   matched_groups: number; bank_lines_cleared: number; book_lines_cleared: number
   by_method: Record<string, number>; findings: Finding[]; summary: Summary
 }
+/** A ranked ledger line for one statement line — `GET .../candidates/{txn_id}`,
+ *  written for exactly the case where the ladder gives up and a person has to
+ *  clear the line by hand, and never called until now. */
+interface Candidate {
+  jv_line_id: string; jv_number: string; voucher_date: string
+  summary: string | null; amount: string; contra_kind: string; exact: boolean
+}
 interface AdviceLine {
   id: string; seq: number; payee_code: string | null; payee_name: string | null
   amount: string; matched_jv_line_id: string | null
@@ -135,6 +142,22 @@ const KIND_TONE: Record<string, string> = {
   other_payable: 'bg-neutral-100 text-neutral-600',
   bank_fee: 'bg-neutral-100 text-neutral-500',
   mixed: 'bg-amber-50 text-amber-700',
+}
+
+// The ledger rows get `contra_label` from the server; the candidates endpoint
+// returns only the kind, so the same words live here rather than being invented
+// per call site. Mirrors bank_book.KIND_LABELS.
+const KIND_LABEL_UI: Record<string, string> = {
+  ap: 'Accounts payable',
+  bank_transfer: 'Bank transfer',
+  cash: 'Cash',
+  payroll: 'Payroll',
+  credit_card: 'Credit card',
+  other_payable: 'Other payable',
+  bank_fee: 'Bank charges / interest',
+  mixed: 'Several accounts',
+  other: 'Other',
+  unknown: '—',
 }
 
 function money(v: string | number | null | undefined): string {
@@ -334,6 +357,17 @@ export default function BankReconciliationPage() {
     }
     return m
   }, [period])
+  // Candidates are for the case a person is actually in: ONE statement line
+  // selected, looking for the ledger lines that make it up. Asking for several at
+  // once has no meaning — the ranking is per statement line.
+  const soleBankPick = pickedBank.size === 1 ? [...pickedBank][0] : null
+  const { data: candidates = [], isFetching: candidatesLoading } = useQuery({
+    queryKey: ['bank-recon-candidates', reconId, soleBankPick],
+    enabled: !!reconId && !!soleBankPick,
+    queryFn: () => financeApi.get<Candidate[]>(
+      `/bank-recon/reconciliations/${reconId}/candidates/${soleBankPick}`),
+  })
+
   const focused = period?.matches.find((g) => g.id === focusGroup) ?? null
 
   // Bring the focused group into view on BOTH sides. A group can span 26 ledger
@@ -683,6 +717,78 @@ export default function BankReconciliationPage() {
                     Match these
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* ── candidates for the one statement line being cleared ─────── */}
+            {/* The ladder deliberately stops before guessing: a PDS batch can be one
+                statement line against a dozen ledger lines, and searching that many
+                combinations by amount alone finds A set that adds up rather than THE
+                set. So it hands the line to a person — and until now handed it over
+                with 74 rows and no help. This is the ranking it already computes. */}
+            {soleBankPick && !frozen && (
+              <div className="mb-3 rounded-lg border border-[#085E5E]/30 bg-white">
+                <div className="flex items-center gap-2 border-b border-neutral-100 px-3 py-2 text-xs">
+                  <Link2 className="h-4 w-4 text-neutral-400" />
+                  <span className="font-semibold uppercase tracking-wide text-neutral-500">
+                    Ledger lines that could make up this statement line
+                  </span>
+                  {candidatesLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-neutral-400" />}
+                  <span className="ml-auto text-neutral-400">
+                    tick what belongs — the totals above say when it balances
+                  </span>
+                </div>
+                {candidates.length === 0 && !candidatesLoading ? (
+                  <div className="px-3 py-4 text-sm text-neutral-400">
+                    No unclaimed ledger line within the search window. Widen the period,
+                    or import the payment file for this batch and run Match again.
+                  </div>
+                ) : (
+                  <div className="max-h-56 overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {candidates.map((c, i) => (
+                          <tr key={c.jv_line_id}
+                              onClick={() => toggle(pickedBook, c.jv_line_id, setPickedBook)}
+                              className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-50',
+                                i % 2 && 'bg-neutral-50/40',
+                                pickedBook.has(c.jv_line_id)
+                                  && 'bg-[#F2F8F7] ring-1 ring-inset ring-[#085E5E]/30')}>
+                            <td className="w-10 px-2 py-1.5">
+                              <input type="checkbox" readOnly checked={pickedBook.has(c.jv_line_id)}
+                                     className="h-3.5 w-3.5 accent-[#085E5E]" />
+                            </td>
+                            <td className="w-14 px-2 py-1.5 font-mono text-xs text-neutral-500">
+                              {shortDate(c.voucher_date)}
+                            </td>
+                            <td className={cn('w-28 px-2 py-1.5 text-right font-mono tabular-nums',
+                              Number(c.amount) < 0 ? 'text-red-600' : 'text-green-700')}>
+                              {money(c.amount)}
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <div className="truncate" title={c.summary ?? ''}>{c.summary || '—'}</div>
+                              <div className="font-mono text-[11px] text-neutral-400">{c.jv_number}</div>
+                            </td>
+                            <td className="w-36 px-2 py-1.5">
+                              <Pill tone={KIND_TONE[c.contra_kind]}>
+                                {KIND_LABEL_UI[c.contra_kind] ?? c.contra_kind}
+                              </Pill>
+                            </td>
+                            <td className="w-24 px-2 py-1.5 text-right">
+                              {/* Named, not just ranked first: "same amount to the cent"
+                                  is a different kind of claim from "nearby and plausible". */}
+                              {c.exact && (
+                                <span className="rounded bg-green-50 px-1.5 py-0.5 text-[11px] text-green-700">
+                                  exact amount
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 

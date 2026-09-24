@@ -829,3 +829,79 @@ async def test_difference_says_whether_it_was_carried_in_or_arose_this_period(
 
     # And the halves are derived from the right sides, not from each other
     assert opening == Dc(s["statement_opening"] or "0") - Dc(s["book_opening"])
+
+
+# ── one period, one statement ─────────────────────────────────────────────────
+
+async def test_a_later_statement_does_not_hijack_an_earlier_period(db_session):
+    """Banks date a statement from the previous closing date, so consecutive
+    months share an endpoint: July runs 06-30 → 07-31 and August 07-31 → 08-31.
+    Picking "the latest statement that overlaps" therefore handed July the August
+    statement the moment August was imported, and a July period signed off at
+    0.00 began reporting −255,207.81 (production, 2026-09-24).
+    """
+    from app.crud import bank_recon as crud
+    from app.models.bank import BankAccount
+    from app.models.bank_recon import BankReconciliation, BankStatement, IMPORTED
+    from app.models.nc_bank_account import NcBankAccount
+
+    db_session.add_all([
+        ChartOfAccount(code="1002", name="Cash on Bank", account_type="asset",
+                       normal_balance="debit", is_postable=False),
+        ChartOfAccount(code="100201", name="Checking", account_type="asset",
+                       normal_balance="debit", is_postable=True, parent_code="1002"),
+    ])
+    nc = NcBankAccount(nc_pk="NCHIJ1", code="8888", name="Hijack test", currency="CAD")
+    acct = BankAccount(name="Test CAD", bank_name="T", currency="CAD",
+                       ledger_account_code="100201", nc_bank_account_code="8888")
+    db_session.add_all([nc, acct])
+    await db_session.flush()
+
+    for ps, pe, op, cl in (("2026-06-30", "2026-07-31", "100.00", "200.00"),
+                           ("2026-07-31", "2026-08-31", "200.00", "50.00")):
+        db_session.add(BankStatement(
+            bank_account_id=acct.id, period_start=date.fromisoformat(ps),
+            period_end=date.fromisoformat(pe), status=IMPORTED, verified=True,
+            opening_balance=D(op), closing_balance=D(cl), currency="CAD"))
+    rec = BankReconciliation(bank_account_id=acct.id, period_start=date(2026, 7, 1),
+                             period_end=date(2026, 7, 31), currency="CAD")
+    db_session.add(rec)
+    await db_session.flush()
+
+    s = await crud.recompute(db_session, rec, acct)
+
+    # July's own statement: 31 days of overlap against August's single shared day.
+    assert s["statement_opening"] == "100.00"
+    assert s["statement_closing"] == "200.00"
+
+
+async def test_a_signed_off_period_is_not_recomputed_when_read(db_session):
+    """Sign-off froze the snapshot the report is rendered from, and then every
+    read recomputed and OVERWROTE the stored figures anyway. Frozen has to mean
+    the number the auditor sees, not only the PDF."""
+    from app.crud import bank_recon as crud
+    from app.models.bank import BankAccount
+    from app.models.bank_recon import FINALIZED, BankReconciliation
+    from app.models.nc_bank_account import NcBankAccount
+
+    nc = NcBankAccount(nc_pk="NCFRZ1", code="7777", name="Frozen test", currency="CAD")
+    acct = BankAccount(name="Frozen CAD", bank_name="T", currency="CAD",
+                       ledger_account_code="100201", nc_bank_account_code="7777")
+    db_session.add_all([nc, acct])
+    await db_session.flush()
+
+    rec = BankReconciliation(
+        bank_account_id=acct.id, period_start=date(2026, 7, 1),
+        period_end=date(2026, 7, 31), currency="CAD", status=FINALIZED,
+        statement_opening=D("100.00"), statement_closing=D("200.00"),
+        book_opening=D("100.00"), book_closing=D("200.00"), difference=D("0.00"))
+    db_session.add(rec)
+    await db_session.flush()
+
+    s = await crud.recompute(db_session, rec, acct)
+
+    # Read back exactly as signed — and the row is untouched, which is the half a
+    # snapshot alone never protected.
+    assert s["difference"] == "0.00"
+    assert rec.difference == D("0.00")
+    assert rec.statement_closing == D("200.00")
