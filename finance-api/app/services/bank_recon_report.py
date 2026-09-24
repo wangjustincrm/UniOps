@@ -23,10 +23,76 @@ The report is built from the SNAPSHOT once a period is finalized, never from a
 re-query. A signed-off reconciliation has to keep saying what it said.
 """
 import io
+import re
 from datetime import date
 from decimal import Decimal
+from xml.sax.saxutils import escape
 
 ZERO = Decimal("0")
+
+# NC's bank names, voucher summaries and payee names are Chinese. Helvetica has
+# no Chinese glyphs, so every one of them printed as a row of black boxes.
+_CJK_RE = re.compile(
+    "[\u2e80-\u33ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
+    "\ufe30-\ufe4f\uff00-\uffef]+"
+)
+
+# Preferred first because a TTF is *embedded*: an auditor opening the report on
+# a machine with no Chinese font installed still sees the bank's name. The CID
+# font after it is only referenced by name, so it depends on the reader having
+# one — better than boxes, worse than embedding. Helvetica last: the report
+# still builds, the Chinese is still boxes, and nothing else is lost.
+_CJK_TTF_CANDIDATES = (
+    ("wqy-zenhei", "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc", 0),
+    ("wqy-microhei", "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", 0),
+    ("droid-fallback", "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf", 0),
+)
+_cjk_font_name = None
+
+
+def _cjk_font() -> str:
+    """Name of a registered font that can draw Chinese. Resolved once."""
+    global _cjk_font_name
+    if _cjk_font_name is not None:
+        return _cjk_font_name
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    for name, path, index in _CJK_TTF_CANDIDATES:
+        try:
+            pdfmetrics.registerFont(TTFont(name, path, subfontIndex=index))
+            _cjk_font_name = name
+            return name
+        except Exception:
+            continue
+    try:
+        pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+        _cjk_font_name = "STSong-Light"
+    except Exception:
+        _cjk_font_name = "Helvetica"
+    return _cjk_font_name
+
+
+def _rich(text) -> str:
+    """Paragraph markup: XML-escaped, with every Chinese run switched to the CJK
+    font so the surrounding English keeps Helvetica (and its bold)."""
+    t = escape(str(text if text is not None else ""))
+    if not _CJK_RE.search(t):
+        return t
+    font = _cjk_font()
+    if font == "Helvetica":
+        return t
+    return _CJK_RE.sub(lambda m: f'<font name="{font}">{m.group(0)}</font>', t)
+
+
+def _cell(text, style):
+    """A table cell. Left as a plain string unless it has Chinese in it — that
+    keeps the all-English case laid out exactly as it was."""
+    from reportlab.platypus import Paragraph
+
+    t = str(text if text is not None else "")
+    return Paragraph(_rich(t), style) if _CJK_RE.search(t) else t
 
 
 def _money(v) -> str:
@@ -73,6 +139,9 @@ def render_pdf(snapshot: dict, reconciled_on: date, reconciled_by: str) -> bytes
                         fontSize=10.5, leading=14, spaceBefore=10, spaceAfter=4)
     small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8.5, leading=11,
                            textColor=colors.HexColor("#5D6B6A"))
+    # Only used for cells that actually contain Chinese; matches the FONTSIZE the
+    # table style applies to the plain-string cells around it.
+    cell = ParagraphStyle("cell", parent=styles["Normal"], fontSize=7.5, leading=9.5)
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(letter),
@@ -82,12 +151,12 @@ def render_pdf(snapshot: dict, reconciled_on: date, reconciled_by: str) -> bytes
                                   f"{snapshot['period_end']}")
     flow = []
     s = snapshot["summary"]
-    flow.append(Paragraph(f"{snapshot['account']}, Period Ending "
-                          f"{snapshot['period_end']}", h1))
+    flow.append(Paragraph(_rich(f"{snapshot['account']}, Period Ending "
+                                f"{snapshot['period_end']}"), h1))
     flow.append(Paragraph("RECONCILIATION REPORT", h2))
     flow.append(Paragraph(
         f"Reconciled on: {reconciled_on.isoformat()} &nbsp;&nbsp; "
-        f"Reconciled by: {reconciled_by}", small))
+        f"Reconciled by: {_rich(reconciled_by)}", small))
     flow.append(Paragraph(
         "Any changes made to transactions after this date are not included in this "
         "report.", small))
@@ -128,8 +197,10 @@ def render_pdf(snapshot: dict, reconciled_on: date, reconciled_by: str) -> bytes
                  f"AMOUNT ({snapshot['currency']})"]]
         for r in rows:
             amt = _money(r.get("amount"))
-            data.append([r.get("date", ""), r.get("type", ""), r.get("ref", ""),
-                         (r.get("payee") or "")[:70],
+            data.append([r.get("date", ""),
+                         _cell(r.get("type", ""), cell),
+                         _cell(r.get("ref", ""), cell),
+                         _cell((r.get("payee") or "")[:70], cell),
                          ("-" + amt) if negative else amt])
         data.append(["", "", "", "Total",
                      ("-" if negative else "") + _money(

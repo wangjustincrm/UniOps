@@ -2,8 +2,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# fonts-wqy-zenhei: the reconciliation report embeds it so NC's Chinese bank
+# names and voucher summaries render instead of printing as black boxes.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev curl \
+    gcc libpq-dev curl fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/*
 
 COPY packages/authz /packages/authz
