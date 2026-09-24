@@ -311,14 +311,41 @@ async def record_ad_hoc(
     rather than from the date somebody missed.
     """
     when = performed_on or date.today()
-    inspection = AssetInspection(
-        id=uuid.uuid4(),
-        asset_id=asset.id,
-        due_on=when,
-        result="due",
-    )
-    db.add(inspection)
-    await db.flush()
+
+    # One row per asset per day, enforced by the database. A second check on
+    # the same item on the same day therefore cannot be a second row, and
+    # inserting one answered 500 — which is what the third acceptance round
+    # hit: "internal server error on pass or fail entries". Two cases, and
+    # neither of them is a crash.
+    inspection = (await db.execute(
+        select(AssetInspection).where(
+            AssetInspection.asset_id == asset.id,
+            AssetInspection.due_on == when,
+        )
+    )).scalar_one_or_none()
+
+    if inspection is not None and inspection.result in ("passed", "failed"):
+        # Already checked today, and a recorded result is not overwritten —
+        # the register is the evidence that it was looked at and what was
+        # found. Said plainly rather than as a server error.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{asset.asset_no} was already checked on {when:%-d %B %Y} and the "
+            f"result was recorded as {inspection.result}. A result on the "
+            f"register is not replaced; record the next check on its own day.",
+        )
+
+    if inspection is None:
+        # Nothing owed today — this is somebody walking past and looking at it,
+        # which is a check. The occurrence is made and recorded in one breath.
+        inspection = AssetInspection(
+            id=uuid.uuid4(),
+            asset_id=asset.id,
+            due_on=when,
+            result="due",
+        )
+        db.add(inspection)
+        await db.flush()
 
     await record_inspection(
         db, inspection, result=result, notes=notes,

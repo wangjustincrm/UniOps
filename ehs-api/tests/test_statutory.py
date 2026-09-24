@@ -315,3 +315,40 @@ async def test_changing_the_check_cycle_moves_the_next_check(hse_manager):
     })
     assert off.json()["next_due_on"] is None, (
         "an item nobody schedules must stop raising checks")
+
+
+async def test_checking_the_same_item_twice_in_a_day_is_refused_not_a_crash(hse_manager):
+    """One row per asset per day is a database constraint.
+
+    A second check on the same item on the same day cannot be a second row,
+    and inserting one answered 500 — which is what the third acceptance round
+    hit: "internal server error on pass or fail entries". It is also what
+    happens on the ordinary path, because the sweep raises a row for anything
+    due today and the ad-hoc check then tried to make another.
+    """
+    _, client = hse_manager
+    asset = (await client.post("/api/v1/safety-assets", json={
+        "name": "Eyewash — packaging line", "inspection_frequency": "monthly",
+    })).json()
+
+    first = await client.post(f"/api/v1/safety-assets/{asset['id']}/inspections",
+                              json={"result": "passed", "notes": "Flushed, clear."})
+    assert first.status_code in (200, 201), first.text
+    assert first.json()["result"] == "passed"
+    assert first.json()["performed_by_name"], "a check has to say who did it"
+
+    again = await client.post(f"/api/v1/safety-assets/{asset['id']}/inspections",
+                              json={"result": "failed", "notes": "Second look."})
+    assert again.status_code == 409, (
+        f"expected a plain refusal, got {again.status_code}: {again.text}")
+    assert "already checked" in again.json()["detail"]
+    assert asset["asset_no"] in again.json()["detail"], (
+        "the message has to name the item — somebody checking a row of "
+        "extinguishers needs to know which one it means")
+
+    # And the first result stands: a recorded result is the register's
+    # evidence and is not replaced by a later attempt.
+    checks = (await client.get(
+        f"/api/v1/safety-assets/inspections?asset_id={asset['id']}")).json()
+    done = [c for c in checks if c["performed_on"]]
+    assert len(done) == 1 and done[0]["result"] == "passed"

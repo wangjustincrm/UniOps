@@ -146,3 +146,25 @@ export interface DirectoryPerson {
   department_id: string | null
   department_name: string | null
 }
+
+/**
+ * Open a file the API serves, in a new tab.
+ *
+ * A plain link cannot carry the session header and comes back a 401, so the
+ * bytes are fetched and handed to the browser as a blob. Every "open the
+ * attachment" in this module goes through here — three of them were built as
+ * an upload with no way back down, which is the half people actually use.
+ */
+export async function openFile(path: string, filename?: string): Promise<void> {
+  const blob = await apiBlob(path)
+  const url = URL.createObjectURL(blob)
+  const w = window.open(url, '_blank', 'noopener')
+  if (!w && filename) {
+    // Pop-up blocked — fall back to a download rather than losing the file.
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}

@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CalendarDays, Plus, Upload, X, Paperclip } from 'lucide-react'
-import { api, apiBlob } from '@/lib/api'
+import { api, apiBlob , openFile } from '@/lib/api'
 import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -731,10 +731,21 @@ function CourseMaterial({ course, mayWrite }: { course: Course; mayWrite: boolea
   return (
     <span className="flex flex-col gap-0.5 text-xs text-neutral-600">
       {files.length === 0 && <span className="text-neutral-500">No material</span>}
+      {/* ★ The filename was all there was. Uploading, listing and removing
+          were built and opening was not, so an instructor could see that the
+          handout existed and could not read it — which is the only thing they
+          wanted it for. */}
       {files.map((m) => (
         <span key={m.id} className="flex items-center gap-1.5">
           <Paperclip className="h-3.5 w-3.5 shrink-0 text-neutral-400" aria-hidden />
-          <span className="min-w-0 truncate">{m.filename}</span>
+          <button
+            type="button"
+            onClick={() => openFile(
+              `/api/v1/training/courses/${course.id}/materials/${m.id}`, m.filename)}
+            className="min-w-0 truncate text-left text-primary-700 hover:underline"
+          >
+            {m.filename}
+          </button>
           {mayWrite && (
             <button type="button" aria-label={`Remove ${m.filename}`}
                     disabled={remove.isPending}

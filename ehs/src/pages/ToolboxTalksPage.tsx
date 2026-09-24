@@ -12,7 +12,7 @@
 import { useState, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Users, Paperclip } from 'lucide-react'
-import { api, ApiError } from '@/lib/api'
+import { api, ApiError, openFile } from '@/lib/api'
 import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import {
   PageHeader, SectionTitle,
@@ -61,6 +61,9 @@ export default function ToolboxTalksPage() {
   // talk went to, when it was handed over, who has signed or when. A number
   // with nobody's name beside it cannot be chased.
   const [showingState, setShowingState] = useState<string | null>(null)
+  // Which delivery's signatures are open. On the page rather than inside the
+  // HSE panel, because the person who collected them needs it too.
+  const [openSigs, setOpenSigs] = useState<string | null>(null)
 
   const mine = (deliveries.data ?? []).filter((d) => d.status === 'pending')
   const done = (deliveries.data ?? []).filter((d) => d.status === 'delivered')
@@ -155,7 +158,16 @@ export default function ToolboxTalksPage() {
             {isHse && !t.is_published && <MaterialRow talk={t} />}
             {t.material_filename && t.is_published && (
               <p className="mt-1.5 text-xs text-neutral-500">
-                Sheet: {t.material_filename}
+                {/* The crew signs against what this says, so everybody who is
+                    asked to sign has to be able to read it — it was a filename
+                    and nothing else. */}
+                Sheet:{' '}
+                <button type="button"
+                        onClick={() => openFile(
+                          `/api/v1/toolbox-talks/${t.id}/material`, t.material_filename ?? 'sheet')}
+                        className="font-medium text-primary-700 hover:underline">
+                  {t.material_filename}
+                </button>
               </p>
             )}
             {showingState === t.id && <TalkState talkId={t.id} />}
@@ -173,14 +185,32 @@ export default function ToolboxTalksPage() {
                      placeholder="Search delivered by crew or supervisor" />
           <ul className="flex flex-col gap-2">
             {delivered.pageRows.map((d) => (
-              <li key={d.id} className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white p-3 text-sm">
-                <Check className="h-4 w-4 shrink-0 text-primary-600" aria-hidden />
-                <span className="min-w-0 flex-1 text-neutral-800">
-                  {d.department_name ?? d.supervisor_name}
-                </span>
-                <span className="text-xs text-neutral-500">
-                  {d.signed_count} signed{d.held_at ? ` · ${formatDateTime(d.held_at)}` : ''}
-                </span>
+              <li key={d.id} className="rounded-xl border border-neutral-200 bg-white p-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <Check className="h-4 w-4 shrink-0 text-primary-600" aria-hidden />
+                  <span className="min-w-0 flex-1 text-neutral-800">
+                    {d.department_name ?? d.supervisor_name}
+                  </span>
+                  {/* Openable by whoever delivered it, not only by HSE. The
+                      signature list was behind the HSE-only panel, so somebody
+                      who had just collected the room's signatures saw the words
+                      "1 signed" and nothing behind them — and read that as the
+                      signatures not having been saved. They were. */}
+                  {d.signed_count > 0 ? (
+                    <button type="button"
+                            onClick={() => setOpenSigs(openSigs === d.id ? null : d.id)}
+                            aria-expanded={openSigs === d.id}
+                            className="text-xs font-semibold text-primary-700 hover:underline">
+                      {d.signed_count} signed
+                    </button>
+                  ) : (
+                    <span className="text-xs text-neutral-500">Nobody signed</span>
+                  )}
+                  {d.held_at && (
+                    <span className="text-xs text-neutral-500">{formatDateTime(d.held_at)}</span>
+                  )}
+                </div>
+                {openSigs === d.id && <Signatures deliveryId={d.id} />}
               </li>
             ))}
           </ul>
@@ -362,9 +392,18 @@ function MaterialRow({ talk }: { talk: Talk }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
       <Paperclip className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
-      <span className="text-neutral-600">
-        {talk.material_filename ?? 'No sheet attached — the crew signs against what it says'}
-      </span>
+      {talk.material_filename ? (
+        <button type="button"
+                onClick={() => openFile(
+                  `/api/v1/toolbox-talks/${talk.id}/material`, talk.material_filename ?? 'sheet')}
+                className="text-primary-700 hover:underline">
+          {talk.material_filename}
+        </button>
+      ) : (
+        <span className="text-neutral-600">
+          No sheet attached — the crew signs against what it says
+        </span>
+      )}
       <input ref={inputRef} type="file" className="hidden"
              accept="application/pdf,image/png,image/jpeg,image/webp"
              onChange={(e) => {
