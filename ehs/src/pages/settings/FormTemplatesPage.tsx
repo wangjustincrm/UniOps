@@ -163,9 +163,12 @@ function NewScheduleDialog({ template, onClose, onDone }: {
   const [frequency, setFrequency] = useState('monthly')
   const [rotation, setRotation] = useState('none')
   const [role, setRole] = useState('ehs_coordinator')
+  // A week out, read off the local calendar. `toISOString` would push this a
+  // day late for anyone west of UTC, which at UTC-4 means every evening.
   const [nextDue, setNextDue] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() + 7)
-    return d.toISOString().slice(0, 10)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${
+      String(d.getDate()).padStart(2, '0')}`
   })
   const [departments, setDepartments] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)

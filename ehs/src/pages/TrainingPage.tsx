@@ -12,7 +12,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CalendarDays, Plus, Upload, X, Paperclip } from 'lucide-react'
 import { api, apiBlob , openFile } from '@/lib/api'
 import { Pagination, SearchBox, useListView } from '@/components/ListView'
-import { formatDate } from '@/lib/formatDate'
+import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
@@ -171,7 +171,7 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient()
   const [courseId, setCourseId] = useState('')
   const [title, setTitle] = useState('')
-  const [date, setDate] = useState('')
+  const [date, setDate] = useState(todayForInput())
   const [start, setStart] = useState('')
   const [where, setWhere] = useState('')
   const [coordinator, setCoordinator] = useState<PersonValue>(EMPTY_PERSON)
@@ -425,7 +425,7 @@ function NewRecordForm({ onClose, courseCode }: {
   const queryClient = useQueryClient()
   const [person, setPerson] = useState<PersonValue>(EMPTY_PERSON)
   const [courseId, setCourseId] = useState('')
-  const [completedOn, setCompletedOn] = useState('')
+  const [completedOn, setCompletedOn] = useState(todayForInput())
   const [expiresOn, setExpiresOn] = useState('')
   const [delivery, setDelivery] = useState('external')
 

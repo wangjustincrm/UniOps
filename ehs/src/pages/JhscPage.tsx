@@ -16,7 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, CalendarDays, Check, Plus, UserMinus, X } from 'lucide-react'
 import { api } from '@/lib/api'
-import { formatDate } from '@/lib/formatDate'
+import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
@@ -353,7 +353,7 @@ function MeetingsTab({ mayManage }: { mayManage: boolean }) {
 function NewMeetingForm({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
-  const [heldOn, setHeldOn] = useState('')
+  const [heldOn, setHeldOn] = useState(todayForInput())
   const [where, setWhere] = useState('')
 
   const create = useMutation({

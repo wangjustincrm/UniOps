@@ -16,7 +16,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarCheck, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
-import { formatDate } from '@/lib/formatDate'
+import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
   Card, ErrorNote, Field, inputClass, primaryButton, secondaryButton, SectionTitle,
@@ -204,7 +204,7 @@ function PlanCard({ plan, incidentId }: { plan: Plan; incidentId: string }) {
 
 function PlanForm({ incidentId, onClose }: { incidentId: string; onClose: () => void }) {
   const queryClient = useQueryClient()
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [startDate, setStartDate] = useState(todayForInput)
   const [expectedEnd, setExpectedEnd] = useState('')
   const [duties, setDuties] = useState('')
   const [restrictions, setRestrictions] = useState('')

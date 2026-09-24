@@ -21,6 +21,7 @@ import { api, ApiError } from '@/lib/api'
 import { ehsRoutes } from '@/app/routes'
 import { FormRenderer, looksLikeFailure, type FormValues, type Question } from '@/components/FormRenderer'
 import { useMyProfile } from '@/hooks/useMyProfile'
+import { todayForInput } from '@/lib/formatDate'
 import type { CompressedImage } from '@/lib/imageCompress'
 
 interface Submission {
@@ -87,12 +88,6 @@ export default function FormFillPage() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (loaded || answers.isLoading) return
-    setValues(toValues(answers.data ?? []))
-    setLoaded(true)
-  }, [loaded, answers.isLoading, answers.data])
-
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pending = useRef<FormValues>({})
 
@@ -118,6 +113,35 @@ export default function FormFillPage() {
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(flush, 900)
   }
+
+  useEffect(() => {
+    if (loaded || answers.isLoading || !submission.data) return
+    const rows = answers.data ?? []
+    const next = toValues(rows)
+
+    // A form opened for the first time gets today's date in its date questions —
+    // and the same value goes into the pending batch, so what is shown is what
+    // gets stored. A default that only shows in the input is worse than none:
+    // the person submits without touching it and the answer is empty.
+    //
+    // It is queued, not saved: opening a draft must not write to it. Scheduled
+    // inspections are visible to more people than will fill them, and a save on
+    // open would stamp the date someone happened to look, under their name, and
+    // then never re-seed for the person who actually fills it in the next day.
+    // Queued is enough — the first edit and the submit both flush.
+    if (rows.length === 0 && submission.data.status !== 'submitted') {
+      const today = todayForInput()
+      for (const q of submission.data.schema_snapshot ?? []) {
+        if (q.type === 'date' && next[q.key] === undefined) {
+          next[q.key] = today
+          pending.current[q.key] = today
+        }
+      }
+    }
+
+    setValues(next)
+    setLoaded(true)
+  }, [loaded, answers.isLoading, answers.data, submission.data])
 
   // A form closed mid-edit still saves what was typed.
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])

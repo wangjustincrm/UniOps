@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, Eye, Wrench } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { nowForInput, todayForInput } from '@/lib/formatDate'
 import { PageHeader } from '@/components/ui'
 import { discardDraft, loadDraft, saveDraft } from '@/lib/draftStore'
 import type { CompressedImage } from '@/lib/imageCompress'
@@ -91,13 +92,27 @@ interface FormState {
   signature: string | null
 }
 
-const EMPTY: FormState = {
-  kind: null, title: '', date: '', time: '', locationId: '', incidentType: '',
+/**
+ * A blank form, built when one is asked for.
+ *
+ * ★ A function, not a constant. The date and the time are filled in rather
+ * than left blank — an incident is reported now, about now, and those were the
+ * two most-typed fields on the form. But this shell keeps tabs alive: a
+ * constant would have been computed once when the module loaded, so a tab
+ * opened in the morning and filled in after lunch would carry the morning's
+ * time, a tab left open over midnight would carry yesterday's date, and
+ * Discard would restore whichever moment the page happened to load at.
+ *
+ * Both stay editable: a report written up the next morning says so.
+ */
+const emptyForm = (): FormState => ({
+  kind: null, title: '', date: todayForInput(), time: nowForInput(),
+  locationId: '', incidentType: '',
   injuryClass: '', description: '',
   injured: EMPTY_PERSON, bodyPart: null, natureOfInjury: null,
   treatment: '', sentOffsite: false, followUp: '',
   talkedToOperator: '', whyNot: '', anonymous: false, signature: null,
-}
+})
 
 const DRAFT_KIND = 'incident'
 const DRAFT_ID = 'current'
@@ -106,7 +121,7 @@ export default function IncidentReportPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const profile = useMyProfile()
-  const [form, setForm] = useState<FormState>(EMPTY)
+  const [form, setForm] = useState<FormState>(emptyForm)
   const [photos, setPhotos] = useState<CompressedImage[]>([])
   const [restored, setRestored] = useState(false)
   const [draftWarning, setDraftWarning] = useState<string | null>(null)
@@ -119,7 +134,8 @@ export default function IncidentReportPage() {
       // in loadDraft already rejects a draft from an older shape, and this is
       // the second guard: a field added since the draft was written must come
       // back as its default, not as undefined for the page to read through.
-      setForm({ ...EMPTY, ...draft.data.form, injured: draft.data.form?.injured ?? EMPTY_PERSON })
+      setForm({ ...emptyForm(), ...draft.data.form,
+                injured: draft.data.form?.injured ?? EMPTY_PERSON })
       setPhotos(draft.data.photos ?? [])
       setRestored(true)
     }
@@ -241,13 +257,14 @@ export default function IncidentReportPage() {
             key={kind}
             type="button"
             onClick={() => {
-              const now = new Date()
               set('kind', kind)
               setForm((f) => ({
                 ...f,
                 kind,
-                date: f.date || now.toISOString().slice(0, 10),
-                time: f.time || now.toTimeString().slice(0, 5),
+                // Local, not UTC: this plant is at UTC-4, so after eight in
+                // the evening the ISO date is already tomorrow.
+                date: f.date || todayForInput(),
+                time: f.time || nowForInput(),
               }))
             }}
             className="flex min-h-[64px] items-center gap-3 rounded-xl border border-neutral-200 bg-white p-3.5 text-left"
@@ -473,7 +490,7 @@ export default function IncidentReportPage() {
       <div className="fixed inset-x-0 bottom-16 z-10 flex gap-2 border-t border-neutral-200 bg-white p-3 md:static md:mt-4 md:border-0 md:p-0">
         <button
           type="button"
-          onClick={() => { discardDraft(DRAFT_KIND, DRAFT_ID); setForm(EMPTY); setPhotos([]) }}
+          onClick={() => { discardDraft(DRAFT_KIND, DRAFT_ID); setForm(emptyForm()); setPhotos([]) }}
           className="min-h-[44px] flex-1 rounded-lg border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-600"
         >
           Discard

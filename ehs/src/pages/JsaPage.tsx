@@ -17,7 +17,7 @@ import { ehsRoutes } from '@/app/routes'
 import { ClipboardList, Plus, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Pagination, SearchBox, useListView } from '@/components/ListView'
-import { formatDate } from '@/lib/formatDate'
+import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useMyProfile } from '@/hooks/useMyProfile'
 import { LocationSelect } from '@/components/LocationSelect'
@@ -519,7 +519,7 @@ function SignDialog(
   { jsa, onClose, onSigned }: { jsa: Jsa; onClose: () => void; onSigned: () => void },
 ) {
   const profile = useMyProfile()
-  const [workedOn, setWorkedOn] = useState(() => new Date().toISOString().slice(0, 10))
+  const [workedOn, setWorkedOn] = useState(todayForInput)
   const [person, setPerson] = useState<PersonValue>(EMPTY_PERSON)
   const [isSupervisor, setIsSupervisor] = useState(false)
   const [signature, setSignature] = useState<string | null>(null)

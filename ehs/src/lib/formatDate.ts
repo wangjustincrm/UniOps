@@ -58,3 +58,24 @@ export function countdown(dueAt: string | null | undefined, now: Date = new Date
   const tone = overdue ? 'over' : hours < 4 ? 'urgent' : hours < 24 ? 'soon' : 'calm'
   return { label: overdue ? `overdue ${label}` : label, overdue, tone, hours }
 }
+
+/**
+ * Today, and now, as the `<input type="date">` and `type="time"` want them.
+ *
+ * ★ Built from the local parts rather than `toISOString().slice(0, 10)`.
+ * This plant is at UTC-4, so anything filed after 8pm would be dated
+ * tomorrow — the whole module has been caught by that once already, and a
+ * date that is quietly a day out on an injury report is the kind of thing an
+ * inspector finds rather than we do.
+ */
+export function todayForInput(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${
+    String(d.getDate()).padStart(2, '0')}`
+}
+
+export function nowForInput(): string {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${
+    String(d.getMinutes()).padStart(2, '0')}`
+}
