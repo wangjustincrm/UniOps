@@ -250,7 +250,7 @@ export default function IncidentDetailPage() {
     <div className="min-w-0">
       <header className="border-b border-neutral-200 bg-white p-4">
         <p className="font-mono text-xs text-neutral-500">{inc.incident_no}</p>
-      <PageHeader title="{inc.title}" subtitle={<>{inc.location_path ?? 'No area recorded'} {inc.occurred_at ? ` · ${formatDateTime(inc.occurred_at)}` : ''} {inc.is_anonymous ? ' · reported anonymously' : inc.reported_by_name ? ` · ${inc.reported_by_name}` : ''}</>} />
+      <PageHeader title={inc.title} subtitle={<>{inc.location_path ?? 'No area recorded'} {inc.occurred_at ? ` · ${formatDateTime(inc.occurred_at)}` : ''} {inc.is_anonymous ? ' · reported anonymously' : inc.reported_by_name ? ` · ${inc.reported_by_name}` : ''}</>} />
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <InjuryBadge injuryClass={inc.injury_class} />
           <MolBadge reportable={inc.mol_reportable} />

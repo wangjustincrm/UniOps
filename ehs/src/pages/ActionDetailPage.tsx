@@ -91,7 +91,7 @@ export default function ActionDetailPage() {
   return (
     <div className="p-4">
       <p className="font-mono text-xs text-neutral-500">{a.action_no}</p>
-      <PageHeader title="{a.title}" />
+      <PageHeader title={a.title} />
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <StatusBadge status={a.status} />
         {late !== null && late > 0 && a.status !== 'closed' && (

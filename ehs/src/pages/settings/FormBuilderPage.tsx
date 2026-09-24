@@ -154,7 +154,7 @@ export default function FormBuilderPage() {
         {/* Which form this is. The page said "Form builder" and nothing else,
             so with four similarly-named ladder inspections open in tabs there
             was no way to tell them apart. */}
-      <PageHeader title="{template.data?.name ?? 'Form builder'}" />
+      <PageHeader title={template.data?.name ?? 'Form builder'} />
         {template.data && (
           <p className="text-xs text-neutral-500">
             <span className="font-mono">{template.data.code}</span>

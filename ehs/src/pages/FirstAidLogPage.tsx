@@ -52,7 +52,7 @@ export default function FirstAidLogPage() {
       >
         {canWrite && (
           <Link
-            to="/incidents/new?kind=medical"
+            to="/report"
             className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg bg-primary-600 px-3.5 text-sm font-semibold text-white"
           >
             <Plus className="h-4 w-4" aria-hidden />
