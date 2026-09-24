@@ -409,3 +409,43 @@ async def test_the_work_request_number_is_set_and_never_silently_cleared(
     later = (await client.get(f"/api/v1/actions/{action['id']}")).json()
     assert later["work_request_no"] == "WR-44812", (
         "an update that did not mention the work request must not clear it")
+
+
+async def test_an_action_remembers_which_document_raised_it(hse_manager, worker):
+    """★ "Raised from INC-…" is the first thing anyone reading an action wants
+    to open, and it was blank for nearly all of them.
+
+    `source_ref` is not a field on `ActionCreate`, so an action raised through
+    the API stored none — which is every action raised from a screen. Only the
+    few backend paths that passed one explicitly had it, and the rest offered
+    no way back to what they were about.
+    """
+    owner, _ = worker
+    _, client = hse_manager
+
+    incident = (await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Caught a hand at the capping head",
+        "incident_type": "first_aid",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "description": "Guard was off.",
+        "persons": [{"role": "injured", "person_name": "Dario Okafor"}],
+    })).json()
+
+    action = (await client.post("/api/v1/actions", json=_payload(
+        owner.id, source_type="incident", source_id=incident["id"]))).json()
+
+    assert action["source_ref"] == incident["incident_no"], (
+        "the action has to carry the number of the document it came from, or "
+        "the screen showing it has nothing to print and nowhere to link")
+    assert action["source_id"] == incident["id"]
+
+
+async def test_an_action_with_no_numbered_source_says_nothing_rather_than_guessing(
+        hse_manager, worker):
+    """A manually raised action has no source document, and inventing a
+    reference for it would be worse than leaving the line off the page."""
+    owner, _ = worker
+    _, client = hse_manager
+    action = (await client.post("/api/v1/actions", json=_payload(owner.id))).json()
+    assert action["source_type"] == "manual"
+    assert action["source_ref"] is None

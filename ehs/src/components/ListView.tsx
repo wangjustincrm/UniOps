@@ -156,6 +156,14 @@ export interface ListViewOptions<T> {
    * first page, which is what the in-browser filters do for themselves.
    */
   resetKey?: string
+  /**
+   * What the search box starts with — a link that arrives already narrowed to
+   * one record, typically from an action naming the hazard or drill it was
+   * raised from. Followed whenever it changes, not only on the first render,
+   * because these pages live in a keep-alive tab and arriving a second time
+   * does not remount them.
+   */
+  query?: string
 }
 
 export function useListView<T>(
@@ -163,8 +171,13 @@ export function useListView<T>(
   searchable: Searchable<T>,
   options: ListViewOptions<T> = {},
 ) {
-  const { dateOf, resetKey } = options
-  const [query, setQuery] = useState('')
+  const { dateOf, resetKey, query: wantedQuery = '' } = options
+  const [query, setQuery] = useState(wantedQuery)
+  const [lastQuery, setLastQuery] = useState(wantedQuery)
+  if (wantedQuery !== lastQuery) {
+    setLastQuery(wantedQuery)
+    setQuery(wantedQuery)
+  }
   const [page, setPage] = useState(0)
   const dateFilter = useDateFilter(() => setPage(0))
   const { range } = dateFilter

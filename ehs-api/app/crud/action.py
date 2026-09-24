@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.action import Action, ActionUpdate, ActionVerification
@@ -29,6 +29,47 @@ async def _location_path(db: AsyncSession, location_id: uuid.UUID | None) -> str
     return (await db.execute(select(Location.path).where(Location.id == location_id))).scalar()
 
 
+# Where each kind of source keeps the number people know it by. An action says
+# "raised from INC-2026-0041", and that reference is a snapshot: the source can
+# be deleted or renumbered and the action still has to say what it came from.
+#
+# ★ The backfill in migration 20260924_0038 carries its own copy of this map —
+# a migration must not import application code, or it stops reproducing what
+# the schema looked like at the time it ran. A source type added here needs
+# adding there too, in a migration of its own.
+_SOURCE_NUMBERS: dict[str, tuple[str, str]] = {
+    "incident": ("ehs_incidents", "incident_no"),
+    "inspection": ("ehs_form_submissions", "submission_no"),
+    "permit": ("ehs_permits", "permit_no"),
+    "hazard": ("ehs_hazards", "hazard_no"),
+    "drill": ("ehs_drills", "drill_no"),
+    "jhsc": ("ehs_jhsc_meetings", "meeting_no"),
+}
+
+
+async def resolve_source_ref(
+    db: AsyncSession, source_type: str, source_id: uuid.UUID | None
+) -> str | None:
+    """The number of the document this action was raised from.
+
+    ★ Looked up here rather than left to the caller. `source_ref` is not part
+    of `ActionCreate`, so every action raised through the API had a null one —
+    which is most of them — and the screens that say "raised from …" said
+    nothing at all. The callers that do pass a reference keep theirs; this only
+    fills the gap.
+    """
+    if source_id is None:
+        return None
+    table = _SOURCE_NUMBERS.get(source_type)
+    if table is None:
+        return None
+    name, column = table
+    return (await db.execute(
+        text(f"select {column} from {name} where id = :id"),  # noqa: S608 — both from the map above
+        {"id": source_id},
+    )).scalar()
+
+
 async def create(
     db: AsyncSession,
     payload: ActionCreate,
@@ -43,6 +84,8 @@ async def create(
     is meant to remove.
     """
     now = now or datetime.now(timezone.utc)
+    source_ref = source_ref or await resolve_source_ref(
+        db, payload.source_type, payload.source_id)
     action = Action(
         id=uuid.uuid4(),
         action_no=await next_number(db, "action", now=now),

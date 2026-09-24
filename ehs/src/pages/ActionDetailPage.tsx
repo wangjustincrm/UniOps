@@ -6,7 +6,7 @@
  * they are separate controls here rather than one "complete" button.
  */
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui'
 import { daysOverdue, formatDate, formatDateTime } from '@/lib/formatDate'
 import { StatusBadge } from '@/components/StatusBadge'
+import { sourceLink, SOURCE_NOUN } from '@/lib/sourceLink'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import { usePermissions } from '@/hooks/usePermissions'
 
@@ -30,7 +31,7 @@ interface Verification {
 }
 interface ActionDetail {
   id: string; action_no: string; title: string; description: string | null
-  source_type: string; source_ref: string | null; status: string
+  source_type: string; source_id: string | null; source_ref: string | null; status: string
   hierarchy_of_control: string | null; owner_name: string | null
   due_date: string; escalation_level: number; closed_at: string | null
   work_request_no: string | null
@@ -87,6 +88,7 @@ export default function ActionDetailPage() {
   if (isError) return <p className="p-4 text-sm text-danger-700">{(error as ApiError).message}</p>
   const a = data!
   const late = daysOverdue(a.due_date)
+  const sourceHref = sourceLink(a.source_type, a.source_id, a.source_ref)
 
   return (
     <div className="p-4">
@@ -106,7 +108,27 @@ export default function ActionDetailPage() {
         )}
       </div>
       <p className="mt-2 text-xs text-neutral-500">
-        {a.source_ref ? `Raised from ${a.source_ref} · ` : ''}
+        {(a.source_ref || sourceHref) && (
+          <>
+            Raised from{' '}
+            {/* A link where the record has a page, plain text where it does
+                not. This was grey text at the weight of a caption, and it is
+                the first thing anyone reading an action wants to open. */}
+            {/* The number where the action stored one, and the kind of
+                document where it did not — actions raised through the API had
+                no reference at all until recently, and "Raised from" followed
+                by nothing is not worth printing. */}
+            {sourceHref ? (
+              <Link to={sourceHref}
+                    className="font-semibold text-neutral-900 underline underline-offset-2 hover:text-primary-700">
+                {a.source_ref ?? SOURCE_NOUN[a.source_type] ?? 'the source record'}
+              </Link>
+            ) : (
+              <span className="font-semibold text-neutral-900">{a.source_ref}</span>
+            )}
+            {' · '}
+          </>
+        )}
         Owner {a.owner_name ?? 'unassigned'} · due{' '}
         {/* The date is the thing people are chasing on this page, and it read
             at the same weight as the words around it. */}

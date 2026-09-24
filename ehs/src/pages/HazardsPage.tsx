@@ -12,6 +12,7 @@
  * drift from it within a month.
  */
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldAlert, Plus, X } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -103,10 +104,15 @@ export default function HazardsPage() {
     queryKey: ['hazard-summary'],
     queryFn: () => api.get<RatingCount[]>('/api/v1/hazards/summary'),
   })
+  const [search] = useSearchParams()
   const list = useListView(hazards.data, (h) => [
     h.hazard_no, h.title, h.description, h.location_path, h.owner_name,
     h.hazard_type_label, h.current_rating, h.status,
-  ], { dateOf: (h) => h.identified_on })
+    // ★ `?q=` lets an action that was raised from a hazard land on that one
+    // row. There is no page for a single hazard, and a link to the register
+    // alone would drop somebody into a hundred rows with no sign of which one
+    // they were sent for.
+  ], { dateOf: (h) => h.identified_on, query: search.get('q') ?? '' })
 
   return (
     <div className="p-4">

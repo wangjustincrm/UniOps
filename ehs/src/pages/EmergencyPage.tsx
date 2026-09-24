@@ -18,7 +18,7 @@ import { AlertTriangle, Check, HeartPulse, Plus, Siren, Timer, X } from 'lucide-
 import { api } from '@/lib/api'
 import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import { formatDate } from '@/lib/formatDate'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { usePermissions } from '@/hooks/usePermissions'
 import { SignaturePad } from '@/components/SignaturePad'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
@@ -120,12 +120,16 @@ function DrillsTab({ mayRun }: { mayRun: boolean }) {
     queryKey: ['drills'],
     queryFn: () => api.get<Drill[]>('/api/v1/drills'),
   })
+  const [search] = useSearchParams()
+  // ★ `?q=` lets an action raised from a drill land on that drill's row: there
+  // is no page for a single drill, and the register alone would not say which
+  // one the link was about.
   const list = useListView(drills.data, (d) => [
     d.drill_no, d.scenario, d.drill_type, d.status,
     // The areas are a list; flattened so searching "packaging" finds a drill
     // that covered it.
     ...d.areas.map((a) => a.path),
-  ], { dateOf: (d) => d.held_on ?? d.planned_for })
+  ], { dateOf: (d) => d.held_on ?? d.planned_for, query: search.get('q') ?? '' })
   const trend = useQuery({
     queryKey: ['drill-trend'],
     queryFn: () => api.get<TrendRow[]>('/api/v1/drills/trend?drill_type=fire'),

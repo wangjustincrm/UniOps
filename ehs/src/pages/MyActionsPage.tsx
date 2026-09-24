@@ -42,6 +42,66 @@ const ESCALATION_NOTE: Record<number, string> = {
   3: 'Escalated to the HSE Manager.',
 }
 
+/**
+ * A titled block, drawn only when it holds something.
+ *
+ * The count is in the heading because the first question anyone asks this page
+ * is "how much is late", and counting cards to answer it is the reason the
+ * page felt long.
+ */
+function Group({ title, count, tone = 'plain', children }: {
+  title: string
+  count: number
+  tone?: 'plain' | 'warn' | 'bad'
+  children: React.ReactNode
+}) {
+  if (count === 0) return null
+  const badge = tone === 'bad'
+    ? 'bg-danger-600 text-white'
+    : tone === 'warn'
+      ? 'bg-warning-100 text-warning-800'
+      : 'bg-neutral-100 text-neutral-600'
+  return (
+    <section className="mb-1 flex flex-col gap-2">
+      <h2 className="mt-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+        {title}
+        <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${badge}`}>
+          {count}
+        </span>
+      </h2>
+      {children}
+    </section>
+  )
+}
+
+function ActionCard({ action: a }: { action: ActionListItem }) {
+  return (
+    <Link
+      to={`/actions/${a.id}`}
+      className="block rounded-xl border border-neutral-200 bg-white p-3.5 transition-colors hover:border-primary-300 hover:bg-primary-50/40"
+    >
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-neutral-900">{a.title}</h3>
+          <p className="mt-0.5 text-xs text-neutral-500">
+            {a.action_no}
+            {a.source_ref ? ` · from ${a.source_ref}` : ''}
+          </p>
+        </div>
+        <Lateness dueDate={a.due_date} />
+      </div>
+      {ESCALATION_NOTE[a.escalation_level] && (
+        <p className="mt-2.5 border-t border-neutral-100 pt-2.5 text-xs text-neutral-600">
+          {ESCALATION_NOTE[a.escalation_level]}
+        </p>
+      )}
+      <div className="mt-2.5">
+        <StatusBadge status={a.status} />
+      </div>
+    </Link>
+  )
+}
+
 interface AssignedTask {
   id: string; type: string; title: string; description: string | null
   priority: string; document_type: string; document_id: string
@@ -95,90 +155,72 @@ export default function MyActionsPage() {
     )
   }
 
+  // ★ Grouped by when it is wanted, not by where it came from. The page was
+  // one run of cards with a couple of headings appearing only when the block
+  // above them happened to be non-empty — so the first group was unlabelled,
+  // and something three weeks late sat between two things due next month with
+  // nothing but a red pill to tell them apart.
+  const overdue = actions.filter((a) => (daysOverdue(a.due_date) ?? 0) > 0)
+  const today = actions.filter((a) => daysOverdue(a.due_date) === 0)
+  const later = actions.filter((a) => (daysOverdue(a.due_date) ?? 0) < 0)
+
   return (
     <div className="flex flex-col gap-2 p-4">
-      {other.length > 0 && (
-        <>
-          {other.map((t) => (
-            <Link
-              key={t.id}
-              to={t.path || '/actions/mine'}
-              className="block rounded-xl border border-neutral-200 bg-white p-3.5 transition-colors hover:border-primary-300 hover:bg-primary-50/40"
-            >
-              <div className="flex items-start gap-3">
-                <ClipboardList className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-sm font-semibold text-neutral-900">{t.title}</h2>
-                  <p className="mt-0.5 text-xs text-neutral-500">{t.document_number}</p>
-                  {t.description && (
-                    <p className="mt-1 text-xs text-neutral-600">{t.description}</p>
-                  )}
-                </div>
+      <Group title="Overdue" count={overdue.length} tone="bad">
+        {overdue.map((a) => <ActionCard key={a.id} action={a} />)}
+      </Group>
+
+      <Group title="Due today" count={today.length} tone="warn">
+        {today.map((a) => <ActionCard key={a.id} action={a} />)}
+      </Group>
+
+      <Group title="Waiting on you to verify" count={verifying.length} tone="warn">
+        {verifying.map((a) => (
+          <Link
+            key={a.id}
+            to={`/actions/${a.id}`}
+            className="block rounded-xl border border-warning-500/40 bg-warning-50/40 p-3.5 transition-colors hover:border-warning-500"
+          >
+            <h2 className="text-sm font-semibold text-neutral-900">{a.title}</h2>
+            <p className="mt-0.5 text-xs text-neutral-500">
+              {a.action_no}
+              {a.source_ref ? ` · from ${a.source_ref}` : ''}
+            </p>
+            <p className="mt-1.5 text-xs text-neutral-600">
+              The work is reported done. Confirm the control is effective —
+              or that it is not, which sends it back.
+            </p>
+          </Link>
+        ))}
+      </Group>
+
+      <Group title="Coming up" count={later.length}>
+        {later.map((a) => <ActionCard key={a.id} action={a} />)}
+      </Group>
+
+      {/* Everything else this module has handed me: a toolbox talk to deliver,
+          an inspection due, a policy to sign. They used to open the page
+          unlabelled, above a heading that belonged to the block underneath. */}
+      <Group title="Other work assigned to you" count={other.length}>
+        {other.map((t) => (
+          <Link
+            key={t.id}
+            to={t.path || '/actions/mine'}
+            className="block rounded-xl border border-neutral-200 bg-white p-3.5 transition-colors hover:border-primary-300 hover:bg-primary-50/40"
+          >
+            <div className="flex items-start gap-3">
+              <ClipboardList className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm font-semibold text-neutral-900">{t.title}</h2>
+                <p className="mt-0.5 text-xs text-neutral-500">{t.document_number}</p>
+                {t.description && (
+                  <p className="mt-1 text-xs text-neutral-600">{t.description}</p>
+                )}
               </div>
-            </Link>
-          ))}
-          {actions.length > 0 && (
-            <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
-              Corrective actions
-            </p>
-          )}
-        </>
-      )}
-      {verifying.length > 0 && (
-        <>
-          <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
-            Waiting on you to verify
-          </p>
-          {verifying.map((a) => (
-            <Link
-              key={a.id}
-              to={`/actions/${a.id}`}
-              className="block rounded-xl border border-warning-500/40 bg-warning-50/40 p-3.5 transition-colors hover:border-warning-500"
-            >
-              <h2 className="text-sm font-semibold text-neutral-900">{a.title}</h2>
-              <p className="mt-0.5 text-xs text-neutral-500">
-                {a.action_no}
-                {a.source_ref ? ` · from ${a.source_ref}` : ''}
-              </p>
-              <p className="mt-1.5 text-xs text-neutral-600">
-                The work is reported done. Confirm the control is effective —
-                or that it is not, which sends it back.
-              </p>
-            </Link>
-          ))}
-          {actions.length > 0 && (
-            <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
-              Yours to do
-            </p>
-          )}
-        </>
-      )}
-      {actions.map((a) => (
-        <Link
-          key={a.id}
-          to={`/actions/${a.id}`}
-          className="block rounded-xl border border-neutral-200 bg-white p-3.5 transition-colors hover:border-primary-300 hover:bg-primary-50/40"
-        >
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-semibold text-neutral-900">{a.title}</h2>
-              <p className="mt-0.5 text-xs text-neutral-500">
-                {a.action_no}
-                {a.source_ref ? ` · from ${a.source_ref}` : ''}
-              </p>
             </div>
-            <Lateness dueDate={a.due_date} />
-          </div>
-          {ESCALATION_NOTE[a.escalation_level] && (
-            <p className="mt-2.5 border-t border-neutral-100 pt-2.5 text-xs text-neutral-600">
-              {ESCALATION_NOTE[a.escalation_level]}
-            </p>
-          )}
-          <div className="mt-2.5">
-            <StatusBadge status={a.status} />
-          </div>
-        </Link>
-      ))}
+          </Link>
+        ))}
+      </Group>
     </div>
   )
 }
