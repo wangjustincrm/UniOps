@@ -27,6 +27,7 @@ import { Link, Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, CheckCircle2, Download, FileText, History, Landmark, Link2, Loader2,
+  Paperclip,
   Lock, LockOpen, Sparkles, Undo2, Upload,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
@@ -89,6 +90,12 @@ interface AutoResult {
 /** A ranked ledger line for one statement line — `GET .../candidates/{txn_id}`,
  *  written for exactly the case where the ladder gives up and a person has to
  *  clear the line by hand, and never called until now. */
+/** Every file this reconciliation stands on — statements, payment files and the
+ *  signed-off report. All three were already stored; none were listable. */
+interface ReconDoc {
+  kind: string; label: string; name: string; detail: string
+  imported_at: string | null; storage_key: string | null; superseded: boolean
+}
 interface Candidate {
   jv_line_id: string; jv_number: string; voucher_date: string
   summary: string | null; amount: string; contra_kind: string; exact: boolean
@@ -147,6 +154,12 @@ const KIND_TONE: Record<string, string> = {
 // The ledger rows get `contra_label` from the server; the candidates endpoint
 // returns only the kind, so the same words live here rather than being invented
 // per call site. Mirrors bank_book.KIND_LABELS.
+const DOC_TONE: Record<string, string> = {
+  statement: 'bg-blue-50 text-blue-700',
+  advice: 'bg-green-50 text-green-700',
+  report: 'bg-[#E4EFEC] text-[#085E5E]',
+}
+
 const KIND_LABEL_UI: Record<string, string> = {
   ap: 'Accounts payable',
   bank_transfer: 'Bank transfer',
@@ -344,6 +357,14 @@ export default function BankReconciliationPage() {
     onError: (e: Error) => flash('err', e.message),
   })
 
+  // Same helper the report uses: the file server authenticates the caller, so a
+  // plain href would 401 for anyone but whoever minted it.
+  const downloadDoc = (d: ReconDoc) => {
+    if (!d.storage_key) return
+    financeDownload(`/bank-recon/documents/${d.storage_key}`, d.name)
+      .catch((e: Error) => flash('err', e.message))
+  }
+
   // Which group a line belongs to — powers the "what is this line made of" highlight.
   const groupOfBank = useMemo(() => {
     const m: Record<string, string> = {}
@@ -366,6 +387,14 @@ export default function BankReconciliationPage() {
     enabled: !!reconId && !!soleBankPick,
     queryFn: () => financeApi.get<Candidate[]>(
       `/bank-recon/reconciliations/${reconId}/candidates/${soleBankPick}`),
+  })
+
+  const [showDocs, setShowDocs] = useState(false)
+  const { data: docs = [] } = useQuery({
+    queryKey: ['bank-recon-docs', reconId],
+    enabled: !!reconId && showDocs,
+    queryFn: () => financeApi.get<ReconDoc[]>(
+      `/bank-recon/reconciliations/${reconId}/documents`),
   })
 
   const focused = period?.matches.find((g) => g.id === focusGroup) ?? null
@@ -627,6 +656,11 @@ export default function BankReconciliationPage() {
                 </>
               )}
               <div className="ml-auto flex items-center gap-2">
+                <button onClick={() => setShowDocs((v) => !v)}
+                        className={cn(secondaryBtn, showDocs && 'border-[#085E5E] text-[#085E5E]')}>
+                  <Paperclip className="h-4 w-4" />
+                  {showDocs ? 'Hide' : 'Attachments'}
+                </button>
                 <button onClick={() => download.mutate('pdf')} disabled={download.isPending}
                         className={secondaryBtn}>
                   <Download className="h-4 w-4" /> Report (PDF)
@@ -788,6 +822,63 @@ export default function BankReconciliationPage() {
                       </tbody>
                     </table>
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* ── every document behind this reconciliation ───────────────── */}
+            {showDocs && (
+              <div className="mb-3 rounded-lg border border-neutral-200 bg-white">
+                <div className="flex items-center gap-2 border-b border-neutral-100 px-3 py-2">
+                  <Paperclip className="h-4 w-4 text-neutral-400" />
+                  <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                    Documents for this period ({docs.length})
+                  </span>
+                </div>
+                {docs.length === 0 ? (
+                  <div className="px-3 py-4 text-sm text-neutral-400">
+                    Nothing stored for this period yet — statements and payment files
+                    appear here as they are imported, and the report once it is signed off.
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {docs.map((d, i) => (
+                        <tr key={`${d.kind}-${d.storage_key ?? i}`}
+                            className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40',
+                              d.superseded && 'opacity-50')}>
+                          <td className="w-40 px-3 py-2">
+                            <Pill tone={DOC_TONE[d.kind] ?? 'bg-neutral-100 text-neutral-600'}>
+                              {d.label}
+                            </Pill>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="truncate" title={d.name}>{d.name}</div>
+                            <div className="text-xs text-neutral-400">{d.detail}</div>
+                          </td>
+                          <td className="w-40 px-3 py-2 text-xs text-neutral-500">
+                            {d.imported_at ? d.imported_at.slice(0, 16).replace('T', ' ') : ''}
+                            {/* A superseded statement is kept on purpose — a re-import
+                                replaces what is reconciled against, not the record of
+                                what was once uploaded. */}
+                            {d.superseded && <span className="ml-2">superseded</span>}
+                          </td>
+                          <td className="w-28 px-3 py-2 text-right">
+                            {d.storage_key ? (
+                              <button className="text-xs text-[#085E5E] underline"
+                                      onClick={() => downloadDoc(d)}>
+                                Download
+                              </button>
+                            ) : (
+                              <span className="text-xs text-neutral-400" title="Imported before file retention was in place, or the file server rejected it">
+                                not stored
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 )}
               </div>
             )}

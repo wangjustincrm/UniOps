@@ -521,6 +521,89 @@ async def report(recon_id: uuid.UUID, user: CurrentUser,
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+@router.get("/reconciliations/{recon_id}/documents")
+async def documents(recon_id: uuid.UUID, _: CurrentUser,
+                    db: AsyncSession = Depends(get_db)):
+    """Every file this reconciliation stands on, in one list.
+
+    The three kinds were already being stored — statements, payment files and the
+    signed-off report all go to the file server — but each was reachable only
+    from the control that happened to produce it, so "show me what this
+    reconciliation was built from" had no answer (user, 2026-09-24). An audit
+    trail nobody can enumerate is not an audit trail.
+
+    Advices are listed for the period they were imported against, not for the
+    reconciliation row: finance uploads a payment file the day they pay, so a
+    month's worth arrives across several uploads and all of them belong here.
+    """
+    rec = await _recon(db, recon_id)
+    out: list[dict] = []
+
+    stmts = (await db.execute(
+        select(BankStatement).where(
+            BankStatement.bank_account_id == rec.bank_account_id,
+            BankStatement.period_start <= rec.period_end,
+            BankStatement.period_end >= rec.period_start)
+        .order_by(BankStatement.period_end))).scalars().all()
+    for st in stmts:
+        out.append({
+            "kind": "statement", "label": "Bank statement",
+            "name": st.source_filename or f"statement-{st.period_end.isoformat()}.pdf",
+            "detail": f"{st.period_start.isoformat()} → {st.period_end.isoformat()}",
+            "imported_at": st.created_at.isoformat() if st.created_at else None,
+            "storage_key": str(st.source_storage_key) if st.source_storage_key else None,
+            "superseded": st.status != IMPORTED,
+        })
+
+    advices = (await db.execute(
+        select(BankPaymentAdvice).where(
+            BankPaymentAdvice.bank_account_id == rec.bank_account_id,
+            BankPaymentAdvice.status == IMPORTED,
+            BankPaymentAdvice.advice_date >= rec.period_start,
+            BankPaymentAdvice.advice_date <= rec.period_end)
+        .order_by(BankPaymentAdvice.advice_date))).scalars().all()
+    for ad in advices:
+        out.append({
+            "kind": "advice", "label": "Payment file",
+            "name": ad.source_filename or f"advice-{ad.advice_date.isoformat()}.pdf",
+            "detail": f"{ad.advice_date.isoformat()} · {ad.line_count} payee(s) · {ad.total}",
+            "imported_at": ad.created_at.isoformat() if ad.created_at else None,
+            "storage_key": str(ad.source_storage_key) if ad.source_storage_key else None,
+            "superseded": False,
+        })
+
+    if rec.report_storage_key:
+        out.append({
+            "kind": "report", "label": "Signed-off report",
+            "name": f"bank-reconciliation-{rec.period_end.isoformat()}.pdf",
+            "detail": (f"signed off {rec.finalized_at.date().isoformat()}"
+                       if rec.finalized_at else "generated"),
+            "imported_at": rec.finalized_at.isoformat() if rec.finalized_at else None,
+            "storage_key": str(rec.report_storage_key),
+            "superseded": False,
+        })
+    return out
+
+
+@router.get("/documents/{storage_key}")
+async def download_document(storage_key: uuid.UUID, _: CurrentUser, token: BearerToken):
+    """Stream one stored document back through this service.
+
+    Proxied rather than handing out a file-server URL: the file server takes the
+    caller's own token, and a link that only works for whoever generated it is a
+    link that looks broken to everyone else.
+    """
+    try:
+        resp = await bank_files.fetch(storage_key, token)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return Response(
+        content=resp.content,
+        media_type=resp.headers.get("content-type", "application/octet-stream"),
+        headers={"Content-Disposition": resp.headers.get(
+            "content-disposition", f'attachment; filename="{storage_key}"')})
+
+
 @router.post("/reconciliations/{recon_id}/finalize")
 async def finalize(recon_id: uuid.UUID, user: CurrentUser, token: BearerToken,
                    db: AsyncSession = Depends(get_db)):
