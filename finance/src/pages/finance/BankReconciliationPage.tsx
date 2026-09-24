@@ -22,7 +22,7 @@
  * Styling follows the Portal convention (CoaConfigPage): neutral palette, zebra
  * rows, code chips, status pills, #085E5E primary.
  */
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -292,6 +292,23 @@ export default function BankReconciliationPage() {
   }, [period])
   const focused = period?.matches.find((g) => g.id === focusGroup) ?? null
 
+  // Bring the focused group into view on BOTH sides. A group can span 26 ledger
+  // lines in a 260-row table, so "the rows are highlighted" is useless if the
+  // reader has to go hunting for them. First row of each side is enough — the
+  // rest of the group follows it.
+  useEffect(() => {
+    if (!focused) return
+    const show = (id: string | undefined) => {
+      if (!id) return
+      document.getElementById(id)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }
+    show(focused.bank_ids[0] ? `bank-${focused.bank_ids[0]}` : undefined)
+    // jv_line_id can be null between a full NC reload and the healer run, and
+    // `book-null` matches nothing — skip to the first line that still has one.
+    const firstBook = focused.book_lines.find((l) => l.jv_line_id)
+    show(firstBook ? `book-${firstBook.jv_line_id}` : undefined)
+  }, [focused])
+
   const pickedBankTotal = useMemo(
     () => (period?.bank_lines ?? []).filter((b) => pickedBank.has(b.id))
       .reduce((s, b) => s + Number(b.amount), 0), [period, pickedBank])
@@ -482,8 +499,31 @@ export default function BankReconciliationPage() {
                 <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-800">
                   <AlertTriangle className="h-3.5 w-3.5" /> Needs a look ({findings.length})
                 </div>
+                {/* Clickable: a finding names a statement line, and reading it used
+                    to leave you to find that line yourself in a 37-row table. If the
+                    line is already in a cleared group, focus the group so both sides
+                    highlight and the breakdown opens; otherwise just scroll to it. */}
                 <ul className="space-y-1 text-sm text-amber-900">
-                  {findings.map((f, i) => <li key={i}>· {f.message}</li>)}
+                  {findings.map((f, i) => {
+                    const bankId = f.bank_ids[0]
+                    const gid = bankId ? groupOfBank[bankId] : undefined
+                    const reachable = !!bankId
+                    return (
+                      <li key={i}>
+                        {reachable ? (
+                          <button type="button"
+                                  onClick={() => {
+                                    if (gid) setFocusGroup(gid)
+                                    else document.getElementById(`bank-${bankId}`)
+                                      ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+                                  }}
+                                  className="text-left underline decoration-amber-400 underline-offset-2 hover:decoration-amber-700">
+                            · {f.message}
+                          </button>
+                        ) : <>· {f.message}</>}
+                      </li>
+                    )
+                  })}
                 </ul>
               </div>
             )}
@@ -541,9 +581,13 @@ export default function BankReconciliationPage() {
                         <tr key={b.id}
                             onClick={() => (b.cleared ? setFocusGroup(gid === focusGroup ? null : gid)
                               : !frozen && toggle(pickedBank, b.id, setPickedBank))}
+                            id={`bank-${b.id}`}
                             className={cn('cursor-pointer border-t border-neutral-100',
                               i % 2 && 'bg-neutral-50/40',
-                              inFocus && 'bg-[#E4EFEC]',
+                              // The focused group has to read at a glance across a
+                              // 37-row table; the old bg-[#E4EFEC] was too close to
+                              // the zebra stripe to find by eye.
+                              inFocus && 'bg-[#BFE3DA] ring-1 ring-inset ring-[#085E5E]',
                               pickedBank.has(b.id) && 'bg-[#F2F8F7] ring-1 ring-inset ring-[#085E5E]/30')}>
                           <td className="px-2 py-1.5">
                             {b.cleared
@@ -592,9 +636,10 @@ export default function BankReconciliationPage() {
                         <tr key={b.jv_line_id}
                             onClick={() => (b.cleared ? setFocusGroup(gid === focusGroup ? null : gid)
                               : !frozen && toggle(pickedBook, b.jv_line_id, setPickedBook))}
+                            id={`book-${b.jv_line_id}`}
                             className={cn('cursor-pointer border-t border-neutral-100',
                               i % 2 && 'bg-neutral-50/40',
-                              inFocus && 'bg-[#E4EFEC]',
+                              inFocus && 'bg-[#BFE3DA] ring-1 ring-inset ring-[#085E5E]',
                               pickedBook.has(b.jv_line_id) && 'bg-[#F2F8F7] ring-1 ring-inset ring-[#085E5E]/30')}>
                           <td className="px-2 py-1.5">
                             {b.cleared
@@ -690,19 +735,27 @@ export default function BankReconciliationPage() {
                 <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
                   Cleared groups ({period.matches.length})
                 </div>
-                <div className="flex flex-wrap gap-1.5">
+                {/* A fixed 6-column grid, not flex-wrap: wrapped chips of different
+                    widths gave every row a different rhythm, and 37 of them read as
+                    noise. Aligned columns make the list scannable. */}
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
                   {period.matches.map((g) => (
                     <button key={g.id}
                             onClick={() => setFocusGroup(g.id === focusGroup ? null : g.id)}
-                            className={cn('rounded-lg border px-2 py-1 text-xs',
+                            title={`${g.bank_ids.length} statement line(s) matched against `
+                              + `${g.book_lines.length} ledger line(s)`}
+                            className={cn('rounded-lg border px-2 py-1 text-left text-xs',
                               g.id === focusGroup
-                                ? 'border-[#085E5E] bg-[#E4EFEC] text-[#085E5E]'
+                                ? 'border-[#085E5E] bg-[#BFE3DA] text-[#085E5E]'
                                 : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50')}>
-                      <span className="font-mono tabular-nums">{money(g.amount)}</span>
-                      <span className="ml-1.5 text-neutral-400">
-                        {g.bank_ids.length}↔{g.book_lines.length}
+                      {/* Stacked and left-aligned: in a fixed column the three parts
+                          on one line push each other around and nothing lines up
+                          between rows. */}
+                      <span className="block font-mono tabular-nums">{money(g.amount)}</span>
+                      <span className="block truncate">{METHOD_LABEL[g.method] ?? g.method}</span>
+                      <span className="block text-[11px] text-neutral-400">
+                        {g.bank_ids.length} ↔ {g.book_lines.length} lines
                       </span>
-                      <span className="ml-1.5">{METHOD_LABEL[g.method] ?? g.method}</span>
                     </button>
                   ))}
                 </div>
