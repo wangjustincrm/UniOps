@@ -14,6 +14,7 @@ The ledger side is built the way nc_sync builds it — journal_voucher_lines on
 100201 with a bank_account_id — because that column IS the feature's
 prerequisite, and a test that faked the book side would not prove the wiring.
 """
+import io
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -67,7 +68,9 @@ async def scene(db_session):
                        normal_balance="debit", is_postable=True),
     ])
     nc = NcBankAccount(nc_pk="NCBANK1", code="1033760", acc_num="1033760",
-                       name="RBC CAD Chequing", acc_name="RBC", bank_name="RBC-York Street",
+                       # NC really does name this one in Chinese — that is the
+                       # whole reason the label cannot come from here.
+                       name="RBC加拿大元活期户", acc_name="RBC", bank_name="RBC-York Street",
                        currency="CAD")
     acct = BankAccount(name="RBC CAD", bank_name="RBC", account_masked="3760",
                        currency="CAD", ledger_account_code="100201",
@@ -172,7 +175,9 @@ async def test_book_side_is_scoped_to_one_bank_account(client, scene):
                          "?date_from=2026-07-01&date_to=2026-07-31", headers=_h())
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["bank_account"] == "1033760/RBC CAD Chequing"
+    assert body["bank_account"] == "RBC CAD", (
+        "the label is the Name column of Bank Settings — not NC's Chinese name, "
+        "and not NC's code either")
     amounts = sorted(D(l["amount"]) for l in body["lines"])
     assert D("400000.00") in amounts            # our leg, not the BOC one
     assert amounts.count(D("-400000.00")) == 0
@@ -367,6 +372,14 @@ async def test_a_signed_off_period_is_frozen_and_reports_from_its_snapshot(
     assert pdf.status_code == 200
     assert pdf.content[:5] == b"%PDF-"
     assert "attachment" in pdf.headers["content-disposition"]
+
+    # The report goes to auditors, so the account has to be named the way
+    # finance names it, not the way NC does (this one is "RBC加拿大元活期户"
+    # over there).
+    import pypdf
+    header = (pypdf.PdfReader(io.BytesIO(pdf.content)).pages[0].extract_text() or "")
+    assert "RBC CAD, Period Ending" in header
+    assert "活期户" not in header
 
     xlsx = await client.get(f"/finance/v1/bank-recon/reconciliations/{rid}/report?fmt=xlsx",
                             headers=_h())

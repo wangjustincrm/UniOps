@@ -144,6 +144,19 @@ class BookPeriod:
     lines: list[BookLine]
 
 
+def account_label(account: BankAccount) -> str:
+    """The name that goes on screen and on the auditor's report: the Name column
+    of Bank Settings, exactly as finance maintains it ("RBC Operating").
+
+    Never NC's name. NC names some of these accounts in Chinese
+    ("RBC加拿大元活期户", "JPMORGAN NEWYORK美元活期户") and this is an English
+    document. NC's code is not in the label either — it is already carried
+    separately as bank_account_code, for anyone who needs to trace the ledger
+    side back.
+    """
+    return account.name
+
+
 async def resolve_nc_account(db: AsyncSession, account: BankAccount) -> NcBankAccount | None:
     """The NC bank account a UniOps bank_accounts row IS, or None if unmapped.
 
@@ -316,7 +329,7 @@ async def book_period(db: AsyncSession, account: BankAccount,
     total_debit = sum((ln.debit for ln in lines), ZERO)
     total_credit = sum((ln.credit for ln in lines), ZERO)
     return BookPeriod(
-        bank_account_code=nc.code, bank_account_label=nc.label,
+        bank_account_code=nc.code, bank_account_label=account_label(account),
         date_from=date_from, date_to=date_to,
         opening=opening, closing=opening + total_debit - total_credit,
         total_debit=total_debit, total_credit=total_credit, lines=lines,
