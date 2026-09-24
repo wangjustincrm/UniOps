@@ -15,7 +15,7 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Paperclip, Plus, X } from 'lucide-react'
-import { api, ApiError } from '@/lib/api'
+import { api, ApiError, openFile } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { ErrorNote, Field, inputClass, primaryButton, secondaryButton } from '@/components/ui'
@@ -38,16 +38,22 @@ function inDays(n: number): string {
     String(d.getDate()).padStart(2, '0')}`
 }
 
-export function DrillEvidence({ drillId }: { drillId: string }) {
+export function DrillEvidence({ drillId, readOnly = false }: {
+  drillId: string
+  /** An evaluated drill is not edited — but it is still read, and that is
+   *  precisely when somebody wants to see the photographs and what was
+   *  raised. Read-only drops the controls, not the content. */
+  readOnly?: boolean
+}) {
   return (
     <div className="mt-3 grid gap-3 sm:grid-cols-2">
-      <DrillPhotos drillId={drillId} />
-      <DrillActions drillId={drillId} />
+      <DrillPhotos drillId={drillId} readOnly={readOnly} />
+      <DrillActions drillId={drillId} readOnly={readOnly} />
     </div>
   )
 }
 
-function DrillPhotos({ drillId }: { drillId: string }) {
+function DrillPhotos({ drillId, readOnly }: { drillId: string; readOnly: boolean }) {
   const queryClient = useQueryClient()
   const fileInput = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
@@ -85,16 +91,21 @@ function DrillPhotos({ drillId }: { drillId: string }) {
         {photos.data?.map((a) => (
           <li key={a.id} className="flex items-center gap-2 text-xs">
             <Paperclip className="h-3.5 w-3.5 shrink-0 text-neutral-400" aria-hidden />
-            <span className="min-w-0 flex-1 truncate text-neutral-800">{a.filename}</span>
+            <button type="button"
+                    onClick={() => openFile(
+                      `/api/v1/drills/${drillId}/attachments/${a.id}/download`, a.filename)}
+                    className="min-w-0 flex-1 truncate text-left text-primary-700 hover:underline">
+              {a.filename}
+            </button>
             <span className="shrink-0 text-neutral-400">
               {a.uploaded_by_name ?? '—'}, {formatDate(a.created_at)}
             </span>
-            <button type="button" aria-label={`Remove ${a.filename}`}
+            {!readOnly && <button type="button" aria-label={`Remove ${a.filename}`}
                     disabled={remove.isPending}
                     onClick={() => { if (!remove.isPending) remove.mutate(a.id) }}
                     className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-50">
               <X className="h-3.5 w-3.5" />
-            </button>
+            </button>}
           </li>
         ))}
       </ul>
@@ -121,16 +132,18 @@ function DrillPhotos({ drillId }: { drillId: string }) {
           e.target.value = ''
         }}
       />
-      <button type="button" disabled={upload.isPending}
-              onClick={() => fileInput.current?.click()}
-              className="mt-1.5 text-xs font-semibold text-primary-700 hover:underline disabled:opacity-40">
-        {upload.isPending ? 'Uploading…' : 'Add a photograph'}
-      </button>
+      {!readOnly && (
+        <button type="button" disabled={upload.isPending}
+                onClick={() => fileInput.current?.click()}
+                className="mt-1.5 text-xs font-semibold text-primary-700 hover:underline disabled:opacity-40">
+          {upload.isPending ? 'Uploading…' : 'Add a photograph'}
+        </button>
+      )}
     </div>
   )
 }
 
-function DrillActions({ drillId }: { drillId: string }) {
+function DrillActions({ drillId, readOnly }: { drillId: string; readOnly: boolean }) {
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
@@ -204,7 +217,7 @@ function DrillActions({ drillId }: { drillId: string }) {
             </button>
           </div>
         </div>
-      ) : (
+      ) : !readOnly && (
         <button type="button" onClick={() => setAdding(true)}
                 className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-primary-700 hover:underline">
           <Plus className="h-3.5 w-3.5" aria-hidden />

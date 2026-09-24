@@ -70,7 +70,9 @@ async def upload_attachment(
     drill_id: uuid.UUID, file: UploadFile,
     db: SessionDep, user: CanWriteFirstAid, token: BearerToken,
 ):
-    await crud.get_drill(db, drill_id)
+    # Same gate the drill's own fields carry. Without it a photograph could be
+    # added to a drill that was signed off and closed weeks ago.
+    crud.assert_not_evaluated(await crud.get_drill(db, drill_id), "its evidence")
 
     data = await file.read()
     if len(data) > MAX_FILE_SIZE:
@@ -111,7 +113,8 @@ async def delete_attachment(
     drill_id: uuid.UUID, attachment_id: uuid.UUID,
     db: SessionDep, user: CanWriteFirstAid, token: BearerToken,  # noqa: ARG001
 ):
-    await crud.get_drill(db, drill_id)
+    # ★ The one that mattered: evidence on a closed drill was deletable.
+    crud.assert_not_evaluated(await crud.get_drill(db, drill_id), "its evidence")
     att = await db.get(DrillAttachment, attachment_id)
     if att is None or att.drill_id != drill_id:
         raise HTTPException(404, "Attachment not found")

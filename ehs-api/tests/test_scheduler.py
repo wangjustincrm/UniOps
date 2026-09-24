@@ -410,3 +410,66 @@ async def test_a_talk_can_be_handed_to_somebody_who_is_not_a_supervisor(
     assert len(mine) == 1, f"the person named must get it: {mine}"
     assert mine[0]["supervisor_name"] == plain.full_name
     assert mine[0]["created_at"], "when it was handed over is half of 'is this late'"
+
+
+async def test_an_evaluated_drill_will_not_give_up_its_evidence(
+        hse_manager, db_session):
+    """"The record is not edited after this" has to cover the photographs.
+
+    The rule lived inside the drill's own update, so it guarded the fields and
+    nothing else — the attachments hang off a separate table with a separate
+    endpoint, and evidence could be removed from a closed drill by anybody
+    holding a token. A record that makes that claim and does not keep it is
+    worse than one that never made it.
+
+    The attachment row is seeded rather than uploaded: uploading goes through
+    file-api, which is not running here, and what is under test is the gate
+    rather than the upload.
+    """
+    import uuid as _uuid
+    from datetime import date
+
+    from app.models.drill import DrillAttachment
+
+    _, client = hse_manager
+    drill_id = (await client.post("/api/v1/drills", json={
+        "drill_type": "evacuation", "scenario": "Fire in the dryer bay.",
+        "held_on": date.today().isoformat(),
+    })).json()["id"]
+
+    async def put_one(name: str) -> str:
+        row = DrillAttachment(
+            id=_uuid.uuid4(), drill_id=_uuid.UUID(drill_id),
+            storage_key=_uuid.uuid4(),
+            filename=name, content_type="image/jpeg", file_size=12,
+        )
+        db_session.add(row)
+        await db_session.commit()
+        return str(row.id)
+
+    # Open: the gate lets it through. It cannot complete here — deleting the
+    # bytes goes to file-api, which is not running — so what is asserted is
+    # that it was not refused, which is the admitting side of the gate under
+    # test. Without this the 409 below would also pass on a gate that refused
+    # everything.
+    removable = await put_one("muster.jpg")
+    allowed = await client.delete(f"/api/v1/drills/{drill_id}/attachments/{removable}")
+    assert allowed.status_code != 409, (
+        f"an open drill must not refuse: {allowed.status_code} {allowed.text}")
+
+    kept = await put_one("north-door.jpg")
+
+    # Closed: it does not.
+    await client.patch(f"/api/v1/drills/{drill_id}", json={"all_accounted_for": True})
+    done = await client.post(f"/api/v1/drills/{drill_id}/evaluate", json={})
+    assert done.status_code == 200, done.text
+
+    blocked = await client.delete(f"/api/v1/drills/{drill_id}/attachments/{kept}")
+    assert blocked.status_code == 409, (
+        f"evidence on a closed drill must not be removable: {blocked.text}")
+
+    # And it is still there to be read, which is the point of keeping it.
+    # (The first row is here too: its delete got past the gate and then failed
+    # at the file service, which is the outage path and not what this asserts.)
+    listed = (await client.get(f"/api/v1/drills/{drill_id}/attachments")).json()
+    assert kept in [a["id"] for a in listed]

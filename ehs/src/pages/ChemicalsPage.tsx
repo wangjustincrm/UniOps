@@ -16,7 +16,7 @@
  * actually asked of this are "what is in this drum" and "what is stored in
  * here", and both are asked standing in front of it.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, Download, FileText, FlaskConical, Plus, Printer,
@@ -989,10 +989,71 @@ function ChemicalForm({ existing, onClose }: { existing?: Chemical; onClose: () 
     first_aid_note: firstAid || null,
   })
 
+  // ★ The data sheet, on the form that creates the product. It used to take
+  // three steps in three places — add the product, file a revision against it,
+  // then upload the file to that revision — so a product entered by somebody
+  // holding the sheet in their hand arrived without it. The revision is still
+  // a revision underneath, because Reg 860's three-year clock runs from the
+  // supplier's revision date and a file with no revision has no clock.
+  const [sheetFile, setSheetFile] = useState<File | null>(null)
+  const [sheetRevision, setSheetRevision] = useState('')
+  const [sheetRevisionDate, setSheetRevisionDate] = useState('')
+  const sheetInput = useRef<HTMLInputElement>(null)
+
+  // ★ Three calls, and the product is created by the first. If the data sheet
+  // then fails to upload, pressing Save again would create a second product —
+  // so what has already succeeded is remembered and skipped on a retry. The
+  // alternative, one endpoint that does all three, would put a file upload
+  // inside the transaction that creates the product.
+  // Both steps are remembered, not just the first. Filing a revision and then
+  // failing to upload the file would otherwise file a second revision on the
+  // retry — and `add_sheet` marks whatever it replaces as no longer current,
+  // so the product would be left pointing at an empty version.
+  const createdId = useRef<string | null>(null)
+  const createdSheetId = useRef<string | null>(null)
+  const [partial, setPartial] = useState<string | null>(null)
+
   const create = useMutation({
-    mutationFn: () => (editing
-      ? api.patch(`/api/v1/chemicals/${existing!.id}`, body())
-      : api.post('/api/v1/chemicals', body())),
+    mutationFn: async () => {
+      if (editing) return api.patch(`/api/v1/chemicals/${existing!.id}`, body())
+
+      if (!createdId.current) {
+        const made = await api.post<{ id: string }>('/api/v1/chemicals', body())
+        createdId.current = made.id
+      }
+      const chemicalId = createdId.current
+
+      // A revision with no file is still a record — "the supplier is at Rev 4
+      // and we have not got it" is a real state, and the compliance gaps
+      // report is what chases it. A blank block creates nothing.
+      if (sheetFile || sheetRevision || sheetRevisionDate) {
+        try {
+          if (!createdSheetId.current) {
+            const sheet = await api.post<{ id: string }>(
+              `/api/v1/chemicals/${chemicalId}/sds`, {
+                revision: sheetRevision || null,
+                revision_date: sheetRevisionDate || null,
+              })
+            createdSheetId.current = sheet.id
+          }
+          if (sheetFile) {
+            const form = new FormData()
+            form.append('file', sheetFile)
+            await api.upload(`/api/v1/sds/${createdSheetId.current}/file`, form)
+          }
+        } catch (e) {
+          // The product exists, so the lists have to be told — somebody sent
+          // to "open it and file the sheet from there" needs to find it.
+          queryClient.invalidateQueries({ queryKey: ['chemicals'] })
+          queryClient.invalidateQueries({ queryKey: ['chemical-gaps'] })
+          setPartial(
+            'The product was added, but its data sheet was not attached. '
+            + 'Open it and file the sheet from there.')
+          throw e
+        }
+      }
+      return { id: chemicalId }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chemicals'] })
       queryClient.invalidateQueries({ queryKey: ['chemical-gaps'] })
@@ -1072,6 +1133,44 @@ function ChemicalForm({ existing, onClose }: { existing?: Chemical; onClose: () 
           </Field>
         </div>
       </div>
+      {!editing && (
+        <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+          <p className="text-xs font-medium text-neutral-700">Safety data sheet</p>
+          <p className="mt-0.5 max-w-[68ch] text-xs text-neutral-500">
+            Attach it here if you have it. WHMIS gives a worker a right to the
+            sheet for what they handle, and a product filed without one shows in
+            the compliance gaps until it has one.
+          </p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <Field label="Supplier's revision">
+              <input className={inputClass} value={sheetRevision}
+                     onChange={(e) => setSheetRevision(e.target.value)}
+                     placeholder="Rev 4" />
+            </Field>
+            <Field label="Revision date"
+                   hint="The three-year review runs from this, not from today">
+              <input type="date" className={inputClass} value={sheetRevisionDate}
+                     onChange={(e) => setSheetRevisionDate(e.target.value)} />
+            </Field>
+          </div>
+          <input ref={sheetInput} type="file" className="hidden"
+                 accept="application/pdf,image/png,image/jpeg,image/webp"
+                 onChange={(e) => setSheetFile(e.target.files?.[0] ?? null)} />
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <button type="button" onClick={() => sheetInput.current?.click()}
+                    className="font-semibold text-primary-700 hover:underline">
+              {sheetFile ? 'Choose a different file' : 'Attach the data sheet'}
+            </button>
+            {sheetFile && <span className="text-neutral-600">{sheetFile.name}</span>}
+          </div>
+        </div>
+      )}
+
+      {partial && (
+        <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700">
+          {partial}
+        </p>
+      )}
       <ErrorNote error={create.error} />
       <div className="mt-3 flex justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>

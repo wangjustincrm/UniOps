@@ -90,6 +90,36 @@ async def fetch_file_bytes(storage_key: uuid.UUID, bearer_token: str) -> bytes |
 
 
 async def delete_from_file_server(storage_key: uuid.UUID, bearer_token: str) -> None:
+    """Remove the bytes. Uploading handles the file server being unreachable
+    and this did not — a network error propagated as an unhandled exception,
+    so a delete during a file-api outage answered 500 with a stack trace in
+    the log rather than saying what was wrong.
+
+    A failure here is reported rather than swallowed: the caller has usually
+    not yet removed its own row, and telling somebody an attachment is gone
+    while the file is still on disk is the wrong half to get wrong.
+    """
     url = f"{settings.FILE_SERVER_URL}/files/{storage_key}"
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        await client.delete(url, headers={"Authorization": f"Bearer {bearer_token}"})
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.delete(
+                url, headers={"Authorization": f"Bearer {bearer_token}"})
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="The file service is not reachable, so the attachment could "
+                   "not be removed. Nothing was changed.",
+        ) from exc
+
+    # A 404 means the bytes are already gone, which is the state being asked
+    # for — the row can go. Anything else is a refusal, and every caller
+    # deletes its own row next: swallowing it would report the attachment as
+    # removed while the file is still on disk.
+    if resp.status_code == 404:
+        return
+    if not resp.is_success:
+        raise HTTPException(
+            status_code=502,
+            detail=f"The file service refused to remove the file "
+                   f"({resp.status_code}). The attachment was left in place.",
+        )

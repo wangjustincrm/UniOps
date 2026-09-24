@@ -1,3 +1,4 @@
+import { useState } from 'react'
 /**
  * Safety API client.
  *
@@ -158,13 +159,50 @@ export interface DirectoryPerson {
 export async function openFile(path: string, filename?: string): Promise<void> {
   const blob = await apiBlob(path)
   const url = URL.createObjectURL(blob)
-  const w = window.open(url, '_blank', 'noopener')
-  if (!w && filename) {
-    // Pop-up blocked — fall back to a download rather than losing the file.
+
+  // ★ No `noopener` in the feature string. The spec says `window.open`
+  // returns null whenever it is given, so the blocked-pop-up branch below
+  // fired on every single call — every click opened the file in a tab and
+  // downloaded a second copy of it. The isolation `noopener` buys is applied
+  // afterwards instead, which leaves the return value meaning what it says.
+  const w = window.open(url, '_blank')
+  if (w) {
+    w.opener = null
+  } else if (filename) {
+    // Genuinely blocked — hand it over as a download rather than losing it.
     const a = document.createElement('a')
     a.href = url
     a.download = filename
     a.click()
   }
+
   setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+/**
+ * Opening a file from a button, with somewhere for the failure to go.
+ *
+ * `openFile` rejects on a 403 or a 404 like any other request, and an
+ * `onClick` that calls it swallows that — the button was pressed, nothing
+ * happened, and nothing said why. This keeps the message so a page can render
+ * it beside whatever was clicked.
+ */
+export function useFileOpener() {
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const open = async (path: string, filename?: string) => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await openFile(path, filename)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'The file could not be opened.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return { open, error, busy }
 }

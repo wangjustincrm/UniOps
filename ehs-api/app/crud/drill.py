@@ -101,12 +101,24 @@ async def create_drill(db: AsyncSession, payload: dict, *, creator_id: uuid.UUID
     return drill
 
 
-async def update_drill(db: AsyncSession, drill: Drill, fields: dict) -> Drill:
+def assert_not_evaluated(drill: Drill, what: str = "the record") -> None:
+    """An evaluated drill is closed to changes — all of them.
+
+    The rule lived inside `update_drill`, so it covered the drill's own fields
+    and nothing else: the photographs hung off a separate table with a separate
+    endpoint, and evidence could be deleted from a closed drill by anybody
+    holding a token. A record that says "not edited afterwards" while its
+    attachments can be removed is making a claim it does not keep.
+    """
     if drill.status == "evaluated":
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            f"{drill.drill_no} has been evaluated. The record of what happened is "
-            "not edited afterwards.")
+            f"{drill.drill_no} has been evaluated. {what.capitalize()} is not "
+            "changed afterwards.")
+
+
+async def update_drill(db: AsyncSession, drill: Drill, fields: dict) -> Drill:
+    assert_not_evaluated(drill, "the record of what happened")
 
     if "area_ids" in fields:
         areas: list[dict] = []

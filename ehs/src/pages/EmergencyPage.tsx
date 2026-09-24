@@ -330,10 +330,29 @@ function DrillDetail({ drill, mayRun }: { drill: Drill; mayRun: boolean }) {
       )}
 
       {evaluated ? (
-        <p className="text-xs text-neutral-500">
-          Evaluated {drill.evaluated_at && formatDate(drill.evaluated_at)} by{' '}
-          {drill.evaluated_by_name}. The record is not edited after this.
-        </p>
+        // ★ Evaluated used to collapse the whole drill to one sentence. The
+        // root cause, the signature, the photographs and the action items all
+        // stopped being visible the moment the drill was finished — which is
+        // exactly when somebody wants to read them. Closed means not editable,
+        // not invisible.
+        <>
+          {drill.root_cause_label && (
+            <p className="mt-2 text-sm text-neutral-700">
+              <span className="font-semibold">Root cause:</span> {drill.root_cause_label}
+            </p>
+          )}
+          {drill.signed_by_name && (
+            <p className="mt-1 text-xs text-neutral-500">
+              Signed by {drill.signed_by_name}
+              {drill.signed_at && ` on ${formatDate(drill.signed_at)}`}
+            </p>
+          )}
+          <DrillEvidence drillId={drill.id} readOnly />
+          <p className="mt-2 text-xs text-neutral-500">
+            Evaluated {drill.evaluated_at && formatDate(drill.evaluated_at)} by{' '}
+            {drill.evaluated_by_name}. The record is not edited after this.
+          </p>
+        </>
       ) : mayRun ? (
         <RecordPanel drill={drill} onSaved={invalidate} />
       ) : null}
