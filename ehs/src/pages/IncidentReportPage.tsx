@@ -25,6 +25,10 @@ import { PhotoCapture } from '@/components/PhotoCapture'
 import { SignaturePad } from '@/components/SignaturePad'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import { useMyProfile } from '@/hooks/useMyProfile'
+import { usePermissions } from '@/hooks/usePermissions'
+import {
+  EMPTY_INJURY_DETAIL, hasInjuryDetail, InjuryDetailFields, type InjuryDetail,
+} from '@/components/InjuryDetail'
 
 type Kind = 'medical' | 'equipment' | 'near_miss'
 
@@ -59,6 +63,10 @@ interface IncidentTypeOption {
   /** Fatality and Unconscious are MOL-reportable and say nothing about lost
    *  time, so the form asks for the injury class separately. */
   asks_injury_class: boolean
+  /** Whether somebody was actually hurt, and so whether the WSIB detail is
+   *  worth asking for here. Served rather than decided on this side, for the
+   *  same reason the list of types is. */
+  injury_detail: boolean
 }
 
 interface FormState {
@@ -88,6 +96,11 @@ interface FormState {
   followUp: string
   talkedToOperator: '' | 'yes' | 'no' | 'na'
   whyNot: string
+  // Section B on HSE's form — SAMPLE and vitals, filled in by whoever assessed
+  // the injury. It used to live only on the investigation, which is a screen
+  // opened hours later: by then the pulse and the pain score are being written
+  // from memory, if they are written at all.
+  injury: InjuryDetail
   anonymous: boolean
   signature: string | null
 }
@@ -112,6 +125,7 @@ const emptyForm = (): FormState => ({
   injured: EMPTY_PERSON, bodyPart: null, natureOfInjury: null,
   treatment: '', sentOffsite: false, followUp: '',
   talkedToOperator: '', whyNot: '', anonymous: false, signature: null,
+  injury: { ...EMPTY_INJURY_DETAIL },
 })
 
 const DRAFT_KIND = 'incident'
@@ -135,16 +149,27 @@ export default function IncidentReportPage() {
       // the second guard: a field added since the draft was written must come
       // back as its default, not as undefined for the page to read through.
       setForm({ ...emptyForm(), ...draft.data.form,
-                injured: draft.data.form?.injured ?? EMPTY_PERSON })
+                injured: draft.data.form?.injured ?? EMPTY_PERSON,
+                // Never restored, because it is never saved (see below).
+                injury: { ...EMPTY_INJURY_DETAIL } })
       setPhotos(draft.data.photos ?? [])
       setRestored(true)
     }
   }, [])
 
   // Save on every change once something has actually been entered.
+  //
+  // ★ Section B is deliberately left out of the draft. A draft lives in this
+  // browser's storage, the plant's phones and tablets are shared, and signing
+  // out does not empty it — so a half-finished form would leave somebody's
+  // allergies and medication on a device the next person logs into, readable
+  // to anyone who opens the developer tools whether or not the screen shows
+  // it. Losing a few minutes of Section B if the page is closed is the right
+  // side of that trade; the rest of the form still survives a dead zone.
   useEffect(() => {
     if (!form.kind) return
-    const ok = saveDraft(DRAFT_KIND, DRAFT_ID, { form, photos })
+    const ok = saveDraft(DRAFT_KIND, DRAFT_ID,
+                         { form: { ...form, injury: { ...EMPTY_INJURY_DETAIL } }, photos })
     setDraftWarning(ok ? null
       : 'This draft is too large to keep on the phone — submit it while you have signal.')
   }, [form, photos])
@@ -156,6 +181,17 @@ export default function IncidentReportPage() {
     enabled: Boolean(form.kind),
   })
 
+
+  const selectedType = incidentTypes?.find((t) => t.code === form.incidentType)
+  const asksInjuryClass = Boolean(selectedType?.asks_injury_class)
+
+  // ★ Section B is shown to the people allowed to hold it, and only for the
+  // types where somebody was hurt. It carries allergies, medication and past
+  // medical history — the same permission the investigation asks for, because
+  // the record does not become less private for being typed earlier.
+  const { can } = usePermissions()
+  const showInjuryDetail = form.kind === 'medical' && Boolean(selectedType?.injury_detail)
+    && can('ehs.incident.medical.read')
 
   const submit = useMutation({
     mutationFn: async () => {
@@ -206,6 +242,28 @@ export default function IncidentReportPage() {
       const created = await api.post<{ id: string }>('/api/v1/incidents', body)
       await api.post(`/api/v1/incidents/${created.id}/submit`)
 
+      // Section B goes up after the submit, because the endpoint refuses a
+      // draft: the injury detail belongs to a report that exists. Only when
+      // something was actually entered — a PUT of empty fields would create a
+      // medical record saying nothing, with somebody's name against it.
+      //
+      // ★ A failure here does not fail the submit. The incident already
+      // exists; throwing would leave the form on screen with the Submit button
+      // live, and the next press would file the same injury a second time.
+      // A duplicate statutory report is barely better than a missing one, so
+      // this reports what did not save and says where to finish it.
+      let injuryDetailFailed = false
+      if (showInjuryDetail && hasInjuryDetail(form.injury)) {
+        try {
+          // The whole section, and only the keys the endpoint knows: it rejects
+          // anything else outright rather than dropping it, which is what stops
+          // a renamed field from looking like a cleared one.
+          await api.put(`/api/v1/incidents/${created.id}/medical`, { ...form.injury })
+        } catch {
+          injuryDetailFailed = true
+        }
+      }
+
       // Photos go up after the incident exists, because they hang off its id.
       // A failure here is reported but does not fail the submit: the report is
       // already filed, and telling someone their injury report failed because
@@ -221,7 +279,7 @@ export default function IncidentReportPage() {
           photosFailed += 1
         }
       }
-      return { ...created, photosFailed }
+      return { ...created, photosFailed, injuryDetailFailed }
     },
     onSuccess: (created) => {
       discardDraft(DRAFT_KIND, DRAFT_ID)
@@ -232,12 +290,16 @@ export default function IncidentReportPage() {
           `photo(s) could not be uploaded — open the report and add them again.`,
         )
       }
+      if (created.injuryDetailFailed) {
+        window.alert(
+          'Your report was filed, but the injury detail did not save. ' +
+          'Open the report and enter it on the investigation — nothing else was lost.',
+        )
+      }
       navigate(`/incidents/${created.id}`)
     },
   })
 
-  const asksInjuryClass = Boolean(
-    incidentTypes?.find((t) => t.code === form.incidentType)?.asks_injury_class)
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
@@ -417,6 +479,26 @@ export default function IncidentReportPage() {
             <input className={inputClass} value={form.followUp}
                    onChange={(e) => set('followUp', e.target.value)} />
           </Field>
+        </>
+      )}
+
+      {showInjuryDetail && (
+        <>
+          {/* Section B, on the report rather than only on the investigation.
+              It was reachable before, but a screen later: by the time anyone
+              opened it the pulse and the pain score were being written from
+              memory. The timeline stays there — it is built as treatment goes
+              on, not in the minute the form is filled in. */}
+          <p className="mt-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            <span className="font-semibold">Private.</span> The WSIB detail below is
+            visible only to people who may read medical information, and can be
+            added to later from the investigation.
+          </p>
+          <InjuryDetailFields
+            value={form.injury}
+            onChange={(v) => set('injury', v)}
+            showTimeline={false}
+          />
         </>
       )}
 

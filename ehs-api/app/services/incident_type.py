@@ -38,6 +38,11 @@ class IncidentType:
     # True where the type says nothing about injury severity and the reporter
     # must be asked separately.
     asks_injury_class: bool = False
+    # True where the type is one where somebody was actually hurt, and the
+    # WSIB detail — Section B on HSE's form — is worth asking for while the
+    # first aider still remembers it. Occupational illness is in because it is
+    # an injury for WSIB's purposes even though it carries no severity here.
+    injury_detail: bool = False
 
 
 TYPES: tuple[IncidentType, ...] = (
@@ -46,15 +51,15 @@ TYPES: tuple[IncidentType, ...] = (
     IncidentType("near_miss", "Near Miss — no injury but has the potential to cause one",
                  "near_miss"),
     IncidentType("first_aid", "First Aid Injury — managed using existing first aid equipment",
-                 "medical", injury_class="first_aid"),
+                 "medical", injury_class="first_aid", injury_detail=True),
     IncidentType("medical_aid",
                  "Medical Aid by clinic, hospital or other health care facility",
-                 "medical", injury_class="medical_aid"),
+                 "medical", injury_class="medical_aid", injury_detail=True),
     IncidentType("lost_time", "Lost Time as defined by WSIB", "medical",
-                 injury_class="lost_time"),
+                 injury_class="lost_time", injury_detail=True),
     IncidentType("property_damage", "Property / Asset Damage", "equipment"),
     IncidentType("occupational_illness", "Occupational Illness", "medical",
-                 category_code="occupational_illness"),
+                 category_code="occupational_illness", injury_detail=True),
     IncidentType("environmental", "Environmental Incident", "equipment",
                  category_code="environmental_incident"),
     IncidentType("security", "Security Incident", "medical",
@@ -62,9 +67,11 @@ TYPES: tuple[IncidentType, ...] = (
     IncidentType("drug_alcohol", "Drug / Alcohol Related", "medical",
                  category_code="drug_alcohol_related"),
     IncidentType("fatality", "Fatality — MOL and police must be notified immediately",
-                 "medical", mol_reportable=True, asks_injury_class=True),
+                 "medical", mol_reportable=True, asks_injury_class=True,
+                 injury_detail=True),
     IncidentType("unconscious", "Unconscious — MOL must be notified immediately",
-                 "medical", mol_reportable=True, asks_injury_class=True),
+                 "medical", mol_reportable=True, asks_injury_class=True,
+                 injury_detail=True),
 )
 
 BY_CODE = {t.code: t for t in TYPES}

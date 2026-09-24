@@ -576,3 +576,29 @@ async def test_the_range_admits_as_well_as_excludes(hse_manager):
     whole_year = await client.get(
         "/api/v1/incidents?occurred_from=2026-01-01&occurred_to=2026-12-31&limit=200")
     assert {inside["id"], outside["id"]} <= {r["id"] for r in whole_year.json()}
+
+
+# ── What the report form asks for ───────────────────────────────────────────
+
+async def test_the_types_say_which_ones_want_the_injury_detail(hse_manager):
+    """Section B appears on the report form for the types where somebody was
+    hurt, and that rule is served rather than decided in the browser.
+
+    A copy of it on the other side would drift from this one, and the way it
+    would drift is silent: a type added later would simply never offer the
+    WSIB detail, and nobody finds a question that was not asked.
+    """
+    _, client = hse_manager
+    rows = await client.get("/api/v1/incidents/types")
+    assert rows.status_code == 200, rows.text
+    wants = {t["code"] for t in rows.json() if t["injury_detail"]}
+
+    # Hurt: the three severities, occupational illness, and the two the
+    # Ministry must hear about.
+    assert wants == {"first_aid", "medical_aid", "lost_time",
+                     "occupational_illness", "fatality", "unconscious"}
+
+    # And the ones where nobody was: asked for it, the form would be asking a
+    # near miss about its allergies.
+    assert not wants & {"report_only", "near_miss", "property_damage",
+                        "environmental", "security", "drug_alcohol"}

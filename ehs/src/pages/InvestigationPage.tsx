@@ -18,11 +18,12 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useTabTitle } from '@uniops/shell'
 import { api, ApiError } from '@/lib/api'
 import {
-  inputSized, PageHeader, SectionTitle,
+  PageHeader, SectionTitle,
 } from '@/components/ui'
 import { ehsRoutes } from '@/app/routes'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { SignaturePad } from '@/components/SignaturePad'
+import { InjuryDetailFields, type VitalsReading } from '@/components/InjuryDetail'
 import { VocabularyMultiSelect, VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import { useMyProfile } from '@/hooks/useMyProfile'
 
@@ -37,16 +38,6 @@ interface Investigation {
   root_cause_narrative: string | null
   completed_at: string | null
   signed_by_name: string | null
-}
-
-interface VitalsReading {
-  at: string; pulse: string; respirations: string; blood_pressure: string
-  pain_level: number | null; pain_location: string; other: string
-}
-
-const EMPTY_READING: VitalsReading = {
-  at: '', pulse: '', respirations: '', blood_pressure: '',
-  pain_level: null, pain_location: '', other: '',
 }
 
 interface Medical {
@@ -428,123 +419,7 @@ export default function InvestigationPage() {
             </p>
           )}
 
-          {/* SAMPLE: signs, allergies, medicines, past history, last meal,
-              events. This is the order a first aider is trained to ask in —
-              re-sorting the screen makes them skip one. */}
-          <SectionTitle className="mb-2 mt-2">Medical information</SectionTitle>
-          <Field label="Time of assessment">
-            <input className={inputClass} value={med.assessed_at_text ?? ''}
-                   onChange={(e) => setMed({ ...med, assessed_at_text: e.target.value })}
-                   placeholder="10:00 am" />
-          </Field>
-          {([
-            ['signs_symptoms', 'Signs and symptoms'],
-            ['allergies', 'Allergies'],
-            ['medicines', 'Medicines'],
-            ['past_medical_history', 'Past medical history'],
-            ['last_meal', 'Last meal'],
-            ['events_prior', 'Events prior'],
-            ['general_comments', 'General comments'],
-          ] as const).map(([key, label]) => (
-            <Field key={key} label={label}>
-              <textarea rows={2} className={`${inputClass} py-2`}
-                        value={(med[key] as string | null) ?? ''}
-                        onChange={(e) => setMed({ ...med, [key]: e.target.value })} />
-            </Field>
-          ))}
-
-          <SectionTitle className="mb-2 mt-2">Vitals</SectionTitle>
-          {/* Taken more than once, because the trend is what decides whether
-              somebody goes to hospital: a pulse of 110 reads one way on its own
-              and another beside the 90 from five minutes earlier. The form used
-              to hold exactly one set. */}
-          {(med.vitals_series ?? []).map((v, i) => {
-            const setReading = (patch: Partial<VitalsReading>) =>
-              setMed({ ...med, vitals_series: (med.vitals_series ?? []).map(
-                (x, j) => (j === i ? { ...x, ...patch } : x)) })
-            return (
-              <div key={i} className="mb-3 rounded-lg border border-neutral-200 p-2.5">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-xs font-medium text-neutral-600">
-                    Reading {i + 1}
-                  </span>
-                  <button type="button"
-                          onClick={() => setMed({ ...med,
-                            vitals_series: (med.vitals_series ?? []).filter((_, j) => j !== i) })}
-                          className="flex min-h-[32px] min-w-[32px] items-center justify-center text-neutral-400">
-                    <Trash2 className="h-4 w-4" aria-hidden />
-                    <span className="sr-only">Remove reading {i + 1}</span>
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Time">
-                    {/* A picker, not free text: these are compared against each
-                        other and against the timeline, and "10:06 am" beside
-                        "1006" cannot be. */}
-                    <input type="time" className={inputClass} value={v.at}
-                           onChange={(e) => setReading({ at: e.target.value })} />
-                  </Field>
-                  <Field label="Pulse"><input className={inputClass} value={v.pulse}
-                    onChange={(e) => setReading({ pulse: e.target.value })} /></Field>
-                  <Field label="Respirations"><input className={inputClass} value={v.respirations}
-                    onChange={(e) => setReading({ respirations: e.target.value })} /></Field>
-                  <Field label="Blood pressure"><input className={inputClass} value={v.blood_pressure}
-                    onChange={(e) => setReading({ blood_pressure: e.target.value })} /></Field>
-                  <Field label="Pain level (0–10)">
-                    <input type="number" min={0} max={10} className={inputClass}
-                           value={v.pain_level ?? ''}
-                           onChange={(e) => setReading({
-                             pain_level: e.target.value === '' ? null : Number(e.target.value) })} />
-                  </Field>
-                  <Field label="Where is the pain"><input className={inputClass} value={v.pain_location}
-                    onChange={(e) => setReading({ pain_location: e.target.value })} /></Field>
-                  <div className="col-span-2">
-                    <Field label="Anything else observed">
-                      <input className={inputClass} value={v.other}
-                             onChange={(e) => setReading({ other: e.target.value })} />
-                    </Field>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-          <button type="button"
-                  onClick={() => setMed({ ...med,
-                    vitals_series: [...(med.vitals_series ?? []), { ...EMPTY_READING }] })}
-                  className="mb-2 flex min-h-[38px] items-center gap-1.5 text-sm font-medium text-primary-700">
-            <Plus className="h-4 w-4" aria-hidden />
-            {(med.vitals_series ?? []).length === 0 ? 'Record vitals' : 'Record vitals again'}
-          </button>
-
-          <SectionTitle className="mb-2 mt-2">Timeline</SectionTitle>
-          {(med.timeline ?? []).map((t, i) => (
-            // `min-w-0` on the event box below is what stops this row being
-            // wider than the panel: a flex item will not shrink past its
-            // content by default, so the event text was pushed off the edge.
-            <div key={i} className="mb-2 flex gap-2">
-              <input type="time" className={`${inputSized('w-32')} shrink-0`} value={t.time}
-                     aria-label="Time"
-                     onChange={(e) => setMed({ ...med, timeline: (med.timeline ?? []).map(
-                       (x, j) => j === i ? { ...x, time: e.target.value } : x) })} />
-              <input className={`${inputClass} min-w-0`} value={t.event} placeholder="What happened"
-                     onChange={(e) => setMed({ ...med, timeline: (med.timeline ?? []).map(
-                       (x, j) => j === i ? { ...x, event: e.target.value } : x) })} />
-              <button type="button"
-                      onClick={() => setMed({ ...med,
-                        timeline: (med.timeline ?? []).filter((_, j) => j !== i) })}
-                      className="flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400">
-                <Trash2 className="h-4 w-4" aria-hidden />
-                <span className="sr-only">Remove</span>
-              </button>
-            </div>
-          ))}
-          <button type="button"
-                  onClick={() => setMed({ ...med,
-                    timeline: [...(med.timeline ?? []), { time: '', event: '' }] })}
-                  className="flex min-h-[38px] items-center gap-1.5 text-sm font-medium text-primary-700">
-            <Plus className="h-4 w-4" aria-hidden />
-            Add a timeline entry
-          </button>
+          <InjuryDetailFields value={med} onChange={setMed} />
         </Section>
       )}
 
