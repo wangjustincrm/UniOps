@@ -164,8 +164,48 @@ export default function MyActionsPage() {
   const today = actions.filter((a) => daysOverdue(a.due_date) === 0)
   const later = actions.filter((a) => (daysOverdue(a.due_date) ?? 0) < 0)
 
+  // ★ The counts before the cards. "How much is on me, and how much of it is
+  // late" is the question this page is opened with, and answering it by
+  // scrolling and counting is not answering it. Each tile is the group it
+  // names, so the summary and the list below cannot disagree.
+  const summary = [
+    { label: 'Overdue', count: overdue.length, tone: 'bad' as const },
+    { label: 'Due today', count: today.length, tone: 'warn' as const },
+    { label: 'To verify', count: verifying.length, tone: 'warn' as const },
+    { label: 'Coming up', count: later.length, tone: 'plain' as const },
+    { label: 'Other work', count: other.length, tone: 'plain' as const },
+  ]
+  const outstanding = actions.length + verifying.length + other.length
+
   return (
     <div className="flex flex-col gap-2 p-4">
+      <section className="mb-1 rounded-xl border border-neutral-200 bg-white p-4">
+        <p className="flex items-baseline gap-2.5">
+          <span className="text-3xl font-bold tabular-nums leading-none text-neutral-900">
+            {outstanding}
+          </span>
+          <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            {outstanding === 1 ? 'thing needs doing' : 'things need doing'}
+          </span>
+        </p>
+        <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {summary.map((s) => (
+            <li key={s.label}
+                className={`rounded-lg px-2.5 py-2 ${
+                  s.count === 0
+                    ? 'bg-neutral-50 text-neutral-400'
+                    : s.tone === 'bad'
+                      ? 'bg-danger-50 text-danger-800'
+                      : s.tone === 'warn'
+                        ? 'bg-warning-50 text-warning-800'
+                        : 'bg-neutral-100 text-neutral-700'}`}>
+              <p className="text-lg font-bold tabular-nums leading-none">{s.count}</p>
+              <p className="mt-1 text-[11px] font-medium uppercase tracking-wide">{s.label}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
       <Group title="Overdue" count={overdue.length} tone="bad">
         {overdue.map((a) => <ActionCard key={a.id} action={a} />)}
       </Group>

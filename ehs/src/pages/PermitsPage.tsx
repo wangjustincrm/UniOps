@@ -33,7 +33,8 @@ import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { SignaturePad } from '@/components/SignaturePad'
 import {
-  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
+  Card, Empty, ErrorNote, Field, inputClass, LoadFailedNote, PageHeader, primaryButton,
+  secondaryButton, SectionTitle, Tabs,
 } from '@/components/ui'
 
 interface Precaution { key: string; label: string; help?: string }
@@ -296,6 +297,15 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
 
       {type?.requires_gas_test && (
         <GasPanel permit={permit} readings={readings.data ?? []} onSaved={invalidate} />
+      )}
+
+      {/* ★ A failed fetch used to fall through `?? []` and draw an empty
+          signature list, which is what somebody who had just signed was shown.
+          An empty list and a refused one have to look different: one of them
+          means the signature is not there, and the other means you were not
+          allowed to look. */}
+      {(signatures.isError || readings.isError) && (
+        <LoadFailedNote what="Some of this permit" />
       )}
 
       <SignaturePanel permit={permit} type={type} signatures={signatures.data ?? []}

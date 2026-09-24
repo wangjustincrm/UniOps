@@ -24,7 +24,7 @@ from app.api.v1.incidents import _user_id
 from app.core.deps import SessionDep
 from uniops_authz import has_permission
 
-from app.core.permissions import CanIssuePermit, CanReadPermit, CanRequestPermit
+from app.core.permissions import CanIssuePermit, CanRequestPermit
 from app.crud import permit as crud
 from app.services import permit as rules
 
@@ -179,6 +179,26 @@ async def _may_browse(db, payload: dict) -> bool:
                                 "ehs.permit.read")
 
 
+async def _readable(db, payload: dict, permit) -> None:
+    """The same rule `get_permit` applies, for the parts of a permit.
+
+    ★ A permit's gas readings and signatures were guarded by `ehs.permit.read`
+    while the permit itself is guarded by `ehs.permit.request` and narrowed to
+    your own. So somebody who raised a permit could open it and sign it, and
+    then be refused the list that shows their signature — which on screen is
+    indistinguishable from the signature not having saved, and is what the
+    third acceptance round reported: "signatures are not saved when worker is
+    logged in but show when supervisor is logged in". They had saved. The
+    signature list came back 403 and the screen had nothing to draw.
+
+    The sub-resources are part of the document, so they follow the document.
+    """
+    if permit.requested_by != _user_id(payload) and not await _may_browse(db, payload):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "You can only open permits you raised")
+
+
 @router.get("/permits", response_model=list[PermitOut])
 async def list_permits(
     db: SessionDep, user: CanRequestPermit,
@@ -233,8 +253,8 @@ async def update_permit(
 
 
 @router.get("/permits/{permit_id}/gas", response_model=list[GasReadingOut])
-async def list_readings(permit_id: uuid.UUID, db: SessionDep, user: CanReadPermit):  # noqa: ARG001
-    await crud.get_permit(db, permit_id)
+async def list_readings(permit_id: uuid.UUID, db: SessionDep, user: CanRequestPermit):
+    await _readable(db, user, await crud.get_permit(db, permit_id))
     out = []
     for row in await crud.readings_for(db, permit_id):
         item = GasReadingOut.model_validate(row)
@@ -259,8 +279,8 @@ async def record_reading(
 
 
 @router.get("/permits/{permit_id}/signatures", response_model=list[SignatureOut])
-async def list_signatures(permit_id: uuid.UUID, db: SessionDep, user: CanReadPermit):  # noqa: ARG001
-    await crud.get_permit(db, permit_id)
+async def list_signatures(permit_id: uuid.UUID, db: SessionDep, user: CanRequestPermit):
+    await _readable(db, user, await crud.get_permit(db, permit_id))
     return await crud.signatures_for(db, permit_id)
 
 

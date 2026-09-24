@@ -221,3 +221,31 @@ export function LinkButton({ onClick, children, tone = 'primary', disabled, clas
     </button>
   )
 }
+
+
+/**
+ * Something on this page did not load.
+ *
+ * ★ For the very common shape `query.data ?? []`, which turns a failed or
+ * refused request into an empty list. An empty list and a refused one mean
+ * opposite things — "there is nothing" against "you were not shown it" — and
+ * on a signature list the difference is whether somebody signs again. Render
+ * this beside any list whose query can fail; the fallback stays, so the page
+ * still draws.
+ */
+export function LoadFailedNote({ what, children }: {
+  /** What could not be loaded, in the reader's words: "the signatures". */
+  what?: string
+  children?: ReactNode
+}) {
+  return (
+    <p className="mt-3 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
+      {children ?? (
+        <>
+          {what ? `${what} could not be loaded` : 'Some of this could not be loaded'},
+          so what is shown may be incomplete. Nothing already recorded has been lost.
+        </>
+      )}
+    </p>
+  )
+}

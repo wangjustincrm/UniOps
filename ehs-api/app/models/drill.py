@@ -75,6 +75,13 @@ class Drill(UUIDPrimaryKey, TimestampMixin, Base):
     root_cause_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     root_cause_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
+    # Who ran it. Not the same person as the one who signs the record off, and
+    # not readable from the signature — which is a picture of a name, and was
+    # the only answer this record could give.
+    run_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    run_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # Who says this is what happened. On the row rather than in file-api: a
     # drill report that renders without its signature is not the document that
     # was signed.

@@ -40,6 +40,7 @@ interface Drill {
   missing_note: string | null
   observations: string | null; what_worked: string | null; what_failed: string | null
   root_cause_id: string | null; root_cause_label: string | null
+  run_by: string | null; run_by_name: string | null
   signature: string | null; signed_by_name: string | null; signed_at: string | null
   status: string; evaluated_at: string | null; evaluated_by_name: string | null
   created_by_name: string | null
@@ -80,7 +81,7 @@ const CAPACITIES = [
 
 const TABS = [
   { key: 'drills', label: 'Drills' },
-  { key: 'responders', label: 'Who can respond' },
+  { key: 'responders', label: 'First Aid Certifications' },
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
@@ -354,6 +355,11 @@ function DrillDetail({ drill, mayRun }: { drill: Drill; mayRun: boolean }) {
               <span className="font-semibold">Root cause:</span> {drill.root_cause_label}
             </p>
           )}
+          {drill.run_by_name && (
+            <p className="mt-1 text-sm text-neutral-700">
+              <span className="font-semibold">Run by:</span> {drill.run_by_name}
+            </p>
+          )}
           {drill.signed_by_name && (
             <p className="mt-1 text-xs text-neutral-500">
               Signed by {drill.signed_by_name}
@@ -397,6 +403,14 @@ function RecordPanel({ drill, onSaved }: { drill: Drill; onSaved: () => void }) 
   const [failed, setFailed] = useState(drill.what_failed ?? '')
   const [person, setPerson] = useState<PersonValue>(EMPTY_PERSON)
   const [capacity, setCapacity] = useState('warden')
+  // ★ Who ran it, picked rather than read off the signature. A signature is a
+  // picture of a name, and HSE reported that theirs could not be read — and it
+  // is the wrong field anyway: whoever signs the record off is not always
+  // whoever ran the evacuation.
+  const [runBy, setRunBy] = useState<PersonValue>(
+    drill.run_by || drill.run_by_name
+      ? { ...EMPTY_PERSON, userId: drill.run_by, name: drill.run_by_name ?? '' }
+      : EMPTY_PERSON)
 
   const save = useMutation({
     mutationFn: () => api.patch(`/api/v1/drills/${drill.id}`, {
@@ -411,6 +425,10 @@ function RecordPanel({ drill, onSaved }: { drill: Drill; onSaved: () => void }) 
       what_failed: failed || null,
       root_cause_id: rootCause?.id ?? null,
       root_cause_label: rootCause?.label ?? null,
+      run_by: runBy.userId,
+      // Sent only for somebody with no staff record behind them; where there
+      // is an id the server reads the name from it.
+      run_by_name: runBy.userId ? null : (runBy.name.trim() || null),
       // The name and time are stamped by the server, never sent from here.
       signature,
     }),
@@ -493,11 +511,18 @@ function RecordPanel({ drill, onSaved }: { drill: Drill; onSaved: () => void }) 
         </Field>
       </div>
 
+      <div className="mt-3">
+        <Field label="Who ran the drill"
+               hint="Named as well as signed — a signature is a picture of a name, and the person who signs the record off is not always the person who ran it">
+          <PersonPicker value={runBy} onChange={setRunBy} />
+        </Field>
+      </div>
+
       <DrillEvidence drillId={drill.id} />
 
       <div className="mt-3">
         <p className="mb-1 text-xs font-medium text-neutral-700">
-          Signed by whoever ran the drill
+          Signature
         </p>
         <SignaturePad value={signature} onChange={setSignature} />
         {drill.signed_by_name && drill.signed_at && (

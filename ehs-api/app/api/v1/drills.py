@@ -60,6 +60,10 @@ class DrillPatch(BaseModel):
     # Why it went the way it did, from the same list the investigations use.
     root_cause_id: uuid.UUID | None = None
     root_cause_label: str | None = Field(default=None, max_length=200)
+    # Who ran it, chosen from the staff list. The name is stored beside the id
+    # so the report still says who ran it after they have left.
+    run_by: uuid.UUID | None = None
+    run_by_name: str | None = Field(default=None, max_length=255)
     # Base64 PNG. Signing stamps the name and time on the server — a signature
     # whose "who" and "when" came from the client is not evidence of anything.
     signature: str | None = None
@@ -85,6 +89,7 @@ class DrillOut(BaseModel):
     observations: str | None
     root_cause_id: uuid.UUID | None
     root_cause_label: str | None
+    run_by_name: str | None
     signature: str | None
     signed_by_name: str | None
     signed_at: datetime | None
@@ -211,6 +216,16 @@ async def update_drill(
         # Cleared on purpose — the drill is unsigned again, and leaving the
         # name behind would show it as signed by somebody with nothing under it.
         fields.update(signed_by=None, signed_by_name=None, signed_at=None)
+
+    # The name of whoever ran it is read from the staff record, not taken from
+    # the caller: it is a snapshot of who that person was, and a snapshot the
+    # client can write is not one. A name with no id behind it is kept as
+    # typed — that is how a contractor running a drill gets recorded.
+    if fields.get("run_by"):
+        fields["run_by_name"] = await _resolve_name(db, fields["run_by"])
+    elif "run_by" in fields:
+        fields["run_by_name"] = fields.get("run_by_name")
+
     return await crud.update_drill(db, drill, fields)
 
 
