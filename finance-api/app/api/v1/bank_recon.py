@@ -11,7 +11,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.coa import _require_manage
@@ -73,8 +73,29 @@ async def nc_accounts(_: CurrentUser, db: AsyncSession = Depends(get_db)):
     in place (migration 0036) — and it says so, because an empty picker with no
     explanation reads as a broken page.
     """
+    # Only the accounts THIS book's ledger actually references, plus whatever is
+    # already linked. nc_bank_accounts is an upsert-only mirror — by design, since
+    # an account that stops appearing in vouchers may still have reconciliation
+    # matches hanging off it — so once a sync had written the FeiHe group's ~100
+    # Chinese accounts into it, no later sync could take them out again. Narrowing
+    # the sync's scope (which this release also does) only stops it adding more.
+    #
+    # Deriving the list from journal_voucher_lines instead needs no delete and
+    # cannot drift: an account with no line on this book has no ledger side, so a
+    # reconciliation against it could never balance. Already-linked accounts stay
+    # in the list regardless, or an existing mapping would silently vanish from
+    # the picker that is supposed to show it.
+    from app.models.bank import BankAccount
+    from app.models.journal_voucher import JournalVoucherLine
+
+    used = select(JournalVoucherLine.bank_account_id).where(
+        JournalVoucherLine.bank_account_id.is_not(None)).distinct()
+    linked = select(BankAccount.nc_bank_account_code).where(
+        BankAccount.nc_bank_account_code.is_not(None))
     rows = (await db.execute(
-        select(NcBankAccount).order_by(NcBankAccount.code))).scalars().all()
+        select(NcBankAccount)
+        .where(or_(NcBankAccount.id.in_(used), NcBankAccount.code.in_(linked)))
+        .order_by(NcBankAccount.code))).scalars().all()
     return {
         "accounts": [{"code": r.code, "name": r.name, "acc_num": r.acc_num,
                       "bank_name": r.bank_name, "currency": r.currency,

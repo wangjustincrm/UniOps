@@ -695,3 +695,57 @@ async def test_a_reader_cannot_import(client, scene):
         f"/finance/v1/bank-recon/{scene['account'].id}/statements",
         files={"file": ("x.pdf", b"%PDF", "application/pdf")}, headers=_h(role="ap_clerk"))
     assert r.status_code == 403
+
+
+# ── the NC account picker ─────────────────────────────────────────────────────
+
+async def test_nc_account_picker_offers_only_this_book_and_what_is_linked(
+        client, scene, db_session):
+    """Reported from production: the picker listed 123 accounts, ~100 of them the
+    FeiHe group's Chinese ones.
+
+    Narrowing the sync's scope could not fix it on its own. nc_bank_accounts is an
+    upsert-only mirror by design — an account that stops appearing in vouchers may
+    still have reconciliation matches hanging off it — so rows a previous sync
+    wrote stay for good, and no later sync takes them back out. Deriving the list
+    from journal_voucher_lines is self-correcting instead: an account with no line
+    on this book has no ledger side, so a reconciliation against it could never
+    balance.
+    """
+    from app.models.nc_bank_account import NcBankAccount
+
+    # An account this book DOES post to but nobody has linked yet — the case the
+    # whole picker exists for. Without this assertion a rule that only ever
+    # offered already-linked accounts would pass every check below, and setting up
+    # a new account would become impossible.
+    used_unlinked = NcBankAccount(nc_pk="NCBANK3", code="4010351",
+                                  name="RBC USD", currency="USD")
+    # The group's account: in the mirror because an earlier sync wrote it, but no
+    # line on this book ever touches it and nobody has linked it. This is the ~100
+    # that were cluttering the production picker.
+    group_account = NcBankAccount(nc_pk="NCBANK4", code="23050162515100000035",
+                                  name="中国建设银行股份有限公司齐齐哈尔分行0035",
+                                  currency="CNY")
+    db_session.add_all([used_unlinked, group_account])
+    await db_session.flush()
+    jv = JournalVoucher(jv_number="JV-202607-9001", voucher_word="JV",
+                        voucher_date=date(2026, 7, 9), fiscal_period="2026-07",
+                        status=POSTED, nc_source_pk="NCPK9001", source_service="nc")
+    db_session.add(jv)
+    await db_session.flush()
+    db_session.add(JournalVoucherLine(
+        jv_id=jv.id, line_no=1, account_code="100201", local_debit=D("10"),
+        orig_debit=D("10"), currency="CAD", bank_account_id=used_unlinked.id))
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/bank-recon/nc-accounts", headers=_h())
+    assert r.status_code == 200, r.text
+    codes = {a["code"] for a in r.json()["accounts"]}
+
+    assert "4010351" in codes   # ★ posted to by this book, not yet linked -> offered
+    assert "1033760" in codes   # linked to a BankAccount -> offered whatever else
+    # 1060 IS offered: the scene's inter-bank transfer posts its far leg there, so
+    # it has a ledger side like any other.
+    assert "1060" in codes
+    # ★ the one that must NOT be there
+    assert "23050162515100000035" not in codes
