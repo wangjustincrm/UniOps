@@ -1,8 +1,9 @@
 /**
- * AP Duplicate Invoices — invoice numbers NC has on more than one payable.
+ * AP Duplicate Invoices — vendor + invoice numbers NC has on more than one payable.
  *
- * NC65 does not check that an invoice number is unique, and the same invoice
- * has been entered and paid twice. NC cannot be changed from here, so this page
+ * Finance's rule: vendor name + invoice number is unique. NC65 does not check
+ * it, and the same invoice has been entered and paid twice. The same number
+ * from two different vendors is NOT a duplicate. NC cannot be changed from here, so this page
  * is the check NC does not have: it is recomputed from the NC mirror on every
  * load, and the hourly AP sync raises one standing task for AP when something
  * new appears (finance-api services/ap_duplicate_invoice_tasks.py).
@@ -11,7 +12,8 @@
  *   Stop approval  — a draft repeats an invoice already entered; do not approve it
  *   Stop payment   — an approved extra copy still has a balance; hold it back
  *   Recover        — every copy is settled; the supplier was paid twice
- *   Review         — same number, different amounts; usually a deliberate split
+ *   Review         — same vendor and number, different amounts; still a breach,
+ *                    cleared by reviewing it (e.g. as a deliberate split)
  *
  * A group the reviewer confirms is fine is marked reviewed with a reason. The
  * verdict covers the bills that were on screen: if another copy lands later,
@@ -26,7 +28,7 @@ import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-type Kind = 'exact' | 'cross_supplier' | 'pending' | 'amount_differs'
+type Kind = 'exact' | 'amount_differs' | 'pending'
 type Status = 'stop_approval' | 'stop_payment' | 'recover' | 'review'
 
 interface CcyTotals { findings: number; extra_amount: string; open_exposure: string }
@@ -46,7 +48,7 @@ interface Review {
   reason: string; note: string | null; reviewed_by_name: string | null; reviewed_at: string | null
 }
 interface Finding {
-  key: string; kind: Kind; kind_label: string; status: Status
+  key: string; kind: Kind; kind_label: string; vendor: string; status: Status
   invoice_no: string | null; invoice_no_norm: string; currency: string | null
   supplier_code: string | null; supplier_name: string | null; amount: string | null
   extra_copies: number; extra_amount: string; open_exposure: string
@@ -56,12 +58,11 @@ interface Finding {
 interface Resp { summary: Record<Kind, KindSummary>; total: number; findings: Finding[] }
 interface Reason { code: string; label: string }
 
-const KIND_ORDER: Kind[] = ['exact', 'cross_supplier', 'pending', 'amount_differs']
+const KIND_ORDER: Kind[] = ['exact', 'amount_differs', 'pending']
 const KIND_TAB: Record<Kind, string> = {
-  exact: 'Same invoice, same amount',
-  cross_supplier: 'Across supplier codes',
+  exact: 'Same vendor + invoice, same amount',
+  amount_differs: 'Same vendor + invoice, different amounts',
   pending: 'Unapproved drafts',
-  amount_differs: 'Different amounts',
 }
 const STATUS: Record<Status, { label: string; cls: string; hint: string }> = {
   stop_approval: { label: 'Stop approval', cls: 'bg-red-50 text-red-700 border-red-200',
@@ -71,7 +72,7 @@ const STATUS: Record<Status, { label: string; cls: string; hint: string }> = {
   recover: { label: 'Recover', cls: 'bg-amber-50 text-amber-800 border-amber-200',
              hint: 'Every copy is settled — the supplier was paid more than once' },
   review: { label: 'Review', cls: 'bg-neutral-50 text-neutral-600 border-neutral-200',
-            hint: 'Same number, different amounts — usually one invoice split on purpose' },
+            hint: 'Same vendor and invoice number, different amounts — check it; mark a deliberate split as reviewed' },
 }
 
 function money(v: string | null | undefined) {
@@ -279,8 +280,10 @@ export default function ApDuplicateInvoicesPage() {
       <div className="mx-auto max-w-7xl">
         <div className="mb-5 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm leading-relaxed text-neutral-700">
           <p className="mb-1.5">
-            NC does not check that an invoice number is unique, so the same invoice can be entered —
-            and paid — more than once. This page is that check. It reads NC&rsquo;s payables after
+            A vendor&rsquo;s invoice number must be unique. NC does not check it, so the same invoice
+            can be entered — and paid — more than once. This page is that check: every group is one
+            vendor and one invoice number on more than one payable, whatever the amounts. The same
+            number from two different vendors is not a duplicate. It reads NC&rsquo;s payables after
             every AP sync (hourly), and AP gets a task when something new turns up.
           </p>
           <p className="text-neutral-500">
@@ -292,7 +295,7 @@ export default function ApDuplicateInvoicesPage() {
           </p>
         </div>
 
-        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-4 grid gap-3 sm:grid-cols-3">
           {KIND_ORDER.map((k) => {
             const s = summary?.[k]
             const byCcy = Object.entries(s?.by_currency ?? {})
@@ -311,7 +314,7 @@ export default function ApDuplicateInvoicesPage() {
                   <span className="font-mono text-base font-semibold text-neutral-900">{s?.unreviewed ?? '—'}</span>
                   {' '}to review{s && s.reviewed > 0 && <> · {s.reviewed} reviewed</>}
                 </p>
-                {(k === 'exact' || k === 'cross_supplier') && byCcy.map(([ccy, t]) => (
+                {k === 'exact' && byCcy.map(([ccy, t]) => (
                   <p key={ccy} className="mt-0.5 text-[11px] text-neutral-500">
                     <span className="font-mono">{ccy}</span> billed twice {money(t.extra_amount)}
                     {Number(t.open_exposure) > 0 && (
@@ -319,9 +322,6 @@ export default function ApDuplicateInvoicesPage() {
                     )}
                   </p>
                 ))}
-                {!s?.actionable && s && (
-                  <p className="mt-0.5 text-[11px] text-neutral-400">Not counted in the AP task</p>
-                )}
               </button>
             )
           })}

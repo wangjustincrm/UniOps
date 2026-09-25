@@ -1,49 +1,47 @@
-"""The same invoice on more than one NC payable — NC does not check, so we do.
+"""Vendor + invoice number must be unique on NC payables — NC does not check.
 
-NC65 accepts any invoice number on a payable, however many payables already
-carry it, and it has been paid twice because of it. NC is the book of record
-and cannot be changed from here, so this is DETECTION on the mirror: it runs
-after every AP sync (hourly, see app/tasks/nc_ap_sync_scheduler.py) and raises
-one standing task for AP (ap_duplicate_invoice_tasks.py). The earlier it fires
-the cheaper it is: a draft can simply not be approved, an approved copy can be
-held back from the next payment run, and only a copy that was already paid has
-to be recovered from the supplier.
+NC65 accepts any invoice number on a payable, however many payables of the
+same vendor already carry it, and the same invoice has been paid twice because
+of it. The rule finance set (2026-09-25): **vendor name + invoice number is
+unique**. The same number from two different vendors is not a duplicate —
+invoice numbers are the vendor's, and "1" or "000001" from two freelancers are
+two invoices.
 
-What production said on 2026-09-25, which is what shaped the rules below:
+NC is the book of record and cannot be changed from here, so this is DETECTION
+on the mirror: it runs after every AP sync (hourly, see
+app/tasks/nc_ap_sync_scheduler.py) and raises one standing task for AP
+(ap_duplicate_invoice_tasks.py). The earlier it fires the cheaper it is: a draft
+can simply not be approved, an approved copy can be held back from the next
+payment run, and only a copy that was already paid has to be recovered.
 
-  * 213 (supplier, invoice number) pairs sit on 2+ approved payables. Most of
-    them are NOT duplicates, and a check that fires on all of them would be
-    ignored within a week:
-      - a bill and its reversal: KLN 0006814591-01 +2,746.71 twice and
-        -2,746.71 once is ONE live copy, not three;
-      - the supply chain settles one invoice into two bills on the same day
-        (goods and freight — Gertex, Doverco, Agropur);
-      - the milk bills carry month labels ("Aug", "Jul") in the invoice field.
-  * Once an equal credit is netted off, 36 pairs still have the same amount
-    on two or more live copies — 145,053.61 of duplicate billing. The biggest,
-    Jane Media 1497 (50,722.88 CAD) and FrieslandCampina 9007737328 (45,800.00
-    USD), were paid twice. Several still had a copy open.
-  * The same number and amount under TWO supplier codes is the vendor-master
-    version of the same mistake (Nielsen 9301122753, 3,860.84, under
-    "ACNieisen Company" and "Nielsen Consumer LLC", August and September 2026).
-  * Drafts collide too — 507848 was on four unapproved payables at once.
+What still does NOT break the rule: a bill and the credit that reverses it.
+Quoting the original invoice number on the credit is how NC corrects a payable,
+and afterwards only one copy stands (KLN 0006814591-01: +2,746.71 twice,
+-2,746.71 once = one live copy). 64 of the vendor/number pairs on production
+are exactly that. Netting is per currency and exact amount.
 
-Hence four kinds of finding, in descending order of how sure we are:
+Three kinds of finding, all counted in the AP task:
 
-  exact           same supplier, currency, invoice number and amount, on 2+
-                  live copies after equal credits are netted off
-  cross_supplier  same invoice number and amount under 2+ supplier codes
-  pending         an UNAPPROVED payable (last PENDING_DAYS days) whose supplier
-                  and invoice number are already on another payable — the one
-                  moment it can be stopped before it is even owed
-  amount_differs  same supplier and invoice number, live copies of different
-                  amounts. Mostly legitimate splits; shown for review, never
-                  counted in the task
+  exact           the same amount on 2+ live copies — the plain double entry
+                  (production 2026-09-25: 36 groups, 94,999.54 CAD and
+                  50,054.07 USD billed twice)
+  amount_differs  2+ live copies, different amounts. Often the supply chain
+                  splitting one invoice into goods and freight bills; finance
+                  decided it is still a breach and is cleared by a review
+                  ("split") rather than left off the list (113 groups)
+  pending         an UNAPPROVED payable (last PENDING_DAYS days) repeating a
+                  vendor/number already entered — the one moment it can be
+                  stopped before it is even owed
+
+The vendor is matched by NAME (trimmed, case- and whitespace-folded), not by
+supplier code — that is the rule as finance stated it. On production every
+name maps to exactly one code today, so the two agree; keying on the name keeps
+the rule true if a vendor is ever keyed twice under one name.
 
 Matching is on `invoice_no_norm` (upper-cased, whitespace removed — see
-nc_ap_sync.normalise_invoice_no). An entry is one (bill, invoice number):
-a bill can carry several invoices (1,873 of them do), and the amount that
-matters is the invoice's share of it, not the bill total.
+nc_ap_sync.normalise_invoice_no). An entry is one (bill, invoice number): a
+bill can carry several invoices (1,873 of them do), and the amount that matters
+is the invoice's share of it, not the bill total.
 
 Findings are recomputed on every read and never stored. The only thing stored
 is finance's verdict on one (0039_ap_inv_dup_reviews), and a verdict covers a
@@ -51,6 +49,7 @@ finding only while no bill has been added to it since.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -61,30 +60,35 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 EXACT = "exact"
-CROSS_SUPPLIER = "cross_supplier"
-PENDING = "pending"
 AMOUNT_DIFFERS = "amount_differs"
+PENDING = "pending"
 
-KINDS = (EXACT, CROSS_SUPPLIER, PENDING, AMOUNT_DIFFERS)
+KINDS = (EXACT, AMOUNT_DIFFERS, PENDING)
 
 KIND_LABELS = {
-    EXACT: "Same supplier, same invoice number, same amount",
-    CROSS_SUPPLIER: "Same invoice number and amount under different supplier codes",
-    PENDING: "Unapproved payable repeats an invoice number already entered",
-    AMOUNT_DIFFERS: "Same supplier and invoice number, different amounts",
+    EXACT: "Same vendor and invoice number, same amount",
+    AMOUNT_DIFFERS: "Same vendor and invoice number, different amounts",
+    PENDING: "Unapproved payable repeats a vendor's invoice number already entered",
 }
 
-#: The kinds that are a duplicate until someone says otherwise. AMOUNT_DIFFERS
-#: is left out: on production it is overwhelmingly one invoice split across
-#: bills on purpose, and a task that is mostly noise stops being read.
-ACTIONABLE = (EXACT, CROSS_SUPPLIER, PENDING)
+#: Every kind breaks the rule; all of them count toward the AP task.
+ACTIONABLE = KINDS
 
 #: How far back an unapproved payable still counts as work in progress. Older
 #: drafts are abandoned documents; AP Subledger Health's "Never approved" view
 #: already lists those and marks the ones an approved bill superseded.
 PENDING_DAYS = 90
 
+#: Shown for a group whose live copies are in more than one currency: its
+#: money cannot be added up, so none is reported for it.
+MIXED = "MIXED"
+
 _ZERO = Decimal("0")
+
+
+def vendor_key(name: str | None) -> str:
+    """The vendor half of the uniqueness key."""
+    return re.sub(r"\s+", " ", (name or "").strip()).upper()
 
 
 @dataclass(frozen=True)
@@ -106,21 +110,25 @@ class Entry:
     open: Decimal
     dismissed: bool = False
 
+    @property
+    def vendor(self) -> str:
+        return vendor_key(self.supplier_name)
+
 
 @dataclass
 class Finding:
     kind: str
     invoice_no_norm: str
     invoice_no: str | None
+    vendor: str
     currency: str | None
     supplier_code: str | None
     supplier_name: str | None
     amount: Decimal | None
     entries: list[Entry]
-    #: Copies beyond the first. For EXACT/CROSS_SUPPLIER, the number of times
-    #: this invoice was billed once too often.
+    #: Live copies beyond the first.
     extra_copies: int = 0
-    #: What was billed on those extra copies.
+    #: For EXACT: what was billed on those extra copies.
     extra_amount: Decimal = _ZERO
     #: The part of extra_amount NC still shows as payable — what can still be
     #: stopped rather than recovered.
@@ -131,9 +139,10 @@ class Finding:
     key: str = field(init=False)
 
     def __post_init__(self):
-        amt = f"{self.amount:.2f}" if self.amount is not None else "*"
-        self.key = ":".join((self.kind, self.currency or "-", self.supplier_code or "*",
-                             self.invoice_no_norm, amt))
+        # vendor + invoice number IS the rule, so it is the identity; the kind
+        # rides along because a pending draft becoming an approved copy is a
+        # new situation the earlier verdict never covered.
+        self.key = ":".join((self.kind, self.vendor, self.invoice_no_norm))
 
     @property
     def bill_nos(self) -> list[str]:
@@ -152,14 +161,13 @@ class Finding:
 # ── detection (pure) ─────────────────────────────────────────────────────────
 
 def _live_counts(entries: list[Entry]) -> Counter:
-    """Positive amount -> copies still standing once equal credits are netted.
-
-    A bill and its full reversal leave nothing; two bills and one reversal
-    leave one. Zero-amount entries are placeholders and count for nothing.
-    """
-    pos = Counter(e.amount for e in entries if e.amount > 0)
-    neg = Counter(-e.amount for e in entries if e.amount < 0)
-    return Counter({a: n - neg[a] for a, n in pos.items() if n - neg[a] > 0})
+    """(currency, positive amount) -> copies still standing once equal credits
+    are netted. A bill and its full reversal leave nothing; two bills and one
+    reversal leave one. Zero-amount entries are placeholders and count for
+    nothing."""
+    pos = Counter((e.currency, e.amount) for e in entries if e.amount > 0)
+    neg = Counter((e.currency, -e.amount) for e in entries if e.amount < 0)
+    return Counter({k: n - neg[k] for k, n in pos.items() if n - neg[k] > 0})
 
 
 def _exposure(entries: list[Entry], extra_amount: Decimal) -> Decimal:
@@ -171,6 +179,11 @@ def _exposure(entries: list[Entry], extra_amount: Decimal) -> Decimal:
 
 def _name(entries: list[Entry]) -> str | None:
     return next((e.supplier_name for e in entries if e.supplier_name), None)
+
+
+def _code(entries: list[Entry]) -> str | None:
+    codes = {e.supplier_code for e in entries if e.supplier_code}
+    return next(iter(codes)) if len(codes) == 1 else None
 
 
 def _raw(entries: list[Entry]) -> str | None:
@@ -187,85 +200,54 @@ def detect(entries: list[Entry], *, today: date | None = None,
     today = today or date.today()
     pending_since = today - timedelta(days=pending_days)
 
-    by_invoice: dict[str, list[Entry]] = defaultdict(list)
+    groups: dict[tuple[str, str], list[Entry]] = defaultdict(list)
     for e in entries:
         if e.invoice_no_norm:
-            by_invoice[e.invoice_no_norm].append(e)
+            groups[(e.vendor, e.invoice_no_norm)].append(e)
 
     findings: list[Finding] = []
-    for norm, group in by_invoice.items():
+    for (vendor, norm), group in groups.items():
         live = [e for e in group if e.effective]
+        counts = _live_counts(live)
+        standing = sum(counts.values())
 
-        # Same supplier: EXACT, else AMOUNT_DIFFERS.
-        by_supplier: dict[tuple, list[Entry]] = defaultdict(list)
-        for e in live:
-            by_supplier[(e.supplier_code, e.currency)].append(e)
-        for (sc, ccy), bucket in by_supplier.items():
-            counts = _live_counts(bucket)
-            exact_amounts = [a for a, n in counts.items() if n >= 2]
-            for a in exact_amounts:
-                involved = [e for e in bucket if e.amount in (a, -a)]
-                extra = counts[a] - 1
-                findings.append(Finding(
-                    kind=EXACT, invoice_no_norm=norm, invoice_no=_raw(involved),
-                    currency=ccy, supplier_code=sc, supplier_name=_name(involved),
-                    amount=a, entries=_order(involved), extra_copies=extra,
-                    extra_amount=a * extra,
-                    open_exposure=_exposure(involved, a * extra)))
-            if not exact_amounts and sum(counts.values()) >= 2:
-                findings.append(Finding(
-                    kind=AMOUNT_DIFFERS, invoice_no_norm=norm, invoice_no=_raw(bucket),
-                    currency=ccy, supplier_code=sc, supplier_name=_name(bucket),
-                    amount=None, entries=_order(bucket),
-                    extra_copies=sum(counts.values()) - 1))
+        # Approved copies: one finding per vendor + number.
+        if standing >= 2:
+            ccys = {c for c, _ in counts}
+            ccy = next(iter(ccys)) if len(ccys) == 1 else MIXED
+            # Amounts entered more than once. Money is reported for these only,
+            # and only when every copy is in one currency.
+            doubled = {k: n for k, n in counts.items() if n >= 2}
+            extra = (sum((a * (n - 1) for (_, a), n in doubled.items()), _ZERO)
+                     if ccy != MIXED else _ZERO)
+            repeated = [e for e in live if (e.currency, abs(e.amount)) in doubled]
+            # One amount, and every live copy is it: the plain double entry.
+            single = len(doubled) == 1 and next(iter(doubled.values())) == standing
+            findings.append(Finding(
+                kind=EXACT if doubled else AMOUNT_DIFFERS,
+                invoice_no_norm=norm, invoice_no=_raw(live), vendor=vendor,
+                currency=ccy, supplier_code=_code(live), supplier_name=_name(live),
+                amount=next(iter(doubled))[1] if single else None,
+                entries=_order(live), extra_copies=standing - 1, extra_amount=extra,
+                open_exposure=_exposure(repeated, extra) if extra else _ZERO))
 
-        # Different suppliers, same number and amount.
-        by_ccy: dict[str | None, list[Entry]] = defaultdict(list)
-        for e in live:
-            by_ccy[e.currency].append(e)
-        for ccy, bucket in by_ccy.items():
-            per_supplier = {sc: _live_counts([e for e in bucket if e.supplier_code == sc])
-                            for sc in {e.supplier_code for e in bucket}}
-            if len(per_supplier) < 2:
-                continue
-            amounts = {a for c in per_supplier.values() for a in c}
-            for a in amounts:
-                holders = [sc for sc, c in per_supplier.items() if c.get(a)]
-                if len(holders) < 2:
-                    continue
-                involved = [e for e in bucket
-                            if e.supplier_code in holders and e.amount in (a, -a)]
-                copies = sum(per_supplier[sc][a] for sc in holders)
-                extra = copies - 1
-                findings.append(Finding(
-                    kind=CROSS_SUPPLIER, invoice_no_norm=norm, invoice_no=_raw(involved),
-                    currency=ccy, supplier_code=None, supplier_name=None, amount=a,
-                    entries=_order(involved), extra_copies=extra, extra_amount=a * extra,
-                    open_exposure=_exposure(involved, a * extra)))
-
-        # Unapproved payables repeating a number the same supplier already has.
-        # Only a positive draft can be a second copy: a draft credit note that
-        # quotes the invoice it reverses is the correct way to undo one. And an
-        # approved bill that was fully reversed no longer counts as "already
-        # entered" — re-entering it corrected is the other half of that workflow.
+        # Unapproved payables repeating a vendor/number already entered. Only a
+        # positive draft can be a second copy: a draft credit note quoting the
+        # invoice it reverses is the correct way to undo one. And an approved
+        # bill that was fully reversed no longer counts as "already entered" —
+        # re-entering it corrected is the other half of that workflow.
         drafts = [e for e in group
                   if not e.effective and not e.dismissed and e.amount > 0
                   and e.bill_date is not None and e.bill_date >= pending_since]
-        by_draft_supplier: dict[str | None, list[Entry]] = defaultdict(list)
-        for d in drafts:
-            by_draft_supplier[d.supplier_code].append(d)
-        for sc, ds in by_draft_supplier.items():
-            same = [e for e in group if e.supplier_code == sc]
-            others_live = [e for e in same if e.effective]
-            standing = sum(_live_counts(others_live).values())
-            if not standing and len({d.bill_no for d in ds}) < 2:
-                continue
-            involved = [e for e in same if e.effective or e in ds]
+        draft_bills = {d.bill_no for d in drafts}
+        if drafts and (standing or len(draft_bills) >= 2):
+            involved = live + drafts
             findings.append(Finding(
                 kind=PENDING, invoice_no_norm=norm, invoice_no=_raw(involved),
-                currency=ds[0].currency, supplier_code=sc, supplier_name=_name(involved),
+                vendor=vendor, currency=drafts[0].currency,
+                supplier_code=_code(involved), supplier_name=_name(involved),
                 amount=None, entries=_order(involved),
-                extra_copies=len({d.bill_no for d in ds})))
+                extra_copies=len(draft_bills)))
 
     rank = {k: i for i, k in enumerate(KINDS)}
     findings.sort(key=lambda f: (rank[f.kind], -f.open_exposure, -f.extra_amount,
@@ -401,7 +383,7 @@ def _entry_json(e: Entry, pays: dict) -> dict:
 def finding_json(f: Finding, pays: dict | None = None) -> dict:
     pays = pays or {}
     return {
-        "key": f.key, "kind": f.kind, "kind_label": KIND_LABELS[f.kind],
+        "key": f.key, "kind": f.kind, "kind_label": KIND_LABELS[f.kind], "vendor": f.vendor,
         "status": f.status, "invoice_no": f.invoice_no, "invoice_no_norm": f.invoice_no_norm,
         "currency": f.currency, "supplier_code": f.supplier_code,
         "supplier_name": f.supplier_name,
