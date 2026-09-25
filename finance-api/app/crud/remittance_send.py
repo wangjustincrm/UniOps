@@ -107,6 +107,79 @@ async def _upsert(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
     await db.flush()
 
 
+def _result_base(g: PayeeGroup) -> dict:
+    return {"recipient_kind": g.recipient_kind, "party_id": str(g.party_id),
+            "party_name": g.party_name}
+
+
+def _from_header(sender: RemittanceSettings) -> str:
+    return (f"{sender.from_name} <{sender.from_email}>"
+            if sender.from_name else sender.from_email)
+
+
+async def _skip_reason(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
+                       group: PayeeGroup,
+                       resend_ids: set[tuple[str, uuid.UUID]]) -> str | None:
+    """Why this payee will NOT be emailed, or None if it will be.
+
+    The one refusal rule, shared by send_groups (which enforces it) and
+    render_groups (which shows it to the operator before they confirm) — so
+    the confirmation screen can never promise an email the send then skips,
+    or hide one it then sends.
+    """
+    if group.block_reasons or not group.email:
+        # The real group builder always appends BLOCK_MISSING_EMAIL
+        # whenever email is blank, so block_reasons is never empty here.
+        return ", ".join(group.block_reasons)
+    if (group.recipient_kind, group.party_id) not in resend_ids:
+        prev = await rem.last_send_for_group(
+            db, scope_kind=scope_kind, scope_id=scope_id, group=group)
+        if prev is not None and prev["status"] == SENT:
+            return "Already sent — resend not requested"
+    return None
+
+
+async def render_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
+                        groups: list[PayeeGroup], reference: str,
+                        payment_method: str, company_name: str,
+                        sender: RemittanceSettings,
+                        resend_ids: set[tuple[str, uuid.UUID]] | None = None,
+                        payment_date: date | None = None) -> list[dict]:
+    """The emails send_groups WOULD send for these arguments, without sending
+    any of them — the operator's confirmation step before an irreversible
+    send. Same skip rule (`_skip_reason`), same `render()` call, same
+    From/To/Cc as send_groups, so what the operator reviews is what the
+    payee receives.
+
+    Read-only: no email, no log row, no commit. A payee send_groups would
+    skip comes back `skipped` with the same reason; one whose template fails
+    to render comes back `failed` with the error (send_groups would log that
+    failure — this does not).
+    """
+    results: list[dict] = []
+    resend_ids = resend_ids or set()
+    for g in groups:
+        base = _result_base(g)
+        skip = await _skip_reason(db, scope_kind=scope_kind, scope_id=scope_id,
+                                  group=g, resend_ids=resend_ids)
+        if skip is not None:
+            results.append({**base, "status": "skipped", "error": skip})
+            continue
+        try:
+            subject, html = render(g, company_name=company_name, reference=reference,
+                                    payment_method=payment_method,
+                                    template=sender.template,
+                                    logo_data_url=sender.logo_data_url,
+                                    payment_date=payment_date)
+        except Exception as exc:  # noqa: BLE001 — isolate one payee's failure
+            results.append({**base, "status": "failed", "error": str(exc)[:500]})
+            continue
+        results.append({**base, "status": "ready", "error": None,
+                        "from": _from_header(sender), "to": g.email,
+                        "cc": sender.cc_email, "subject": subject, "html": html})
+    return results
+
+
 async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
                        groups: list[PayeeGroup], reference: str,
                        payment_method: str, company_name: str,
@@ -157,22 +230,12 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
     results: list[dict] = []
     resend_ids = resend_ids or set()
     for g in groups:
-        base = {"recipient_kind": g.recipient_kind, "party_id": str(g.party_id),
-                "party_name": g.party_name}
-        if g.block_reasons or not g.email:
-            # The real group builder always appends BLOCK_MISSING_EMAIL
-            # whenever email is blank, so block_reasons is never empty here.
-            results.append({**base, "status": "skipped",
-                             "error": ", ".join(g.block_reasons)})
+        base = _result_base(g)
+        skip = await _skip_reason(db, scope_kind=scope_kind, scope_id=scope_id,
+                                  group=g, resend_ids=resend_ids)
+        if skip is not None:
+            results.append({**base, "status": "skipped", "error": skip})
             continue
-
-        if (g.recipient_kind, g.party_id) not in resend_ids:
-            prev = await rem.last_send_for_group(
-                db, scope_kind=scope_kind, scope_id=scope_id, group=g)
-            if prev is not None and prev["status"] == SENT:
-                results.append({**base, "status": "skipped",
-                                 "error": "Already sent — resend not requested"})
-                continue
 
         try:
             subject, html = render(g, company_name=company_name, reference=reference,
@@ -204,8 +267,7 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
                 smtp_host=sender.smtp_host, smtp_port=sender.smtp_port,
                 smtp_user=sender.smtp_user, smtp_password=sender.smtp_password,
                 smtp_use_tls=sender.smtp_use_tls,
-                smtp_from=(f"{sender.from_name} <{sender.from_email}>"
-                           if sender.from_name else sender.from_email),
+                smtp_from=_from_header(sender),
             )
         except Exception as exc:  # noqa: BLE001 — isolate one payee's failure
             # send_email() already logs and re-raises SMTP failures — no
