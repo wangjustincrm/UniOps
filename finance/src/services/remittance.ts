@@ -173,3 +173,32 @@ export function sendRemittance(
   }
   return financeApi.post<SendResult>(`${base(scope)}/send`, { recipients, payment_date })
 }
+
+/** One payee's email exactly as `sendRemittance` would deliver it, from the
+ * render endpoint. `ready` carries the envelope and body; `skipped` (blocked,
+ * or already sent without resend) and `failed` (template error) carry only
+ * `error` — the send would not email them either. */
+export type RenderedEmail = SendResultItem & (
+  | { status: 'ready'; from: string; to: string; cc: string | null; subject: string; html: string }
+  | { status: 'skipped' | 'failed' }
+)
+
+/**
+ * The emails `sendRemittance` would send for the same arguments — nothing is
+ * sent and nothing is logged. Backs the panel's confirmation step: sending is
+ * irreversible, so the operator reviews what the payee will receive before
+ * the real send. Same body, same server-side gates (role, future date).
+ */
+export function renderRemittance(
+  scope: RemittanceScope,
+  recipients: { recipient_kind: string; party_id: string; resend?: boolean }[] | null,
+  paymentDate?: string,
+): Promise<{ emails: RenderedEmail[] }> {
+  const payment_date = paymentDate || undefined
+  if (scope.kind === 'selection') {
+    return financeApi.post<{ emails: RenderedEmail[] }>(
+      '/payments/remittance/selection/render',
+      { payment_ids: scope.paymentIds, recipients, payment_date })
+  }
+  return financeApi.post<{ emails: RenderedEmail[] }>(`${base(scope)}/render`, { recipients, payment_date })
+}
