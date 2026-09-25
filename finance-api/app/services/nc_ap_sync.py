@@ -749,6 +749,14 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
             pays, pay_lines = transform_payments(ex)
             counts |= _write_payments(cur, pays, pay_lines, full=(mode == "full"))
             ok, tie = compute_tie_out(cur, ex.nc_totals)
+
+            # NC does not keep invoice numbers unique on payables, and it has
+            # paid the same invoice twice. Checked here, on the rows this run
+            # just wrote and in its transaction, so a new copy reaches AP within
+            # one sync interval; one standing task, closes itself when clean.
+            from app.services import ap_duplicate_invoice_tasks
+            outcome = ap_duplicate_invoice_tasks.raise_or_clear(cur, run_id)
+            logger.info("NC AP sync %s: duplicate-invoice task %s", run_id, outcome)
             con.commit()
 
             # Advance the watermark only to what we actually stored. If NC gave

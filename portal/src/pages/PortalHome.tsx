@@ -266,6 +266,18 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
   // services/nc_purchase_sync/error_tasks.py); system_admin only.
   import_erp_vendor: 'Import ERP Vendor',
   resolve_nc_sync_error: 'Resolve NC Sync Error',
+  // Standing finance-api tasks whose subject is a set of NC rows, not a
+  // document: services/jv_validation_tasks.py and ap_duplicate_invoice_tasks.py.
+  resolve_jv_validation: 'Resolve JV Validation Findings',
+  resolve_ap_duplicate_invoice: 'Resolve Duplicate NC Invoices',
+}
+
+// finance-api's standing tasks. document_id is the sync RUN that raised them,
+// not a page, so each one opens the Finance page that lists its findings.
+// Without this the DOC_PATH fallback yields EPMS /dashboard/<run-uuid>.
+const FINANCE_TASK_PATH: Record<string, string> = {
+  jv_validation: '/finance/jv-validation',
+  ap_duplicate_invoice: '/finance/ap-duplicate-invoices',
 }
 
 const VMS_DOC_LABELS: Record<string, string> = {
@@ -552,6 +564,9 @@ export default function PortalHome() {
         // OA-owned doc surfaced via approval-api → deep-link into OA, not EPMS.
         module = 'EXPENSE'; base = OA_URL
         path = `${oaPath}/${t.document_id}`
+      } else if (FINANCE_TASK_PATH[t.document_type]) {
+        base = FINANCE_URL
+        path = FINANCE_TASK_PATH[t.document_type]
       } else if (t.document_type.toLowerCase() === 'budget_plan') {
         // Budget is owned by the Finance module — deep-link into Finance (which
         // wraps the EPMS plan editor in Portal chrome), not bare EPMS.

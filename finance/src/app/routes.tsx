@@ -2,6 +2,7 @@ import type { RouteDef } from '@uniops/shell'
 import AccountsPayablePage from '@/pages/finance/AccountsPayablePage'
 import ApReconciliationPage from '@/pages/finance/ApReconciliationPage'
 import ApLedgerHealthPage from '@/pages/finance/ApLedgerHealthPage'
+import ApDuplicateInvoicesPage from '@/pages/finance/ApDuplicateInvoicesPage'
 import ApCashFlowPage from '@/pages/finance/ApCashFlowPage'
 import AccountsReceivablePage from '@/pages/finance/AccountsReceivablePage'
 import GeneralLedgerPage from '@/pages/finance/GeneralLedgerPage'
@@ -29,6 +30,7 @@ export const financeRoutes: RouteDef[] = [
   { path: '/finance/ap', element: <AccountsPayablePage />, tab: { title: 'Accounts Payable', icon: 'CreditCard', keyStrategy: 'static', pinned: true } },
   { path: '/finance/ap-recon', element: <ApReconciliationPage />, tab: { title: 'AP Reconciliation', icon: 'ClipboardCheck', keyStrategy: 'static' } },
   { path: '/finance/ap-ledger-health', element: <ApLedgerHealthPage />, tab: { title: 'AP Subledger Health', icon: 'HeartPulse', keyStrategy: 'static' } },
+  { path: '/finance/ap-duplicate-invoices', element: <ApDuplicateInvoicesPage />, tab: { title: 'AP Duplicate Invoices', icon: 'CopyX', keyStrategy: 'static' } },
   { path: '/finance/ap-cash-flow', element: <ApCashFlowPage />, tab: { title: 'AP Cash Flow', icon: 'TrendingUp', keyStrategy: 'static' } },
   { path: '/finance/ar', element: <AccountsReceivablePage />, tab: { title: 'Accounts Receivable', icon: 'Receipt', keyStrategy: 'static' } },
   { path: '/finance/gl', element: <GeneralLedgerPage />, tab: { title: 'General Ledger', icon: 'BookOpen', keyStrategy: 'static' } },
