@@ -1,4 +1,4 @@
-"""Duplicate invoice numbers on NC payables — rules, verdicts, task, wiring.
+"""Vendor + invoice number uniqueness on NC payables — rules, verdicts, task, wiring.
 
 The rules are tested pure first (no DB): every kind gets the case that MUST
 fire and the look-alike that must NOT, because the look-alikes are most of
@@ -91,9 +91,21 @@ def test_open_copy_is_stop_payment_and_exposure_is_capped():
     assert both.open_exposure == Decimal("544.14")
 
 
-def test_different_currency_is_not_the_same_bill():
-    assert kinds(dup.detect([E("B1", "272.24", ccy="USD"), E("B2", "272.24", ccy="CAD")],
-                            today=TODAY)) == []
+def test_same_vendor_and_number_in_two_currencies_still_breaks_the_rule():
+    """Uniqueness is vendor + number; the currency is not part of it. The money
+    cannot be added across currencies, so none is reported."""
+    found = dup.detect([E("B1", "272.24", ccy="USD"), E("B2", "272.24", ccy="CAD")],
+                       today=TODAY)
+    assert kinds(found) == [dup.AMOUNT_DIFFERS]
+    assert found[0].currency == dup.MIXED
+    assert found[0].extra_amount == 0
+
+
+def test_reversal_nets_only_within_its_currency():
+    """Tenaquip 16464968-00: USD bill, CAD bill, USD credit — one live copy."""
+    found = dup.detect([E("B1", "272.24", ccy="USD"), E("B2", "272.24", ccy="CAD"),
+                        E("B3", "-272.24", ccy="USD")], today=TODAY)
+    assert found == []
 
 
 def test_invoice_number_is_matched_normalised():
@@ -104,11 +116,13 @@ def test_invoice_number_is_matched_normalised():
 
 # ── amount_differs ───────────────────────────────────────────────────────────
 
-def test_split_invoice_is_review_not_exact():
-    """Gertex 3061177: goods and freight settled as two bills the same day."""
+def test_split_invoice_still_breaks_the_rule():
+    """Gertex 3061177: goods and freight settled as two bills the same day.
+    Finance's rule counts it (2026-09-25); a review clears it."""
     found = dup.detect([E("B1", "2418.20"), E("B2", "93.51")], today=TODAY)
     assert kinds(found) == [dup.AMOUNT_DIFFERS]
     assert found[0].status == "review"
+    assert dup.AMOUNT_DIFFERS in dup.ACTIONABLE
 
 
 def test_partial_credit_leaves_one_bill_not_a_split():
@@ -116,32 +130,50 @@ def test_partial_credit_leaves_one_bill_not_a_split():
     assert dup.detect([E("B1", "1543.83"), E("B2", "-200.62")], today=TODAY) == []
 
 
-def test_exact_wins_over_amount_differs_in_the_same_bucket():
+def test_one_finding_per_vendor_and_number():
+    """A repeated amount alongside a different one: one group, reported as the
+    double entry it contains, with all three bills in it."""
     found = dup.detect([E("B1", "10"), E("B2", "10"), E("B3", "5")], today=TODAY)
     assert kinds(found) == [dup.EXACT]
+    f = found[0]
+    assert f.bill_nos == ["B1", "B2", "B3"]
+    assert f.extra_copies == 2
+    assert f.extra_amount == Decimal("10")
+    assert f.amount is None
 
 
-# ── cross_supplier ───────────────────────────────────────────────────────────
+# ── the vendor half of the key ───────────────────────────────────────────────
 
-def test_same_number_and_amount_under_two_supplier_codes():
-    """Nielsen 9301122753: 3,860.84 under ACNielsen and Nielsen Consumer LLC."""
-    found = dup.detect([E("B1", "3860.84", sc="S1"), E("B2", "3860.84", sc="S2", open_="3860.84")],
+def test_same_number_and_amount_from_two_vendors_is_not_a_duplicate():
+    """Invoice numbers are the vendor's. Nielsen under two differently named
+    vendor records is, by the rule finance set, two vendors."""
+    found = dup.detect([E("B1", "3860.84", sc="S1", name="ACNieisen Company of Cana"),
+                        E("B2", "3860.84", sc="S2", name="Nielsen Consumer LLC")],
                        today=TODAY)
-    assert kinds(found) == [dup.CROSS_SUPPLIER]
-    assert found[0].open_exposure == Decimal("3860.84")
-    assert found[0].supplier_code is None
-
-
-def test_wrong_supplier_reversed_and_rebilled_is_clean():
-    """Acklands/Nilfisk 20419497: billed to the wrong supplier, credited there,
-    billed to the right one. One live copy left — nothing to report."""
-    found = dup.detect([E("B1", "3684.92", sc="ACK"), E("B2", "-3684.92", sc="ACK"),
-                        E("B3", "3684.92", sc="NIL")], today=TODAY)
     assert found == []
 
 
-def test_same_number_different_amounts_across_suppliers_is_nothing():
-    assert dup.detect([E("B1", "500", sc="S1"), E("B2", "12", sc="S2")], today=TODAY) == []
+def test_freelancers_numbering_from_one_are_not_duplicates():
+    found = dup.detect([E("B1", "500", sc="S1", inv="1", name="Joseph Tong"),
+                        E("B2", "500", sc="S2", inv="1", name="Jacob Autio")], today=TODAY)
+    assert found == []
+
+
+def test_vendor_is_matched_by_name_not_code():
+    """The same vendor keyed under two codes is still one vendor."""
+    found = dup.detect([E("B1", "10", sc="S1", name="Acme Ltd"),
+                        E("B2", "10", sc="S2", name="  acme   LTD ")], today=TODAY)
+    assert kinds(found) == [dup.EXACT]
+    assert found[0].supplier_code is None          # two codes: no single one to show
+    assert found[0].vendor == "ACME LTD"
+
+
+def test_wrong_vendor_reversed_and_rebilled_is_clean():
+    """Acklands/Nilfisk 20419497: billed to the wrong vendor, credited there,
+    billed to the right one."""
+    found = dup.detect([E("B1", "3684.92", sc="ACK"), E("B2", "-3684.92", sc="ACK"),
+                        E("B3", "3684.92", sc="NIL")], today=TODAY)
+    assert found == []
 
 
 # ── pending ──────────────────────────────────────────────────────────────────
@@ -207,12 +239,14 @@ def test_review_covers_the_bills_it_saw_and_reopens_on_a_new_copy():
     assert three[0].review is None and three[0].reopened
 
 
-def test_keys_are_stable_and_distinct_per_kind():
+def test_keys_are_stable_and_follow_vendor_and_number():
     a = dup.detect([E("B1", "10"), E("B2", "10")], today=TODAY)[0]
     b = dup.detect([E("B1", "10"), E("B2", "10")], today=TODAY)[0]
-    c = dup.detect([E("B1", "10", sc="S1"), E("B2", "10", sc="S2")], today=TODAY)[0]
+    c = dup.detect([E("B1", "10", sc="S9"), E("B2", "10", sc="S9")], today=TODAY)[0]
+    d = dup.detect([E("B1", "10"), E("B2", "7")], today=TODAY)[0]
     assert a.key == b.key
-    assert a.key != c.key
+    assert a.key != c.key                           # another vendor
+    assert a.key != d.key                           # another kind
 
 
 # ── DB-backed: seeding the mirror ────────────────────────────────────────────
@@ -296,15 +330,25 @@ async def test_task_raised_refreshed_and_closed(db_session, seeded):
     assert priority == "urgent"                  # money is still payable on a copy
     assert "50,722.88 CAD" in title
     assert dup.KIND_LABELS[dup.EXACT] in description
-    # The split is on the page, not in the task.
-    assert dup.KIND_LABELS[dup.AMOUNT_DIFFERS] not in description
+    # Different amounts break the rule too, so the split is in the task.
+    assert dup.KIND_LABELS[dup.AMOUNT_DIFFERS] in description
 
     assert _run() == "refreshed"
     assert len(_open_tasks()) == 1
 
-    # The copy is voided in NC -> the task closes itself.
+    # The copy is voided in NC: nothing is payable twice any more, but the
+    # split still breaks the rule — the task stays, no longer urgent.
     _exec("update nc_ap_bills set bill_status=-1, approve_status=-1, "
           "bill_date='2025-01-01' where bill_no='D1002'")
+    assert _run() == "refreshed"
+    rows = _open_tasks()
+    assert rows[0][4] == "normal"
+
+    # Reviewed as a split -> the task closes itself.
+    split = next(f for f in await dup.findings(db_session, today=TODAY))
+    assert split.kind == dup.AMOUNT_DIFFERS
+    assert (await dup.review(db_session, split.key, split.bill_nos, "split", None,
+                             uuid.uuid4(), "AP Clerk"))["applied"]
     assert _run() == "closed"
     assert _open_tasks() == []
     assert _run() == "clean"
@@ -316,6 +360,12 @@ async def test_a_reviewed_finding_does_not_hold_the_task_open(db_session, seeded
     res = await dup.review(db_session, f.key, f.bill_nos, "recovered", None,
                            uuid.uuid4(), "AP Clerk")
     assert res["applied"]
+    # The split is still unreviewed, so the task stays — not urgent any more.
+    assert _run() == "refreshed"
+    assert _open_tasks()[0][4] == "normal"
+    g = next(f for f in await dup.findings(db_session, today=TODAY) if f.review is None)
+    assert (await dup.review(db_session, g.key, g.bill_nos, "split", None,
+                             uuid.uuid4(), "AP Clerk"))["applied"]
     assert _run() == "closed"
 
 

@@ -1,4 +1,4 @@
-"""One standing AP task for invoice numbers NC has on more than one payable.
+"""One standing AP task for vendor + invoice numbers NC has on more than one payable.
 
 Same shape as jv_validation_tasks.py, on purpose: raw psycopg2 over the AP
 sync's own cursor, inside a SAVEPOINT in the run's transaction, ONE task that
@@ -11,9 +11,10 @@ are the ones who can stop a draft, hold a copy back from the payment run, or
 chase the supplier for a refund. system_admin still sees it (the inbox hands
 system_admin every task).
 
-Only the ACTIONABLE kinds count. "Same number, different amount" is left to
-the page: on production it is mostly one invoice split on purpose, and a task
-that is mostly noise stops being read.
+Every kind counts — finance's rule is that vendor + invoice number is unique,
+whatever the amounts (2026-09-25). A deliberate split is cleared by reviewing
+it as one, once; it is not left off the list. Only money still payable on a
+repeated copy, or a draft about to be approved, makes the task urgent.
 """
 from __future__ import annotations
 
@@ -59,11 +60,12 @@ def _describe(found: list[dup.Finding]) -> tuple[str, str, str]:
     elif n_pending:
         title = f"{n_pending} unapproved NC payables repeat an invoice number already entered"
     else:
-        title = f"{len(found)} invoices were billed more than once in NC"
+        title = f"{len(found)} vendor invoice numbers are on more than one NC payable"
 
     body = [
-        "NC does not check invoice numbers for uniqueness. Each group below has "
-        "the same invoice on more than one payable and has not been reviewed yet.",
+        "A vendor's invoice number must be unique, and NC does not check it. Each "
+        "group below is one vendor and one invoice number on more than one payable, "
+        "not reviewed yet.",
         "",
     ]
     for kind in dup.ACTIONABLE:
@@ -79,8 +81,8 @@ def _describe(found: list[dup.Finding]) -> tuple[str, str, str]:
         "",
         "Open Finance → AP Duplicate Invoices. Stop a draft before it is approved; "
         "hold an approved copy back from the payment run; for a copy already paid, "
-        "ask the supplier for a refund or credit. If two bills are genuinely "
-        "different invoices, mark the group reviewed with the reason.",
+        "ask the supplier for a refund or credit. A deliberate split, or two genuinely "
+        "different invoices, is marked reviewed with the reason.",
     ]
     return title[:_TITLE_MAX], "\n".join(body), ("urgent" if urgent else "normal")
 
