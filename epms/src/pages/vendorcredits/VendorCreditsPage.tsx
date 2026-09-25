@@ -1,10 +1,14 @@
 import { useState } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { AlertTriangle, Plus } from 'lucide-react'
 
 import { useRolePermissions } from '@/hooks/useConfig'
 import { useReviewVendorCredit, useVendorCredits } from '@/hooks/useVendorCredits'
 import type { VendorCredit } from '@/services/vendorCredits'
 import { useAuthStore } from '@/stores/auth.store'
+
+import { CreditDetailDrawer } from './CreditDetailDrawer'
+import { ManualCreditModal } from './ManualCreditModal'
 
 const TABS = [
   { key: 'pending_review', label: 'Pending Review' },
@@ -23,6 +27,10 @@ export function VendorCreditsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('pending_review')
   const [noteFor, setNoteFor] = useState<{ credit: VendorCredit; action: 'reject' | 'void' } | null>(null)
   const [note, setNote] = useState('')
+  const [showManual, setShowManual] = useState(false)
+  // Held as an id, not the row: after an Add file / review the list refetches
+  // and the drawer should show the fresh row, or close once it leaves this tab.
+  const [openId, setOpenId] = useState<string | null>(null)
 
   const { data, isLoading } = useVendorCredits(tab)
   const review = useReviewVendorCredit()
@@ -32,6 +40,7 @@ export function VendorCreditsPage() {
   const canManage = user?.role === 'system_admin' || !!perms?.['epms.vendor_credit.manage']
 
   const rows = data?.items ?? []
+  const openCredit = rows.find((c) => c.id === openId) ?? null
 
   // The single `review` mutation backs both the inline Approve buttons and the
   // note modal's Confirm button. Route its error to the right spot by looking
@@ -43,10 +52,20 @@ export function VendorCreditsPage() {
 
   return (
     <div className="p-6">
-      <h1 className="text-xl font-semibold text-neutral-900">Vendor Credits</h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Credit notes received from vendors. Approved credits are netted off the next payment to that vendor.
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-neutral-900">Vendor Credits</h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Credit notes received from vendors. Approved credits are netted off the next payment to that vendor.
+          </p>
+        </div>
+        <button onClick={() => setShowManual(true)}
+                title="For a credit the vendor confirmed by email but will not issue a credit note for"
+                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700">
+          <Plus className="h-4 w-4" />
+          Record Manual Credit
+        </button>
+      </div>
 
       <div className="mt-4 flex gap-1 border-b border-neutral-200">
         {TABS.map((t) => (
@@ -60,7 +79,7 @@ export function VendorCreditsPage() {
         ))}
       </div>
 
-      {approveError && (
+      {approveError && !openCredit && (
         <div className="mt-4 flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           {approveError}
@@ -88,12 +107,19 @@ export function VendorCreditsPage() {
           </thead>
           <tbody>
             {rows.map((c) => (
-              <tr key={c.id} className="border-t border-neutral-100">
+              <tr key={c.id} onClick={() => setOpenId(c.id)}
+                  className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50">
                 <td className="px-4 py-3 font-mono text-xs">
                   {c.credit_number}
                   {c.opening_balance && (
                     <span className="ml-2 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-600">
                       Opening balance
+                    </span>
+                  )}
+                  {c.source === 'manual' && (
+                    <span className="ml-2 rounded bg-warning-50 px-1.5 py-0.5 text-[10px] text-warning-700"
+                          title="No credit note issued — recorded from the vendor's email">
+                      Manual
                     </span>
                   )}
                 </td>
@@ -104,8 +130,17 @@ export function VendorCreditsPage() {
                 <td className="px-4 py-3 text-right font-mono">{fmt(c.applied_amount, c.currency)}</td>
                 <td className="px-4 py-3 text-right font-mono font-semibold">{fmt(c.remaining_amount, c.currency)}</td>
                 <td className="px-4 py-3 text-xs text-neutral-500">{c.po_number ?? '—'}</td>
-                <td className="px-4 py-3 text-right">
-                  {canManage && c.status === 'pending_review' && (
+                <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  {/* A manual credit's evidence is the attached email, so it is
+                      reviewed in the drawer where that file can be opened. */}
+                  {canManage && c.status === 'pending_review' && c.source === 'manual' && (
+                    <button
+                      className="rounded border border-primary-300 px-2.5 py-1 text-xs font-medium text-primary-700"
+                      onClick={() => { review.reset(); setOpenId(c.id) }}>
+                      Review
+                    </button>
+                  )}
+                  {canManage && c.status === 'pending_review' && c.source !== 'manual' && (
                     <>
                       <button
                         className="mr-2 rounded bg-success-600 px-2.5 py-1 text-xs font-medium text-white"
@@ -134,7 +169,28 @@ export function VendorCreditsPage() {
         </table>
       )}
 
-      {noteFor && (
+      {showManual && (
+        <ManualCreditModal
+          onClose={() => setShowManual(false)}
+          onCreated={(credit) => { setShowManual(false); setTab('pending_review'); setOpenId(credit.id) }}
+        />
+      )}
+
+      {openCredit && (
+        <CreditDetailDrawer
+          credit={openCredit}
+          canManage={canManage}
+          reviewPending={review.isPending}
+          approveError={approveError}
+          onClose={() => { setOpenId(null); review.reset() }}
+          onApprove={() => review.mutate({ id: openCredit.id, action: 'approve' },
+                                         { onSuccess: () => setOpenId(null) })}
+          onReject={() => { review.reset(); setNoteFor({ credit: openCredit, action: 'reject' }); setNote('') }}
+          onVoid={() => { review.reset(); setNoteFor({ credit: openCredit, action: 'void' }); setNote('') }}
+        />
+      )}
+
+      {noteFor && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-lg bg-white p-5">
             <h2 className="text-base font-semibold">
@@ -161,14 +217,15 @@ export function VendorCreditsPage() {
                 onClick={() => {
                   review.mutate(
                     { id: noteFor.credit.id, action: noteFor.action, note: note.trim() },
-                    { onSuccess: () => setNoteFor(null) },
+                    { onSuccess: () => { setNoteFor(null); setOpenId(null) } },
                   )
                 }}>
                 Confirm
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

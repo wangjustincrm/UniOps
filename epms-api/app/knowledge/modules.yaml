@@ -45,7 +45,26 @@ modules:
       - Receive goods, or confirm a service was completed
       - Match a vendor invoice against the order and the receipt
       - Raise a payment application once it is all lined up
+      - Record a vendor credit so it is deducted from the next payment to that vendor
     documents: [pr, po, gr, invoice, pa, agreement]
+    notes:
+      - >-
+        A vendor credit (money the vendor owes back — a credit note, or an
+        overpayment or duplicate payment they acknowledge) is not an invoice.
+        It lives under Vendor Credits, waits in Pending Review until someone
+        with the vendor-credit permission approves it, and is then deducted
+        automatically, oldest first, from the next payment to that vendor in
+        the same currency. A credit-note PDF is uploaded through Upload Invoice,
+        which recognises the negative total and switches to Credit Note.
+      - >-
+        When the vendor will not issue a credit note — typically they email
+        "use invoice #…REV -2,216.15 on your next payment" — use Vendor Credits
+        → Record Manual Credit. Enter the reference number they quoted (it is
+        what the remittance shows them), the amount, and in Basis who at the
+        vendor confirmed it and when; attach their email, saved from Outlook as
+        .msg or .eml, or printed to PDF. The basis and the attached email are
+        both required: the email is the only document behind the credit, and a
+        manual credit cannot be approved until it is attached.
 
   - key: oa
     label: OA — Office Automation

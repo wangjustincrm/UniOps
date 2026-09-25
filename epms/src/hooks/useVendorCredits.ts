@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { vendorCreditsService, type CreateVendorCreditBody } from '@/services/vendorCredits'
+import {
+  creditAttachmentService, vendorCreditsService, type CreateVendorCreditBody,
+} from '@/services/vendorCredits'
 
 export function useVendorCredits(status?: string) {
   return useQuery({
@@ -31,5 +33,23 @@ export function useReviewVendorCredit() {
       return vendorCreditsService.void(v.id, v.note)
     },
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['vendor-credits'] }) },
+  })
+}
+
+export const creditAttachmentsKey = (creditId: string) => ['vendor-credit-attachments', creditId]
+
+export function useCreditAttachments(creditId: string | null) {
+  return useQuery({
+    queryKey: creditAttachmentsKey(creditId ?? ''),
+    queryFn: () => creditAttachmentService.list(creditId as string),
+    enabled: !!creditId,
+  })
+}
+
+export function useUploadCreditAttachment(creditId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (file: File) => creditAttachmentService.upload(creditId, file),
+    onSettled: () => { void qc.invalidateQueries({ queryKey: creditAttachmentsKey(creditId) }) },
   })
 }

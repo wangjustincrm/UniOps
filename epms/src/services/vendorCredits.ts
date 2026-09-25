@@ -1,4 +1,5 @@
-import { financeApi } from '@/lib/api'
+import { EXPENSE_BASE, financeApi } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth.store'
 
 export interface VendorCredit {
   id: string
@@ -20,7 +21,10 @@ export interface VendorCredit {
   line_items: unknown[]
   file_name: string | null
   notes: string | null
-  source: 'upload' | 'qbo_import'
+  /** upload = from a vendor credit-note document; manual = the vendor would
+   * not issue one and AP recorded it from correspondence (the evidence is the
+   * attached email); qbo_import = Phase C one-off import. */
+  source: 'upload' | 'manual' | 'qbo_import'
   opening_balance: boolean
   uploaded_by: string
   uploaded_by_name: string | null
@@ -49,6 +53,8 @@ export interface CreateVendorCreditBody {
   line_items?: unknown[]
   file_name?: string | null
   notes?: string | null
+  /** Omitted = 'upload'. 'manual' makes `notes` mandatory server-side. */
+  source?: 'upload' | 'manual'
 }
 
 const qs = (params: Record<string, string | undefined>) => {
@@ -71,6 +77,57 @@ export const vendorCreditsService = {
     financeApi.post<VendorCredit>(`/vendor-credits/${id}/reject`, { note }),
   void:    (id: string, note: string) =>
     financeApi.post<VendorCredit>(`/vendor-credits/${id}/void`, { note }),
+}
+
+// ── Evidence files ───────────────────────────────────────────────────────────
+//
+// A credit's files live in expense-api's shared invoice attachment store under
+// invoice_source='credit' (invoice_id = the vendor credit's id). expense-api
+// lets the uploader and the payer roles read them — the same people who review
+// credits — and lists nothing for anyone else.
+
+export interface CreditAttachment {
+  id: string
+  file_name: string
+  content_type: string
+  file_size_bytes: number
+  uploaded_at: string
+}
+
+/** What the file pickers offer. Saved Outlook/.eml emails are here because a
+ * manual credit's only evidence is usually the vendor's email. */
+export const CREDIT_EVIDENCE_ACCEPT =
+  '.msg,.eml,.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.doc,.docx,.xls,.xlsx,.txt'
+
+const authHeader = () => ({ Authorization: `Bearer ${useAuthStore.getState().token}` })
+const ATT_BASE = `${EXPENSE_BASE}/api/v1/invoice-attachments`
+
+async function failure(res: Response, what: string): Promise<Error> {
+  let detail = ''
+  try { detail = (await res.json())?.detail ?? '' } catch { /* not JSON */ }
+  return new Error(`${what} (${res.status})${detail ? `: ${detail}` : ''}`)
+}
+
+export const creditAttachmentService = {
+  list: async (creditId: string): Promise<CreditAttachment[]> => {
+    const res = await fetch(`${ATT_BASE}?invoice_id=${creditId}&invoice_source=credit`,
+                            { headers: authHeader() })
+    if (!res.ok) throw await failure(res, 'Could not load attachments')
+    return res.json()
+  },
+  upload: async (creditId: string, file: File): Promise<CreditAttachment> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${ATT_BASE}?invoice_id=${creditId}&invoice_source=credit`,
+                            { method: 'POST', headers: authHeader(), body: form })
+    if (!res.ok) throw await failure(res, `${file.name} did not attach`)
+    return res.json()
+  },
+  blob: async (attachmentId: string): Promise<Blob> => {
+    const res = await fetch(`${ATT_BASE}/${attachmentId}/file`, { headers: authHeader() })
+    if (!res.ok) throw await failure(res, 'Could not open file')
+    return res.blob()
+  },
 }
 
 // ── Netting preview for the PA Process dialog (Phase B) ──────────────────────
