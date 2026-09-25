@@ -1170,3 +1170,72 @@ async def test_the_go_live_opening_voucher_is_the_initial_balance(db_session):
     # 1000 go-live − 300 + 50; the 2021 restatement of 700 must not be added.
     assert await opening_balance(db_session, boc.id, date(2026, 7, 1)) == D("750.00")
     assert await opening_balance(db_session, rbc.id, date(2026, 7, 1)) == D("500.00")
+
+
+def _stmt(lines):
+    """A parsed July statement with these (day, description, amount, balance) rows."""
+    from app.services.bank_statement_parse import ParsedStatement, StatementLine
+    rows = [StatementLine(seq=i, txn_date=_date(2026, 7, d), description=desc,
+                          amount=_D(amt), running_balance=_D(bal) if bal else None)
+            for i, (d, desc, amt, bal) in enumerate(lines, start=1)]
+    return ParsedStatement(
+        period_start=_date(2026, 6, 30), period_end=_date(2026, 7, 31),
+        opening_balance=_D("1000.00"),
+        closing_balance=_D("1000.00") + sum((r.amount for r in rows), _D("0")),
+        lines=rows, currency="CAD", account_no="x", parse_method="ai",
+        parse_model="claude-haiku-4-5-20251001", verified=True, verify_errors=[],
+        raw_payload={"stub": True})
+
+
+async def test_a_re_read_keeps_its_lines_even_when_the_description_changes(
+        client, scene, monkeypatch):
+    """BOC CNY July 2026, re-imported: the AI read "…Online Banking ZZFC260717"
+    the first time and "…Online Banking" the second. The line key included the
+    description, so the second read added −20,200.00 AGAIN next to the matched
+    one, and the old misread rows were never cleared out either."""
+    from app.services import bank_statement_parse
+    url = f"/finance/v1/bank-recon/{scene['account'].id}/statements"
+
+    async def upload(st, name):
+        monkeypatch.setattr(bank_statement_parse, "parse_statement",
+                            lambda data, filename="", currency=None: st)
+        r = await client.post(url, files={"file": (name, name.encode(), "application/pdf")},
+                              headers=_h())
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    await upload(_stmt([(7, "Activity fee ZZFC260717", "-455.60", "544.40"),
+                        (8, "a row the AI made up", "-1.00", None)]), "a.pdf")
+
+    # match the fee by hand
+    rid = await _open(client, scene["account"])
+    page = (await client.get(f"/finance/v1/bank-recon/reconciliations/{rid}",
+                             headers=_h())).json()
+    fee = next(b for b in page["bank_lines"] if b["description"] == "Activity fee ZZFC260717")
+    book = next(b for b in page["book_lines"] if b["amount"] == "-455.60")
+    r = await client.post(f"/finance/v1/bank-recon/reconciliations/{rid}/matches",
+                          json={"bank_transaction_ids": [fee["id"]],
+                                "jv_line_ids": [book["jv_line_id"]]}, headers=_h())
+    assert r.status_code == 200, r.text
+
+    # re-read: the reference fell off the description, the made-up row is gone
+    second = await upload(_stmt([(7, "Activity fee", "-455.60", "544.40")]), "b.pdf")
+    assert second["reused"] == 1 and second["imported"] == 0
+    assert second["removed"] == 1 and second["stale_matched"] == []
+
+    page = (await client.get(f"/finance/v1/bank-recon/reconciliations/{rid}",
+                             headers=_h())).json()
+    kept = next(b for b in page["bank_lines"] if b["id"] == fee["id"])
+    assert kept["cleared"] and kept["description"] == "Activity fee"   # same row, match intact
+    assert not any(b["description"] == "a row the AI made up" for b in page["bank_lines"])
+    # ours plus the scene's own seeded −455.60 — not a third copy
+    same_day = [b for b in page["bank_lines"]
+                if b["txn_date"] == "2026-07-07" and b["amount"] == "-455.60"]
+    assert len(same_day) == 2
+
+    # a read that no longer has the MATCHED line: kept, and said out loud
+    third = await upload(_stmt([(9, "something else", "-2.00", None)]), "c.pdf")
+    assert [t["id"] for t in third["stale_matched"]] == [fee["id"]]
+    page = (await client.get(f"/finance/v1/bank-recon/reconciliations/{rid}",
+                             headers=_h())).json()
+    assert any(b["id"] == fee["id"] and b["cleared"] for b in page["bank_lines"])

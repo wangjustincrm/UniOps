@@ -97,15 +97,47 @@ async def import_statement_pdf(db: AsyncSession, account: BankAccount, data: byt
     db.add(st)
     await db.flush()
 
+    # The previous read's lines, for the same period. A re-read is a second AI
+    # pass over the same PDF, and descriptions come back slightly different:
+    # BOC CNY July 2026 read "…Online Banking ZZFC260717" the first time and
+    # "…Online Banking" the second. The hash includes the description, so that
+    # line was taken for a new one and the period showed −20,200.00 twice — one
+    # matched, one not. Date + amount (+ the printed balance) identify a line on
+    # one statement; the description is not stable enough to be the key.
+    prior_txns = []
+    if prior is not None:
+        prior_txns = list((await db.execute(
+            select(BankTransaction).where(BankTransaction.statement_id == prior.id)
+            .order_by(BankTransaction.sort_seq)
+        )).scalars().all())
+    taken: set = set()
+
+    def _claim_prior(ln) -> BankTransaction | None:
+        same = [t for t in prior_txns if t.id not in taken
+                and t.txn_date == ln.txn_date and t.amount == ln.amount]
+        if not same:
+            return None
+        exact = [t for t in same if ln.running_balance is not None
+                 and t.running_balance == ln.running_balance]
+        return (exact or same)[0]
+
     imported = reused = 0
     for ln in parsed.lines:
         h = _txn_hash(account.id, ln.txn_date, ln.amount, ln.description, "")
         existing = (await db.execute(
             select(BankTransaction).where(BankTransaction.import_hash == h)
         )).scalar_one_or_none()
+        if existing is not None and existing.id in taken:
+            existing = None     # two identical lines on one statement: the 2nd is new
+        if existing is None:
+            existing = _claim_prior(ln)
+            if existing is not None:
+                existing.description = ln.description[:500]
+                existing.import_hash = h
         if existing is not None:
             # Same line, re-read: keep the row (and anything matched to it) and
             # just re-point it at the new statement.
+            taken.add(existing.id)
             existing.statement_id = st.id
             existing.running_balance = ln.running_balance
             existing.sort_seq = ln.seq
@@ -119,9 +151,34 @@ async def import_statement_pdf(db: AsyncSession, account: BankAccount, data: byt
             entity_id=account.entity_id))
         imported += 1
     await db.flush()
+
+    # What the previous read had and this one does not. Unmatched: it was a
+    # misread and goes, or the period keeps a line the bank never printed.
+    # Matched: someone's reconciliation work hangs off it, so it is NOT deleted
+    # silently — it is kept and counted, and the caller says so.
+    removed = 0
+    stale_matched = []
+    leftovers = [t for t in prior_txns if t.id not in taken]
+    if leftovers:
+        in_groups = set((await db.execute(
+            select(BankReconMatchTxn.bank_transaction_id).where(
+                BankReconMatchTxn.bank_transaction_id.in_([t.id for t in leftovers]))
+        )).scalars().all())
+        for t in leftovers:
+            if t.id in in_groups:
+                stale_matched.append(t)
+            else:
+                await db.delete(t)
+                removed += 1
+        await db.flush()
+
     return {"statement_id": str(st.id), "verified": st.verified,
             "verify_errors": st.verify_errors or [],
             "lines": len(parsed.lines), "imported": imported, "reused": reused,
+            "removed": removed,
+            "stale_matched": [{"id": str(t.id), "date": t.txn_date.isoformat(),
+                               "amount": str(t.amount), "description": t.description}
+                              for t in stale_matched],
             "superseded": str(prior.id) if prior else None}
 
 
