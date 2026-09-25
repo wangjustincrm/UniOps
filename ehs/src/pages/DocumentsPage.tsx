@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { FileText, Plus, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
@@ -187,12 +188,18 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
   const [version, setVersion] = useState('1.0')
   const [reviewMonths, setReviewMonths] = useState('12')
   const [requiresAck, setRequiresAck] = useState(true)
+  // ★ Named people, as well as roles. A procedure that concerns four people on
+  // one line corresponds to no role, and sending it to whoever holds the
+  // nearest one teaches thirty others to ignore the next thing they are sent.
+  const [named, setNamed] = useState<PersonValue[]>([])
+  const [adding, setAdding] = useState<PersonValue>(EMPTY_PERSON)
 
   const create = useMutation({
     mutationFn: () => api.post<SafetyDoc>('/api/v1/documents', {
       title, category, summary: summary || null, version,
       review_months: reviewMonths ? Number(reviewMonths) : null,
       requires_ack: requiresAck,
+      ack_user_ids: named.map((p) => p.userId).filter(Boolean),
     }),
     onSuccess: (doc) => {
       queryClient.invalidateQueries({ queryKey: ['documents'] })
@@ -242,8 +249,49 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
       <label className="mt-3 flex items-center gap-2 text-sm text-neutral-700">
         <input type="checkbox" checked={requiresAck}
                onChange={(e) => setRequiresAck(e.target.checked)} />
-        Everyone must read and sign this
+        This has to be read and signed
       </label>
+
+      {requiresAck && (
+        <div className="mt-2 rounded-lg border border-neutral-200 p-3">
+          <p className="text-xs font-medium text-neutral-700">Who has to sign it</p>
+          <p className="mt-0.5 text-xs text-neutral-500">
+            {named.length === 0
+              ? 'Everybody, unless you name people here.'
+              : 'Only the people named here.'}
+          </p>
+          {named.length > 0 && (
+            <ul className="mt-2 flex flex-wrap gap-1.5">
+              {named.map((p) => (
+                <li key={p.userId ?? p.name}
+                    className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
+                  {p.name}
+                  <button type="button" aria-label={`Remove ${p.name}`}
+                          onClick={() => setNamed(named.filter((x) => x.userId !== p.userId))}
+                          className="flex min-h-[24px] min-w-[24px] items-center justify-center text-neutral-400 hover:text-danger-700">
+                    <X className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-2">
+            <PersonPicker
+              value={adding}
+              onChange={(v) => {
+                // Only somebody with an account: the document has to reach a
+                // list, and a typed-in name reaches nothing.
+                if (v.userId && !named.some((p) => p.userId === v.userId)) {
+                  setNamed([...named, v])
+                  setAdding(EMPTY_PERSON)
+                } else {
+                  setAdding(v)
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
       <ErrorNote error={create.error} />
       <div className="mt-3 flex justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>

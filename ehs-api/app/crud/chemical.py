@@ -197,6 +197,20 @@ async def by_qr_token(db: AsyncSession, token: str) -> SafetyDataSheet | None:
         select(SafetyDataSheet).where(SafetyDataSheet.qr_token == token))).scalar_one_or_none()
 
 
+async def _supersede_labels(db: AsyncSession, chemical_id: uuid.UUID) -> int:
+    """Mark this chemical's live labels as out of date. Returns how many."""
+    from app.models.label import ChemicalLabel
+
+    rows = (await db.execute(
+        select(ChemicalLabel).where(
+            ChemicalLabel.chemical_id == chemical_id,
+            ChemicalLabel.status.in_(("approved", "printed")),
+        ))).scalars().all()
+    for label in rows:
+        label.status = "superseded"
+    return len(rows)
+
+
 async def add_sheet(
     db: AsyncSession, chemical: Chemical, payload: dict, *, user_id: uuid.UUID,
 ) -> SafetyDataSheet:
@@ -210,6 +224,19 @@ async def add_sheet(
         if previous.is_current:
             previous.is_current = False
             await _clear_review_clock(db, previous)
+
+    # ★ Any approved label built from the sheet being replaced is now suspect.
+    #
+    # A supplier revision can change the hazard classification, and the label on
+    # the drum is what somebody reads before opening it. WHMIS 2015 wants that
+    # label to match the current sheet, so an approved label made from an older
+    # one must stop being printable — but it is not rewritten either: the new
+    # classification has to be read off the new sheet and approved by a person,
+    # which is the rule this module already enforces for every label.
+    #
+    # Superseded rather than deleted, for the same reason the sheet is: the
+    # label that was in force is part of the record.
+    await _supersede_labels(db, chemical.id)
 
     revision_date = payload.get("revision_date")
     sheet = SafetyDataSheet(

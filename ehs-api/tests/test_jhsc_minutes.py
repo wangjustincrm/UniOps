@@ -1,0 +1,111 @@
+"""The minutes, and the meeting they belong to.
+
+HSE asked for the format of the minutes to be configurable, so they are a form
+template rather than a second layout engine. What was missing is the link: the
+screen told people to fill the form in under Forms and attach it to the
+meeting, and there was nothing on the meeting to attach it with — the endpoint
+existed and nothing called it.
+"""
+import uuid
+from datetime import date
+
+import pytest
+
+from app.models.config import EhsConfig
+
+
+@pytest.fixture
+async def minutes_template(hse_manager, db_session):
+    """A published form, chosen in Settings as the minutes form.
+
+    Built through the API rather than inserted, so it is a template in the
+    state the product actually produces — a draft with no published version
+    cannot be started, and seeding one directly would hide that.
+    """
+    _, client = hse_manager
+    created = await client.post("/api/v1/forms/templates", json={
+        "code": f"jhsc-min-{uuid.uuid4().hex[:5]}",
+        "name": "Committee minutes",
+        "category": "jhsc",
+    })
+    assert created.status_code in (200, 201), created.text
+    template = created.json()
+
+    # The questions are their own step, and publishing without any is refused —
+    # which is why this goes through the real path rather than seeding a row.
+    saved = await client.put(f"/api/v1/forms/templates/{template['id']}/schema", json={
+        "schema": [{"key": "present", "type": "text", "label": "Who was there",
+                    "required": False}],
+    })
+    assert saved.status_code in (200, 201), saved.text
+    published = await client.post(
+        f"/api/v1/forms/templates/{template['id']}/publish",
+        json={"change_note": "First version"})
+    assert published.status_code in (200, 201), published.text
+
+    config = await db_session.get(EhsConfig, 1)
+    if config is None:
+        config = EhsConfig(id=1)
+        db_session.add(config)
+    config.jhsc_minutes_template_code = template["code"]
+    await db_session.commit()
+    return template
+
+
+async def _a_meeting(client) -> dict:
+    r = await client.post("/api/v1/jhsc/meetings", json={
+        "held_on": date.today().isoformat(), "title": "Monthly meeting"})
+    assert r.status_code in (200, 201), r.text
+    return r.json()
+
+
+async def test_the_minutes_are_started_from_the_meeting_and_stay_attached(
+        hse_manager, minutes_template):
+    """★ The link is made when the document comes into existence, which is the
+    one moment nobody can forget it."""
+    _, client = hse_manager
+    meeting = await _a_meeting(client)
+
+    started = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")
+    assert started.status_code in (200, 201), started.text
+    submission_id = started.json()["submission_id"]
+    assert started.json()["submission_no"]
+
+    back = (await client.get(f"/api/v1/jhsc/meetings/{meeting['id']}")).json()
+    assert back["minutes_submission_id"] == submission_id
+
+
+async def test_starting_the_minutes_twice_opens_the_same_ones(
+        hse_manager, minutes_template):
+    """★ A second press must not cut the first set loose.
+
+    Pressed twice — by one person on a slow connection, or by two members of
+    the committee — pointing the meeting at a fresh empty form would leave
+    half-written statutory minutes orphaned in Forms with nothing saying where
+    they went.
+    """
+    _, client = hse_manager
+    meeting = await _a_meeting(client)
+
+    first = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")
+    second = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")
+    assert first.json()["submission_id"] == second.json()["submission_id"]
+
+    back = (await client.get(f"/api/v1/jhsc/meetings/{meeting['id']}")).json()
+    assert back["minutes_submission_id"] == first.json()["submission_id"]
+
+
+async def test_it_says_so_when_no_minutes_form_has_been_chosen(hse_manager, db_session):
+    """Rather than starting something arbitrary, or failing silently."""
+    _, client = hse_manager
+    config = await db_session.get(EhsConfig, 1)
+    if config is None:
+        config = EhsConfig(id=1)
+        db_session.add(config)
+    config.jhsc_minutes_template_code = None
+    await db_session.commit()
+
+    meeting = await _a_meeting(client)
+    refused = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")
+    assert refused.status_code == 409, refused.text
+    assert "Settings" in refused.json()["detail"]

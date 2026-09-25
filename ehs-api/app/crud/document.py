@@ -19,6 +19,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
+from sqlalchemy import false as sa_false
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,6 +79,7 @@ async def create_document(db: AsyncSession, payload: dict, *, owner_id: uuid.UUI
         review_months=payload.get("review_months"),
         requires_ack=payload.get("requires_ack", False),
         ack_roles=payload.get("ack_roles") or [],
+        ack_user_ids=[str(u) for u in (payload.get("ack_user_ids") or [])],
         qr_token=_new_qr_token(),
         owner_id=payload.get("owner_id") or owner_id,
         owner_name=owner_name,
@@ -161,6 +163,11 @@ async def new_version(
         version=version,
         review_months=doc.review_months,
         requires_ack=doc.requires_ack, ack_roles=list(doc.ack_roles or []),
+        # ★ The named people come across too. Without this a document sent to
+        # three people and to no role became a document with no audience at
+        # all on its next revision — and no audience means the plant, so one
+        # correction would put it on four hundred people's lists.
+        ack_user_ids=[str(u) for u in (doc.ack_user_ids or [])],
         qr_token=_new_qr_token(),
         supersedes_id=doc.id,
         owner_id=doc.owner_id or owner_id, owner_name=doc.owner_name,
@@ -185,18 +192,47 @@ async def _audience(db: AsyncSession, doc: SafetyDocument) -> list[User]:
     in addition to their job is in the first-aid procedure's audience.
     """
     roles = list(doc.ack_roles or [])
-    if not roles:
+    named = [uuid.UUID(str(u)) for u in (doc.ack_user_ids or [])]
+
+    # Neither roles nor names: the plant. That is what an unqualified policy
+    # means and it is the existing behaviour.
+    if not roles and not named:
         return list((await db.execute(
             select(User).where(User.is_active.is_(True)))).scalars())
 
-    ids = set((await db.execute(
+    # ★ The union, not the intersection. Naming somebody adds them to a role's
+    # audience rather than narrowing it — the same mistake was made once on the
+    # toolbox talk, where naming a supervisor filtered the list instead of
+    # replacing it and a lead hand outside the role received nothing at all.
+    by_role = set((await db.execute(
         text("SELECT user_id FROM user_roles WHERE role_code = ANY(:roles)"),
-        {"roles": roles})).scalars().all())
+        {"roles": roles})).scalars().all()) if roles else set()
+    reachable = by_role | set(named)
+
     return list((await db.execute(
         select(User).where(
             User.is_active.is_(True),
-            (User.role.in_(roles)) | (User.id.in_(ids) if ids else User.id.is_(None)),
+            (User.role.in_(roles) if roles else sa_false())
+            | (User.id.in_(reachable) if reachable else sa_false()),
         ))).scalars())
+
+
+async def acknowledged_at(
+    db: AsyncSession, doc: SafetyDocument, *, user_id: uuid.UUID
+) -> datetime | None:
+    """When this person signed this version, if they have.
+
+    Asked by the scanned-code screen so it can say "you signed this in August"
+    rather than offering to take a signature it would then quietly discard —
+    `acknowledge` is idempotent and returns the original record, so pressing the
+    button would report success for something that happened months ago.
+    """
+    return (await db.execute(
+        select(DocumentAcknowledgement.acknowledged_at).where(
+            DocumentAcknowledgement.document_id == doc.id,
+            DocumentAcknowledgement.user_id == user_id,
+            DocumentAcknowledgement.version == doc.version,
+        ))).scalar_one_or_none()
 
 
 async def acknowledge(

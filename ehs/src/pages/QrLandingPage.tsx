@@ -11,12 +11,14 @@
  * because they need to report something should land on the report form with the
  * area already filled in, not on a menu.
  */
-import { useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ClipboardCheck, FileText, MapPin, TriangleAlert, Wrench } from 'lucide-react'
+import { Check, ClipboardCheck, FileText, MapPin, TriangleAlert, Wrench } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { Card, primaryButton, secondaryButton } from '@/components/ui'
+import { formatDate } from '@/lib/formatDate'
+import { SignaturePad } from '@/components/SignaturePad'
 
 interface QrTarget {
   kind: string
@@ -24,6 +26,8 @@ interface QrTarget {
   label: string
   path: string
   actions: string[]
+  /** When this person already signed this version of a document. */
+  signed_at: string | null
 }
 
 const ICONS: Record<string, typeof MapPin> = {
@@ -118,6 +122,19 @@ export default function QrLandingPage() {
             Record a check
           </button>
         )}
+        {/* ★ Signed here, on the screen the camera landed on. The code on a
+            policy by the door exists so somebody can read it and say they
+            have; sending them to another page to do that is the step where it
+            stops happening. */}
+        {t.actions.includes('acknowledge') && (
+          <AcknowledgeHere documentId={t.id} label={t.label} />
+        )}
+        {t.signed_at && (
+          <p className="rounded-xl border border-success-500/40 bg-success-50 px-3.5 py-3 text-sm text-success-800">
+            You signed this version on {formatDate(t.signed_at)}. Nothing else is
+            needed.
+          </p>
+        )}
         {t.actions.includes('report_incident') && (
           <button type="button" className={secondaryButton} onClick={() => navigate('/report')}>
             <TriangleAlert className="h-4 w-4" aria-hidden />
@@ -125,6 +142,59 @@ export default function QrLandingPage() {
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+
+/**
+ * Reading and signing a policy from the code on the wall.
+ *
+ * The signature is optional, as it is everywhere else here: the record of who
+ * acknowledged what and when is the thing Read & Sign is for, and refusing to
+ * take that without a drawn squiggle on a phone in a corridor would lose more
+ * records than it secures.
+ */
+function AcknowledgeHere({ documentId, label }: { documentId: string; label: string }) {
+  const [signature, setSignature] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const sign = useMutation({
+    mutationFn: () => api.post(`/api/v1/documents/${documentId}/acknowledge`, { signature }),
+    onSuccess: () => setDone(true),
+    onError: (e: unknown) => setError(e instanceof ApiError ? e.message : String(e)),
+  })
+
+  if (done) {
+    return (
+      <div className="rounded-xl border border-success-500/40 bg-success-50 p-3.5">
+        <p className="text-sm font-semibold text-success-800">Signed.</p>
+        <p className="mt-0.5 text-xs text-success-700">
+          Your name and the time are on the record for {label}.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-3.5">
+      <p className="text-sm font-semibold text-neutral-900">Sign to say you have read it</p>
+      <p className="mt-0.5 text-xs text-neutral-500">
+        A signature is optional — pressing the button is the record.
+      </p>
+      <div className="mt-2">
+        <SignaturePad value={signature} onChange={setSignature} />
+      </div>
+      {error && (
+        <p className="mt-2 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{error}</p>
+      )}
+      <button type="button" className={`${primaryButton} mt-3 w-full`}
+              disabled={sign.isPending}
+              onClick={() => { if (!sign.isPending) { setError(null); sign.mutate() } }}>
+        <Check className="h-4 w-4" aria-hidden />
+        {sign.isPending ? 'Signing…' : 'I have read this'}
+      </button>
     </div>
   )
 }

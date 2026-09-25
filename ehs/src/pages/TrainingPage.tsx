@@ -26,6 +26,10 @@ interface Course {
   material_filename: string | null
 }
 interface QuizSummary { id: string; title: string; course_id: string | null }
+/** What the quiz's own page already computes, shown where the question is asked. */
+interface QuizResults {
+  people: number; passed: number; average_score: number | null; total_attempts: number
+}
 interface Session {
   id: string; delivery_no: string; course_label: string; title: string
   session_date: string; start_time: string | null; location_text: string | null
@@ -586,13 +590,11 @@ function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
 
               {/* The quiz that belongs to this course, which the training
                   screens never showed — so a quiz and the course it tests
-                  looked like two unrelated things. */}
-              {quiz ? (
-                <Link to={`/quizzes/${quiz.id}/edit`}
-                      className="text-xs font-medium text-primary-700 hover:underline">
-                  Quiz: {quiz.title}
-                </Link>
-              ) : (
+                  looked like two unrelated things. ★ And how the room did on
+                  it: the third round asked for the course to hold everything
+                  about itself, and a pass rate is the part of a quiz anybody
+                  running the course actually wants. */}
+              {quiz ? <CourseQuiz quiz={quiz} /> : (
                 <span className="text-xs text-neutral-400">No quiz</span>
               )}
 
@@ -709,6 +711,40 @@ interface Material {
  * sign-off sheet, last year's revision — which is what the second acceptance
  * round asked for.
  */
+/**
+ * A course's quiz, and how everyone who has taken it did.
+ *
+ * Every attempt on that quiz, across every session the course has ever run —
+ * not one sitting. The numbers are already computed for the quiz's own page;
+ * this puts them where the question gets asked.
+ *
+ * ★ Loading is not "nobody has taken it". That is the same mistake as an empty
+ * list standing in for a failed request, and on a slow connection an instructor
+ * would read "nobody has taken it yet" for a second or two before the real
+ * figures arrived.
+ */
+function CourseQuiz({ quiz }: { quiz: QuizSummary }) {
+  const results = useQuery({
+    queryKey: ['quiz-results', quiz.id],
+    queryFn: () => api.get<QuizResults>(`/api/v1/quizzes/${quiz.id}/results`),
+  })
+  const r = results.data
+
+  return (
+    <Link to={`/quizzes/${quiz.id}/edit`}
+          className="flex min-w-0 flex-col text-xs font-medium text-primary-700 hover:underline">
+      <span className="truncate">Quiz: {quiz.title}</span>
+      <span className="text-[11px] font-normal text-neutral-500">
+        {results.isError ? 'results unavailable'
+          : results.isLoading || !r ? '…'
+          : r.people === 0 ? 'nobody has taken it yet'
+          : `${r.passed} of ${r.people} passed, all sittings`
+            + (r.average_score !== null ? ` · average ${r.average_score}%` : '')}
+      </span>
+    </Link>
+  )
+}
+
 function CourseMaterial({ course, mayWrite }: { course: Course; mayWrite: boolean }) {
   const queryClient = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)

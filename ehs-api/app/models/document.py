@@ -61,6 +61,11 @@ class SafetyDocument(UUIDPrimaryKey, TimestampMixin, Base):
                                                default=False, server_default="false")
     # Empty list = everybody. A list of role codes narrows it — the forklift
     # procedure does not need a signature from the accounts office.
+    # Named individuals, in addition to whatever roles are listed. A procedure
+    # that concerns four people on one line corresponds to no role, and sending
+    # it to the nearest one teaches thirty others to ignore the next one.
+    ack_user_ids: Mapped[list] = mapped_column(JSONB, nullable=False,
+                                               default=list, server_default="[]")
     ack_roles: Mapped[list] = mapped_column(JSONB, nullable=False,
                                             default=list, server_default="[]")
 

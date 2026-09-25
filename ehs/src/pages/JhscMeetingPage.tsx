@@ -76,11 +76,10 @@ function SendForm({ recId, onDone, onCancel }: {
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
-import { Plus, Send } from 'lucide-react'
+import { FileText, Plus, Send } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -452,6 +451,17 @@ function MinutesPanel(
     mutationFn: () => api.post(`/api/v1/jhsc/meetings/${meeting.id}/publish`, {}),
     onSuccess: onSaved,
   })
+  // Starting the minutes and attaching them to this meeting are one call, so
+  // there is no half-done state where a form exists and nothing points at it.
+  const navigate = useNavigate()
+  const startMinutes = useMutation({
+    mutationFn: () => api.post<{ submission_id: string; submission_no: string }>(
+      `/api/v1/jhsc/meetings/${meeting.id}/minutes-form/start`, {}),
+    onSuccess: (r) => {
+      onSaved()
+      navigate(`/forms/submissions/${r.submission_id}`)
+    },
+  })
 
   if (!editable) {
     return (
@@ -484,15 +494,29 @@ function MinutesPanel(
               form, so the headings can change as the committee's practice does.
               Fill it in under Forms and attach it here.
             </p>
-            <Link to={`/forms?template=${encodeURIComponent(templateCode ?? '')}`}
-                  className="mt-2 inline-block text-xs font-semibold text-primary-700 hover:underline">
-              Open the minutes form
-            </Link>
+            {/* ★ Started from here, so the link between the minutes and the
+                meeting is made when the document comes into existence. The
+                screen used to say "fill it in under Forms and attach it here"
+                and offer nothing here to attach it with — so the minutes and
+                the meeting they belong to were two unrelated records. Pressing
+                it again opens the same ones. */}
+            <button type="button"
+                    className="mt-2 inline-flex min-h-[32px] items-center gap-1.5 text-xs font-semibold text-primary-700 hover:underline disabled:opacity-50"
+                    disabled={startMinutes.isPending}
+                    onClick={() => { if (!startMinutes.isPending) startMinutes.mutate() }}>
+              <FileText className="h-3.5 w-3.5" aria-hidden />
+              {startMinutes.isPending
+                ? 'Opening…'
+                : meeting.minutes_submission_id
+                  ? 'Open the minutes'
+                  : 'Write the minutes'}
+            </button>
             {meeting.minutes_submission_id && (
               <p className="mt-1.5 text-xs text-success-700">
                 A filled-in form is attached to this meeting.
               </p>
             )}
+            <ErrorNote error={startMinutes.error} />
           </div>
         ) : (
           <Field label="Minutes"

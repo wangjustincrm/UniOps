@@ -22,6 +22,7 @@ to be told the label is stale rather than that something went wrong.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel
@@ -33,6 +34,7 @@ from app.core.deps import SessionDep
 from app.core.permissions import CanReportIncident
 from app.crud import asset as asset_crud
 from app.crud import chemical as chemical_crud
+from app.api.v1.incidents import _user_id
 from app.crud import document as document_crud
 from app.crud import permit as permit_crud
 from app.crud import quiz as quiz_crud
@@ -44,6 +46,9 @@ router = APIRouter(prefix="/qr")
 class QrTarget(BaseModel):
     kind: str
     id: uuid.UUID
+    # When this person already acknowledged this version, if they have. Only a
+    # document carries it.
+    signed_at: datetime | None = None
     label: str
     # Where the front end should go. Relative, because the same token resolves
     # inside the module and inside the Portal shell.
@@ -84,11 +89,21 @@ async def resolve(token: str, db: SessionDep, user: CanReportIncident):  # noqa:
 
     document = await document_crud.by_qr_token(db, token)
     if document is not None:
+        # ★ Whether this person has already signed *this version*. Without it
+        # the code by the door asks somebody to sign something they signed in
+        # August, and pressing the button quietly returns the old record — so
+        # the screen would say "Signed" about an act that did not just happen.
+        signed_at = None
+        if document.requires_ack:
+            signed_at = await document_crud.acknowledged_at(
+                db, document, user_id=_user_id(user))
         return QrTarget(
             kind="document", id=document.id,
             label=f"{document.title} v{document.version}",
             path=f"/documents/{document.id}",
-            actions=["read", "acknowledge"] if document.requires_ack else ["read"],
+            actions=(["read", "acknowledge"] if document.requires_ack and not signed_at
+                     else ["read"]),
+            signed_at=signed_at,
         )
 
     quiz = await quiz_crud.by_qr_token(db, token)

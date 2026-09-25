@@ -48,6 +48,8 @@ class DocumentIn(BaseModel):
     requires_ack: bool = False
     # Empty = everybody. Role codes narrow it.
     ack_roles: list[str] = Field(default_factory=list)
+    # Named people, added to whatever the roles reach rather than narrowing it.
+    ack_user_ids: list[uuid.UUID] = Field(default_factory=list)
     owner_id: uuid.UUID | None = None
 
 
@@ -62,6 +64,7 @@ class DocumentPatch(BaseModel):
     review_months: int | None = Field(default=None, ge=1, le=120)
     requires_ack: bool | None = None
     ack_roles: list[str] | None = None
+    ack_user_ids: list[uuid.UUID] | None = None
     owner_id: uuid.UUID | None = None
 
 
@@ -85,6 +88,7 @@ class DocumentOut(BaseModel):
     supersedes_id: uuid.UUID | None
     requires_ack: bool
     ack_roles: list[str]
+    ack_user_ids: list[uuid.UUID]
     qr_token: str | None
     owner_name: str | None
 

@@ -202,6 +202,16 @@ async def label_pdf_download(
     by hiding a button — a hidden button is a suggestion, and this is a rule.
     """
     label = await crud.get_label(db, label_id)
+    if label.status == "superseded":
+        # ★ A newer data sheet has arrived since this was approved. The hazard
+        # classification may have changed with it, and the label on the drum is
+        # what somebody reads before opening it — printing the old one is a
+        # WHMIS breach dressed up as a working feature.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "A newer safety data sheet has been filed since this label was "
+            "approved. Make a new label from the current sheet — the hazards "
+            "may have changed.")
     if label.status not in ("approved", "printed"):
         raise HTTPException(
             status.HTTP_409_CONFLICT,

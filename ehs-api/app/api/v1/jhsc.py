@@ -4,14 +4,18 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
+
+from sqlalchemy import select
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import SessionDep
 from app.core.permissions import CanManageJhsc, CanReadJhsc
 from app.crud import form as forms_crud
 from app.crud import jhsc as crud
+from app.models.config import EhsConfig
+from app.models.form import FormTemplate
 
 router = APIRouter(prefix="/jhsc")
 
@@ -246,6 +250,13 @@ async def list_recommendations(
         db, meeting_id=meeting_id, outstanding_only=outstanding)
 
 
+class MinutesFormStarted(BaseModel):
+    """Where the minutes now live, so the screen can open them."""
+
+    submission_id: uuid.UUID
+    submission_no: str
+
+
 class MinutesFormIn(BaseModel):
     """Attaching the filled-in minutes form to the meeting."""
 
@@ -272,6 +283,56 @@ async def attach_minutes_form(
     meeting.minutes_submission_id = submission.id
     await db.flush()
     return MeetingOut.model_validate(meeting)
+
+
+@router.post("/meetings/{meeting_id}/minutes-form/start", response_model=MinutesFormStarted,
+             status_code=status.HTTP_201_CREATED)
+async def start_minutes_form(
+    meeting_id: uuid.UUID, db: SessionDep, user: CanManageJhsc,
+):
+    """Begin the minutes for this meeting, on the configured form.
+
+    ★ One call because the two halves have to stay together. The screen told
+    people to fill the form in under Forms and attach it here, and there was
+    nothing here to attach it with — the endpoint existed and nothing called
+    it, so the minutes and the meeting they belong to were two unrelated
+    records. Starting it from the meeting makes the link at the moment the
+    document comes into existence, which is the only moment nobody can forget.
+    """
+    meeting = await crud.get_meeting(db, meeting_id)
+
+    # ★ Idempotent. Pressed twice — by one person on a slow connection, or by
+    # two members of the committee — a second call would point the meeting at a
+    # fresh empty form and cut the half-written minutes loose in Forms, with
+    # nothing saying where they went. These are the committee's statutory
+    # record; the second press opens the one that exists.
+    if meeting.minutes_submission_id is not None:
+        existing = await forms_crud.get_submission(db, meeting.minutes_submission_id)
+        return MinutesFormStarted(submission_id=existing.id,
+                                  submission_no=existing.submission_no)
+
+    config = (await db.execute(select(EhsConfig).where(EhsConfig.id == 1))).scalar_one_or_none()
+    code = (config.jhsc_minutes_template_code if config else None) or None
+    if not code:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "No minutes form has been chosen yet. Pick one under Settings → Rules.")
+
+    template = (await db.execute(
+        select(FormTemplate).where(FormTemplate.code == code))).scalar_one_or_none()
+    if template is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Settings names '{code}' as the minutes form, and there is no such "
+            "form. Choose one that exists under Settings → Rules.")
+
+    submission = await forms_crud.start_submission(
+        db, template.id, user_id=_user_id(user),
+        location_id=None, occurred_at=None)
+    meeting.minutes_submission_id = submission.id
+    await db.flush()
+    return MinutesFormStarted(submission_id=submission.id,
+                              submission_no=submission.submission_no)
 
 
 @router.post("/meetings/{meeting_id}/recommendations", response_model=RecommendationOut,

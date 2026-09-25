@@ -696,6 +696,11 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
 
   const current = (labels.data ?? []).find(
     (l) => l.status === 'draft' || l.status === 'approved' || l.status === 'printed')
+  // Something was approved once and a revision has retired it, with nothing
+  // live in its place. That is the state worth saying out loud: the drums in
+  // the plant are wearing a label this system will no longer print.
+  const supersededByRevision =
+    !current && (labels.data ?? []).some((l) => l.status === 'superseded')
 
   const print = async (labelId: string) => {
     if (busy) return
@@ -714,6 +719,20 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
   return (
     <div className="mt-4">
       <SectionTitle className="mb-1.5">Workplace label</SectionTitle>
+
+      {/* ★ A label approved against a sheet that has since been replaced stops
+          being printable, because the supplier may have reclassified the
+          product and the label on the drum is what somebody reads before
+          opening it. It is not rewritten automatically: the new hazards have
+          to be read off the new sheet and approved by a person, which is the
+          rule every label here already follows. */}
+      {supersededByRevision && (
+        <p className="mb-2 max-w-[68ch] rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800">
+          A newer data sheet has been filed since the last label was approved, so
+          that label can no longer be printed — the hazards may have changed.
+          Start a new one and check it against the current sheet.
+        </p>
+      )}
 
       {!current ? (
         <>
