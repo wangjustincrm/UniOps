@@ -122,7 +122,8 @@ classified as (
 actual as (
     select cost_center_id,
            coalesce(sum(amt) filter (where m between :month_from and :month_to), 0) as period,
-           coalesce(sum(amt) filter (where m <= :month_to), 0) as ytd
+           coalesce(sum(amt) filter (where m <= :month_to), 0) as ytd,
+           {actual_months} as months
       from classified
      where policy_prefix is null and budget_account_id is not null
        and cost_center_id is not null
@@ -146,7 +147,8 @@ orphan as (
 plan as (
     select p.cost_center_id,
            coalesce(sum(pl.amount), 0) as full_year,
-           coalesce(sum(pl.amount) filter (where pl.month between :month_from and :month_to), 0) as period
+           coalesce(sum(pl.amount) filter (where pl.month between :month_from and :month_to), 0) as period,
+           {plan_months} as months
       from budget_plans p
       join budget_plan_lines pl on pl.plan_id = p.id
       join budget_accounts ba on ba.id = pl.account_id
@@ -158,7 +160,8 @@ plan as (
 select cc.id, cc.code, cc.name,
        dp.code as dept_code, dp.name as dept_name,
        coalesce(plan.full_year, 0), coalesce(plan.period, 0),
-       coalesce(actual.period, 0), coalesce(actual.ytd, 0)
+       coalesce(actual.period, 0), coalesce(actual.ytd, 0),
+       plan.months, actual.months
   from cost_centers cc
   left join departments dp on dp.id = cc.department_id
   left join actual on actual.cost_center_id = cc.id
@@ -210,7 +213,8 @@ classified as (
 )
 select coalesce(policy_prefix, '__unplaced__') as bucket,
        coalesce(sum(amt) filter (where m between :month_from and :month_to), 0) as period,
-       coalesce(sum(amt) filter (where m <= :month_to), 0) as ytd
+       coalesce(sum(amt) filter (where m <= :month_to), 0) as ytd,
+       {actual_months} as months
   from classified
  where policy_prefix is not null
     or cost_center_id is null or budget_account_id is null
@@ -312,6 +316,23 @@ async def unallocated_lines(db, *, fiscal_year: int, month_from: int, month_to: 
     }
 
 
+def _month_array(column: str, month: str) -> str:
+    """Twelve per-month sums as one numeric[] — the monthly expansion of the
+    period columns, computed in the same pass so it cannot disagree with them."""
+    return "array[" + ", ".join(
+        f"coalesce(sum({column}) filter (where {month} = {i}), 0)"
+        for i in range(1, 13)) + "]::numeric[]"
+
+
+_ACTUAL_MONTHS = _month_array("amt", "m")
+_PLAN_MONTHS = _month_array("pl.amount", "pl.month")
+
+
+def _months(values) -> list[Decimal]:
+    """A NULL array (no plan / no actual for the cost centre) is twelve zeros."""
+    return [Decimal(v) for v in values] if values else [_ZERO] * 12
+
+
 def _s(v) -> str:
     return str(Decimal(v or 0).quantize(Decimal("0.01")))
 
@@ -322,6 +343,20 @@ def _pct(num: Decimal, den: Decimal) -> str | None:
     if den == 0:
         return None
     return str((num / den * 100).quantize(Decimal("0.1")))
+
+
+def _monthly(plan_m: list[Decimal] | None, actual_m: list[Decimal],
+             month_from: int, month_to: int) -> list[dict[str, Any]]:
+    """Plan and actual for each month of the window — no per-month variance;
+    finance asked for the two figures only (user, 2026-09-25). `plan_m` None
+    means the row has no plan at all (the category-level buckets)."""
+    out = []
+    for m in range(month_from, month_to + 1):
+        entry: dict[str, Any] = {"month": m, "actual": _s(actual_m[m - 1])}
+        if plan_m is not None:
+            entry["plan"] = _s(plan_m[m - 1])
+        out.append(entry)
+    return out
 
 
 def _metrics(plan_fy: Decimal, plan_period: Decimal,
@@ -343,6 +378,12 @@ def _metrics(plan_fy: Decimal, plan_period: Decimal,
 def _accumulate(bucket: dict, row) -> None:
     for i, key in enumerate(("fy", "pp", "ap", "ay")):
         bucket[key] = bucket.get(key, _ZERO) + Decimal(row[i])
+
+
+def _accumulate_months(bucket: dict, plan_m: list[Decimal], actual_m: list[Decimal]) -> None:
+    for key, values in (("pm", plan_m), ("am", actual_m)):
+        prev = bucket.get(key, [_ZERO] * 12)
+        bucket[key] = [a + b for a, b in zip(prev, values)]
 
 
 # ── composition: what a roll-up figure is made of ───────────────────────────
@@ -517,27 +558,36 @@ async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dic
         "excluded_like": [f"{p}%" for p in EXCLUDED_IO_PREFIXES],
     }
     rows = (await db.execute(
-        text(_SQL.format(categories=_CATEGORIES)), params)).all()
+        text(_SQL.format(categories=_CATEGORIES, actual_months=_ACTUAL_MONTHS,
+                         plan_months=_PLAN_MONTHS)), params)).all()
+
+    def monthly(agg: dict) -> list[dict[str, Any]]:
+        return _monthly(agg.get("pm", [_ZERO] * 12), agg.get("am", [_ZERO] * 12),
+                        month_from, month_to)
 
     company: dict = {}
     centres: dict[str, dict] = {}
     departments: dict[str, dict] = {}
     for (cc_id, cc_code, cc_name, dept_code, dept_name,
-         plan_fy, plan_period, act_period, act_ytd) in rows:
+         plan_fy, plan_period, act_period, act_ytd, plan_months, act_months) in rows:
         amounts = (plan_fy, plan_period, act_period, act_ytd)
+        plan_m, act_m = _months(plan_months), _months(act_months)
         leaf = {
             "cost_center_id": str(cc_id), "cost_center_code": cc_code,
             "cost_center_name": cc_name,
             "department_code": dept_code, "department_name": dept_name,
             "expense_centre": (cc_code or "").split("-")[0],
             **_metrics(*(Decimal(a) for a in amounts)),
+            "monthly": _monthly(plan_m, act_m, month_from, month_to),
         }
         _accumulate(company, amounts)
+        _accumulate_months(company, plan_m, act_m)
 
         centre_code = leaf["expense_centre"]
         centre = centres.setdefault(centre_code, {"children": []})
         centre["children"].append(leaf)
         _accumulate(centre, amounts)
+        _accumulate_months(centre, plan_m, act_m)
 
         # A cost centre with no department would vanish from the department
         # tree while still counting in the company total — surface it instead.
@@ -545,14 +595,19 @@ async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dic
         dept = departments.setdefault(key, {"name": dept_name, "children": []})
         dept["children"].append(leaf)
         _accumulate(dept, amounts)
+        _accumulate_months(dept, plan_m, act_m)
 
     policy_rows = (await db.execute(
-        text(_POLICY_SQL.format(categories=_CATEGORIES)), params)).all()
+        text(_POLICY_SQL.format(categories=_CATEGORIES, actual_months=_ACTUAL_MONTHS)),
+        params)).all()
     unallocated_period = unallocated_ytd = _ZERO
+    unallocated_m = [_ZERO] * 12
     breakdown = []
-    for bucket, period, ytd in policy_rows:
+    for bucket, period, ytd, months in policy_rows:
         unallocated_period += Decimal(period)
         unallocated_ytd += Decimal(ytd)
+        bucket_m = _months(months)
+        unallocated_m = [a + b for a, b in zip(unallocated_m, bucket_m)]
         breakdown.append({
             "key": bucket,
             # The bucket holds lines missing a cost centre OR a budget
@@ -563,6 +618,7 @@ async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dic
                       if bucket == "__unplaced__"
                       else EXCLUDED_IO_LABELS.get(bucket, bucket)),
             "actual_period": _s(period), "actual_ytd": _s(ytd),
+            "monthly": _monthly(None, bucket_m, month_from, month_to),
         })
     breakdown.sort(key=lambda b: Decimal(b["actual_ytd"]), reverse=True)
 
@@ -570,6 +626,7 @@ async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dic
         return {"code": code, "label": label,
                 **_metrics(agg.get("fy", _ZERO), agg.get("pp", _ZERO),
                            agg.get("ap", _ZERO), agg.get("ay", _ZERO)),
+                "monthly": monthly(agg),
                 **extra}
 
     centre_nodes = [
@@ -587,6 +644,8 @@ async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dic
 
     company_metrics = _metrics(company.get("fy", _ZERO), company.get("pp", _ZERO),
                                company.get("ap", _ZERO), company.get("ay", _ZERO))
+    company_metrics["monthly"] = monthly(company)
+    company_actual_m = company.get("am", [_ZERO] * 12)
     return {
         "fiscal_year": fiscal_year,
         "month_from": month_from, "month_to": month_to,
@@ -596,6 +655,7 @@ async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dic
         "unallocated": {
             "actual_period": _s(unallocated_period),
             "actual_ytd": _s(unallocated_ytd),
+            "monthly": _monthly(None, unallocated_m, month_from, month_to),
             "breakdown": breakdown,
         },
         # Everything posted in the window, however it was classified. A report
@@ -605,5 +665,8 @@ async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dic
             "unallocated_actual_period": _s(unallocated_period),
             "total_actual_period": _s(
                 Decimal(company_metrics["actual_period"]) + unallocated_period),
+            "total_monthly": _monthly(
+                None, [a + b for a, b in zip(company_actual_m, unallocated_m)],
+                month_from, month_to),
         },
     }

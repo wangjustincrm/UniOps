@@ -325,3 +325,51 @@ async def test_unallocated_lines_respect_the_window(db_session, seeded):
     q1 = await rollup.unallocated_lines(db_session, fiscal_year=2026, month_from=1,
                                         month_to=3, bucket="CRM09912")
     assert q1["rows"] == []
+
+
+# ── expand by months ────────────────────────────────────────────────────────
+
+async def test_monthly_covers_the_window_and_adds_up_to_the_period(db_session, seeded):
+    """The monthly expansion is the period columns cut by month — every level's
+    months must sum back to that level's period figures, or the expanded page
+    shows two different answers side by side."""
+    r = await _roll(db_session, mf=7, mt=9)
+    nodes = [r["company"]] + r["by_expense_centre"] + r["by_department"] + \
+        [c for n in r["by_expense_centre"] for c in n["children"]]
+    for n in nodes:
+        assert [e["month"] for e in n["monthly"]] == [7, 8, 9]
+        assert sum(Decimal(e["plan"]) for e in n["monthly"]) == Decimal(n["plan_period"])
+        assert sum(Decimal(e["actual"]) for e in n["monthly"]) == Decimal(n["actual_period"])
+
+    aug = {e["month"]: e for e in r["company"]["monthly"]}[8]
+    assert aug == {"month": 8, "plan": "160.00", "actual": "600.00"}
+    ga = next(n for n in r["by_expense_centre"] if n["code"] == "GA")
+    assert [e["actual"] for e in ga["monthly"]] == ["0.00", "200.00", "0.00"]
+
+
+async def test_monthly_unallocated_has_no_plan_and_closes_the_total(db_session, seeded):
+    """Category-level rows carry no plan at all — not a plan of zero — and the
+    per-month total is placed + unallocated, month by month."""
+    r = await _roll(db_session, mf=1, mt=9)
+    un = r["unallocated"]
+    assert all("plan" not in e for e in un["monthly"])
+    assert {e["month"]: e["actual"] for e in un["monthly"]}[8] == "5007.00"
+    for b in un["breakdown"]:
+        assert sum(Decimal(e["actual"]) for e in b["monthly"]) == Decimal(b["actual_period"])
+
+    total = {e["month"]: Decimal(e["actual"]) for e in r["reconciliation"]["total_monthly"]}
+    company = {e["month"]: Decimal(e["actual"]) for e in r["company"]["monthly"]}
+    unalloc = {e["month"]: Decimal(e["actual"]) for e in un["monthly"]}
+    assert all(total[m] == company[m] + unalloc[m] for m in range(1, 10))
+    assert sum(total.values()) == Decimal(r["reconciliation"]["total_actual_period"])
+
+
+async def test_monthly_of_a_centre_with_no_plan_or_actual_is_zeros(db_session, seeded):
+    """A cost centre with neither side gets NULL arrays from SQL; they must come
+    out as zeros, not crash or vanish."""
+    _exec("insert into cost_centers (id, code, name, is_active, created_at, updated_at) "
+          "values (%s,'RD-0199','empty',true,now(),now())", (uuid.uuid4(),))
+    r = await _roll(db_session, mf=1, mt=3)
+    rd = next(n for n in r["by_expense_centre"] if n["code"] == "RD")
+    assert rd["children"][0]["monthly"] == [
+        {"month": m, "plan": "0.00", "actual": "0.00"} for m in (1, 2, 3)]

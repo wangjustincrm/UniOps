@@ -148,3 +148,48 @@ def test_borders_carry_every_side():
     for border in re.findall(r"<border>.*?</border>", _styles_xml(), re.S):
         for side in ("left", "right", "top", "bottom", "diagonal"):
             assert f"<{side}" in border, f"{side} missing from {border}"
+
+
+def _monthly_payload():
+    p = _payload()
+    p["month_from"], p["month_to"] = 8, 9
+    cells = [{"month": 8, "plan": "50.00", "actual": "20.00"},
+             {"month": 9, "plan": "50.00", "actual": "40.00"}]
+    for n in [p["company"], *p["by_expense_centre"], *p["by_department"],
+              p["by_expense_centre"][0]["children"][0]]:
+        n["monthly"] = cells
+    p["company"] = {**_METRICS, "monthly": cells}
+    p["unallocated"]["monthly"] = [{"month": 8, "actual": "900.00"},
+                                   {"month": 9, "actual": "0.00"}]
+    p["unallocated"]["breakdown"][0]["monthly"] = p["unallocated"]["monthly"]
+    p["reconciliation"]["total_monthly"] = [{"month": 8, "actual": "920.00"},
+                                            {"month": 9, "actual": "40.00"}]
+    return p
+
+
+def test_by_month_puts_plan_actual_pairs_before_the_window_columns():
+    """Two columns a month — plan and actual, no monthly variance — ahead of the
+    unchanged eight measures."""
+    data = build_rollup_xlsx(rollup=_monthly_payload(), group_by="centre",
+                             window_label="Aug-Sep", by_month=True)
+    ws = openpyxl.load_workbook(io.BytesIO(data)).active
+    head = [ws.cell(4, c).value for c in range(1, ws.max_column + 1)]
+    assert head == ["Expense centre", "Code", "Aug Plan", "Aug Actual", "Sep Plan",
+                    "Sep Actual", "Plan Aug-Sep", "Actual Aug-Sep", "Variance",
+                    "Variance %", "Full-year plan", "Actual YTD", "Remaining", "Consumed %"]
+    rows = {ws.cell(r, 1).value: [ws.cell(r, c).value for c in range(1, 15)]
+            for r in range(5, ws.max_row + 1)}
+    assert rows["Whole company"][2:8] == [50, 20, 50, 40, 100, 60]
+    # category-level: no plan, blank rather than 0
+    assert rows["Category-level (not allocated)"][2:6] == [None, 900, None, 0]
+    # percentages still land on the percent format after the shift
+    assert ws.cell(5, 10).number_format == "0.0"
+    assert ws.cell(5, 14).number_format == "0.0"
+    assert ws.cell(5, 3).number_format == "#,##0.00"
+
+
+def test_without_by_month_the_layout_is_unchanged():
+    ws = openpyxl.load_workbook(io.BytesIO(build_rollup_xlsx(
+        rollup=_monthly_payload(), group_by="centre", window_label="Aug-Sep"))).active
+    assert ws.max_column == 10
+    assert ws.cell(4, 3).value == "Plan Aug-Sep"
