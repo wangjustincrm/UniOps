@@ -54,6 +54,9 @@ interface Summary {
   outstanding_bank_lines: number; outstanding_book_lines: number
   difference: string; opening_difference: string; movement_difference: string
   bank_account: string; status: string
+  /** Absent on periods signed off before foreign-currency accounts reconciled in
+   *  their own currency — their frozen snapshot never had these. */
+  currency?: string; base_only_count?: number; base_only_local_total?: string
 }
 interface BankLine {
   id: string; txn_date: string; description: string; amount: string
@@ -63,6 +66,14 @@ interface BookLine {
   jv_line_id: string; jv_number: string; voucher_date: string; summary: string | null
   amount: string; contra_kind: string; contra_label: string; contra_codes: string[]
   cleared: boolean
+  /** The same line in CAD (NC 本币). Only differs from `amount` on a non-CAD account. */
+  local_amount?: string
+}
+/** A ledger line with no amount in the account's currency — FX revaluation or a
+ *  CAD-only adjustment. Shown for the record; it is not a bank movement. */
+interface BaseOnlyLine {
+  jv_line_id: string; jv_number: string; voucher_date: string; summary: string | null
+  currency: string; local_amount: string
 }
 interface MatchGroup {
   id: string; method: string; amount: string; note: string | null
@@ -79,6 +90,7 @@ interface PeriodRow {
 interface Period {
   id: string; status: string; period_start: string; period_end: string; currency: string
   summary: Summary; bank_lines: BankLine[]; book_lines: BookLine[]; matches: MatchGroup[]
+  base_only_lines?: BaseOnlyLine[]
 }
 interface Finding {
   kind: string; message: string; bank_ids: string[]; advice_ids: string[]; book_ids: string[]
@@ -118,6 +130,7 @@ const METHOD_TRUST: Record<string, 'evidence' | 'amounts' | 'manual'> = {
   direct: 'amounts',
   subset_sum: 'amounts',
   book_subset: 'amounts',
+  bank_rollup: 'amounts',
   manual: 'manual',
 }
 const TRUST_CHIP: Record<string, string> = {
@@ -138,6 +151,7 @@ const METHOD_LABEL: Record<string, string> = {
   direct: 'One to one',
   subset_sum: 'Split across ledger lines',
   book_subset: 'Inferred — no payment file',
+  bank_rollup: 'Many statement lines, one ledger entry',
   manual: 'Matched by hand',
 }
 
@@ -275,11 +289,19 @@ export default function BankReconciliationPage() {
 
   const importStatement = useMutation({
     mutationFn: (file: File) =>
-      financeUpload<{ verified: boolean; verify_errors: string[]; lines: number; imported: number; retention_warning: string | null }>(
+      financeUpload<{ verified: boolean; verify_errors: string[]; lines: number; imported: number
+                      removed?: number
+                      stale_matched?: { date: string; amount: string; description: string }[]
+                      retention_warning: string | null }>(
         `/bank-recon/${accountId}/statements`, file),
     onSuccess: (r) => {
-      const head = `Statement read: ${r.lines} lines (${r.imported} new).`
-      if (!r.verified) {
+      const head = `Statement read: ${r.lines} lines (${r.imported} new${r.removed ? `, ${r.removed} from the previous read removed` : ''}).`
+      // A matched line the new read no longer has: kept rather than deleted,
+      // because a group hangs off it — so the person has to hear about it.
+      const stale = r.stale_matched ?? []
+      if (stale.length) {
+        flash('err', `${head} ${stale.length} matched line(s) from the previous read are not on this statement any more — unmatch and review: ${stale.map((t) => `${t.date} ${money(t.amount)} ${t.description}`).join('; ')}`)
+      } else if (!r.verified) {
         flash('err', `${head} It does NOT tie to its own printed totals, so it cannot be reconciled yet — ${r.verify_errors.join(' ')}`)
       } else {
         flash('ok', `${head} Verified against the statement's own totals.${r.retention_warning ? ` ${r.retention_warning}` : ''}`)
@@ -429,6 +451,11 @@ export default function BankReconciliationPage() {
 
   const s = period?.summary
   const frozen = period?.status === 'finalized'
+  // A non-CAD account reconciles in its own currency (NC 原币); the CAD figures
+  // are secondary. null on a CAD account, where the two are the same number.
+  const periodCcy = (s?.currency ?? period?.currency ?? 'CAD').toUpperCase()
+  const foreignCcy = periodCcy !== 'CAD' ? periodCcy : null
+  const baseOnly = period?.base_only_lines ?? []
   const busy = autoMatch.isPending || matchByHand.isPending || finalize.isPending
     || reopen.isPending || importStatement.isPending || importAdvices.isPending
 
@@ -575,14 +602,22 @@ export default function BankReconciliationPage() {
               <Stat label="Statement closing" value={money(s?.statement_closing)}
                     hint={s?.statement_verified ? 'verified' : 'not verified'}
                     tone={s?.statement_verified ? undefined : 'warn'} />
-              <Stat label="Ledger opening" value={money(s?.book_opening)} />
-              <Stat label="Ledger closing" value={money(s?.book_closing)} />
+              <Stat label="Ledger opening" value={money(s?.book_opening)}
+                    hint={foreignCcy ? `${foreignCcy} · NC original currency` : undefined} />
+              <Stat label="Ledger closing" value={money(s?.book_closing)}
+                    hint={foreignCcy ? `${foreignCcy} · NC original currency` : undefined} />
               <Stat label="Cleared"
                     value={`${(s?.cleared_debit_count ?? 0) + (s?.cleared_credit_count ?? 0)} lines`}
                     hint={`${money(s?.cleared_debit_total)} out · ${money(s?.cleared_credit_total)} in`} />
+              {/* 0.00 against a statement that does not tie to its own totals is
+                  not "reconciled" — ICBC July read the USD opening and the CAD
+                  closing and still landed on 0.00 here. Sign off refuses it; the
+                  card must not say the opposite. */}
               <Stat label="Difference" value={money(s?.difference)}
-                    tone={Number(s?.difference ?? 0) === 0 ? 'pos' : 'neg'}
-                    hint={Number(s?.difference ?? 0) === 0 ? 'reconciled' : 'must be 0.00 to sign off'} />
+                    tone={!s?.statement_verified ? 'warn' : Number(s?.difference ?? 0) === 0 ? 'pos' : 'neg'}
+                    hint={s?.statement_closing == null ? 'no statement imported yet'
+                      : !s?.statement_verified ? 'statement not verified — re-import it'
+                      : Number(s?.difference ?? 0) === 0 ? 'reconciled' : 'must be 0.00 to sign off'} />
             </div>
 
             {/* Where the difference came from. The two halves sum to Difference and
@@ -648,10 +683,15 @@ export default function BankReconciliationPage() {
                     Import payment files
                   </button>
 
-                  <button onClick={() => autoMatch.mutate()} disabled={busy} className={primaryBtn}>
+                  {/* "Auto-match", not "Match": the legend below tells people to tick
+                      both sides and then match, and with this button also called
+                      Match they ticked two lines and never ran the ladder — BOC July
+                      sat at 1 manual group while 29 same-amount pairs waited. */}
+                  <button onClick={() => autoMatch.mutate()} disabled={busy} className={primaryBtn}
+                          title="Match everything the rules can prove: payment files, confirmation numbers, and one statement line to one ledger line of the same amount within 5 days">
                     {autoMatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
                       : <Sparkles className="h-4 w-4" />}
-                    Match
+                    Auto-match
                   </button>
                 </>
               )}
@@ -895,7 +935,7 @@ export default function BankReconciliationPage() {
               </span>
               <span className="flex items-center gap-1">
                 <input type="checkbox" readOnly className="h-3.5 w-3.5 accent-[#085E5E]" />
-                not matched — tick both sides, then Match
+                not matched — tick both sides, then Match these
               </span>
               <span className="flex items-center gap-1">
                 <span className="inline-block h-3 w-3 rounded-sm bg-[#BFE3DA] ring-1 ring-[#085E5E]" />
@@ -975,7 +1015,9 @@ export default function BankReconciliationPage() {
               </Side>
 
               <Side title={`NC ledger · ${period.book_lines.length} lines`}
-                    subtitle="Account 100201, expanded by bank account">
+                    subtitle={foreignCcy
+                      ? `Account 100201, expanded by bank account · amounts in ${foreignCcy} (NC original currency), CAD below`
+                      : 'Account 100201, expanded by bank account'}>
                 <table className="w-full text-sm">
                   <thead className="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500">
                     <tr>
@@ -1018,6 +1060,9 @@ export default function BankReconciliationPage() {
                           <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
                             Number(b.amount) < 0 ? 'text-red-600' : 'text-green-700')}>
                             {money(b.amount)}
+                            {foreignCcy && b.local_amount != null && (
+                              <div className="text-[11px] text-neutral-400">CAD {money(b.local_amount)}</div>
+                            )}
                           </td>
                           <td className="px-2 py-1.5">
                             <div className="truncate" title={b.summary ?? ''}>{b.summary || '—'}</div>
@@ -1029,6 +1074,35 @@ export default function BankReconciliationPage() {
                         </tr>
                       )
                     })}
+                    {/* Not selectable on purpose: they have no amount in the account's
+                        currency, so there is nothing on the statement they could ever
+                        match. Listed so the CAD 科目余额表 figure can still be traced. */}
+                    {baseOnly.length > 0 && (
+                      <tr className="border-t border-neutral-200 bg-neutral-50">
+                        <td colSpan={5} className="px-3 py-1.5 text-[11px] text-neutral-500">
+                          Not on the statement · {baseOnly.length} line{baseOnly.length > 1 ? 's' : ''} with
+                          no {foreignCcy ?? period.currency} amount (FX revaluation / CAD-only),
+                          CAD {money(s?.base_only_local_total ??
+                            String(baseOnly.reduce((t, b) => t + Number(b.local_amount), 0)))} — excluded
+                          from the ledger balance
+                        </td>
+                      </tr>
+                    )}
+                    {baseOnly.map((b) => (
+                      <tr key={b.jv_line_id} className="border-t border-neutral-100 text-neutral-400">
+                        <td className="px-2 py-1.5" />
+                        <td className="px-2 py-1.5 font-mono text-xs">{shortDate(b.voucher_date)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-xs tabular-nums">
+                          <div>—</div>
+                          <div className="text-[11px]">CAD {money(b.local_amount)}</div>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <div className="truncate" title={b.summary ?? ''}>{b.summary || '—'}</div>
+                          <div className="font-mono text-[11px]">{b.jv_number}</div>
+                        </td>
+                        <td className="px-2 py-1.5" />
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </Side>
