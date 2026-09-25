@@ -16,7 +16,7 @@ and these are the calculations that must never be wrong.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, SmallInteger, String
+from sqlalchemy import DateTime, ForeignKey, Index, SmallInteger, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +33,15 @@ class StatutoryDeadline(UUIDPrimaryKey, TimestampMixin, Base):
             postgresql_where="satisfied_at IS NULL",
         ),
         Index("ix_ehs_deadline_source", "source_type", "source_id"),
+        # ★ One obligation of a kind per record. Three things read it as a
+        # given: the sweep finds the task it already raised by the obligation's
+        # name, satisfying one closes that same task, and both cleanups group
+        # by it. Without this the rule holds only because every path that
+        # starts a clock happens to reuse the existing row — and the day one
+        # does not, two obligations fold into one prompt and one of them goes
+        # unanswered, silently, in a statutory record.
+        UniqueConstraint("source_type", "source_id", "kind",
+                         name="uq_ehs_deadline_source_kind"),
     )
 
     # Polymorphic source, no FK — the same pattern the shared `tasks` table has

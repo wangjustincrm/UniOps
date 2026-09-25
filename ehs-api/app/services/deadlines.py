@@ -23,6 +23,31 @@ from app.models.incident import Incident
 from app.models.statutory import StatutoryDeadline
 from app.models.training import WorkerCertification
 from app.services import statutory
+from app.services import tasks as task_service
+
+# Which document a deadline's inbox task hangs off. The same map the sweep in
+# `tasks/scheduler.py` uses; kept here too because closing a task needs to find
+# it, and importing the scheduler from a service it calls would be a cycle.
+DEADLINE_DOC_TYPE = {
+    "incident": task_service.DOC_INCIDENT,
+    "cert": task_service.DOC_CERT,
+    "jhsc_rec": task_service.DOC_JHSC,
+    "document": task_service.DOC_DOCUMENT,
+    "sds": "ehs_sds",
+}
+
+
+def task_lead(kind: str) -> str:
+    """How an obligation's task title begins.
+
+    ★ This string is how the sweep finds a task it has already raised, and how
+    satisfying an obligation finds the task to close. One record can owe two
+    obligations — a critical injury owes both the Ministry and WSIB — so the
+    document alone does not identify the task, and the `tasks` mirror has no
+    column to hold a deadline id. Both callers must derive it here: change the
+    wording in one place only and the two stop finding each other's work.
+    """
+    return f"{kind.replace('_', ' ')} — "
 
 
 async def load_holidays(db: AsyncSession) -> frozenset[date]:
@@ -113,12 +138,34 @@ async def satisfy(
     evidence_note: str | None = None,
     when: datetime,
 ) -> StatutoryDeadline:
-    """Record that the obligation was discharged. Stops the clock."""
+    """Record that the obligation was discharged. Stops the clock, and the
+    prompt.
+
+    ★ Closing the task is half of discharging the obligation. It was not done:
+    HSE could file the report with the Ministry, upload the receipt, and still
+    be told to do it — for good, because the sweep only ever raised these and
+    nothing ever closed one. Nobody saw it while tasks assigned to a role
+    reached no screen; once they did, this was most of what was on the page.
+
+    Only this obligation's task. A critical injury owes the Ministry a report
+    and WSIB a Form 7, and filing one of them does not discharge the other.
+    """
     deadline.satisfied_at = when
     deadline.satisfied_by = user_id
     deadline.satisfied_by_name = user_name
     deadline.evidence_file_id = evidence_file_id
     deadline.evidence_note = evidence_note
+
+    doc_type = DEADLINE_DOC_TYPE.get(deadline.source_type, task_service.DOC_INCIDENT)
+    lead = task_lead(deadline.kind)
+    for task in await task_service.open_tasks_for(
+        db, doc_type=doc_type, doc_id=deadline.source_id
+    ):
+        if task.type == task_service.TASK_STATUTORY and (task.title or "").startswith(lead):
+            task.is_completed = True
+            task.completed_at = when
+            task.completed_by = user_id
+
     await db.flush()
     return deadline
 

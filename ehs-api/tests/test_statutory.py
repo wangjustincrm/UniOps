@@ -352,3 +352,105 @@ async def test_checking_the_same_item_twice_in_a_day_is_refused_not_a_crash(hse_
         f"/api/v1/safety-assets/inspections?asset_id={asset['id']}")).json()
     done = [c for c in checks if c["performed_on"]]
     assert len(done) == 1 and done[0]["result"] == "passed"
+
+
+# ── The prompt and the obligation ───────────────────────────────────────────
+
+async def test_filing_the_report_closes_the_task_that_asked_for_it(hse_manager, db_session):
+    """★ Satisfying an obligation left its inbox task open for good.
+
+    HSE could file with the Ministry, upload the receipt, and still be told to
+    do it. Nothing closed a statutory task — the sweep only raised them — and
+    nobody saw the pile because tasks assigned to a role rather than to a
+    person reached no screen at all.
+    """
+    import uuid as _uuid
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.statutory import StatutoryDeadline
+    from app.services import deadlines as deadline_service
+    from app.services import tasks as task_service
+
+    manager, client = hse_manager
+    source_id = _uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    deadline = StatutoryDeadline(
+        id=_uuid.uuid4(), kind="wsib_form7", source_type="incident",
+        source_id=source_id, source_ref="INC-2026-9001",
+        due_at=now + timedelta(hours=4), regulation_ref="WSIA s.21",
+        clock_type="business", starts_at=now,
+    )
+    db_session.add(deadline)
+    await task_service.open_task(
+        db_session,
+        task_type=task_service.TASK_STATUTORY,
+        doc_type=task_service.DOC_INCIDENT,
+        doc_id=source_id,
+        doc_number="INC-2026-9001",
+        title=f"{deadline_service.task_lead('wsib_form7')}due in 4h",
+        assigned_role="ehs_manager",
+    )
+    # A second obligation on the same record. Filing one does not discharge the
+    # other, and the assertion below is what keeps them apart.
+    await task_service.open_task(
+        db_session,
+        task_type=task_service.TASK_STATUTORY,
+        doc_type=task_service.DOC_INCIDENT,
+        doc_id=source_id,
+        doc_number="INC-2026-9001",
+        title=f"{deadline_service.task_lead('mol_48h')}overdue",
+        assigned_role="ehs_manager",
+    )
+    await db_session.commit()
+
+    before = {t["title"] for t in (await client.get("/api/v1/actions/mine/tasks")).json()}
+    assert any(t.startswith("wsib form7") for t in before)
+
+    await deadline_service.satisfy(
+        db_session, deadline, user_id=manager.id, user_name=manager.full_name,
+        evidence_note="Filed and acknowledged.", when=now)
+    await db_session.commit()
+
+    after = {t["title"] for t in (await client.get("/api/v1/actions/mine/tasks")).json()}
+    assert not any(t.startswith("wsib form7") for t in after), (
+        "the prompt to file it has to go when it has been filed")
+    assert any(t.startswith("mol 48h") for t in after), (
+        "the Ministry report is a different obligation and is still owed")
+
+
+async def test_escalating_rewords_the_prompt_rather_than_adding_one(hse_manager, db_session):
+    """★ One obligation, one prompt.
+
+    Each escalation used to raise another task, so a deadline that crossed all
+    three thresholds left three saying the same thing in three tones. On the
+    test database thirty-six open tasks stood for twelve incidents, one of them
+    holding six.
+    """
+    import uuid as _uuid
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.statutory import StatutoryDeadline
+    from app.tasks.scheduler import sweep_statutory
+
+    _, client = hse_manager
+    source_id = _uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    db_session.add(StatutoryDeadline(
+        id=_uuid.uuid4(), kind="wsib_form7", source_type="incident",
+        source_id=source_id, source_ref="INC-2026-9002",
+        due_at=now + timedelta(hours=20), regulation_ref="WSIA s.21",
+        clock_type="business", starts_at=now,
+    ))
+    await db_session.commit()
+
+    def theirs(rows):
+        return [t for t in rows if t["document_number"] == "INC-2026-9002"]
+
+    # Three sweeps, at widening lateness: due tomorrow, due shortly, overdue.
+    for at in (now, now + timedelta(hours=18), now + timedelta(hours=30)):
+        await sweep_statutory(db_session, at)
+        await db_session.commit()
+
+    rows = theirs((await client.get("/api/v1/actions/mine/tasks")).json())
+    assert len(rows) == 1, f"one obligation, one prompt — got {[r['title'] for r in rows]}"
+    assert "overdue" in rows[0]["title"], "and the one prompt says where it now stands"

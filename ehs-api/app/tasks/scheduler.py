@@ -37,6 +37,7 @@ from app.models.action import Action
 from app.models.config import EhsConfig
 from app.models.mirrors import User
 from app.models.statutory import StatutoryDeadline
+from app.services import deadlines as deadline_service
 from app.services import notify
 from app.services import tasks as task_service
 from app.crud import asset as asset_crud
@@ -84,16 +85,9 @@ async def _load_config(db: AsyncSession) -> EhsConfig | None:
     return (await db.execute(select(EhsConfig).where(EhsConfig.id == 1))).scalar_one_or_none()
 
 
-# Which document a deadline's task should point at. Every clock lives in one
-# table, but they hang off four different records, and a task deep-linking to
-# an incident that does not exist is worse than no task at all.
-_DEADLINE_DOC_TYPE = {
-    "incident": task_service.DOC_INCIDENT,
-    "cert": task_service.DOC_CERT,
-    "jhsc_rec": task_service.DOC_JHSC,
-    "document": task_service.DOC_DOCUMENT,
-    "sds": "ehs_sds",
-}
+# Which document a deadline's task should point at lives with the deadlines
+# service: raising the task and closing it have to agree about where it hangs,
+# and they did not while each kept its own answer.
 
 
 async def sweep_statutory(db: AsyncSession, now: datetime) -> int:
@@ -112,19 +106,45 @@ async def sweep_statutory(db: AsyncSession, now: datetime) -> int:
         remaining = deadline.due_at - now
         when = ("overdue" if overdue
                 else f"due in {int(remaining.total_seconds() // 3600)}h")
-        await task_service.open_task(
-            db,
-            task_type=task_service.TASK_STATUTORY,
-            doc_type=_DEADLINE_DOC_TYPE.get(
-                deadline.source_type, task_service.DOC_INCIDENT),
-            doc_id=deadline.source_id,
-            doc_number=deadline.source_ref or str(deadline.source_id)[:8],
-            title=f"{deadline.kind.replace('_', ' ')} — {when}",
-            assigned_role="ehs_manager",
-            description=(f"{deadline.regulation_ref or 'Statutory obligation'}. "
-                         f"Due {deadline.due_at.isoformat()}."),
-            priority="high" if level >= 2 else "normal",
-        )
+        doc_type = deadline_service.DEADLINE_DOC_TYPE.get(
+            deadline.source_type, task_service.DOC_INCIDENT)
+        # The obligation's own name leads the title, and is how its task is
+        # found again — here, and by `satisfy()` when it closes it. Derived in
+        # one place so the two cannot drift: one record can owe two of these,
+        # and matching on the document alone would fold them into one prompt.
+        lead = deadline_service.task_lead(deadline.kind)
+        title = f"{lead}{when}"
+        description = (f"{deadline.regulation_ref or 'Statutory obligation'}. "
+                       f"Due {deadline.due_at.isoformat()}.")
+        priority = "high" if level >= 2 else "normal"
+
+        # ★ One obligation, one prompt. Escalating used to add a task rather
+        # than change the one already there, so a single deadline that crossed
+        # all three thresholds left three open tasks saying the same thing in
+        # three tones — and on the test database one incident had six. They
+        # were invisible while nothing read role-assigned tasks; the moment
+        # that was fixed they became most of what the HSE Manager could see.
+        existing = next(
+            (t for t in await task_service.open_tasks_for(
+                db, doc_type=doc_type, doc_id=deadline.source_id)
+             if t.type == task_service.TASK_STATUTORY
+             and (t.title or "").startswith(lead)), None)
+        if existing is not None:
+            existing.title = title
+            existing.description = description
+            existing.priority = priority
+        else:
+            await task_service.open_task(
+                db,
+                task_type=task_service.TASK_STATUTORY,
+                doc_type=doc_type,
+                doc_id=deadline.source_id,
+                doc_number=deadline.source_ref or str(deadline.source_id)[:8],
+                title=title,
+                assigned_role="ehs_manager",
+                description=description,
+                priority=priority,
+            )
         # HSE gets this by email as well as by inbox. It is the one category
         # where a list somebody has not opened today is not good enough.
         await notify.statutory_escalated(db, deadline, overdue=overdue)

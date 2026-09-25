@@ -25,6 +25,7 @@ from app.models.chemical import Chemical, SafetyDataSheet
 from app.models.mirrors import Department, Location, User
 from app.models.statutory import StatutoryDeadline
 from app.services import statutory
+from app.services import deadlines as deadline_service
 from app.services.numbering import next_number
 
 
@@ -285,9 +286,15 @@ async def _clear_review_clock(db: AsyncSession, sheet: SafetyDataSheet) -> None:
             StatutoryDeadline.satisfied_at.is_(None),
         ))).scalar_one_or_none()
     if deadline is not None:
-        deadline.satisfied_at = datetime.now(timezone.utc)
-        deadline.evidence_note = "Superseded by a newer revision"
-        await db.flush()
+        # Through the service rather than by writing the column: satisfying an
+        # obligation also closes its prompt, and a second place that only wrote
+        # the column left the old "SDS review — overdue" task open for good.
+        await deadline_service.satisfy(
+            db, deadline,
+            user_id=None, user_name=None,
+            evidence_note="Superseded by a newer revision",
+            when=datetime.now(timezone.utc),
+        )
 
 
 # ── The two findings ─────────────────────────────────────────────────────────

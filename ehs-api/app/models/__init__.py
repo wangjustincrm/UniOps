@@ -4,6 +4,7 @@ Alembic's env.py and the test suite's `Base.metadata.create_all` both rely on
 this module having imported every model — one that is not reachable from here
 is silently absent from migrations and from the test schema.
 """
+from app.models.area_owner import AreaOwner  # noqa: F401
 from app.models.action import Action, ActionUpdate, ActionVerification  # noqa: F401
 from app.models.asset import AssetInspection, SafetyAsset  # noqa: F401
 from app.models.chemical import Chemical, SafetyDataSheet  # noqa: F401
