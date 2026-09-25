@@ -21,7 +21,7 @@ import { formatDate, formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
-  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, LoadProblem,
 } from '@/components/ui'
 
 interface Session {
@@ -73,7 +73,11 @@ export default function CourseSessionPage() {
   }
 
   if (session.isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
-  if (!session.data) return <p className="p-4 text-sm text-neutral-500">Session not found.</p>
+  // ★ The reason first. A refused or failed request leaves `data`
+  // undefined exactly as a deleted record does, so this used to answer
+  // "not found" to a 403 and to a server error alike.
+  if (session.isError) return <LoadProblem error={session.error} noun="course session" />
+  if (!session.data) return <LoadProblem error={null} noun="course session" />
   const s = session.data
   const open = s.status === 'scheduled'
 

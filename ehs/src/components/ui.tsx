@@ -6,6 +6,7 @@
  * data — the pages keep their own queries.
  */
 import type { ReactNode } from 'react'
+import { ApiError } from '@/lib/api'
 
 /**
  * The scale. Three sizes below the body text and no more:
@@ -247,5 +248,44 @@ export function LoadFailedNote({ what, children }: {
         </>
       )}
     </p>
+  )
+}
+
+
+/**
+ * Why a record is not on screen.
+ *
+ * ★ These pages read `if (!query.data) return "Not found"`, and a request that
+ * was refused or that failed leaves `data` undefined just as a deleted record
+ * does. So a 403 on somebody else's permit, and a 500, both rendered "Not
+ * found" — telling the reader the record does not exist when it does, which is
+ * the version of this mistake that sends somebody off to re-enter it.
+ *
+ * Gone and unreachable are different answers and this gives the right one.
+ */
+export function LoadProblem({ error, noun }: { error: unknown; noun: string }) {
+  const status = error instanceof ApiError ? error.status : null
+  // ★ No error at all also means missing. A query that answered 200 with null,
+  // or one that never ran because its route parameter was absent, is not
+  // something to retry — telling somebody to try again on a record that does
+  // not exist is how they end up entering it a second time.
+  const missing = status === 404 || error === null || error === undefined
+  return (
+    <div className="p-4">
+      <p className={`rounded-lg px-3 py-2.5 text-sm ${
+        missing ? 'bg-neutral-50 text-neutral-700' : 'bg-warning-50 text-warning-800'}`}>
+        {missing ? (
+          <>This {noun} no longer exists.</>
+        ) : status === 403 ? (
+          <>You do not have access to this {noun}.</>
+        ) : (
+          <>
+            This {noun} could not be loaded
+            {error instanceof ApiError && error.message ? ` — ${error.message}` : ''}.
+            It has not gone anywhere; try again.
+          </>
+        )}
+      </p>
+    </div>
   )
 }

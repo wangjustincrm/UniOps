@@ -25,8 +25,9 @@ import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import { DrillEvidence } from '@/components/DrillEvidence'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
-  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs, LoadFailedNote,
 } from '@/components/ui'
+import { anyFailed } from '@/lib/anyFailed'
 
 interface Drill {
   id: string; drill_no: string; drill_type: string; scenario: string
@@ -662,6 +663,13 @@ function RespondersTab({ mayWriteTraining }: { mayWriteTraining: boolean }) {
         record. Nothing is maintained here, so it cannot drift from what the
         register says.
       </p>
+
+      {/* ★ An empty first-aider roster says the plant has no first aiders,
+          which is a Regulation 1101 finding and not something a failed request
+          gets to say. */}
+      {anyFailed(responders, coverage) && (
+        <LoadFailedNote what="The first-aid certifications" />
+      )}
 
       {mayWriteTraining && (
         <div className="mb-3 flex justify-end">

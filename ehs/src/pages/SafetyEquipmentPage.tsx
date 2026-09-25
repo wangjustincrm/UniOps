@@ -24,7 +24,7 @@ import { LocationSelect } from '@/components/LocationSelect'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import {
   Card, dangerButton, Empty, ErrorNote, Field, PageHeader, Tabs, inputClass,
-  primaryButton, secondaryButton,
+  primaryButton, secondaryButton, LoadFailedNote,
 } from '@/components/ui'
 
 interface Asset {
@@ -505,7 +505,11 @@ function CheckHistory({ assetId }: { assetId: string }) {
 
   return (
     <div className="mt-3 border-t border-neutral-100 pt-3">
-      {done.length === 0 ? (
+      {/* ★ "No check has been recorded" is what Regulation 851 asks about, so
+          it must not be what a failed request looks like. */}
+      {checks.isError ? (
+        <LoadFailedNote what="This item's check history" />
+      ) : done.length === 0 ? (
         <p className="text-xs text-neutral-500">
           No check has been recorded against this item yet.
         </p>

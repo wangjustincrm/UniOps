@@ -23,7 +23,7 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { SignaturePad } from '@/components/SignaturePad'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import {
-  Card, Empty, ErrorNote, PageHeader, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, PageHeader, primaryButton, secondaryButton, LoadProblem, LoadFailedNote,
 } from '@/components/ui'
 import { CATEGORY_LABELS, type SafetyDoc } from '@/pages/DocumentsPage'
 import QrPanel from '@/components/QrPanel'
@@ -63,7 +63,11 @@ export default function DocumentDetailPage() {
   }
 
   if (doc.isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
-  if (!doc.data) return <p className="p-4 text-sm text-neutral-500">Document not found.</p>
+  // ★ The reason first. A refused or failed request leaves `data`
+  // undefined exactly as a deleted record does, so this used to answer
+  // "not found" to a 403 and to a server error alike.
+  if (doc.isError) return <LoadProblem error={doc.error} noun="document" />
+  if (!doc.data) return <LoadProblem error={null} noun="document" />
   const d = doc.data
   const iOweASignature = (mine.data ?? []).some((m) => m.id === d.id)
 
@@ -312,6 +316,16 @@ function SigningPanel({ doc }: { doc: SafetyDoc }) {
   })
 
   const s = status.data
+  // ★ It used to return null here, so a failed request took the whole
+  // read-and-sign section off the page — and a document with no such section
+  // reads as a document nobody has to acknowledge. Saying so is the point.
+  if (status.isError) {
+    return (
+      <Card className="mt-4">
+        <LoadFailedNote what="Who has signed this" />
+      </Card>
+    )
+  }
   if (!s) return null
 
   return (

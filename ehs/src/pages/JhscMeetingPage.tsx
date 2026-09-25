@@ -85,8 +85,9 @@ import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
-  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, LoadProblem, LoadFailedNote,
 } from '@/components/ui'
+import { anyFailed } from '@/lib/anyFailed'
 import { ReplyBadge, type Recommendation } from '@/pages/JhscPage'
 
 interface Meeting {
@@ -138,14 +139,22 @@ export default function JhscMeetingPage() {
   }
 
   if (meeting.isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
-  if (!meeting.data) return <p className="p-4 text-sm text-neutral-500">Meeting not found.</p>
+  // ★ The reason first. A refused or failed request leaves `data`
+  // undefined exactly as a deleted record does, so this used to answer
+  // "not found" to a 403 and to a server error alike.
+  if (meeting.isError) return <LoadProblem error={meeting.error} noun="meeting" />
+  if (!meeting.data) return <LoadProblem error={null} noun="meeting" />
   const m = meeting.data
   const published = m.status === 'published'
   const rows = attendance.data ?? []
   const present = rows.filter((a) => a.attendance === 'present').length
+  // ★ "0 present" is a statement about a committee meeting, and OHSA s.9 wants
+  // a record of who was there. A failed fetch must not make it.
+  const partial = anyFailed(attendance, recommendations)
 
   return (
     <div className="p-4">
+      {partial && <LoadFailedNote what="Part of this meeting" />}
       <PageHeader
         title={m.title || `Meeting of ${formatDate(m.held_on)}`}
         subtitle={`${m.meeting_no} · ${formatDate(m.held_on)}`

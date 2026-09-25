@@ -24,8 +24,9 @@ import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { SignaturePad } from '@/components/SignaturePad'
 import {
-  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, LoadProblem, LoadFailedNote,
 } from '@/components/ui'
+import { anyFailed } from '@/lib/anyFailed'
 import { CONTROL_LEVELS, RatingBadge, type Hazard } from '@/pages/HazardsPage'
 
 interface Jsa {
@@ -230,8 +231,14 @@ export function JsaDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['jsa-signoffs', id] })
   }
 
+  const failedToLoad = anyFailed(jsa, steps, signoffs)
+
   if (jsa.isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
-  if (!jsa.data) return <p className="p-4 text-sm text-neutral-500">Not found.</p>
+  // ★ The reason first. A refused or failed request leaves `data`
+  // undefined exactly as a deleted record does, so this used to answer
+  // "not found" to a 403 and to a server error alike.
+  if (jsa.isError) return <LoadProblem error={jsa.error} noun="analysis" />
+  if (!jsa.data) return <LoadProblem error={null} noun="analysis" />
   const j = jsa.data
   const isDraft = j.status === 'draft'
 
@@ -271,6 +278,11 @@ export function JsaDetailPage() {
           </div>
         </dl>
       </Card>
+
+      {/* ★ An empty sign-off list reads as "nobody was briefed before this job",
+          which is the finding an inspector writes up. It has to be told apart
+          from "we could not load the sign-offs". */}
+      {failedToLoad && <LoadFailedNote what="Part of this analysis" />}
 
       <StepEditor jsa={j} steps={steps.data ?? []} editable={mayWrite && isDraft}
                   onSaved={invalidate} />

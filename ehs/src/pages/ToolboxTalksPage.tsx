@@ -17,8 +17,9 @@ import { api, ApiError, openFile } from '@/lib/api'
 import { todayForInput } from '@/lib/formatDate'
 import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import {
-  PageHeader, SectionTitle,
+  PageHeader, SectionTitle, LoadFailedNote,
 } from '@/components/ui'
+import { anyFailed } from '@/lib/anyFailed'
 import { formatDateTime } from '@/lib/formatDate'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { SignaturePad } from '@/components/SignaturePad'
@@ -91,6 +92,9 @@ export default function ToolboxTalksPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [named?.id])
 
+  // ★ An empty "to deliver" list means the crews are up to date, and an empty
+  // signature count means nobody signed. Neither is a failed request's to say.
+  const partial = anyFailed(talks, deliveries)
   const mine = (deliveries.data ?? []).filter((d) => d.status === 'pending')
   const done = (deliveries.data ?? []).filter((d) => d.status === 'delivered')
 
@@ -106,6 +110,7 @@ export default function ToolboxTalksPage() {
 
   return (
     <div className="p-4">
+      {partial && <LoadFailedNote what="Part of this page" />}
       <PageHeader title="Toolbox talks">
         {isHse && (
           <button type="button" onClick={() => setCreating(true)}
