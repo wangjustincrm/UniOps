@@ -9,7 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.coa import _require_manage  # shared can_manage gate (roles ∪ assignments)
+from app.api.v1.coa import _require_manage  # FX rates only — still a chart-of-accounts concern
+from app.core import bank_authz
 from app.core.deps import CurrentUser
 from app.crud import bank as bank_crud
 from app.db.base import get_db
@@ -67,9 +68,16 @@ async def list_accounts(_: CurrentUser, db: AsyncSession = Depends(get_db)):
     return (await db.execute(select(BankAccount).order_by(BankAccount.name))).scalars().all()
 
 
+@router.get("/permissions")
+async def my_bank_permissions(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """What the bank pages may offer this user — the same two gates the writes use."""
+    return {"can_reconcile": await bank_authz.can(db, user, bank_authz.RECONCILE),
+            "can_manage_settings": await bank_authz.can(db, user, bank_authz.SETTINGS)}
+
+
 @router.post("/accounts", response_model=AccountOut, status_code=201)
 async def create_account(body: AccountIn, user: CurrentUser, db: AsyncSession = Depends(get_db)):
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.SETTINGS)
     acct = BankAccount(**body.model_dump())
     db.add(acct)
     await db.flush()
@@ -80,7 +88,7 @@ async def create_account(body: AccountIn, user: CurrentUser, db: AsyncSession = 
 @router.put("/accounts/{account_id}", response_model=AccountOut)
 async def update_account(account_id: uuid.UUID, body: AccountIn, user: CurrentUser,
                          db: AsyncSession = Depends(get_db)):
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.SETTINGS)
     acct = await _get_account(db, account_id)
     for k, v in body.model_dump().items():
         setattr(acct, k, v)
@@ -111,7 +119,7 @@ async def import_statement(
     """Import a statement CSV. `mapping` is a JSON column map (date/description/
     reference + signed `amount` OR `debit`+`credit`, with date_format/default_year).
     Omit it to reuse the account's saved preset. save_mapping persists it for reuse."""
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     acct = await _get_account(db, account_id)
     parsed_map: dict | None = None
     if mapping:
@@ -146,7 +154,7 @@ async def auto_match(
     account_id: uuid.UUID, user: CurrentUser, db: AsyncSession = Depends(get_db),
     window_days: int = Query(default=5, ge=0, le=60),
 ):
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     acct = await _get_account(db, account_id)
     result = await bank_crud.auto_match(db, acct, window_days=window_days)
     await db.commit()
@@ -162,7 +170,7 @@ async def match_txn(
     txn_id: uuid.UUID, body: ManualMatchRequest, user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     txn = (await db.execute(
         select(BankTransaction).where(BankTransaction.id == txn_id)
     )).scalar_one_or_none()
@@ -180,7 +188,7 @@ async def match_txn(
 
 @router.post("/transactions/{txn_id}/unmatch", response_model=TxnOut)
 async def unmatch_txn(txn_id: uuid.UUID, user: CurrentUser, db: AsyncSession = Depends(get_db)):
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     txn = (await db.execute(
         select(BankTransaction).where(BankTransaction.id == txn_id)
     )).scalar_one_or_none()
@@ -200,7 +208,7 @@ async def exclude_txn(txn_id: uuid.UUID, body: ExcludeRequest, user: CurrentUser
                       db: AsyncSession = Depends(get_db)):
     """Exclude (or re-include) a line — bank fees, interest, internal FX transfers
     that have no payment_record counterpart."""
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     txn = (await db.execute(
         select(BankTransaction).where(BankTransaction.id == txn_id)
     )).scalar_one_or_none()

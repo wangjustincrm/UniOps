@@ -108,11 +108,12 @@ export default function BankStatementCsvPage() {
   const [matchFor, setMatchFor] = useState<Txn | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
+  // Same key as the reconciliation workbench: importing a statement is reconciling.
   const { data: perms } = useQuery({
-    queryKey: ['coa-permissions'],
-    queryFn: () => financeApi.get<{ can_manage: boolean }>('/coa/permissions'),
+    queryKey: ['bank-permissions'],
+    queryFn: () => financeApi.get<{ can_reconcile: boolean; can_manage_settings: boolean }>('/bank/permissions'),
   })
-  const canManage = perms?.can_manage ?? false
+  const canManage = perms?.can_reconcile ?? false
 
   const { data: accounts = [] } = useQuery({
     queryKey: ['bank-accounts'],

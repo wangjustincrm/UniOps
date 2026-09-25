@@ -27,6 +27,13 @@ lines.
                     by bounded subset-sum in one vendor bucket
   6b book_subset    a statement line with NO payment file, against   the 31 Jul 28,918.08
                     a unique small subset of leftover ledger lines   (28,209.32 + 708.76)
+  6c (finding)      the one leftover statement line and the one leftover   JPM US 224.18,
+                    ledger line with this amount in the whole period,     11 days apart
+                    outside the window — NAMED for a person, not cleared
+  6d bank_rollup    ALL leftover statement lines sum to the one leftover   JPM Toronto July:
+                    ledger line — NC booked a month of card settlements   39 Paymentech /
+                    as one entry                                          PayPal lines =
+                                                                          shopify 41,180.87
   7 (none)          left for a human, with candidates ranked
 
 Measured end to end on the real July set — the AI-read statement, the 19 payment
@@ -83,6 +90,7 @@ M_CONFIRMATION = "confirmation_no"
 M_DIRECT = "direct"
 M_SUBSET_SUM = "subset_sum"
 M_BOOK_SUBSET = "book_subset"
+M_BANK_ROLLUP = "bank_rollup"
 M_MANUAL = "manual"          # a person built the group by hand
 
 # Legal-form noise that differs between the bank's payee list and NC's summary
@@ -485,6 +493,58 @@ def plan(bank_txns: list[BankTxn], advices: list[AdviceView],
             message=(f"This statement line ({txn.amount}) has no payment file. It was "
                      f"cleared against {len(hit)} ledger lines that sum to it exactly, but "
                      f"upload the payment file to confirm the vendor breakdown.")))
+
+    # ── rung 6c: same amount, too far apart to clear — so NAME it, don't clear it.
+    #
+    # JPM US July: the bank returned 224.18 on 07-17 and NC booked "returned
+    # Buhler Technologies usd$224.18" on 07-28 — eleven days, past the window.
+    # The window is deliberate (an AP payment 18 days off the same amount can be
+    # last month's invoice paid again), so this does not clear anything. But when
+    # the amount is left exactly ONCE on each side for the whole period, the pair
+    # is the obvious candidate and the person should be handed it, not made to
+    # hunt for it.
+    left_bank = [t for t in bank_txns if t.id not in claimed_bank]
+    left_book = [b for b in book_lines if b.id not in claimed_book]
+    wide_pairs = set()
+    for txn in left_bank:
+        books = [b for b in left_book if b.amount == txn.amount]
+        banks = [t for t in left_bank if t.amount == txn.amount]
+        if len(books) == 1 and len(banks) == 1:
+            gap = abs((books[0].voucher_date - txn.txn_date).days)
+            wide_pairs.update({txn.id, books[0].id})
+            out.findings.append(Finding(
+                kind="wide_date_candidate", bank_ids=[txn.id], book_ids=[books[0].id],
+                message=(f"{txn.amount} on {txn.txn_date} is the only statement line of this "
+                         f"amount, and {books[0].jv_number} on {books[0].voucher_date} the "
+                         f"only ledger line — {gap} days apart, too far to clear on the "
+                         f"amount. If they are the same money, tick both and Match these.")))
+
+    # ── rung 6d: many statement lines against ONE ledger line.
+    #
+    # The mirror of 6b. JPM Toronto July: 38 card-settlement deposits (Paymentech,
+    # PayPal, AlphaPay) and one Paymentech fee on the statement; NC booked the
+    # month as a single "shopify Payment Jul" 41,180.87 — which is exactly what
+    # all 39 leftover statement lines add up to. Only the whole leftover set is
+    # tried (no subset search over dozens of lines), and only against a ledger
+    # line that is the sole one of that amount; reported, like 6b, so a
+    # month-end rollup stays visible instead of vanishing into a cleared count.
+    # Lines just named in 6c are held out: they have an explanation waiting.
+    left_bank = [t for t in bank_txns if t.id not in claimed_bank and t.id not in wide_pairs]
+    left_book = [b for b in book_lines if b.id not in claimed_book and b.id not in wide_pairs]
+    if len(left_bank) > 1 and left_book:
+        total = sum((t.amount for t in left_bank), ZERO)
+        hits = [b for b in left_book if b.amount == total]
+        if len(hits) == 1:
+            book = hits[0]
+            if commit(M_BANK_ROLLUP, left_bank, None, [book.id], {},
+                      note=f"{len(left_bank)} statement lines booked in NC as one entry"):
+                out.findings.append(Finding(
+                    kind="bank_rollup", bank_ids=[t.id for t in left_bank],
+                    book_ids=[book.id],
+                    message=(f"{len(left_bank)} statement lines ({left_bank[0].txn_date} to "
+                             f"{left_bank[-1].txn_date}) add up exactly to one ledger line, "
+                             f"{book.jv_number} {total} — NC booked them as one entry. "
+                             f"Cleared on the amount; check that is what that entry is.")))
 
     out.unmatched_bank = [t.id for t in bank_txns if t.id not in claimed_bank]
     out.unmatched_book = [b.id for b in book_lines if b.id not in claimed_book]

@@ -297,3 +297,42 @@ def test_candidates_for_ranks_exact_amounts_first():
     got = M.candidates_for(txn, books, claimed_book=set())
     assert got[0].id == "K2"                       # exact amount always first
     assert got[1].id == "K3"                       # then the one that shares "WSIB"
+
+
+# ── rungs 6c / 6d: what the JPM statements needed ────────────────────────────
+
+def test_the_only_line_of_an_amount_far_away_is_named_not_cleared():
+    """JPM US July: bank return 224.18 on 07-17, NC "returned Buhler" on 07-28.
+    Outside the window, so it is not cleared — but handed to the person."""
+    p = M.plan([bank("b1", 17, "EFT Return Items Offset", "224.18")], [],
+               [book("k1", 28, "returned Buhler Technologies usd$224.18", "224.18",
+                     kind="bank_transfer")])
+    assert p.groups == []
+    f = next(f for f in p.findings if f.kind == "wide_date_candidate")
+    assert (f.bank_ids, f.book_ids) == (["b1"], ["k1"]) and "11 days apart" in f.message
+
+
+def test_no_wide_date_candidate_when_the_amount_repeats():
+    p = M.plan([bank("b1", 1, "x", "224.18"), bank("b2", 20, "y", "224.18")], [],
+               [book("k1", 28, "z", "224.18")])
+    assert not [f for f in p.findings if f.kind == "wide_date_candidate"]
+
+
+def test_a_month_of_card_settlements_booked_as_one_entry_clears_as_a_rollup():
+    """JPM Toronto July: 38 Paymentech/PayPal deposits and a Paymentech fee on the
+    statement, one "shopify Payment Jul" 41,180.87 in NC."""
+    txns = [bank("b1", 2, "ACH Credit Received - PAYPAL", "2766.91"),
+            bank("b2", 2, "ACH Credit Received - PAYMENTECH", "745.88"),
+            bank("b3", 2, "Incoming ACH Debit - PAYMENTECH FEE", "-781.42"),
+            bank("b4", 31, "ACH Credit Received - PAYMENTECH", "2141.14")]
+    p = M.plan(txns, [], [book("k1", 30, "External System Generated shopify Payment Jul",
+                               "4872.51", kind="other")])
+    assert [(g.method, sorted(g.bank_ids), g.book_ids) for g in p.groups] == \
+        [(M.M_BANK_ROLLUP, ["b1", "b2", "b3", "b4"], ["k1"])]
+    assert any(f.kind == "bank_rollup" for f in p.findings)      # said out loud
+
+
+def test_no_rollup_unless_the_whole_leftover_adds_up_exactly():
+    txns = [bank("b1", 2, "a", "100.00"), bank("b2", 3, "b", "50.00")]
+    p = M.plan(txns, [], [book("k1", 30, "month", "149.99", kind="other")])
+    assert not p.groups

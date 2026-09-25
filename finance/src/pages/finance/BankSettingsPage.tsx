@@ -54,11 +54,12 @@ export default function BankSettingsPage() {
   const [editing, setEditing] = useState<Partial<Account> | null>(null)
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
+  // finance.bank.settings — the bank-account master, granted apart from reconciling.
   const { data: perms } = useQuery({
-    queryKey: ['coa-permissions'],
-    queryFn: () => financeApi.get<{ can_manage: boolean }>('/coa/permissions'),
+    queryKey: ['bank-permissions'],
+    queryFn: () => financeApi.get<{ can_reconcile: boolean; can_manage_settings: boolean }>('/bank/permissions'),
   })
-  const canManage = perms?.can_manage ?? false
+  const canManage = perms?.can_manage_settings ?? false
 
   const { data: accounts = [], isFetching } = useQuery({
     queryKey: ['bank-accounts'],

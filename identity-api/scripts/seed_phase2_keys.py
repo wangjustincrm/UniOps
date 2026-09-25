@@ -39,6 +39,8 @@ PHASE2_KEYS: dict[str, tuple[str, str, int]] = {
     # admits callers on these two keys and fails closed without either.
     "finance.budget.view_all":  ("finance", "Full Access Budget View",          113),
     "finance.budget.view_dept": ("finance", "Department-Related Budget View",   114),
+    "finance.bank.reconcile": ("finance", "Bank Reconciliation",               115),
+    "finance.bank.settings":  ("finance", "Manage Bank Accounts",              116),
     "budget.catalog.write":  ("budget",  "Edit Budget Catalog",     120),
     "budget.plan.write":     ("budget",  "Edit Budget Plans",       121),
     "budget.opening.write":  ("budget",  "Edit Opening Balances",   122),
@@ -65,6 +67,10 @@ PHASE2_DEFAULTS: dict[str, tuple[str, ...]] = {
     "finance.coa.manage":   ("system_admin", "finance_manager"),
     "finance.period.close": ("system_admin", "finance_manager"),
     "finance.jv.post":      ("system_admin", "finance_manager", "finance_bp"),
+    # 0014_bank_perms: the finance.coa.manage defaults these used to borrow,
+    # plus payment_officer.
+    "finance.bank.reconcile": ("system_admin", "finance_manager", "payment_officer"),
+    "finance.bank.settings":  ("system_admin", "finance_manager", "payment_officer"),
     # The two halves of 0010_budget_view_scope_perms' grants. That migration
     # seeds view_dept with a NOT IN over role_defs, so it also covers
     # admin-created custom roles AND payment_officer (added later, by migration

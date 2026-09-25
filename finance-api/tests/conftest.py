@@ -214,6 +214,9 @@ def _migrate():
             # uniops_authz, which drops an ADDITIONAL role without an active
             # role_defs row — these are the ones its tests assign that way.
             "dept_manager", "director", "opm",
+            # an ADDITIONAL role in production (primary is e.g. requester) —
+            # the bank-permission tests assign it that way.
+            "payment_officer",
         )):
             conn.execute(sa.text(
                 "INSERT INTO role_defs (code, label, sort, is_active) VALUES (:c, :c, :s, true)"),
@@ -227,6 +230,9 @@ def _migrate():
             # production defaults mirrored in _phase2_defaults below.
             ("finance.budget.view_all", "finance"),
             ("finance.budget.view_dept", "finance"),
+            # identity migration 0014_bank_perms
+            ("finance.bank.reconcile", "finance"),
+            ("finance.bank.settings", "finance"),
         )):
             conn.execute(sa.text(
                 "INSERT INTO permission_defs (key, module, label, sort) VALUES (:k, :m, :k, :s)"),
@@ -239,6 +245,8 @@ def _migrate():
                 "system_admin", "finance_manager", "finance_bp", "ap_clerk",
             ),
             "finance.budget.view_dept": ("requester", "dept_manager", "director", "opm"),
+            "finance.bank.reconcile": ("system_admin", "finance_manager", "payment_officer"),
+            "finance.bank.settings": ("system_admin", "finance_manager", "payment_officer"),
         }
         for key, roles in _phase2_defaults.items():
             for role in roles:

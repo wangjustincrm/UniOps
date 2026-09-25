@@ -551,14 +551,20 @@ def _parsed_advice(tie_ok=True):
 
 async def test_uploading_a_statement_stores_it_and_its_lines(client, scene, monkeypatch):
     from app.services import bank_statement_parse
-    monkeypatch.setattr(bank_statement_parse, "parse_statement",
-                        lambda data, filename="": _parsed_statement())
+    asked = {}
+
+    def parse(data, filename="", currency=None):
+        asked["currency"] = currency
+        return _parsed_statement()
+    monkeypatch.setattr(bank_statement_parse, "parse_statement", parse)
     r = await client.post(
         f"/finance/v1/bank-recon/{scene['account'].id}/statements",
         files={"file": ("RBC.pdf", b"%PDF-1.4 stub", "application/pdf")}, headers=_h())
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["verified"] is True and body["lines"] == 1 and body["imported"] == 1
+    # the reader is told which currency section to take (ICBC mixes them)
+    assert asked["currency"] == "CAD"
     # No file server in the test environment: retention fails, is REPORTED, and does
     # not take the import down with it.
     assert body["retention_warning"]
@@ -577,7 +583,7 @@ async def test_an_unverified_statement_is_kept_with_its_reasons(client, scene, m
     from app.services import bank_statement_parse
     monkeypatch.setattr(
         bank_statement_parse, "parse_statement",
-        lambda data, filename="": _parsed_statement(
+        lambda data, filename="", currency=None: _parsed_statement(
             verified=False, errors=["Line 5 (BR TO BR): the statement shows 530858.97 here"]))
     r = await client.post(
         f"/finance/v1/bank-recon/{scene['account'].id}/statements",
@@ -591,7 +597,7 @@ async def test_re_importing_a_period_supersedes_rather_than_duplicating(
         client, scene, monkeypatch):
     from app.services import bank_statement_parse
     monkeypatch.setattr(bank_statement_parse, "parse_statement",
-                        lambda data, filename="": _parsed_statement())
+                        lambda data, filename="", currency=None: _parsed_statement())
     url = f"/finance/v1/bank-recon/{scene['account'].id}/statements"
     first = (await client.post(url, files={"file": ("a.pdf", b"%PDF-1", "application/pdf")},
                                headers=_h())).json()
@@ -609,7 +615,7 @@ async def test_an_unreadable_statement_is_a_422_not_a_500(client, scene, monkeyp
     from app.services import bank_statement_parse
     from app.services.bank_statement_parse import StatementUnparseable
 
-    def boom(data, filename=""):
+    def boom(data, filename="", currency=None):
         raise StatementUnparseable("Could not read this statement PDF.")
     monkeypatch.setattr(bank_statement_parse, "parse_statement", boom)
     r = await client.post(
@@ -624,7 +630,7 @@ async def test_an_ai_outage_is_a_503_and_says_it_is_not_your_file(client, scene,
     clerk their document was unreadable when nothing was wrong with it."""
     from app.services import bank_statement_parse
 
-    def limit(data, filename=""):
+    def limit(data, filename="", currency=None):
         raise RuntimeError("Statement reading is temporarily unavailable — the AI "
                            "service account has reached a usage or billing limit. "
                            "This is NOT a problem with your file.")
@@ -790,8 +796,14 @@ async def test_opening_excludes_ncs_opening_voucher_but_keeps_real_postings(db_s
     await db_session.flush()
 
     async def line(num, day, dr, cr, kind):
+        # As NC lays them out: movements in 2025, and the kind-2 voucher in period
+        # 2026-00 (dated 0001-01-01) restating them. A kind-2 voucher with no
+        # earlier movement is a go-live balance instead — see
+        # test_the_go_live_opening_voucher_is_the_initial_balance.
+        opening = kind == 2
         jv = JournalVoucher(jv_number=f"JV-202601-{num:04d}", voucher_word="JV",
-                            voucher_date=date(2026, 1, day), fiscal_period="2026-01",
+                            voucher_date=date(1, 1, 1) if opening else date(2025, 12, day),
+                            fiscal_period="2026-00" if opening else "2025-12",
                             status=POSTED, nc_source_pk=f"OPK{num}", source_service="nc",
                             nc_voucher_kind=kind)
         db_session.add(jv)
@@ -977,3 +989,349 @@ async def test_an_open_period_still_reports_live_figures(client, db_session):
 
     r = await client.get(f"/finance/v1/bank-recon/{acct.id}/reconciliations", headers=_h())
     assert r.json()[0]["difference"] == "-42.00"
+
+
+# ── a foreign-currency account ────────────────────────────────────────────────
+
+async def test_a_usd_account_reconciles_in_usd_not_in_cad(db_session):
+    """RBC USD 4010351, July 2026 — the real figures. The book side summed
+    local_debit/local_credit (CAD), so a USD account whose ledger agrees with the
+    statement to the cent showed Ledger opening 18,665.16 / closing 17,535.00
+    against a statement of 13,135.23 / 12,499.11, and a difference of −5,035.89
+    that no matching could ever clear.
+
+    Three shapes NC really puts on a USD bank account:
+      - ordinary USD lines: orig in USD, local in CAD at the day's rate
+      - 汇兑损益结转: currency USD, orig 0.00, local only — a CAD revaluation
+      - "interest + Carry forward": lines booked in CAD on the USD account, a pair
+        that nets to zero; no USD amount at all
+    Only the first kind is the bank's money.
+    """
+    from app.crud import bank_recon as crud
+    from app.models.bank_recon import BankReconciliation, BankStatement, IMPORTED
+    from app.services import bank_book
+
+    db_session.add_all([
+        ChartOfAccount(code="1002", name="Cash on Bank", account_type="asset",
+                       normal_balance="debit", is_postable=False),
+        ChartOfAccount(code="100201", name="Checking", account_type="asset",
+                       normal_balance="debit", is_postable=True, parent_code="1002"),
+        ChartOfAccount(code="2001", name="Short-term loans", account_type="liability",
+                       normal_balance="credit", is_postable=True),
+        ChartOfAccount(code="6603", name="Financial expenses", account_type="expense",
+                       normal_balance="debit", is_postable=True),
+    ])
+    usd = NcBankAccount(nc_pk="NCUSD1", code="4010351", name="RBC美元活期户", currency="USD")
+    cad = NcBankAccount(nc_pk="NCCAD1", code="1033760", name="RBC加拿大元活期户",
+                        currency="CAD")
+    acct = BankAccount(name="RBC USD Checking", bank_name="RBC", currency="USD",
+                       ledger_account_code="100201", nc_bank_account_code="4010351")
+    cad_acct = BankAccount(name="RBC CAD Checking", bank_name="RBC", currency="CAD",
+                           ledger_account_code="100201", nc_bank_account_code="1033760")
+    db_session.add_all([usd, cad, acct, cad_acct])
+    await db_session.flush()
+
+    async def voucher(num, d, lines):
+        jv = JournalVoucher(jv_number=f"JV-{d:%Y%m}-{num:04d}", voucher_word="JV",
+                            voucher_date=d, fiscal_period=f"{d:%Y-%m}", status=POSTED,
+                            nc_source_pk=f"USDPK{num}", source_service="nc")
+        db_session.add(jv)
+        await db_session.flush()
+        ids = []
+        for i, (acc, ccy, odr, ocr, ldr, lcr, summary, bank) in enumerate(lines, 1):
+            ln = JournalVoucherLine(
+                jv_id=jv.id, line_no=i, account_code=acc, summary=summary,
+                orig_debit=D(odr), orig_credit=D(ocr), local_debit=D(ldr),
+                local_credit=D(lcr), currency=ccy, bank_account_id=bank)
+            db_session.add(ln)
+            await db_session.flush()
+            ids.append(ln.id)
+        return ids
+
+    U, C = usd.id, cad.id
+    # June: the carry-in. 13,135.23 USD was 18,665.16 CAD when booked.
+    await voucher(1, date(2026, 6, 10), [
+        ("100201", "USD", "13135.23", "0", "18665.16", "0", "Funding", U),
+        ("6603", "USD", "0", "13135.23", "0", "18665.16", "Funding", None)])
+    # June: revaluation — CAD only. Must not reach the USD opening.
+    await voucher(2, date(2026, 6, 29), [
+        ("100201", "USD", "0", "0", "556.75", "0", "2026年06月汇兑损益结转", U),
+        ("6603", "CAD", "0", "556.75", "0", "556.75", "2026年06月汇兑损益结转", None)])
+    # July: the one real movement — the credit-card payment.
+    await voucher(3, JUL(28), [
+        ("100201", "USD", "0", "636.12", "0", "897.82", "Credit Card USD Payment", U),
+        ("2001", "USD", "636.12", "0", "897.82", "0", "Credit Card USD Payment", None)])
+    # July: revaluation.
+    await voucher(4, JUL(30), [
+        ("100201", "USD", "0", "0", "0", "232.34", "2026年07月汇兑损益结转", U),
+        ("6603", "CAD", "232.34", "0", "232.34", "0", "2026年07月汇兑损益结转", None)])
+    # July: interest booked in CAD on the USD account, and its carry-forward.
+    await voucher(5, JUL(30), [
+        ("100201", "CAD", "-18.66", "0", "-18.66", "0", "JP Morgan USD interest", U),
+        ("6603", "CAD", "0", "-18.66", "0", "-18.66", "JP Morgan USD interest", None)])
+    await voucher(6, JUL(30), [
+        ("100201", "CAD", "0", "-18.66", "0", "-18.66", "Carry forward", U),
+        ("6603", "CAD", "-18.66", "0", "-18.66", "0", "Carry forward", None)])
+    # July: USD → CAD transfer. The legs are 1,000.00 USD and 1,400.00 CAD — they
+    # never have the same amount, so the counterpart cannot be found by amount.
+    xfer = await voucher(7, JUL(15), [
+        ("100201", "USD", "0", "1000.00", "0", "1400.00", "USD to CAD", U),
+        ("100201", "CAD", "1400.00", "0", "1400.00", "0", "USD to CAD", C)])
+
+    period = await bank_book.book_period(db_session, acct, JUL(1), JUL(31))
+
+    assert period.currency == "USD"
+    assert period.opening == D("13135.23")                 # not 18,665.16 + 556.75
+    assert period.closing == D("11499.11")                 # 13,135.23 − 636.12 − 1,000
+    assert sorted(ln.amount for ln in period.lines) == [D("-1000.00"), D("-636.12")]
+    card = next(ln for ln in period.lines if ln.amount == D("-636.12"))
+    assert card.local_amount == D("-897.82")                # CAD kept for display
+    # Revaluation + the CAD pair: listed, not matchable, not in the balance.
+    assert len(period.base_only) == 3
+    assert period.base_only_local_total == D("-232.34")
+
+    counterparts = await bank_book.transfer_counterparts(db_session, period.lines)
+    assert counterparts[xfer[0]]["code"] == "1033760"
+
+    # The CAD side of the same transfer is untouched: CAD reads local, as before.
+    cad_period = await bank_book.book_period(db_session, cad_acct, JUL(1), JUL(31))
+    assert cad_period.currency == "CAD"
+    assert [ln.amount for ln in cad_period.lines] == [D("1400.00")]
+    assert cad_period.base_only == []
+
+    # And the reconciliation itself: statement and ledger agree, to the cent.
+    db_session.add(BankStatement(
+        bank_account_id=acct.id, period_start=date(2026, 6, 30),
+        period_end=date(2026, 7, 31), status=IMPORTED, verified=True,
+        opening_balance=D("13135.23"), closing_balance=D("11499.11"), currency="USD"))
+    rec = BankReconciliation(bank_account_id=acct.id, period_start=JUL(1),
+                             period_end=JUL(31), currency="USD")
+    db_session.add(rec)
+    await db_session.flush()
+
+    s = await crud.recompute(db_session, rec, acct)
+    assert s["difference"] == "0.00"
+    assert s["opening_difference"] == "0.00"
+    assert s["currency"] == "USD"
+    assert s["base_only_count"] == 3
+    assert s["base_only_local_total"] == "-232.34"
+
+
+async def test_the_go_live_opening_voucher_is_the_initial_balance(db_session):
+    """BOC 1060 went live in NC in 2020. Its 2020-00 opening voucher is not a
+    restatement of anything before it — nothing IS before it — it is the balance
+    the account arrived with (5,670,888.07). Excluding every kind-2 voucher left
+    the July 2026 ledger opening at −4,307,455.32 against a statement opening of
+    1,363,432.75, with the month's own movement agreeing to the cent.
+
+    Later years' opening vouchers still restate the ledger and stay out; an
+    account whose first movement predates its first opening voucher (RBC) has no
+    go-live voucher at all.
+    """
+    from app.services.bank_book import opening_balance
+
+    db_session.add_all([
+        ChartOfAccount(code="1002", name="Cash on Bank", account_type="asset",
+                       normal_balance="debit", is_postable=False),
+        ChartOfAccount(code="100201", name="Checking", account_type="asset",
+                       normal_balance="debit", is_postable=True, parent_code="1002"),
+    ])
+    boc = NcBankAccount(nc_pk="NCGOLIVE1", code="1060", name="BOC CAD", currency="CAD")
+    rbc = NcBankAccount(nc_pk="NCGOLIVE2", code="1033760", name="RBC CAD", currency="CAD")
+    db_session.add_all([boc, rbc])
+    await db_session.flush()
+
+    n = iter(range(1, 100))
+
+    async def line(bank, period, d, dr, cr, kind):
+        k = next(n)
+        jv = JournalVoucher(jv_number=f"JV-GL-{k:04d}", voucher_word="JV", voucher_date=d,
+                            fiscal_period=period, status=POSTED, nc_source_pk=f"GLPK{k}",
+                            source_service="nc", nc_voucher_kind=kind)
+        db_session.add(jv)
+        await db_session.flush()
+        db_session.add(JournalVoucherLine(
+            jv_id=jv.id, line_no=1, account_code="100201",
+            orig_debit=D(dr), orig_credit=D(cr), local_debit=D(dr), local_credit=D(cr),
+            currency="CAD", bank_account_id=bank.id))
+        await db_session.flush()
+
+    NC_OPENING_DATE = date(1, 1, 1)     # how NC dates period-00 vouchers
+    # BOC: go-live balance in 2020-00, then real movements, then the yearly
+    # restatements (2021-00 = the 2020 closing, and so on).
+    await line(boc, "2020-00", NC_OPENING_DATE, "1000.00", "0", 2)
+    await line(boc, "2020-09", date(2020, 9, 2), "0", "300.00", 0)
+    await line(boc, "2021-00", NC_OPENING_DATE, "700.00", "0", 2)
+    await line(boc, "2021-03", date(2021, 3, 1), "50.00", "0", 0)
+    # RBC: movements first, restatements after — nothing to keep.
+    await line(rbc, "2024-05", date(2024, 5, 30), "500.00", "0", 0)
+    await line(rbc, "2025-00", NC_OPENING_DATE, "500.00", "0", 2)
+
+    # 1000 go-live − 300 + 50; the 2021 restatement of 700 must not be added.
+    assert await opening_balance(db_session, boc.id, date(2026, 7, 1)) == D("750.00")
+    assert await opening_balance(db_session, rbc.id, date(2026, 7, 1)) == D("500.00")
+
+
+def _stmt(lines):
+    """A parsed July statement with these (day, description, amount, balance) rows."""
+    from app.services.bank_statement_parse import ParsedStatement, StatementLine
+    rows = [StatementLine(seq=i, txn_date=_date(2026, 7, d), description=desc,
+                          amount=_D(amt), running_balance=_D(bal) if bal else None)
+            for i, (d, desc, amt, bal) in enumerate(lines, start=1)]
+    return ParsedStatement(
+        period_start=_date(2026, 6, 30), period_end=_date(2026, 7, 31),
+        opening_balance=_D("1000.00"),
+        closing_balance=_D("1000.00") + sum((r.amount for r in rows), _D("0")),
+        lines=rows, currency="CAD", account_no="x", parse_method="ai",
+        parse_model="claude-haiku-4-5-20251001", verified=True, verify_errors=[],
+        raw_payload={"stub": True})
+
+
+async def test_a_re_read_keeps_its_lines_even_when_the_description_changes(
+        client, scene, monkeypatch):
+    """BOC CNY July 2026, re-imported: the AI read "…Online Banking ZZFC260717"
+    the first time and "…Online Banking" the second. The line key included the
+    description, so the second read added −20,200.00 AGAIN next to the matched
+    one, and the old misread rows were never cleared out either."""
+    from app.services import bank_statement_parse
+    url = f"/finance/v1/bank-recon/{scene['account'].id}/statements"
+
+    async def upload(st, name):
+        monkeypatch.setattr(bank_statement_parse, "parse_statement",
+                            lambda data, filename="", currency=None: st)
+        r = await client.post(url, files={"file": (name, name.encode(), "application/pdf")},
+                              headers=_h())
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    await upload(_stmt([(7, "Activity fee ZZFC260717", "-455.60", "544.40"),
+                        (8, "a row the AI made up", "-1.00", None)]), "a.pdf")
+
+    # match the fee by hand
+    rid = await _open(client, scene["account"])
+    page = (await client.get(f"/finance/v1/bank-recon/reconciliations/{rid}",
+                             headers=_h())).json()
+    fee = next(b for b in page["bank_lines"] if b["description"] == "Activity fee ZZFC260717")
+    book = next(b for b in page["book_lines"] if b["amount"] == "-455.60")
+    r = await client.post(f"/finance/v1/bank-recon/reconciliations/{rid}/matches",
+                          json={"bank_transaction_ids": [fee["id"]],
+                                "jv_line_ids": [book["jv_line_id"]]}, headers=_h())
+    assert r.status_code == 200, r.text
+
+    # re-read: the reference fell off the description, the made-up row is gone
+    second = await upload(_stmt([(7, "Activity fee", "-455.60", "544.40")]), "b.pdf")
+    assert second["reused"] == 1 and second["imported"] == 0
+    assert second["removed"] == 1 and second["stale_matched"] == []
+
+    page = (await client.get(f"/finance/v1/bank-recon/reconciliations/{rid}",
+                             headers=_h())).json()
+    kept = next(b for b in page["bank_lines"] if b["id"] == fee["id"])
+    assert kept["cleared"] and kept["description"] == "Activity fee"   # same row, match intact
+    assert not any(b["description"] == "a row the AI made up" for b in page["bank_lines"])
+    # ours plus the scene's own seeded −455.60 — not a third copy
+    same_day = [b for b in page["bank_lines"]
+                if b["txn_date"] == "2026-07-07" and b["amount"] == "-455.60"]
+    assert len(same_day) == 2
+
+    # a read that no longer has the MATCHED line: kept, and said out loud
+    third = await upload(_stmt([(9, "something else", "-2.00", None)]), "c.pdf")
+    assert [t["id"] for t in third["stale_matched"]] == [fee["id"]]
+    page = (await client.get(f"/finance/v1/bank-recon/reconciliations/{rid}",
+                             headers=_h())).json()
+    assert any(b["id"] == fee["id"] and b["cleared"] for b in page["bank_lines"])
+
+
+# ── who may reconcile: its own Access Control keys ────────────────────────────
+
+def _h_as(user_id, role):
+    tok = jwt.encode({"sub": str(user_id), "role": role, "name": "Perm Test",
+                      "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                     settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return {"Authorization": f"Bearer {tok}"}
+
+
+async def _payment_officer(db_session):
+    """Production's shape: primary role requester, payment_officer ADDITIONAL."""
+    from sqlalchemy import text
+    uid = uuid.uuid4()
+    await db_session.execute(text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'payment_officer')"),
+        {"u": uid})
+    await db_session.flush()
+    return _h_as(uid, "requester")
+
+
+async def test_a_payment_officer_can_reconcile_without_the_chart_of_accounts(
+        client, scene, db_session):
+    """Bank reconciliation borrowed finance.coa.manage, so the only way to let a
+    Payment Officer reconcile was to let them edit the chart of accounts too —
+    which is what production did on 2026-09-25. It has its own keys now."""
+    h = await _payment_officer(db_session)
+    acct = scene["account"]
+
+    perms = (await client.get("/finance/v1/bank/permissions", headers=h)).json()
+    assert perms == {"can_reconcile": True, "can_manage_settings": True}
+    r = await client.post(f"/finance/v1/bank-recon/{acct.id}/reconciliations",
+                          json={"period_start": "2026-07-01", "period_end": "2026-07-31"},
+                          headers=h)
+    assert r.status_code == 200, r.text
+    r = await client.post(f"/finance/v1/bank-recon/reconciliations/{r.json()['id']}/auto-match",
+                          headers=h)
+    assert r.status_code == 200, r.text
+
+    # ...and still cannot touch the chart of accounts
+    coa = (await client.get("/finance/v1/coa/permissions", headers=h)).json()
+    assert coa["can_manage"] is False
+
+
+async def test_the_bank_gates_read_the_bank_keys_not_the_coa_key(client, scene, db_session):
+    """Revoke finance.bank.reconcile from finance_manager in the matrix: it keeps
+    the chart of accounts and loses reconciliation — the gate follows the row."""
+    from sqlalchemy import text
+    acct = scene["account"]
+    body = {"period_start": "2026-07-01", "period_end": "2026-07-31"}
+    ok = await client.post(f"/finance/v1/bank-recon/{acct.id}/reconciliations",
+                           json=body, headers=_h())
+    assert ok.status_code == 200          # admitted while the row is there
+
+    await db_session.execute(text(
+        "DELETE FROM role_permissions WHERE role_code = 'finance_manager' "
+        "AND permission_key = 'finance.bank.reconcile'"))
+    await db_session.flush()
+    r = await client.post(f"/finance/v1/bank-recon/{acct.id}/reconciliations",
+                          json=body, headers=_h())
+    assert r.status_code == 403 and "finance.bank.reconcile" in r.json()["detail"]
+    assert (await client.get("/finance/v1/coa/permissions", headers=_h())).json()["can_manage"]
+    perms = (await client.get("/finance/v1/bank/permissions", headers=_h())).json()
+    assert perms == {"can_reconcile": False, "can_manage_settings": True}
+
+
+async def test_bank_settings_has_its_own_key(client, scene, db_session):
+    from sqlalchemy import text
+    acct = scene["account"]
+    body = {"name": acct.name, "bank_name": acct.bank_name, "currency": "CAD",
+            "ledger_account_code": "100201", "nc_bank_account_code": "1033760"}
+    ok = await client.put(f"/finance/v1/bank/accounts/{acct.id}", json=body, headers=_h())
+    assert ok.status_code == 200, ok.text
+
+    await db_session.execute(text(
+        "DELETE FROM role_permissions WHERE role_code = 'finance_manager' "
+        "AND permission_key = 'finance.bank.settings'"))
+    await db_session.flush()
+    r = await client.put(f"/finance/v1/bank/accounts/{acct.id}", json=body, headers=_h())
+    assert r.status_code == 403 and "finance.bank.settings" in r.json()["detail"]
+    # reconciling is a different key, still held
+    r = await client.post(f"/finance/v1/bank-recon/{acct.id}/reconciliations",
+                          json={"period_start": "2026-07-01", "period_end": "2026-07-31"},
+                          headers=_h())
+    assert r.status_code == 200, r.text
+
+
+async def test_a_requester_without_the_role_is_still_refused(client, scene):
+    h = _h_as(uuid.uuid4(), "requester")
+    r = await client.post(f"/finance/v1/bank-recon/{scene['account'].id}/reconciliations",
+                          json={"period_start": "2026-07-01", "period_end": "2026-07-31"},
+                          headers=h)
+    assert r.status_code == 403
+    assert (await client.get("/finance/v1/bank/permissions", headers=h)).json() == \
+        {"can_reconcile": False, "can_manage_settings": False}

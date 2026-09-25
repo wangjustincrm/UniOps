@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.coa import _require_manage
+from app.core import bank_authz
 from app.core.deps import BearerToken, CurrentUser
 from app.crud import bank_recon as crud
 from app.db.base import get_db
@@ -114,7 +114,7 @@ async def import_statement(account_id: uuid.UUID, user: CurrentUser, token: Bear
                            db: AsyncSession = Depends(get_db)):
     """Import a statement PDF. Stored even when it does not verify — the errors
     name the line to fix, and the reconciliation is what refuses to use it."""
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     acct = await _account(db, account_id)
     data = await _read_upload(file)
     try:
@@ -161,7 +161,7 @@ async def import_advices(account_id: uuid.UUID, user: CurrentUser, token: Bearer
                          db: AsyncSession = Depends(get_db)):
     """Import one or many payment files at once — a month is ~20 of them, and
     making finance upload them one by one is how they end up not uploading them."""
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     acct = await _account(db, account_id)
     out: list[dict] = []
     for f in files:
@@ -243,6 +243,7 @@ async def book_side(account_id: uuid.UUID, _: CurrentUser,
     counterparts = await bank_book.transfer_counterparts(db, period.lines)
     return {
         "bank_account": period.bank_account_label,
+        "currency": period.currency,
         "opening": str(period.opening), "closing": str(period.closing),
         "total_debit": str(period.total_debit), "total_credit": str(period.total_credit),
         "lines": [{
@@ -250,13 +251,25 @@ async def book_side(account_id: uuid.UUID, _: CurrentUser,
             "voucher_date": b.voucher_date.isoformat(), "line_no": b.line_no,
             "summary": b.summary, "currency": b.currency,
             "debit": str(b.debit), "credit": str(b.credit), "amount": str(b.amount),
+            "local_amount": str(b.local_amount),
             "contra_codes": b.contra_codes, "contra_names": b.contra_names,
             "contra_kind": b.contra_kind,
             "contra_label": bank_book.KIND_LABELS.get(b.contra_kind, b.contra_kind),
             "partner_name": b.partner_name,
             "transfer_counterpart": counterparts.get(b.jv_line_id),
         } for b in period.lines],
+        "base_only_lines": _base_only_payload(period),
     }
+
+
+def _base_only_payload(period) -> list[dict]:
+    """Ledger lines with no amount in the account's currency — FX revaluation and
+    CAD-only adjustments on a foreign-currency account. Shown, never matched."""
+    return [{
+        "jv_line_id": str(b.jv_line_id), "jv_number": b.jv_number,
+        "voucher_date": b.voucher_date.isoformat(), "summary": b.summary,
+        "currency": b.currency, "local_amount": str(b.local_amount),
+    } for b in (period.base_only or [])]
 
 
 # ── the session ────────────────────────────────────────────────────────────────
@@ -269,7 +282,7 @@ class OpenIn(BaseModel):
 @router.post("/{account_id}/reconciliations")
 async def open_period(account_id: uuid.UUID, body: OpenIn, user: CurrentUser,
                       db: AsyncSession = Depends(get_db)):
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     acct = await _account(db, account_id)
     if body.period_end < body.period_start:
         raise HTTPException(status_code=422, detail="The period ends before it starts.")
@@ -366,10 +379,12 @@ async def get_period(recon_id: uuid.UUID, _: CurrentUser,
         "book_lines": [{
             "jv_line_id": str(b.jv_line_id), "jv_number": b.jv_number,
             "voucher_date": b.voucher_date.isoformat(), "summary": b.summary,
-            "amount": str(b.amount), "contra_kind": b.contra_kind,
+            "amount": str(b.amount), "local_amount": str(b.local_amount),
+            "contra_kind": b.contra_kind,
             "contra_label": bank_book.KIND_LABELS.get(b.contra_kind, b.contra_kind),
             "contra_codes": b.contra_codes,
             "cleared": b.jv_line_id in claimed_book} for b in period.lines],
+        "base_only_lines": _base_only_payload(period),
         "matches": [{
             "id": str(m.id), "method": m.method, "amount": str(m.amount),
             "note": m.note, "advice_id": str(m.advice_id) if m.advice_id else None,
@@ -383,7 +398,7 @@ async def auto_match(recon_id: uuid.UUID, user: CurrentUser,
                      window_days: int = Query(default=bank_matching.DEFAULT_WINDOW_DAYS,
                                               ge=0, le=60),
                      db: AsyncSession = Depends(get_db)):
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     rec = await _recon(db, recon_id)
     acct = await _account(db, rec.bank_account_id)
     try:
@@ -405,7 +420,7 @@ class MatchIn(BaseModel):
 @router.post("/reconciliations/{recon_id}/matches")
 async def create_match(recon_id: uuid.UUID, body: MatchIn, user: CurrentUser,
                        db: AsyncSession = Depends(get_db)):
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     rec = await _recon(db, recon_id)
     acct = await _account(db, rec.bank_account_id)
     try:
@@ -425,7 +440,7 @@ async def create_match(recon_id: uuid.UUID, body: MatchIn, user: CurrentUser,
 @router.delete("/reconciliations/{recon_id}/matches/{match_id}")
 async def delete_match(recon_id: uuid.UUID, match_id: uuid.UUID, user: CurrentUser,
                        db: AsyncSession = Depends(get_db)):
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     rec = await _recon(db, recon_id)
     acct = await _account(db, rec.bank_account_id)
     try:
@@ -626,7 +641,7 @@ async def download_document(storage_key: uuid.UUID, _: CurrentUser, token: Beare
 @router.post("/reconciliations/{recon_id}/finalize")
 async def finalize(recon_id: uuid.UUID, user: CurrentUser, token: BearerToken,
                    db: AsyncSession = Depends(get_db)):
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     rec = await _recon(db, recon_id)
     acct = await _account(db, rec.bank_account_id)
     snapshot = await _snapshot(db, rec, acct, user.get("name") or "")
@@ -652,7 +667,7 @@ async def finalize(recon_id: uuid.UUID, user: CurrentUser, token: BearerToken,
 @router.post("/reconciliations/{recon_id}/reopen")
 async def reopen(recon_id: uuid.UUID, user: CurrentUser,
                  db: AsyncSession = Depends(get_db)):
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     rec = await _recon(db, recon_id)
     if rec.status != FINALIZED:
         raise HTTPException(status_code=409, detail="That period is not finalized.")
@@ -665,7 +680,7 @@ async def reopen(recon_id: uuid.UUID, user: CurrentUser,
 async def heal(user: CurrentUser, db: AsyncSession = Depends(get_db)):
     """Re-point ledger references orphaned by a full NC sync. Safe to run any
     time; finalized periods are skipped."""
-    await _require_manage(db, user)
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
     result = await crud.heal_matches(db)
     await db.commit()
     return result
