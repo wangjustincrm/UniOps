@@ -78,7 +78,7 @@ modules:
     covers: >
       The accounting side: the ledger, accounts payable and receivable, bank
       and payment execution, and the exchange with NC and QuickBooks.
-    who: Finance staff. Most people never open it.
+    who: Finance staff. Bank reconciliation is also open to whoever holds the Bank Reconciliation permission in Access Control — Payment Officers by default. Most people never open it.
     typical:
       - Execute approved payments and issue remittance advice
       - Reconcile accounts payable against what EPMS says is owed

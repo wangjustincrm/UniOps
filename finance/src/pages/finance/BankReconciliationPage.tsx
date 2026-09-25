@@ -241,11 +241,12 @@ export default function BankReconciliationPage() {
     if (kind === 'ok') setTimeout(() => setBanner(null), 6000)
   }
 
+  // finance.bank.reconcile in Access Control — not the chart-of-accounts key it used to borrow.
   const { data: perms } = useQuery({
-    queryKey: ['coa-permissions'],
-    queryFn: () => financeApi.get<{ can_manage: boolean }>('/coa/permissions'),
+    queryKey: ['bank-permissions'],
+    queryFn: () => financeApi.get<{ can_reconcile: boolean; can_manage_settings: boolean }>('/bank/permissions'),
   })
-  const canManage = perms?.can_manage ?? false
+  const canManage = perms?.can_reconcile ?? false
 
   const { data: accounts = [] } = useQuery({
     queryKey: ['bank-accounts'],
