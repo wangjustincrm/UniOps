@@ -76,6 +76,10 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   // Dashboard (finance-api services/jv_validation_tasks.py). Admin-only, one
   // standing task that closes itself when the findings clear.
   resolve_jv_validation: 'Resolve JV Validation Findings',
+  // An invoice number NC has on more than one payable (finance-api
+  // services/ap_duplicate_invoice_tasks.py). ap_clerk, one standing task that
+  // closes itself when nothing unreviewed is left.
+  resolve_ap_duplicate_invoice: 'Resolve Duplicate NC Invoices',
 }
 
 // Portal origin — NC sync errors that are not a missing vendor are resolved in
@@ -149,6 +153,11 @@ export function taskHref(task: TaskHrefInput): string {
   // reported them, so it cannot be part of the path.
   if (docType === 'jv_validation') {
     return financeHandoffHref('/finance/jv-validation')
+  }
+  // Same shape: the subject is a set of NC payables, document_id is the AP
+  // sync run.
+  if (docType === 'ap_duplicate_invoice') {
+    return financeHandoffHref('/finance/ap-duplicate-invoices')
   }
 
   // Both create_pa and create_prepayment_pa anchor on the PO and open the PA

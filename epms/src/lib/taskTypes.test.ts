@@ -144,3 +144,20 @@ describe('taskHref — JV validation findings', () => {
     expect(TASK_TYPE_LABELS.resolve_jv_validation).toBe('Resolve JV Validation Findings')
   })
 })
+
+describe('taskHref — duplicate NC invoices', () => {
+  // finance-api ap_duplicate_invoice_tasks.py: document_id is the AP sync run.
+  const RUN_ID = '7d2e4f60-1a3b-4c5d-8e9f-0a1b2c3d4e5f'
+  const task = { type: 'resolve_ap_duplicate_invoice', document_type: 'ap_duplicate_invoice', document_id: RUN_ID }
+
+  it('sends the task to the Finance AP Duplicate Invoices page', () => {
+    const href = taskHref(task)
+    expect(href).toMatch(/^https?:\/\//)
+    expect(href).toContain('/finance/ap-duplicate-invoices')
+    expect(href).not.toContain(RUN_ID)
+  })
+
+  it('labels the type', () => {
+    expect(TASK_TYPE_LABELS.resolve_ap_duplicate_invoice).toBe('Resolve Duplicate NC Invoices')
+  })
+})

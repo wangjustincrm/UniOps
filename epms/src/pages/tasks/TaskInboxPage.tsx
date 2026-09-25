@@ -16,7 +16,7 @@ type TabValue = 'all' | 'urgent' | 'normal' | 'completed'
 
 // Task document types whose `description` is the substance of the card rather
 // than engine boilerplate — see the render comment below.
-const REASON_IN_CARD = new Set(['nc_sync', 'jv_validation'])
+const REASON_IN_CARD = new Set(['nc_sync', 'jv_validation', 'ap_duplicate_invoice'])
 
 const TABS: { value: TabValue; label: string }[] = [
   { value: 'all', label: 'All' },
