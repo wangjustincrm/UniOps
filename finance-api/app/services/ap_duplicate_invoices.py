@@ -136,6 +136,9 @@ class Finding:
     review: dict | None = None
     #: A verdict existed but a bill was added after it.
     reopened: bool = False
+    #: The stored key of the verdict that was matched (covering or stale) —
+    #: differs from `key` for a verdict recorded under the old key format.
+    matched_key: str | None = None
     key: str = field(init=False)
 
     def __post_init__(self):
@@ -257,11 +260,30 @@ def detect(entries: list[Entry], *, today: date | None = None,
 
 def apply_reviews(findings: list[Finding], reviews: dict[str, dict]) -> None:
     """Attach live verdicts. A verdict covers a finding only if every bill in
-    the finding was in front of the reviewer; a later copy re-opens it."""
+    the finding was in front of the reviewer; a later copy re-opens it.
+
+    Verdicts recorded before the rule became vendor NAME + invoice number
+    (5abc3fa3, key `kind:currency:supplier_code:invoice:amount`) do not match
+    today's key. They are recognised by what the row itself stores — the kind,
+    the invoice number and the bills the reviewer saw — so finance does not
+    have to redo them. Sharing at least one bill is what ties an old verdict to
+    this vendor's group rather than another vendor's with the same number.
+    """
+    legacy = [r for r in reviews.values() if r.get("invoice_no_norm")]
     for f in findings:
         r = reviews.get(f.key)
         if r is None:
+            seen = set(f.bill_nos)
+            cands = [c for c in legacy
+                     if c.get("finding_key") != f.key and c["kind"] == f.kind
+                     and c["invoice_no_norm"] == f.invoice_no_norm
+                     and seen & set(c["bill_nos"])]
+            # A covering one if there is one, else any overlap (-> re-opened).
+            r = next((c for c in cands if seen <= set(c["bill_nos"])),
+                     cands[0] if cands else None)
+        if r is None:
             continue
+        f.matched_key = r.get("finding_key", f.key)
         if set(f.bill_nos) <= set(r["bill_nos"]):
             f.review = r
         else:
@@ -293,7 +315,8 @@ select b.bill_no, b.nc_pk, b.bill_status, b.approve_status, b.trade_type,
 """
 
 _REVIEWS_SQL = """
-select finding_key, kind, bill_nos, reason, note, reviewed_by_name, reviewed_at
+select finding_key, kind, bill_nos, reason, note, reviewed_by_name, reviewed_at,
+       invoice_no_norm
   from nc_ap_invoice_dup_reviews where retired_at is null
 """
 
@@ -307,9 +330,10 @@ def _entry(r) -> Entry:
 
 
 def _review(r) -> tuple[str, dict]:
-    return r[0], {"kind": r[1], "bill_nos": list(r[2]), "reason": r[3], "note": r[4],
-                  "reviewed_by_name": r[5],
-                  "reviewed_at": r[6].isoformat() if r[6] else None}
+    return r[0], {"finding_key": r[0], "kind": r[1], "bill_nos": list(r[2]),
+                  "reason": r[3], "note": r[4], "reviewed_by_name": r[5],
+                  "reviewed_at": r[6].isoformat() if r[6] else None,
+                  "invoice_no_norm": r[7]}
 
 
 def _since(today: date) -> date:
@@ -458,13 +482,15 @@ async def review(db: AsyncSession, key: str, seen_bill_nos: list[str], reason: s
         return {"applied": False, "reason": "changed", "bill_nos": current.bill_nos}
     if current.review is not None:
         return {"applied": False, "reason": "already_reviewed", "review": current.review}
-    # A re-opened finding carries a stale verdict; retire it so the new one can
-    # take the (partial) unique slot, and the old one stays on the record.
+    # A re-opened finding carries a stale verdict (possibly under the old key
+    # format); retire it so the new one takes the (partial) unique slot and the
+    # old one stays on the record.
     await db.execute(text("""
         update nc_ap_invoice_dup_reviews
            set retired_at = now(), retired_by = :by, retired_by_name = :by_name
-         where finding_key = :key and retired_at is null
-    """), {"key": key, "by": user_id, "by_name": user_name})
+         where finding_key in (:key, :matched) and retired_at is null
+    """), {"key": key, "matched": current.matched_key or key,
+           "by": user_id, "by_name": user_name})
     await db.execute(text("""
         insert into nc_ap_invoice_dup_reviews
             (finding_key, kind, invoice_no_norm, currency, supplier_code, bill_nos,
@@ -479,10 +505,14 @@ async def review(db: AsyncSession, key: str, seen_bill_nos: list[str], reason: s
 
 async def unreview(db: AsyncSession, key: str, user_id: uuid.UUID,
                    user_name: str | None) -> dict:
+    # The verdict on screen may be stored under the old key format; undo
+    # whichever row the finding actually matched.
+    current = next((f for f in await findings(db) if f.key == key), None)
+    matched = current.matched_key if current is not None and current.matched_key else key
     res = await db.execute(text("""
         update nc_ap_invoice_dup_reviews
            set retired_at = now(), retired_by = :by, retired_by_name = :by_name
-         where finding_key = :key and retired_at is null
-    """), {"key": key, "by": user_id, "by_name": user_name})
+         where finding_key in (:key, :matched) and retired_at is null
+    """), {"key": key, "matched": matched, "by": user_id, "by_name": user_name})
     await db.commit()
     return {"retired": res.rowcount}
