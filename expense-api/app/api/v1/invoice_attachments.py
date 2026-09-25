@@ -18,6 +18,22 @@ router = APIRouter(prefix="/invoice-attachments", tags=["invoice-attachments"])
 
 MAX_FILE_BYTES = 25 * 1024 * 1024  # 25 MB
 
+# Browsers send no usable type for saved emails: Chrome on a PC without Outlook
+# registered reports "" for .msg, which reaches us as application/octet-stream
+# and would be refused by file-api's allowlist. Only these two are re-typed from
+# the extension — anything else keeps what the browser said.
+_EMAIL_TYPES = {".msg": "application/vnd.ms-outlook", ".eml": "message/rfc822"}
+
+
+def _content_type(file: UploadFile) -> str:
+    ctype = (file.content_type or "").split(";")[0].strip().lower()
+    if ctype in ("", "application/octet-stream"):
+        name = (file.filename or "").lower()
+        for ext, email_type in _EMAIL_TYPES.items():
+            if name.endswith(ext):
+                return email_type
+    return file.content_type or "application/octet-stream"
+
 
 class AttachmentMeta(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -111,13 +127,14 @@ async def upload_attachment(
     data = await file.read()
     if len(data) > MAX_FILE_BYTES:
         raise HTTPException(status_code=413, detail="File too large (max 25 MB)")
+    content_type = _content_type(file)
 
     # Upload to file-api
     try:
         storage_key = await upload_to_file_server(
             data,
             filename=file.filename or "invoice",
-            content_type=file.content_type or "application/octet-stream",
+            content_type=content_type,
             doc_type="invoice",
             doc_id=invoice_id,
             bearer_token=token,
@@ -130,7 +147,7 @@ async def upload_attachment(
         invoice_id=invoice_id,
         invoice_source=invoice_source,
         file_name=file.filename or "invoice",
-        content_type=file.content_type or "application/octet-stream",
+        content_type=content_type,
         file_size_bytes=len(data),
         storage_key=storage_key,
         uploaded_by=uuid.UUID(user["sub"]),

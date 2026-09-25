@@ -28,6 +28,10 @@ class Settings(BaseSettings):
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
         "application/msword",  # .doc
         "text/csv", "text/plain",
+        # Saved emails — the only evidence for a vendor credit the vendor will
+        # not issue a credit note for (they say "deduct it" by email).
+        "application/vnd.ms-outlook",  # .msg (Outlook)
+        "message/rfc822",  # .eml
     ]
 
     @property
