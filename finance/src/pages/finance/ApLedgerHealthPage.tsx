@@ -25,7 +25,7 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, Download, EyeOff, Loader2, Undo2, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, EyeOff, Loader2, Search, Undo2, X } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { invalidateApJudgement } from '@/lib/apJudgement'
@@ -157,6 +157,13 @@ function csvEscape(v: unknown) {
 }
 /** Already YYYY-MM-DD from the API — never re-parse a date-only string. */
 function day(v: string | null) { return v ? v.slice(0, 10) : '—' }
+/** Vendor search: name or code, case-insensitive, on the rows already loaded. */
+function matchesVendor(q: string, r: { supplier_name: string | null; supplier_code: string | null }) {
+  const needle = q.trim().toLowerCase()
+  if (!needle) return true
+  return (r.supplier_name ?? '').toLowerCase().includes(needle)
+    || (r.supplier_code ?? '').toLowerCase().includes(needle)
+}
 
 /**
  * Recording why a payable is being set aside.
@@ -986,6 +993,7 @@ export default function ApLedgerHealthPage() {
   // not work — they are an exclusion that has to be declared, not worked.
   const [view, setView] = useState<'suppliers' | 'bills' | 'abandoned'>('suppliers')
   const [open, setOpen] = useState<{ code: string; name: string | null; gap: string | null } | null>(null)
+  const [vendorQ, setVendorQ] = useState('')
 
   const { data: summary, isFetching: loadingSummary } = useQuery({
     queryKey: ['ap-ledger-health-summary'],
@@ -1005,6 +1013,12 @@ export default function ApLedgerHealthPage() {
   })
 
   const ccyRows = summary?.currencies ?? []
+  // Filtered in the browser: both lists arrive whole (limit=500). Not offered on
+  // 'Bills by date' — there "Ignore all N matching" acts on the server-side
+  // filter, and a search the server never saw would make N lie.
+  const searching = vendorQ.trim() !== ''
+  const supplierRows = (items?.items ?? []).filter((r) => matchesVendor(vendorQ, r))
+  const abandonedRows = (abandoned?.items ?? []).filter((r) => matchesVendor(vendorQ, r))
 
   const exportCsv = () => {
     const head = view === 'abandoned'
@@ -1014,11 +1028,11 @@ export default function ApLedgerHealthPage() {
          'Subledger open', 'Billed minus paid', 'Gap',
          'Ignored bills', 'Ignored balance', 'Open after ignored']
     const body = view === 'abandoned'
-      ? (abandoned?.items ?? []).map((r) => [
+      ? abandonedRows.map((r) => [
           r.bill_no, r.bill_date, r.supplier_code, r.supplier_name, r.invoice_no,
           r.currency, r.money_cr, r.money_bal, r.bill_status, r.approve_status,
           r.superseded ? 'yes' : 'no'])
-      : (items?.items ?? []).map((r) => [
+      : supplierRows.map((r) => [
           r.supplier_code, r.supplier_name, r.currency, r.health,
           r.billed, r.paid, r.subledger_open, r.billed_minus_paid, r.gap,
           r.ignored_bills, r.ignored_bal, r.open_after_ignored])
@@ -1141,13 +1155,25 @@ export default function ApLedgerHealthPage() {
           </div>
           <span className="text-sm text-neutral-500">
             {currency}
-            {view === 'abandoned' ? ` · ${abandoned?.total ?? 0} documents`
-              : view === 'suppliers' ? ` · ${items?.total ?? 0} suppliers` : ''}
+            {view === 'abandoned'
+              ? ` · ${searching ? `${abandonedRows.length} of ` : ''}${abandoned?.total ?? 0} documents`
+              : view === 'suppliers'
+                ? ` · ${searching ? `${supplierRows.length} of ` : ''}${items?.total ?? 0} suppliers` : ''}
           </span>
-          {view !== 'bills' && <button onClick={exportCsv}
-                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
-            <Download className="h-4 w-4" /> Export CSV
-          </button>}
+          {view !== 'bills' && (
+            <div className="ml-auto flex items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                <input type="search" value={vendorQ} onChange={(e) => setVendorQ(e.target.value)}
+                       placeholder="Search vendor name or code" aria-label="Search vendor"
+                       className="w-64 rounded-lg border border-neutral-300 py-1.5 pl-8 pr-2.5 text-sm" />
+              </div>
+              <button onClick={exportCsv}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
+                <Download className="h-4 w-4" /> Export CSV
+              </button>
+            </div>
+          )}
         </div>
 
         {view === 'bills' ? (
@@ -1170,10 +1196,12 @@ export default function ApLedgerHealthPage() {
                 {loadingAbandoned && !abandoned ? (
                   <tr><td colSpan={7} className="px-3 py-8 text-center">
                     <Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></td></tr>
-                ) : (abandoned?.items.length ?? 0) === 0 ? (
+                ) : abandonedRows.length === 0 ? (
                   <tr><td colSpan={7} className="px-3 py-8 text-center text-neutral-400">
-                    No abandoned documents carrying a balance in {currency}.</td></tr>
-                ) : abandoned!.items.map((r) => (
+                    {searching && (abandoned?.items.length ?? 0) > 0
+                      ? <>No vendor matching &ldquo;{vendorQ.trim()}&rdquo; in {currency}.</>
+                      : <>No abandoned documents carrying a balance in {currency}.</>}</td></tr>
+                ) : abandonedRows.map((r) => (
                   <tr key={r.bill_no} className="border-t border-neutral-100 hover:bg-neutral-50/60">
                     <td className="px-3 py-2 font-mono text-xs">{r.bill_no}</td>
                     <td className="px-3 py-2 text-xs text-neutral-600">{day(r.bill_date)}</td>
@@ -1217,10 +1245,12 @@ export default function ApLedgerHealthPage() {
               {loadingItems && !items ? (
                 <tr><td colSpan={7} className="px-3 py-8 text-center">
                   <Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></td></tr>
-              ) : (items?.items.length ?? 0) === 0 ? (
+              ) : supplierRows.length === 0 ? (
                 <tr><td colSpan={7} className="px-3 py-8 text-center text-neutral-400">
-                  No suppliers in this state for {currency}.</td></tr>
-              ) : items!.items.map((r) => {
+                  {searching && (items?.items.length ?? 0) > 0
+                    ? <>No vendor matching &ldquo;{vendorQ.trim()}&rdquo; in {currency}.</>
+                    : <>No suppliers in this state for {currency}.</>}</td></tr>
+              ) : supplierRows.map((r) => {
                 // A supplier whose whole balance has been judged away is not
                 // work any more. It stays listed and states what was ignored —
                 // dropping the row would make the page disagree with NC with
