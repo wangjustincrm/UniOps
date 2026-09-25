@@ -12,16 +12,28 @@
  * sendable from the current state of vendor emails / invoice numbers — it is
  * a plain re-fetch, not a cache bust. Blocked payees cannot be selected; the
  * disabled checkbox is a convenience only, the server refuses them anyway.
+ *
+ * Sending is two steps: "Preview & Send" renders the selected payees' emails
+ * server-side without sending (RemittanceEmailPreview), and only "Confirm &
+ * Send" there actually sends — an advice is irreversible once it leaves.
  */
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Loader2, RefreshCw, Send } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, Loader2, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  fetchPreview, scopeKey, sendRemittance,
-  type PayeeGroup, type RemittanceScope, type SendResult,
+  fetchPreview, renderRemittance, scopeKey, sendRemittance,
+  type PayeeGroup, type RemittanceScope, type RenderedEmail, type SendResult,
 } from '@/services/remittance'
 import { primaryBtn, secondaryBtn } from './buttonStyles'
+import { RemittanceEmailPreview } from './RemittanceEmailPreview'
+
+type Recipient = { recipient_kind: string; party_id: string; resend: boolean }
+
+/** What the operator is looking at on the confirmation step, frozen at the
+ * moment it was rendered — Confirm sends exactly these recipients with this
+ * date, not whatever the selection/date picker says by then. */
+type PendingConfirm = { emails: RenderedEmail[]; recipients: Recipient[]; paymentDate: string }
 
 export type RemittanceStatus = 'ready' | 'blocked' | 'sent' | 'failed' | 'skipped' | 'not_sent'
 
@@ -114,6 +126,8 @@ export function RemittancePanel({ scope, onSent }: {
   // (see finance-api/app/api/v1/remittance.py's PAYMENT_DATE_FIELD).
   const [paymentDate, setPaymentDate] = useState(todayLocal())
   const [sending, setSending] = useState(false)
+  const [rendering, setRendering] = useState(false)
+  const [confirm, setConfirm] = useState<PendingConfirm | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<SendResult | null>(null)
 
@@ -146,6 +160,7 @@ export function RemittancePanel({ scope, onSent }: {
     setSelected(new Set())
     setExpanded(new Set())
     setPaymentDate(todayLocal())
+    setConfirm(null)
     prevGroupsRef.current = null
   }, [key])
 
@@ -179,7 +194,8 @@ export function RemittancePanel({ scope, onSent }: {
     prevGroupsRef.current = preview.groups
   }, [preview])
 
-  async function handleSend() {
+  // Step 1 of 2: render the selected payees' emails without sending them.
+  async function handlePreview() {
     if (!preview) return
     const selectedGroups = preview.groups.filter((g) => selected.has(payeeKey(g.recipient_kind, g.party_id)))
     if (selectedGroups.length === 0) return
@@ -193,15 +209,38 @@ export function RemittancePanel({ scope, onSent }: {
     // scope (e.g. a colleague resent it a moment ago from the other scope's
     // panel) but that THIS operator never intended to resend. Kept per-payee,
     // that other payee still comes back `skipped`, exactly as it should.
-    const recipients = selectedGroups.map((g) => ({
+    const recipients: Recipient[] = selectedGroups.map((g) => ({
       recipient_kind: g.recipient_kind,
       party_id: g.party_id,
       resend: readinessOf(g) === 'sent',
     }))
+    setRendering(true)
+    setSendError(null)
+    setLastResult(null)
+    try {
+      const { emails } = await renderRemittance(scope, recipients, paymentDate)
+      setConfirm({ emails, recipients, paymentDate })
+    } catch (e) {
+      setSendError((e as Error).message)
+    } finally {
+      setRendering(false)
+    }
+  }
+
+  // Step 2 of 2: send exactly what was just reviewed. Only the payees the
+  // preview showed as `ready` — one it showed as not being sent must not
+  // go out because its state changed in between.
+  async function handleConfirmSend() {
+    if (!confirm) return
+    const ready = new Set(confirm.emails.filter((e) => e.status === 'ready')
+      .map((e) => payeeKey(e.recipient_kind, e.party_id)))
+    const recipients = confirm.recipients.filter((r) => ready.has(payeeKey(r.recipient_kind, r.party_id)))
+    if (recipients.length === 0) return
     setSending(true)
     setSendError(null)
     try {
-      const result = await sendRemittance(scope, recipients, paymentDate)
+      const result = await sendRemittance(scope, recipients, confirm.paymentDate)
+      setConfirm(null)
       setLastResult(result)
       onSent?.(result)
       // Re-fetch rather than locally patch state — a send just changed the
@@ -247,6 +286,17 @@ export function RemittancePanel({ scope, onSent }: {
   }
 
   const selectedCount = selected.size
+
+  if (confirm) {
+    return (
+      <div className="space-y-3">
+        {sendError && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{sendError}</div>}
+        <RemittanceEmailPreview emails={confirm.emails} sending={sending}
+          onBack={() => { setConfirm(null); setSendError(null) }}
+          onConfirm={() => void handleConfirmSend()} />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-3">
@@ -408,9 +458,9 @@ export function RemittancePanel({ scope, onSent }: {
       )}
 
       <div className="flex justify-end">
-        <button type="button" disabled={sending || selectedCount === 0} onClick={() => void handleSend()} className={primaryBtn}>
-          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          {sending ? 'Sending…' : `Send (${selectedCount})`}
+        <button type="button" disabled={rendering || selectedCount === 0} onClick={() => void handlePreview()} className={primaryBtn}>
+          {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+          {rendering ? 'Preparing preview…' : `Preview & Send (${selectedCount})`}
         </button>
       </div>
     </div>
