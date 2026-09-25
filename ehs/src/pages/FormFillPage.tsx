@@ -22,6 +22,7 @@ import { ehsRoutes } from '@/app/routes'
 import { FormRenderer, looksLikeFailure, type FormValues, type Question } from '@/components/FormRenderer'
 import { useMyProfile } from '@/hooks/useMyProfile'
 import { todayForInput } from '@/lib/formatDate'
+import { formatAreaPath } from '@/lib/areaPath'
 import type { CompressedImage } from '@/lib/imageCompress'
 
 interface Submission {
@@ -192,7 +193,7 @@ export default function FormFillPage() {
         <p className="font-mono text-xs text-neutral-500">{sub.submission_no}</p>
         {sub.location_path && (
           <p className="mt-0.5 text-sm text-neutral-600">
-            {sub.location_path.split('/').slice(1).join(' › ')}
+            {formatAreaPath(sub.location_path)}
           </p>
         )}
         {done && (

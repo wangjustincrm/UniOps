@@ -12,6 +12,7 @@ import { ClipboardList, Plus } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import { formatDateTime } from '@/lib/formatDate'
+import { formatAreaPath } from '@/lib/areaPath'
 import { LocationSelect } from '@/components/LocationSelect'
 import { StatusBadge } from '@/components/StatusBadge'
 
@@ -227,7 +228,7 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
                   </div>
                   <p className="mt-1 text-xs text-neutral-500">
                     {s.submission_no}
-                    {s.location_path ? ` · ${s.location_path.split('/').slice(1).join(' › ')}` : ''}
+                    {formatAreaPath(s.location_path) ? ` · ${formatAreaPath(s.location_path)}` : ''}
                     {s.occurred_at ? ` · ${formatDateTime(s.occurred_at)}` : ''}
                     {s.submitted_by_name ? ` · ${s.submitted_by_name}` : ''}
                   </p>

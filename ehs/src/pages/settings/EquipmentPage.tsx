@@ -8,12 +8,17 @@
  */
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, Upload } from 'lucide-react'
+import { Plus, Search, Upload } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
-import { PageHeader } from '@/components/ui'
+import { formatAreaPath } from '@/lib/areaPath'
+import {
+  Card, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
+} from '@/components/ui'
+import { LocationSelect } from '@/components/LocationSelect'
 
 interface Equipment {
   id: string; asset_no: string | null; name: string; equipment_type: string | null
+  location_id: string | null
   location_path: string | null; department_name: string | null; is_active: boolean
 }
 interface ImportResult { created: number; updated: number; skipped: number; problems: string[] }
@@ -31,6 +36,9 @@ export default function EquipmentPage() {
       `/api/v1/equipment${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   })
 
+  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<Equipment | null>(null)
+
   const upload = useMutation({
     mutationFn: async (file: File) => {
       const form = new FormData()
@@ -46,10 +54,32 @@ export default function EquipmentPage() {
 
   return (
     <div className="p-4">
-      <PageHeader title="Equipment" />
+      <PageHeader title="Equipment">
+        {/* ★ One machine at a time, as well as a spreadsheet. The endpoint was
+            always there; this screen only ever offered the upload, so adding
+            the one press that arrived this morning meant editing a CSV and
+            re-importing the lot. */}
+        <button type="button" className={primaryButton}
+                onClick={() => { setAdding(true); setEditing(null) }}>
+          <Plus className="h-4 w-4" aria-hidden />
+          Add a machine
+        </button>
+      </PageHeader>
       <p className="mb-4 text-sm text-neutral-600">
         Picking a machine on a form fills in its area and department from here.
       </p>
+
+      {(adding || editing) && (
+        <EquipmentForm
+          equipment={editing}
+          onClose={() => { setAdding(false); setEditing(null) }}
+          onSaved={() => {
+            setAdding(false)
+            setEditing(null)
+            queryClient.invalidateQueries({ queryKey: ['equipment'] })
+          }}
+        />
+      )}
 
       <div className="mb-4 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4">
         <input ref={fileInput} type="file" accept=".csv,text/csv" className="hidden"
@@ -93,7 +123,9 @@ export default function EquipmentPage() {
 
       {list.data?.length === 0 && (
         <p className="p-8 text-center text-sm text-neutral-500">
-          {search ? `Nothing matches “${search}”.` : 'No equipment yet — upload a spreadsheet.'}
+          {search
+            ? `Nothing matches “${search}”.`
+            : 'No equipment yet — add one, or upload a spreadsheet.'}
         </p>
       )}
       <ul className="flex flex-col gap-1.5">
@@ -106,13 +138,91 @@ export default function EquipmentPage() {
                 <span className="text-xs text-neutral-500">{e.equipment_type}</span>
               )}
             </div>
-            <p className="mt-0.5 text-xs text-neutral-500">
-              {e.location_path ? e.location_path.split('/').slice(1).join(' › ') : 'No area'}
-              {e.department_name ? ` · ${e.department_name}` : ''}
-            </p>
+            <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
+              <p className="min-w-0 flex-1 text-xs text-neutral-500">
+                {formatAreaPath(e.location_path) ?? 'No area'}
+                {e.department_name ? ` · ${e.department_name}` : ''}
+              </p>
+              <button type="button" onClick={() => { setEditing(e); setAdding(false) }}
+                      className="min-h-[28px] text-xs font-medium text-primary-700 hover:underline">
+                Edit
+              </button>
+            </div>
           </li>
         ))}
       </ul>
     </div>
+  )
+}
+
+
+/**
+ * One machine, added or corrected by hand.
+ *
+ * The area is what earns its place here: choosing it fills in the department
+ * on every form that names this machine, which is the whole reason this
+ * register exists. The server derives the department from the area rather than
+ * asking twice — two answers to one question is how they come to disagree.
+ */
+function EquipmentForm(
+  { equipment, onClose, onSaved }:
+  { equipment: Equipment | null; onClose: () => void; onSaved: () => void },
+) {
+  const [assetNo, setAssetNo] = useState(equipment?.asset_no ?? '')
+  const [name, setName] = useState(equipment?.name ?? '')
+  const [type, setType] = useState(equipment?.equipment_type ?? '')
+  const [locationId, setLocationId] = useState<string | null>(equipment?.location_id ?? null)
+  const [error, setError] = useState<string | null>(null)
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body = {
+        asset_no: assetNo.trim() || null,
+        name: name.trim(),
+        equipment_type: type.trim() || null,
+        location_id: locationId,
+      }
+      return equipment
+        ? api.patch(`/api/v1/equipment/${equipment.id}`, body)
+        : api.post('/api/v1/equipment', body)
+    },
+    onSuccess: onSaved,
+    onError: (e: unknown) => setError(e instanceof ApiError ? e.message : String(e)),
+  })
+
+  return (
+    <Card className="mb-4">
+      <SectionTitle className="mb-2">
+        {equipment ? `Edit ${equipment.name}` : 'Add a machine'}
+      </SectionTitle>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Name">
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)}
+                 placeholder="Line 1 DSI" />
+        </Field>
+        <Field label="Asset number" hint="Optional, but it is what a spreadsheet matches on">
+          <input className={inputClass} value={assetNo}
+                 onChange={(e) => setAssetNo(e.target.value)} />
+        </Field>
+        <Field label="Kind">
+          <input className={inputClass} value={type} onChange={(e) => setType(e.target.value)}
+                 placeholder="Direct steam injection" />
+        </Field>
+        <Field label="Where it is"
+               hint="The department comes from this — picking the machine on a form fills both in">
+          <LocationSelect value={locationId} onChange={setLocationId}
+                          placeholder="Pick an area" />
+        </Field>
+      </div>
+      {error && <ErrorNote error={new Error(error)} />}
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
+        <button type="button" className={primaryButton}
+                disabled={!name.trim() || save.isPending}
+                onClick={() => { if (name.trim() && !save.isPending) { setError(null); save.mutate() } }}>
+          {save.isPending ? 'Saving…' : equipment ? 'Save' : 'Add it'}
+        </button>
+      </div>
+    </Card>
   )
 }
