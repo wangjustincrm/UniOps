@@ -82,10 +82,17 @@ modules:
     typical:
       - Execute approved payments and issue remittance advice
       - Reconcile accounts payable against what EPMS says is owed
+      - Find an invoice keyed into NC more than once, before the extra copy is approved or paid
       - Post and review journal vouchers
       - Find a voucher across several months, or by the item, project or party it was booked against
       - See who prepared, checked and posted a voucher in NC, and whether it was cancelled
       - Reconcile a bank statement against the ledger and sign the period off
+    notes:
+      - >-
+        NC itself does not stop the same invoice number being entered on two
+        payables. Finance → AP Duplicate Invoices is that check: it runs after
+        every hourly AP sync and gives AP a task when a copy appears. A bill
+        reversed by an equal credit is not counted as a copy.
 
   - key: budget
     label: Budget
