@@ -157,7 +157,8 @@ async def budget_actual_rollup_export(
         fiscal_year: int = Query(...),
         month_from: int = Query(default=1, ge=1, le=12),
         month_to: int | None = Query(default=None, ge=1, le=12),
-        group_by: str = Query(default="centre")):
+        group_by: str = Query(default="centre"),
+        by_month: bool = Query(default=False)):
     """The roll-up as an .xlsx, grouped the way the page is grouped.
 
     The tree is written out fully expanded — a collapsed row on screen is a
@@ -183,8 +184,12 @@ async def budget_actual_rollup_export(
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     label = (months[month_from - 1] if month_from == month_to
              else f"{months[month_from - 1]}-{months[month_to - 1]}")
-    xlsx = build_rollup_xlsx(rollup=data, group_by=group_by, window_label=label)
-    name = f"budget-actual-{group_by}-FY{fiscal_year}-{label}.xlsx"
+    # A single month has nothing to expand — same rule as the page's checkbox.
+    by_month = by_month and month_from < month_to
+    xlsx = build_rollup_xlsx(rollup=data, group_by=group_by, window_label=label,
+                             by_month=by_month)
+    name = (f"budget-actual-{group_by}-FY{fiscal_year}-{label}"
+            f"{'-monthly' if by_month else ''}.xlsx")
     return Response(
         content=xlsx,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

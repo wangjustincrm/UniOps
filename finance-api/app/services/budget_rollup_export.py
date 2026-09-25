@@ -65,8 +65,15 @@ def _num(v: Any) -> float | None:
     return float(Decimal(str(v)))
 
 
+_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
 def build_rollup_xlsx(*, rollup: dict[str, Any], group_by: str,
-                      window_label: str) -> bytes:
+                      window_label: str, by_month: bool = False) -> bytes:
+    """`by_month` puts a Plan / Actual pair for every month of the window in
+    front of the window totals — the same expansion the page shows. No monthly
+    variance: finance asked for the two figures only (user, 2026-09-25)."""
     by_department = group_by == "department"
     nodes = rollup["by_department" if by_department else "by_expense_centre"]
     level_header = "Department" if by_department else "Expense centre"
@@ -82,8 +89,15 @@ def build_rollup_xlsx(*, rollup: dict[str, Any], group_by: str,
                 f"actual = NC posted")
     ws["A2"].font = Font(size=10, color=_rgb("737373"))
 
+    months = (list(range(rollup["month_from"], rollup["month_to"] + 1))
+              if by_month else [])
+    # Column layout: label, code, [month plan/actual pairs], the eight measures.
+    first_measure = 3 + 2 * len(months)
+    pct_cols = {first_measure + 3, first_measure + 7}
+
     headers = [
         level_header, "Code",
+        *[h for m in months for h in (f"{_MONTHS[m - 1]} Plan", f"{_MONTHS[m - 1]} Actual")],
         f"Plan {window_label}", f"Actual {window_label}", "Variance", "Variance %",
         "Full-year plan", "Actual YTD", "Remaining", "Consumed %",
     ]
@@ -102,12 +116,15 @@ def build_rollup_xlsx(*, rollup: dict[str, Any], group_by: str,
               top_border: bool = False) -> None:
         nonlocal row
         row += 1
-        cells = [
-            (1, label), (2, code or ""),
-            (3, _num(m.get("plan_period"))), (4, _num(m.get("actual_period"))),
-            (5, _num(m.get("variance_period"))), (6, _num(m.get("variance_period_pct"))),
-            (7, _num(m.get("plan_full_year"))), (8, _num(m.get("actual_ytd"))),
-            (9, _num(m.get("remaining_full_year"))), (10, _num(m.get("consumed_pct"))),
+        per_month = {e["month"]: e for e in m.get("monthly") or []}
+        cells = [(1, label), (2, code or "")]
+        for i, month in enumerate(months):
+            e = per_month.get(month, {})
+            cells += [(3 + 2 * i, _num(e.get("plan"))), (4 + 2 * i, _num(e.get("actual")))]
+        cells += [
+            (first_measure + i, _num(m.get(key))) for i, key in enumerate((
+                "plan_period", "actual_period", "variance_period", "variance_period_pct",
+                "plan_full_year", "actual_ytd", "remaining_full_year", "consumed_pct"))
         ]
         for col, value in cells:
             c = ws.cell(row=row, column=col, value=value)
@@ -118,7 +135,7 @@ def build_rollup_xlsx(*, rollup: dict[str, Any], group_by: str,
                 # then silently drops the styling it recovered.
                 c.alignment = Alignment(horizontal="left", indent=indent)
             elif col >= 3:
-                c.number_format = _PCT if col in (6, 10) else _MONEY
+                c.number_format = _PCT if col in pct_cols else _MONEY
             if bold:
                 c.font = Font(bold=True)
             if fill is not None:
@@ -135,17 +152,20 @@ def build_rollup_xlsx(*, rollup: dict[str, Any], group_by: str,
 
     unalloc = rollup["unallocated"]
     write("Category-level (not allocated)", "",
-          {"actual_period": unalloc["actual_period"], "actual_ytd": unalloc["actual_ytd"]},
+          {"actual_period": unalloc["actual_period"], "actual_ytd": unalloc["actual_ytd"],
+           "monthly": unalloc.get("monthly")},
           bold=True, fill=_POLICY_FILL, top_border=True)
     for b in unalloc["breakdown"]:
         write(b["label"], "",
-              {"actual_period": b["actual_period"], "actual_ytd": b["actual_ytd"]},
+              {"actual_period": b["actual_period"], "actual_ytd": b["actual_ytd"],
+               "monthly": b.get("monthly")},
               indent=2, fill=_POLICY_FILL)
 
     rec = rollup["reconciliation"]
     # The same proof the page carries: placed + unallocated == everything posted.
     write(f"Total actual {window_label}", "",
-          {"actual_period": rec["total_actual_period"]},
+          {"actual_period": rec["total_actual_period"],
+           "monthly": rec.get("total_monthly")},
           bold=True, fill=_TOTAL_FILL, top_border=True)
     row += 1
     # NOT "= x + y": a cell whose text starts with "=" is a formula to Excel,
@@ -156,7 +176,7 @@ def build_rollup_xlsx(*, rollup: dict[str, Any], group_by: str,
                    f"and {rec['unallocated_actual_period']} category-level")
             ).font = Font(size=9, color=_rgb("737373"))
 
-    widths = [34, 16, 16, 16, 14, 11, 16, 16, 14, 12]
+    widths = [34, 16, *[14] * (2 * len(months)), 16, 16, 14, 11, 16, 16, 14, 12]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 

@@ -15,7 +15,7 @@
  * currently LARGER than everything that does. A summary that omitted them would
  * show a third of the company's spend and look complete.
  */
-import { useMemo, useState } from 'react'
+import { type ReactNode, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, Download, Loader2 } from 'lucide-react'
 import { financeApi, financeDownload } from '@/lib/api'
@@ -26,7 +26,9 @@ import { JvDetailModal } from './JvDetailModal'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+interface MonthCell { month: number; plan?: string; actual: string }
 interface Metrics {
+  monthly?: MonthCell[]
   plan_period: string; actual_period: string
   variance_period: string; variance_period_pct: string | null
   plan_full_year: string; actual_ytd: string
@@ -44,12 +46,13 @@ interface Rollup {
   by_expense_centre: Node[]
   by_department: Node[]
   unallocated: {
-    actual_period: string; actual_ytd: string
-    breakdown: { key: string; label: string; actual_period: string; actual_ytd: string }[]
+    actual_period: string; actual_ytd: string; monthly?: MonthCell[]
+    breakdown: { key: string; label: string; actual_period: string; actual_ytd: string
+                 monthly?: MonthCell[] }[]
   }
   reconciliation: {
     placed_actual_period: string; unallocated_actual_period: string
-    total_actual_period: string
+    total_actual_period: string; total_monthly?: MonthCell[]
   }
 }
 
@@ -100,8 +103,14 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
   const [jvId, setJvId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [expandMonths, setExpandMonths] = useState(false)
 
   const [from, to] = win
+  // A single month has nothing to expand; the box is hidden and ignored then,
+  // but keeps its state so it comes back ticked on the next multi-month window.
+  const multiMonth = from < to
+  const months = multiMonth && expandMonths
+    ? Array.from({ length: to - from + 1 }, (_, i) => from + i) : []
 
   const applyWindow = (next: [number, number]) => {
     const label = next[0] === next[1] ? MONTHS[next[0] - 1]
@@ -221,6 +230,15 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
               Same cost centres, two ways in
             </span>
 
+            {multiMonth && (
+              <label className="ml-auto inline-flex cursor-pointer select-none items-center gap-1.5 text-xs text-neutral-700">
+                <input type="checkbox" checked={expandMonths}
+                       onChange={(e) => setExpandMonths(e.target.checked)}
+                       className="h-3.5 w-3.5 cursor-pointer rounded border-neutral-300 accent-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600" />
+                Expand by months
+              </label>
+            )}
+
             {/* Exports whichever grouping is on screen, fully expanded — a
                 collapsed row is a convenience on a page and missing data in a
                 spreadsheet. */}
@@ -230,7 +248,8 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                 try {
                   await financeDownload(
                     `/gl/budget-actual/rollup/export?fiscal_year=${fiscalYear}` +
-                    `&month_from=${from}&month_to=${to}&group_by=${tab}`,
+                    `&month_from=${from}&month_to=${to}&group_by=${tab}` +
+                    (months.length ? '&by_month=true' : ''),
                     `budget-actual-${tab}-FY${fiscalYear}.xlsx`)
                 } catch (e) {
                   setExportError(e instanceof Error ? e.message : 'Export failed')
@@ -238,7 +257,8 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
               }}
               disabled={exporting || !data}
               className={cn(
-                'ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-lg border',
+                'inline-flex cursor-pointer items-center gap-1.5 rounded-lg border',
+                multiMonth ? 'ml-3' : 'ml-auto',
                 'border-neutral-300 px-2.5 py-1.5 text-xs font-medium text-neutral-700',
                 'transition-colors hover:bg-neutral-50',
                 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600',
@@ -253,13 +273,18 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[60rem] text-sm">
+            <table className="w-full min-w-[60rem] text-sm"
+                   style={months.length ? { minWidth: `${60 + months.length * 11}rem` } : undefined}>
               <thead className="sticky top-0 z-10">
                 <tr className="border-y border-neutral-200 bg-neutral-50/95 text-xs font-medium text-neutral-600 backdrop-blur">
                   <th className="px-3 py-2 text-left font-medium">
                     {tab === 'centre' ? 'Expense centre' : 'Department'}
                   </th>
-                  <th className="px-3 py-2 text-right font-medium">Plan {windowLabel}</th>
+                  {months.map((m, i) => (
+                    <MonthHeads key={m} month={m} first={i === 0} />
+                  ))}
+                  <th className={cn('px-3 py-2 text-right font-medium',
+                    months.length > 0 && 'border-l border-neutral-200')}>Plan {windowLabel}</th>
                   <th className="px-3 py-2 text-right font-medium">Actual {windowLabel}</th>
                   <th className="px-3 py-2 text-right font-medium">Variance</th>
                   <th className="px-3 py-2 text-right font-medium">%</th>
@@ -272,7 +297,7 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
               <tbody>
                 {nodes.map((n) => (
                   <Row key={n.code || n.label} node={n} isOpen={open.has(n.code || n.label)}
-                       onToggle={() => toggle(n.code || n.label)} tab={tab}
+                       onToggle={() => toggle(n.code || n.label)} tab={tab} months={months}
                        scope={scope} onScopeChange={onScopeChange} />
                 ))}
 
@@ -289,7 +314,9 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                       Tracked by category, never spread over cost centres
                     </p>
                   </td>
-                  <td className="px-3 py-2 text-right text-neutral-400">—</td>
+                  <MonthActualOnly months={months} cells={data.unallocated.monthly} />
+                  <td className={cn('px-3 py-2 text-right text-neutral-400',
+                    months.length > 0 && 'border-l border-neutral-200')}>—</td>
                   <td className="px-3 py-2 text-right font-mono">{money(data.unallocated.actual_period)}</td>
                   <td colSpan={3} className="px-3 py-2 text-right text-neutral-400">—</td>
                   <td className="px-3 py-2 text-right font-mono">{money(data.unallocated.actual_ytd)}</td>
@@ -307,7 +334,9 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                         Vouchers
                       </button>
                     </td>
-                    <td className="px-3 py-1.5 text-right text-neutral-300">—</td>
+                    <MonthActualOnly months={months} cells={b.monthly} small />
+                    <td className={cn('px-3 py-1.5 text-right text-neutral-300',
+                      months.length > 0 && 'border-l border-neutral-200')}>—</td>
                     <td className="px-3 py-1.5 text-right font-mono text-xs">{money(b.actual_period)}</td>
                     <td colSpan={3} className="px-3 py-1.5 text-right text-neutral-300">—</td>
                     <td className="px-3 py-1.5 text-right font-mono text-xs">{money(b.actual_ytd)}</td>
@@ -321,12 +350,14 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                     whole is what this page was rebuilt to stop being. */}
                 <tr className="border-t-2 border-neutral-300 bg-neutral-50 font-semibold">
                   <td className="px-3 py-2">Total actual {windowLabel}</td>
+                  <MonthActualOnly months={months} cells={data.reconciliation.total_monthly} />
                   {/* No plan figure beside this total on purpose: the plan
                       covers only what lands in a cost centre, while this actual
                       includes the category-level items, which are not budgeted
                       at all. Printing them side by side reads as a 12M overrun
                       that does not exist. The company plan is in the card above. */}
-                  <td className="px-3 py-2 text-right text-neutral-300">—</td>
+                  <td className={cn('px-3 py-2 text-right text-neutral-300',
+                    months.length > 0 && 'border-l border-neutral-200')}>—</td>
                   <td className="px-3 py-2 text-right font-mono">
                     {money(data.reconciliation.total_actual_period)}
                   </td>
@@ -354,8 +385,9 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
   )
 }
 
-function Row({ node, isOpen, onToggle, tab, scope, onScopeChange }: {
+function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
   node: Node; isOpen: boolean; onToggle: () => void; tab: 'centre' | 'department'
+  months: number[]
   scope: Scope | null; onScopeChange: (s: Scope) => void
 }) {
   const overspent = Number(node.variance_period) < 0
@@ -382,7 +414,7 @@ function Row({ node, isOpen, onToggle, tab, scope, onScopeChange }: {
             </button>
           </span>
         </td>
-        <Cells m={node} overspent={overspent} />
+        <Cells m={node} overspent={overspent} months={months} />
       </tr>
       {isOpen && node.children.map((c) => (
         <tr key={c.cost_center_id}
@@ -403,21 +435,71 @@ function Row({ node, isOpen, onToggle, tab, scope, onScopeChange }: {
               </span>
             )}
           </td>
-          <Cells m={c} overspent={Number(c.variance_period) < 0} small />
+          <Cells m={c} overspent={Number(c.variance_period) < 0} months={months} small />
         </tr>
       ))}
     </>
   )
 }
 
-function Cells({ m, overspent, small }: { m: Metrics; overspent: boolean; small?: boolean }) {
+function MonthHeads({ month, first }: { month: number; first: boolean }) {
+  return (
+    <>
+      <th className={cn('whitespace-nowrap px-3 py-2 text-right font-medium text-neutral-500',
+        !first && 'border-l border-neutral-100')}>{MONTHS[month - 1]} plan</th>
+      <th className="whitespace-nowrap px-3 py-2 text-right font-medium">{MONTHS[month - 1]} actual</th>
+    </>
+  )
+}
+
+/** Month columns for a row that has no plan (category-level, totals): the plan
+ *  cell stays "—", same as the window plan cell beside it. */
+function MonthActualOnly({ months, cells, small }: {
+  months: number[]; cells?: MonthCell[]; small?: boolean
+}) {
+  const by = new Map((cells ?? []).map((c) => [c.month, c]))
+  const cls = cn('px-3 text-right font-mono tabular-nums', small ? 'py-1.5 text-xs' : 'py-2')
+  return (
+    <>
+      {months.map((m, i) => (
+        <MonthPair key={m} first={i === 0}
+                   plan={<span className="text-neutral-300">—</span>}
+                   actual={money(by.get(m)?.actual ?? null)} cls={cls} />
+      ))}
+    </>
+  )
+}
+
+function MonthPair({ plan, actual, cls, first }: {
+  plan: ReactNode; actual: ReactNode; cls: string; first: boolean
+}) {
+  return (
+    <>
+      <td className={cn(cls, 'text-neutral-500', !first && 'border-l border-neutral-100')}>{plan}</td>
+      <td className={cls}>{actual}</td>
+    </>
+  )
+}
+
+function Cells({ m, overspent, months, small }: {
+  m: Metrics; overspent: boolean; months: number[]; small?: boolean
+}) {
   // tabular-nums: proportional digits make a column of figures ripple; finance
   // scans these vertically for magnitude, not word by word.
   const cls = cn('px-3 text-right font-mono tabular-nums',
                  small ? 'py-1.5 text-xs' : 'py-2')
+  const by = new Map((m.monthly ?? []).map((c) => [c.month, c]))
   return (
     <>
-      <td className={cn(cls, 'text-neutral-500')}>{money(m.plan_period)}</td>
+      {/* Plan and actual per month only — no monthly variance (user, 2026-09-25). */}
+      {months.map((mo, i) => (
+        <MonthPair key={mo} first={i === 0} cls={cls}
+                   plan={money(by.get(mo)?.plan ?? null)}
+                   actual={money(by.get(mo)?.actual ?? null)} />
+      ))}
+      <td className={cn(cls, 'text-neutral-500', months.length > 0 && 'border-l border-neutral-200')}>
+        {money(m.plan_period)}
+      </td>
       <td className={cls}>{money(m.actual_period)}</td>
       <td className={cn(cls, overspent && 'text-danger-600 font-semibold')}>
         {money(m.variance_period)}
