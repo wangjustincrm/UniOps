@@ -249,6 +249,49 @@ def test_keys_are_stable_and_follow_vendor_and_number():
     assert a.key != d.key                           # another kind
 
 
+def _legacy(kind, inv, bills, key="exact:CAD:0000518:0001128981-01:22.60"):
+    """A verdict as 5abc3fa3 stored it — the old key format."""
+    return {"finding_key": key, "kind": kind, "invoice_no_norm": inv,
+            "bill_nos": bills, "reason": "other", "note": "balanced in NC."}
+
+
+def test_verdict_under_the_old_key_still_covers_its_group():
+    """Production had one of these before the vendor-name rule shipped:
+    KLN 0001128981-01, 22.60, reviewed 2026-09-25 20:41 UTC."""
+    found = dup.detect([E("B1", "22.60", inv="0001128981-01"),
+                        E("B2", "22.60", inv="0001128981-01")], today=TODAY)
+    old = _legacy(dup.EXACT, "0001128981-01", ["B1", "B2"])
+    dup.apply_reviews(found, {old["finding_key"]: old})
+    assert found[0].review is old
+    assert found[0].matched_key == old["finding_key"] != found[0].key
+
+
+def test_old_verdict_does_not_cover_another_vendors_group():
+    """Same invoice number, disjoint bills: another vendor's verdict."""
+    found = dup.detect([E("C1", "22.60", sc="S9", inv="0001128981-01"),
+                        E("C2", "22.60", sc="S9", inv="0001128981-01")], today=TODAY)
+    old = _legacy(dup.EXACT, "0001128981-01", ["B1", "B2"])
+    dup.apply_reviews(found, {old["finding_key"]: old})
+    assert found[0].review is None and not found[0].reopened
+
+
+def test_old_verdict_reopens_when_a_copy_was_added_since():
+    found = dup.detect([E("B1", "22.60", inv="X"), E("B2", "22.60", inv="X"),
+                        E("B3", "22.60", inv="X")], today=TODAY)
+    old = _legacy(dup.EXACT, "X", ["B1", "B2"])
+    dup.apply_reviews(found, {old["finding_key"]: old})
+    assert found[0].review is None and found[0].reopened
+    assert found[0].matched_key == old["finding_key"]
+
+
+def test_old_verdict_of_another_kind_is_not_borrowed():
+    """A cross_supplier verdict (a kind that no longer exists) covers nothing."""
+    found = dup.detect([E("B1", "10", inv="X"), E("B2", "10", inv="X")], today=TODAY)
+    old = _legacy("cross_supplier", "X", ["B1", "B2"], key="cross_supplier:CAD:*:X:10.00")
+    dup.apply_reviews(found, {old["finding_key"]: old})
+    assert found[0].review is None and not found[0].reopened
+
+
 # ── DB-backed: seeding the mirror ────────────────────────────────────────────
 
 _TEST_DSN = (f"host={os.getenv('TEST_PG_HOST', 'localhost')} "
@@ -316,6 +359,41 @@ async def test_unapproved_bills_are_not_counted_as_copies(db_session):
     _bill("D2002", "100", inv="X", status=(-1, -1), day=date(2025, 1, 1))  # old draft
     _bill("D2003", "100", inv="X", status=(-99, 3), day=date(2026, 9, 20))  # deleted
     assert await dup.findings(db_session, today=TODAY) == []
+
+
+async def test_legacy_verdict_is_honoured_and_can_be_undone(db_session, seeded):
+    """The row production held, verbatim in shape: old key, same bills."""
+    _exec("insert into nc_ap_invoice_dup_reviews (finding_key, kind, invoice_no_norm, "
+          "currency, supplier_code, bill_nos, reason, note, reviewed_by_name, reviewed_at) "
+          "values ('exact:CAD:S1:1497:50722.88', 'exact', '1497', 'CAD', 'S1', "
+          "array['D1001','D1002'], 'recovered', 'old key', 'AP Clerk', now())")
+    exact = next(f for f in await dup.findings(db_session, today=TODAY) if f.kind == dup.EXACT)
+    assert exact.review is not None and exact.review["note"] == "old key"
+    assert exact.key != "exact:CAD:S1:1497:50722.88"
+
+    # Undo from the page (which only knows the new key) retires the old row.
+    assert (await dup.unreview(db_session, exact.key, uuid.uuid4(), "AP Clerk")) == {"retired": 1}
+    again = next(f for f in await dup.findings(db_session, today=TODAY) if f.kind == dup.EXACT)
+    assert again.review is None
+    # And a fresh verdict is stored under the new key.
+    assert (await dup.review(db_session, again.key, again.bill_nos, "recovered", None,
+                             uuid.uuid4(), "AP Clerk"))["applied"]
+    live = _exec("select finding_key from nc_ap_invoice_dup_reviews where retired_at is null")
+    assert live == [(again.key,)]
+
+
+async def test_reviewing_a_reopened_legacy_group_retires_the_old_row(db_session, seeded):
+    _exec("insert into nc_ap_invoice_dup_reviews (finding_key, kind, invoice_no_norm, "
+          "currency, supplier_code, bill_nos, reason, reviewed_at) "
+          "values ('exact:CAD:S1:1497:50722.88', 'exact', '1497', 'CAD', 'S1', "
+          "array['D1001','D1002'], 'recovered', now())")
+    _bill("D1009", "50722.88", inv="1497")                  # a third copy since
+    f = next(f for f in await dup.findings(db_session, today=TODAY) if f.kind == dup.EXACT)
+    assert f.review is None and f.reopened
+    assert (await dup.review(db_session, f.key, f.bill_nos, "correcting_in_nc", None,
+                             uuid.uuid4(), "AP Clerk"))["applied"]
+    live = _exec("select finding_key from nc_ap_invoice_dup_reviews where retired_at is null")
+    assert live == [(f.key,)]
 
 
 # ── the standing task ────────────────────────────────────────────────────────
