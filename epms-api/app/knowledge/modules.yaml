@@ -85,7 +85,7 @@ modules:
       - Post and review journal vouchers
       - Find a voucher across several months, or by the item, project or party it was booked against
       - See who prepared, checked and posted a voucher in NC, and whether it was cancelled
-      - Reconcile a bank statement against the ledger and sign the period off
+      - Reconcile a bank statement against the ledger and sign the period off (a USD or CNY account reconciles in its own currency, not in CAD)
 
   - key: budget
     label: Budget

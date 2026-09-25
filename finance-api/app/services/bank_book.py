@@ -33,13 +33,41 @@ The matcher uses it: AP lines are the ones to look for inside a payment advice,
 transfers pair against "Funds transfer credit" statement lines, and fees match
 one-to-one. It is also what the reconciliation screen shows, because it is what
 finance reads when they do this by hand.
+
+## A foreign-currency account reconciles in ITS currency, not in CAD
+
+NC books every line twice: 原币 (orig_debit/orig_credit, in the line's currency)
+and 本币 (local_debit/local_credit, CAD). A bank statement only ever knows the
+first. RBC USD 4010351, July 2026, measured against production:
+
+                     orig (USD)     local (CAD)     statement (USD)
+    opening           13,135.23      18,665.16       13,135.23
+    movement            -636.12        -897.82        -636.12
+    FX revaluation         0.00        -232.34            —
+    closing           12,499.11      17,535.00       12,499.11
+
+Reading local turned a USD account that reconciles to the cent into a
+"difference" of −5,035.89 that no amount of matching could clear: every line
+was off by the day's rate, and the month-end 汇兑损益结转 (orig 0.00, CAD only)
+sat in the ledger with nothing on the statement to match it to.
+
+So on a non-CAD account the book side is the ORIGINAL amount of the lines booked
+in that account's currency. Lines with no amount in it — the FX revaluation, and
+the CAD-denominated "interest + Carry forward" pairs NC posts on the USD accounts
+— are not movements of that bank's money. They are kept out of the matchable
+list and handed back separately (`BookPeriod.base_only`), with their CAD total,
+so they are visible rather than silently dropped.
+
+A CAD account is untouched: it keeps reading local, exactly as before (on RBC
+1033760 orig == local on all 4,830 lines anyway, and the CNY/EUR lines that sit
+on a few CAD accounts are only meaningful in CAD).
 """
 import uuid
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bank import BankAccount
@@ -47,6 +75,10 @@ from app.models.journal_voucher import POSTED, JournalVoucher, JournalVoucherLin
 from app.models.nc_bank_account import NcBankAccount
 
 ZERO = Decimal("0")
+
+# NC's 本币 for this book. local_debit/local_credit are always in it; a bank
+# account in any other currency reconciles on orig_debit/orig_credit instead.
+BASE_CURRENCY = "CAD"
 
 # The cash accounts a bank reconciliation draws from. 1002 is "Cash on Bank";
 # 100201 Checking and 100202 Savings are its postable children, and both carry
@@ -111,13 +143,20 @@ class BookLine:
     account_code: str | None
     summary: str | None
     currency: str
-    debit: Decimal              # as posted (local/CAD)
+    debit: Decimal              # in the BANK ACCOUNT's currency — see module doc
     credit: Decimal
     contra_codes: list[str]
     contra_names: list[str]
     contra_kind: str
     partner_name: str | None
     posted: bool
+    # The same line in CAD, as NC's 本币. Equal to debit/credit on a CAD account.
+    local_debit: Decimal = ZERO
+    local_credit: Decimal = ZERO
+
+    @property
+    def local_amount(self) -> Decimal:
+        return self.local_debit - self.local_credit
 
     @property
     def amount(self) -> Decimal:
@@ -142,6 +181,15 @@ class BookPeriod:
     total_debit: Decimal
     total_credit: Decimal
     lines: list[BookLine]
+    # The account's currency, and the lines on it that have no amount in that
+    # currency (FX revaluation, CAD-only adjustments). Always empty on a CAD
+    # account. Not part of opening/closing — they are not the bank's money.
+    currency: str = BASE_CURRENCY
+    base_only: list[BookLine] | None = None
+
+    @property
+    def base_only_local_total(self) -> Decimal:
+        return sum((ln.local_amount for ln in (self.base_only or [])), ZERO)
 
 
 def account_label(account: BankAccount) -> str:
@@ -189,6 +237,15 @@ def _posted_filter(include_unposted: bool):
 # real postings that move cash; excluding them would break the number the other
 # way. Measured: with kind 2 out and the rest in, the opening is 564,623.34 —
 # the balance the RBC statement prints.
+#
+# ★ EXCEPT the go-live one. The earliest opening voucher on an account, when no
+# movement precedes it, is not a restatement of anything — it IS the balance the
+# account arrived in NC with. BOC 1060 went live in 2020: its 2020-00 opening
+# voucher nets 5,670,888.07, and dropping it put the July 2026 ledger opening at
+# −4,307,455.32 against a statement opening of 1,363,432.75 — a gap of exactly
+# 5,670,888.07, with the period's own movement agreeing to the cent. RBC never
+# hit this because it has no go-live voucher: its first movement (2024-05) is
+# older than its first opening voucher (2025-00). See `_go_live_year`.
 _OPENING_VOUCHER_KIND = 2
 
 
@@ -214,19 +271,90 @@ async def _cash_subtree(db: AsyncSession) -> list[str]:
     return list(rows) or [CASH_ACCOUNT_PREFIX, "100201", "100202"]
 
 
+def account_currency(account: BankAccount, nc: NcBankAccount | None) -> str:
+    """NC's own currency for the bank account wins; Bank Settings is the fallback."""
+    return ((nc.currency if nc is not None else None) or account.currency
+            or BASE_CURRENCY).upper()
+
+
+def _in_currency(ccy: str):
+    """(debit, credit) SQL expressions in the bank account's currency.
+
+    CAD: local, as it always was. Anything else: orig on the lines booked in that
+    currency, zero on the rest — a CAD-only line has no USD amount to add.
+    """
+    if ccy == BASE_CURRENCY:
+        return JournalVoucherLine.local_debit, JournalVoucherLine.local_credit
+    same = func.upper(JournalVoucherLine.currency) == ccy
+    return (case((same, JournalVoucherLine.orig_debit), else_=0),
+            case((same, JournalVoucherLine.orig_credit), else_=0))
+
+
+def _line_in_currency(ln: JournalVoucherLine, ccy: str) -> tuple[Decimal, Decimal]:
+    """Python twin of `_in_currency`, for one loaded line."""
+    if ccy == BASE_CURRENCY:
+        return ln.local_debit or ZERO, ln.local_credit or ZERO
+    if (ln.currency or "").upper() == ccy:
+        return ln.orig_debit or ZERO, ln.orig_credit or ZERO
+    return ZERO, ZERO
+
+
+def _voucher_year():
+    """Fiscal year of a voucher. Opening vouchers are dated 0001-01-01 in NC, so
+    the year has to come from fiscal_period ("2020-00"), never from the date."""
+    from sqlalchemy import Integer, cast
+    return cast(func.substr(JournalVoucher.fiscal_period, 1, 4), Integer)
+
+
+async def _go_live_year(db: AsyncSession, nc_account_id: uuid.UUID, codes: list[str],
+                        include_unposted: bool) -> int | None:
+    """The fiscal year whose opening voucher carries the account's INITIAL balance,
+    or None when every opening voucher is a restatement.
+
+    That is the earliest year with an opening voucher on this account, provided no
+    real movement is in an earlier year. Later years' opening vouchers restate
+    movements already in the ledger and stay excluded.
+    """
+    scope = (_posted_filter(include_unposted),
+             JournalVoucherLine.account_code.in_(codes),
+             JournalVoucherLine.bank_account_id == nc_account_id)
+    is_opening = func.coalesce(JournalVoucher.nc_voucher_kind, 0) == _OPENING_VOUCHER_KIND
+    first_opening, first_move = (await db.execute(
+        select(func.min(_voucher_year()).filter(is_opening),
+               func.min(_voucher_year()).filter(~is_opening))
+        .select_from(JournalVoucherLine)
+        .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+        .where(*scope)
+    )).one()
+    if first_opening is None:
+        return None
+    if first_move is not None and first_move < first_opening:
+        return None
+    return first_opening
+
+
 async def opening_balance(db: AsyncSession, nc_account_id: uuid.UUID, before: date,
-                          include_unposted: bool = False) -> Decimal:
+                          include_unposted: bool = False,
+                          currency: str = BASE_CURRENCY) -> Decimal:
     """Balance carried into `before` — every posted line on this bank account
     strictly earlier. This is NC's 期初余额 for the account-balance expansion, and
     on the July RBC account it is 564,623.34, the statement's opening balance.
+
+    In the account's own currency: on RBC USD 4010351 it is 13,135.23 USD, the
+    statement's opening — not the 18,665.16 CAD that local sums to.
     """
     codes = await _cash_subtree(db)
+    dr, cr = _in_currency(currency.upper())
+    go_live = await _go_live_year(db, nc_account_id, codes, include_unposted)
+    kept = _excludes_opening_vouchers()
+    if go_live is not None:
+        kept = or_(kept, _voucher_year() == go_live)
     row = (await db.execute(
-        select(func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
-               func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
+        select(func.coalesce(func.sum(dr), 0),
+               func.coalesce(func.sum(cr), 0))
         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
         .where(_posted_filter(include_unposted),
-               _excludes_opening_vouchers(),
+               kept,
                JournalVoucherLine.account_code.in_(codes),
                JournalVoucherLine.bank_account_id == nc_account_id,
                JournalVoucher.voucher_date < before)
@@ -309,23 +437,33 @@ async def book_period(db: AsyncSession, account: BankAccount,
                   JournalVoucherLine.line_no)
     )).all()
 
+    ccy = account_currency(account, nc)
     contra = await _contra_map(db, [ln for ln, _jv in rows])
     lines = []
+    base_only = []
     for ln, jv in rows:
         pairs = contra.get(ln.id, [])
-        lines.append(BookLine(
+        debit, credit = _line_in_currency(ln, ccy)
+        local_dr, local_cr = ln.local_debit or ZERO, ln.local_credit or ZERO
+        # Nothing in the account's currency but something in CAD: an FX
+        # revaluation or a CAD-only adjustment. Never on a CAD account, where
+        # debit/credit ARE local.
+        target = (base_only if debit == ZERO and credit == ZERO
+                  and (local_dr != ZERO or local_cr != ZERO) else lines)
+        target.append(BookLine(
             jv_line_id=ln.id, nc_voucher_pk=jv.nc_source_pk, jv_number=jv.jv_number,
             voucher_date=jv.voucher_date, line_no=ln.line_no,
             account_code=ln.account_code, summary=ln.summary, currency=ln.currency,
-            debit=ln.local_debit or ZERO, credit=ln.local_credit or ZERO,
+            debit=debit, credit=credit,
             contra_codes=[c for c, _n in pairs],
             contra_names=[n for _c, n in pairs if n],
             contra_kind=classify_contra([c for c, _n in pairs]),
             partner_name=ln.partner_name,
             posted=(jv.status == POSTED),
+            local_debit=local_dr, local_credit=local_cr,
         ))
 
-    opening = await opening_balance(db, nc.id, date_from, include_unposted)
+    opening = await opening_balance(db, nc.id, date_from, include_unposted, ccy)
     total_debit = sum((ln.debit for ln in lines), ZERO)
     total_credit = sum((ln.credit for ln in lines), ZERO)
     return BookPeriod(
@@ -333,6 +471,7 @@ async def book_period(db: AsyncSession, account: BankAccount,
         date_from=date_from, date_to=date_to,
         opening=opening, closing=opening + total_debit - total_credit,
         total_debit=total_debit, total_credit=total_credit, lines=lines,
+        currency=ccy, base_only=base_only,
     )
 
 
@@ -356,22 +495,26 @@ async def transfer_counterparts(db: AsyncSession, lines: list[BookLine]) -> dict
     jv_ids = [jv for _lid, jv in jv_of]
     codes = await _cash_subtree(db)
     others = (await db.execute(
-        select(JournalVoucherLine.jv_id, NcBankAccount.code, NcBankAccount.name,
-               JournalVoucherLine.local_debit, JournalVoucherLine.local_credit)
+        select(JournalVoucherLine.id, JournalVoucherLine.jv_id, NcBankAccount.code,
+               NcBankAccount.name, JournalVoucherLine.local_debit,
+               JournalVoucherLine.local_credit)
         .join(NcBankAccount, NcBankAccount.id == JournalVoucherLine.bank_account_id)
         .where(JournalVoucherLine.jv_id.in_(jv_ids),
                JournalVoucherLine.account_code.in_(codes))
     )).all()
     by_jv: dict = {}
-    for jv_id, code, name, dr, cr in others:
-        by_jv.setdefault(jv_id, []).append((code, name, dr, cr))
+    for lid, jv_id, code, name, dr, cr in others:
+        by_jv.setdefault(jv_id, []).append((lid, code, name, (dr or ZERO) - (cr or ZERO)))
 
     out: dict = {}
     for line_id, jv_id in jv_of:
         mine = ours[line_id]
-        for code, name, dr, cr in by_jv.get(jv_id, []):
-            # the leg that is not ours, and on the opposite side
-            if code != mine and code and (dr or ZERO) - (cr or ZERO) != mine.amount:
+        for lid, code, name, local in by_jv.get(jv_id, []):
+            # The leg that is not ours, on the opposite side. Compared by line id
+            # and by the SIGN of the CAD amount: across currencies (USD account →
+            # CAD account) the two legs' own amounts never match, and mine.amount
+            # is in this account's currency while `local` is CAD.
+            if lid != line_id and code and (local > ZERO) != (mine.local_amount > ZERO):
                 out[line_id] = {"code": code, "name": name}
                 break
     return out

@@ -119,6 +119,21 @@ def build_snapshot(rec, account_label: str, summary: dict, cleared_debits: list,
     }
 
 
+def _base_only_note(snapshot: dict) -> str | None:
+    """On a foreign-currency account, the ledger lines left out because they have
+    no amount in that currency. An auditor comparing to NC's CAD 科目余额表 will
+    see a different register balance; this line is the reason, with the number."""
+    s = snapshot.get("summary") or {}
+    n = int(s.get("base_only_count") or 0)
+    if not n:
+        return None
+    return (f"Register balance is in {snapshot['currency']} (NC original currency). "
+            f"{n} ledger line(s) with no {snapshot['currency']} amount — FX "
+            f"revaluation / CAD-only adjustments, CAD "
+            f"{_money(s.get('base_only_local_total'))} — are not bank movements "
+            f"and are excluded.")
+
+
 # ── PDF ────────────────────────────────────────────────────────────────────────
 
 def render_pdf(snapshot: dict, reconciled_on: date, reconciled_by: str) -> bytes:
@@ -186,6 +201,9 @@ def render_pdf(snapshot: dict, reconciled_on: date, reconciled_by: str) -> bytes
         ("TOPPADDING", (0, 0), (-1, -1), 3),
     ]))
     flow.append(t)
+    if note := _base_only_note(snapshot):
+        flow.append(Spacer(1, 4))
+        flow.append(Paragraph(escape(note), small))
     flow.append(Spacer(1, 10))
 
     def detail(title: str, rows: list, negative: bool):
@@ -268,6 +286,9 @@ def render_xlsx(snapshot: dict, reconciled_on: date, reconciled_by: str) -> byte
         ws.cell(ws.max_row, 2).number_format = money
     ws.cell(ws.max_row, 1).font = bold
     ws.cell(ws.max_row, 2).font = bold
+    if note := _base_only_note(snapshot):
+        ws.append([])
+        ws.append([note])
     ws.column_dimensions["A"].width = 46
     ws.column_dimensions["B"].width = 18
 

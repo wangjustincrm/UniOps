@@ -243,6 +243,7 @@ async def book_side(account_id: uuid.UUID, _: CurrentUser,
     counterparts = await bank_book.transfer_counterparts(db, period.lines)
     return {
         "bank_account": period.bank_account_label,
+        "currency": period.currency,
         "opening": str(period.opening), "closing": str(period.closing),
         "total_debit": str(period.total_debit), "total_credit": str(period.total_credit),
         "lines": [{
@@ -250,13 +251,25 @@ async def book_side(account_id: uuid.UUID, _: CurrentUser,
             "voucher_date": b.voucher_date.isoformat(), "line_no": b.line_no,
             "summary": b.summary, "currency": b.currency,
             "debit": str(b.debit), "credit": str(b.credit), "amount": str(b.amount),
+            "local_amount": str(b.local_amount),
             "contra_codes": b.contra_codes, "contra_names": b.contra_names,
             "contra_kind": b.contra_kind,
             "contra_label": bank_book.KIND_LABELS.get(b.contra_kind, b.contra_kind),
             "partner_name": b.partner_name,
             "transfer_counterpart": counterparts.get(b.jv_line_id),
         } for b in period.lines],
+        "base_only_lines": _base_only_payload(period),
     }
+
+
+def _base_only_payload(period) -> list[dict]:
+    """Ledger lines with no amount in the account's currency — FX revaluation and
+    CAD-only adjustments on a foreign-currency account. Shown, never matched."""
+    return [{
+        "jv_line_id": str(b.jv_line_id), "jv_number": b.jv_number,
+        "voucher_date": b.voucher_date.isoformat(), "summary": b.summary,
+        "currency": b.currency, "local_amount": str(b.local_amount),
+    } for b in (period.base_only or [])]
 
 
 # ── the session ────────────────────────────────────────────────────────────────
@@ -366,10 +379,12 @@ async def get_period(recon_id: uuid.UUID, _: CurrentUser,
         "book_lines": [{
             "jv_line_id": str(b.jv_line_id), "jv_number": b.jv_number,
             "voucher_date": b.voucher_date.isoformat(), "summary": b.summary,
-            "amount": str(b.amount), "contra_kind": b.contra_kind,
+            "amount": str(b.amount), "local_amount": str(b.local_amount),
+            "contra_kind": b.contra_kind,
             "contra_label": bank_book.KIND_LABELS.get(b.contra_kind, b.contra_kind),
             "contra_codes": b.contra_codes,
             "cleared": b.jv_line_id in claimed_book} for b in period.lines],
+        "base_only_lines": _base_only_payload(period),
         "matches": [{
             "id": str(m.id), "method": m.method, "amount": str(m.amount),
             "note": m.note, "advice_id": str(m.advice_id) if m.advice_id else None,

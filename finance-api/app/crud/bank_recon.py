@@ -466,6 +466,11 @@ async def recompute(db: AsyncSession, rec: BankReconciliation,
         "movement_difference": str(movement_difference),
         "bank_account": period.bank_account_label,
         "status": rec.status,
+        # Everything above is in this currency. On a non-CAD account the FX
+        # revaluation / CAD-only lines are outside it, counted here in CAD.
+        "currency": period.currency,
+        "base_only_count": len(period.base_only or []),
+        "base_only_local_total": str(period.base_only_local_total),
     }
 
 
