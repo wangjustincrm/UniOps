@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from sqlalchemy import (Boolean, Date, DateTime, ForeignKey, Integer, Numeric,
                         String, Text)
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -245,3 +245,37 @@ class NcApBillDismissal(Base):
     restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     restored_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     restored_by_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+
+# Finance's verdict on a duplicate-invoice finding. Closed set for the same
+# reason as DISMISS_REASONS: the verdicts get counted. "other" needs a note.
+DUP_REVIEW_REASONS = {
+    "not_duplicate": "Different invoices that share a number",
+    "split": "One invoice deliberately split across several bills",
+    "recovered": "Overpayment recovered / credit received from the supplier",
+    "correcting_in_nc": "Being corrected in NC (void or credit note pending)",
+    "other": "Other",
+}
+
+
+class NcApInvoiceDupReview(Base):
+    """Mirrors 0039_ap_inv_dup_reviews column for column. Findings themselves
+    are never stored — see app/services/ap_duplicate_invoices.py."""
+    __tablename__ = "nc_ap_invoice_dup_reviews"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True,
+                                          default=uuid.uuid4)
+    finding_key: Mapped[str] = mapped_column(String(300), nullable=False)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    invoice_no_norm: Mapped[str] = mapped_column(String(100), nullable=False)
+    currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    supplier_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    bill_nos: Mapped[list[str]] = mapped_column(ARRAY(String(40)), nullable=False)
+    reason: Mapped[str] = mapped_column(String(40), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    reviewed_by_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retired_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    retired_by_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
