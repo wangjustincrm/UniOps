@@ -83,6 +83,10 @@ class ParsedStatement:
     # What solve_signs could not settle. Each entry is a reason the statement is
     # not trustworthy, so verify() folds them into verify_errors.
     solve_notes: list[str] = field(default_factory=list)
+    # "printed sections" when the directions came from the statement's own
+    # deposit / withdrawal sections and those agree with its printed per-side
+    # counts and totals — see _solve_by_printed_totals.
+    direction_basis: str | None = None
     raw_payload: dict | None = None
 
     @property
@@ -167,7 +171,15 @@ def verify(st: ParsedStatement) -> tuple[bool, list[str]]:
     # debit/credit pair), but "did not occur once" is not a guarantee, and a
     # silent coin-flip on direction is not acceptable for money. So: refuse, and
     # tell the human what to confirm.
-    errors.extend(_ambiguous_pairs(st))
+    #
+    # Not when the directions came from PRINTED SECTIONS. JPM US lists deposits
+    # and withdrawals under their own headings, each with its count and total;
+    # a 48,076.00 "EFT Return" under Deposits on 07/13 and a 48,076.00 "Corp Pay"
+    # under Withdrawals on 07/16 are not ambiguous — the heading says which is
+    # which, and the reading agreed with both printed totals. The check is for
+    # layouts where the side is only a column position, which extraction loses.
+    if st.direction_basis != "printed sections":
+        errors.extend(_ambiguous_pairs(st))
     errors.extend(st.solve_notes)
 
     # 6. shape checks — cheap, and each one has been a real extraction failure
@@ -238,6 +250,12 @@ def solve_signs(st: ParsedStatement) -> list[str]:
     """
     from itertools import product
 
+    if all(ln.running_balance is None for ln in st.lines):
+        by_totals = _solve_by_printed_totals(st)
+        if by_totals is not None:
+            st.solve_notes = by_totals
+            return by_totals
+
     notes: list[str] = []
     balance = st.opening_balance
     for seg in _segments(st):
@@ -277,6 +295,66 @@ def solve_signs(st: ParsedStatement) -> list[str]:
     return notes
 
 
+# Enumerating which k of n lines are the credits is C(n, k); past this many the
+# statement is left to the per-segment path and its "too many" note.
+_MAX_TOTALS_COMBINATIONS = 2_000_000
+
+
+def _solve_by_printed_totals(st: ParsedStatement) -> list[str] | None:
+    """Directions for a statement that prints NO running balance at all.
+
+    JPM's US Commercial Checking lists "Deposits and Additions" and "Electronic
+    Withdrawals" as separate sections and never prints a balance per line, so
+    there is no segment to solve against — 17 lines in July, one segment, past
+    what the balance solver will enumerate. But it prints, per side, how many
+    and how much: 4 deposits for 266,572.29 and 13 withdrawals for 348,719.87.
+    That is enough: the credits are the k-subset of magnitudes summing to the
+    printed credit total. One such subset = the directions are proven by the
+    statement's own figures, not by the model.
+
+    Several subsets that differ only by swapping lines of EQUAL magnitude
+    (48,076.00 returned and 48,076.00 paid) are the same arithmetic; the
+    extracted signs are kept if they are one of them, and `_ambiguous_pairs`
+    still names those lines for a human. Returns None when the statement does
+    not print all four figures — the ordinary path applies.
+    """
+    from itertools import combinations
+    from math import comb
+
+    k, n = st.printed_credit_count, len(st.lines)
+    if (st.printed_total_credits is None or st.printed_total_debits is None
+            or k is None or st.printed_debit_count is None):
+        return None
+    if k + st.printed_debit_count != n:
+        return [f"The statement prints {k} credits and {st.printed_debit_count} debits, "
+                f"but {n} lines were read — a line is missing or extra."]
+    if comb(n, k) > _MAX_TOTALS_COMBINATIONS:
+        return None
+    mags = [abs(ln.amount) for ln in st.lines]
+    solutions = [set(c) for c in combinations(range(n), k)
+                 if sum((mags[i] for i in c), ZERO) == st.printed_total_credits]
+    if not solutions:
+        return [f"No {k} of the {n} amounts add up to the printed credit total "
+                f"{st.printed_total_credits} — an amount was misread."]
+    shapes = {tuple(sorted(mags[i] for i in sol)) for sol in solutions}
+    if len(shapes) > 1:
+        return [f"{len(shapes)} different sets of {k} lines add up to the printed credit "
+                f"total {st.printed_total_credits}. The statement does not say which — "
+                f"confirm the directions."]
+    extracted = {i for i, ln in enumerate(st.lines) if ln.amount > ZERO}
+    if extracted in solutions:
+        # The reader's own section placement agrees with both printed totals and
+        # both counts: the directions ARE the statement's headings.
+        st.direction_basis = "printed sections"
+        return []
+    # The reading disagreed with the printed totals, so its section placement is
+    # not evidence. Take the arithmetic; equal-magnitude pairs stay flagged.
+    chosen = solutions[0]
+    for i, ln in enumerate(st.lines):
+        ln.amount = mags[i] if i in chosen else -mags[i]
+    return []
+
+
 def _ambiguous_pairs(st: ParsedStatement) -> list[str]:
     """Equal-magnitude debit/credit pairs sharing one balance segment."""
     errors = []
@@ -305,8 +383,8 @@ Return EXACTLY this shape, no markdown, no commentary:
   "currency": "3-letter code",
   "period_start": "YYYY-MM-DD",
   "period_end": "YYYY-MM-DD",
-  "opening_balance": number,
-  "closing_balance": number,
+  "opening_balance": number or null,
+  "closing_balance": number or null,
   "printed_total_debits": number or null,
   "printed_total_credits": number or null,
   "printed_debit_count": integer or null,
@@ -316,7 +394,8 @@ Return EXACTLY this shape, no markdown, no commentary:
       "date": "YYYY-MM-DD",
       "description": "string",
       "amount": number,
-      "running_balance": number or null
+      "running_balance": number or null,
+      "currency": "3-letter code or null"
     }
   ]
 }
@@ -344,6 +423,16 @@ More rules:
     1269496.36 and 30. Null if the statement does not print them.
   - Amounts are plain numbers: no currency symbols, no thousands separators.
   - Include fees and interest — they are transactions like any other.
+  - `closing_balance` is the statement's FINAL balance for the whole period
+    ("Closing Balance", "Ending balance", "Your closing balance"). A figure
+    labelled "Balance Carried Forward To Next Page" or "Balance Carried Over From
+    Previous Page" is a page subtotal: it is NEVER the opening or the closing
+    balance. Neither is "Total Dr", "Total Cr" or "Net Movement" — those are
+    totals of the transactions, not balances. If THIS page does not print the
+    final closing balance (it is often on the last page), return null for
+    `closing_balance`.
+  - If this page has no transaction table at all (a cover page of terms and
+    addresses), return "lines": [] and null for anything it does not print.
 """
 
 
@@ -442,8 +531,23 @@ _CONTINUATION_PROMPT = """\
 This is page {page} of a multi-page bank statement. Return ONLY the transaction
 rows printed in the "Account Activity Details" table ON THIS PAGE, as JSON:
 
-{{"lines": [{{"date": "YYYY-MM-DD", "description": "string", "amount": number,
-             "running_balance": number or null}}]}}
+{{"opening_balance": number or null,
+ "closing_balance": number or null,
+ "lines": [{{"date": "YYYY-MM-DD", "description": "string", "amount": number,
+             "running_balance": number or null, "currency": "3-letter code or null"}}]}}
+
+`opening_balance`: only if THIS page prints the statement's opening balance
+("Opening Balance", "Balance forward" at the start of the period); else null.
+
+`closing_balance`: the statement's FINAL closing balance, only if THIS page
+prints it ("Closing Balance", "Ending balance"). "Balance Carried Forward To Next
+Page" / "Balance Carried Over From Previous Page" are page subtotals, and "Total
+Dr" / "Total Cr" / "Net Movement" are totals of the transactions — none of them
+is the closing balance. Null when this page does not print the final one.
+
+Also, ONLY if this page prints them (else null): "period_start" and "period_end"
+("STATEMENT PERIOD FROM 1 JUL 2026 TO 31 JUL 2026" -> "2026-07-01", "2026-07-31"),
+"account_no", and "currency" (the statement's currency).
 
 The sign rule, the balance-column rule and the date carry-down rule are the same
 as for page 1:
@@ -525,7 +629,67 @@ def _single_pages(pdf_bytes: bytes) -> list[bytes]:
     return out
 
 
-def extract_payload(pdf_bytes: bytes, filename: str = "statement.pdf") -> dict:
+def _currency_rule(currency: str | None) -> str:
+    """Appended to every page's prompt when the account's currency is known.
+
+    The reader is asked to TRANSCRIBE every currency section's balances with
+    their currency code — not to pick one. Picking is done in code
+    (`_page_balances`), because asked to "return null when this page has no USD
+    closing", Haiku returned the CAD closing on ICBC page 2 anyway.
+    """
+    if not currency:
+        return ""
+    return f"""
+
+THIS ACCOUNT IS IN {currency}. Some banks (ICBC) print several currency
+sub-accounts in ONE statement, one after another — each with its own "Opening
+Balance" row, its own transactions and its own "Closing Balance" row, with a
+currency code at the start of every row.
+
+Add this key to your JSON:
+  "balance_sections": [
+    {{"currency": "3-letter code", "opening_balance": number or null,
+      "closing_balance": number or null}}
+  ]
+with ONE entry for EVERY currency whose opening or closing balance is printed ON
+THIS PAGE, each with its own currency code, exactly as printed — even the
+currencies that are not {currency}. Use null for a balance this page does not
+print for that currency. "Balance Carried Forward To Next Page" and portfolio /
+account summary tables are not opening or closing balances.
+
+For `lines`, return ONLY {currency} transactions. "Opening Balance", "Closing
+Balance", "Total Withdrawal" and "Total Deposit" rows are balances and totals,
+never transactions. Put each transaction's currency code in `currency` (null
+when the row does not print one).
+"""
+
+
+def _page_balances(reply: dict, ccy: str | None) -> tuple:
+    """(opening, closing) for the account's currency, from one page's reply.
+
+    With a currency: take the matching section. A page whose sections are ALL in
+    other currencies contributes nothing — that is what stops ICBC page 2's CAD
+    closing from becoming the USD account's closing. A single section with no
+    code is a single-currency statement and is taken as-is.
+    """
+    secs = reply.get("balance_sections")
+    if ccy and isinstance(secs, list) and secs:
+        secs = [x for x in secs if isinstance(x, dict)]
+        mine = [x for x in secs if str(x.get("currency") or "").upper() == ccy]
+        if mine:
+            opening = next((x.get("opening_balance") for x in mine
+                            if x.get("opening_balance") is not None), None)
+            closing = next((x.get("closing_balance") for x in reversed(mine)
+                            if x.get("closing_balance") is not None), None)
+            return opening, closing
+        if len(secs) == 1 and not secs[0].get("currency"):
+            return secs[0].get("opening_balance"), secs[0].get("closing_balance")
+        return None, None
+    return reply.get("opening_balance"), reply.get("closing_balance")
+
+
+def extract_payload(pdf_bytes: bytes, filename: str = "statement.pdf",
+                    currency: str | None = None) -> dict:
     """Haiku reads -> the extraction JSON. No verification here.
 
     Read PAGE BY PAGE, not whole-document, and the reason is measured. A single
@@ -543,27 +707,127 @@ def extract_payload(pdf_bytes: bytes, filename: str = "statement.pdf") -> dict:
     if not pages:
         raise StatementUnparseable(f"{filename} has no pages.")
 
-    payload = _ask([_doc_block(pages[0]), {"type": "text", "text": _PROMPT}],
+    ccy = currency.upper() if currency else None
+    rule = _currency_rule(ccy)
+    payload = _ask([_doc_block(pages[0]), {"type": "text", "text": _PROMPT + rule}],
                    f"{filename} page 1")
     lines = list(payload.get("lines") or [])
+    o, c = _page_balances(payload, ccy)
+    openings, closings = [(1, o)], [(1, c)]
     for i, page in enumerate(pages[1:], start=2):
         more = _ask([_doc_block(page),
-                     {"type": "text", "text": _CONTINUATION_PROMPT.format(page=i)}],
+                     {"type": "text",
+                      "text": _CONTINUATION_PROMPT.format(page=i) + rule}],
                     f"{filename} page {i}")
         lines.extend(more.get("lines") or [])
+        o, c = _page_balances(more, ccy)
+        openings.append((i, o))
+        closings.append((i, c))
+        # JPM Toronto's page 1 is terms and addresses only; the period, account
+        # number and currency are in the header of page 2 onwards.
+        for key in ("period_start", "period_end", "account_no", "currency"):
+            if not payload.get(key) and more.get(key):
+                payload[key] = more[key]
+    if ccy:
+        # The prompt asks for one currency; this is the check that it got one.
+        # A row that names a DIFFERENT currency is dropped, and counted.
+        kept = [ln for ln in lines if not isinstance(ln, dict)
+                or not ln.get("currency") or str(ln["currency"]).upper() == ccy]
+        payload["_other_currency_lines_dropped"] = len(lines) - len(kept)
+        lines = kept
+        payload["currency"] = ccy
     payload["lines"] = lines
     payload["_pages_read"] = len(pages)
+    _settle_opening(payload, openings, filename)
+    _settle_closing(payload, closings, filename)
     return payload
 
 
-def parse_statement(pdf_bytes: bytes, filename: str = "statement.pdf") -> ParsedStatement:
+def _as_dec(v) -> Decimal | None:
+    try:
+        return Decimal(str(v)).quantize(Decimal("0.01"))
+    except Exception:
+        return None
+
+
+def _settle_opening(payload: dict, openings: list, filename: str) -> None:
+    """The FIRST page that printed an opening balance wins — the mirror of the
+    closing rule. On a single-currency statement that is page 1, as always; on a
+    combined one (ICBC) the account's section can begin on any page."""
+    printed = [(page, v) for page, v in openings if v is not None]
+    if not printed:
+        raise StatementUnparseable(
+            f"{filename}: no page prints an opening balance"
+            f"{' for ' + payload['currency'] if payload.get('currency') else ''}"
+            f" — is this the right account's statement?")
+    page, value = printed[0]
+    payload["opening_balance"] = value
+    payload["_opening_from"] = f"page {page}"
+
+
+def _settle_closing(payload: dict, closings: list, filename: str) -> None:
+    """Which page's closing balance is THE closing balance.
+
+    Page 1 alone is not enough. RBC prints the account summary — closing included
+    — on page 1, but Bank of China prints "Closing Balance" at the end of the LAST
+    page, and page 1 only has "Balance Carried Forward To Next Page". Read from
+    page 1, BOC CNY July 2026 closed at 37,804.68 (the page-1 carry-forward)
+    instead of 20,851.68, and the statement came back unverified — and because
+    signs are solved from the balances, a wrong closing can flip them too.
+
+    So: the LAST page that printed a closing balance wins. If none did, the last
+    running balance the bank printed is the closing (it is the balance after the
+    final transaction), and that choice is recorded. If there is neither, say so
+    rather than guess.
+    """
+    printed = [(page, v) for page, v in closings if v is not None]
+    lines = payload.get("lines") or []
+    last = lines[-1] if lines else None
+    last_balance = (last.get("running_balance") if isinstance(last, dict) else None)
+    if printed and last_balance is not None:
+        # The closing balance IS the balance after the last transaction. When the
+        # bank printed that balance, it arbitrates between candidates: JPM August
+        # offered "Net Movement 43,172.17" from its last page, and the real
+        # closing 168,522.18 is the last row's balance.
+        agreeing = [(page, v) for page, v in printed
+                    if _as_dec(v) is not None and _as_dec(v) == _as_dec(last_balance)]
+        if agreeing:
+            printed = agreeing
+        else:
+            # JPM Toronto prints no closing-balance field at all — only the last
+            # row's balance, then "Total Dr / Total Cr / Net Movement". Every
+            # candidate the pages offered was one of those totals (July: Net
+            # Movement 41,810.24 for a closing of 125,350.01). The bank's own last
+            # balance wins; the rejected figures are kept for the record. A
+            # misread last balance is still caught — verify() checks every
+            # printed balance against the lines above it.
+            payload["closing_balance"] = last_balance
+            payload["_closing_from"] = "last printed running balance"
+            payload["_closing_rejected"] = [f"page {pg}: {v}" for pg, v in printed]
+            return
+    if printed:
+        page, value = printed[-1]
+        payload["closing_balance"] = value
+        payload["_closing_from"] = f"page {page}"
+        return
+    if isinstance(last, dict) and last.get("running_balance") is not None:
+        payload["closing_balance"] = last["running_balance"]
+        payload["_closing_from"] = "last printed running balance"
+        return
+    raise StatementUnparseable(
+        f"{filename}: no page prints a closing balance and the last transaction "
+        f"has no printed balance — the closing balance cannot be read.")
+
+
+def parse_statement(pdf_bytes: bytes, filename: str = "statement.pdf",
+                    currency: str | None = None) -> ParsedStatement:
     """PDF -> a verified-or-explained ParsedStatement.
 
     Never raises on a verification failure: an unverified statement is worth
     storing and showing (its `verify_errors` name the line that is wrong), and the
     reconciliation is what refuses to use it.
     """
-    payload = extract_payload(pdf_bytes, filename=filename)
+    payload = extract_payload(pdf_bytes, filename=filename, currency=currency)
     st = payload_to_statement(payload)
     st.parse_method = "ai"
     st.parse_model = MODEL

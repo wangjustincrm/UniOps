@@ -59,7 +59,11 @@ async def import_statement_pdf(db: AsyncSession, account: BankAccount, data: byt
     away would leave them with "it failed" and nothing to look at. The
     reconciliation is what refuses to use it.
     """
-    parsed = bank_statement_parse.parse_statement(data, filename=filename)
+    # The account's currency goes in: one ICBC statement carries the CNY, USD and
+    # CAD sub-accounts together, and without it the reader took the first section
+    # it met — the USD one — for the CAD account.
+    parsed = bank_statement_parse.parse_statement(data, filename=filename,
+                                                  currency=account.currency)
     sha = hashlib.sha256(data).hexdigest()
 
     # A re-import of the same period supersedes the old row. Its transactions are

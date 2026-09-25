@@ -348,3 +348,252 @@ def test_solver_refuses_a_segment_too_wide_to_enumerate():
     notes = solve_signs(st)
     assert any("too many to determine" in n for n in notes)
     assert verify(st)[0] is False
+
+
+# ── which page the closing balance comes from ─────────────────────────────────
+
+import pytest  # noqa: E402
+
+def _fake_pages(monkeypatch, replies):
+    """Stand in for the PDF split and the per-page AI reads."""
+    from app.services import bank_statement_parse as bsp
+    monkeypatch.setattr(bsp, "_single_pages", lambda pdf: [b"p"] * len(replies))
+    it = iter(replies)
+    monkeypatch.setattr(bsp, "_ask", lambda content, what: next(it))
+    return bsp
+
+
+def _page1(closing, lines):
+    return {"account_no": "100301000001994", "currency": "CNY",
+            "period_start": "2026-07-01", "period_end": "2026-07-31",
+            "opening_balance": 34411.68, "closing_balance": closing, "lines": lines}
+
+
+BOC_P1 = [{"date": "2026-07-23", "description": "Transfer ZHENGZHOU FANCHUANG",
+           "amount": -20200.00, "running_balance": 14211.68},
+          {"date": "2026-07-29", "description": "Transfer Canada Royal Milk ULC",
+           "amount": 23593.00, "running_balance": 37804.68}]
+BOC_P2 = [{"date": "2026-07-30", "description": "Transfer Shanghai Ehsure",
+           "amount": -7744.00, "running_balance": 30060.68},
+          {"date": "2026-07-30", "description": "Transfer Unitrans (Beijing)",
+           "amount": -9209.00, "running_balance": 20851.68}]
+
+
+def test_the_closing_balance_printed_on_the_last_page_wins(monkeypatch):
+    """BOC CNY July 2026: page 1 ends in "Balance Carried Forward To Next Page
+    37,804.68" and the real "Closing Balance 20,851.68" is on page 2. Reading the
+    summary from page 1 only stored 37,804.68 and an unverified statement."""
+    # even when page 1 wrongly reports the carry-forward as a closing
+    bsp = _fake_pages(monkeypatch, [_page1(37804.68, BOC_P1),
+                                    {"closing_balance": 20851.68, "lines": BOC_P2}])
+    payload = bsp.extract_payload(b"%PDF", "BOC CNY 1994 2026.7.pdf")
+    assert payload["closing_balance"] == 20851.68
+    assert payload["_closing_from"] == "page 2"
+
+    st = bsp.payload_to_statement(payload)
+    assert st.closing_balance == Decimal("20851.68")
+    assert st.verified
+
+
+def test_a_closing_balance_on_page_one_still_counts(monkeypatch):
+    """RBC prints its account summary, closing included, on page 1 only."""
+    bsp = _fake_pages(monkeypatch, [_page1(20851.68, BOC_P1),
+                                    {"closing_balance": None, "lines": BOC_P2}])
+    payload = bsp.extract_payload(b"%PDF", "rbc.pdf")
+    assert payload["closing_balance"] == 20851.68
+    assert payload["_closing_from"] == "page 1"
+
+
+def test_no_printed_closing_falls_back_to_the_last_printed_balance(monkeypatch):
+    bsp = _fake_pages(monkeypatch, [_page1(None, BOC_P1),
+                                    {"closing_balance": None, "lines": BOC_P2}])
+    payload = bsp.extract_payload(b"%PDF", "x.pdf")
+    assert payload["closing_balance"] == 20851.68
+    assert payload["_closing_from"] == "last printed running balance"
+
+
+def test_no_closing_anywhere_is_refused_not_guessed(monkeypatch):
+    last = dict(BOC_P2[-1], running_balance=None)
+    bsp = _fake_pages(monkeypatch, [_page1(None, BOC_P1),
+                                    {"closing_balance": None, "lines": [BOC_P2[0], last]}])
+    with pytest.raises(bsp.StatementUnparseable):
+        bsp.extract_payload(b"%PDF", "x.pdf")
+
+
+# ── one statement, several currencies (ICBC) ──────────────────────────────────
+
+ICBC_P1 = {"account_no": "0001230719200018518", "currency": "USD",
+           "period_start": "2026-07-01", "period_end": "2026-07-31",
+           # what a reader with no currency to aim at did: USD opening, USD row
+           "opening_balance": 4935.38, "closing_balance": 4929.38,
+           "lines": [{"date": "2026-07-01", "description": "CHG Monthly Adm Fee - Corporate",
+                      "amount": -6.00, "running_balance": 4929.38, "currency": "USD"},
+                     {"date": "2026-07-01", "description": "CHG Monthly Adm Fee - Corporate",
+                      "amount": -5.00, "running_balance": 9580.88, "currency": "CAD"}]}
+ICBC_P1_CAD = dict(ICBC_P1, opening_balance=9585.88, closing_balance=None,
+                   lines=[ICBC_P1["lines"][1]])
+ICBC_P2_CAD = {"opening_balance": None, "closing_balance": 9580.88, "lines": []}
+
+
+def test_the_account_currency_reaches_every_page_prompt(monkeypatch):
+    from app.services import bank_statement_parse as bsp
+    monkeypatch.setattr(bsp, "_single_pages", lambda pdf: [b"p", b"p"])
+    seen = []
+
+    def ask(content, what):
+        seen.append(content[-1]["text"])
+        return ICBC_P1_CAD if len(seen) == 1 else ICBC_P2_CAD
+    monkeypatch.setattr(bsp, "_ask", ask)
+    bsp.extract_payload(b"%PDF", "ICBC 2026.7.pdf", currency="cad")
+    assert all("THIS ACCOUNT IS IN CAD" in t for t in seen) and len(seen) == 2
+
+
+def test_an_icbc_statement_is_read_for_the_accounts_currency_only(monkeypatch):
+    """ICBC prints CNY, USD and CAD sub-accounts in one statement. Read for the
+    CAD account without saying so, it came back as the USD opening (4,935.38),
+    the USD fee (−6.00) and — from page 2 — the CAD closing (9,580.88)."""
+    bsp = _fake_pages(monkeypatch, [ICBC_P1_CAD, ICBC_P2_CAD])
+    payload = bsp.extract_payload(b"%PDF", "ICBC 2026.7.pdf", currency="CAD")
+    st = bsp.payload_to_statement(payload)
+    assert st.currency == "CAD"
+    assert (st.opening_balance, st.closing_balance) == (Decimal("9585.88"), Decimal("9580.88"))
+    assert [ln.amount for ln in st.lines] == [Decimal("-5.00")]
+    assert st.verified
+
+
+def test_a_row_in_another_currency_is_dropped_even_if_the_reader_returns_it(monkeypatch):
+    bsp = _fake_pages(monkeypatch, [dict(ICBC_P1_CAD, lines=ICBC_P1["lines"]), ICBC_P2_CAD])
+    payload = bsp.extract_payload(b"%PDF", "ICBC 2026.7.pdf", currency="CAD")
+    assert [ln["amount"] for ln in payload["lines"]] == [-5.00]
+    assert payload["_other_currency_lines_dropped"] == 1
+
+
+def test_the_opening_can_come_from_a_later_page(monkeypatch):
+    """The account's section may begin on page 2 of a combined statement."""
+    bsp = _fake_pages(monkeypatch, [
+        dict(ICBC_P1_CAD, opening_balance=None, lines=[]),
+        {"opening_balance": 9585.88, "closing_balance": 9580.88,
+         "lines": [ICBC_P1["lines"][1]]}])
+    payload = bsp.extract_payload(b"%PDF", "ICBC 2026.7.pdf", currency="CAD")
+    assert payload["opening_balance"] == 9585.88 and payload["_opening_from"] == "page 2"
+
+
+def test_no_opening_for_the_currency_is_refused(monkeypatch):
+    bsp = _fake_pages(monkeypatch, [dict(ICBC_P1_CAD, opening_balance=None), ICBC_P2_CAD])
+    with pytest.raises(bsp.StatementUnparseable):
+        bsp.extract_payload(b"%PDF", "ICBC 2026.7.pdf", currency="CAD")
+
+
+def test_a_page_with_only_other_currencies_does_not_supply_the_closing(monkeypatch):
+    """ICBC July, read for the USD account. Page 2 prints only the CAD closing
+    (9,580.88); told to return null when there is no USD closing, Haiku returned
+    the CAD one anyway — and last-page-wins made it the USD closing. The pick is
+    now made in code from sections the reader labels with their currency."""
+    usd_row = ICBC_P1["lines"][0]
+    p1 = dict(ICBC_P1, lines=[usd_row], balance_sections=[
+        {"currency": "USD", "opening_balance": 4935.38, "closing_balance": 4929.38},
+        {"currency": "CAD", "opening_balance": 9585.88, "closing_balance": None}])
+    p2 = {"opening_balance": None, "closing_balance": 9580.88,   # the misread
+          "balance_sections": [{"currency": "CAD", "opening_balance": None,
+                                "closing_balance": 9580.88}],
+          "lines": []}
+    bsp = _fake_pages(monkeypatch, [p1, p2])
+    st = bsp.payload_to_statement(
+        bsp.extract_payload(b"%PDF", "ICBC 2026.7.pdf", currency="USD"))
+    assert (st.opening_balance, st.closing_balance) == (Decimal("4935.38"), Decimal("4929.38"))
+    assert st.raw_payload["_closing_from"] == "page 1"
+    assert st.verified
+
+    # and the same PDF for the CAD account takes the CAD figures from both pages
+    bsp = _fake_pages(monkeypatch, [dict(p1, lines=[ICBC_P1["lines"][1]]), p2])
+    st = bsp.payload_to_statement(
+        bsp.extract_payload(b"%PDF", "ICBC 2026.7.pdf", currency="CAD"))
+    assert (st.opening_balance, st.closing_balance) == (Decimal("9585.88"), Decimal("9580.88"))
+
+
+def test_a_total_offered_as_the_closing_loses_to_the_last_printed_balance(monkeypatch):
+    """JPM Toronto prints no closing balance, only the last row's balance and
+    then "Total Dr / Total Cr / Net Movement". Haiku offered Net Movement
+    (41,810.24) as the closing of a statement that closes at 125,350.01."""
+    p1 = {"account_no": None, "currency": None, "period_start": None, "period_end": None,
+          "opening_balance": None, "closing_balance": None, "lines": []}   # cover page
+    p2 = {"period_start": "2026-07-01", "period_end": "2026-07-31",
+          "account_no": "4011812940", "currency": "CAD",
+          "opening_balance": 83539.77, "closing_balance": 41810.24,        # Net Movement
+          "lines": [{"date": "2026-07-02", "description": "ACH Credit Received",
+                     "amount": 41810.24, "running_balance": 125350.01}]}
+    bsp = _fake_pages(monkeypatch, [p1, p2])
+    payload = bsp.extract_payload(b"%PDF", "jpm.pdf", currency="CAD")
+    assert payload["closing_balance"] == 125350.01
+    assert payload["_closing_from"] == "last printed running balance"
+    assert payload["_closing_rejected"] == ["page 2: 41810.24"]
+    # the header facts came from page 2, not the cover page
+    assert (payload["period_start"], payload["account_no"]) == ("2026-07-01", "4011812940")
+    assert bsp.payload_to_statement(payload).verified
+
+
+def test_directions_are_proven_by_printed_totals_when_no_balance_is_printed():
+    """JPM US prints deposits and withdrawals in separate sections and no running
+    balance at all; the per-side counts and totals decide every direction."""
+    from app.services.bank_statement_parse import (ParsedStatement, StatementLine,
+                                                    payload_to_statement)
+    lines = [("2026-07-02", "Chips Credit", 200000.00), ("2026-07-03", "Wire out", -150000.00),
+             ("2026-07-09", "ACH debit", -30.42), ("2026-07-20", "Deposit", 70.42)]
+    payload = {"period_start": "2026-07-01", "period_end": "2026-07-31",
+               "opening_balance": 1000.00, "closing_balance": 51040.00,
+               "printed_total_credits": 200070.42, "printed_credit_count": 2,
+               "printed_total_debits": 150030.42, "printed_debit_count": 2,
+               # every sign read backwards
+               "lines": [{"date": d, "description": t, "amount": -a, "running_balance": None}
+                         for d, t, a in lines]}
+    st = payload_to_statement(payload)
+    assert [ln.amount for ln in st.lines] == [Decimal(str(a)).quantize(Decimal("0.01"))
+                                              for _d, _t, a in lines]
+    assert st.verified, st.verify_errors
+
+
+def _jpm_us(credit_first_pair: bool):
+    from app.services.bank_statement_parse import payload_to_statement
+    ret, pay = (48076.00, -48076.00) if credit_first_pair else (-48076.00, 48076.00)
+    return payload_to_statement({
+        "period_start": "2026-07-01", "period_end": "2026-07-31",
+        "opening_balance": 1000.00, "closing_balance": 201000.00,
+        "printed_total_credits": 248076.00, "printed_credit_count": 2,
+        "printed_total_debits": 48076.00, "printed_debit_count": 1,
+        "lines": [
+            {"date": "2026-07-13", "description": "EFT Return Items Offset", "amount": ret,
+             "running_balance": None},
+            {"date": "2026-07-16", "description": "Chips Credit", "amount": 200000.00,
+             "running_balance": None},
+            {"date": "2026-07-16", "description": "Corp Pay", "amount": pay,
+             "running_balance": None}]})
+
+
+def test_a_same_amount_pair_under_printed_headings_is_not_ambiguous():
+    """JPM US July: 48,076.00 returned (Deposits and Additions, 07/13) and
+    48,076.00 paid (Electronic Withdrawals, 07/16). The headings say which is
+    which and the reading ties to both printed totals — nothing to confirm."""
+    st = _jpm_us(credit_first_pair=True)
+    assert st.direction_basis == "printed sections"
+    assert st.verified, st.verify_errors
+
+
+def test_the_pair_is_still_flagged_when_the_reading_disagrees_with_the_totals():
+    """If the reader's sections do not tie to the printed totals, its placement
+    is not evidence, and an equal-magnitude pair is genuinely undetermined."""
+    from app.services.bank_statement_parse import payload_to_statement
+    st = payload_to_statement({
+        "period_start": "2026-07-01", "period_end": "2026-07-31",
+        "opening_balance": 1000.00, "closing_balance": 201000.00,
+        "printed_total_credits": 248076.00, "printed_credit_count": 2,
+        "printed_total_debits": 48076.00, "printed_debit_count": 1,
+        "lines": [   # the Chips credit read as a withdrawal: totals no longer tie
+            {"date": "2026-07-13", "description": "EFT Return", "amount": 48076.00,
+             "running_balance": None},
+            {"date": "2026-07-16", "description": "Chips Credit", "amount": -200000.00,
+             "running_balance": None},
+            {"date": "2026-07-16", "description": "Corp Pay", "amount": -48076.00,
+             "running_balance": None}]})
+    assert st.direction_basis is None
+    assert not st.verified
+    assert any("48076.00 in opposite directions" in e for e in st.verify_errors)

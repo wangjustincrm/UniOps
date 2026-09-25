@@ -551,14 +551,20 @@ def _parsed_advice(tie_ok=True):
 
 async def test_uploading_a_statement_stores_it_and_its_lines(client, scene, monkeypatch):
     from app.services import bank_statement_parse
-    monkeypatch.setattr(bank_statement_parse, "parse_statement",
-                        lambda data, filename="": _parsed_statement())
+    asked = {}
+
+    def parse(data, filename="", currency=None):
+        asked["currency"] = currency
+        return _parsed_statement()
+    monkeypatch.setattr(bank_statement_parse, "parse_statement", parse)
     r = await client.post(
         f"/finance/v1/bank-recon/{scene['account'].id}/statements",
         files={"file": ("RBC.pdf", b"%PDF-1.4 stub", "application/pdf")}, headers=_h())
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["verified"] is True and body["lines"] == 1 and body["imported"] == 1
+    # the reader is told which currency section to take (ICBC mixes them)
+    assert asked["currency"] == "CAD"
     # No file server in the test environment: retention fails, is REPORTED, and does
     # not take the import down with it.
     assert body["retention_warning"]
@@ -577,7 +583,7 @@ async def test_an_unverified_statement_is_kept_with_its_reasons(client, scene, m
     from app.services import bank_statement_parse
     monkeypatch.setattr(
         bank_statement_parse, "parse_statement",
-        lambda data, filename="": _parsed_statement(
+        lambda data, filename="", currency=None: _parsed_statement(
             verified=False, errors=["Line 5 (BR TO BR): the statement shows 530858.97 here"]))
     r = await client.post(
         f"/finance/v1/bank-recon/{scene['account'].id}/statements",
@@ -591,7 +597,7 @@ async def test_re_importing_a_period_supersedes_rather_than_duplicating(
         client, scene, monkeypatch):
     from app.services import bank_statement_parse
     monkeypatch.setattr(bank_statement_parse, "parse_statement",
-                        lambda data, filename="": _parsed_statement())
+                        lambda data, filename="", currency=None: _parsed_statement())
     url = f"/finance/v1/bank-recon/{scene['account'].id}/statements"
     first = (await client.post(url, files={"file": ("a.pdf", b"%PDF-1", "application/pdf")},
                                headers=_h())).json()
@@ -609,7 +615,7 @@ async def test_an_unreadable_statement_is_a_422_not_a_500(client, scene, monkeyp
     from app.services import bank_statement_parse
     from app.services.bank_statement_parse import StatementUnparseable
 
-    def boom(data, filename=""):
+    def boom(data, filename="", currency=None):
         raise StatementUnparseable("Could not read this statement PDF.")
     monkeypatch.setattr(bank_statement_parse, "parse_statement", boom)
     r = await client.post(
@@ -624,7 +630,7 @@ async def test_an_ai_outage_is_a_503_and_says_it_is_not_your_file(client, scene,
     clerk their document was unreadable when nothing was wrong with it."""
     from app.services import bank_statement_parse
 
-    def limit(data, filename=""):
+    def limit(data, filename="", currency=None):
         raise RuntimeError("Statement reading is temporarily unavailable — the AI "
                            "service account has reached a usage or billing limit. "
                            "This is NOT a problem with your file.")
