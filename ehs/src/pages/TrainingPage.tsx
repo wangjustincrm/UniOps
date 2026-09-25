@@ -734,12 +734,19 @@ function CourseMaterial({ course, mayWrite }: { course: Course; mayWrite: boolea
     onSuccess: refresh,
   })
 
+  // ★ "No material attached" is what the third round reported as the
+  // instructor not being able to open the files — so a failure to load them
+  // must not look the same as there being none.
   const files = materials.data ?? []
-  if (!mayWrite && files.length === 0) return null
+  if (!mayWrite && files.length === 0 && !materials.isError) return null
 
   return (
     <span className="flex flex-col gap-0.5 text-xs text-neutral-600">
-      {files.length === 0 && <span className="text-neutral-500">No material</span>}
+      {materials.isError ? (
+        <span className="text-warning-700">Could not load this course's material</span>
+      ) : files.length === 0 ? (
+        <span className="text-neutral-500">No material</span>
+      ) : null}
       {/* ★ The filename was all there was. Uploading, listing and removing
           were built and opening was not, so an instructor could see that the
           handout existed and could not read it — which is the only thing they

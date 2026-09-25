@@ -15,7 +15,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Mail } from 'lucide-react'
 import { api } from '@/lib/api'
-import { SectionTitle } from '@/components/ui'
+import { SectionTitle, LoadFailedNote,
+} from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
 
 interface Communication {
@@ -38,7 +39,18 @@ export function CommunicationLog({ docType, docId }: { docType: string; docId: s
     retry: false,
   })
 
-  if (log.isLoading || log.error) return null
+  if (log.isLoading) return null
+  // ★ A failure is not silence. "Notifications sent" missing entirely reads as
+  // "nothing was sent about this incident", and that log is the audit chain —
+  // it is what somebody checks when asking whether the right people were told.
+  if (log.error) {
+    return (
+      <section className="mt-6">
+        <SectionTitle className="mb-2">Notifications sent</SectionTitle>
+        <LoadFailedNote what="The notification history" />
+      </section>
+    )
+  }
   const rows = log.data ?? []
   if (rows.length === 0) return null
 

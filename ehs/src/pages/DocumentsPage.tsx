@@ -16,7 +16,7 @@ import { api } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
-  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs, LoadFailedNote,
 } from '@/components/ui'
 
 export interface SafetyDoc {
@@ -58,6 +58,9 @@ export default function DocumentsPage() {
     <div className="p-4">
       <PageHeader title="Safety documents" />
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
+      {/* ★ Nothing to read is a statement an employee acts on: they conclude
+          they have no policies outstanding. */}
+      {mine.isError && <LoadFailedNote what="What you have to read" />}
       {tab === 'mine' && <ToReadTab docs={mine.data ?? []} loading={mine.isLoading} />}
       {tab === 'library' && <LibraryTab statuses={['published']} mayManage={mayManage} />}
       {tab === 'drafts' && <LibraryTab statuses={['draft', 'retired']} mayManage={mayManage} />}

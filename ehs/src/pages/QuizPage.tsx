@@ -23,7 +23,7 @@ import { formatDate } from '@/lib/formatDate'
 import QrPanel from '@/components/QrPanel'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
-  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, LoadFailedNote,
 } from '@/components/ui'
 
 interface Quiz {
@@ -229,6 +229,13 @@ export function TakeQuizPage() {
   })
 
   if (questions.isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
+  // ★ "This quiz has no questions yet" is a claim about the quiz. Nothing worse
+  // follows from getting it wrong — the early return means no empty attempt can
+  // be submitted and recorded as training — but it sends somebody to ask HSE
+  // why a quiz they were told to take is empty.
+  if (questions.isError) {
+    return <div className="p-4"><LoadFailedNote what="This quiz" /></div>
+  }
   const rows = questions.data ?? []
   if (rows.length === 0) {
     return <div className="p-4"><Empty>This quiz has no questions yet.</Empty></div>

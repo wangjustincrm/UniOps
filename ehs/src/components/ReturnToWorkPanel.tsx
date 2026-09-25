@@ -19,7 +19,7 @@ import { api } from '@/lib/api'
 import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
-  Card, ErrorNote, Field, inputClass, primaryButton, secondaryButton, SectionTitle,
+  Card, ErrorNote, Field, inputClass, primaryButton, secondaryButton, SectionTitle, LoadFailedNote,
 } from '@/components/ui'
 
 interface Plan {
@@ -66,6 +66,10 @@ export function ReturnToWorkPanel({ incidentId }: { incidentId: string }) {
 
   return (
     <section className="mt-6">
+      {/* ★ No plan listed reads as "no modified duties were arranged for this
+          injured person", which is a claim about a legal obligation and not
+          something a failed request gets to make. */}
+      {plans.isError && <LoadFailedNote what="The return-to-work plans" />}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <SectionTitle>Return to work</SectionTitle>
         {rows.length === 0 && !creating && (
