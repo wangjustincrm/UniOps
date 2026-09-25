@@ -4,13 +4,18 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.deps import BearerToken, SessionDep
-from app.core.permissions import CanReadTraining, CanWriteTraining
+from app.core.permissions import CanReportIncident, CanReadTraining, CanWriteTraining
 from app.crud import training as crud
 from sqlalchemy import select
+
+from uniops_authz import has_permission
+from app.models.config import EhsConfig
+from app.services import certificate_pdf
+from app.services.http_headers import content_disposition
 
 from app.crud.incident import _resolve_name
 from app.models.course import CourseMaterial
@@ -205,6 +210,20 @@ async def download_course_material(
     return await proxy_download(course.material_file_id, token)
 
 
+@router.get("/records/mine", response_model=list[TrainingRecordOut])
+async def my_records(db: SessionDep, user: CanReportIncident):
+    """What this person has been trained on.
+
+    ★ Its own endpoint, gated on being an employee. Reading the register is a
+    much narrower permission than reading your own record, and an ordinary
+    worker holds none of the training permissions — so without this the
+    certificate the module issues them would exist and be unreachable, which is
+    where this module keeps ending up.
+    """
+    return [TrainingRecordOut.model_validate(r) for r in await crud.list_training(
+        db, user_id=_user_id(user), order="date")]
+
+
 @router.get("/records", response_model=list[TrainingRecordOut])
 async def list_records(
     db: SessionDep,
@@ -258,6 +277,62 @@ async def download_certificate(
     if record.certificate_file_id is None:
         raise HTTPException(404, "No certificate is attached to this record")
     return await proxy_download(record.certificate_file_id, token)
+
+
+@router.get("/records/{record_id}/certificate/issued")
+async def issued_certificate(
+    record_id: uuid.UUID, db: SessionDep, user: CanReportIncident,
+):
+    """The certificate this plant issues for its own training.
+
+    Generated rather than stored: it is a rendering of the record, so it cannot
+    drift from it, and a record corrected next week produces a corrected
+    certificate rather than leaving a stale PDF in a file server.
+
+    ★ Visible to the person who earned it and to whoever can read the training
+    register — the third round asked for both. Somebody else's certificate is
+    not yours to fetch.
+
+    ★ Gated on being an employee, not on reading the register, because an
+    ordinary worker holds no training permission and this is *their* document.
+    The narrowing happens below. Guarding the route with the register
+    permission would have been the permit-signature mistake again: a person
+    allowed to have the thing, and not allowed to fetch it.
+    """
+    record = await crud.get_training_record(db, record_id)
+    me = _user_id(user)
+    if record.user_id != me and not await has_permission(
+            db, me, user.get("role", ""), "ehs.training.read"):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "You can only open your own certificate")
+
+    if record.delivery == "external":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This course was taken elsewhere, so the certificate is theirs to "
+            "issue. Attach the one they gave you instead.")
+
+    config = (await db.execute(select(EhsConfig).where(EhsConfig.id == 1))).scalar_one_or_none()
+    pdf = certificate_pdf.render(
+        person_name=record.user_name,
+        course_name=record.course_label,
+        course_code=None,
+        completed_on=record.completed_on,
+        expires_on=record.expires_on,
+        record_no=str(record.id)[:8].upper(),
+        verify_url=None,
+        heading=config.certificate_heading if config else None,
+        body=config.certificate_body if config else None,
+        signatory=config.certificate_signatory if config else None,
+    )
+    # ★ Through the helper: HTTP headers are latin-1, so a name that needed the
+    # CJK font cannot go in one — the download 500s for exactly the people this
+    # work was about.
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": content_disposition(
+            f"certificate-{record.user_name.replace(' ', '-')}")})
 
 
 @router.post("/records", response_model=TrainingRecordOut, status_code=status.HTTP_201_CREATED)

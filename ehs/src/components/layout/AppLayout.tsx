@@ -110,7 +110,8 @@ const NAV: NavGroup[] = [
     items: [
       // No permission: a supervisor delivers these and everyone signs one.
       { label: 'Toolbox Talks',      href: '/toolbox-talks', icon: Users },
-      { label: 'Training',           href: '/training',      icon: GraduationCap,   permission: 'ehs.training.read' },
+      { label: 'My Training', href: '/training/mine', icon: GraduationCap },
+  { label: 'Training',           href: '/training',      icon: GraduationCap,   permission: 'ehs.training.read' },
       // No permission: taking a quiz is something every worker does, usually
       // by scanning a code the trainer put on the screen.
       { label: 'Quizzes',            href: '/quizzes',       icon: ClipboardList },

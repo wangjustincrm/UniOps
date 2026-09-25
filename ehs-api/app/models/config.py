@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, CheckConstraint, Date, Integer, SmallInteger, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, Integer, SmallInteger, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +41,13 @@ class EhsConfig(TimestampMixin, Base):
     )
 
     # ── Certificate expiry warnings, in days before expiry ──────────────────
+    # What an in-house certificate says. The wording is the plant's own; who
+    # earned it, which course, when and until when are not configurable,
+    # because those are what make it evidence rather than decoration.
+    certificate_heading: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    certificate_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    certificate_signatory: Mapped[str | None] = mapped_column(String(150), nullable=True)
+
     cert_warn_days: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=lambda: [90, 60, 30], server_default="[90, 60, 30]",
     )

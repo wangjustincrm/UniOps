@@ -23,6 +23,7 @@ from app.core.deps import BearerToken, SessionDep
 from app.core.permissions import CanManageDocument, CanReadDocument
 from app.crud import chemical as chemical_crud
 from app.crud import label as crud
+from app.services.http_headers import content_disposition
 from app.services import ghs, label_pdf, pictograms
 from app.services.attachments import fetch_file_bytes, proxy_download
 
@@ -237,6 +238,9 @@ async def label_pdf_download(
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition":
-                 f'inline; filename="label-{label.product_identifier[:40]}.pdf"'},
+        # ★ Through the helper: a Chinese product name cannot go in a header
+        # as-is, and this printed the label fine and then answered 500 on the
+        # way out.
+        headers={"Content-Disposition": content_disposition(
+            f"label-{label.product_identifier[:40]}")},
     )

@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CalendarDays, Plus, Upload, X, Paperclip } from 'lucide-react'
-import { api, apiBlob , openFile } from '@/lib/api'
+import { api, apiBlob, openFile, useFileOpener } from '@/lib/api'
 import { Pagination, SearchBox, useListView, DateRangeFilter, useDateFilter } from '@/components/ListView'
 import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -662,7 +662,20 @@ function Certificate({ record, mayWrite }: { record: Record_; mayWrite: boolean 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['training-records'] }),
   })
 
-  if (!record.certificate_file_id && !mayWrite) return null
+  // The issued one is rendered on request rather than stored, so it is fetched
+  // the same way as an uploaded file: with the session token, as a blob.
+  //
+  // ★ Through `useFileOpener`, which keeps the error. A bare try/finally
+  // swallowed a 403 and put the button back as if nothing had happened.
+  const issued = useFileOpener()
+
+  // ★ Training run here gets a certificate the plant issues, generated from
+  // the record so it cannot drift from it. A course taken elsewhere keeps the
+  // one its awarding body gave — issuing our own for somebody else's ticket
+  // would be making a claim that is not ours to make.
+  const isOurs = record.delivery !== 'external'
+
+  if (!record.certificate_file_id && !mayWrite && !isOurs) return null
 
   return (
     <p className="mt-1 flex items-center gap-1.5 text-xs">
@@ -674,10 +687,19 @@ function Certificate({ record, mayWrite }: { record: Record_; mayWrite: boolean 
                 className="font-medium text-primary-700 hover:underline disabled:opacity-40">
           {opening ? 'Opening…' : 'Certificate'}
         </button>
+      ) : isOurs ? (
+        <button type="button" disabled={issued.busy}
+                onClick={() => issued.open(
+                  `/api/v1/training/records/${record.id}/certificate/issued`,
+                  `certificate-${record.user_name}.pdf`)}
+                className="font-medium text-primary-700 hover:underline disabled:opacity-40">
+          {issued.busy ? 'Opening…' : 'Certificate'}
+        </button>
       ) : (
         <span className="text-neutral-500">No certificate on file</span>
       )}
-      {mayWrite && (
+      {issued.error && <span className="text-danger-700">{issued.error}</span>}
+      {mayWrite && record.delivery === 'external' && (
         <>
           <input ref={inputRef} type="file" className="hidden"
                  accept="application/pdf,image/png,image/jpeg,image/webp"

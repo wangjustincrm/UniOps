@@ -74,6 +74,11 @@ class ConfigOut(BaseModel):
     # Null until somebody picks one — every meeting before that used the
     # free-text box, and still does.
     jhsc_minutes_template_code: str | None
+    # What an in-house certificate says. The plant's own wording; who earned it
+    # and when are not configurable, because those are what make it evidence.
+    certificate_heading: str | None
+    certificate_body: str | None
+    certificate_signatory: str | None
 
 
 class ConfigUpdate(BaseModel):
@@ -90,6 +95,9 @@ class ConfigUpdate(BaseModel):
     # The form the JHSC minutes are written on. Empty string clears it back to
     # the free-text box; null means "not mentioned in this request".
     jhsc_minutes_template_code: str | None = Field(default=None, max_length=40)
+    certificate_heading: str | None = Field(default=None, max_length=120)
+    certificate_body: str | None = None
+    certificate_signatory: str | None = Field(default=None, max_length=150)
 
     @model_validator(mode="after")
     def _ladder_must_ascend(self):

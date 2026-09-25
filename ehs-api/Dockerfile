@@ -2,8 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# ★ fonts-wqy-zenhei is not optional decoration. Every PDF this service makes
+# is drawn with ReportLab, and ReportLab's built-in faces are Type 1 with no
+# CJK glyphs — a Chinese name on a certificate comes out as a row of black
+# boxes, with no error and no warning. Plenty of people at this plant have one.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev curl \
+    gcc libpq-dev curl fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/*
 
 # Build context is the repo root so the shared authz package can be installed.

@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '@/lib/api'
-import { PageHeader } from '@/components/ui'
+import { PageHeader, SectionTitle } from '@/components/ui'
 
 interface Config {
   capa_remind_before_days: number
@@ -17,6 +17,9 @@ interface Config {
   allow_anonymous_report: boolean
   statutory_scan_interval_minutes: number
   jhsc_minutes_template_code: string | null
+  certificate_heading: string | null
+  certificate_body: string | null
+  certificate_signatory: string | null
 }
 
 interface Template { id: string; code: string; name: string; category: string }
@@ -96,6 +99,38 @@ export default function RulesPage() {
               <option key={t.id} value={t.code}>{t.name}</option>
             ))}
           </select>
+        </Row>
+      </section>
+
+      {/* ★ The wording only. Who earned it, which course, when, until when and
+          the record number are always on the certificate and are not settings:
+          they are what make it evidence rather than decoration. */}
+      <section className="mb-4 rounded-xl border border-neutral-200 bg-white p-4">
+        <SectionTitle className="mb-1">The certificate for training run here</SectionTitle>
+        <p className="mb-3 max-w-[68ch] text-xs text-neutral-500">
+          Your words on your own paper. The name, the course, the dates and the
+          record number are on it whatever you put here.
+        </p>
+        <Row label="Heading">
+          <input
+            className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-300 px-2 text-sm"
+            placeholder="Certificate of Training"
+            value={form.certificate_heading ?? ''}
+            onChange={(e) => setForm({ ...form, certificate_heading: e.target.value })} />
+        </Row>
+        <Row label="Line under the name">
+          <input
+            className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-300 px-2 text-sm"
+            placeholder="has completed the following training to the standard required."
+            value={form.certificate_body ?? ''}
+            onChange={(e) => setForm({ ...form, certificate_body: e.target.value })} />
+        </Row>
+        <Row label="Signed by">
+          <input
+            className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-300 px-2 text-sm"
+            placeholder="Health, Safety and Environment"
+            value={form.certificate_signatory ?? ''}
+            onChange={(e) => setForm({ ...form, certificate_signatory: e.target.value })} />
         </Row>
       </section>
 

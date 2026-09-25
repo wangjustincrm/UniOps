@@ -36,6 +36,7 @@ import MyActionsPage from '@/pages/MyActionsPage'
 import TrainingPage from '@/pages/TrainingPage'
 import LocationsPage from '@/pages/settings/LocationsPage'
 import PositionsPage from '@/pages/settings/PositionsPage'
+import MyTrainingPage from '@/pages/MyTrainingPage'
 import AreaOwnersPage from '@/pages/settings/AreaOwnersPage'
 import RulesPage from '@/pages/settings/RulesPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
@@ -114,6 +115,11 @@ export const ehsRoutes: RouteDef[] = [
     path: '/calendar',
     element: <ComplianceCalendarPage />,
     tab: { title: 'Calendar', icon: 'CalendarClock', keyStrategy: 'static' },
+  },
+  {
+    path: '/training/mine',
+    element: <MyTrainingPage />,
+    tab: { title: 'My training', icon: 'GraduationCap', keyStrategy: 'static' },
   },
   {
     path: '/training',

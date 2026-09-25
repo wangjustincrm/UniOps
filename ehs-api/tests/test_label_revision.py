@@ -74,6 +74,41 @@ async def test_a_new_data_sheet_stops_the_old_label_printing(
     assert back["status"] == "superseded"
 
 
+async def test_a_chinese_product_name_does_not_break_the_printer(
+        hse_manager, db_session):
+    """★ The same latin-1 header that broke the certificate breaks this.
+
+    `Content-Disposition` is built from the product name, and a header cannot
+    carry one written in Chinese — the label rendered and the response then
+    answered 500 on the way out, for exactly the products whose names need the
+    care.
+    """
+    from app.models.chemical import Chemical
+
+    _, client = hse_manager
+    chem = Chemical(id=uuid.uuid4(), chemical_no=f"CHM-{uuid.uuid4().hex[:6]}",
+                    name="烧碱 50%", is_active=True)
+    db_session.add(chem)
+    await db_session.commit()
+
+    label = ChemicalLabel(
+        id=uuid.uuid4(), chemical_id=chem.id,
+        product_identifier="烧碱 50%", signal_word="Danger", status="approved",
+        approved_at=datetime.now(timezone.utc), approved_by_name="Marie Tremblay",
+        hazard_statements=["H314"], precautionary_statements=["P280"],
+        pictograms=["GHS05"],
+    )
+    db_session.add(label)
+    await db_session.commit()
+
+    got = await client.get(f"/api/v1/labels/{label.id}/pdf")
+    assert got.status_code == 200, got.text
+    disposition = got.headers["content-disposition"]
+    assert "filename*=UTF-8''" in disposition, disposition
+    # And the plain filename is still something every client can read.
+    assert disposition.encode("latin-1"), "the header itself has to be encodable"
+
+
 async def test_a_draft_label_is_left_alone_by_a_revision(
         hse_manager, chemical, db_session):
     """Only labels that were approved are superseded.
