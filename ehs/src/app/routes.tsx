@@ -36,6 +36,7 @@ import MyActionsPage from '@/pages/MyActionsPage'
 import TrainingPage from '@/pages/TrainingPage'
 import LocationsPage from '@/pages/settings/LocationsPage'
 import PositionsPage from '@/pages/settings/PositionsPage'
+import AreaOwnersPage from '@/pages/settings/AreaOwnersPage'
 import RulesPage from '@/pages/settings/RulesPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
 
@@ -252,6 +253,11 @@ export const ehsRoutes: RouteDef[] = [
     path: '/settings/lists',
     element: <VocabulariesPage />,
     tab: { title: 'Lists', icon: 'List', keyStrategy: 'static' },
+  },
+  {
+    path: '/settings/area-owners',
+    element: <AreaOwnersPage />,
+    tab: { title: 'Area responsibility', icon: 'MapPin', keyStrategy: 'static' },
   },
   {
     path: '/settings/areas',

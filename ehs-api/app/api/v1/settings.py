@@ -12,17 +12,18 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.core.deps import BearerToken, SessionDep
 from app.core.permissions import (
     CanManageSettings, CanReadDocument, CanReadIncident, CanReportIncident,
 )
 from app.crud import vocabulary as crud
-from app.services import mdm
+from app.services import area_scope, mdm, notify
 from app.services.attachments import MAX_FILE_SIZE, proxy_download, upload_to_file_server
 from app.models.config import EhsConfig
-from app.models.mirrors import Department, Location
+from app.models.area_owner import AreaOwner
+from app.models.mirrors import Department, Location, User
 from app.schemas.settings import (
     ConfigOut,
     ConfigUpdate,
@@ -334,3 +335,111 @@ async def download_pictogram(
             f"No pictogram has been uploaded for {item.label}",
         )
     return await proxy_download(uuid.UUID(str(file_id)), token)
+
+
+# ── Who covers which part of the plant ───────────────────────────────────────
+
+class AreaOwnerOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: str | None
+    location_id: uuid.UUID
+    # The tree's current answer, not the snapshot taken when this was assigned:
+    # a renamed area should read as its new name here.
+    location_path: str
+
+
+class AreaOwnerIn(BaseModel):
+    user_id: uuid.UUID
+    location_id: uuid.UUID
+
+
+@router.get("/area-owners", response_model=list[AreaOwnerOut])
+async def list_area_owners(db: SessionDep, user: CanManageSettings):  # noqa: ARG001
+    """Who is down for which area, worst-case readable: ordered by area.
+
+    Read with the live path so a renamed area reads as its new name rather than
+    as whatever it was called when somebody was assigned to it.
+    """
+    # Left join on purpose: an area deleted from the master data would otherwise
+    # take its assignment off this screen while leaving the row in the table,
+    # so nobody could clear it.
+    rows = (await db.execute(text(
+        "select o.id, o.user_id, o.user_name, o.location_id,"
+        "       coalesce(l.path, o.location_path || '  (area no longer exists)')"
+        "  from ehs_area_owners o"
+        "  left join locations l on l.id = o.location_id"
+        " order by 5, o.user_name"))).all()
+    return [AreaOwnerOut(id=r[0], user_id=r[1], user_name=r[2],
+                         location_id=r[3], location_path=r[4]) for r in rows]
+
+
+@router.post("/area-owners", response_model=AreaOwnerOut, status_code=status.HTTP_201_CREATED)
+async def add_area_owner(payload: AreaOwnerIn, db: SessionDep, user: CanManageSettings):  # noqa: ARG001
+    """Make somebody responsible for an area, and for everything under it."""
+    location = (await db.execute(
+        select(Location).where(Location.id == payload.location_id))).scalar_one_or_none()
+    if location is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "That area is not in the plant tree")
+    if not location.is_active:
+        # A retired area cannot be made somebody's responsibility. Work already
+        # recorded against it keeps falling to HSE, which is where the count
+        # will show it.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{location.path} is no longer in use, so it cannot be assigned")
+
+    person = (await db.execute(
+        select(User).where(User.id == payload.user_id))).scalar_one_or_none()
+    if person is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such person")
+    if not person.is_active:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{person.full_name}'s account is not active, so work sent to this "
+            "area would reach nobody")
+
+    # ★ Refused if they do not hold the role the work is addressed to.
+    #
+    # Area work is raised for `area_supervisor` and fetched only for holders of
+    # that role. An area assigned to somebody without it looks covered — so the
+    # work stops falling to HSE — while never appearing on their list either.
+    # That is the silent loss this whole mechanism exists to remove, and it
+    # would be created here, by a screen that looked like it had worked.
+    held = await notify.roles_held_by(db, person.id, person.role or "")
+    if not held & area_scope.AREA_SCOPED_ROLES:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{person.full_name} is not an area supervisor, so work for this "
+            "area would not reach them. Give them the role first, or choose "
+            "somebody who holds it.")
+
+    existing = (await db.execute(
+        select(AreaOwner).where(AreaOwner.user_id == payload.user_id,
+                                AreaOwner.location_id == payload.location_id)
+    )).scalar_one_or_none()
+    if existing is not None:
+        # Saying it twice is not an error worth stopping for.
+        return AreaOwnerOut(id=existing.id, user_id=existing.user_id,
+                            user_name=existing.user_name,
+                            location_id=existing.location_id,
+                            location_path=location.path)
+
+    row = AreaOwner(
+        id=uuid.uuid4(), user_id=person.id, user_name=person.full_name,
+        location_id=location.id, location_path=location.path,
+    )
+    db.add(row)
+    await db.flush()
+    return AreaOwnerOut(id=row.id, user_id=row.user_id, user_name=row.user_name,
+                        location_id=row.location_id, location_path=location.path)
+
+
+@router.delete("/area-owners/{owner_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_area_owner(owner_id: uuid.UUID, db: SessionDep, user: CanManageSettings):  # noqa: ARG001
+    row = await db.get(AreaOwner, owner_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not assigned")
+    await db.delete(row)

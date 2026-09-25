@@ -70,6 +70,9 @@ class ParticipationRow(BaseModel):
 
 
 class JhscMonth(BaseModel):
+    # The meeting, not the month it fell in: two meetings in one September are
+    # two rows with the same month, and the screen needs to tell them apart.
+    id: str
     month: str
     held_on: str
     present: int

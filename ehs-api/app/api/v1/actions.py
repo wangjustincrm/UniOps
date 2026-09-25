@@ -18,6 +18,7 @@ from app.crud import action as crud
 from app.models.mirrors import Task
 from app.models.action import Action
 from app.services import tasks as task_service
+from app.services import area_scope
 from app.services import notify
 from app.schemas.action import (
     ActionCreate,
@@ -165,6 +166,45 @@ TASK_PATHS: dict[str, str] = {
 }
 
 
+class UnattributedOut(BaseModel):
+    """Work that belongs to a part of the plant nobody is down for."""
+
+    count: int
+    examples: list[str]
+
+
+@router.get("/unattributed", response_model=UnattributedOut)
+async def unattributed(db: SessionDep, user: CanReadAction):
+    """How much role work has no area owner.
+
+    ★ Its own question, and only HSE's. Narrowing role tasks by area means work
+    whose area nobody covers would otherwise reach nobody — so it goes to HSE,
+    and this is the number that says how much of it there is. It is the pressure
+    to finish the mapping, and it is the honest alternative to a silent drop.
+    """
+    mine = _user_id(user)
+    roles = await notify.roles_held_by(db, mine, user.get("role", ""))
+    # ★ HSE's question, and gated as one. Reading corrective actions is a much
+    # wider permission than being answerable for the plant, and this answer
+    # names documents.
+    if not roles & area_scope.SITE_WIDE_ROLES:
+        return UnattributedOut(count=0, examples=[])
+
+    rows = (await db.execute(
+        select(Task).where(
+            Task.assigned_user_id.is_(None),
+            Task.is_completed.is_(False),
+            Task.document_type.like("ehs%"),
+        ).order_by(Task.created_at.desc())
+    )).scalars().all()
+
+    _, orphans = await area_scope.split_by_area(
+        db, list(rows), user_id=mine, roles=roles)
+    return UnattributedOut(
+        count=len(orphans),
+        examples=[t.title or t.document_number for t in orphans[:5]])
+
+
 @router.get("/mine/tasks", response_model=list[AssignedTaskOut])
 async def my_tasks(db: SessionDep, user: CanReportIncident):
     """Everything else assigned to me by this module.
@@ -187,6 +227,12 @@ async def my_tasks(db: SessionDep, user: CanReportIncident):
     # and the page was the one hiding them.
     mine = _user_id(user)
     roles = await notify.roles_held_by(db, mine, user.get("role", ""))
+    # ★ HSE is answerable for area work nobody has been named for, so the query
+    # has to fetch it before the scoping can hand it to them. It reaches them
+    # only if it is unowned — `split_by_area` decides that; without this the
+    # rows never get as far as being decided about.
+    query_roles = roles | (area_scope.AREA_SCOPED_ROLES
+                           if roles & area_scope.SITE_WIDE_ROLES else set())
 
     # ★ The actions already listed above this, so their own task is not shown
     # twice. It used to drop every task on a corrective action, which also
@@ -202,13 +248,21 @@ async def my_tasks(db: SessionDep, user: CanReportIncident):
         select(Task).where(
             or_(Task.assigned_user_id == mine,
                 and_(Task.assigned_user_id.is_(None),
-                     Task.assigned_role.in_(roles) if roles else false())),
+                     Task.assigned_role.in_(query_roles) if query_roles else false())),
             Task.is_completed.is_(False),
             Task.document_type.like("ehs%"),
             not_(and_(Task.document_type == task_service.DOC_ACTION,
                       Task.document_id.in_(owned) if owned else false())),
         ).order_by(Task.created_at.desc())
     )).scalars().all()
+
+    # ★ Narrowed to the areas this person is down for. Work given to a role is
+    # given to everybody holding it, and for `area_supervisor` that is one
+    # plant-wide queue — a queue everybody can see is a queue nobody owns.
+    # Work whose area nobody is down for goes to HSE and is counted, rather
+    # than being shown to every supervisor or to no one.
+    rows, _unattributed = await area_scope.split_by_area(
+        db, list(rows), user_id=mine, roles=roles)
 
     out = []
     for t in rows:

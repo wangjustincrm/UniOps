@@ -214,6 +214,11 @@ async def attendance_by_month(db: AsyncSession, *, year: int) -> list[dict]:
         )).all())
         invited = sum(counts.values())
         out.append({
+            # The meeting's own id. The month is a label, and a committee that
+            # met twice in September produces two rows carrying "09" — which the
+            # dashboard was using to tell them apart, so React folded them into
+            # one and the second meeting's attendance was not drawn.
+            "id": str(meeting_id),
             "month": f"{held_on.month:02d}",
             "held_on": held_on.isoformat(),
             "present": counts.get("present", 0),

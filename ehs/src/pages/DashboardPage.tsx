@@ -61,7 +61,7 @@ interface Dashboard {
   jhsc: {
     available: boolean
     reason: string | null
-    months?: { month: string; held_on: string | null; present: number; invited: number }[]
+    months?: { id: string; month: string; held_on: string | null; present: number; invited: number }[]
     members?: number
   }
 }
@@ -207,6 +207,14 @@ export default function DashboardPage() {
     queryKey: ['dashboard-layout'],
     queryFn: () => api.get<{ panels: string[]; available: { key: string; label: string }[] }>(
       '/api/v1/dashboard/layout'),
+  })
+  // ★ How much area work nobody has been named for. On the dashboard because
+  // that is the screen HSE has open — a number that only appears on the page
+  // where you would go to fix it is a number nobody is prompted by.
+  const unowned = useQuery({
+    queryKey: ['unattributed'],
+    queryFn: () => api.get<{ count: number; examples: string[] }>(
+      '/api/v1/actions/unattributed'),
   })
   const [choosing, setChoosing] = useState(false)
   const order = layout.data?.panels ?? []
@@ -377,7 +385,11 @@ export default function DashboardPage() {
                 const invited = Math.max(m.invited, 1)
                 const pct = Math.round((m.present / invited) * 100)
                 return (
-                  <li key={m.month} className="flex items-center gap-2">
+                  // ★ The meeting, not the month. A committee that met twice
+                  // in September gave two rows the same key, and React drew one
+                  // of them — so the second meeting's attendance was missing
+                  // from the page with nothing to say so.
+                  <li key={m.id} className="flex items-center gap-2">
                     <span className="w-24 shrink-0 text-right text-xs text-neutral-600">
                       {MONTH_NAMES[Number(m.month) - 1] ?? m.month}
                       {m.held_on && (
@@ -498,6 +510,21 @@ export default function DashboardPage() {
                           { form_kind: 'near_miss' })
                 : undefined} />
       </div>
+
+      {(unowned.data?.count ?? 0) > 0 && (
+        <Link to="/settings/area-owners"
+              className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-warning-50 px-3 py-2 transition-colors hover:bg-warning-100">
+          <p className="min-w-0 flex-1 text-xs text-warning-800">
+            <span className="font-bold tabular-nums">{unowned.data!.count}</span>{' '}
+            {unowned.data!.count === 1 ? 'task belongs' : 'tasks belong'} to a part of
+            the plant nobody is responsible for, so they are on your list rather than a
+            supervisor's.
+          </p>
+          <span className="shrink-0 text-xs font-semibold text-warning-800 underline">
+            Assign the areas
+          </span>
+        </Link>
+      )}
 
       {h.rir_note && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-warning-50 px-3 py-2">

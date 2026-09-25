@@ -564,3 +564,256 @@ async def test_the_owner_does_not_see_their_own_action_twice(worker, hse_manager
 
     tasks = (await owner_client.get("/api/v1/actions/mine/tasks")).json()
     assert action["id"] not in {t["document_id"] for t in tasks}
+
+
+# ── Whose part of the plant ─────────────────────────────────────────────────
+
+async def _an_area(db_session, path: str):
+    """A node of the location tree, with its live path."""
+    import uuid as _uuid
+
+    from sqlalchemy import text as sql_text
+
+    loc_id = _uuid.uuid4()
+    await db_session.execute(sql_text(
+        "insert into locations (id, code, name, level, path, depth, is_active)"
+        " values (:id, :code, :name, 'department', :path, 1, true)"),
+        {"id": loc_id, "code": path[:40], "name": path.split('/')[-1], "path": path})
+    await db_session.commit()
+    return loc_id
+
+
+async def test_an_area_task_reaches_the_supervisor_who_covers_it(
+        hse_manager, test_engine, db_session):
+    """★ Work given to `area_supervisor` used to reach every supervisor at once.
+
+    A queue everybody can see is a queue nobody owns, which is what the plant
+    reported. It now goes to whoever is down for the area it happened in.
+    """
+    import uuid as _uuid
+
+    from sqlalchemy import text as sql_text
+
+    from app.models.area_owner import AreaOwner
+    from app.services import tasks as task_service
+    from tests.conftest import authed_client, make_token, make_user
+
+    dryer = await _an_area(db_session, "Production/103 – Dryer")
+    warehouse = await _an_area(db_session, "Production/105 – Warehouse")
+
+    ours = await make_user(test_engine, role="area_supervisor")
+    theirs = await make_user(test_engine, role="area_supervisor")
+    db_session.add(AreaOwner(id=_uuid.uuid4(), user_id=ours.id, user_name=ours.full_name,
+                             location_id=dryer, location_path="Production/103 – Dryer"))
+    db_session.add(AreaOwner(id=_uuid.uuid4(), user_id=theirs.id, user_name=theirs.full_name,
+                             location_id=warehouse,
+                             location_path="Production/105 – Warehouse"))
+
+    # An asset in the dryer, and the check nobody has been named for.
+    asset_id = _uuid.uuid4()
+    await db_session.execute(sql_text(
+        "insert into ehs_safety_assets (id, asset_no, name, location_id, status)"
+        " values (:id, :no, 'Extinguisher', :loc, 'in_service')"),
+        {"id": asset_id, "no": f"EQ-{str(asset_id)[:6]}", "loc": dryer})
+    await task_service.open_task(
+        db_session,
+        task_type="ehs_do_action",
+        doc_type="ehs_asset",
+        doc_id=asset_id,
+        doc_number="EQ-TEST",
+        title="Check the extinguisher by the dryer",
+        assigned_role="area_supervisor",
+        assigned_user_id=None,
+    )
+    await db_session.commit()
+
+    async with authed_client(make_token(ours.id, ours.role), db_session) as c:
+        mine = (await c.get("/api/v1/actions/mine/tasks")).json()
+        assert str(asset_id) in {t["document_id"] for t in mine}, (
+            "the dryer is theirs, so the check is theirs")
+
+    async with authed_client(make_token(theirs.id, theirs.role), db_session) as c:
+        others = (await c.get("/api/v1/actions/mine/tasks")).json()
+        assert str(asset_id) not in {t["document_id"] for t in others}, (
+            "the warehouse supervisor is not responsible for the dryer")
+
+    # ★ And HSE does *not* see it, because somebody is down for it. Handing
+    # them every area task as well would rebuild the same undifferentiated
+    # queue one desk along; they get the work nobody is named for, which is a
+    # different list and a shorter one.
+    _, hse = hse_manager
+    seen = (await hse.get("/api/v1/actions/mine/tasks")).json()
+    assert str(asset_id) not in {t["document_id"] for t in seen}
+    counted = (await hse.get("/api/v1/actions/unattributed")).json()
+    assert not any("dryer" in e.lower() for e in counted["examples"]), (
+        "it has an owner, so it is not unattributed")
+
+
+async def test_work_in_an_area_nobody_covers_falls_to_hse_and_is_counted(
+        hse_manager, test_engine, db_session):
+    """Not to every supervisor, and not to nobody.
+
+    A task no screen shows is the failure this module exists to prevent; a task
+    on every screen is the queue the plant asked us to remove. So it goes to
+    HSE, and the number is what says the mapping is unfinished.
+    """
+    import uuid as _uuid
+
+    from sqlalchemy import text as sql_text
+
+    from app.services import tasks as task_service
+    from tests.conftest import authed_client, make_token, make_user
+
+    orphan_area = await _an_area(db_session, "Production/106 – Utilities")
+    supervisor = await make_user(test_engine, role="area_supervisor")
+
+    asset_id = _uuid.uuid4()
+    await db_session.execute(sql_text(
+        "insert into ehs_safety_assets (id, asset_no, name, location_id, status)"
+        " values (:id, :no, 'Eyewash', :loc, 'in_service')"),
+        {"id": asset_id, "no": f"EQ-{str(asset_id)[:6]}", "loc": orphan_area})
+    await task_service.open_task(
+        db_session,
+        task_type="ehs_do_action",
+        doc_type="ehs_asset",
+        doc_id=asset_id,
+        doc_number="EQ-ORPHAN",
+        title="Check the eyewash in utilities",
+        assigned_role="area_supervisor",
+        assigned_user_id=None,
+    )
+    await db_session.commit()
+
+    async with authed_client(make_token(supervisor.id, supervisor.role), db_session) as c:
+        theirs = (await c.get("/api/v1/actions/mine/tasks")).json()
+        assert str(asset_id) not in {t["document_id"] for t in theirs}
+
+    _, hse = hse_manager
+    seen = (await hse.get("/api/v1/actions/mine/tasks")).json()
+    assert str(asset_id) in {t["document_id"] for t in seen}, "it falls to HSE"
+
+    counted = (await hse.get("/api/v1/actions/unattributed")).json()
+    assert counted["count"] >= 1
+    assert any("eyewash" in e.lower() for e in counted["examples"])
+
+    # And it is not a number anybody can ask for: it names documents.
+    async with authed_client(make_token(supervisor.id, supervisor.role), db_session) as c:
+        assert (await c.get("/api/v1/actions/unattributed")).json()["count"] == 0
+
+
+async def test_the_statutory_clocks_are_not_narrowed_by_area(hse_manager, db_session):
+    """★ Only `area_supervisor` work is narrowed.
+
+    The statutory tasks are the HSE Manager's and hang off SDS revisions,
+    committee recommendations and certificates — none of which have a location.
+    Narrowing those would file every one as unattributed and drown the number
+    that means "somebody still has to be named for this part of the plant".
+    """
+    import uuid as _uuid
+
+    from app.services import tasks as task_service
+
+    _, client = hse_manager
+    doc_id = _uuid.uuid4()
+    await task_service.open_task(
+        db_session,
+        task_type=task_service.TASK_STATUTORY,
+        doc_type="ehs_sds",
+        doc_id=doc_id,
+        doc_number="CHM-2026-0009",
+        title="sds 3y — overdue",
+        assigned_role="ehs_manager",
+        assigned_user_id=None,
+    )
+    await db_session.commit()
+
+    mine = (await client.get("/api/v1/actions/mine/tasks")).json()
+    assert str(doc_id) in {t["document_id"] for t in mine}
+
+    counted = (await client.get("/api/v1/actions/unattributed")).json()
+    assert not any("sds 3y" in e.lower() for e in counted["examples"]), (
+        "a task that was never area work is not unattributed area work")
+
+
+async def test_an_area_owner_who_cannot_be_reached_does_not_count_as_cover(
+        hse_manager, test_engine, db_session):
+    """★ The failure this whole mechanism exists to remove, created by its own
+    maintenance screen.
+
+    Area work is raised for `area_supervisor` and fetched only for holders of
+    that role. Assign an area to somebody without it and the area looks
+    covered — so the work stops falling to HSE — while never reaching them
+    either. Nobody sees it and the unattributed count says zero.
+    """
+    import uuid as _uuid
+
+    from sqlalchemy import text as sql_text
+
+    from app.models.area_owner import AreaOwner
+    from app.services import tasks as task_service
+    from tests.conftest import authed_client, make_token, make_user
+
+    area = await _an_area(db_session, "Production/107 – Office")
+    # A real person, with a real job, that is not this one. `supervisor` rather
+    # than `dept_manager` because this test reads their own task list, and that
+    # needs `ehs.incident.report` — a role without it answers 403 and the
+    # assertion would pass for the wrong reason.
+    clerk = await make_user(test_engine, role="supervisor")
+    db_session.add(AreaOwner(id=_uuid.uuid4(), user_id=clerk.id, user_name=clerk.full_name,
+                             location_id=area, location_path="Production/107 – Office"))
+
+    asset_id = _uuid.uuid4()
+    await db_session.execute(sql_text(
+        "insert into ehs_safety_assets (id, asset_no, name, location_id, status)"
+        " values (:id, :no, 'First aid kit', :loc, 'in_service')"),
+        {"id": asset_id, "no": f"EQ-{str(asset_id)[:6]}", "loc": area})
+    await task_service.open_task(
+        db_session,
+        task_type="ehs_do_action",
+        doc_type="ehs_asset",
+        doc_id=asset_id,
+        doc_number="EQ-OFFICE",
+        title="Check the first aid kit in the office",
+        assigned_role="area_supervisor",
+        assigned_user_id=None,
+    )
+    await db_session.commit()
+
+    # Not theirs: they do not hold the role the work was addressed to.
+    async with authed_client(make_token(clerk.id, clerk.role), db_session) as c:
+        assert str(asset_id) not in {
+            t["document_id"] for t in (await c.get("/api/v1/actions/mine/tasks")).json()}
+
+    # So it is unattributed, and HSE has it.
+    _, hse = hse_manager
+    assert str(asset_id) in {
+        t["document_id"] for t in (await hse.get("/api/v1/actions/mine/tasks")).json()}, (
+        "an assignment nobody can be reached about is not cover")
+    counted = (await hse.get("/api/v1/actions/unattributed")).json()
+    assert any("first aid kit" in e.lower() for e in counted["examples"])
+
+
+async def test_the_screen_refuses_an_assignment_that_would_reach_nobody(
+        hse_manager, test_engine, db_session):
+    """And it is refused at the point of being made, with the reason.
+
+    Better than letting somebody save it and discover months later that an area
+    of the plant has been quietly answering to no one.
+    """
+    from tests.conftest import make_user
+
+    _, client = hse_manager
+    area = await _an_area(db_session, "Production/108 – Yard")
+    clerk = await make_user(test_engine, role="dept_manager")
+    supervisor = await make_user(test_engine, role="area_supervisor")
+
+    refused = await client.post("/api/v1/settings/area-owners", json={
+        "user_id": str(clerk.id), "location_id": str(area)})
+    assert refused.status_code == 409, refused.text
+    assert "not an area supervisor" in refused.json()["detail"]
+
+    # The admission side: somebody who does hold it is accepted.
+    ok = await client.post("/api/v1/settings/area-owners", json={
+        "user_id": str(supervisor.id), "location_id": str(area)})
+    assert ok.status_code in (200, 201), ok.text
+    assert ok.json()["location_path"] == "Production/108 – Yard"
