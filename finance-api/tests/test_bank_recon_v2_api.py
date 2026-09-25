@@ -1239,3 +1239,99 @@ async def test_a_re_read_keeps_its_lines_even_when_the_description_changes(
     page = (await client.get(f"/finance/v1/bank-recon/reconciliations/{rid}",
                              headers=_h())).json()
     assert any(b["id"] == fee["id"] and b["cleared"] for b in page["bank_lines"])
+
+
+# ── who may reconcile: its own Access Control keys ────────────────────────────
+
+def _h_as(user_id, role):
+    tok = jwt.encode({"sub": str(user_id), "role": role, "name": "Perm Test",
+                      "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                     settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return {"Authorization": f"Bearer {tok}"}
+
+
+async def _payment_officer(db_session):
+    """Production's shape: primary role requester, payment_officer ADDITIONAL."""
+    from sqlalchemy import text
+    uid = uuid.uuid4()
+    await db_session.execute(text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'payment_officer')"),
+        {"u": uid})
+    await db_session.flush()
+    return _h_as(uid, "requester")
+
+
+async def test_a_payment_officer_can_reconcile_without_the_chart_of_accounts(
+        client, scene, db_session):
+    """Bank reconciliation borrowed finance.coa.manage, so the only way to let a
+    Payment Officer reconcile was to let them edit the chart of accounts too —
+    which is what production did on 2026-09-25. It has its own keys now."""
+    h = await _payment_officer(db_session)
+    acct = scene["account"]
+
+    perms = (await client.get("/finance/v1/bank/permissions", headers=h)).json()
+    assert perms == {"can_reconcile": True, "can_manage_settings": True}
+    r = await client.post(f"/finance/v1/bank-recon/{acct.id}/reconciliations",
+                          json={"period_start": "2026-07-01", "period_end": "2026-07-31"},
+                          headers=h)
+    assert r.status_code == 200, r.text
+    r = await client.post(f"/finance/v1/bank-recon/reconciliations/{r.json()['id']}/auto-match",
+                          headers=h)
+    assert r.status_code == 200, r.text
+
+    # ...and still cannot touch the chart of accounts
+    coa = (await client.get("/finance/v1/coa/permissions", headers=h)).json()
+    assert coa["can_manage"] is False
+
+
+async def test_the_bank_gates_read_the_bank_keys_not_the_coa_key(client, scene, db_session):
+    """Revoke finance.bank.reconcile from finance_manager in the matrix: it keeps
+    the chart of accounts and loses reconciliation — the gate follows the row."""
+    from sqlalchemy import text
+    acct = scene["account"]
+    body = {"period_start": "2026-07-01", "period_end": "2026-07-31"}
+    ok = await client.post(f"/finance/v1/bank-recon/{acct.id}/reconciliations",
+                           json=body, headers=_h())
+    assert ok.status_code == 200          # admitted while the row is there
+
+    await db_session.execute(text(
+        "DELETE FROM role_permissions WHERE role_code = 'finance_manager' "
+        "AND permission_key = 'finance.bank.reconcile'"))
+    await db_session.flush()
+    r = await client.post(f"/finance/v1/bank-recon/{acct.id}/reconciliations",
+                          json=body, headers=_h())
+    assert r.status_code == 403 and "finance.bank.reconcile" in r.json()["detail"]
+    assert (await client.get("/finance/v1/coa/permissions", headers=_h())).json()["can_manage"]
+    perms = (await client.get("/finance/v1/bank/permissions", headers=_h())).json()
+    assert perms == {"can_reconcile": False, "can_manage_settings": True}
+
+
+async def test_bank_settings_has_its_own_key(client, scene, db_session):
+    from sqlalchemy import text
+    acct = scene["account"]
+    body = {"name": acct.name, "bank_name": acct.bank_name, "currency": "CAD",
+            "ledger_account_code": "100201", "nc_bank_account_code": "1033760"}
+    ok = await client.put(f"/finance/v1/bank/accounts/{acct.id}", json=body, headers=_h())
+    assert ok.status_code == 200, ok.text
+
+    await db_session.execute(text(
+        "DELETE FROM role_permissions WHERE role_code = 'finance_manager' "
+        "AND permission_key = 'finance.bank.settings'"))
+    await db_session.flush()
+    r = await client.put(f"/finance/v1/bank/accounts/{acct.id}", json=body, headers=_h())
+    assert r.status_code == 403 and "finance.bank.settings" in r.json()["detail"]
+    # reconciling is a different key, still held
+    r = await client.post(f"/finance/v1/bank-recon/{acct.id}/reconciliations",
+                          json={"period_start": "2026-07-01", "period_end": "2026-07-31"},
+                          headers=_h())
+    assert r.status_code == 200, r.text
+
+
+async def test_a_requester_without_the_role_is_still_refused(client, scene):
+    h = _h_as(uuid.uuid4(), "requester")
+    r = await client.post(f"/finance/v1/bank-recon/{scene['account'].id}/reconciliations",
+                          json={"period_start": "2026-07-01", "period_end": "2026-07-31"},
+                          headers=h)
+    assert r.status_code == 403
+    assert (await client.get("/finance/v1/bank/permissions", headers=h)).json() == \
+        {"can_reconcile": False, "can_manage_settings": False}
