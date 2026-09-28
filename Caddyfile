@@ -1,31 +1,46 @@
 # UniOps edge reverse proxy (Caddy) — single 443 entry, subdomains under
-# canadaroyalmilk.com, TLS terminated with the company wildcard cert.
+# canadaroyalmilk.com.
 #
-# Place the wildcard cert (covering *.canadaroyalmilk.com) on the app server:
-#   ./certs/fullchain.pem   (server cert + intermediate chain)
-#   ./certs/privkey.pem     (private key)
-# The `edge` service in docker-compose.prod.yml mounts ./certs read-only.
+# TLS is fully automatic: Caddy obtains a Let's Encrypt cert PER HOSTNAME below
+# and renews it itself ~30 days before expiry. No cron, no DNS change, no manual
+# step. Certs + ACME account persist in the `caddy_data` volume.
 #
-# All sites use the provided cert (no ACME / Let's Encrypt). Caddy listens on 80
-# and 443; 80 redirects to 443. Internal + external browsers use the same domain
-# (split-DNS or firewall hairpin → 10.10.50.65:443).
+# Validation is TLS-ALPN-01 on 443 — the only port the firewall maps
+# (66.102.68.69:443 → 10.10.50.65:443). HTTP-01 is disabled because port 80 is
+# NOT mapped publicly; leaving it enabled would just waste a failed attempt.
+# Requirements: every site name below must have a PUBLIC A record → 66.102.68.69,
+# and the firewall policy must accept 443 from any source (LE validates from
+# several regions). ★Adding a new site = add its public DNS record FIRST.
+#
+# (Previously: one manual *.canadaroyalmilk.com wildcard cert from ./certs,
+# renewed by hand every 90 days via renew-cert.sh — wildcards REQUIRE DNS-01 and
+# our registrar Rebel has no API. Emergency rollback: set the `site_tls` snippet
+# back to `tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem`.)
+#
+# Internal + external browsers use the same domain (split-DNS or firewall
+# hairpin → 10.10.50.65:443).
 
 # Global options: disable HTTP/3. The firewall maps only TCP 443 (not UDP 443),
 # so advertising h3 makes browsers retry API calls over UDP/443 → "Failed to
 # fetch". Serve over h1/h2 (TCP) only; no alt-svc h3 advertised.
 {
+	email wangjustin@canadaroyalmilk.com
 	servers {
 		protocols h1 h2
 	}
 }
 
-(wildcard) {
-	tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
+(site_tls) {
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
 }
 
 # ── Frontends (nginx :80 in each web image) ───────────────────────────────────
 portal.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 
 	# Public legal pages (EULA + privacy policy). Must stay reachable WITHOUT
 	# login: Intuit fetches these URLs during the QuickBooks app assessment, as
@@ -41,66 +56,66 @@ portal.canadaroyalmilk.com {
 	}
 }
 epms.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy epms-web:80
 }
 oa.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy oa-web:80
 }
 vms.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy vms-web:80
 }
 booking.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy booking-web:80
 }
 finance.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy finance-web:80
 }
 mrp.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy mrp-web:80
 }
 
 # ── Browser-facing APIs (approval/identity are server-to-server, no subdomain) ─
 epms-api.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy epms-api:8000
 }
 oa-api.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy expense-api:8006
 }
 vms-api.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy vms-api:8008
 }
 booking-api.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy booking-api:8010
 }
 finance-api.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy finance-api:8004
 }
 budget-api.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy budget-api:8007
 }
 mdm-api.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy mdm-api:8002
 }
 mrp-api.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy mrp-api:8011
 }
 
 # ── File server (file-api lives on the File server, not in this compose) ──────
 files.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy 10.10.50.66:8005
 }

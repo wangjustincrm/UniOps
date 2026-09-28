@@ -535,7 +535,8 @@ services:
       start_period: 10s
 
   # ── Edge reverse proxy — DOMAIN mode only (opt-in via `--profile edge`) ───────
-  # Terminates TLS with ./certs/{fullchain,privkey}.pem and routes
+  # Terminates TLS with per-host Let's Encrypt certs that Caddy obtains + renews
+  # itself (TLS-ALPN-01 on 443; stored in the caddy_data volume) and routes
   # <module>.canadaroyalmilk.com / <api>-api.canadaroyalmilk.com to the containers
   # (see Caddyfile). Used with the DOMAIN image set (TAG=<sha>, https URLs baked).
   # For the LAN image set (TAG=<sha>-lan, http://10.10.50.65:<port> baked), DON'T

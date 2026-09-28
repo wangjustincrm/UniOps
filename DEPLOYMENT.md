@@ -105,8 +105,9 @@ at build time).
 
 - **Images:** GitHub Container Registry — `ghcr.io/wangjustincrm/uniops-*:<tag>`.
 - **Single entry:** the **Caddy `edge`** service on the app server (`10.10.50.65`)
-  listens on **443**, terminates TLS with the company wildcard cert
-  (`./certs/{fullchain,privkey}.pem`, covers `*.canadaroyalmilk.com`), and routes
+  listens on **443**, terminates TLS with per-hostname Let's Encrypt certs that
+  Caddy obtains and renews automatically (TLS-ALPN-01 on 443, kept in the
+  `caddy_data` volume — no manual renewal, no DNS TXT step), and routes
   subdomains to the containers (see `Caddyfile`):
 
   | Subdomain (`.canadaroyalmilk.com`) | → container        |
@@ -133,7 +134,7 @@ at build time).
   `https://<sub>.canadaroyalmilk.com`, so both internal and external users use the
   same HTTPS domains.
 - **Public exposure:** the firewall **Server Mapping** forwards **only**
-  public `45.78.113.218:443` → `10.10.50.65:443` (the edge). No other port is
+  public `66.102.68.69:443` → `10.10.50.65:443` (the edge). No other port is
   exposed. The web/api services still publish their ports for on-box debugging but
   public traffic enters only through Caddy.
 
@@ -141,12 +142,15 @@ at build time).
 
 - A **GitHub Personal Access Token** with `write:packages` (build host) /
   `read:packages` (app server).
-- **TLS cert** for `*.canadaroyalmilk.com` placed at `./certs/fullchain.pem` +
-  `./certs/privkey.pem` on the app server (see `certs/README.md`).
-- **Firewall Server Mapping:** public `45.78.113.218:443` → `10.10.50.65:443`
+- **TLS:** nothing to place — Caddy issues the certs itself. It only needs every
+  site name in the `Caddyfile` to have a **public** A record → the mapped public
+  IP, and public 443 reachable from any source. ★A new subdomain must get its
+  public DNS record **before** it is added to the `Caddyfile`, otherwise Caddy
+  keeps retrying that name (and burns Let's Encrypt failed-validation quota).
+- **Firewall Server Mapping:** public `66.102.68.69:443` → `10.10.50.65:443`
   (TCP). Enable NAT **hairpin/loopback** so internal users hitting the public IP
   reach the edge too (or use split-DNS — see DNS below).
-- **DNS** A records (→ `45.78.113.218`): `portal`, `epms`, `oa`, `vms`, `finance`,
+- **DNS** A records (→ `66.102.68.69`): `portal`, `epms`, `oa`, `vms`, `finance`,
   `mrp`, `epms-api`, `oa-api`, `vms-api`, `finance-api`, `budget-api`, `mdm-api`,
   `mrp-api`, `files` — each `.canadaroyalmilk.com`. (Use specific records, **not**
   a wildcard on the company apex.) Internal: rely on firewall hairpin, or add the
@@ -208,14 +212,13 @@ the other modules at `http://10.10.50.65:<port>`.
 ```bash
 git pull origin main
 cp .env.prod.example .env        # TAG=90303d8 (the https set), DB_PASSWORD, JWT_SECRET_KEY
-mkdir -p certs                   # copy fullchain.pem + privkey.pem into ./certs
 echo "<GHCR_PAT>" | docker login ghcr.io -u wangjustincrm --password-stdin
 
 docker compose -f docker-compose.prod.yml pull
 ./migrate-prod.sh
 docker compose -f docker-compose.prod.yml --profile edge up -d   # WITH Caddy
 
-docker compose -f docker-compose.prod.yml logs --tail=30 edge    # cert + sites loaded?
+docker compose -f docker-compose.prod.yml logs --tail=30 edge    # expect "certificate obtained successfully" per host
 ```
 
 Then add the firewall mapping + DNS (see Prerequisites) and open
@@ -406,7 +409,7 @@ Additional one-time steps are required before the first booking release:
       removes the event from the calendar.
 
 6. **DNS + Caddy** — `booking.canadaroyalmilk.com` and `booking-api.canadaroyalmilk.com` are already
-   present in the `Caddyfile`. Add both A records (→ `45.78.113.218`) in the external DNS and the
+   present in the `Caddyfile`. Add both A records (→ `66.102.68.69`) in the external DNS and the
    corresponding internal split-DNS entries (→ `10.10.50.65`).
 
 ---
@@ -462,7 +465,7 @@ release:
 
 4. **DNS + Caddy** — `mrp.canadaroyalmilk.com` and `mrp-api.canadaroyalmilk.com`
    are already present in the `Caddyfile` (same pattern as Booking's step 6
-   above). Add both A records (→ `45.78.113.218`) in the external DNS and the
+   above). Add both A records (→ `66.102.68.69`) in the external DNS and the
    corresponding internal split-DNS entries (→ `10.10.50.65`) — see
    Prerequisites' DNS list above, which now includes them (M13, final-phase
    review: this step and the Prerequisites DNS list previously omitted
