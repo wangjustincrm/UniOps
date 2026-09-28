@@ -1,23 +1,78 @@
+interface PreviewRecipient {
+  id: string; name: string; email: string | null
+  will_receive: boolean; reason: string | null
+}
+interface Preview {
+  subject: string; body: string
+  recipients: PreviewRecipient[]
+  unreachable: string[]
+  seq_will_be: number
+}
+
 /**
- * Recording who a recommendation was put in front of.
+ * Choosing who has to answer, seeing what they will be sent, and sending it.
+ *
+ * ★ Two requests from the third round, and they belong together: "allow the
+ * recommendation and the staff to send it to in one entry process" and "create
+ * a process to review the communication in draft mode before it is sent to
+ * allow for configuration before sending it".
+ *
+ * So recording and sending are one flow, with the message shown in between.
+ * The preview is fetched from the server rather than composed here, because a
+ * message composed twice is a message that drifts — and the half that drifts
+ * is always the one nobody reads afterwards.
  *
  * ★ Sending does not start or move the twenty-one day clock — that runs from
  * when the recommendation was made. If it moved, not sending would extend a
  * statutory deadline indefinitely.
  */
-function SendForm({ recId, onDone, onCancel }: {
-  recId: string; onDone: () => void; onCancel: () => void
+function RecommendationComposer({
+  meetingId, recId, recommendationText, onDone, onCancel,
+}: {
+  meetingId: string
+  /** Set when an already-recorded recommendation is being sent. */
+  recId?: string
+  /** Set when the text is being written here, in the same step. */
+  recommendationText?: string
+  onDone: () => void
+  onCancel: () => void
 }) {
   const [chosen, setChosen] = useState<string[]>([])
   const [search, setSearch] = useState('')
+  const [text, setText] = useState(recommendationText ?? '')
+  const [preview, setPreview] = useState<Preview | null>(null)
+  // The body once somebody has edited it. Null means "as the server composed it".
+  const [edited, setEdited] = useState<string | null>(null)
+
+  const writing = recId === undefined
   const people = useQuery({
     queryKey: ['toolbox-supervisors', true],
     queryFn: () => api.get<{ id: string; full_name: string; role: string }[]>(
       '/api/v1/toolbox-talks/supervisors?everyone=true'),
   })
-  const send = useMutation({
-    mutationFn: () => api.post(`/api/v1/jhsc/recommendations/${recId}/send`,
-                               { user_ids: chosen }),
+
+  const draft = useMutation({
+    mutationFn: () => api.post<Preview>('/api/v1/jhsc/recommendations/preview', {
+      meeting_id: meetingId, recommendation: text, user_ids: chosen,
+      message: edited,
+    }),
+    onSuccess: (p) => { setPreview(p); setEdited(p.body) },
+  })
+
+  const submit = useMutation({
+    mutationFn: () => (writing
+      ? api.post(`/api/v1/jhsc/meetings/${meetingId}/recommendations`,
+                 { recommendation: text, send_to: chosen, message: edited })
+      : api.post(`/api/v1/jhsc/recommendations/${recId}/send`,
+                 { user_ids: chosen, message: edited })),
+    onSuccess: onDone,
+  })
+
+  // Recording without naming anybody stays available: the clock runs from the
+  // recording, so a committee that has not decided who answers can still start it.
+  const recordOnly = useMutation({
+    mutationFn: () => api.post(`/api/v1/jhsc/meetings/${meetingId}/recommendations`,
+                               { recommendation: text }),
     onSuccess: onDone,
   })
 
@@ -27,9 +82,65 @@ function SendForm({ recId, onDone, onCancel }: {
         || p.full_name.toLowerCase().includes(search.trim().toLowerCase()))
     : loaded.slice(0, 12)
 
+  const busy = draft.isPending || submit.isPending || recordOnly.isPending
+  const ready = text.trim().length > 0
+
+  if (preview) {
+    return (
+      <div className="mt-2 rounded-lg border border-primary-200 bg-primary-50/40 p-2.5">
+        <p className="mb-1.5 text-xs font-semibold text-neutral-800">
+          This is what will be sent — recommendation #{preview.seq_will_be}
+        </p>
+        <dl className="mb-2 text-xs">
+          <dt className="text-neutral-500">Subject</dt>
+          <dd className="mb-1.5 text-neutral-900">{preview.subject}</dd>
+          <dt className="text-neutral-500">To</dt>
+          <dd className="text-neutral-900">
+            {preview.recipients.filter((r) => r.will_receive)
+              .map((r) => r.name).join(', ') || 'nobody who can be emailed'}
+          </dd>
+        </dl>
+        {/* ★ Said plainly, because the send drops these people silently. A
+            recommendation "sent" to somebody with no address on file is owed a
+            reply by somebody who was never told. */}
+        {preview.unreachable.length > 0 && (
+          <p className="mb-2 rounded-lg bg-warning-50 px-2.5 py-2 text-xs text-warning-800">
+            <b>Will not receive the email:</b>{' '}
+            {preview.recipients.filter((r) => !r.will_receive)
+              .map((r) => `${r.name} (${r.reason ?? 'no address'})`).join(', ')}.
+            They are still recorded as having been asked, and the reply is still
+            owed — tell them another way.
+          </p>
+        )}
+        <label className="mb-1 block text-xs text-neutral-500" htmlFor="rec-body">
+          Message — edit it if the committee worded it differently
+        </label>
+        <textarea id="rec-body" rows={6} className={`${inputClass} py-2 text-sm`}
+                  value={edited ?? preview.body}
+                  onChange={(e) => setEdited(e.target.value)} />
+        <ErrorNote error={submit.error} />
+        <div className="mt-2 flex justify-end gap-2">
+          <button type="button" className={secondaryButton} disabled={busy}
+                  onClick={() => setPreview(null)}>Back</button>
+          <button type="button" className={primaryButton} disabled={busy}
+                  onClick={() => { if (!busy) submit.mutate() }}>
+            {submit.isPending ? 'Sending…' : writing ? 'Record and send' : 'Send it'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="mt-2 rounded-lg border border-neutral-200 p-2.5">
-      <p className="mb-1.5 text-xs font-medium text-neutral-700">
+      {writing && (
+        <Field label="Recommendation">
+          <textarea className={`${inputClass} min-h-[80px] py-2`} value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    placeholder="What the committee recommends the employer do" />
+        </Field>
+      )}
+      <p className="mb-1.5 mt-2 text-xs font-medium text-neutral-700">
         Who is this being put in front of?
       </p>
       <input className={`${inputClass} mb-1.5`} value={search}
@@ -48,13 +159,22 @@ function SendForm({ recId, onDone, onCancel }: {
           </li>
         ))}
       </ul>
-      <ErrorNote error={send.error} />
-      <div className="flex justify-end gap-2">
+      {people.isError && <LoadFailedNote what="The list of people" />}
+      <ErrorNote error={draft.error} />
+      <ErrorNote error={recordOnly.error} />
+      <div className="flex flex-wrap justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onCancel}>Cancel</button>
+        {writing && (
+          <button type="button" className={secondaryButton}
+                  disabled={!ready || busy}
+                  onClick={() => { if (ready && !busy) recordOnly.mutate() }}>
+            {recordOnly.isPending ? 'Recording…' : 'Record without sending'}
+          </button>
+        )}
         <button type="button" className={primaryButton}
-                disabled={chosen.length === 0 || send.isPending}
-                onClick={() => { if (!send.isPending) send.mutate() }}>
-          {send.isPending ? 'Sending…' : 'Send it'}
+                disabled={!ready || chosen.length === 0 || busy}
+                onClick={() => { if (ready && chosen.length > 0 && !busy) draft.mutate() }}>
+          {draft.isPending ? 'Composing…' : 'Review the message'}
         </button>
       </div>
     </div>
@@ -278,17 +398,10 @@ function RecommendationList({
   meetingId: string; rows: Recommendation[]; mayManage: boolean; onChanged: () => void
 }) {
   const [adding, setAdding] = useState(false)
-  const [text, setText] = useState('')
   const [replyTo, setReplyTo] = useState<string | null>(null)
   // Who it was put in front of. Without it the committee could see that
   // nobody had answered and not who had failed to.
   const [sendingTo, setSendingTo] = useState<string | null>(null)
-
-  const create = useMutation({
-    mutationFn: () => api.post(`/api/v1/jhsc/meetings/${meetingId}/recommendations`,
-                               { recommendation: text }),
-    onSuccess: () => { setText(''); setAdding(false); onChanged() },
-  })
 
   return (
     <>
@@ -316,8 +429,10 @@ function RecommendationList({
                 </p>
               ) : mayManage && (
                 sendingTo === r.id
-                  ? <SendForm recId={r.id} onDone={() => { setSendingTo(null); onChanged() }}
-                              onCancel={() => setSendingTo(null)} />
+                  ? <RecommendationComposer meetingId={meetingId} recId={r.id}
+                      recommendationText={r.recommendation}
+                      onDone={() => { setSendingTo(null); onChanged() }}
+                      onCancel={() => setSendingTo(null)} />
                   : (
                     <button type="button" onClick={() => setSendingTo(r.id)}
                             className="mt-1.5 text-xs font-semibold text-neutral-500 hover:text-neutral-900 hover:underline">
@@ -352,21 +467,9 @@ function RecommendationList({
       {mayManage && (
         adding ? (
           <Card className="mt-2">
-            <Field label="Recommendation">
-              <textarea className={`${inputClass} min-h-[80px] py-2`} value={text}
-                        onChange={(e) => setText(e.target.value)}
-                        placeholder="What the committee recommends the employer do" />
-            </Field>
-            <ErrorNote error={create.error} />
-            <div className="mt-2 flex justify-end gap-2">
-              <button type="button" className={secondaryButton}
-                      onClick={() => setAdding(false)}>Cancel</button>
-              <button type="button" className={primaryButton}
-                      disabled={!text.trim() || create.isPending}
-                      onClick={() => { if (!create.isPending) create.mutate() }}>
-                {create.isPending ? 'Recording…' : 'Record'}
-              </button>
-            </div>
+            <RecommendationComposer meetingId={meetingId}
+              onDone={() => { setAdding(false); onChanged() }}
+              onCancel={() => setAdding(false)} />
           </Card>
         ) : (
           <button type="button" className={`${secondaryButton} mt-2`} onClick={() => setAdding(true)}>

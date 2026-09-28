@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from types import SimpleNamespace
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,6 +17,8 @@ from app.crud import form as forms_crud
 from app.crud import jhsc as crud
 from app.models.config import EhsConfig
 from app.models.form import FormTemplate
+from app.models.mirrors import User
+from app.services import mail, notify
 
 router = APIRouter(prefix="/jhsc")
 
@@ -210,6 +213,14 @@ async def publish_meeting(meeting_id: uuid.UUID, db: SessionDep, user: CanManage
 class RecommendationIn(BaseModel):
     recommendation: str = Field(min_length=1)
     raised_by_name: str | None = Field(default=None, max_length=255)
+    # ★ Recorded and sent in one step, which is what the committee asked for:
+    # naming who has to answer was a second screen they had to remember to go
+    # back to, and an unsent recommendation is one nobody owes a reply to.
+    # Left empty it still only records — the twenty-one days run from the
+    # recording either way, so recording first and sending later stays valid.
+    send_to: list[uuid.UUID] = Field(default_factory=list)
+    # The body as approved in the preview. Empty means send the standard text.
+    message: str | None = None
 
 
 class ResponseIn(BaseModel):
@@ -338,12 +349,23 @@ async def start_minutes_form(
 @router.post("/meetings/{meeting_id}/recommendations", response_model=RecommendationOut,
              status_code=status.HTTP_201_CREATED)
 async def add_recommendation(
-    meeting_id: uuid.UUID, payload: RecommendationIn, db: SessionDep, user: CanManageJhsc,  # noqa: ARG001
+    meeting_id: uuid.UUID, payload: RecommendationIn, db: SessionDep, user: CanManageJhsc,
 ):
-    """Recording one starts OHSA s.9(20)'s twenty-one days."""
+    """Recording one starts OHSA s.9(20)'s twenty-one days.
+
+    Sending is part of the same request when recipients are named. It is not a
+    separate clock: the twenty-one days run from the recording, so a
+    recommendation recorded now and sent tomorrow is owed a reply on the same
+    date either way.
+    """
     meeting = await crud.get_meeting(db, meeting_id)
-    return await crud.add_recommendation(
+    rec = await crud.add_recommendation(
         db, meeting, text=payload.recommendation, raised_by_name=payload.raised_by_name)
+    if payload.send_to:
+        rec = await crud.send_recommendation(
+            db, rec, user_ids=payload.send_to, sender_id=_user_id(user),
+            message=payload.message)
+    return rec
 
 
 class SendRecommendationIn(BaseModel):
@@ -352,6 +374,8 @@ class SendRecommendationIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     user_ids: list[uuid.UUID] = Field(min_length=1)
+    # What the sender approved in the preview, when they changed it.
+    message: str | None = None
 
 
 @router.post("/recommendations/{rec_id}/send", response_model=RecommendationOut)
@@ -367,7 +391,91 @@ async def send_recommendation(
     """
     rec = await crud.get_recommendation(db, rec_id)
     return await crud.send_recommendation(
-        db, rec, user_ids=payload.user_ids, sender_id=_user_id(user))
+        db, rec, user_ids=payload.user_ids, sender_id=_user_id(user),
+        message=payload.message)
+
+
+class PreviewIn(BaseModel):
+    """What the notice would say, before anybody is told anything."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    meeting_id: uuid.UUID
+    recommendation: str = Field(min_length=1)
+    user_ids: list[uuid.UUID] = Field(default_factory=list)
+    # A draft the sender has already edited, so a second look shows their words.
+    message: str | None = None
+
+
+class PreviewRecipient(BaseModel):
+    id: uuid.UUID
+    name: str
+    email: str | None
+    # ★ Whether this person will actually receive it. `mail.recipients` drops
+    # anybody inactive or opted out of email, silently — which is right for a
+    # second channel and wrong for a preview whose whole job is to say what is
+    # about to happen. The common case is an opt-out, not a missing address:
+    # `users.email` is NOT NULL, and anybody sharing a mailbox is set to `none`
+    # on purpose.
+    will_receive: bool
+    reason: str | None = None
+
+
+class PreviewOut(BaseModel):
+    subject: str
+    body: str
+    recipients: list[PreviewRecipient]
+    # Named here as well as per-recipient, because this is the line somebody
+    # reads before pressing send.
+    unreachable: list[str]
+    seq_will_be: int
+
+
+@router.post("/recommendations/preview", response_model=PreviewOut)
+async def preview_recommendation(
+    payload: PreviewIn, db: SessionDep, user: CanManageJhsc,  # noqa: ARG001
+):
+    """The message, in full, before it is sent — and who will not get it.
+
+    ★ The committee asked to review the communication in draft and to be able
+    to change it before sending. The subject and body come from the same
+    function the send uses, so what is shown here cannot drift from what goes
+    out. Nothing is written by this request.
+    """
+    meeting = await crud.get_meeting(db, payload.meeting_id)
+    seq = await crud.next_recommendation_seq(db, meeting.id)
+
+    # A stand-in with the fields the message needs, so that no half-built row
+    # reaches the database on the way to a preview.
+    draft = SimpleNamespace(seq=seq, recommendation=payload.recommendation)
+    subject, default_body = notify.jhsc_recommendation_message(meeting, draft)
+
+    people = list((await db.execute(
+        select(User).where(User.id.in_(payload.user_ids)))).scalars().all()) \
+        if payload.user_ids else []
+    addressable = {u.id for u in await mail.recipients(db, [p.id for p in people])}
+
+    rows: list[PreviewRecipient] = []
+    for person in people:
+        why = None
+        if person.id not in addressable:
+            if not person.is_active:
+                why = "no longer active"
+            elif not person.email:
+                why = "no email address on file"
+            else:
+                why = "has opted out of email"
+        rows.append(PreviewRecipient(
+            id=person.id, name=person.full_name, email=person.email,
+            will_receive=person.id in addressable, reason=why))
+
+    return PreviewOut(
+        subject=subject,
+        body=payload.message if payload.message and payload.message.strip() else default_body,
+        recipients=rows,
+        unreachable=[r.name for r in rows if not r.will_receive],
+        seq_will_be=seq,
+    )
 
 
 @router.post("/recommendations/{rec_id}/respond", response_model=RecommendationOut)

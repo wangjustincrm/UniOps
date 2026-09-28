@@ -248,16 +248,28 @@ async def get_recommendation(db: AsyncSession, rec_id: uuid.UUID) -> JhscRecomme
     return rec
 
 
+async def next_recommendation_seq(db: AsyncSession, meeting_id: uuid.UUID) -> int:
+    """What the next recommendation at this meeting will be numbered.
+
+    Used by the preview so the draft message carries the number the sent one
+    will carry. It is a read; two people previewing at once would be shown the
+    same number and whichever records first gets it, which is the same race the
+    numbering has always had.
+    """
+    highest = (await db.execute(
+        select(func.max(JhscRecommendation.seq))
+        .where(JhscRecommendation.meeting_id == meeting_id))).scalar() or 0
+    return highest + 1
+
+
 async def add_recommendation(
     db: AsyncSession, meeting: JhscMeeting, *, text: str, raised_by_name: str | None,
 ) -> JhscRecommendation:
     """Record a recommendation and start the twenty-one days running."""
-    highest = (await db.execute(
-        select(func.max(JhscRecommendation.seq))
-        .where(JhscRecommendation.meeting_id == meeting.id))).scalar() or 0
+    seq = await next_recommendation_seq(db, meeting.id)
 
     rec = JhscRecommendation(
-        id=uuid.uuid4(), meeting_id=meeting.id, seq=highest + 1,
+        id=uuid.uuid4(), meeting_id=meeting.id, seq=seq,
         recommendation=text, raised_by_name=raised_by_name,
     )
     db.add(rec)
@@ -320,7 +332,7 @@ async def respond(
 
 async def send_recommendation(
     db: AsyncSession, rec: JhscRecommendation, *,
-    user_ids: list[uuid.UUID], sender_id: uuid.UUID,
+    user_ids: list[uuid.UUID], sender_id: uuid.UUID, message: str | None = None,
 ) -> JhscRecommendation:
     """Record who the recommendation was put in front of, and tell them.
 
@@ -344,5 +356,5 @@ async def send_recommendation(
     rec.sent_by_name = await _name(db, sender_id)
     await db.flush()
 
-    await notify.jhsc_recommendation_sent(db, meeting, rec, people)
+    await notify.jhsc_recommendation_sent(db, meeting, rec, people, body=message)
     return rec

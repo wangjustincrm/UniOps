@@ -324,8 +324,24 @@ async def jhsc_recommendation(db: AsyncSession, meeting, recommendation) -> None
     )
 
 
+def jhsc_recommendation_message(meeting, recommendation) -> tuple[str, str]:
+    """The subject and body of the notice, as one function.
+
+    ★ The committee asked to see the message before it goes out and to be able
+    to change it. A preview that composes the text separately from the send
+    drifts from it — silently, and in the direction of showing something nicer
+    than what was sent. Both call this.
+    """
+    subject = (f"JHSC recommendation {meeting.meeting_no} #{recommendation.seq} "
+               "— a written response is owed")
+    body = (f"{recommendation.recommendation}\n\n"
+            "OHSA s.9(20) requires a written response within twenty-one days "
+            "of the recommendation being made.")
+    return subject, body
+
+
 async def jhsc_recommendation_sent(
-    db: AsyncSession, meeting, recommendation, people,
+    db: AsyncSession, meeting, recommendation, people, *, body: str | None = None,
 ) -> None:
     """Named recipients, rather than whoever holds a role.
 
@@ -333,18 +349,18 @@ async def jhsc_recommendation_sent(
     This is the committee putting it in front of particular people and
     recording that they did — which is what makes an unanswered recommendation
     somebody's to answer rather than nobody's.
+
+    ``body`` is what the sender approved in the preview, when they edited it.
     """
     addressable = await mail.recipients(db, [p.id for p in people])
     if not addressable:
         return
+    default_subject, default_body = jhsc_recommendation_message(meeting, recommendation)
     await mail.queue(
         db,
         to=[u.email for u in addressable],
-        subject=f"JHSC recommendation {meeting.meeting_no} #{recommendation.seq} "
-                "— a written response is owed",
-        body=(f"{recommendation.recommendation}\n\n"
-              "OHSA s.9(20) requires a written response within twenty-one days "
-              "of the recommendation being made."),
+        subject=default_subject,
+        body=body if body and body.strip() else default_body,
         doc_type=task_service.DOC_JHSC,
         doc_id=meeting.id,
         template_key="jhsc_recommendation_sent",
