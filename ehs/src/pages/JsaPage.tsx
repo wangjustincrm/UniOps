@@ -27,7 +27,8 @@ import {
   Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, LoadProblem, LoadFailedNote,
 } from '@/components/ui'
 import { anyFailed } from '@/lib/anyFailed'
-import { CONTROL_LEVELS, RatingBadge, type Hazard } from '@/pages/HazardsPage'
+import { CONTROL_LEVELS, type Hazard } from '@/pages/HazardsPage'
+import { RatingBadge } from '@/components/RiskScoring'
 
 interface Jsa {
   id: string; jsa_no: string; title: string; job_description: string | null

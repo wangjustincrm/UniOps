@@ -23,6 +23,7 @@ import { CommunicationLog } from '@/components/CommunicationLog'
 import { ReturnToWorkPanel } from '@/components/ReturnToWorkPanel'
 import { NewActionDialog } from '@/components/NewActionDialog'
 import { RiskAssessmentDialog } from '@/components/RiskAssessmentDialog'
+import { RatingBadge, RiskScoringHistory, useScorings } from '@/components/RiskScoring'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
 import type { Deadline } from '@/lib/types'
@@ -196,6 +197,10 @@ export default function IncidentDetailPage() {
   const canInvestigate = can('ehs.incident.investigate')
   const canRaiseAction = can('ehs.action.write')
   const [assessing, setAssessing] = useState(false)
+  // The current rating, for the heading. The list below is the history; this
+  // is the answer to "how bad is this one" without reading it.
+  const scorings = useScorings('incident', id ?? '')
+  const latestRating = scorings.data?.[0]?.rating ?? null
   const hasInvestigation = Boolean(
     tree.data && (tree.data.immediate.length > 0 || tree.data.root.length > 0))
 
@@ -307,6 +312,37 @@ export default function IncidentDetailPage() {
           </section>
         )}
 
+        {/* ── Risk assessment ───────────────────────────────────────────── */}
+        {/* ★ Its own section, because it had none. The button was here and what
+            it produced appeared nowhere: the assessment saved and the page was
+            unchanged, which is indistinguishable from it having failed. The
+            scorings are readable by anybody who can open the incident — they
+            are part of the record — while making one still needs the
+            investigator's permission. */}
+        <section className="px-4 pb-4">
+          <div className="mb-2.5 flex items-center justify-between gap-3">
+            <SectionTitle className="mb-0">Risk assessment</SectionTitle>
+            {latestRating && <RatingBadge rating={latestRating} />}
+          </div>
+          {canInvestigate && (
+            <button
+              type="button"
+              onClick={() => setAssessing(true)}
+              className="flex min-h-[40px] w-full items-center justify-center rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+            >
+              {latestRating ? 'Assess it again' : 'Assess the risk'}
+            </button>
+          )}
+          {assessing && (
+            <RiskAssessmentDialog sourceType="incident" sourceId={id}
+                                  onClose={() => setAssessing(false)} />
+          )}
+          <RiskScoringHistory sourceType="incident" sourceId={id} showHazard
+            emptyNote={canInvestigate
+              ? 'Not scored against the matrix yet. Scoring an incident is how a one-off becomes a ranked hazard.'
+              : 'Not scored against the matrix yet.'} />
+        </section>
+
         {/* ── Causes and what is being done ─────────────────────────────── */}
         <section className="p-4">
           {canInvestigate && (
@@ -316,19 +352,6 @@ export default function IncidentDetailPage() {
             >
               {hasInvestigation ? 'Edit the investigation' : 'Start the investigation'}
             </Link>
-          )}
-          {canInvestigate && (
-            <button
-              type="button"
-              onClick={() => setAssessing(true)}
-              className="mb-3 flex min-h-[40px] w-full items-center justify-center rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-            >
-              Assess the risk
-            </button>
-          )}
-          {assessing && (
-            <RiskAssessmentDialog sourceType="incident" sourceId={id}
-                                  onClose={() => setAssessing(false)} />
           )}
           <SectionTitle className="mb-2.5">Root causes and what is being done</SectionTitle>
           {tree.isLoading && <p className="text-sm text-neutral-500">Loading…</p>}

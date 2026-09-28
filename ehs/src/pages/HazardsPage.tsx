@@ -23,6 +23,7 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
+import { RatingBadge, RiskScoringHistory } from '@/components/RiskScoring'
 import {
   Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
 } from '@/components/ui'
@@ -46,14 +47,6 @@ interface Severity {
 }
 interface Matrix { likelihood: Likelihood[]; severity: Severity[]; consequence_types: string[] }
 
-/** The matrix's own order, not the alphabet's. */
-const RATING_TONE: Record<string, string> = {
-  critical: 'bg-danger-600 text-white',
-  serious: 'bg-danger-50 text-danger-700',
-  moderate: 'bg-warning-50 text-warning-700',
-  acceptable: 'bg-success-50 text-success-700',
-}
-
 export const CONTROL_LEVELS = [
   { key: 'elimination', label: 'Elimination' },
   { key: 'substitution', label: 'Substitution' },
@@ -61,22 +54,6 @@ export const CONTROL_LEVELS = [
   { key: 'administrative', label: 'Administrative control' },
   { key: 'ppe', label: 'PPE' },
 ]
-
-export function RatingBadge({ rating }: { rating: string | null }) {
-  if (!rating) {
-    return (
-      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
-        Not assessed
-      </span>
-    )
-  }
-  const tone = RATING_TONE[rating.toLowerCase()] ?? 'bg-neutral-100 text-neutral-600'
-  return (
-    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize ${tone}`}>
-      {rating}
-    </span>
-  )
-}
 
 export default function HazardsPage() {
   const { can } = usePermissions()
@@ -230,7 +207,10 @@ export default function HazardsPage() {
                     )}
                   </span>
                 </div>
-                {scoringFor === h.id && <ScoringHistory hazardId={h.id} />}
+                {scoringFor === h.id && (
+                  <RiskScoringHistory sourceType="hazard" sourceId={h.id}
+                    emptyNote="This hazard has not been scored against the matrix yet." />
+                )}
               </Card>
             </li>
           ))}
@@ -260,80 +240,6 @@ export default function HazardsPage() {
  * reading as though it has two of them. One form, and `existing` decides
  * whether it records or corrects.
  */
-interface Assessment {
-  id: string; consequence_type: string
-  likelihood_code: string; likelihood_label: string | null
-  severity_level: number; severity_label: string | null
-  rating: string; controls: string | null
-  residual_likelihood_code: string | null; residual_severity_level: number | null
-  residual_rating: string | null
-  assessed_by_name: string | null; assessed_at: string
-}
-
-/**
- * How a hazard came to be rated what it is rated.
- *
- * Every scoring, most recent first, with the words beside the numbers. "2"
- * says nothing on its own — the second acceptance round asked it outright,
- * "is 2 bad or good?" — and the matrix scores severity differently depending
- * on which consequence it was judged against, so the answer is meaningless
- * without saying which.
- */
-function ScoringHistory({ hazardId }: { hazardId: string }) {
-  const scorings = useQuery({
-    queryKey: ['risk-assessments', hazardId],
-    queryFn: () => api.get<Assessment[]>(
-      `/api/v1/risk/assessments?source_type=hazard&source_id=${hazardId}`),
-  })
-
-  if (scorings.isLoading) {
-    return <p className="mt-3 border-t border-neutral-100 pt-3 text-xs text-neutral-500">Loading…</p>
-  }
-  if (!scorings.data?.length) {
-    return (
-      <p className="mt-3 border-t border-neutral-100 pt-3 text-xs text-neutral-500">
-        This hazard has not been scored against the matrix yet.
-      </p>
-    )
-  }
-
-  return (
-    <ul className="mt-3 flex flex-col gap-2.5 border-t border-neutral-100 pt-3">
-      {scorings.data.map((a) => (
-        <li key={a.id} className="text-xs">
-          <span className="flex flex-wrap items-center gap-2">
-            <RatingBadge rating={a.rating} />
-            <span className="text-neutral-500">
-              judged on <span className="capitalize">{a.consequence_type.replace('_', ' ')}</span>
-            </span>
-            <span className="text-neutral-400">·</span>
-            <span className="text-neutral-600">
-              {a.assessed_by_name ?? 'Unknown'}, {formatDate(a.assessed_at)}
-            </span>
-          </span>
-          <span className="mt-1 block text-neutral-700">
-            Likelihood {a.likelihood_code}
-            {a.likelihood_label && ` — ${a.likelihood_label}`}
-            {' · '}
-            Severity {a.severity_level}
-            {a.severity_label && ` — ${a.severity_label}`}
-          </span>
-          {a.residual_rating && (
-            <span className="mt-0.5 block text-neutral-500">
-              Once the controls are in: <span className="capitalize">{a.residual_rating}</span>
-              {a.residual_likelihood_code && ` (${a.residual_likelihood_code}`}
-              {a.residual_severity_level !== null && `/${a.residual_severity_level})`}
-            </span>
-          )}
-          {a.controls && (
-            <span className="mt-0.5 block text-neutral-600">Controls: {a.controls}</span>
-          )}
-        </li>
-      ))}
-    </ul>
-  )
-}
-
 function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => void }) {
   const queryClient = useQueryClient()
   const editing = Boolean(existing)
