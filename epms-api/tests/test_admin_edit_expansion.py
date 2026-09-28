@@ -327,6 +327,84 @@ async def test_edit_without_line_items_leaves_a_lineless_pa_intact(test_engine):
 
 
 @pytest.mark.asyncio
+async def test_edit_charge_without_line_edit_recomputes_pa_totals(test_engine):
+    """Adding a shipping fee in DM must move payment_amount.
+
+    PA-20260902-0007: shipping 0 → 20 was stored, payment_amount stayed 757.89
+    because only a line edit triggered a recompute. Tax applies to line items
+    only — shipping and other charges are never taxed (taxable freight goes on
+    a line) — so the stored 89.50 (vendor invoice taxed its freight) becomes
+    668.39 × 0.13 = 86.89. The dialog sends every editable field on every save,
+    so the trigger is "a charge or the rate changed".
+    """
+    from app.models.user import User
+    from app.models.pa import PaymentApplication, PaLineItem
+    from app.models.vendor import Vendor
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); vid = uuid.uuid4(); pa_id = uuid.uuid4(); bare_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"ps-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C", role="requester"))
+        db.add(Vendor(id=vid, code=f"V-PS-{vid.hex[:4]}", name="V", category="supplier",
+                      contact_name="A", contact_email="a@x.com"))
+        await db.commit()
+    async with factory() as db:
+        for rid, num in ((pa_id, "PA-SHIP-1"), (bare_id, "PA-SHIP-NOLINES")):
+            db.add(PaymentApplication(
+                id=rid, pa_number=num, title="t",
+                status="approved", pa_type="regular", currency="CAD",
+                subtotal=Decimal("668.39"), tax_rate=Decimal("0.13"), tax_amount=Decimal("89.50"),
+                shipping_amount=Decimal("0"), other_charges=Decimal("0"),
+                payment_amount=Decimal("757.89"),
+                vendor_id=vid, vendor_name="V", created_by=creator,
+                invoice_ids=[], gr_ids=[]))
+        await db.flush()
+        db.add(PaLineItem(id=uuid.uuid4(), pa_id=pa_id, description="goods", qty=Decimal("1"),
+                          unit="ea", unit_price=Decimal("668.39"), line_total=Decimal("668.39"),
+                          sort_order=0))
+        await db.commit()
+
+    async def edit(rid, patch):
+        async with factory() as db:
+            await service.edit_record(db, "pa", rid, patch,
+                                      actor_id=creator, actor_email="admin@x.com")
+            await db.commit()
+        async with factory() as db:
+            return (await db.execute(
+                select(PaymentApplication).where(PaymentApplication.id == rid))).scalar_one()
+
+    # What the dialog sends: strings, every editable field, only shipping changed.
+    same = {"title": "t", "tax_rate": "0.1300", "other_charges": "0.00"}
+    pa = await edit(pa_id, {**same, "shipping_amount": "20.00"})
+    assert pa.subtotal == Decimal("668.39")
+    assert pa.tax_amount == Decimal("86.89")        # lines × rate, freight untaxed
+    assert pa.payment_amount == Decimal("775.28")
+
+    # Lineless PA: the stored subtotal stands in for lines and must survive;
+    # a shipping-only edit keeps the hand-entered tax.
+    pa = await edit(bare_id, {**same, "shipping_amount": "20.00"})
+    assert pa.subtotal == Decimal("668.39")
+    assert pa.tax_amount == Decimal("89.50")
+    assert pa.payment_amount == Decimal("777.89")
+    # ...and a rate change re-derives it from that subtotal.
+    pa = await edit(bare_id, {**same, "tax_rate": "0.05", "shipping_amount": "20.00"})
+    assert pa.tax_amount == Decimal("33.42")
+    assert pa.payment_amount == Decimal("721.81")
+
+    # Admission side: a save that changes no charge leaves the totals alone,
+    # even if they disagree with the header (migrated PMS rows do).
+    async with factory() as db:
+        row = (await db.execute(select(PaymentApplication).where(PaymentApplication.id == pa_id))).scalar_one()
+        row.payment_amount = Decimal("1.00")
+        await db.commit()
+    pa = await edit(pa_id, {**same, "title": "t2", "shipping_amount": "20.00"})
+    assert pa.title == "t2"
+    assert pa.payment_amount == Decimal("1.00")
+
+
+@pytest.mark.asyncio
 async def test_get_record_includes_line_items(test_engine):
     from app.models.user import User
     from app.models.pr import PurchaseRequest, PrLineItem

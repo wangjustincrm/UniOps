@@ -10,7 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.po_number import regenerate_and_cascade
-from app.admin.recompute import recompute_header
+from app.admin.recompute import PA_CHARGE_FIELDS, recompute_header, recompute_pa_header_only
 from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
 from app.crud.agreement_schedule import reassign_open_confirm_tasks
@@ -305,6 +305,23 @@ async def _apply_line_items(db, spec, row, items: list[dict]):
         setattr(row, hk, hv)
 
 
+async def _recompute_pa_from_stored_lines(db, spec, row, *, rate_changed: bool):
+    """Header recompute for a PA edit that did not touch the lines.
+
+    With lines: the same full recompute a line edit gets — tax is lines × rate,
+    shipping and other charges untaxed. Without: the stored subtotal stands in
+    (an empty array would zero 91 production PAs); see recompute_pa_header_only."""
+    Model = spec.schema.child.model
+    lines = (await db.execute(
+        select(Model).where(getattr(Model, spec.schema.child.fk_field) == row.id))).scalars().all()
+    if lines:
+        totals = recompute_header("pa", row, [{"line_total": l.line_total} for l in lines])
+    else:
+        totals = recompute_pa_header_only(row, rate_changed=rate_changed)
+    for hk, hv in totals.items():
+        setattr(row, hk, hv)
+
+
 async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch: dict,
                       *, actor_id: uuid.UUID, actor_email: str,
                       regenerate_po_number: bool = False,
@@ -332,6 +349,7 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
                 raise ValueError(f"users reference '{src_req}' not found")
             src_pr.created_by = hit.id
             routing_requester_changed = True
+    charges_before = {f: getattr(row, f, None) for f in PA_CHARGE_FIELDS} if entity == "pa" else {}
     for key, value in patch.items():
         if key not in editable:
             raise ValueError(f"Field '{key}' is not editable")
@@ -351,6 +369,13 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
                 invoice_links_changed = row.status in ("processed", "paid")
         else:
             setattr(row, key, _coerce(spec.schema.field_type(key), value))
+    if entity == "pa" and line_items is None:
+        changed = {f for f, v in charges_before.items() if getattr(row, f, None) != v}
+        if changed:
+            # A line edit recomputes the whole header below; a charge or rate
+            # edit alone used to recompute nothing, so a shipping fee added here
+            # was stored but never reached payment_amount.
+            await _recompute_pa_from_stored_lines(db, spec, row, rate_changed="tax_rate" in changed)
     received_qty_resynced = 0
     if line_items is not None:
         await _apply_line_items(db, spec, row, line_items)
