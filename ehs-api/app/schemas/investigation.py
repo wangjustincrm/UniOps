@@ -71,6 +71,12 @@ class CauseActionOut(BaseModel):
     id: uuid.UUID
     action_no: str
     title: str
+    # ★ What the action actually says to do. Round 4: "any root cause analysis,
+    # or capa completed as part of the drill or on any form shall display the
+    # capa description". A title is a label — "Guard the nip point" — and the
+    # description is the instruction, which is the part somebody reading the
+    # root cause needs in order to judge whether the cause has been answered.
+    description: str | None = None
     status: str
     owner_name: str | None
     due_date: object

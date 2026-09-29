@@ -20,6 +20,7 @@ import { useTabTitle } from '@uniops/shell'
 import { api, ApiError } from '@/lib/api'
 import { ehsRoutes } from '@/app/routes'
 import { FormRenderer, looksLikeFailure, type FormValues, type Question } from '@/components/FormRenderer'
+import { LinkedActions } from '@/components/LinkedActions'
 import { useMyProfile } from '@/hooks/useMyProfile'
 import { todayForInput } from '@/lib/formatDate'
 import { formatAreaPath } from '@/lib/areaPath'
@@ -230,6 +231,15 @@ export default function FormFillPage() {
             Submitted by {sub.submitted_by_name ?? 'someone'}
             {sub.failed_count > 0 && ` · ${sub.failed_count} failed check(s) raised an action`}
           </p>
+        )}
+        {/* ★ Which actions, not how many. "3 failed check(s) raised an action"
+            named none of them, so the only route to the work was to guess at the
+            actions list and match by title. */}
+        {done && sub.failed_count > 0 && (
+          <LinkedActions
+            sourceType="inspection" sourceId={id ?? ''}
+            title="Raised by the failed checks"
+            emptyNote="The failed checks raised nothing — tell us, because they should have." />
         )}
       </header>
 

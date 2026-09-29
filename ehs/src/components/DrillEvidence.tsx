@@ -12,6 +12,7 @@
  * the same verification as everything else. Nothing here is a second kind of
  * action item.
  */
+import { Link } from 'react-router-dom'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Paperclip, Plus, X } from 'lucide-react'
@@ -25,7 +26,7 @@ interface Attachment {
   uploaded_by_name: string | null; created_at: string
 }
 interface Action {
-  id: string; action_no: string; title: string; status: string
+  id: string; action_no: string; title: string; description: string | null; status: string
   owner_name: string | null; due_date: string
 }
 
@@ -174,14 +175,42 @@ function DrillActions({ drillId, readOnly }: { drillId: string; readOnly: boolea
     <div className="rounded-lg border border-neutral-200 p-2.5">
       <p className="mb-1.5 text-xs font-medium text-neutral-700">Action items</p>
 
-      <ul className="flex flex-col gap-1">
+      {/* ★ Round 4, TC-14: "any root cause analysis, or capa completed as part
+          of the drill or on any form shall display the capa description, and the
+          information in the history of changes."
+
+          The row had a number, a title, an owner and a date, and was not a
+          link — so the description and the trail were both a search away. A
+          title is a label; the description is the instruction, and it is what
+          somebody reading a root cause needs to judge whether the cause has
+          been answered. */}
+      <ul className="flex flex-col gap-1.5">
         {actions.data?.map((a) => (
-          <li key={a.id} className="flex flex-wrap items-baseline gap-x-2 text-xs">
-            <span className="font-mono text-neutral-500">{a.action_no}</span>
-            <span className="min-w-0 flex-1 text-neutral-800">{a.title}</span>
-            <span className="text-neutral-500">
-              {a.owner_name ?? 'Unassigned'} · due {formatDate(a.due_date)}
-            </span>
+          <li key={a.id}>
+            <Link to={`/actions/${a.id}`}
+                  className="block rounded-md px-1.5 py-1 text-xs hover:bg-primary-50/50">
+              <span className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-mono text-neutral-500">{a.action_no}</span>
+                <span className="min-w-0 flex-1 font-medium text-neutral-800">{a.title}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${
+                  a.status === 'closed' || a.status === 'verified'
+                    ? 'bg-success-50 text-success-700'
+                    : a.status === 'in_progress'
+                      ? 'bg-warning-50 text-warning-700'
+                      : 'bg-neutral-100 text-neutral-600'}`}>
+                  {(a.status ?? 'open').replace('_', ' ')}
+                </span>
+              </span>
+              {a.description && (
+                <span className="mt-0.5 block whitespace-pre-wrap text-neutral-600">
+                  {a.description}
+                </span>
+              )}
+              <span className="mt-0.5 block text-[11px] text-neutral-400">
+                {a.owner_name ?? 'Unassigned'} · due {formatDate(a.due_date)} ·
+                {' '}open it for who changed what, and when
+              </span>
+            </Link>
           </li>
         ))}
       </ul>

@@ -51,7 +51,7 @@ interface Incident {
   persons: Person[]; deadlines: Deadline[]
 }
 interface CauseAction {
-  id: string; action_no: string; title: string; status: string
+  id: string; action_no: string; title: string; description: string | null; status: string
   owner_name: string | null; due_date: string; escalation_level: number
 }
 interface Cause {
@@ -641,14 +641,30 @@ function CauseCard({ cause, incidentId, canRaise }: {
       <p className="mt-0.5 text-sm text-neutral-900">{cause.label}</p>
       {cause.note && <p className="mt-1 text-xs text-neutral-500">{cause.note}</p>}
 
+      {/* ★ Openable, and carrying what it says to do. Round 4: "any root cause
+          analysis, or capa completed as part of the drill or on any form shall
+          display the capa description, and the information in the history of
+          changes." It was a static row with a number and a title — a title is a
+          label, the description is the instruction, and the change history is a
+          click away only if the row is a link. It was not. */}
       {cause.actions.map((a) => (
-        <div key={a.id}
-             className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-neutral-200 bg-neutral-50 px-2.5 py-2 text-xs">
-          <span className="font-mono text-neutral-500">{a.action_no}</span>
-          <span className="min-w-0 flex-1 text-neutral-800">{a.title}</span>
-          <StatusBadge status={a.status} />
-          {a.owner_name && <span className="text-neutral-500">{a.owner_name}</span>}
-        </div>
+        <Link key={a.id} to={`/actions/${a.id}`}
+              className="mt-2 block rounded-md border border-dashed border-neutral-200 bg-neutral-50 px-2.5 py-2 text-xs hover:border-primary-300 hover:bg-primary-50/40">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-neutral-500">{a.action_no}</span>
+            <span className="min-w-0 flex-1 font-medium text-neutral-800">{a.title}</span>
+            <StatusBadge status={a.status} />
+            {a.owner_name && <span className="text-neutral-500">{a.owner_name}</span>}
+          </span>
+          {a.description && (
+            <span className="mt-1 block whitespace-pre-wrap text-neutral-600">
+              {a.description}
+            </span>
+          )}
+          <span className="mt-1 block text-[11px] text-neutral-400">
+            Open it for who changed what, and when
+          </span>
+        </Link>
       ))}
 
       {cause.needs_action && (
