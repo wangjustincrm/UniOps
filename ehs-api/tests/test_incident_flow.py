@@ -801,3 +801,69 @@ class TestAnIncidentCannotBeDatedForward:
             "occurred_at": (datetime.now(timezone.utc) + timedelta(minutes=3)).isoformat(),
         })
         assert accepted.status_code in (200, 201), accepted.text
+
+
+async def test_the_where_panel_counts_where_it_happened_not_who_was_hurt(
+        hse_manager, db_session):
+    """★ Round 4: "where it happened is part of the incident creation record, but
+    that location is not accurate in the dashboard where people are getting hurt
+    graph."
+
+    It was not the location. The panel was grouped by `department_id`, and an
+    incident's department is the department of the *person hurt* — so somebody
+    from Production injured in the warehouse counted towards Production, and the
+    area the reporter chose appeared on the dashboard nowhere.
+
+    Both cuts are kept, because "which department's people keep getting hurt" is
+    also a real question. This asserts they are different numbers, which is the
+    whole point: a test that used the same area and department would pass on the
+    broken version.
+    """
+    from sqlalchemy import text as sql_text
+
+    _, client = hse_manager
+    year = datetime.now(ET).year
+
+    warehouse = uuid.uuid4()
+    path = "Warehouse test/105 – Warehouse"
+    await db_session.execute(sql_text(
+        "insert into locations (id, code, name, level, path, depth, is_active)"
+        " values (:id, :code, '105 – Warehouse', 'department', :path, 1, true)"),
+        {"id": warehouse, "code": f"WH-{str(warehouse)[:6]}", "path": path})
+    production = uuid.uuid4()
+    await db_session.execute(sql_text(
+        "insert into departments (id, code, name, is_active)"
+        " values (:id, :code, :name, true)"),
+        {"id": production, "code": f"PRD-{str(production)[:6]}",
+         "name": f"Production {str(production)[:6]}"})
+    await db_session.commit()
+
+    before_loc = {r["label"]: r["count"] for r in (await client.get(
+        f"/api/v1/dashboard?year={year}")).json()["injured_locations"]}
+
+    # Hurt in the warehouse; works for production.
+    made = await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Slipped in the warehouse",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "incident_type": "first_aid",
+        "location_id": str(warehouse),
+        "department_id": str(production),
+    })
+    assert made.status_code in (200, 201), made.text
+    await client.post(f"/api/v1/incidents/{made.json()['id']}/submit")
+
+    figures = (await client.get(f"/api/v1/dashboard?year={year}")).json()
+
+    by_location = {r["label"]: r["count"] for r in figures["injured_locations"]}
+    assert by_location.get(path, 0) == \
+        before_loc.get(path, 0) + 1, (
+        "the injury is not counted against the area it happened in")
+
+    # ★ And it is counted against the department too, under that department's
+    # name — the two panels answer different questions and must not be the same
+    # number by accident.
+    by_department = {r["label"]: r["count"] for r in figures["injured_departments"]}
+    assert any(str(production)[:6] in label for label in by_department), (
+        "the department cut lost the incident")
+    assert "105 – Warehouse" not in " ".join(by_department), (
+        "the department panel is reporting an area, which is the original fault")

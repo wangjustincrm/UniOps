@@ -33,6 +33,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { CalendarClock, TrendingUp } from 'lucide-react'
 import { api } from '@/lib/api'
+import { formatAreaPath } from '@/lib/areaPath'
 import {
   PageHeader, SectionTitle,
 } from '@/components/ui'
@@ -57,6 +58,7 @@ interface Dashboard {
   near_misses: NearMissRow[]
   body_parts: CountRow[]
   injured_departments: CountRow[]
+  injured_locations: CountRow[]
   participation: ParticipationRow[]
   jhsc: {
     available: boolean
@@ -338,8 +340,33 @@ export default function DashboardPage() {
           )}
         </Panel>
     ),
+    injured_locations: (
+      /* ★ The plant area the reporter chose on the form. The panel headed
+         "Where people are getting hurt" was grouped by department — and an
+         incident's department is the department of the person hurt, so somebody
+         from Production injured in the warehouse counted towards Production and
+         the area they recorded appeared on the dashboard nowhere. Round 4
+         reported it as the location being inaccurate; it was not the location
+         at all. Both cuts are useful and the one that answers "where" is this. */
+      <Panel title="Where injuries are happening">
+          {data.injured_locations.length === 0 ? (
+            <EmptyNote>No injuries recorded this year.</EmptyNote>
+          ) : (
+            <Bars
+              rows={data.injured_locations.map((r) => ({
+                ...r, label: formatAreaPath(r.label) ?? r.label,
+              }))}
+              linkFor={(r) => drillTo(
+                h.year, `injuries in ${r.label}`,
+                r.id
+                  ? { injured_only: 'true', location_id: r.id }
+                  : { injured_only: 'true' })}
+            />
+          )}
+        </Panel>
+    ),
     injured_departments: (
-<Panel title="Where people are getting hurt">
+<Panel title="Injured by department">
           {data.injured_departments.length === 0 ? (
             <EmptyNote>No injuries recorded this year.</EmptyNote>
           ) : (

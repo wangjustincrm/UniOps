@@ -192,6 +192,37 @@ async def body_parts(db: AsyncSession, *, year: int) -> list[dict]:
     return [{"label": label, "count": n} for label, n in rows]
 
 
+async def injured_by_location(db: AsyncSession, *, year: int) -> list[dict]:
+    """Where the injuries actually happened.
+
+    ★ Round 4: "where it happened is part of the incident creation record, but
+    that location is not accurate in the dashboard where people are getting hurt
+    graph."
+
+    It was not the location at all. The panel headed "Where people are getting
+    hurt" was grouped by `department_id`, and an incident's department is the
+    department of the person who was hurt — so somebody from Production injured
+    in the warehouse counted towards Production, and the plant area the reporter
+    chose on the form was not on the dashboard anywhere. Both are worth having;
+    only one of them answers "where".
+
+    Grouped on the live `locations` path rather than the snapshot on the
+    incident, so renaming an area does not split its history into two bars.
+    """
+    start, end = _year_bounds(year)
+    rows = (await db.execute(text("""
+        select i.location_id, coalesce(l.path, 'Not recorded'), count(*)
+          from ehs_incidents i
+          left join locations l on l.id = i.location_id
+         where i.occurred_at >= :start and i.occurred_at < :end
+           and i.injury_class is not null
+      group by 1, 2
+      order by count(*) desc, 2
+    """), {"start": start, "end": end})).all()
+    return [{"id": str(loc_id) if loc_id else None, "label": label, "count": n}
+            for loc_id, label, n in rows]
+
+
 async def injured_by_department(db: AsyncSession, *, year: int) -> list[dict]:
     """Their horizontal bars. Departments with no injuries are left out —
     the chart answers "where are people getting hurt", not "list every

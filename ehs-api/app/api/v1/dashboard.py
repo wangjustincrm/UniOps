@@ -95,6 +95,7 @@ class DashboardOut(BaseModel):
     near_misses: list[NearMissRow]
     body_parts: list[CountRow]
     injured_departments: list[CountRow]
+    injured_locations: list[CountRow]
     participation: list[ParticipationRow]
     jhsc: Jhsc
 
@@ -112,6 +113,7 @@ async def get_dashboard(
         near_misses=await svc.near_misses_by_month(db, year=year),
         body_parts=await svc.body_parts(db, year=year),
         injured_departments=await svc.injured_by_department(db, year=year),
+        injured_locations=await svc.injured_by_location(db, year=year),
         participation=await svc.participation(db, year=year),
         jhsc=await svc.jhsc_attendance(db, year=year),
     )
@@ -125,7 +127,8 @@ PANELS: tuple[tuple[str, str], ...] = (
     ("injuries_by_month", "Injuries by month"),
     ("near_misses", "Near misses and good catches"),
     ("participation", "Safety participation"),
-    ("injured_departments", "Where people are getting hurt"),
+    ("injured_locations", "Where injuries are happening"),
+    ("injured_departments", "Injured by department"),
     ("body_parts", "Part of the body affected"),
     ("jhsc_attendance", "JHSC meeting attendance"),
 )
