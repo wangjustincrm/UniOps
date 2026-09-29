@@ -180,8 +180,20 @@ async def get_incident(incident_id: uuid.UUID, db: SessionDep, user: CanReportIn
 
 
 @router.post("/{incident_id}/submit", response_model=IncidentOut)
-async def submit_incident(incident_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
+async def submit_incident(incident_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    """File a draft report.
+
+    ★ Checked nothing at all: anybody able to report an incident could submit
+    anybody else's draft, which files a statutory record in somebody else's
+    name — and a draft is the one state where the person writing it has not
+    finished deciding what it says.
+    """
     incident = await crud.get(db, incident_id)
+    if not await _may_read(db, user, incident):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "You can only submit reports you filed or were involved in",
+        )
     await crud.submit(db, incident)
     return await _to_out(db, incident)
 

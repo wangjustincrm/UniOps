@@ -197,14 +197,25 @@ async def acknowledge(
 
 @router.get("/{document_id}/acknowledgements", response_model=list[AckOut])
 async def list_acknowledgements(
-    document_id: uuid.UUID, db: SessionDep, user: CanReadDocument,  # noqa: ARG001
+    document_id: uuid.UUID, db: SessionDep, user: CanManageDocument,  # noqa: ARG001
 ):
+    """Everybody who has signed it.
+
+    ★ Was readable by anyone who could read the document, which is everybody —
+    so an employee could see which of their colleagues had not signed the
+    harassment policy yet. Whether somebody has complied is a management fact
+    about them. Their own is on their own record; this is the roster.
+    """
     return await crud.acknowledgements(db, await crud.get_document(db, document_id))
 
 
 @router.get("/{document_id}/signing-status", response_model=SigningStatusOut)
-async def signing_status(document_id: uuid.UUID, db: SessionDep, user: CanReadDocument):  # noqa: ARG001
-    """Who has signed, and — the half that gets used — who has not."""
+async def signing_status(document_id: uuid.UUID, db: SessionDep, user: CanManageDocument):  # noqa: ARG001
+    """Who has signed, and — the half that gets used — who has not.
+
+    The same narrowing as the roster above, and for the sharper reason: this one
+    names the people who have *not* complied.
+    """
     return await crud.signing_status(db, await crud.get_document(db, document_id))
 
 

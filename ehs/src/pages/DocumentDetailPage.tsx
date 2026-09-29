@@ -112,7 +112,13 @@ export default function DocumentDetailPage() {
 
       {mayManage && d.status === 'draft' && <DraftControls doc={d} onChanged={invalidate} />}
 
-      {d.requires_ack && d.status !== 'draft' && <SigningPanel doc={d} />}
+      {/* ★ Who has and has not signed is a management roster, so it is drawn
+          only for whoever manages documents. A worker sees whether *they* owe a
+          signature, in the panel above — which is their part of it. Gating the
+          panel as well as the endpoint matters: without this, the narrowing
+          would have shown them a permission error where there used to be a
+          list, which reads as a fault rather than as none of their business. */}
+      {mayManage && d.requires_ack && d.status !== 'draft' && <SigningPanel doc={d} />}
 
       {mayManage && d.status === 'published' && <PublishedControls doc={d} onChanged={invalidate} />}
 

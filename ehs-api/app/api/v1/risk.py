@@ -12,10 +12,12 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
-from app.api.v1.incidents import _user_id
+from app.api.v1.incidents import _may_read, _user_id
+from uniops_authz import has_permission
 from app.core.deps import SessionDep
 from app.core.permissions import CanReportIncident
 from app.crud.incident import _resolve_name
+from app.models.incident import Incident
 from app.models.risk import RiskAssessment, RiskLikelihood, RiskSeverity
 
 router = APIRouter(prefix="/risk")
@@ -116,6 +118,10 @@ async def _rate(db: SessionDep, likelihood_code: str, severity_level: int) -> tu
 async def create_assessment(
     payload: AssessmentIn, db: SessionDep, user: CanReportIncident,
 ):
+    if not await _may_see(db, user, payload.source_type, payload.source_id):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "You can only assess incidents you reported or were involved in")
     if payload.consequence_type not in CONSEQUENCE_TYPES:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -154,12 +160,52 @@ async def create_assessment(
     return row
 
 
+async def _may_see(db, user: dict, source_type: str | None, source_id: uuid.UUID | None) -> bool:
+    """Whether this caller may read the assessments of that record.
+
+    ★ An assessment belongs to the record it is about, so it follows that
+    record's own rule rather than having one of its own. Reading an incident
+    needs ehs.incident.read, or being the person who reported it or was
+    involved — and an assessment of an incident states what could happen, how
+    bad, and who judged it. Served on a looser permission it is the incident,
+    read around the incident's gate. The third acceptance round found exactly
+    this: the incident answered 403 and its assessments answered 200.
+
+    A hazard or a job analysis is deliberately open to everybody. Both are
+    plant-wide safety information a worker is meant to consult before starting,
+    and their own registers are readable on the same permission.
+    """
+    if source_type == "incident" and source_id is not None:
+        incident = await db.get(Incident, source_id)
+        if incident is None:
+            return True  # nothing exists to disclose; the empty list is honest
+        return await _may_read(db, user, incident)
+    return True
+
+
 @router.get("/assessments", response_model=list[AssessmentOut])
 async def list_assessments(
-    db: SessionDep, user: CanReportIncident,  # noqa: ARG001
+    db: SessionDep, user: CanReportIncident,
     source_type: str | None = None, source_id: uuid.UUID | None = None,
     limit: int = Query(default=100, le=300),
 ):
+    # ★ Asking without naming a record is browsing every assessment on site,
+    # incidents included. That is the register's permission, not the reporting
+    # one — and a caller who omits the filter must not get what a caller who
+    # names an incident would be refused.
+    if source_id is None:
+        if not await has_permission(db, _user_id(user), user.get("role", ""),
+                                    "ehs.incident.read"):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Say which record's assessments you want. Listing them across "
+                "records needs permission to browse the incident register.")
+    elif not await _may_see(db, user, source_type, source_id):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "You can only see the assessments of incidents you reported or "
+            "were involved in")
+
     q = select(RiskAssessment)
     if source_type:
         q = q.where(RiskAssessment.source_type == source_type)
