@@ -5,6 +5,7 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.core.deps import SessionDep
 from app.core.permissions import CanReadIncident, CanWriteFirstAid
@@ -73,6 +74,27 @@ async def list_register(
         occurred_from=occurred_from, occurred_to=occurred_to))
     entries.sort(key=lambda e: e.occurred_at, reverse=True)
     return entries[:limit]
+
+
+class RegisterSources(BaseModel):
+    """How many entries come from each side of the merge.
+
+    ★ Asked for on the screen because HSE has reported the register as redundant
+    in three consecutive rounds. It is not redundant while entries exist that
+    live nowhere else, and this is the number that says whether that is still
+    true — if `register_only` ever reaches zero, the page can go.
+    """
+
+    from_incidents: int
+    register_only: int
+
+
+@router.get("/sources", response_model=RegisterSources)
+async def register_sources(db: SessionDep, user: CanReadIncident):  # noqa: ARG001
+    return RegisterSources(
+        from_incidents=len(await crud.first_aid_from_incidents(db, limit=1000)),
+        register_only=len(await crud.list_(db, limit=1000)),
+    )
 
 
 @router.get("/{entry_id}", response_model=FirstAidOut)

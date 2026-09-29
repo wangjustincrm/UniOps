@@ -79,6 +79,8 @@ interface FormState {
   injuryClass: string
   description: string
   injured: PersonValue
+  /** The first aider who treated them — Regulation 1101 wants the name. */
+  firstAider: PersonValue
   // Two vocabularies the reporting form has never offered, though both were
   // populated in Settings and accepted by the API from the start. Nothing has
   // ever written them, which is why the body-part chart on the dashboard can
@@ -122,7 +124,7 @@ const emptyForm = (): FormState => ({
   kind: null, title: '', date: todayForInput(), time: nowForInput(),
   locationId: '', incidentType: '',
   injuryClass: '', description: '',
-  injured: EMPTY_PERSON, bodyPart: null, natureOfInjury: null,
+  injured: EMPTY_PERSON, firstAider: EMPTY_PERSON, bodyPart: null, natureOfInjury: null,
   treatment: '', sentOffsite: false, followUp: '',
   talkedToOperator: '', whyNot: '', anonymous: false, signature: null,
   injury: { ...EMPTY_INJURY_DETAIL },
@@ -150,6 +152,7 @@ export default function IncidentReportPage() {
       // back as its default, not as undefined for the page to read through.
       setForm({ ...emptyForm(), ...draft.data.form,
                 injured: draft.data.form?.injured ?? EMPTY_PERSON,
+                firstAider: draft.data.form?.firstAider ?? EMPTY_PERSON,
                 // Never restored, because it is never saved (see below).
                 injury: { ...EMPTY_INJURY_DETAIL } })
       setPhotos(draft.data.photos ?? [])
@@ -246,6 +249,17 @@ export default function IncidentReportPage() {
         // HSE asked for this so nobody picks a name and then picks the
         // department that name already implies.
         if (form.injured.departmentId) body.department_id = form.injured.departmentId
+      }
+      // ★ A row of its own rather than a column on the injured person: more than
+      // one responder is normal, and the register answers "who treated this"
+      // with all of them.
+      if (form.kind === 'medical' && form.firstAider.name.trim()) {
+        body.persons = [...((body.persons as unknown[]) ?? []), {
+          role: 'first_aider',
+          person_name: form.firstAider.name.trim(),
+          user_id: form.firstAider.userId,
+          external_company: form.firstAider.externalCompany,
+        }]
       }
       if (form.kind === 'near_miss') {
         body.extra = {
@@ -526,6 +540,16 @@ export default function IncidentReportPage() {
           <Field label="Anything owed afterwards?" help="A dressing to check, a follow-up call.">
             <input className={inputClass} value={form.followUp}
                    onChange={(e) => set('followUp', e.target.value)} />
+          </Field>
+
+          {/* ★ Who gave the treatment. Regulation 1101 asks for it by name, and
+              the register printed nothing in that column for everything
+              reported on this form — the role existed on the record and nothing
+              ever filled it in. A written-in name is accepted, because the
+              person who treated a cut may be a visiting nurse. */}
+          <Field label="Who gave the treatment?"
+                 help="The first aider who treated them. Regulation 1101 asks for the name.">
+            <PersonPicker value={form.firstAider} onChange={(v) => set('firstAider', v)} />
           </Field>
         </>
       )}

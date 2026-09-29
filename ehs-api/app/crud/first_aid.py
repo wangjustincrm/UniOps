@@ -178,12 +178,20 @@ async def first_aid_from_incidents(
     """
     from app.schemas.first_aid import FirstAidOut
 
+    # ★ Outer join, not inner. An injury form filed without naming who was hurt
+    # — two of eighteen on the dev database — dropped out of the register
+    # entirely, and Regulation 1101 asks for a record of every treatment given,
+    # not of every treatment where somebody filled in the name field. A nameless
+    # entry is a worse record than a named one and a far better one than none.
     stmt = (
         select(Incident, IncidentPerson)
-        .join(IncidentPerson, IncidentPerson.incident_id == Incident.id)
+        .outerjoin(
+            IncidentPerson,
+            (IncidentPerson.incident_id == Incident.id)
+            & (IncidentPerson.role == "injured"),
+        )
         .where(
             Incident.injury_class == "first_aid",
-            IncidentPerson.role == "injured",
             Incident.status != "draft",
         )
         .order_by(Incident.occurred_at.desc())
@@ -196,27 +204,49 @@ async def first_aid_from_incidents(
         stmt = stmt.where(Incident.occurred_at < end)
     if injured_user_id:
         stmt = stmt.where(IncidentPerson.user_id == injured_user_id)
+        # Asking about one person excludes the unnamed ones by definition.
     if location_id:
         stmt = stmt.where(Incident.location_id == location_id)
 
+    rows = (await db.execute(stmt)).all()
+    if not rows:
+        return []
+
+    # ★ Who gave the treatment. Regulation 1101 asks for it by name, and the
+    # register printed nothing in that column for anything reported on an injury
+    # form — the role existed on the model and nothing ever wrote it. Read in
+    # one query for all the entries rather than one each.
+    aiders: dict[uuid.UUID, str] = {}
+    for incident_id, name in (await db.execute(
+        select(IncidentPerson.incident_id, IncidentPerson.person_name)
+        .where(IncidentPerson.incident_id.in_([i.id for i, _ in rows]),
+               IncidentPerson.role == "first_aider")
+    )).all():
+        # More than one responder is recorded as more than one name, because
+        # "who treated this" is answered by all of them.
+        aiders[incident_id] = f"{aiders[incident_id]}, {name}" if incident_id in aiders else name
+
     out = []
-    for incident, person in (await db.execute(stmt)).all():
+    for incident, person in rows:
         out.append(FirstAidOut(
-            id=person.id,
+            # The person row when there is one, so the id stays stable per
+            # treatment; the incident otherwise.
+            id=person.id if person else incident.id,
             log_no=incident.incident_no,
             incident_id=incident.id,
             occurred_at=incident.occurred_at,
             location_id=incident.location_id,
             location_path=incident.location_path,
-            injured_user_id=person.user_id,
-            injured_name=person.person_name,
-            first_aider_name=None,
-            body_part_label=person.body_part_label,
+            injured_user_id=person.user_id if person else None,
+            injured_name=(person.person_name if person else None) or "Not named",
+            first_aider_name=aiders.get(incident.id),
+            body_part_label=person.body_part_label if person else None,
             # Required on the register and optional on the incident: an entry
             # with nothing written is still a record that treatment happened.
-            treatment_given=person.treatment or "—",
-            sent_offsite=bool(person.sent_offsite),
-            follow_up=person.follow_up,
+            treatment_given=(person.treatment if person else None) or "—",
+            sent_offsite=bool(person.sent_offsite) if person else False,
+            follow_up=person.follow_up if person else None,
             created_at=incident.created_at,
+            source="incident",
         ))
     return out

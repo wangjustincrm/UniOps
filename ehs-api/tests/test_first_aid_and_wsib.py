@@ -535,3 +535,84 @@ async def test_the_range_reaches_both_halves_of_the_register(hse_manager, db_ses
     whole_year = await client.get(
         "/api/v1/first-aid?occurred_from=2026-01-01&occurred_to=2026-12-31")
     assert str(old.id) in {e["id"] for e in whole_year.json()}
+
+
+class TestTheRegisterIsTheWholeRegister:
+    """★ Round 4, TC-17: "the HSE role should be able to read all information
+    regarding incidents and the first aid register."
+
+    Two things were missing from it, and both are Regulation 1101 requirements
+    rather than conveniences:
+
+    - an injury form filed without naming who was hurt dropped out of the
+      register entirely, because the query joined the injured-person row and
+      insisted on it. Two of eighteen on the dev database;
+    - who gave the treatment was never shown. The role existed on the model and
+      nothing ever wrote it, so the column was empty for everything reported on
+      an injury form.
+    """
+
+    async def test_a_first_aid_injury_with_nobody_named_is_still_in_the_register(
+            self, hse_manager):
+        _, client = hse_manager
+        before = len((await client.get("/api/v1/first-aid")).json())
+
+        made = await client.post("/api/v1/incidents", json={
+            "form_kind": "medical",
+            "title": "Dressed a cut, name not taken",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "incident_type": "first_aid",
+        })
+        assert made.status_code in (200, 201), made.text
+        await client.post(f"/api/v1/incidents/{made.json()['id']}/submit")
+
+        entries = (await client.get("/api/v1/first-aid")).json()
+        assert len(entries) == before + 1, (
+            "a treatment with no name on it is missing from the Regulation 1101 record")
+        mine = next(e for e in entries if e["log_no"] == made.json()["incident_no"])
+        assert mine["injured_name"] == "Not named", mine["injured_name"]
+
+    async def test_the_register_says_who_gave_the_treatment(self, hse_manager, test_engine):
+        """★ And the admission it needs: a named responder appears, so this is
+        not passing because every entry says the same thing."""
+        from tests.conftest import make_user
+
+        _, client = hse_manager
+        aider = await make_user(test_engine, role="requester", full_name="Priya Raman")
+
+        made = await client.post("/api/v1/incidents", json={
+            "form_kind": "medical",
+            "title": "Shallow cut to a finger",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "incident_type": "first_aid",
+            "persons": [
+                {"role": "injured", "person_name": "Dario Okafor",
+                 "treatment": "Cleaned and dressed"},
+                {"role": "first_aider", "person_name": aider.full_name,
+                 "user_id": str(aider.id)},
+            ],
+        })
+        assert made.status_code in (200, 201), made.text
+        await client.post(f"/api/v1/incidents/{made.json()['id']}/submit")
+
+        entries = (await client.get("/api/v1/first-aid")).json()
+        mine = next(e for e in entries if e["log_no"] == made.json()["incident_no"])
+        assert mine["first_aider_name"] == "Priya Raman", mine
+        assert mine["injured_name"] == "Dario Okafor"
+        assert mine["treatment_given"] == "Cleaned and dressed"
+
+    async def test_recording_a_treatment_in_the_old_register_is_still_refused(
+            self, hse_manager):
+        """HSE, round 4: "stop recording data on the first aid registry form."
+
+        It already is, and this keeps it that way — the endpoint answers 409 and
+        says where to go rather than 404, so a caller still pointed at it is told
+        rather than left guessing.
+        """
+        _, client = hse_manager
+        refused = await client.post("/api/v1/first-aid", json={
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "injured_name": "Somebody", "treatment_given": "A plaster",
+        })
+        assert refused.status_code == 409, refused.text
+        assert "injury form" in refused.json()["detail"]

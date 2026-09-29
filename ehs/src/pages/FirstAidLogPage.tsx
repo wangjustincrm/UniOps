@@ -17,6 +17,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useNavigate } from 'react-router-dom'
 import { ArrowUpRight, Plus } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { formatAreaPath } from '@/lib/areaPath'
 import { Pagination, SearchBox, useListView, DateRangeFilter, useDateFilter } from '@/components/ListView'
 import { PageHeader } from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
@@ -26,6 +27,9 @@ interface Entry {
   id: string; log_no: string; incident_id: string | null; occurred_at: string
   location_path: string | null; injured_name: string; first_aider_name: string | null
   body_part_label: string | null; treatment_given: string; sent_offsite: boolean
+  /** 'incident' when it was reported on an injury form, 'register' when it was
+      entered here before first aid moved onto that form. */
+  source: string
 }
 
 export default function FirstAidLogPage() {
@@ -51,6 +55,15 @@ export default function FirstAidLogPage() {
     // are not torn down and rebuilt under the person typing into them.
     placeholderData: keepPreviousData,
   })
+  // What the note explains. Cheap, cached, and the only thing on the page that
+  // answers "does this register still need to exist".
+  const sources = useQuery({
+    queryKey: ['first-aid', 'sources'],
+    queryFn: () => api.get<{ from_incidents: number; register_only: number }>(
+      '/api/v1/first-aid/sources'),
+    staleTime: 5 * 60_000,
+  })
+
   const list = useListView(data, (e) => [
     e.log_no, e.injured_name, e.first_aider_name, e.body_part_label,
     e.treatment_given, e.location_path,
@@ -83,10 +96,25 @@ export default function FirstAidLogPage() {
           are. They are the Regulation 1101 record as it stands, and
           renumbering statutory entries to tidy a screen is not a trade worth
           making — so this list reads both, and only the way in has changed. */}
+      {/* ★ With the counts, because "this register is redundant now" has come
+          back in three consecutive rounds. It is not redundant while entries
+          exist that live nowhere else — and that is a number, not an argument.
+          If it ever reaches zero the page can go. */}
       <p className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
         New treatment is recorded on the injury form — report an incident and
-        set its type to First Aid. Everything entered here before stays, and
-        this register lists both.
+        set its type to First Aid.
+        {sources.data && (
+          <>
+            {' '}This register lists both:{' '}
+            <b>{sources.data.from_incidents}</b> from injury forms and{' '}
+            <b>{sources.data.register_only}</b> entered here before the change.
+            {sources.data.register_only > 0 && (
+              <> Those {sources.data.register_only} exist nowhere else — they are
+              the Regulation 1101 record as it stands, which is why this page
+              is still here.</>
+            )}
+          </>
+        )}
       </p>
 
 
@@ -114,11 +142,23 @@ export default function FirstAidLogPage() {
                   <span className="ml-1.5 font-normal text-neutral-500">{e.body_part_label}</span>
                 )}
               </span>
-              {e.incident_id && (
-                <span className="rounded-full bg-warning-50 px-2.5 py-0.5 text-xs font-semibold text-warning-700">
+              {/* ★ "Escalated" means a first-aid entry turned out to need more
+                  than first aid. It was drawn for anything holding an incident
+                  id — which since the merge is every entry reported on an injury
+                  form, so eighteen of twenty-four said a treatment had escalated
+                  when none of them had. The two are different facts and now read
+                  differently. */}
+              {e.source === 'incident' ? (
+                <Link to={`/incidents/${e.incident_id}`}
+                      className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-200">
+                  On an injury form
+                </Link>
+              ) : e.incident_id ? (
+                <Link to={`/incidents/${e.incident_id}`}
+                      className="rounded-full bg-warning-50 px-2.5 py-0.5 text-xs font-semibold text-warning-700 hover:bg-warning-100">
                   Escalated
-                </span>
-              )}
+                </Link>
+              ) : null}
               {e.sent_offsite && (
                 <span className="rounded-full bg-info-50 px-2.5 py-0.5 text-xs font-semibold text-info-700">
                   Sent off site
@@ -126,10 +166,18 @@ export default function FirstAidLogPage() {
               )}
             </div>
             <p className="mt-1.5 text-sm text-neutral-700">{e.treatment_given}</p>
+            {/* ★ Regulation 1101 asks who gave it, by name. The column existed
+                on the record and was never drawn. */}
+            <p className="mt-0.5 text-xs text-neutral-500">
+              {e.first_aider_name
+                ? <>Treated by {e.first_aider_name}</>
+                : <span className="text-neutral-400">Who treated it was not recorded</span>}
+              {e.location_path && <> · {formatAreaPath(e.location_path)}</>}
+            </p>
             {/* The common path to a WSIB obligation: first aid at the time, a
                 clinic two days later. Offered from the entry because that entry
                 is usually the only contemporaneous record of when it happened. */}
-            {!e.incident_id && canWrite && (
+            {e.source === 'register' && !e.incident_id && canWrite && (
               <button
                 type="button"
                 onClick={() => setEscalating({ id: e.id, log_no: e.log_no, injured_name: e.injured_name })}

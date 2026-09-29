@@ -46,6 +46,11 @@ class FirstAidOut(BaseModel):
     sent_offsite: bool
     follow_up: str | None
     created_at: datetime
+    # ★ Which of the two sources this entry is. HSE has now said three times
+    # that the register looks redundant, and it is not: entries made before
+    # first aid moved onto the injury form exist only here. Saying so per row
+    # answers the question on the screen instead of in a release note.
+    source: str = "register"
 
 
 class EscalateIn(BaseModel):
