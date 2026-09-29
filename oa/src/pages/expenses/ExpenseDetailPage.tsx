@@ -19,8 +19,6 @@ interface ApprovalEvent {
   actor_name: string
   action: string
   comment: string | null
-  from_status: string
-  to_status: string
   created_at: string
 }
 
@@ -112,6 +110,14 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   [ACTION.REJECT]:  <XCircle className="h-4 w-4 text-danger-500" />,
   [ACTION.RETURN]:  <RotateCcw className="h-4 w-4 text-warning-500" />,
   [ACTION.PAY]:     <Banknote className="h-4 w-4 text-success-500" />,
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  [ACTION.SUBMIT]:  'Submitted',
+  [ACTION.APPROVE]: 'Approved',
+  [ACTION.REJECT]:  'Rejected',
+  [ACTION.RETURN]:  'Returned',
+  [ACTION.PAY]:     'Paid',
 }
 
 // ── Attachments card ──────────────────────────────────────────────────────────
@@ -297,9 +303,7 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
               {s.state === 'current' && (
                 <p className="mt-0.5 text-xs text-neutral-400">Awaiting this approver</p>
               )}
-              {s.comment && (
-                <p className="mt-0.5 text-xs text-neutral-600 italic">"{s.comment}"</p>
-              )}
+              {/* Comments are shown once, in the Approval Timeline below. */}
             </div>
             <span className="shrink-0 text-[10px] font-mono text-neutral-300">Step {s.step_idx + 1}</span>
           </li>
@@ -404,7 +408,7 @@ export default function ExpenseDetailPage() {
   const backLabel = claim.claim_type === 'TRA' ? 'Travel Applications' : 'Expense Claims'
 
   return (
-    <div className="flex flex-col gap-6 max-w-4xl">
+    <div className="flex flex-col gap-6 max-w-6xl">
       {/* Back + header */}
       <div>
         <button
@@ -494,6 +498,11 @@ export default function ExpenseDetailPage() {
         </div>
       </div>
 
+      {/* Two columns, as on the EPMS document pages: the claim on the left,
+          its approval chain and history on the right. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      <div className="lg:col-span-8 flex flex-col gap-6 min-w-0">
+
       {/* Claim summary */}
       <div className="grid grid-cols-2 gap-4 rounded-xl border border-neutral-200 bg-white p-5">
         <div>
@@ -539,9 +548,6 @@ export default function ExpenseDetailPage() {
           </div>
         </div>
       </div>
-
-      {/* Approval status — who has approved, who is pending */}
-      <ApprovalStatusCard claimId={claim.id} />
 
       {/* Travel Application details (TRA — no money/line items, has its own PDF) */}
       {claim.claim_type === 'TRA' && (
@@ -654,33 +660,38 @@ export default function ExpenseDetailPage() {
 
       {/* Attachments */}
       <AttachmentsCard claimId={claim.id} canUpload={isEditable(claim.status)} />
+      </div>
 
-      {/* Approval timeline */}
-      {claim.approval_events.length > 0 && (
-        <div className="rounded-xl border border-neutral-200 bg-white p-5">
-          <h2 className="mb-4 text-sm font-semibold text-neutral-700">Approval Timeline</h2>
-          <div className="space-y-3">
-            {claim.approval_events.map((evt) => (
-              <div key={evt.id} className="flex items-start gap-3">
-                <div className="mt-0.5 shrink-0">{ACTION_ICONS[evt.action] ?? <CheckCircle className="h-4 w-4 text-neutral-400" />}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-neutral-800">{evt.actor_name}</span>
-                    <span className="text-xs text-neutral-500 capitalize">{evt.action}d</span>
-                    <span className="text-xs text-neutral-400">{formatDate(evt.created_at)}</span>
+      {/* Right: approval chain + history */}
+      <div className="lg:col-span-4 flex flex-col gap-6 lg:sticky lg:top-6 self-start w-full">
+        {/* Approval status — who has approved, who is pending */}
+        <ApprovalStatusCard claimId={claim.id} />
+
+        {/* Approval timeline — every action on the claim, with its comment */}
+        {claim.approval_events.length > 0 && (
+          <div className="rounded-xl border border-neutral-200 bg-white p-5">
+            <h2 className="mb-4 text-sm font-semibold text-neutral-700">Approval Timeline</h2>
+            <div className="space-y-3">
+              {claim.approval_events.map((evt) => (
+                <div key={evt.id} className="flex items-start gap-3">
+                  <div className="mt-0.5 shrink-0">{ACTION_ICONS[evt.action] ?? <CheckCircle className="h-4 w-4 text-neutral-400" />}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-2">
+                      <span className="text-sm font-medium text-neutral-800">{evt.actor_name}</span>
+                      <span className="text-xs text-neutral-500">{ACTION_LABELS[evt.action] ?? evt.action}</span>
+                    </div>
+                    <p className="text-xs text-neutral-400">{formatDate(evt.created_at)}</p>
+                    {evt.comment && (
+                      <p className="mt-1 whitespace-pre-line rounded bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700">{evt.comment}</p>
+                    )}
                   </div>
-                  {evt.comment && (
-                    <p className="mt-0.5 text-xs text-neutral-600 italic">"{evt.comment}"</p>
-                  )}
                 </div>
-                <span className="shrink-0">
-                  <StatusBadge status={evt.to_status} />
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+      </div>
 
       {/* Mark as Processed modal */}
       {activeAction === ACTION.PAY && (
