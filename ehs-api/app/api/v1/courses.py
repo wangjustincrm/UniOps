@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
-from app.core.permissions import CanReadTraining, CanWriteTraining
+from app.core.permissions import CanReadTraining, CanReportIncident, CanWriteTraining
 from app.crud import course as crud
 from app.services.attachments import MAX_FILE_SIZE, proxy_download, upload_to_file_server
 from uniops_authz import has_permission
@@ -128,6 +128,34 @@ async def _require_roster_rights(db, user: dict, delivery) -> None:
         "only they or HSE can change its roster")
 
 
+async def _require_session_access(db, user: dict, delivery) -> None:
+    """Whoever is running it, or anyone who may read the training register.
+
+    ★ Round 4, TC-09 and TC-10: "the run by person on training should have full
+    edit and create rights to allow for adding and marking students … allow the
+    run by person to pass or fail the students as that role is currently limit to
+    the HSE role."
+
+    The gate on these endpoints was `ehs.training.read`, and the coordinator is
+    whoever HSE nominated — on the dev database that includes an ordinary
+    employee, and `requester` does not hold that permission. So the person named
+    to run a session could not open it, let alone mark it. `supervisor` and
+    `dept_manager` hold no training permission either.
+
+    Being named to run the session is the right to see it. The register as a
+    whole still needs the register's permission.
+    """
+    uid = _user_id(user)
+    if delivery.coordinator_id == uid:
+        return
+    if await has_permission(db, uid, user.get("role", ""), "ehs.training.read"):
+        return
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN,
+        "You are not running this session and do not have access to the "
+        "training register")
+
+
 @router.get("", response_model=list[DeliveryOut])
 async def list_sessions(
     db: SessionDep, user: CanReadTraining,
@@ -156,8 +184,13 @@ async def create_session(payload: DeliveryIn, db: SessionDep, user: CanWriteTrai
 
 
 @router.get("/{delivery_id}", response_model=DeliveryOut)
-async def get_session(delivery_id: uuid.UUID, db: SessionDep, user: CanReadTraining):  # noqa: ARG001
-    return (await _with_counts(db, [await crud.get_delivery(db, delivery_id)]))[0]
+async def get_session(delivery_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    delivery = await crud.get_delivery(db, delivery_id)
+    # ★ Widened outside, narrowed here. The outer gate is the one every employee
+    # holds, so a coordinator of any role can reach their own session; the rule
+    # about whose session it is lives here rather than in the dependency.
+    await _require_session_access(db, user, delivery)
+    return (await _with_counts(db, [delivery]))[0]
 
 
 @router.patch("/{delivery_id}", response_model=DeliveryOut)
@@ -177,15 +210,16 @@ async def update_session(
 
 
 @router.get("/{delivery_id}/roster", response_model=list[EnrolmentOut])
-async def get_roster(delivery_id: uuid.UUID, db: SessionDep, user: CanReadTraining):  # noqa: ARG001
-    await crud.get_delivery(db, delivery_id)
+async def get_roster(delivery_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    delivery = await crud.get_delivery(db, delivery_id)
+    await _require_session_access(db, user, delivery)
     return await crud.roster(db, delivery_id)
 
 
 @router.post("/{delivery_id}/roster", response_model=list[EnrolmentOut],
              status_code=status.HTTP_201_CREATED)
 async def add_to_roster(
-    delivery_id: uuid.UUID, payload: EnrolIn, db: SessionDep, user: CanReadTraining,
+    delivery_id: uuid.UUID, payload: EnrolIn, db: SessionDep, user: CanReportIncident,
 ):
     delivery = await crud.get_delivery(db, delivery_id)
     await _require_roster_rights(db, user, delivery)
@@ -194,7 +228,7 @@ async def add_to_roster(
 
 @router.delete("/{delivery_id}/roster/{enrolment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_from_roster(
-    delivery_id: uuid.UUID, enrolment_id: uuid.UUID, db: SessionDep, user: CanReadTraining,
+    delivery_id: uuid.UUID, enrolment_id: uuid.UUID, db: SessionDep, user: CanReportIncident,
 ):
     delivery = await crud.get_delivery(db, delivery_id)
     await _require_roster_rights(db, user, delivery)
@@ -203,10 +237,17 @@ async def remove_from_roster(
 
 @router.post("/{delivery_id}/results", response_model=list[EnrolmentOut])
 async def mark_results(
-    delivery_id: uuid.UUID, payload: MarkIn, db: SessionDep, user: CanWriteTraining,
+    delivery_id: uuid.UUID, payload: MarkIn, db: SessionDep, user: CanReportIncident,
 ):
-    """Record who passed. Each pass writes a row into the training register."""
+    """Record who passed. Each pass writes a row into the training register.
+
+    ★ The coordinator marks their own session. It was `ehs.training.write`, so
+    "HSE fills in the instructor and marks pass or fail" was the only path — and
+    the person who stood in the room watching them do it had to send the results
+    to somebody else to type in.
+    """
     delivery = await crud.get_delivery(db, delivery_id)
+    await _require_roster_rights(db, user, delivery)
     if delivery.status == "cancelled":
         raise HTTPException(status.HTTP_409_CONFLICT, "This session was cancelled")
     changed = await crud.mark_results(
@@ -218,8 +259,12 @@ async def mark_results(
 
 
 @router.post("/{delivery_id}/complete", response_model=DeliveryOut)
-async def complete_session(delivery_id: uuid.UUID, db: SessionDep, user: CanWriteTraining):  # noqa: ARG001
-    delivery = await crud.complete(db, await crud.get_delivery(db, delivery_id))
+async def complete_session(delivery_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    delivery = await crud.get_delivery(db, delivery_id)
+    # Closing a session is part of marking it, and marking it is the
+    # coordinator's job.
+    await _require_roster_rights(db, user, delivery)
+    delivery = await crud.complete(db, delivery)
     return (await _with_counts(db, [delivery]))[0]
 
 

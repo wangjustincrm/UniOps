@@ -488,3 +488,92 @@ async def test_a_certificate_from_outside_can_be_attached(hse_manager, worker):
 
     missing = await client.get(f"/api/v1/training/records/{record['id']}/certificate")
     assert missing.status_code == 404
+
+
+class TestWhoeverIsRunningItCanRunIt:
+    """★ Round 4, TC-09 and TC-10: "the run by person on training should have
+    full edit and create rights to allow for adding and marking students …
+    allow the run by person to pass or fail the students as that role is
+    currently limit to the HSE role."
+
+    The coordinator is whoever HSE nominated, and on the dev database that
+    includes an ordinary employee — `requester` holds no training permission at
+    all, and neither do `supervisor` or `dept_manager`. So the person named to
+    run a session could not open it, could not see the roster, and could not
+    mark anybody: HSE had to type in results for a session they were not in.
+
+    Being named to run it is the right to run it. The register as a whole still
+    needs the register's permission, which is the pair of assertions at the end.
+    """
+
+    @pytest.fixture
+    async def session_run_by_a_worker(self, hse_manager, worker, courses):
+        _, hse = hse_manager
+        wuser, _ = worker
+        made = await hse.post("/api/v1/course-sessions", json={
+            "course_id": str(courses["whmis"].id),
+            "course_label": "WHMIS",
+            "title": "WHMIS refresher",
+            "session_date": date.today().isoformat(),
+            "coordinator_id": str(wuser.id),
+        })
+        assert made.status_code in (200, 201), made.text
+        return made.json()
+
+    async def test_the_coordinator_opens_and_marks_their_own_session(
+            self, worker, hse_manager, session_run_by_a_worker, test_engine):
+        from tests.conftest import make_user
+
+        wuser, wc = worker
+        _, hse = hse_manager
+        sid = session_run_by_a_worker["id"]
+
+        # Open it.
+        assert (await wc.get(f"/api/v1/course-sessions/{sid}")).status_code == 200, (
+            "the person running the session cannot open it")
+
+        # Add a student.
+        student = await make_user(test_engine, role="requester", full_name="Student One")
+        enrolled = await wc.post(f"/api/v1/course-sessions/{sid}/roster",
+                                 json={"user_ids": [str(student.id)]})
+        assert enrolled.status_code in (200, 201), enrolled.text
+
+        roster = await wc.get(f"/api/v1/course-sessions/{sid}/roster")
+        assert roster.status_code == 200, roster.text
+        assert len(roster.json()) == 1
+
+        # ★ Mark them. This is the one HSE named.
+        marked = await wc.post(f"/api/v1/course-sessions/{sid}/results", json={
+            "results": [{"enrolment_id": roster.json()[0]["id"], "result": "passed"}],
+            "complete": True,
+        })
+        assert marked.status_code == 200, marked.text
+        assert marked.json()[0]["result"] == "passed"
+
+    async def test_somebody_else_s_session_is_still_refused(
+            self, worker, hse_manager, test_engine, courses, db_session):
+        """★ The admission's opposite. Opening this up to the coordinator must
+        not open it to everybody — an employee who is not running a session and
+        cannot read the register has no business in either."""
+        from tests.conftest import authed_client, make_token, make_user
+
+        _, hse = hse_manager
+        someone = await make_user(test_engine, role="requester", full_name="Not Involved")
+        made = await hse.post("/api/v1/course-sessions", json={
+            "course_id": str(courses["forklift"].id),
+            "course_label": "Forklift",
+            "title": "Forklift",
+            "session_date": date.today().isoformat(),
+        })
+        assert made.status_code in (200, 201), made.text
+        sid = made.json()["id"]
+
+        # The same session as the fixtures use, or this client cannot see a
+        # delivery that has not been committed yet — a 404 that reads as a 403.
+        async with authed_client(make_token(someone.id, someone.role), db_session) as theirs:
+            assert (await theirs.get(f"/api/v1/course-sessions/{sid}")).status_code == 403
+            assert (await theirs.get(f"/api/v1/course-sessions/{sid}/roster")).status_code == 403
+
+        # And HSE, who holds the register, still can.
+        assert (await hse.get(f"/api/v1/course-sessions/{sid}")).status_code == 200
+        assert (await hse.get(f"/api/v1/course-sessions/{sid}/roster")).status_code == 200
