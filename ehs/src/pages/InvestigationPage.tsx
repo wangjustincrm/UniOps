@@ -56,9 +56,21 @@ interface Medical {
   vitals_series: VitalsReading[]
 }
 
+interface CauseActionDraft {
+  title: string
+  description: string
+  ownerId: string | null
+  /** Shown in the picker; the server is sent the id. */
+  ownerName: string
+  dueDate: string
+}
+
 interface Cause {
   id?: string
   cause_type: 'immediate' | 'root'
+  /** Raised with the cause when the investigator fills it in. Root causes only:
+      an immediate cause is a description of what happened, not work to do. */
+  action?: CauseActionDraft
   vocabulary_item_id: string | null
   label: string
   note: string | null
@@ -211,6 +223,21 @@ export default function InvestigationPage() {
             vocabulary_item_id: c.vocabulary_item_id,
             label: c.label,
             note: c.note || null,
+            // ★ Raised in the same request. The action points at the cause and
+            // the cause has no id until this call saves it, so the server does
+            // the matching — doing it here would mean saving, reading back which
+            // id belongs to which of the rows just typed, then posting.
+            // ★ Only when it is complete. An action must have an owner — an
+            // unowned one has no inbox to appear in — so a half-filled box is
+            // not sent, and the box says what it needs.
+            action: c.action && c.action.title.trim() && c.action.dueDate && c.action.ownerId
+              ? {
+                  title: c.action.title.trim(),
+                  description: c.action.description || null,
+                  owner_id: c.action.ownerId,
+                  due_date: c.action.dueDate,
+                }
+              : null,
           })),
       })
       if (showMedical) {
@@ -307,6 +334,77 @@ export default function InvestigationPage() {
             placeholder="Note (optional)"
             className="mt-2 min-h-[38px] w-full rounded-md border border-neutral-200 px-2.5 text-sm focus:border-primary-400 focus:outline-none"
           />
+          {/* ★ What is being done about it, on this form. Round 4: "when adding
+              a root cause on any form, the ability to raise a corrective action
+              should be able to be completed on the same form at the same time.
+              having to save the record first and then edit the corrective action
+              is time wasting."
+
+              Root causes only. An immediate cause describes what happened; it is
+              not work to do, and offering a box there invites one action per
+              cause where the hierarchy of controls asks for one per root cause. */}
+          {type === 'root' && (
+            c.action ? (
+              <div className="mt-2 rounded-md border border-primary-200 bg-primary-50/40 p-2.5">
+                <p className="mb-1.5 flex items-center justify-between text-xs font-medium text-neutral-700">
+                  What is being done about it
+                  <button type="button" onClick={() => updateCause(i, { action: undefined })}
+                          className="text-xs font-normal text-neutral-500 hover:text-danger-600">
+                    Not now
+                  </button>
+                </p>
+                <input
+                  value={c.action.title}
+                  onChange={(e) => updateCause(i, {
+                    action: { ...c.action!, title: e.target.value } })}
+                  placeholder="Guard the nip point at the sealer entrance"
+                  className="min-h-[38px] w-full rounded-md border border-neutral-200 px-2.5 text-sm focus:border-primary-400 focus:outline-none"
+                />
+                <textarea
+                  value={c.action.description}
+                  onChange={(e) => updateCause(i, {
+                    action: { ...c.action!, description: e.target.value } })}
+                  placeholder="What exactly needs doing, for whoever picks it up"
+                  className="mt-1.5 min-h-[52px] w-full rounded-md border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-primary-400 focus:outline-none"
+                />
+                <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
+                  <PersonPicker
+                    value={{ ...EMPTY_PERSON, userId: c.action.ownerId ?? null,
+                             name: c.action.ownerName ?? '' }}
+                    allowExternal={false}
+                    onChange={(v) => updateCause(i, {
+                      action: { ...c.action!, ownerId: v.userId, ownerName: v.name } })}
+                  />
+                  <input
+                    type="date"
+                    value={c.action.dueDate}
+                    onChange={(e) => updateCause(i, {
+                      action: { ...c.action!, dueDate: e.target.value } })}
+                    className="min-h-[38px] w-full rounded-md border border-neutral-200 px-2.5 text-sm focus:border-primary-400 focus:outline-none"
+                  />
+                </div>
+                <p className={`mt-1.5 text-[11px] ${
+                  c.action.title.trim() && c.action.dueDate && c.action.ownerId
+                    ? 'text-neutral-500'
+                    : 'text-warning-700'}`}>
+                  {c.action.title.trim() && c.action.dueDate && c.action.ownerId
+                    ? 'Raised when you save the investigation.'
+                    : 'Needs what it is, who owns it and when it is due — an '
+                      + 'action nobody owns appears in nobody\'s list. Leave the '
+                      + 'whole box empty and nothing is raised.'}
+                </p>
+              </div>
+            ) : (
+              <button type="button"
+                      onClick={() => updateCause(i, {
+                        action: { title: '', description: '', ownerId: null,
+                                  ownerName: '', dueDate: '' } })}
+                      className="mt-2 flex min-h-[36px] items-center gap-1.5 text-xs font-medium text-primary-700">
+                <Plus className="h-3.5 w-3.5" aria-hidden />
+                Raise a corrective action for this
+              </button>
+            )
+          )}
         </div>
       ))}
       <button type="button" onClick={() => addCause(type)}

@@ -5,7 +5,9 @@ being done about it reads as visibly incomplete, because that gap is what an
 audit looks for. These tests assert the API says so rather than leaving the
 frontend to work it out.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+
+import pytest
 from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/Toronto")
@@ -346,3 +348,106 @@ async def test_vitals_are_a_series_not_a_single_reading(hse_manager, worker):
         ],
     })
     assert len(trimmed.json()["vitals_series"]) == 1
+
+
+@pytest.fixture
+async def submitted_incident(worker, hse_manager) -> str:
+    """An incident past draft, which is what recording causes requires."""
+    _, wc = worker
+    _, mc = hse_manager
+    return (await _reported_and_classified(wc, mc))["id"]
+
+
+@pytest.fixture
+def an_owner(hse_manager) -> str:
+    """Somebody to own the action. Required — an unowned action has no inbox to
+    appear in, which is the failure this module exists to remove."""
+    user, _ = hse_manager
+    return str(user.id)
+
+
+class TestACorrectiveActionRaisedWithItsCause:
+    """★ Round 4, TC-04: "when adding a root cause on any form, the ability to
+    raise a corrective action should be able to be completed on the same form at
+    the same time. having to save the record first and then edit the corrective
+    action is time wasting."
+
+    One request, because an action points at a cause and a cause has no id until
+    it is saved. Done in the client it is three steps whose middle one — reading
+    back which id belongs to which of the rows just typed — is a guess.
+    """
+
+    async def test_the_cause_and_its_action_are_saved_together(
+            self, hse_manager, submitted_incident, an_owner):
+        _, client = hse_manager
+        due = (date.today() + timedelta(days=14)).isoformat()
+
+        saved = await client.put(
+            f"/api/v1/incidents/{submitted_incident}/causes", json={"causes": [
+                {"cause_type": "root", "label": "Guard was removed and not replaced",
+                 "action": {"title": "Refit the guard and lock it",
+                            "description": "Interlocked guard, not a warning label.",
+                            "owner_id": an_owner, "due_date": due}},
+            ]})
+        assert saved.status_code == 200, saved.text
+
+        tree = saved.json()
+        assert len(tree["root"]) == 1
+        cause = tree["root"][0]
+        assert len(cause["actions"]) == 1, "the action was not raised with the cause"
+        assert cause["actions"][0]["title"] == "Refit the guard and lock it"
+        assert cause["actions"][0]["description"] == "Interlocked guard, not a warning label."
+        # ★ And the cause no longer counts as unanswered, which is the figure an
+        # audit reads.
+        assert cause["needs_action"] is False
+        assert tree["unaddressed_root_causes"] == 0
+
+    async def test_saving_the_investigation_again_does_not_raise_a_second_action(
+            self, hse_manager, submitted_incident, an_owner):
+        """★ The one that matters. `replace_causes` runs on every save, and a
+        screen that keeps the action it typed in its state would post it again —
+        two identical corrective actions against one cause, each with its own
+        inbox task and its own escalation ladder.
+        """
+        _, client = hse_manager
+        due = (date.today() + timedelta(days=10)).isoformat()
+        body = {"causes": [
+            {"cause_type": "root", "label": "Procedure not followed",
+             "action": {"title": "Re-brief the crew", "owner_id": an_owner, "due_date": due}},
+        ]}
+
+        first = await client.put(f"/api/v1/incidents/{submitted_incident}/causes", json=body)
+        assert first.status_code == 200, first.text
+        second = await client.put(f"/api/v1/incidents/{submitted_incident}/causes", json=body)
+        assert second.status_code == 200, second.text
+
+        actions = second.json()["root"][0]["actions"]
+        assert len(actions) == 1, f"saving twice raised {len(actions)} actions"
+
+    async def test_a_cause_with_no_action_is_still_flagged(
+            self, hse_manager, submitted_incident):
+        """The admission: the field is optional and the flag still works.
+
+        A root cause with nothing under it is the gap an audit looks for, and
+        making the action possible here must not make the flag stop appearing.
+        """
+        _, client = hse_manager
+        saved = await client.put(
+            f"/api/v1/incidents/{submitted_incident}/causes", json={"causes": [
+                {"cause_type": "root", "label": "Nobody has decided what to do yet"},
+            ]})
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["root"][0]["needs_action"] is True
+        assert saved.json()["unaddressed_root_causes"] == 1
+
+    async def test_an_immediate_cause_is_not_offered_one(self, hse_manager, submitted_incident):
+        """Accepted if sent, because refusing it would be a rule the screen does
+        not need — but the screen only offers it on root causes, where the
+        hierarchy of controls asks for the work to hang."""
+        _, client = hse_manager
+        saved = await client.put(
+            f"/api/v1/incidents/{submitted_incident}/causes", json={"causes": [
+                {"cause_type": "immediate", "label": "Unsafe design"},
+            ]})
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["immediate"][0]["needs_action"] is False

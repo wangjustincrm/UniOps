@@ -8,9 +8,11 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud.action import create as create_action
 from app.models.action import Action
 from app.models.incident import Incident, IncidentCause, IncidentInvestigation
 from app.models.mirrors import User
+from app.schemas.action import ActionCreate
 from app.schemas.investigation import CausesReplace, InvestigationIn
 
 # Actions in these states are no longer being worked, so a cause whose only
@@ -155,6 +157,30 @@ async def replace_causes(
     # Anything still here had an action attached but was dropped from the new
     # set. Keep it, so the action still points at something explaining itself.
     result.extend(keep_by_label.values())
+    await db.flush()
+
+    # ★ Actions raised with their cause, in this request. The client cannot do
+    # this itself: an action points at a cause and a cause has no id until it is
+    # saved, so doing it there means save, read back which id is which of the
+    # rows just typed, then post — and the middle step is a guess. Here the
+    # correspondence is just the loop above.
+    #
+    # Only where the cause has none yet. `replace_causes` runs on every save of
+    # the investigation, so a payload that still carries the action it raised
+    # last time must not raise it again.
+    for cause, item in zip(result, payload.causes, strict=False):
+        if item.action is None or cause.id in attached:
+            continue
+        await create_action(db, ActionCreate(
+            source_type="incident",
+            source_id=incident.id,
+            cause_id=cause.id,
+            title=item.action.title,
+            description=item.action.description,
+            owner_id=item.action.owner_id,
+            due_date=item.action.due_date,
+            hierarchy_of_control=item.action.hierarchy_of_control,
+        ), source_ref=incident.incident_no)
     await db.flush()
     return result
 

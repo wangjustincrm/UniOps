@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -29,6 +29,33 @@ class InvestigationSignIn(BaseModel):
     signature: str = Field(min_length=1, description="base64 PNG of the drawn signature")
 
 
+class CauseActionIn(BaseModel):
+    """A corrective action raised with the cause it addresses, in one request.
+
+    ★ Round 4: "when adding a root cause on any form, the ability to raise a
+    corrective action should be able to be completed on the same form at the same
+    time. having to save the record first and then edit the corrective action is
+    time wasting."
+
+    It has to be one request rather than two because an action points at a cause
+    and a cause has no id until it is saved. Doing it in the client would mean
+    saving the causes, reading back which id belongs to which of the rows just
+    typed, and then posting the actions — three steps whose middle one is a
+    guess. The server already has the correspondence.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    # ★ Required, as it is everywhere an action is raised. "A failed check with
+    # nobody assigned to it is how a known hazard stays a known hazard" — an
+    # unowned action has no inbox to appear in and no escalation ladder to climb.
+    owner_id: uuid.UUID
+    due_date: date
+    hierarchy_of_control: str | None = None
+
+
 class CauseIn(BaseModel):
     cause_type: str = Field(pattern="^(immediate|root)$")
     vocabulary_item_id: uuid.UUID | None = None
@@ -37,6 +64,9 @@ class CauseIn(BaseModel):
     # signed investigation has to keep reading the way it was signed.
     label: str = Field(min_length=1, max_length=200)
     note: str | None = None
+    # Raised with it. Ignored when this cause already has one, so saving the
+    # investigation a second time does not raise a duplicate.
+    action: CauseActionIn | None = None
 
 
 class CausesReplace(BaseModel):
