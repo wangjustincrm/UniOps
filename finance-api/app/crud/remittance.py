@@ -86,6 +86,28 @@ class GroupLine:
     credit_applied: Decimal = Decimal("0")
     gross: Decimal = Decimal("0")
     credit_notes: list[AppliedCreditNote] = field(default_factory=list)
+    # What the vendor can reconcile a line against when there is no invoice
+    # yet — only a prepayment PA sets this (see _prepayment_reference).
+    fallback_ref: str = ""
+
+    @property
+    def vendor_ref(self) -> str:
+        """The vendor-facing reference for this line: their own invoice
+        number when there is one, else the prepayment fallback, else ""
+        (which is what BLOCK_MISSING_INVOICE_NO keys off)."""
+        return self.vendor_inv_no or self.fallback_ref
+
+
+def _prepayment_reference(pa: PaymentApplication) -> str:
+    """A prepayment is paid BEFORE the vendor invoices — typically against a
+    proforma or the PO itself — so it routinely has no invoice number, and
+    requiring one blocked every such advice with no way to unblock it. The
+    PO number is what the vendor reconciles a deposit against; an
+    agreement-sourced prepayment has none, and the PA number is internal
+    (never shown to a vendor), so it falls back to the bare label."""
+    if pa.pa_type != "prepayment":
+        return ""
+    return f"Prepayment - PO {pa.po_number}" if pa.po_number else "Prepayment"
 
 
 @dataclass
@@ -293,7 +315,8 @@ async def _vendor_groups(db: AsyncSession,
                                   payment_date=r.payment_date, amount=r.amount,
                                   credit_applied=r.credit_applied,
                                   gross=r.amount + r.credit_applied,
-                                  credit_notes=credit_notes_by_payment.get(r.id, [])))
+                                  credit_notes=credit_notes_by_payment.get(r.id, []),
+                                  fallback_ref=_prepayment_reference(pa)))
         g.total += r.amount
         g.payment_record_ids.append(r.id)
 
@@ -301,8 +324,9 @@ async def _vendor_groups(db: AsyncSession,
         _apply_email_rules(g)
         # A vendor cannot reconcile a line without its own invoice number, so
         # a missing one blocks the payee rather than rendering a placeholder.
-        # This applies to every vendor line, Direct PAs included.
-        if any(not l.vendor_inv_no for l in g.lines):
+        # This applies to every vendor line, Direct PAs included — except a
+        # prepayment, which is referenced by its PO instead (vendor_ref).
+        if any(not l.vendor_ref for l in g.lines):
             g.block_reasons.append(BLOCK_MISSING_INVOICE_NO)
     return list(out.values())
 
