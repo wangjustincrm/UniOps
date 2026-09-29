@@ -5,6 +5,7 @@
  * table hides the one thing that matters, which is how late something is.
  */
 import { Link } from 'react-router-dom'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ClipboardList } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -109,6 +110,11 @@ interface AssignedTask {
 }
 
 export default function MyActionsPage() {
+  // Which group the summary has been narrowed to, or all of them. Kept in the
+  // page rather than the URL because the tab shell keys a tab on its path —
+  // putting it in the query string would open a second tab for a filter.
+  const [only, setOnly] = useState<string | null>(null)
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['actions', 'mine'],
     queryFn: () => api.get<ActionListItem[]>('/api/v1/actions/mine'),
@@ -176,6 +182,7 @@ export default function MyActionsPage() {
     { label: 'Other work', count: other.length, tone: 'plain' as const },
   ]
   const outstanding = actions.length + verifying.length + other.length
+  const showing = (label: string) => only === null || only === label
 
   return (
     <div className="flex flex-col gap-2 p-4">
@@ -188,33 +195,56 @@ export default function MyActionsPage() {
             {outstanding === 1 ? 'thing needs doing' : 'things need doing'}
           </span>
         </p>
+        {/* ★ Each tile opens its own list. HSE, round 4: "each of the things to
+            do should be clickable, that is, the supervisor should be able to
+            click on (for example) the due today number and a list of actions
+            due today will be displayed." A count that cannot be opened makes
+            somebody scroll and find the group by eye, which is the work the
+            count was supposed to save. A tile at zero is not offered, because
+            there is nothing behind it. */}
         <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
           {summary.map((s) => (
-            <li key={s.label}
-                className={`rounded-lg px-2.5 py-2 ${
+            <li key={s.label}>
+              <button
+                type="button"
+                disabled={s.count === 0}
+                aria-pressed={only === s.label}
+                onClick={() => setOnly(only === s.label ? null : s.label)}
+                className={`min-h-[52px] w-full rounded-lg px-2.5 py-2 text-left transition-colors ${
                   s.count === 0
-                    ? 'bg-neutral-50 text-neutral-400'
+                    ? 'cursor-default bg-neutral-50 text-neutral-400'
                     : s.tone === 'bad'
-                      ? 'bg-danger-50 text-danger-800'
+                      ? 'bg-danger-50 text-danger-800 hover:bg-danger-100'
                       : s.tone === 'warn'
-                        ? 'bg-warning-50 text-warning-800'
-                        : 'bg-neutral-100 text-neutral-700'}`}>
-              <p className="text-lg font-bold tabular-nums leading-none">{s.count}</p>
-              <p className="mt-1 text-[11px] font-medium uppercase tracking-wide">{s.label}</p>
+                        ? 'bg-warning-50 text-warning-800 hover:bg-warning-100'
+                        : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                } ${only === s.label ? 'ring-2 ring-primary-500 ring-offset-1' : ''}`}>
+                <p className="text-lg font-bold tabular-nums leading-none">{s.count}</p>
+                <p className="mt-1 text-[11px] font-medium uppercase tracking-wide">{s.label}</p>
+              </button>
             </li>
           ))}
         </ul>
+        {only !== null && (
+          <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-neutral-600">
+            <span>Showing <b>{only.toLowerCase()}</b> only.</span>
+            <button type="button" onClick={() => setOnly(null)}
+                    className="font-semibold text-primary-700 hover:underline">
+              Show everything
+            </button>
+          </p>
+        )}
       </section>
 
-      <Group title="Overdue" count={overdue.length} tone="bad">
+      <Group title="Overdue" count={showing('Overdue') ? overdue.length : 0} tone="bad">
         {overdue.map((a) => <ActionCard key={a.id} action={a} />)}
       </Group>
 
-      <Group title="Due today" count={today.length} tone="warn">
+      <Group title="Due today" count={showing('Due today') ? today.length : 0} tone="warn">
         {today.map((a) => <ActionCard key={a.id} action={a} />)}
       </Group>
 
-      <Group title="Waiting on you to verify" count={verifying.length} tone="warn">
+      <Group title="Waiting on you to verify" count={showing('To verify') ? verifying.length : 0} tone="warn">
         {verifying.map((a) => (
           <Link
             key={a.id}
@@ -234,14 +264,14 @@ export default function MyActionsPage() {
         ))}
       </Group>
 
-      <Group title="Coming up" count={later.length}>
+      <Group title="Coming up" count={showing('Coming up') ? later.length : 0}>
         {later.map((a) => <ActionCard key={a.id} action={a} />)}
       </Group>
 
       {/* Everything else this module has handed me: a toolbox talk to deliver,
           an inspection due, a policy to sign. They used to open the page
           unlabelled, above a heading that belonged to the block underneath. */}
-      <Group title="Other work assigned to you" count={other.length}>
+      <Group title="Other work assigned to you" count={showing('Other work') ? other.length : 0}>
         {other.map((t) => (
           <Link
             key={t.id}
