@@ -48,8 +48,18 @@ class IncidentType:
 TYPES: tuple[IncidentType, ...] = (
     IncidentType("report_only", "Report Only / No Injury", "medical",
                  category_code="report_only_no_injury"),
+    # ★ Asked on everything except the two HSE named. Round 4: "add 'how bad was
+    # the person hurt' to all 'what kind of incident was this' to allow for
+    # dashboard reporting, except report only/no injury and fatality selections."
+    #
+    # Left blank means nobody was hurt, which is how a near miss or a damaged
+    # machine normally reads — the question is offered because either can turn
+    # out to have hurt somebody, and until now those types carried no severity at
+    # all and were invisible to every injury figure.
     IncidentType("near_miss", "Near Miss — no injury but has the potential to cause one",
-                 "near_miss"),
+                 "near_miss", asks_injury_class=True),
+    # These three *are* the severity. Asking again would be asking the same
+    # question twice and inviting the two answers to disagree.
     IncidentType("first_aid", "First Aid Injury — managed using existing first aid equipment",
                  "medical", injury_class="first_aid", injury_detail=True),
     IncidentType("medical_aid",
@@ -57,17 +67,24 @@ TYPES: tuple[IncidentType, ...] = (
                  "medical", injury_class="medical_aid", injury_detail=True),
     IncidentType("lost_time", "Lost Time as defined by WSIB", "medical",
                  injury_class="lost_time", injury_detail=True),
-    IncidentType("property_damage", "Property / Asset Damage", "equipment"),
+    IncidentType("property_damage", "Property / Asset Damage", "equipment",
+                 asks_injury_class=True),
     IncidentType("occupational_illness", "Occupational Illness", "medical",
-                 category_code="occupational_illness", injury_detail=True),
+                 category_code="occupational_illness", asks_injury_class=True,
+                 injury_detail=True),
     IncidentType("environmental", "Environmental Incident", "equipment",
-                 category_code="environmental_incident"),
+                 category_code="environmental_incident", asks_injury_class=True),
     IncidentType("security", "Security Incident", "medical",
-                 category_code="security_incident"),
+                 category_code="security_incident", asks_injury_class=True),
     IncidentType("drug_alcohol", "Drug / Alcohol Related", "medical",
-                 category_code="drug_alcohol_related"),
+                 category_code="drug_alcohol_related", asks_injury_class=True),
+    # ★ Not asked, and classed as lost time regardless. HSE excluded fatality
+    # from the question; a death is also, always, time lost, and leaving the
+    # class empty would drop it out of LTIFR — the one figure where a fatality
+    # most needs to appear. So the answer is not asked for because it is not in
+    # doubt, rather than because it does not matter.
     IncidentType("fatality", "Fatality — MOL and police must be notified immediately",
-                 "medical", mol_reportable=True, asks_injury_class=True,
+                 "medical", mol_reportable=True, injury_class="lost_time",
                  injury_detail=True),
     IncidentType("unconscious", "Unconscious — MOL must be notified immediately",
                  "medical", mol_reportable=True, asks_injury_class=True,

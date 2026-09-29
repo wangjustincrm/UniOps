@@ -867,3 +867,78 @@ async def test_the_where_panel_counts_where_it_happened_not_who_was_hurt(
         "the department cut lost the incident")
     assert "105 – Warehouse" not in " ".join(by_department), (
         "the department panel is reporting an area, which is the original fault")
+
+
+class TestWhichTypesAskHowBadlySomebodyWasHurt:
+    """★ Round 4, TC-03: "add 'how bad was the person hurt' to all 'what kind of
+    incident was this' to allow for dashboard reporting, except report only/no
+    injury and fatality selections."
+
+    Before this, only Fatality and Unconscious asked — so Property Damage,
+    Occupational Illness, Security and Drug/Alcohol carried no severity at all
+    and were invisible to every injury figure on the dashboard.
+
+    Fatality is the interesting exclusion. HSE took it out of the question, and
+    a death is also, always, time lost: asked nothing and left empty it would
+    drop out of LTIFR, the one figure where a fatality most needs to appear. So
+    it is not asked because the answer is not in doubt, and the type carries it.
+    """
+
+    async def test_the_types_that_ask_and_the_types_that_do_not(self, hse_manager):
+        _, client = hse_manager
+        types = {t["code"]: t for t in (await client.get("/api/v1/incidents/types")).json()}
+
+        # HSE's two exclusions.
+        assert types["report_only"]["asks_injury_class"] is False
+        assert types["fatality"]["asks_injury_class"] is False
+
+        # The three that *are* the severity: asking again would invite the two
+        # answers to disagree.
+        for code in ("first_aid", "medical_aid", "lost_time"):
+            assert types[code]["asks_injury_class"] is False, code
+
+        # Everything else asks.
+        for code in ("near_miss", "property_damage", "occupational_illness",
+                     "environmental", "security", "drug_alcohol", "unconscious"):
+            assert types[code]["asks_injury_class"] is True, code
+
+    async def test_a_fatality_is_recorded_as_lost_time_without_being_asked(self, hse_manager):
+        """★ The consequence of excluding it. Not asked, and not lost."""
+        _, client = hse_manager
+        made = await client.post("/api/v1/incidents", json={
+            "form_kind": "medical", "title": "Fatal incident at the dryer",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "incident_type": "fatality",
+        })
+        assert made.status_code in (200, 201), made.text
+        assert made.json()["injury_class"] == "lost_time"
+        assert made.json()["mol_reportable"] is True
+
+    async def test_property_damage_can_carry_an_injury_now(self, hse_manager):
+        """A machine can be wrecked and somebody hurt in the same event, and the
+        type used to make the second half unrecordable."""
+        _, client = hse_manager
+        made = await client.post("/api/v1/incidents", json={
+            "form_kind": "equipment", "title": "Forklift into the racking",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "incident_type": "property_damage",
+            "injury_class": "medical_aid",
+        })
+        assert made.status_code in (200, 201), made.text
+        assert made.json()["injury_class"] == "medical_aid"
+
+    async def test_nobody_hurt_is_recorded_as_no_injury_class(self, hse_manager):
+        """★ The other half, which keeps the injury figures honest.
+
+        A near miss where nobody was hurt must not count towards anything, and
+        the screen sends no class at all for it rather than a value meaning
+        "none" — the dashboard filters on the class being absent.
+        """
+        _, client = hse_manager
+        made = await client.post("/api/v1/incidents", json={
+            "form_kind": "near_miss", "title": "Pallet fell, nobody underneath",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "incident_type": "near_miss",
+        })
+        assert made.status_code in (200, 201), made.text
+        assert made.json()["injury_class"] is None

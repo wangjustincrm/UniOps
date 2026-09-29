@@ -226,7 +226,10 @@ export default function IncidentReportPage() {
         is_anonymous: form.anonymous,
         signature: form.signature,
         incident_type: form.incidentType || null,
-        injury_class: form.injuryClass || null,
+        // 'none' is this screen's way of saying nobody was hurt, which the
+        // record holds as no injury class at all.
+        injury_class: (form.injuryClass && form.injuryClass !== 'none')
+          ? form.injuryClass : null,
       }
       if (form.kind === 'medical' && form.injured.name.trim()) {
         // An employee match carries a user id; a written-in name does not, and
@@ -456,12 +459,24 @@ export default function IncidentReportPage() {
       {/* Fatality and Unconscious tell us the Ministry must be told; they say
           nothing about lost time, and a death is nearly always — but not
           always — a lost-time injury. Asked rather than assumed. */}
+      {/* ★ Asked on every type except Report Only and Fatality. Round 4: "add
+          'how bad was the person hurt' to all 'what kind of incident was this'
+          to allow for dashboard reporting, except report only/no injury and
+          fatality selections."
+
+          "Nobody was hurt" is an option rather than leaving the field blank. A
+          near miss or a damaged machine usually did hurt nobody, and blank
+          cannot tell that apart from not answered — on the field that drives
+          LTIFR that difference matters. A fatality is not asked and is recorded
+          as lost time regardless, because it is: leaving it empty would drop it
+          out of the one figure where it most needs to appear. */}
       {asksInjuryClass && (
         <Field label="How badly was the person hurt?" required
-               help="Reported separately because this type does not imply it.">
+               help="On the dashboard this is what the injury figures count.">
           <select className={inputClass} value={form.injuryClass}
                   onChange={(e) => set('injuryClass', e.target.value)}>
             <option value="">Select</option>
+            <option value="none">Nobody was hurt</option>
             <option value="first_aid">First aid</option>
             <option value="medical_aid">Medical aid</option>
             <option value="lost_time">Lost time</option>
