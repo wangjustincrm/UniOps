@@ -548,3 +548,51 @@ async def test_one_person_signing_a_policy_does_not_sign_it_for_everybody(
     assert hse_user.id not in remaining, "the signer's own task must close"
     assert other.id in remaining, (
         "somebody else's task must stay open — they have not read it")
+
+
+class TestTheLostTimeGuidanceReachesTheReporter:
+    """★ "Use WSIB wording for lost time" — HSE, round 4, after being asked
+    twice across two rounds.
+
+    Nothing here classifies an injury. The reporter picks one of the twelve
+    options on HSE's form, and that choice drives LTIFR and the WSIB clock — so
+    whether it is picked correctly depends entirely on whether they know the
+    test. HSE writes the test; it is a regulatory definition and one invented in
+    this codebase would be wrong and relied on anyway.
+
+    The part worth testing is who can read it. An ordinary employee is exactly
+    who reports an injury and does not hold `ehs.incident.read`, so served from
+    the config endpoint it would have been invisible to everyone who needs it —
+    this module's most repeated fault, three times over.
+    """
+
+    async def test_an_ordinary_employee_can_read_it(self, hse_manager, worker, config_row):
+        _, hse = hse_manager
+        _, wc = worker
+
+        wording = ("Lost time means the worker did not return to their next "
+                   "scheduled shift, whatever the reason for the absence.")
+        saved = await hse.put("/api/v1/settings/config",
+                              json={"lost_time_rules": {"guidance": wording}})
+        assert saved.status_code == 200, saved.text
+
+        theirs = await wc.get("/api/v1/settings/reporting-guidance")
+        assert theirs.status_code == 200, theirs.text
+        assert theirs.json()["lost_time_guidance"] == wording
+
+        # ★ And the endpoint it is deliberately not on is still refused to them,
+        # so this is a narrow opening rather than the config being widened.
+        assert (await wc.get("/api/v1/settings/config")).status_code == 403
+
+    async def test_it_is_absent_rather_than_invented_when_hse_has_not_written_it(
+            self, hse_manager, worker, config_row):
+        """Empty means nothing is shown. A definition the product made up would
+        be cited in an audit as though HSE had written it."""
+        _, hse = hse_manager
+        _, wc = worker
+        assert (await hse.put("/api/v1/settings/config",
+                              json={"lost_time_rules": {"guidance": "   "}})).status_code == 200
+
+        theirs = await wc.get("/api/v1/settings/reporting-guidance")
+        assert theirs.status_code == 200, theirs.text
+        assert theirs.json()["lost_time_guidance"] is None

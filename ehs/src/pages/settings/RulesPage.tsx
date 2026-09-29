@@ -20,6 +20,7 @@ interface Config {
   certificate_heading: string | null
   certificate_body: string | null
   certificate_signatory: string | null
+  lost_time_rules: { guidance?: string } | null
 }
 
 interface Template { id: string; code: string; name: string; category: string }
@@ -132,6 +133,33 @@ export default function RulesPage() {
             value={form.certificate_signatory ?? ''}
             onChange={(e) => setForm({ ...form, certificate_signatory: e.target.value })} />
         </Row>
+      </section>
+
+      {/* ★ How to tell lost time from medical aid, in HSE's own words.
+          Asked twice across two rounds and answered "use WSIB wording for lost
+          time". Nothing here classifies an injury — the reporter picks it from
+          the twelve options on the form — so whether it is picked correctly
+          depends entirely on whether they know the test. The text is not
+          written into the product because it is a regulatory definition, and
+          one invented here would be wrong in a compliance system and cited as
+          if it were right. */}
+      <section className="mb-4 rounded-xl border border-neutral-200 bg-white p-4">
+        <SectionTitle className="mb-1">When an injury counts as lost time</SectionTitle>
+        <p className="mb-3 max-w-[68ch] text-xs text-neutral-500">
+          Shown to whoever is reporting an injury, beside the choice. Put WSIB's
+          test here in your own words, including the cases people get wrong —
+          modified duties, reduced pay, the day of the accident itself. Left
+          empty, nothing is shown and the reporter is guessing.
+        </p>
+        <textarea
+          rows={4}
+          className="w-full rounded-lg border border-neutral-300 p-2 text-sm"
+          placeholder="Lost time means…"
+          value={form.lost_time_rules?.guidance ?? ''}
+          onChange={(e) => setForm({
+            ...form,
+            lost_time_rules: { ...(form.lost_time_rules ?? {}), guidance: e.target.value },
+          })} />
       </section>
 
       {save.isError && (

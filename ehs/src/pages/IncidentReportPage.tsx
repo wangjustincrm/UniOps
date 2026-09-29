@@ -182,6 +182,20 @@ export default function IncidentReportPage() {
   })
 
 
+  // HSE's own wording for the lost-time test, shown beside the choice it
+  // decides. Fetched only once the form knows it will ask.
+  // ★ Its own endpoint, not /settings/config — that one needs permission to
+  // browse the incident register, which an ordinary employee does not have and
+  // they are exactly who fills this in. Read from the config endpoint the
+  // guidance would have been invisible to everybody who needs it.
+  const { data: guidance } = useQuery({
+    queryKey: ['reporting-guidance'],
+    queryFn: () => api.get<{ lost_time_guidance: string | null }>(
+      '/api/v1/settings/reporting-guidance'),
+    staleTime: 10 * 60_000,
+  })
+  const lostTimeGuidance = guidance?.lost_time_guidance?.trim() || null
+
   const selectedType = incidentTypes?.find((t) => t.code === form.incidentType)
   const asksInjuryClass = Boolean(selectedType?.asks_injury_class)
 
@@ -345,7 +359,20 @@ export default function IncidentReportPage() {
   }
 
   // ── Step 2: the details ──────────────────────────────────────────────────
-  const canSubmit = form.title.trim() && form.date && form.incidentType &&
+  // ★ HSE, round 4: "refuse future dates on all 3 incident types. warn the user
+  // that they selected a future date by mistake." Said as soon as it is typed —
+  // the server refuses it too, but being told at the field is the difference
+  // between a corrected typo and a rejected form.
+  const inTheFuture = Boolean(form.date) && (() => {
+    const [y, m, d] = form.date.split('-').map(Number)
+    const [hh, mm] = (form.time || '23:59').split(':').map(Number)
+    // Built from parts rather than parsed: `new Date('2026-09-29')` is midnight
+    // UTC, which is the previous evening here and has caused this exact class of
+    // off-by-a-day across the whole of UniOps.
+    return new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0).getTime() > Date.now()
+  })()
+
+  const canSubmit = form.title.trim() && form.date && !inTheFuture && form.incidentType &&
     // A type that carries no severity has to have one supplied, or the injury
     // rates lose a count that nobody will notice is missing.
     (!asksInjuryClass || form.injuryClass) &&
@@ -386,6 +413,7 @@ export default function IncidentReportPage() {
       <div className="grid grid-cols-2 gap-2">
         <Field label="Date" required>
           <input type="date" className={inputClass} value={form.date}
+                 max={todayForInput()}
                  onChange={(e) => set('date', e.target.value)} />
         </Field>
         <Field label="Time">
@@ -393,6 +421,13 @@ export default function IncidentReportPage() {
                  onChange={(e) => set('time', e.target.value)} />
         </Field>
       </div>
+      {inTheFuture && (
+        <p className="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800">
+          That is in the future. An incident is reported after it happens, and
+          the Ministry and WSIB clocks both run from when it happened — check
+          the date and time.
+        </p>
+      )}
 
       <Field label="What kind of incident was this?" required>
         <select className={inputClass} value={form.incidentType}
@@ -418,6 +453,19 @@ export default function IncidentReportPage() {
             <option value="lost_time">Lost time</option>
           </select>
         </Field>
+      )}
+      {/* ★ HSE's own test for lost time, where the choice is made. Nothing in
+          the system classifies an injury — the reporter picks it — so whether
+          it is picked right depends on whether they know the test, and the
+          answer drives LTIFR and the WSIB clock. The words are HSE's, from
+          Settings, because a regulatory definition invented here would be
+          wrong and would be relied on anyway. Nothing is shown until they
+          write it. */}
+      {asksInjuryClass && lostTimeGuidance && (
+        <p className="-mt-1 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+          <span className="font-medium text-neutral-800">Lost time means: </span>
+          {lostTimeGuidance}
+        </p>
       )}
       {/* The shared picker rather than a flat list of leaves. HSE asked for
           the general area first and the line last and optional, because

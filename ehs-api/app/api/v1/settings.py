@@ -53,6 +53,33 @@ async def _config_row(db) -> EhsConfig:
     return row
 
 
+class ReportingGuidance(BaseModel):
+    """What somebody filling in an incident report needs to know, and no more.
+
+    ★ Its own endpoint rather than widening `/settings/config`, which needs
+    `ehs.incident.read` — a permission an ordinary employee does not hold, and
+    they are exactly who reports incidents. Reached through the config endpoint
+    the guidance would have been invisible to everybody who needs it, which is
+    this module's most repeated fault. The rest of the config — who is notified,
+    the mail templates, the escalation timings — is nobody's business at the
+    point of filling in a form, so it is not in here.
+    """
+
+    lost_time_guidance: str | None
+    allow_anonymous_report: bool
+
+
+@router.get("/reporting-guidance", response_model=ReportingGuidance)
+async def reporting_guidance(db: SessionDep, user: CanReportIncident):  # noqa: ARG001
+    config = await _config_row(db)
+    rules = config.lost_time_rules or {}
+    text_value = (rules.get("guidance") or "").strip() or None
+    return ReportingGuidance(
+        lost_time_guidance=text_value,
+        allow_anonymous_report=bool(config.allow_anonymous_report),
+    )
+
+
 @router.get("/config", response_model=ConfigOut)
 async def get_config(db: SessionDep, user: CanReadIncident):  # noqa: ARG001
     return ConfigOut.model_validate(await _config_row(db))
@@ -401,20 +428,16 @@ async def add_area_owner(payload: AreaOwnerIn, db: SessionDep, user: CanManageSe
             f"{person.full_name}'s account is not active, so work sent to this "
             "area would reach nobody")
 
-    # ★ Refused if they do not hold the role the work is addressed to.
+    # ★ Any active member of staff, whatever role they hold. HSE: "the area
+    # owners can be assigned to anyone regardless of role. remove the supervisor
+    # requirement."
     #
-    # Area work is raised for `area_supervisor` and fetched only for holders of
-    # that role. An area assigned to somebody without it looks covered — so the
-    # work stops falling to HSE — while never appearing on their list either.
-    # That is the silent loss this whole mechanism exists to remove, and it
-    # would be created here, by a screen that looked like it had worked.
-    held = await notify.roles_held_by(db, person.id, person.role or "")
-    if not held & area_scope.AREA_SCOPED_ROLES:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"{person.full_name} is not an area supervisor, so work for this "
-            "area would not reach them. Give them the role first, or choose "
-            "somebody who holds it.")
+    # This used to refuse anybody without `area_supervisor`, and the refusal was
+    # right at the time: area work is addressed to that role and was only ever
+    # fetched for holders of it, so an area given to anybody else looked covered
+    # and reached nobody. Removing the check alone would have restored exactly
+    # that silent loss. What changed with it is the task query — being down for
+    # an area is now its own reason to be sent that area's work.
 
     existing = (await db.execute(
         select(AreaOwner).where(AreaOwner.user_id == payload.user_id,
