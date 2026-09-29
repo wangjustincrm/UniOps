@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.services import incident_type
@@ -31,6 +31,11 @@ class IncidentPersonIn(BaseModel):
     treatment: str | None = None
     sent_offsite: bool | None = None
     follow_up: str | None = None
+
+
+# How far ahead of this server a reporting device may be. Clock skew between
+# a phone and a server, not a margin for getting the date wrong.
+FUTURE_TOLERANCE = timedelta(minutes=10)
 
 
 class IncidentCreate(BaseModel):
@@ -77,6 +82,25 @@ class IncidentCreate(BaseModel):
             raise ValueError(
                 "occurred_at must include a timezone offset — the statutory "
                 "clocks depend on which local day it falls on"
+            )
+        # ★ HSE's answer in round 4: "refuse future dates on all 3 incident
+        # types. warn the user that they selected a future date by mistake."
+        #
+        # It is not tidiness. MOL's forty-eight hours and WSIB's three business
+        # days both run from the occurrence, so a date typed a week ahead sets
+        # both clocks in the future — the incident then sits outside every
+        # overdue report while the real deadline passes unnoticed. Refused where
+        # the record is created rather than warned about on the screen, because
+        # a warning that can be clicked past is how the clock gets set wrong.
+        #
+        # The tolerance absorbs clock skew between a phone and this server, not
+        # a mistake: a few minutes is the difference between two devices, and
+        # anything beyond it is somebody typing the wrong date.
+        if self.occurred_at > datetime.now(timezone.utc) + FUTURE_TOLERANCE:
+            raise ValueError(
+                "This is dated in the future. An incident is reported after it "
+                "happens, and the MOL and WSIB clocks both run from when it "
+                "happened — check the date and time."
             )
         return self
 

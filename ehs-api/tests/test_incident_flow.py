@@ -619,7 +619,11 @@ async def test_new_years_eve_belongs_to_the_year_it_happened_in(hse_manager, db_
     from sqlalchemy import text as sql_text
 
     _, client = hse_manager
-    year = datetime.now(ET).year
+    # ★ Last year's 31 December, not this one's. An incident cannot be dated in
+    # the future any more (HSE, round 4), and for most of the year "this
+    # December" is. The boundary under test is unchanged: 8:30pm on the 31st in
+    # Ontario is 1:30am on 1 January in UTC either way.
+    year = datetime.now(ET).year - 1
 
     # Measured as a difference, not as a count: other tests file injuries too,
     # and an assertion that December is non-empty would pass under the old
@@ -734,3 +738,66 @@ async def test_two_people_hurt_in_one_incident_count_once(hse_manager, db_sessio
         f"/api/v1/incidents?body_part_label={hand['label']}&limit=200")
     assert rows.status_code == 200, rows.text
     assert sum(1 for r in rows.json() if r["id"] == created.json()["id"]) == 1
+
+
+class TestAnIncidentCannotBeDatedForward:
+    """★ HSE, round 4: "refuse future dates on all 3 incident types. warn the
+    user that they selected a future date by mistake."
+
+    Not tidiness. MOL's forty-eight hours and WSIB's three business days both
+    run from the occurrence, so a date typed a week ahead puts both clocks in
+    the future: the incident sits outside every overdue report while the real
+    deadline goes past unnoticed. Refused where the record is made, because a
+    warning that can be clicked past is how the clock gets set wrong.
+    """
+
+    @pytest.mark.parametrize("form_kind", ["medical", "equipment", "near_miss"])
+    async def test_all_three_forms_refuse_it(self, hse_manager, form_kind):
+        _, client = hse_manager
+        ahead = datetime.now(timezone.utc) + timedelta(days=3)
+
+        refused = await client.post("/api/v1/incidents", json={
+            "form_kind": form_kind,
+            "title": "Dated next week by mistake",
+            "occurred_at": ahead.isoformat(),
+        })
+        assert refused.status_code == 422, refused.text
+        assert "future" in refused.text.lower()
+
+    @pytest.mark.parametrize("form_kind", ["medical", "equipment", "near_miss"])
+    async def test_all_three_forms_still_accept_now(self, hse_manager, form_kind):
+        """★ The admission. Refusing everything satisfies the test above."""
+        _, client = hse_manager
+        accepted = await client.post("/api/v1/incidents", json={
+            "form_kind": form_kind,
+            "title": "Reported as it happened",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+        })
+        assert accepted.status_code in (200, 201), accepted.text
+
+    async def test_a_report_written_up_days_later_is_still_accepted(self, hse_manager):
+        """The common case, and the one a future-date rule must not catch.
+
+        Paper from a night shift gets keyed in days afterwards, and the WSIB
+        clock is supposed to run from the occurrence — so backdating is the
+        correct behaviour, not a loophole.
+        """
+        _, client = hse_manager
+        accepted = await client.post("/api/v1/incidents", json={
+            "form_kind": "medical",
+            "title": "From Friday night's sheet",
+            "occurred_at": (datetime.now(timezone.utc) - timedelta(days=4)).isoformat(),
+        })
+        assert accepted.status_code in (200, 201), accepted.text
+
+    async def test_a_phone_a_few_minutes_fast_is_not_treated_as_a_mistake(self, hse_manager):
+        """Clock skew between a device and this server is not somebody typing
+        the wrong date, and refusing it would make the form unusable on exactly
+        the phones it is meant for."""
+        _, client = hse_manager
+        accepted = await client.post("/api/v1/incidents", json={
+            "form_kind": "near_miss",
+            "title": "Reported from a phone whose clock runs fast",
+            "occurred_at": (datetime.now(timezone.utc) + timedelta(minutes=3)).isoformat(),
+        })
+        assert accepted.status_code in (200, 201), accepted.text
