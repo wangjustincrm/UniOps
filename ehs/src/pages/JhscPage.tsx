@@ -13,7 +13,7 @@
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { AlertTriangle, CalendarDays, Check, Plus, UserMinus, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate, todayForInput } from '@/lib/formatDate'
@@ -56,7 +56,24 @@ const TABS = [
 type TabKey = (typeof TABS)[number]['key']
 
 export default function JhscPage() {
-  const [tab, setTab] = useState<TabKey>('meetings')
+  // ★ A reply task links here with the recommendation it means. Landing on the
+  // meetings list and hunting for it is what the link used to offer, and the
+  // task is a statutory obligation with twenty-one days on it.
+  const [params] = useSearchParams()
+  const wantedRec = params.get('rec')
+  const [tab, setTab] = useState<TabKey>(wantedRec ? 'recommendations' : 'meetings')
+
+  // ★ And the tab follows `rec` whenever it changes, not only on the first
+  // render. This page lives in a keep-alive tab keyed on its path without the
+  // search, so arriving a second time does not remount: open one reply task,
+  // look at Meetings, then open another from My Actions, and the highlight
+  // would move to a recommendation on a tab the reader is not looking at. Same
+  // fault, same fix, as the date filter — raised in review by uniops-9a.
+  const [lastRec, setLastRec] = useState(wantedRec)
+  if (wantedRec !== lastRec) {
+    setLastRec(wantedRec)
+    if (wantedRec) setTab('recommendations')
+  }
   const { can } = usePermissions()
   const mayManage = can('ehs.jhsc.manage')
 
@@ -76,7 +93,9 @@ export default function JhscPage() {
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
       {tab === 'meetings' && <MeetingsTab mayManage={mayManage} />}
       {tab === 'roster' && <RosterTab mayManage={mayManage} />}
-      {tab === 'recommendations' && <RecommendationsTab mayManage={mayManage} />}
+      {tab === 'recommendations' && (
+        <RecommendationsTab mayManage={mayManage} highlight={wantedRec} />
+      )}
     </div>
   )
 }
@@ -403,7 +422,11 @@ function NewMeetingForm({ onClose }: { onClose: () => void }) {
 
 // ── Recommendations ──────────────────────────────────────────────────────────
 
-function RecommendationsTab({ mayManage }: { mayManage: boolean }) {
+function RecommendationsTab({ mayManage, highlight }: {
+  mayManage: boolean
+  /** The one a reply task was pointing at, brought to the top and marked. */
+  highlight?: string | null
+}) {
   const navigate = useNavigate()
   const all = useQuery({
     queryKey: ['jhsc-recommendations'],
@@ -428,9 +451,13 @@ function RecommendationsTab({ mayManage }: { mayManage: boolean }) {
 
   return (
     <ul className="flex flex-col gap-2">
-      {all.data?.map((r) => (
+      {[...(all.data ?? [])]
+        .sort((a, b) => (a.id === highlight ? -1 : b.id === highlight ? 1 : 0))
+        .map((r) => (
         <li key={r.id}>
-          <Card>
+          <Card className={r.id === highlight
+            ? 'ring-2 ring-primary-400 ring-offset-1'
+            : undefined}>
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <button type="button"
                       onClick={() => navigate(`/jhsc/meetings/${r.meeting_id}`)}

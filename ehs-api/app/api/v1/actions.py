@@ -161,7 +161,13 @@ TASK_PATHS: dict[str, str] = {
     "ehs_cert": "/training",
     "ehs_asset": "/equipment",
     "ehs_inc": "/incidents/{id}",
-    "ehs_jhsc": "/jhsc",
+    # ★ To the recommendation, now that the task hangs off one. It was "/jhsc" —
+    # the committee's list page — so somebody told to write a statutory reply
+    # landed on a list of meetings and had to find which meeting and which
+    # recommendation it meant. Raised in review by uniops-9a: changing the
+    # document without changing this would have left the link technically valid
+    # and practically useless.
+    "ehs_jhsc": "/jhsc?rec={id}",
     "ehs_ptw": "/permits/{id}",
 }
 

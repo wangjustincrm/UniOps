@@ -283,3 +283,93 @@ class TestTheReplyReachesThePersonWhoOwesIt:
         mine = await client.get("/api/v1/actions/mine/tasks")
         assert mine.status_code == 200, mine.text
         assert any("recommendation" in t["title"].lower() for t in mine.json())
+
+
+class TestOneMeetingTwoRecommendations:
+    """★ The fault uniops-9a found in review, and the reason the task moved.
+
+    The reply task was raised with `doc_id=meeting.id` — one document for every
+    recommendation made at that meeting — so closing "the reply task" could only
+    close all of them. Sending the second recommendation closed the first one's
+    task while its twenty-one days were still running and nobody had answered
+    it: the obligation stayed and the reminder went.
+
+    The statutory deadline was never touched by this, which is what made it
+    quiet. The clock kept running against a recommendation that had dropped off
+    everybody's list.
+    """
+
+    async def test_sending_the_second_does_not_close_the_first_one_s_task(
+            self, hse_manager, manager_with_email, test_engine, db_session):
+        from tests.conftest import authed_client, make_token, make_user
+
+        _, client = hse_manager
+        other = await make_user(test_engine, role="requester", full_name="Second Manager")
+        meeting = await _a_meeting(client)
+
+        first = await client.post(
+            f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations", json={
+                "recommendation": "Guard the sealer entrance",
+                "send_to": [str(manager_with_email.id)]})
+        assert first.status_code in (200, 201), first.text
+
+        second = await client.post(
+            f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations", json={
+                "recommendation": "Replace the eyewash signage",
+                "send_to": [str(other.id)]})
+        assert second.status_code in (200, 201), second.text
+
+        # ★ The first recipient still owes their reply.
+        async with authed_client(
+                make_token(manager_with_email.id, manager_with_email.role),
+                db_session) as theirs:
+            mine = [t for t in (await theirs.get("/api/v1/actions/mine/tasks")).json()
+                    if "recommendation" in t["title"].lower()]
+            assert mine, "sending the second recommendation closed the first one's task"
+            assert "#1" in mine[0]["title"], mine[0]["title"]
+
+        # And so does the second.
+        async with authed_client(make_token(other.id, other.role), db_session) as theirs:
+            mine = [t for t in (await theirs.get("/api/v1/actions/mine/tasks")).json()
+                    if "recommendation" in t["title"].lower()]
+            assert mine and "#2" in mine[0]["title"], mine
+
+    async def test_answering_one_leaves_the_other_owed(
+            self, hse_manager, manager_with_email, test_engine, db_session):
+        """★ The other half. `respond()` used to wait until nothing on the whole
+        meeting was outstanding — a detour that existed only because the tasks
+        shared a document. Now answering one answers one, and the test proves it
+        does not answer both."""
+        from tests.conftest import authed_client, make_token, make_user
+
+        _, client = hse_manager
+        other = await make_user(test_engine, role="requester", full_name="Third Manager")
+        meeting = await _a_meeting(client)
+
+        first = (await client.post(
+            f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations", json={
+                "recommendation": "Fit a guard", "send_to": [str(manager_with_email.id)]})).json()
+        second = (await client.post(
+            f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations", json={
+                "recommendation": "Re-brief the crew", "send_to": [str(other.id)]})).json()
+
+        answered = await client.post(f"/api/v1/jhsc/recommendations/{first['id']}/respond",
+                                     json={"response": "Guard fitted", "outcome": "accepted"})
+        assert answered.status_code == 200, answered.text
+
+        # The one that was answered is off their list.
+        async with authed_client(
+                make_token(manager_with_email.id, manager_with_email.role),
+                db_session) as theirs:
+            left = [t for t in (await theirs.get("/api/v1/actions/mine/tasks")).json()
+                    if "recommendation" in t["title"].lower()]
+            assert not left, f"answering it did not clear the task: {left}"
+
+        # ★ The one that was not is still owed — this is what used to break the
+        # other way round.
+        async with authed_client(make_token(other.id, other.role), db_session) as theirs:
+            still = [t for t in (await theirs.get("/api/v1/actions/mine/tasks")).json()
+                     if "recommendation" in t["title"].lower()]
+            assert still, "answering one recommendation cleared another one's task"
+            assert "#2" in still[0]["title"], still[0]["title"]
+        assert second["seq"] == 2

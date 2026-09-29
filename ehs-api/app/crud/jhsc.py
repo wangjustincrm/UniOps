@@ -290,11 +290,22 @@ async def add_recommendation(
 
     await deadline_service.ensure_jhsc_reply_deadline(
         db, rec, meeting_ref=meeting.meeting_no)
+    # ★ The task belongs to the recommendation, not to the meeting.
+    #
+    # It was `doc_id=meeting.id`, which is one document for every recommendation
+    # made at that meeting — so closing "the reply task" could only ever close
+    # all of them. Sending a second recommendation closed the first one's task
+    # while its twenty-one days were still running and nobody had answered it.
+    # Found in review by uniops-9a.
+    #
+    # `deadlines.py` already uses the recommendation as the document for the
+    # statutory task, so both kinds now hang off the same id and are told apart
+    # by `task_type` — which every close in this module passes.
     await task_service.open_task(
         db,
         task_type=task_service.TASK_JHSC_REPLY,
         doc_type=DOC_JHSC,
-        doc_id=meeting.id,
+        doc_id=rec.id,
         doc_number=meeting.meeting_no,
         title=f"Reply to JHSC recommendation #{rec.seq}",
         assigned_role="ehs_manager",
@@ -332,14 +343,21 @@ async def respond(
         db, deadline, user_id=user_id, user_name=rec.responded_by_name,
         evidence_note=response[:500], when=now)
 
-    # Close the reply task only when nothing is left outstanding on the
-    # meeting — the task is one per recommendation but they share a document.
-    still_open = await list_recommendations(
-        db, meeting_id=rec.meeting_id, outstanding_only=True)
-    if not still_open:
-        await task_service.close_tasks_for(
-            db, doc_type=DOC_JHSC, doc_id=rec.meeting_id,
-            task_type=task_service.TASK_JHSC_REPLY, completed_by=user_id)
+    # ★ This recommendation's task, and only its own. It used to wait until
+    # nothing on the whole meeting was outstanding — a detour that existed
+    # solely because every reply task shared the meeting as its document, so
+    # closing one closed them all. Now that the task hangs off the
+    # recommendation, answering one answers one.
+    await task_service.close_tasks_for(
+        db, doc_type=DOC_JHSC, doc_id=rec.id,
+        task_type=task_service.TASK_JHSC_REPLY, completed_by=user_id)
+    # ★ Flushed here, as every other write in this module is. `close_tasks_for`
+    # sets attributes and leaves the flush to its caller, and the session this
+    # service runs under has autoflush off — so without this a read taken
+    # immediately afterwards sees the task still open. In a request that ends in
+    # a commit it makes no difference; anywhere else it is the difference between
+    # a closed task and one that looks closed only to the object that closed it.
+    await db.flush()
     return rec
 
 
@@ -380,14 +398,14 @@ async def send_recommendation(
     # recommendation redirected to the right manager must stop being the wrong
     # manager's to answer.
     await task_service.close_tasks_for(
-        db, doc_type=DOC_JHSC, doc_id=meeting.id,
+        db, doc_type=DOC_JHSC, doc_id=rec.id,
         task_type=task_service.TASK_JHSC_REPLY)
     for person in people:
         await task_service.open_task(
             db,
             task_type=task_service.TASK_JHSC_REPLY,
             doc_type=DOC_JHSC,
-            doc_id=meeting.id,
+            doc_id=rec.id,
             doc_number=meeting.meeting_no,
             title=f"Reply to JHSC recommendation #{rec.seq}",
             assigned_role="ehs_manager",
