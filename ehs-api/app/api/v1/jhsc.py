@@ -341,6 +341,12 @@ async def start_minutes_form(
         db, template.id, user_id=_user_id(user),
         location_id=None, occurred_at=None)
     meeting.minutes_submission_id = submission.id
+    # ★ Both directions, in the one place the link is made. Without the second
+    # one the form cannot say what it is for, and an empty set of minutes looks
+    # exactly like a new blank form.
+    submission.source_type = "jhsc"
+    submission.source_id = meeting.id
+    submission.source_ref = meeting.meeting_no
     await db.flush()
     return MinutesFormStarted(submission_id=submission.id,
                               submission_no=submission.submission_no)

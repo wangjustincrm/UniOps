@@ -82,6 +82,14 @@ class FormSubmission(UUIDPrimaryKey, TimestampMixin, Base):
     submitted_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     submitted_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # ★ What this form is for. The link used to run one way only — a meeting
+    # knew its minutes and the minutes knew nothing — so an unfilled set of
+    # minutes was indistinguishable from a fresh blank form, which is what
+    # "returns a new form not the same form back" was describing.
+    source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    source_ref: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     failed_count: Mapped[int] = mapped_column(Integer, nullable=False,
                                               default=0, server_default="0")
 

@@ -13,7 +13,7 @@
  * they can act on when they get back to signal.
  */
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, CloudOff } from 'lucide-react'
 import { useTabTitle } from '@uniops/shell'
@@ -33,6 +33,9 @@ interface Submission {
   location_path: string | null
   submitted_at: string | null
   submitted_by_name: string | null
+  source_type: string | null
+  source_id: string | null
+  source_ref: string | null
   failed_count: number
 }
 
@@ -151,6 +154,19 @@ export default function FormFillPage() {
     mutationFn: async () => {
       if (timer.current) clearTimeout(timer.current)
       await flush()
+      // ★ flush() reports a failure rather than raising, so the debounced
+      // autosave can put the batch back and retry. Submitting regardless was
+      // the fault: the form would be marked submitted — and submitted forms are
+      // immutable — while what was typed never left the browser. Nothing is
+      // lost by stopping here; the batch is still pending and the next save
+      // sends it.
+      if (Object.keys(pending.current).length > 0) {
+        throw new ApiError(
+          0,
+          'What you typed has not been saved yet, so this has not been ' +
+          'submitted. Check your connection and try again — nothing has been lost.',
+          null)
+      }
 
       // Photos upload before the submit call, because a submitted form is
       // immutable — after it, there is nowhere for them to go.
@@ -191,6 +207,19 @@ export default function FormFillPage() {
     <div className="p-4 pb-28">
       <header className="mb-4">
         <p className="font-mono text-xs text-neutral-500">{sub.submission_no}</p>
+        {/* ★ What this form is for. Opened from a meeting, an unfilled set of
+            minutes used to be indistinguishable from a fresh blank form — the
+            only thing on screen was this reference number, and checking it
+            meant comparing it against the other screen. */}
+        {sub.source_type === 'jhsc' && sub.source_id && (
+          <p className="mt-0.5 text-sm text-neutral-700">
+            Minutes of{' '}
+            <Link to={`/jhsc/meetings/${sub.source_id}`}
+                  className="font-medium text-primary-700 hover:underline">
+              {sub.source_ref ?? 'the committee meeting'}
+            </Link>
+          </p>
+        )}
         {sub.location_path && (
           <p className="mt-0.5 text-sm text-neutral-600">
             {formatAreaPath(sub.location_path)}

@@ -123,6 +123,12 @@ class SubmissionOut(BaseModel):
     submitted_at: datetime | None
     submitted_by_name: str | None
     failed_count: int
+    # What the form is for, so it can say so. Without this a set of committee
+    # minutes opened from its meeting showed only its own reference number, and
+    # an unfilled one was indistinguishable from a fresh blank form.
+    source_type: str | None = None
+    source_id: uuid.UUID | None = None
+    source_ref: str | None = None
 
 
 class SubmissionListItem(BaseModel):

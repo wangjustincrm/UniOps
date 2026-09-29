@@ -547,7 +547,11 @@ function MinutesPanel(
   const save = useMutation({
     mutationFn: () => api.patch(`/api/v1/jhsc/meetings/${meeting.id}`,
                                 { agenda: agenda || null, minutes: minutes || null,
-                                  status: minutes.trim() ? 'held' : 'scheduled' }),
+                                  // Same field, same mistake: a meeting minuted
+                                  // on the form has an empty box and was being
+                                  // put back to "scheduled" on every save.
+                                  status: (minutes.trim() || meeting.minutes_submission_id)
+                                    ? 'held' : 'scheduled' }),
     onSuccess: onSaved,
   })
   const publish = useMutation({
@@ -635,8 +639,14 @@ function MinutesPanel(
                 onClick={() => { if (!save.isPending) save.mutate() }}>
           Save draft
         </button>
+        {/* ★ Was disabled on the text box alone, and where HSE has configured a
+            minutes form that box is not even rendered — so Publish could never
+            be pressed. The server decides whether there are minutes to publish
+            (either the box or a submitted form) and says so if there are not;
+            this only has to stop locking the button. One judge, not two. */}
         <button type="button" className={primaryButton}
-                disabled={!minutes.trim() || publish.isPending || save.isPending}
+                disabled={!(minutes.trim() || meeting.minutes_submission_id)
+                          || publish.isPending || save.isPending}
                 onClick={async () => {
                   if (publish.isPending || save.isPending) return
                   await save.mutateAsync()

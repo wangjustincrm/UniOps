@@ -16,6 +16,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.form import FormSubmission
 from app.models.jhsc import JhscAttendance, JhscMeeting, JhscMember, JhscRecommendation
 from app.models.mirrors import Department, User
 from app.services import deadlines as deadline_service
@@ -181,11 +182,23 @@ async def publish_meeting(
     Refused without minutes: publishing an empty record would satisfy the
     dashboard and nothing else.
     """
-    if not (meeting.minutes or "").strip():
+    # ★ Minutes are written either in the box or on the configured form, and
+    # this only ever looked at the box. Where HSE has chosen a minutes form the
+    # box is not even shown, so Publish was permanently refused — reported as
+    # "publish the minutes button can not be pressed by the creator of the
+    # meeting", which read like a permissions fault and was not one. Adding the
+    # form path without moving the test that guards publishing is what caused it.
+    on_a_form = False
+    if meeting.minutes_submission_id is not None:
+        submission = await db.get(FormSubmission, meeting.minutes_submission_id)
+        on_a_form = submission is not None and submission.status == "submitted"
+
+    if not (meeting.minutes or "").strip() and not on_a_form:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "Write the minutes before publishing — the published record is what "
-            "goes on the noticeboard and to the Ministry if asked")
+            "Write the minutes before publishing — either in the box or on the "
+            "minutes form, which has to be submitted. The published record is "
+            "what goes on the noticeboard and to the Ministry if asked.")
     meeting.status = "published"
     meeting.published_at = datetime.now(timezone.utc)
     meeting.published_by = user_id
@@ -354,6 +367,34 @@ async def send_recommendation(
     rec.sent_at = datetime.now(timezone.utc)
     rec.sent_by = sender_id
     rec.sent_by_name = await _name(db, sender_id)
+    await db.flush()
+
+    # ★ Reported as "the recommendations assigned to a supervisor do not show up
+    # in their my actions register". Sending only emailed them and recorded that
+    # it had. The reply is a statutory obligation with twenty-one days on it, and
+    # this module's rule is that whoever must *do* something holds a task —
+    # email is the notice, not the assignment. Raised against each recipient,
+    # because each of them was asked.
+    #
+    # Re-sending replaces the recipients, so their tasks are replaced too: a
+    # recommendation redirected to the right manager must stop being the wrong
+    # manager's to answer.
+    await task_service.close_tasks_for(
+        db, doc_type=DOC_JHSC, doc_id=meeting.id,
+        task_type=task_service.TASK_JHSC_REPLY)
+    for person in people:
+        await task_service.open_task(
+            db,
+            task_type=task_service.TASK_JHSC_REPLY,
+            doc_type=DOC_JHSC,
+            doc_id=meeting.id,
+            doc_number=meeting.meeting_no,
+            title=f"Reply to JHSC recommendation #{rec.seq}",
+            assigned_role="ehs_manager",
+            assigned_user_id=person.id,
+            description=("OHSA s.9(20) requires a written response within 21 days "
+                         f"of the recommendation being made. {rec.recommendation[:300]}"),
+        )
     await db.flush()
 
     await notify.jhsc_recommendation_sent(db, meeting, rec, people, body=message)

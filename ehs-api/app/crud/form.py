@@ -238,6 +238,19 @@ async def submit(
     answers = {a.question_key: a for a in await answers_for(db, submission.id)}
     questions = form_engine.answerable(submission.schema_snapshot)
 
+    # ★ A form with nothing in it at all. The required-question check below
+    # cannot catch this, because a template whose questions are all optional —
+    # which HSE's minutes form is — lets a completely blank form through, and it
+    # is then immutable. Three sets of committee minutes were filed that way:
+    # marked submitted, containing nothing, and impossible to correct. A blank
+    # statutory record is worse than a missing one, because it looks done.
+    if not any(not _is_blank(a) for a in answers.values()):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Nothing has been filled in on this form yet. Answer at least one "
+            "question before submitting it — a submitted form cannot be edited.",
+        )
+
     missing = [
         q["label"] for q in questions
         if q.get("required") and _is_blank(answers.get(q["key"]))

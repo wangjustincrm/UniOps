@@ -23,7 +23,7 @@ from sqlalchemy import select
 
 from app.models.communication import Communication
 from app.models.mirrors import User
-from tests.conftest import make_user
+from tests.conftest import authed_client, make_token, make_user
 
 
 async def _a_meeting(client) -> dict:
@@ -202,3 +202,84 @@ async def test_a_worker_cannot_preview_a_committee_notice(worker):
         "meeting_id": str(uuid.uuid4()), "recommendation": "Anything",
     })
     assert refused.status_code == 403, refused.text
+
+
+class TestTheReplyReachesThePersonWhoOwesIt:
+    """★ "the recommendations assigned to a supervisor do not show up in their
+    my actions register."
+
+    Sending emailed them and recorded that it had. This module's rule is that
+    whoever must *do* something holds a task and email is the notice, not the
+    assignment — and a written reply inside twenty-one days is as much an
+    obligation as anything in the module.
+    """
+
+    async def test_sending_puts_the_reply_in_the_recipient_s_own_list(
+            self, hse_manager, manager_with_email, db_session):
+        _, client = hse_manager
+        meeting = await _a_meeting(client)
+
+        r = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations", json={
+            "recommendation": "Guard the sealer entrance",
+            "send_to": [str(manager_with_email.id)],
+        })
+        assert r.status_code in (200, 201), r.text
+
+        async with authed_client(
+                make_token(manager_with_email.id, manager_with_email.role),
+                db_session) as theirs:
+            mine = await theirs.get("/api/v1/actions/mine/tasks")
+            assert mine.status_code == 200, mine.text
+            titles = [t["title"] for t in mine.json()]
+            assert any("recommendation" in t.lower() for t in titles), \
+                f"the reply is not in their list: {titles}"
+
+    async def test_redirecting_it_moves_the_obligation(
+            self, hse_manager, manager_with_email, db_session, test_engine):
+        """Re-sending replaces the recipients, so it must replace their tasks.
+
+        A recommendation redirected to the right manager must stop being the
+        wrong manager's to answer — otherwise the first person keeps a statutory
+        task for something that is no longer theirs.
+        """
+        _, client = hse_manager
+        wrong = await make_user(test_engine, role="requester", full_name="Wrong Manager")
+        meeting = await _a_meeting(client)
+
+        created = await client.post(
+            f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations", json={
+                "recommendation": "Replace the eyewash signage",
+                "send_to": [str(wrong.id)],
+            })
+        assert created.status_code in (200, 201), created.text
+        rec_id = created.json()["id"]
+
+        resent = await client.post(f"/api/v1/jhsc/recommendations/{rec_id}/send",
+                                   json={"user_ids": [str(manager_with_email.id)]})
+        assert resent.status_code == 200, resent.text
+
+        async with authed_client(make_token(wrong.id, wrong.role), db_session) as theirs:
+            left = [t["title"] for t in (await theirs.get("/api/v1/actions/mine/tasks")).json()]
+            assert not any("recommendation" in t.lower() for t in left), \
+                f"the wrong manager still owes the reply: {left}"
+
+        # ★ The admission: it moved rather than vanishing.
+        async with authed_client(
+                make_token(manager_with_email.id, manager_with_email.role),
+                db_session) as theirs:
+            now = [t["title"] for t in (await theirs.get("/api/v1/actions/mine/tasks")).json()]
+            assert any("recommendation" in t.lower() for t in now), \
+                f"nobody owes the reply now: {now}"
+
+    async def test_recording_without_sending_leaves_it_with_hse(self, hse_manager):
+        """Unchanged, and deliberate: until somebody is named, the obligation is
+        HSE's to place. The role-assigned task is what makes it visible to them."""
+        _, client = hse_manager
+        meeting = await _a_meeting(client)
+        r = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations",
+                              json={"recommendation": "Review the ladder procedure"})
+        assert r.status_code in (200, 201), r.text
+
+        mine = await client.get("/api/v1/actions/mine/tasks")
+        assert mine.status_code == 200, mine.text
+        assert any("recommendation" in t["title"].lower() for t in mine.json())
