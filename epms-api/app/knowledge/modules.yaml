@@ -82,6 +82,12 @@ modules:
         The dividing line people get wrong — if the company is being invoiced
         by a vendor, that is Procurement. If you paid and want it back, that
         is OA.
+      - >-
+        A receipt scanned on a claim line (Scan) is kept as that line's receipt
+        and attached to the claim automatically when it is saved — it does not
+        need uploading again. General and travel expense claims need at least
+        one attachment before they can be submitted. The comment typed when
+        submitting appears in the claim's Approval Timeline.
 
   - key: vms
     label: VMS — Visitor Management
