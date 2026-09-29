@@ -88,6 +88,38 @@ async def areas_for(db: AsyncSession, user_id: uuid.UUID) -> list[str]:
         " where o.user_id = :uid"), {"uid": user_id})).scalars().all())
 
 
+async def owners_of(db: AsyncSession, location_id: uuid.UUID | None) -> list[tuple]:
+    """Who is answerable for the area a record is in, and the area they cover.
+
+    ★ The reverse of `areas_for`, asked when something happens somewhere. Round
+    4: "when the location where the incident is recorded on a form, ensure the
+    area responsible owner is included in the initial notification message."
+
+    An owner may be named for a building while the incident is recorded against
+    a line inside it, so this is the prefix match from `covers` run the other
+    way round — with the separator required, for the same reason: this plant
+    names siblings by continuation, and a bare prefix would hand the owner of
+    "102 – Pretreatment – Dosing and Tipping" everything that happens in
+    "102 – Pretreatment – Milk Receiving".
+
+    Only active accounts, because the point of the list is that somebody reads
+    it. Returns (user_id, user_name, covered_path) so the message can say why
+    they were told.
+    """
+    if location_id is None:
+        return []
+    rows = (await db.execute(text(
+        "select o.user_id, o.user_name, owned.path"
+        "  from ehs_area_owners o"
+        "  join locations owned on owned.id = o.location_id"
+        "  join locations here on here.id = :loc"
+        "  join users u on u.id = o.user_id and u.is_active"
+        " where here.path = owned.path"
+        "    or here.path like owned.path || '/%'"),
+        {"loc": location_id})).all()
+    return [(r[0], r[1], r[2]) for r in rows]
+
+
 def covers(areas: list[str], path: str | None) -> bool:
     """Whether one of these areas contains that location.
 

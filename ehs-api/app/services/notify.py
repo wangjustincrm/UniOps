@@ -107,6 +107,28 @@ async def incident_reported(db: AsyncSession, incident) -> None:
     ends up investigating gets a task when the incident is classified.
     """
     people = await _incident_audience(db, incident.category_label)
+
+    # ★ And whoever is answerable for the area it happened in. Round 4: "when the
+    # location where the incident is recorded on a form, ensure the area
+    # responsible owner is included in the initial notification message."
+    #
+    # An owner named for a building is included for anything inside it, so the
+    # notice reaches the right supervisor without HSE forwarding it. No task:
+    # nobody on this list has been assigned the investigation, and a task
+    # nobody can complete never clears.
+    from app.services import area_scope
+
+    owners = await area_scope.owners_of(db, incident.location_id)
+    named_here = ""
+    if owners:
+        extra = await mail.recipients(db, [uid for uid, _, _ in owners])
+        known = {u.id for u in people}
+        people = people + [u for u in extra if u.id not in known]
+        # Said in the message, because an email with no stated reason reads as
+        # a circular. The area is the reason.
+        named_here = ("You are receiving this because you are down for "
+                      + ", ".join(sorted({path for _, _, path in owners})) + ".")
+
     if not people:
         return
 
@@ -116,6 +138,8 @@ async def incident_reported(db: AsyncSession, incident) -> None:
         "",
         (incident.description or "")[:600],
     ]
+    if named_here:
+        lines += ["", named_here]
     if incident.mol_reportable:
         lines += ["", "This has been flagged as reportable to the Ministry. "
                       "OHSA s.51(1) allows forty-eight hours from the occurrence "

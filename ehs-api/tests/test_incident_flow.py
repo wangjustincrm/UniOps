@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
+from sqlalchemy import select
 
 ET = ZoneInfo("America/Toronto")
 
@@ -942,3 +943,87 @@ class TestWhichTypesAskHowBadlySomebodyWasHurt:
         })
         assert made.status_code in (200, 201), made.text
         assert made.json()["injury_class"] is None
+
+
+class TestTheAreaOwnerHearsAboutIt:
+    """★ Round 4, TC-18: "when the location where the incident is recorded on a
+    form, ensure the area responsible owner is included in the initial
+    notification message."
+
+    Nobody had to be answerable for the notice reaching the right supervisor —
+    it went to the configured group, or to HSE, and the person responsible for
+    the part of the plant where it happened found out when somebody forwarded
+    it.
+    """
+
+    async def test_the_owner_of_the_area_is_told(self, hse_manager, test_engine, db_session):
+        import uuid as _uuid
+
+        from sqlalchemy import text as sql_text
+
+        from app.models.area_owner import AreaOwner
+        from app.models.communication import Communication
+        from tests.conftest import make_user
+
+        _, client = hse_manager
+        supervisor = await make_user(test_engine, role="area_supervisor",
+                                     full_name="Area Owner Person")
+
+        # An owner named for the building; the incident recorded against a line
+        # inside it. The prefix match is the point — an owner is answerable for
+        # what is under them, not only for the exact node.
+        building = _uuid.uuid4()
+        line = _uuid.uuid4()
+        for loc_id, name, path in (
+            (building, "103 – Filling", "Production/103 – Filling"),
+            (line, "Line 1", "Production/103 – Filling/Line 1"),
+        ):
+            await db_session.execute(sql_text(
+                "insert into locations (id, code, name, level, path, depth, is_active)"
+                " values (:id, :code, :name, 'department', :path, 1, true)"),
+                {"id": loc_id, "code": str(loc_id)[:8], "name": name, "path": path})
+        db_session.add(AreaOwner(
+            id=_uuid.uuid4(), user_id=supervisor.id, user_name=supervisor.full_name,
+            location_id=building, location_path="Production/103 – Filling"))
+        await db_session.commit()
+
+        made = await client.post("/api/v1/incidents", json={
+            "form_kind": "medical", "title": "Caught a hand on Line 1",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "incident_type": "first_aid",
+            "location_id": str(line),
+        })
+        assert made.status_code in (200, 201), made.text
+
+        mail = (await db_session.execute(
+            select(Communication)
+            .where(Communication.doc_id == uuid.UUID(made.json()["id"]),
+                   Communication.template_key == "incident_reported"))).scalars().first()
+        assert mail is not None, "nothing was queued"
+        assert supervisor.email in mail.to_addrs, (
+            f"the area owner was not told: {mail.to_addrs}")
+        # ★ And the message says why they got it. An email with no stated reason
+        # reads as a circular, and the next one gets ignored.
+        assert "Production/103 – Filling" in (mail.body_text or "")
+        assert "down for" in (mail.body_text or "")
+
+    async def test_an_incident_with_no_area_still_notifies_hse(self, hse_manager, db_session):
+        """★ The admission. Adding a recipient must not become a requirement for
+        one: plenty of reports name no area, and those must still go out."""
+        from app.models.communication import Communication
+
+        user, client = hse_manager
+        made = await client.post("/api/v1/incidents", json={
+            "form_kind": "medical", "title": "Somewhere unrecorded",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "incident_type": "first_aid",
+        })
+        assert made.status_code in (200, 201), made.text
+
+        mail = (await db_session.execute(
+            select(Communication)
+            .where(Communication.doc_id == uuid.UUID(made.json()["id"]),
+                   Communication.template_key == "incident_reported"))).scalars().first()
+        assert mail is not None, "an incident with no area told nobody"
+        assert "down for" not in (mail.body_text or ""), (
+            "it claims an area owner when there is no area")
