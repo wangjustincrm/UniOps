@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
 from app.crud import expense as expense_crud
 from app.schemas.expense import (
+    ApprovalEventResponse,
     ExpenseActionRequest,
     ExpenseClaimCreate,
     ExpenseClaimListItem,
@@ -577,7 +578,56 @@ async def get_expense(claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep)
         raise HTTPException(status_code=404, detail="Expense claim not found")
     if not await _can_view_claim(db, claim, uuid.UUID(user["sub"]), user.get("role", "")):
         raise HTTPException(status_code=403, detail="Not authorized to view this expense claim")
-    return ExpenseClaimResponse.model_validate(claim)
+    out = ExpenseClaimResponse.model_validate(claim)
+    out.approval_events = await _claim_history(db, claim)
+    return out
+
+
+async def _claim_history(db, claim) -> list[ApprovalEventResponse]:
+    """The claim's history, from both tables it is written to, oldest first.
+
+    Submit / approve / return / reject — and the comment typed with each — are
+    recorded by approval-api in the shared `approval_events` table. Payment is
+    recorded by finance-api (crud/payment_execute.py) in this service's own
+    `expense_approval_events`, which is what `claim.approval_events` loads, and
+    nothing else writes there. The detail endpoint used to serve only the
+    latter, so the timeline showed nothing before payment — and the comment a
+    requester types when submitting, often the only explanation of what the
+    claim is for, vanished from the claim as soon as it was sent. Serving only
+    the shared table would lose the payment row instead. Both, merged.
+    """
+    legacy = [ApprovalEventResponse.model_validate(e) for e in claim.approval_events]
+    shared = await _shared_approval_events(db, claim.id)
+    return sorted(legacy + shared, key=lambda e: e.created_at)
+
+
+async def _shared_approval_events(db, claim_id: uuid.UUID) -> list[ApprovalEventResponse]:
+    """Events approval-api recorded for the claim, with actor names resolved."""
+    from sqlalchemy import bindparam, select as sa_select, text
+    from app.models.approval_event_mirror import ApprovalEventMirror as AEM
+
+    events = list((await db.execute(
+        sa_select(AEM).where(AEM.document_id == claim_id).order_by(AEM.created_at.asc())
+    )).scalars().all())
+    names: dict = {}
+    actor_ids = list({e.actor_id for e in events})
+    if actor_ids:
+        try:
+            async with db.begin_nested():
+                q = text("SELECT id, full_name FROM users WHERE id IN :ids").bindparams(
+                    bindparam("ids", expanding=True))
+                names = {r[0]: r[1] for r in (await db.execute(q, {"ids": actor_ids})).all()}
+        except Exception:
+            names = {}
+    return [
+        ApprovalEventResponse(
+            id=e.id, actor_id=e.actor_id,
+            actor_name=names.get(e.actor_id) or e.actor_role,
+            action=e.action, comment=e.comment, step_idx=e.step_idx,
+            created_at=e.created_at,
+        )
+        for e in events
+    ]
 
 
 class ClaimPermissions(BaseModel):

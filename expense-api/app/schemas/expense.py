@@ -115,8 +115,12 @@ class ApprovalEventResponse(BaseModel):
     actor_name: str
     action: str
     comment: Optional[str]
-    from_status: str
-    to_status: str
+    # Set on rows from expense_approval_events (payment, written by
+    # finance-api); rows from the shared approval_events table (approval-api)
+    # carry no status pair.
+    from_status: Optional[str] = None
+    to_status: Optional[str] = None
+    step_idx: Optional[int] = None
     created_at: datetime
 
 
