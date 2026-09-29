@@ -212,6 +212,17 @@ export default function FormFillPage() {
             minutes used to be indistinguishable from a fresh blank form — the
             only thing on screen was this reference number, and checking it
             meant comparing it against the other screen. */}
+        {/* ★ The item this check is for, which is what "with the name of the
+            station on the form automatic" asks for. Taken from the record rather
+            than written into an answer: a template that happens not to have a
+            "which item" question would otherwise lose it. */}
+        {sub.source_type === 'asset' && (
+          <p className="mt-0.5 text-sm text-neutral-700">
+            Inspection of <span className="font-medium text-neutral-900">
+              {sub.source_ref ?? 'a piece of equipment'}
+            </span>
+          </p>
+        )}
         {sub.source_type === 'jhsc' && sub.source_id && (
           <p className="mt-0.5 text-sm text-neutral-700">
             Minutes of{' '}

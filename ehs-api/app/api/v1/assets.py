@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.incidents import _user_id
@@ -154,6 +154,35 @@ async def update_asset(
 @router.post("/{asset_id}/return-to-service", response_model=AssetOut)
 async def return_to_service(asset_id: uuid.UUID, db: SessionDep, user: CanManageAsset):  # noqa: ARG001
     return await crud.return_to_service(db, await crud.get_asset(db, asset_id))
+
+
+class InspectionFormOut(BaseModel):
+    """Where to fill in this item's check, when it has a form."""
+
+    submission_id: uuid.UUID
+    submission_no: str
+
+
+@router.post("/{asset_id}/inspection-form/start", response_model=InspectionFormOut)
+async def start_inspection_form(
+    asset_id: uuid.UUID, db: SessionDep, user: CanInspectAsset,
+):
+    """Open the form this item is checked on.
+
+    ★ Round 4, TC-07. Refused rather than falling back to the generic dialog
+    when no form is linked: the caller asked for this item's form and there is
+    not one, and silently opening something else is how somebody records a
+    check against the wrong thing.
+    """
+    asset = await crud.get_asset(db, asset_id)
+    found = await crud.inspection_form_for(db, asset, user_id=_user_id(user))
+    if found is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{asset.name} is not linked to an inspection form. Choose one on the "
+            "equipment record, or record the check directly.")
+    submission_id, submission_no = found
+    return InspectionFormOut(submission_id=submission_id, submission_no=submission_no)
 
 
 @router.post("/{asset_id}/inspections", response_model=InspectionOut,

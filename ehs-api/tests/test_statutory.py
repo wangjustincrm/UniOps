@@ -11,6 +11,7 @@ cases is that a deadline lands differently because of them.
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import uuid
 import pytest
 
 from app.services.statutory import (
@@ -454,3 +455,127 @@ async def test_escalating_rewords_the_prompt_rather_than_adding_one(hse_manager,
     rows = theirs((await client.get("/api/v1/actions/mine/tasks")).json())
     assert len(rows) == 1, f"one obligation, one prompt — got {[r['title'] for r in rows]}"
     assert "overdue" in rows[0]["title"], "and the one prompt says where it now stands"
+
+
+class TestEquipmentCheckedOnItsOwnForm:
+    """★ Round 4, TC-07: "allow for an equipment qr code to be linked to a
+    specific form. for example when a user scans the eye wash station qr code the
+    eye wash inspection form shall open with the name of the station on the form
+    automatic … there should be a pass of fail criteria set to ensure the item is
+    inspected properly."
+
+    `inspection_template_id` has been on the asset since the first migration, the
+    API accepted it and the crud stored it — and nothing set it, nothing read it,
+    and eleven items on the dev database had none. This is the wiring.
+
+    The pass/fail half is the point of it: the form's own fail conditions decide
+    whether the item passed, so a failed answer takes it out of service through
+    the same path as a check recorded by hand.
+    """
+
+    @pytest.fixture
+    async def ladder_form(self, hse_manager):
+        """A published template with a question that can fail."""
+        _, client = hse_manager
+        made = await client.post("/api/v1/forms/templates", json={
+            "code": f"ladder-{uuid.uuid4().hex[:5]}", "name": "Ladder check",
+            "category": "inspection"})
+        assert made.status_code in (200, 201), made.text
+        template = made.json()
+        saved = await client.put(f"/api/v1/forms/templates/{template['id']}/schema", json={
+            "schema": [{"key": "rungs", "type": "yes_no_na",
+                        "label": "Rungs undamaged", "required": True,
+                        "fail_on": {"equals": "no"}}]})
+        assert saved.status_code in (200, 201), saved.text
+        published = await client.post(
+            f"/api/v1/forms/templates/{template['id']}/publish", json={})
+        assert published.status_code in (200, 201), published.text
+        return template
+
+    @pytest.fixture
+    async def ladder(self, hse_manager, ladder_form):
+        _, client = hse_manager
+        made = await client.post("/api/v1/safety-assets", json={
+            "name": "Ladder by the dryer",
+            "inspection_frequency": "monthly",
+            "inspection_template_id": ladder_form["id"],
+        })
+        assert made.status_code in (200, 201), made.text
+        return made.json()
+
+    async def test_the_template_reports_its_pass_fail_questions(
+            self, hse_manager, ladder_form):
+        """★ So that whoever links a form can see whether it can fail at all.
+
+        A template with no fail conditions records a pass whatever was observed,
+        and two of the templates on the dev database are exactly that.
+        """
+        _, client = hse_manager
+        rows = {t["code"]: t for t in (await client.get("/api/v1/forms/templates")).json()}
+        mine = rows[ladder_form["code"]]
+        assert mine["published"] is True
+        assert mine["fail_criteria"] == 1
+
+    async def test_starting_it_names_the_item_and_reopens_the_same_one(
+            self, hse_manager, ladder):
+        _, client = hse_manager
+        first = await client.post(
+            f"/api/v1/safety-assets/{ladder['id']}/inspection-form/start")
+        assert first.status_code == 200, first.text
+        submission_id = first.json()["submission_id"]
+
+        sub = (await client.get(f"/api/v1/forms/submissions/{submission_id}")).json()
+        assert sub["source_type"] == "asset"
+        assert sub["source_id"] == ladder["id"]
+        assert "Ladder by the dryer" in (sub["source_ref"] or ""), sub["source_ref"]
+
+        # ★ A second scan reopens the unfinished one.
+        second = await client.post(
+            f"/api/v1/safety-assets/{ladder['id']}/inspection-form/start")
+        assert second.json()["submission_id"] == submission_id
+
+    async def test_a_failed_answer_records_a_failed_check(self, hse_manager, ladder):
+        """★ The criteria doing their job. A "no" on the one question that can
+        fail is a failed inspection, recorded against the item."""
+        _, client = hse_manager
+        started = await client.post(
+            f"/api/v1/safety-assets/{ladder['id']}/inspection-form/start")
+        sid = started.json()["submission_id"]
+
+        assert (await client.put(f"/api/v1/forms/submissions/{sid}/answers",
+                                 json={"values": {"rungs": "no"}})).status_code == 200
+        assert (await client.post(f"/api/v1/forms/submissions/{sid}/submit")).status_code == 200
+
+        checks = (await client.get(
+            f"/api/v1/safety-assets/inspections?asset_id={ladder['id']}")).json()
+        assert checks, "submitting the form recorded no check against the item"
+        assert checks[0]["result"] == "fail", checks[0]
+        assert checks[0]["submission_id"] == sid
+
+    async def test_a_clean_answer_records_a_pass(self, hse_manager, ladder):
+        """★ The admission. Recording everything as a failure would satisfy the
+        test above."""
+        _, client = hse_manager
+        started = await client.post(
+            f"/api/v1/safety-assets/{ladder['id']}/inspection-form/start")
+        sid = started.json()["submission_id"]
+
+        assert (await client.put(f"/api/v1/forms/submissions/{sid}/answers",
+                                 json={"values": {"rungs": "yes"}})).status_code == 200
+        assert (await client.post(f"/api/v1/forms/submissions/{sid}/submit")).status_code == 200
+
+        checks = (await client.get(
+            f"/api/v1/safety-assets/inspections?asset_id={ladder['id']}")).json()
+        assert checks[0]["result"] == "pass", checks[0]
+
+    async def test_an_item_with_no_form_says_so(self, hse_manager):
+        """Rather than opening something else. Recording a check against the
+        wrong thing is worse than being told there is no form."""
+        _, client = hse_manager
+        made = await client.post("/api/v1/safety-assets", json={
+            "name": "Extinguisher with no form", "inspection_frequency": "monthly"})
+        assert made.status_code in (200, 201), made.text
+        refused = await client.post(
+            f"/api/v1/safety-assets/{made.json()['id']}/inspection-form/start")
+        assert refused.status_code == 409, refused.text
+        assert "not linked to an inspection form" in refused.json()["detail"]

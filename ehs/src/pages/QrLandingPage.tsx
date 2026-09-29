@@ -16,7 +16,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Check, ClipboardCheck, FileText, MapPin, TriangleAlert, Wrench } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
-import { Card, primaryButton, secondaryButton } from '@/components/ui'
+import { Card, ErrorNote, primaryButton, secondaryButton } from '@/components/ui'
 import { formatDate } from '@/lib/formatDate'
 import { SignaturePad } from '@/components/SignaturePad'
 
@@ -111,6 +111,15 @@ export default function QrLandingPage() {
                                  : <Wrench className="h-4 w-4" aria-hidden />}
           {t.kind === 'document' ? 'Open it' : 'Open the record'}
         </button>
+        {/* ★ Straight into this item's own inspection form, with the item's
+            name on it. Round 4: "when a user scans the eye wash station qr code
+            the eye wash inspection form shall open with the name of the station
+            on the form automatic." An unfinished form for this item is reopened
+            rather than a second one started — two half-filled checks of one
+            eyewash is the same fault as two sets of minutes for one meeting. */}
+        {t.actions.includes('inspection_form') && (
+          <OpenInspectionForm assetId={t.id} label={t.label} />
+        )}
         {t.actions.includes('record_inspection') && (
           // ★ Straight to a check on *this* item. It used to open the register
           // — every asset in the plant — which is not recording a check on the
@@ -196,5 +205,32 @@ function AcknowledgeHere({ documentId, label }: { documentId: string; label: str
         {sign.isPending ? 'Signing…' : 'I have read this'}
       </button>
     </div>
+  )
+}
+
+
+/**
+ * Opening the form a piece of equipment is checked on.
+ *
+ * Its own component because it makes a request: the submission is created (or
+ * the unfinished one found) by the server, which is the only place that knows
+ * which template the item is linked to.
+ */
+function OpenInspectionForm({ assetId, label }: { assetId: string; label: string }) {
+  const navigate = useNavigate()
+  const open = useMutation({
+    mutationFn: () => api.post<{ submission_id: string; submission_no: string }>(
+      `/api/v1/safety-assets/${assetId}/inspection-form/start`, {}),
+    onSuccess: (r) => navigate(`/forms/submissions/${r.submission_id}`),
+  })
+  return (
+    <>
+      <button type="button" className={primaryButton} disabled={open.isPending}
+              onClick={() => { if (!open.isPending) open.mutate() }}>
+        <ClipboardCheck className="h-4 w-4" aria-hidden />
+        {open.isPending ? 'Opening…' : `Inspect ${label.split(' · ').slice(-1)[0]}`}
+      </button>
+      <ErrorNote error={open.error} />
+    </>
   )
 }

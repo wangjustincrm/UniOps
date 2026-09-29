@@ -84,7 +84,15 @@ async def resolve(token: str, db: SessionDep, user: CanReportIncident):  # noqa:
             # and inventing one for a screen reached by camera would be a page
             # nobody navigates to any other way.
             path=f"/equipment?asset={asset.id}",
-            actions=["record_inspection", "report_incident"],
+            # ★ Whether this item is checked on a form. Round 4: "when a user
+            # scans the eye wash station qr code the eye wash inspection form
+            # shall open with the name of the station on the form automatic."
+            # Reported rather than acted on here, because the landing page is
+            # what decides where a camera sends somebody — and an item with no
+            # form still wants the quick dialog.
+            actions=(["inspection_form", "report_incident"]
+                     if asset.inspection_template_id is not None
+                     else ["record_inspection", "report_incident"]),
         )
 
     document = await document_crud.by_qr_token(db, token)

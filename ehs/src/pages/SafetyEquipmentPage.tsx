@@ -33,6 +33,7 @@ interface Asset {
   serial_no: string | null; manufacturer: string | null; model: string | null
   location_id: string | null; location_path: string | null; department_name: string | null
   inspection_frequency: string | null; next_due_on: string | null
+  inspection_template_id: string | null
   last_inspected_on: string | null; expires_on: string | null
   status: string; notes: string | null; qr_token: string | null
 }
@@ -537,6 +538,10 @@ function CheckHistory({ assetId }: { assetId: string }) {
   )
 }
 
+interface FormTemplate {
+  id: string; name: string; code: string; published: boolean; fail_criteria: number
+}
+
 function AssetForm({ existing, onClose }: { existing?: Asset; onClose: () => void }) {
   const queryClient = useQueryClient()
   const editing = Boolean(existing)
@@ -549,6 +554,18 @@ function AssetForm({ existing, onClose }: { existing?: Asset; onClose: () => voi
   const [serial, setSerial] = useState(existing?.serial_no ?? '')
   const [frequency, setFrequency] = useState(existing?.inspection_frequency ?? 'monthly')
   const [expiresOn, setExpiresOn] = useState(existing?.expires_on ?? '')
+  // ★ Which form this item is checked on. The column has been on the record
+  // since the first release, the API accepted it and nothing ever set it —
+  // eleven items on the dev database, none linked. Round 4 asked for exactly
+  // this: "allow for an equipment qr code to be linked to a specific form."
+  const [templateId, setTemplateId] = useState<string | null>(
+    existing?.inspection_template_id ?? null)
+  const templates = useQuery({
+    queryKey: ['forms', 'templates'],
+    queryFn: () => api.get<FormTemplate[]>('/api/v1/forms/templates'),
+    staleTime: 10 * 60_000,
+  })
+  const chosen = (templates.data ?? []).find((t) => t.id === templateId)
 
   const body = () => ({
     name,
@@ -558,6 +575,7 @@ function AssetForm({ existing, onClose }: { existing?: Asset; onClose: () => voi
     serial_no: serial || null,
     inspection_frequency: frequency || null,
     expires_on: expiresOn || null,
+    inspection_template_id: templateId,
   })
 
   const create = useMutation({
@@ -612,6 +630,36 @@ function AssetForm({ existing, onClose }: { existing?: Asset; onClose: () => voi
           <input type="date" className={inputClass} value={expiresOn}
                  onChange={(e) => setExpiresOn(e.target.value)} />
         </Field>
+        <div className="sm:col-span-2">
+          <Field label="Checked on this form"
+                 hint="Scanning this item's code opens it, with the item's name on it. Leave it unset for the quick pass/fail dialog.">
+            <select className={inputClass} value={templateId ?? ''}
+                    onChange={(e) => setTemplateId(e.target.value || null)}>
+              <option value="">No form — record pass or fail directly</option>
+              {(templates.data ?? [])
+                .filter((t) => t.published)
+                .map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                    {t.fail_criteria > 0
+                      ? ` — ${t.fail_criteria} pass/fail question${t.fail_criteria === 1 ? '' : 's'}`
+                      : ' — no pass/fail questions'}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          {/* ★ Round 4: "there should be a pass of fail criteria set to ensure
+              the item is inspected properly." A template with none can be filled
+              in and submitted and will always record a pass, whatever was
+              observed — so the number is on the option and the warning is here. */}
+          {chosen && chosen.fail_criteria === 0 && (
+            <p className="mt-1 rounded-lg bg-warning-50 px-2.5 py-2 text-xs text-warning-800">
+              <b>{chosen.name}</b> has no pass/fail questions, so a check on it
+              always records a pass whatever was seen. Add a fail condition to at
+              least one question under Settings → Forms.
+            </p>
+          )}
+        </div>
       </div>
       <ErrorNote error={create.error} />
       <div className="mt-3 flex justify-end gap-2">

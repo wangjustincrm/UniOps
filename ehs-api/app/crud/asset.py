@@ -291,9 +291,71 @@ async def record_inspection(
     return inspection
 
 
+async def inspection_form_for(
+    db: AsyncSession, asset: SafetyAsset, *, user_id: uuid.UUID,
+) -> tuple[uuid.UUID, str] | None:
+    """The submission to fill in for this item, creating it if there is none.
+
+    ★ Round 4, TC-07: "allow for an equipment qr code to be linked to a specific
+    form. for example when a user scans the eye wash station qr code the eye wash
+    inspection form shall open with the name of the station on the form
+    automatic."
+
+    `inspection_template_id` has been on this model since the first release, the
+    API accepted it and the crud stored it — and nothing ever set it and nothing
+    ever read it. Eleven items on the dev database, none of them linked. This is
+    the read half; the equipment form is the write half.
+
+    Returns None where the item has no form, which is most of them: a fire
+    extinguisher check is four yes/no answers and the generic dialog is better
+    for it than a template nobody wrote.
+
+    An unsubmitted form for this item is returned rather than a second one being
+    made. Two half-filled checks of the same eyewash is the same fault as two
+    sets of minutes for one meeting — nothing on either says which is real.
+    """
+    from app.crud import form as form_crud
+    from app.models.form import FormSubmission
+
+    if asset.inspection_template_id is None:
+        return None
+
+    existing = (await db.execute(
+        select(FormSubmission).where(
+            FormSubmission.source_type == "asset",
+            FormSubmission.source_id == asset.id,
+            FormSubmission.status != "submitted",
+        ).order_by(FormSubmission.created_at.desc()).limit(1)
+    )).scalar_one_or_none()
+    if existing is not None:
+        return existing.id, existing.submission_no
+
+    # ★ The person scanning it, not the person the item is assigned to.
+    #
+    # Two reasons, and the first one is fatal: with no assignee — which is every
+    # item on the dev database — this passed a fresh random uuid, and
+    # `start_submission` writes it to `submitted_by`, a foreign key to `users`.
+    # So the main path this feature exists for answered 500.
+    #
+    # The second is why the assignee would be wrong even where there is one. The
+    # name on an inspection record is who carried the inspection out. It is
+    # evidence under Reg 851, and whoever is standing at the eyewash with a
+    # phone is the only person it can honestly name.
+    submission = await form_crud.start_submission(
+        db, asset.inspection_template_id, user_id=user_id,
+        location_id=asset.location_id, occurred_at=None)
+    # ★ Which item it is for, which is what puts the station's name on the form.
+    submission.source_type = "asset"
+    submission.source_id = asset.id
+    submission.source_ref = f"{asset.asset_no} · {asset.name}"
+    await db.flush()
+    return submission.id, submission.submission_no
+
+
 async def record_ad_hoc(
     db: AsyncSession, asset: SafetyAsset, *, result: str, notes: str | None,
     user_id: uuid.UUID, performed_on: date | None = None,
+    submission_id: uuid.UUID | None = None,
 ) -> AssetInspection:
     """A check somebody did, whether or not one was due.
 
@@ -349,7 +411,7 @@ async def record_ad_hoc(
 
     await record_inspection(
         db, inspection, result=result, notes=notes,
-        submission_id=None, user_id=user_id, performed_on=when)
+        submission_id=submission_id, user_id=user_id, performed_on=when)
 
     # Checking early moves the cycle rather than leaving a second check owed
     # next week for something just looked at.

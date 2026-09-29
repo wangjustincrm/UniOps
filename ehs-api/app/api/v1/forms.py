@@ -60,6 +60,13 @@ class TemplateOut(BaseModel):
     description: str | None
     category: str
     is_active: bool
+    # ★ Whether it can actually be filled in, and whether filling it in can
+    # fail. Round 4 asked for "a pass of fail criteria set to ensure the item is
+    # inspected properly" — so anywhere a template is chosen has to be able to
+    # say whether that template has any, and an unpublished one cannot be
+    # started at all. Derived, not stored.
+    published: bool = False
+    fail_criteria: int = 0
 
 
 class VersionOut(BaseModel):
@@ -162,12 +169,44 @@ async def question_types():
 
 # ── Templates ────────────────────────────────────────────────────────────────
 
+async def _with_criteria(db, templates: list) -> list[TemplateOut]:
+    """Each template with whether it is published and how many answers can fail.
+
+    One query for the published versions rather than one per template.
+    """
+    from sqlalchemy import select as sa_select
+
+    from app.models.form import FormVersion
+
+    if not templates:
+        return []
+    rows = (await db.execute(
+        sa_select(FormVersion.template_id, FormVersion.schema, FormVersion.version_no)
+        .where(FormVersion.template_id.in_([t.id for t in templates]),
+               FormVersion.status == "published")
+        .order_by(FormVersion.version_no.desc())
+    )).all()
+    latest: dict = {}
+    for template_id, schema, _ in rows:
+        latest.setdefault(template_id, schema or [])
+
+    out = []
+    for t in templates:
+        item = TemplateOut.model_validate(t)
+        schema = latest.get(t.id)
+        item.published = schema is not None
+        item.fail_criteria = sum(1 for q in (schema or []) if q.get("fail_on"))
+        out.append(item)
+    return out
+
+
 @router.get("/templates", response_model=list[TemplateOut])
 async def list_templates(
     db: SessionDep, user: CanReportIncident,  # noqa: ARG001
     category: str | None = None, include_inactive: bool = False,
 ):
-    return await crud.list_templates(db, category=category, active_only=not include_inactive)
+    return await _with_criteria(db, await crud.list_templates(
+        db, category=category, active_only=not include_inactive))
 
 
 @router.post("/templates", response_model=TemplateOut, status_code=201)

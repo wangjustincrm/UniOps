@@ -273,6 +273,25 @@ async def submit(
     # A failed check with nobody assigned to it is how a known hazard stays a
     # known hazard. Owner is whoever submitted, because they are on the spot and
     # HSE reassigns from the action itself.
+    # ★ A form filled in for a piece of equipment records that item's check,
+    # and the form's own fail conditions decide whether it passed. Round 4:
+    # "there should be a pass of fail criteria set to ensure the item is
+    # inspected properly." The criteria are the template's; this is what makes
+    # them mean something — a failed answer takes the item out of service
+    # through the same path as a failed check recorded by hand.
+    if submission.source_type == "asset" and submission.source_id is not None:
+        from app.crud import asset as asset_crud
+
+        item = await asset_crud.get_asset(db, submission.source_id)
+        await asset_crud.record_ad_hoc(
+            db, item,
+            result="fail" if failures else "pass",
+            notes=(f"Recorded on {submission.submission_no}"
+                   + (f" — {len(failures)} failed check(s)" if failures else "")),
+            user_id=user_id,
+            submission_id=submission.id,
+        )
+
     if raise_actions:
         due = (datetime.now(timezone.utc) + timedelta(days=FAILURE_DUE_DAYS)).date()
         for a in failures:
