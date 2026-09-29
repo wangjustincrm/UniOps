@@ -37,7 +37,6 @@ import { InvoiceChainDrawer } from './InvoiceChainDrawer'
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
 // which gates POST /invoices/{id}/match). Users without one of these must not be
 // offered the "Match Invoice" action (PO or Agreement route) — the backend would 403.
-const MATCH_ROLES = new Set(['system_admin', 'ap_clerk', 'finance_manager', 'finance_bp'])
 
 // PO statuses an invoice can be matched/allocated against.
 // closed excluded: closed POs (incl. PMS imports closed by PAID) never enter match candidates
@@ -1308,7 +1307,9 @@ function UnmatchedTab() {
   const { user } = useAuthStore()
   const perms = useRolePermissions().data?.permissions
   const canDelete = user?.role === 'system_admin' || !!perms?.invoice_upload
-  const isAp = !!user?.role && MATCH_ROLES.has(user.role)
+  // Effective permission (primary ∪ additional roles), same key the backend's
+  // ApDep gates on — a user holding ap_clerk only as an additional role is AP too.
+  const isAp = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
   const canMatchInvoice = (inv: ApiInvoice) =>
     isAp || inv.uploaded_by === user?.id ||
     (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)

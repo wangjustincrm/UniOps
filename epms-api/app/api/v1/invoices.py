@@ -48,13 +48,20 @@ from app.services import tax_prefill
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
-# Kept for business logic (visibility / task-assignment fallback below) — NOT
-# the gate anymore. `ApDep` migrated to the shared authz package
-# (epms.invoice.match); this tuple still answers "is this caller AP staff
-# regardless of an open task assignment" at lines using `_AP_ROLES` below.
-_AP_ROLES = ("system_admin", "ap_clerk", "finance_manager", "finance_bp")
 ApDep = Annotated[dict, Depends(require_permission("epms.invoice.match"))]
 InvoiceUploadDep = Annotated[dict, Depends(require_permission("invoice_upload"))]
+
+
+async def _is_ap(db, user: dict) -> bool:
+    """Is this caller AP staff, regardless of an open task assignment?
+
+    Same key and admission semantics as ApDep (primary ∪ additional roles).
+    This used to be a hard-coded primary-role tuple, so a user holding
+    ap_clerk only as an ADDITIONAL role passed ApDep but was treated as
+    non-AP here: 403 on matching an invoice they were not assigned, and
+    their own matches routed into match_review."""
+    return await has_permission(
+        db, uuid.UUID(user["sub"]), user.get("role") or "", "epms.invoice.match")
 
 
 async def _attach_match_assignees(db, invoices: list) -> None:
@@ -106,7 +113,7 @@ async def _require_invoice_match_access(db, user: dict, inv) -> None:
     path, silently bypassing the evidence chain Tasks 1-9 built)."""
     caller_id = uuid.UUID(user["sub"])
     is_uploader = inv.uploaded_by == caller_id
-    if (user.get("role") not in _AP_ROLES and not is_uploader
+    if (not is_uploader and not await _is_ap(db, user)
             and not await _has_open_match_task(db, caller_id, inv.id)):
         raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
 
@@ -753,7 +760,7 @@ async def match_invoice(
     token: BearerToken,
 ):
     caller_id = uuid.UUID(user["sub"])
-    is_ap = user.get("role") in _AP_ROLES
+    is_ap = await _is_ap(db, user)
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
