@@ -99,23 +99,72 @@ export function useEditableClaim(claimId?: string) {
   }
 }
 
+/** A file picked on the form (e.g. a scanned receipt) that becomes a claim
+ *  attachment once the claim exists. `name` overrides the uploaded filename. */
+export interface PendingReceipt {
+  file: File
+  name?: string
+}
+
+/** Upload receipts to a claim; returns the names of the ones that failed. */
+async function uploadReceipts(claimId: string, receipts: PendingReceipt[]): Promise<string[]> {
+  const failed: string[] = []
+  for (const r of receipts) {
+    const name = r.name ?? r.file.name
+    try {
+      const form = new FormData()
+      form.append('file', r.file, name)
+      await api.postForm(`/api/v1/expenses/${claimId}/attachments`, form)
+    } catch {
+      failed.push(name)
+    }
+  }
+  return failed
+}
+
 /**
  * POST a new claim or PATCH the one being edited, then land on its detail page.
  *
  * PATCH deliberately does not send `claim_type`: the type is fixed at creation
  * and ExpenseClaimUpdate has no field for it.
+ *
+ * `receipts` is read at save time: files scanned on the form have nowhere to go
+ * until the claim has an id, so they are uploaded here, inside the same
+ * mutation — the Save button stays pending until they are on the claim, and the
+ * detail page opens with them already listed. Before this a scanned receipt was
+ * only read for its amounts and then dropped, and had to be uploaded again by
+ * hand after saving. A failed upload never loses the saved claim; it is named
+ * so the user knows which one to add on the detail page.
  */
-export function useSaveClaim(editClaimId: string | undefined, onSaved: (id: string) => void) {
+export function useSaveClaim(
+  editClaimId: string | undefined,
+  onSaved: (id: string) => void,
+  opts: { receipts?: () => PendingReceipt[] } = {},
+) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: Record<string, unknown>) => {
+    mutationFn: async (body: Record<string, unknown>) => {
+      let saved: { id: string }
       if (editClaimId) {
         const { claim_type: _ignored, ...rest } = body
-        return api.patch<{ id: string }>(`/api/v1/expenses/${editClaimId}`, rest)
+        saved = await api.patch<{ id: string }>(`/api/v1/expenses/${editClaimId}`, rest)
+      } else {
+        saved = await api.post<{ id: string }>('/api/v1/expenses', body)
       }
-      return api.post<{ id: string }>('/api/v1/expenses', body)
+      const id = saved.id ?? editClaimId ?? ''
+      const receipts = opts.receipts?.() ?? []
+      const failedUploads = receipts.length && id ? await uploadReceipts(id, receipts) : []
+      return { ...saved, id, failedUploads }
     },
     onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['expense-attachments', data.id] })
+      if (data.failedUploads.length) {
+        alert(
+          `The claim was saved, but ${data.failedUploads.length} receipt(s) could not be attached:\n\n`
+          + data.failedUploads.join('\n')
+          + '\n\nPlease add them in the Attachments section.',
+        )
+      }
       if (editClaimId) {
         // The detail page, its permissions, and the task lists all describe a
         // claim that just changed underneath them.
@@ -124,7 +173,7 @@ export function useSaveClaim(editClaimId: string | undefined, onSaved: (id: stri
         qc.invalidateQueries({ queryKey: ['oa-tasks'] })
         qc.invalidateQueries({ queryKey: ['expenses'] })
       }
-      onSaved(data.id ?? editClaimId ?? '')
+      onSaved(data.id)
     },
   })
 }

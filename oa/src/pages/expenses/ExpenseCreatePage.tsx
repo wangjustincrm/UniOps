@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useReplaceTab, Button } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, Trash2, AlertTriangle, ChevronRight, ChevronLeft } from 'lucide-react'
+import { Plus, Trash2, AlertTriangle, ChevronRight, ChevronLeft, Paperclip, X } from 'lucide-react'
 import { cn, currentYearLocal, formatAmount, todayLocal } from '@/lib/utils'
 import { useEditableClaim, useSaveClaim, type EditableFormProps } from '@/lib/editableClaim'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
@@ -38,6 +38,8 @@ interface LineItem {
   tax_amount: string
   net_amount: string
   tax_code: string | null
+  // Transient: the receipt scanned for this line, attached to the claim on save.
+  _file?: File | null
 }
 
 interface TaxCode { code: string; name: string; rate: string; recoverable: boolean }
@@ -439,7 +441,9 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
     return acc && acc.available - (accountDeltas[acc.id] ?? 0) < 0
   })
 
-  const createMutation = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`))
+  const createMutation = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`), {
+    receipts: () => lines.flatMap((l) => (l._file ? [{ file: l._file }] : [])),
+  })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -603,7 +607,25 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
                         <ReceiptScanButton
                           className="self-start"
                           onScanned={(f) => handleReceiptScan(idx, f)}
+                          onFile={(file) => updateLine(idx, { _file: file })}
                         />
+                        {line._file && (
+                          <div
+                            className="flex items-center gap-1 text-[10px] text-neutral-500"
+                            title="Will be attached to the claim when you save"
+                          >
+                            <Paperclip className="h-3 w-3 shrink-0" />
+                            <span className="truncate max-w-[160px]">{line._file.name}</span>
+                            <button
+                              type="button"
+                              aria-label="Don't attach this receipt"
+                              onClick={() => updateLine(idx, { _file: null })}
+                              className="text-neutral-300 hover:text-danger-500"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="px-3 py-2">

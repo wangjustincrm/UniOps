@@ -46,6 +46,7 @@ interface TrvLineItem {
   tax_amount: string
   net_amount: string      // after tax
   _file?: File | null     // transient: receipt/invoice held until the draft is created, then uploaded
+  _fileScanned?: boolean  // _file came from Scan (a re-scan may replace it) rather than Attach
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -160,6 +161,14 @@ function CategorySection({
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Description</label>
                       <ReceiptScanButton
+                        // Same rule as the general expense page: a scan becomes the
+                        // row's receipt and a re-scan replaces an earlier scan, but a
+                        // file attached by hand is never silently swapped out.
+                        onFile={(file) => {
+                          if (!li._file || li._fileScanned) {
+                            onUpdate(li.line_number, { _file: file, _fileScanned: true })
+                          }
+                        }}
                         onScanned={(f) => {
                           const hst = policy?.hst_rate ?? 0.13
                           const grossOrNet = f.total_amount
@@ -246,7 +255,7 @@ function CategorySection({
                       <input type="file" accept="image/*,.pdf" className="hidden"
                         onChange={(e) => {
                           const f = e.target.files?.[0]
-                          if (f) onUpdate(li.line_number, { _file: f })
+                          if (f) onUpdate(li.line_number, { _file: f, _fileScanned: false })
                           e.target.value = ''
                         }} />
                     </label>
@@ -375,28 +384,18 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
     return (parseFloat(l.net_amount) || 0) > (policy[mealKey] as number)
   })
 
-  const save = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`))
+  // Per-row receipts are uploaded by useSaveClaim once the claim has an id.
+  // Claim-level storage; the filename is prefixed with the category so the line
+  // association is readable.
+  const save = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`), {
+    receipts: () => lines.flatMap((l) =>
+      l._file ? [{ file: l._file, name: `[${l.category}] ${l._file.name}` }] : []),
+  })
 
   const mutation = useMutation({
-    mutationFn: async (body: object) => {
-      const claim = await save.mutateAsync(body as Record<string, unknown>)
-      // Upload per-row receipts to the freshly-created draft. Claim-level storage;
-      // filename is prefixed with the category so the line association is readable.
-      // Non-fatal: an upload failure must not lose the created claim.
-      for (const l of lines) {
-        if (!l._file) continue
-        try {
-          const form = new FormData()
-          form.append('file', l._file, `[${l.category}] ${l._file.name}`)
-          await api.postForm(`/api/v1/expenses/${claim.id}/attachments`, form)
-        } catch {
-          // swallow — surfaced on the detail page where the user can retry
-        }
-      }
-      return claim
-    },
+    mutationFn: (body: object) => save.mutateAsync(body as Record<string, unknown>),
     // useSaveClaim already navigates and refreshes the caches; this wrapper
-    // exists only to attach the per-row receipt uploads to the same click.
+    // exists only to put the page's own error message on a failed save.
     onError: (e: any) => setError(e.message || (editClaimId
       ? 'Failed to save changes' : 'Failed to create TRV claim')),
   })
