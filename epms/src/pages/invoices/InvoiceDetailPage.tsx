@@ -27,8 +27,6 @@ import { getTaxLines } from '@/services/invoiceTax'
 import { AssignMatchDialog } from './AssignMatchDialog'
 import { MatchPanel } from './MatchPanel'
 
-const MATCH_ROLES = new Set(['system_admin', 'ap_clerk', 'finance_manager', 'finance_bp'])
-
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
@@ -265,7 +263,9 @@ export default function InvoiceDetailPage() {
   const hasInvoiceUpload =
     user?.role === 'system_admin' || !!perms?.invoice_upload
 
-  const isAp = !!user?.role && MATCH_ROLES.has(user.role)
+  // Effective permission (primary ∪ additional roles), same key the backend's
+  // ApDep gates on — a user holding ap_clerk only as an additional role is AP too.
+  const isAp = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
 
   const canDelete =
     hasInvoiceUpload && !!inv && (inv.status === 'unmatched' || inv.status === 'exception')
