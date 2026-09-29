@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 import sqlalchemy
 
+from app.models.mirrors import User
 from app.services import tasks as task_service
 
 TOMORROW = (datetime.now(timezone.utc).date() + timedelta(days=7)).isoformat()
@@ -735,15 +736,20 @@ async def test_the_statutory_clocks_are_not_narrowed_by_area(hse_manager, db_ses
         "a task that was never area work is not unattributed area work")
 
 
-async def test_an_area_owner_who_cannot_be_reached_does_not_count_as_cover(
+async def test_an_area_owner_of_any_role_is_sent_that_area_s_work(
         hse_manager, test_engine, db_session):
-    """★ The failure this whole mechanism exists to remove, created by its own
-    maintenance screen.
+    """★ HSE, round 4: "the area owners can be assigned to anyone regardless of
+    role. remove the supervisor requirement."
 
-    Area work is raised for `area_supervisor` and fetched only for holders of
-    that role. Assign an area to somebody without it and the area looks
-    covered — so the work stops falling to HSE — while never reaching them
-    either. Nobody sees it and the unattributed count says zero.
+    This test asserted the opposite until that answer arrived, and the earlier
+    behaviour was right at the time: area work is addressed to
+    `area_supervisor`, the task list only fetched role tasks for holders of that
+    role, so an area given to anybody else looked covered and reached nobody.
+
+    Deleting the check alone would have restored exactly that silent loss. What
+    changed with it is the task query — being down for an area is now its own
+    reason to be sent that area's work. This test is the proof of that, which is
+    why it is the same scenario rather than a new one.
     """
     import uuid as _uuid
 
@@ -754,10 +760,10 @@ async def test_an_area_owner_who_cannot_be_reached_does_not_count_as_cover(
     from tests.conftest import authed_client, make_token, make_user
 
     area = await _an_area(db_session, "Production/107 – Office")
-    # A real person, with a real job, that is not this one. `supervisor` rather
-    # than `dept_manager` because this test reads their own task list, and that
-    # needs `ehs.incident.report` — a role without it answers 403 and the
-    # assertion would pass for the wrong reason.
+    # A real person with a real job that is not supervising an area.
+    # `supervisor` rather than `dept_manager` because this test reads their own
+    # task list, and that needs `ehs.incident.report` — a role without it
+    # answers 403 and the assertion would pass for the wrong reason.
     clerk = await make_user(test_engine, role="supervisor")
     db_session.add(AreaOwner(id=_uuid.uuid4(), user_id=clerk.id, user_name=clerk.full_name,
                              location_id=area, location_path="Production/107 – Office"))
@@ -779,41 +785,89 @@ async def test_an_area_owner_who_cannot_be_reached_does_not_count_as_cover(
     )
     await db_session.commit()
 
-    # Not theirs: they do not hold the role the work was addressed to.
+    # ★ Theirs, because they are down for the area.
     async with authed_client(make_token(clerk.id, clerk.role), db_session) as c:
-        assert str(asset_id) not in {
-            t["document_id"] for t in (await c.get("/api/v1/actions/mine/tasks")).json()}
+        assert str(asset_id) in {
+            t["document_id"] for t in (await c.get("/api/v1/actions/mine/tasks")).json()}, (
+            "an area owner is not being sent their own area's work")
 
-    # So it is unattributed, and HSE has it.
+    # And it is no longer HSE's to chase, because somebody is answerable.
     _, hse = hse_manager
-    assert str(asset_id) in {
-        t["document_id"] for t in (await hse.get("/api/v1/actions/mine/tasks")).json()}, (
-        "an assignment nobody can be reached about is not cover")
     counted = (await hse.get("/api/v1/actions/unattributed")).json()
-    assert any("first aid kit" in e.lower() for e in counted["examples"])
+    assert not any("first aid kit" in e.lower() for e in counted["examples"]), (
+        "work with a named owner is still counted as unattributed")
 
 
-async def test_the_screen_refuses_an_assignment_that_would_reach_nobody(
+async def test_a_deactivated_owner_still_does_not_count_as_cover(
         hse_manager, test_engine, db_session):
-    """And it is refused at the point of being made, with the reason.
+    """The half of the old rule that was about reachability, not about roles.
 
-    Better than letting somebody save it and discover months later that an area
-    of the plant has been quietly answering to no one.
+    A closed account reaches nobody whatever role it held, so an area assigned
+    to one is not covered and its work goes back to HSE. Removing the role
+    requirement must not remove this.
+    """
+    import uuid as _uuid
+
+    from sqlalchemy import text as sql_text
+
+    from app.models.area_owner import AreaOwner
+    from app.services import tasks as task_service
+    from tests.conftest import make_user
+
+    area = await _an_area(db_session, "Production/109 – Dock")
+    gone = await make_user(test_engine, role="area_supervisor")
+    left = await db_session.get(User, gone.id)
+    left.is_active = False
+    db_session.add(AreaOwner(id=_uuid.uuid4(), user_id=gone.id, user_name=gone.full_name,
+                             location_id=area, location_path="Production/109 – Dock"))
+
+    asset_id = _uuid.uuid4()
+    await db_session.execute(sql_text(
+        "insert into ehs_safety_assets (id, asset_no, name, location_id, status)"
+        " values (:id, :no, 'Eyewash on the dock', :loc, 'in_service')"),
+        {"id": asset_id, "no": f"EQ-{str(asset_id)[:6]}", "loc": area})
+    await task_service.open_task(
+        db_session,
+        task_type="ehs_do_action",
+        doc_type="ehs_asset",
+        doc_id=asset_id,
+        doc_number="EQ-DOCK",
+        title="Check the eyewash on the dock",
+        assigned_role="area_supervisor",
+        assigned_user_id=None,
+    )
+    await db_session.commit()
+
+    _, hse = hse_manager
+    counted = (await hse.get("/api/v1/actions/unattributed")).json()
+    assert any("eyewash on the dock" in e.lower() for e in counted["examples"]), (
+        "an area owned by a closed account is being counted as covered")
+
+
+async def test_the_screen_accepts_any_active_person_and_refuses_a_closed_account(
+        hse_manager, test_engine, db_session):
+    """Both halves, in one place, because they used to be one rule.
+
+    Anybody active can be made answerable for an area — that is HSE's decision.
+    A closed account is still refused at the point of being made, with the
+    reason, rather than being discovered months later.
     """
     from tests.conftest import make_user
 
     _, client = hse_manager
     area = await _an_area(db_session, "Production/108 – Yard")
     clerk = await make_user(test_engine, role="dept_manager")
-    supervisor = await make_user(test_engine, role="area_supervisor")
+    gone = await make_user(test_engine, role="area_supervisor")
+    closed = await db_session.get(User, gone.id)
+    closed.is_active = False
+    await db_session.commit()
 
-    refused = await client.post("/api/v1/settings/area-owners", json={
-        "user_id": str(clerk.id), "location_id": str(area)})
-    assert refused.status_code == 409, refused.text
-    assert "not an area supervisor" in refused.json()["detail"]
-
-    # The admission side: somebody who does hold it is accepted.
     ok = await client.post("/api/v1/settings/area-owners", json={
-        "user_id": str(supervisor.id), "location_id": str(area)})
+        "user_id": str(clerk.id), "location_id": str(area)})
     assert ok.status_code in (200, 201), ok.text
     assert ok.json()["location_path"] == "Production/108 – Yard"
+
+    refused = await client.post("/api/v1/settings/area-owners", json={
+        "user_id": str(gone.id), "location_id": str(area)})
+    assert refused.status_code == 409, refused.text
+    assert "not active" in refused.json()["detail"]

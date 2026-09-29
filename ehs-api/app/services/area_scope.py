@@ -157,22 +157,20 @@ async def split_by_area(
 
     # Which areas somebody can actually be reached about.
     #
-    # ★ Not simply "has a row in ehs_area_owners". An area assigned to somebody
-    # who does not hold an area-scoped role, or whose account has been
-    # deactivated, is not covered — they will never be shown its work, because
-    # the list only fetches role tasks for holders of that role. Counting them
-    # as covered is the exact failure this whole mechanism exists to remove: the
-    # area looks owned, so it never falls to HSE, and nobody sees it.
+    # ★ Not simply "has a row in ehs_area_owners" — the person has to be able
+    # to receive the work, or the area looks owned, never falls to HSE, and
+    # nobody sees it. That is the failure this mechanism exists to remove.
+    #
+    # It used to also require an area-scoped role, because the task query only
+    # fetched role tasks for holders of that role. HSE asked for the role
+    # requirement to go ("can be assigned to anyone regardless of role"), so
+    # being down for an area is now itself enough to be sent its work — see
+    # `/actions/mine/tasks`. What remains is the part that is about reachability
+    # rather than about roles: a deactivated account reaches nobody.
     covered = list((await db.execute(text(
         "select l.path from ehs_area_owners o"
         "  join locations l on l.id = o.location_id"
-        "  join users u on u.id = o.user_id and u.is_active"
-        " where u.role = any(:roles)"
-        "    or exists (select 1 from user_roles ur"
-        "                 join role_defs rd on rd.code = ur.role_code and rd.is_active"
-        "                where ur.user_id = o.user_id"
-        "                  and ur.role_code = any(:roles))"),
-        {"roles": list(AREA_SCOPED_ROLES)})).scalars().all())
+        "  join users u on u.id = o.user_id and u.is_active"))).scalars().all())
     mine = await areas_for(db, user_id)
     is_hse = bool(roles & SITE_WIDE_ROLES)
 

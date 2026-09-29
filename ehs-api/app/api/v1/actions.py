@@ -231,8 +231,19 @@ async def my_tasks(db: SessionDep, user: CanReportIncident):
     # has to fetch it before the scoping can hand it to them. It reaches them
     # only if it is unowned — `split_by_area` decides that; without this the
     # rows never get as far as being decided about.
+    # ★ And anybody who is down for an area, whatever role they hold. HSE's
+    # answer in round 4 was "the area owners can be assigned to anyone
+    # regardless of role. remove the supervisor requirement" — which cannot be
+    # done by deleting the check that enforced it. Area work is addressed to
+    # `area_supervisor`, and this query only fetched role tasks for holders of
+    # that role, so an area given to somebody without it would have looked
+    # covered while never reaching them: the silent loss the whole mechanism
+    # exists to remove. Being named for an area is now its own reason to be
+    # sent that area's work, and `split_by_area` still decides which areas.
+    area_owner = bool(await area_scope.areas_for(db, mine))
     query_roles = roles | (area_scope.AREA_SCOPED_ROLES
-                           if roles & area_scope.SITE_WIDE_ROLES else set())
+                           if (roles & area_scope.SITE_WIDE_ROLES) or area_owner
+                           else set())
 
     # ★ The actions already listed above this, so their own task is not shown
     # twice. It used to drop every task on a corrective action, which also
