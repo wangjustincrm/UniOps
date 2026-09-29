@@ -337,6 +337,78 @@ async def test_direct_pa_without_invoice_no_blocks_group(db_session):
     assert rem.BLOCK_MISSING_INVOICE_NO in g.block_reasons
 
 
+async def test_prepayment_pa_without_invoice_is_not_blocked(db_session):
+    """A prepayment is paid before the vendor invoices, so it routinely has
+    no invoice number. It must be referenced by its PO instead of blocking
+    the payee — the regular Direct PA above is still blocked."""
+    from app.services import remittance_template as tpl
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    pa = _pa(bp.id, "480.00", invoice_ids=[], po_id=uuid.uuid4())
+    pa.pa_type, pa.po_number = "prepayment", "PO-141-2609-01"
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.block_reasons == []
+    assert g.lines[0].vendor_inv_no == ""
+    assert g.lines[0].vendor_ref == "Prepayment - PO PO-141-2609-01"
+    _, html = tpl.render(g, company_name="CRM", reference="BP-1",
+                         payment_method="bank_transfer")
+    assert "Prepayment - PO PO-141-2609-01" in html
+    assert "Invoice No / Reference" in html
+    assert pa.pa_number not in html
+
+
+async def test_prepayment_without_po_uses_bare_label(db_session):
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    pa = _pa(bp.id, "10.00", invoice_ids=[])          # agreement-style: no PO
+    pa.pa_type = "prepayment"
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.block_reasons == []
+    assert g.lines[0].vendor_ref == "Prepayment"
+
+
+async def test_prepayment_with_invoice_keeps_invoice_number(db_session):
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "PI-77")
+    pa = _pa(bp.id, "10.00", [str(inv.id)], po_id=uuid.uuid4())
+    pa.pa_type = "prepayment"
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.lines[0].vendor_ref == "PI-77"
+
+
+async def test_regular_line_without_invoice_still_blocks_mixed_group(db_session):
+    """A prepayment in the same payee group must not unblock a regular PA
+    that is genuinely missing its invoice number."""
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    pre = _pa(bp.id, "10.00", invoice_ids=[], po_id=uuid.uuid4())
+    pre.pa_type = "prepayment"
+    reg = _pa(bp.id, "20.00", invoice_ids=[], po_id=uuid.uuid4())
+    db_session.add_all([pre, reg])
+    await db_session.flush()
+    recs = [_record(pre), _record(reg)]
+    db_session.add_all(recs)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, recs))[0]
+    assert g.block_reasons == [rem.BLOCK_MISSING_INVOICE_NO]
+
+
 async def _expense_invoice(db, pa_id, number="EXP-INV-1"):
     from app.models.mirrors import ExpenseInvoice
     ei = ExpenseInvoice(pa_id=pa_id, invoice_number=number)

@@ -203,6 +203,8 @@ async def _reference_for(db: AsyncSession, rec: PaymentRecord) -> str:
             inv_no = (await batch_crud.vendor_inv_no_map(db, [pa])).get(pa.id, "")
             if inv_no:
                 return inv_no
+            if pa.pa_type == "prepayment" and pa.po_number:
+                return pa.po_number
         return f"PMT-{rec.id.hex[:8].upper()}"
     return rec.doc_number or str(rec.id)
 
@@ -247,7 +249,7 @@ async def _serialize_groups(db: AsyncSession, groups: list[rem.PayeeGroup], *,
         "total": str(g.total),
         "block_reasons": g.block_reasons,
         "lines": [{
-            "reference": (l.vendor_inv_no if g.recipient_kind == "vendor"
+            "reference": (l.vendor_ref if g.recipient_kind == "vendor"
                           else l.doc_number),
             "payment_date": l.payment_date.isoformat(),
             "amount": str(l.amount),

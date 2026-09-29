@@ -86,8 +86,15 @@ def render(group: PayeeGroup, *, company_name: str, reference: str,
     """
     template = template or {}
     is_vendor = group.recipient_kind == KIND_VENDOR
-    ref_header = "Invoice No" if is_vendor else "Claim No"
-    doc_type = "invoices" if is_vendor else "expense claims"
+    # A prepayment line carries a PO reference, not an invoice number, so a
+    # vendor advice containing one must not claim every row is an invoice.
+    all_invoices = all(l.vendor_inv_no for l in group.lines)
+    if not is_vendor:
+        ref_header, doc_type = "Claim No", "expense claims"
+    elif all_invoices:
+        ref_header, doc_type = "Invoice No", "invoices"
+    else:
+        ref_header, doc_type = "Invoice No / Reference", "payments"
     method_label = _METHOD_LABEL.get(payment_method, payment_method)
 
     # Raw values for the plain-text subject; escaped values for HTML body fields.
@@ -141,7 +148,7 @@ def render(group: PayeeGroup, *, company_name: str, reference: str,
     rows = "".join(
         "<tr>"
         f"<td style='{_CELL}'>"
-        f"{escape(l.vendor_inv_no if is_vendor else l.doc_number)}</td>"
+        f"{escape(l.vendor_ref if is_vendor else l.doc_number)}</td>"
         f"<td style='{_CELL}'>{payment_date or l.payment_date}</td>"
         + _amount_cell(l) +
         "</tr>"
