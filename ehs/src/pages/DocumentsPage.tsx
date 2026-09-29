@@ -8,7 +8,7 @@
  * The management view of Read & Sign is deliberately the outstanding names, not
  * the percentage: a chaser needs to know who to chase.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { FileText, Plus, X } from 'lucide-react'
@@ -119,7 +119,11 @@ function LibraryTab({ statuses, mayManage }: { statuses: string[]; mayManage: bo
 
   return (
     <>
-      {mayManage && statuses.includes('published') && (
+      {/* ★ On both library tabs. It was drawn only where the published documents
+          are listed, and what it creates is a draft — so the tab where drafts
+          live was the one place you could not start one. Same shape as the
+          chemical register, where the way in was behind a tab nobody lands on. */}
+      {mayManage && (
         <div className="mb-3 flex justify-end">
           <button type="button" className={primaryButton} onClick={() => setCreating(true)}>
             <Plus className="h-4 w-4" aria-hidden />
@@ -194,17 +198,52 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
   const [named, setNamed] = useState<PersonValue[]>([])
   const [adding, setAdding] = useState<PersonValue>(EMPTY_PERSON)
 
+  // ★ The document itself, on the form that creates it. Round 4: "add the
+  // ability to add an attachment at the start of the document creation process
+  // just above where names are added." It was a second step on a second screen,
+  // and publishing refuses a document with nothing to read — so the way in
+  // ended at a record that could not be published and gave no hint why.
+  const [file, setFile] = useState<File | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  // The document is created by the first call. If the upload then fails,
+  // pressing Add again would create a second document — so what has already
+  // succeeded is remembered and skipped on the retry. Same shape as the
+  // chemical form, for the same reason.
+  const createdId = useRef<string | null>(null)
+  const [partial, setPartial] = useState<string | null>(null)
+
   const create = useMutation({
-    mutationFn: () => api.post<SafetyDoc>('/api/v1/documents', {
-      title, category, summary: summary || null, version,
-      review_months: reviewMonths ? Number(reviewMonths) : null,
-      requires_ack: requiresAck,
-      ack_user_ids: named.map((p) => p.userId).filter(Boolean),
-    }),
-    onSuccess: (doc) => {
+    mutationFn: async () => {
+      if (!createdId.current) {
+        const doc = await api.post<SafetyDoc>('/api/v1/documents', {
+          title, category, summary: summary || null, version,
+          review_months: reviewMonths ? Number(reviewMonths) : null,
+          requires_ack: requiresAck,
+          ack_user_ids: named.map((p) => p.userId).filter(Boolean),
+        })
+        createdId.current = doc.id
+      }
+      const id = createdId.current
+      if (file) {
+        try {
+          const form = new FormData()
+          form.append('file', file)
+          await api.upload(`/api/v1/documents/${id}/file`, form)
+        } catch (e) {
+          // The document exists, so the list has to be told — somebody sent to
+          // "open it and attach the file there" needs to find it.
+          queryClient.invalidateQueries({ queryKey: ['documents'] })
+          setPartial('The document was added, but the file was not attached. '
+                     + 'Open it and attach the file from there.')
+          throw e
+        }
+      }
+      return { id }
+    },
+    onSuccess: ({ id }) => {
       queryClient.invalidateQueries({ queryKey: ['documents'] })
       onClose()
-      navigate(`/documents/${doc.id}`)
+      navigate(`/documents/${id}`)
     },
   })
 
@@ -246,6 +285,26 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
           </Field>
         </div>
       </div>
+      {/* ★ Above the names, which is where HSE asked for it. */}
+      <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+        <p className="text-xs font-medium text-neutral-700">The document itself</p>
+        <p className="mt-0.5 max-w-[68ch] text-xs text-neutral-500">
+          Attach it here. It cannot be published without something to read, so
+          adding it now saves opening the record again — and nobody can be asked
+          to sign a policy that is not there.
+        </p>
+        <input ref={fileInput} type="file" className="hidden"
+               accept="application/pdf,image/png,image/jpeg,image/webp"
+               onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <button type="button" onClick={() => fileInput.current?.click()}
+                  className="font-semibold text-primary-700 hover:underline">
+            {file ? 'Choose a different file' : 'Attach the document'}
+          </button>
+          {file && <span className="text-neutral-600">{file.name}</span>}
+        </div>
+      </div>
+
       <label className="mt-3 flex items-center gap-2 text-sm text-neutral-700">
         <input type="checkbox" checked={requiresAck}
                onChange={(e) => setRequiresAck(e.target.checked)} />
@@ -291,6 +350,11 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
             />
           </div>
         </div>
+      )}
+      {partial && (
+        <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700">
+          {partial}
+        </p>
       )}
       <ErrorNote error={create.error} />
       <div className="mt-3 flex justify-end gap-2">
