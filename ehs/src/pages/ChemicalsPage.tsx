@@ -228,10 +228,15 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
           <LocationSelect value={locationId} onChange={(id) => setLocationId(id)}
                           placeholder="Anywhere in the plant" />
         </div>
+        {/* ★ Said only "Add", between a search box and an area filter. The data
+            sheet has been attachable on this form for two rounds and the fourth
+            round still reported "can not add an attachment until after the
+            chemical is created" — the form was never opened, because nothing
+            said that was where a product gets added. */}
         {mayManage && (
           <button type="button" className={primaryButton} onClick={() => setCreating(true)}>
             <Plus className="h-4 w-4" aria-hidden />
-            Add
+            Add a chemical
           </button>
         )}
       </div>
