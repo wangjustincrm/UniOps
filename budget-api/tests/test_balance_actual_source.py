@@ -196,3 +196,116 @@ async def test_no_plan_but_nc_has_spent_goes_negative(db_session, monkeypatch):
     res = await balance_crud.get_balance(db, CC, acct.id, FY, bearer_token="t")
 
     assert res.available == Decimal("-500")
+
+
+# ── /actuals/summary — the OA expense-claim account picker ──────────────────
+#
+# Same bug, second consumer: `/balance` was moved to NC but the summary kept
+# reading the ledger, so the OA picker showed CRM00301 at -1,862.65 (38,080
+# budget, 39,942.65 of opening import) while the dashboard showed it in budget.
+
+def _finance_map_returns(monkeypatch, value):
+    seen: dict = {}
+
+    async def _stub(**kwargs):
+        seen.update(kwargs)
+        return value
+    monkeypatch.setattr(balance_crud.finance_client, "nc_actuals_by_account", _stub)
+    return seen
+
+
+@pytest.mark.parametrize("cc", [CC, None], ids=["one-cc", "aggregate"])
+async def test_summary_actual_is_the_nc_figure_not_the_ledger(db_session, monkeypatch, cc):
+    db = db_session
+    acct = await _seed(db, annual=Decimal("38080"), ledger_opening=Decimal("39942.65"))
+    seen = _finance_map_returns(monkeypatch, {str(acct.id): Decimal("5000")})
+
+    res = await balance_crud.get_actuals_summary(
+        db, cost_center_id=cc, fiscal_year=FY, bearer_token="t")
+
+    row = next(a for a in res.accounts if a.account_id == acct.id)
+    assert row.actual_spent == Decimal("5000")
+    assert row.available == Decimal("33080")
+    assert seen["bearer_token"] == "t" and seen["cost_center_id"] == cc
+
+
+async def test_summary_account_nc_has_not_touched_is_a_real_zero(db_session, monkeypatch):
+    """Absent from NC's map = nothing posted. The ledger's opening must not
+    leak back in for that account just because others did have NC rows."""
+    db = db_session
+    acct = await _seed(db, annual=Decimal("38080"), ledger_opening=Decimal("39942.65"))
+    _finance_map_returns(monkeypatch, {str(uuid.uuid4()): Decimal("1")})
+
+    res = await balance_crud.get_actuals_summary(
+        db, cost_center_id=CC, fiscal_year=FY, bearer_token="t")
+
+    row = next(a for a in res.accounts if a.account_id == acct.id)
+    assert row.actual_spent == Decimal("0")
+    assert row.available == Decimal("38080")
+
+
+@pytest.mark.parametrize("cc", [CC, None], ids=["one-cc", "aggregate"])
+async def test_summary_unreachable_finance_falls_back_to_the_ledger(db_session, monkeypatch, cc):
+    db = db_session
+    acct = await _seed(db, annual=Decimal("38080"), ledger_opening=Decimal("39942.65"))
+    _finance_map_returns(monkeypatch, None)
+
+    res = await balance_crud.get_actuals_summary(
+        db, cost_center_id=cc, fiscal_year=FY, bearer_token="t")
+
+    row = next(a for a in res.accounts if a.account_id == acct.id)
+    assert row.actual_spent == Decimal("39942.65")
+    assert row.available == Decimal("-1862.65")
+
+
+async def test_by_account_client_sums_the_months(monkeypatch):
+    """The dashboard endpoint answers per month; the summary wants the year."""
+    import httpx
+
+    from app.services import finance_client
+
+    aid = str(uuid.uuid4())
+
+    class _Resp:
+        status_code = 200
+        def json(self):
+            return {"fiscal_year": FY, "accounts": {aid: {"1": "100.50", "9": "39.50"}}}
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *_a):
+            return False
+        async def get(self, *_a, **_kw):
+            return _Resp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kw: _Client())
+    got = await finance_client.nc_actuals_by_account(
+        bearer_token="t", fiscal_year=FY, cost_center_id=None)
+    assert got == {aid: Decimal("140.00")}
+
+
+@pytest.mark.parametrize("status_code", [403, 500])
+async def test_by_account_client_error_is_unknown_not_empty(monkeypatch, status_code):
+    """An empty map would read as 'nothing spent anywhere' — every account at
+    its full budget. A refusal has to come back as None."""
+    import httpx
+
+    from app.services import finance_client
+
+    class _Resp:
+        text = "nope"
+    _Resp.status_code = status_code
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *_a):
+            return False
+        async def get(self, *_a, **_kw):
+            return _Resp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kw: _Client())
+    got = await finance_client.nc_actuals_by_account(
+        bearer_token="t", fiscal_year=FY, cost_center_id=CC)
+    assert got is None

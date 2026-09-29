@@ -67,3 +67,50 @@ async def nc_actual_for_budget_check(
             cost_center_id, account_id, fiscal_year, e,
         )
         return None
+
+
+async def nc_actuals_by_account(
+    *,
+    bearer_token: str | None,
+    fiscal_year: int,
+    cost_center_id: uuid.UUID | None,
+) -> dict[str, Decimal] | None:
+    """NC posted actual per budget account, year total — every account at once.
+
+    The per-account figures behind `/actuals/summary`, which is what the OA
+    expense-claim account picker shows as each account's remaining budget. It
+    reads `/gl/nc-actuals-monthly`, the Budget Dashboard's own NC line, with
+    the caller's token: that endpoint clamps to the caller's department by the
+    same budget-scope rule this service applies to the plan side, so the
+    budget and the spend it is set against cover the same cost centres.
+
+    Keyed by `str(account_id)`. An account missing from the map is a real
+    zero (NC has posted nothing against it) and callers should take it as one.
+    Returns **None** — never an empty map — when finance-api can't be had; see
+    `nc_actual_for_budget_check` for why "unknown" must not read as "nothing".
+    """
+    url = f"{settings.FINANCE_API_URL}/finance/v1/gl/nc-actuals-monthly"
+    params: dict[str, object] = {"fiscal_year": fiscal_year}
+    if cost_center_id is not None:
+        params["cost_center_id"] = str(cost_center_id)
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(url, params=params, headers=_auth_headers(bearer_token))
+        if r.status_code >= 400:
+            logger.warning(
+                "finance-api nc-actuals-monthly cc=%s fy=%s returned %d: %s",
+                cost_center_id, fiscal_year, r.status_code, r.text[:300],
+            )
+            return None
+        accounts = r.json()["accounts"]
+        return {
+            aid: sum((Decimal(str(v)) for v in months.values()), Decimal("0"))
+            for aid, months in accounts.items()
+        }
+    except (httpx.HTTPError, KeyError, TypeError, ValueError, AttributeError,
+            InvalidOperation) as e:
+        logger.warning(
+            "finance-api nc-actuals-monthly cc=%s fy=%s failed: %s",
+            cost_center_id, fiscal_year, e,
+        )
+        return None

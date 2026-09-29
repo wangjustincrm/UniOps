@@ -207,11 +207,34 @@ async def get_actuals_summary(
     db: AsyncSession,
     *, cost_center_id: uuid.UUID | None = None, fiscal_year: int,
     cc_ids: list[uuid.UUID] | None = None,
+    bearer_token: str | None = None,
 ) -> ActualsSummaryResponse:
-    """Per-account summary: plan vs actual for the full year."""
+    """Per-account summary: plan vs actual for the full year.
+
+    `actual_spent` is NC's posted figure, for the same reason and from the same
+    source as `get_balance` — see there. This one had been left reading the
+    ledger when `/balance` was moved, and it is what the OA expense-claim
+    account picker shows, so a claimant was told CRM00301 was 1,862.65 over
+    budget on the strength of last year's opening import. (The Budget
+    Dashboard also calls this, but takes only annual_budget and committed from
+    it; its NC line it reads from finance-api itself.)
+
+    One call for every account, not one per account. When finance-api can't be
+    had, each account falls back to its ledger figure as `/balance` does.
+    """
     if cc_ids is not None and len(cc_ids) == 0:
         return ActualsSummaryResponse(
             cost_center_id=cost_center_id, fiscal_year=fiscal_year, accounts=[])
+    nc_actual = await finance_client.nc_actuals_by_account(
+        bearer_token=bearer_token, fiscal_year=fiscal_year,
+        cost_center_id=cost_center_id,
+    )
+    if nc_actual is None:
+        logger.warning(
+            "actuals summary cc=%s fy=%s: finance-api unavailable, actual_spent "
+            "fell back to the budget_ledger figure (opening import only)",
+            cost_center_id, fiscal_year,
+        )
     accts_q = (
         select(BudgetAccount, BudgetL1)
         .join(BudgetL1, BudgetAccount.l1_id == BudgetL1.id)
@@ -259,11 +282,15 @@ async def get_actuals_summary(
                        - Decimal(str((await db.execute(release_q)).scalar_one()))
             if committed < 0:
                 committed = Decimal("0")
-            actual = Decimal(str((await db.execute(actual_q)).scalar_one()))
+            if nc_actual is None:
+                actual = Decimal(str((await db.execute(actual_q)).scalar_one()))
         else:
             annual = await get_annual_budget(db, cost_center_id, acct.id, fiscal_year)
             committed = await get_committed(db, cost_center_id, acct.id, fiscal_year)
-            actual = await get_actual_spent(db, cost_center_id, acct.id, fiscal_year)
+            if nc_actual is None:
+                actual = await get_actual_spent(db, cost_center_id, acct.id, fiscal_year)
+        if nc_actual is not None:
+            actual = nc_actual.get(str(acct.id), Decimal("0"))
         available = annual - committed - actual
         utilisation = float((committed + actual) / annual * 100) if annual > 0 else 0.0
         summaries.append(AccountSummary(

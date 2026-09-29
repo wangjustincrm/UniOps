@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.core.authz import require_permission
 from app.core.budget_scope import resolve_budget_scope, scoped_cc_ids
-from app.core.deps import CurrentUserPayload, SessionDep
+from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud import balance as balance_crud
 from app.crud import opening as opening_crud
 from app.schemas.actual import (
@@ -72,17 +72,21 @@ async def list_actuals(
 
 @router.get("/actuals/summary", response_model=ActualsSummaryResponse)
 async def actuals_summary(
-    db: SessionDep, user: CurrentUserPayload,
+    db: SessionDep, user: CurrentUserPayload, token: BearerToken,
     fiscal_year: int = Query(..., ge=2020, le=2100),
     cost_center_id: uuid.UUID | None = Query(default=None),
 ):
+    # The caller's own token goes on to finance-api, which clamps the NC side
+    # to the caller's department by the same rule `scope` clamps the plan here.
     scope = await _scope_for(db, user)
     cc_ids = scoped_cc_ids(scope, cost_center_id)
     if scope.full_access:
         return await balance_crud.get_actuals_summary(
-            db, cost_center_id=cost_center_id, fiscal_year=fiscal_year)
+            db, cost_center_id=cost_center_id, fiscal_year=fiscal_year,
+            bearer_token=token)
     return await balance_crud.get_actuals_summary(
-        db, cost_center_id=None, fiscal_year=fiscal_year, cc_ids=cc_ids)
+        db, cost_center_id=None, fiscal_year=fiscal_year, cc_ids=cc_ids,
+        bearer_token=token)
 
 
 @router.get("/actuals/monthly-summary", response_model=MonthlyActualsSummaryResponse)
