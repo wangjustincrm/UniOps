@@ -271,7 +271,8 @@ async def _effective_role_codes(
     return codes
 
 
-_POST_CODES = ("gm", "opm", "finance_manager", "procurement_manager", "vendor_manager", "finance_bp")
+_POST_CODES = ("gm", "opm", "finance_manager", "procurement_manager", "vendor_manager", "finance_bp",
+               "finance_director")
 
 
 async def role_holder_ids(

@@ -19,14 +19,15 @@ BUILT_IN_ROLES: frozenset[str] = frozenset({
     "requester", "dept_admin", "dept_manager", "gm", "opm",
     "procurement_officer", "procurement_manager", "warehouse_staff",
     "ap_clerk", "finance_bp", "finance_manager", "vendor_manager",
-    "cfo", "auditor", "erp_pa_officer", "payment_officer", "system_admin",
+    "cfo", "auditor", "erp_pa_officer", "payment_officer", "finance_director",
+    "system_admin",
 })
 
 # Roles granted ONLY through identity's user_roles side table — never written to
 # users.role. identity's role_defs.assignable_as_primary (migration 0009) is the
 # source of truth; this mirror only backs the identity-down fallback below, so
 # the primary-role guard does not come undone when identity is unreachable.
-ADDITIONAL_ONLY_ROLES: frozenset[str] = frozenset({"erp_pa_officer", "payment_officer"})
+ADDITIONAL_ONLY_ROLES: frozenset[str] = frozenset({"erp_pa_officer", "payment_officer", "finance_director"})
 
 # Permissions that cannot be disabled for the given role (enforced server-side).
 # The view_* locks below correspond to roles that would be functionally broken
@@ -41,6 +42,7 @@ LOCKED_PERMISSIONS: dict[str, set[str]] = {
     "finance_manager":      {"view_pa"},
     "erp_pa_officer":       {"view_po", "view_pa"},
     "payment_officer":      {"view_pa"},
+    "finance_director":     {"view_pa"},
     "system_admin":         {"admin_panel"},
 }
 
@@ -376,6 +378,11 @@ _DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
     # batch payment is core to the role even though finance-api's own gate
     # already permits it.
     "payment_officer":      _P(view_po=True, view_invoice=True, view_pa=True, view_finance=True, **_BOOKING),
+    # Must match identity's 0015 migration _GRANTS (epms.agreement.read is a
+    # phase-2 key and lives only there). Read-only: the final payment sign-off
+    # needs to open the PA and everything behind it; approving comes from
+    # holding the post in approval-api, not from a matrix permission.
+    "finance_director":     _P(**_VIEW_ALL, view_finance=True, **_BOOKING),
     "system_admin":         {k: True for k in PERMISSION_KEYS},
 }
 
@@ -672,6 +679,7 @@ _BUILTIN_ROLE_NAMES: dict[str, str] = {
     "auditor": "Auditor",
     "erp_pa_officer": "ERP PA Officer",
     "payment_officer": "Payment Officer",
+    "finance_director": "Finance Director",
     "system_admin": "System Admin",
 }
 
