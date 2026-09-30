@@ -6,6 +6,7 @@ import ActionDetailPage from '@/pages/ActionDetailPage'
 import AuditPackPage from '@/pages/AuditPackPage'
 import ChemicalsPage from '@/pages/ChemicalsPage'
 import ComplianceCalendarPage from '@/pages/ComplianceCalendarPage'
+import FeedbackPage from '@/pages/FeedbackPage'
 import CourseSessionPage from '@/pages/CourseSessionPage'
 import DocumentDetailPage from '@/pages/DocumentDetailPage'
 import DocumentsPage from '@/pages/DocumentsPage'
@@ -111,6 +112,11 @@ export const ehsRoutes: RouteDef[] = [
     path: '/first-aid',
     element: <FirstAidLogPage />,
     tab: { title: 'First aid', icon: 'HeartPulse', keyStrategy: 'static' },
+  },
+  {
+    path: '/feedback',
+    element: <FeedbackPage />,
+    tab: { title: 'Feedback', icon: 'MessageSquare', keyStrategy: 'static' },
   },
   {
     path: '/calendar',

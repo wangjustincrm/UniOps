@@ -27,6 +27,7 @@ from app.api.v1.permits import router as permits_router
 from app.api.v1.qr import router as qr_router
 from app.api.v1.quizzes import router as quizzes_router
 from app.api.v1.reports import router as reports_router
+from app.api.v1.feedback import router as feedback_router
 from app.api.v1.rtw import router as rtw_router
 from app.api.v1.risk import router as risk_router
 from app.api.v1.settings import router as settings_router
@@ -91,6 +92,7 @@ api_router.include_router(audit_router, tags=["audit"])
 api_router.include_router(qr_router, tags=["qr"])
 api_router.include_router(communications_router, tags=["communications"])
 api_router.include_router(toolbox_router, tags=["toolbox"])
+api_router.include_router(feedback_router, tags=["feedback"])
 api_router.include_router(first_aid_router, prefix="/first-aid", tags=["first-aid"])
 api_router.include_router(forms_router, tags=["forms"])
 api_router.include_router(deadlines_router, prefix="/deadlines", tags=["statutory"])

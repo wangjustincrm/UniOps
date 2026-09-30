@@ -6,7 +6,7 @@ import {
   ArrowLeft, BarChart3, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck,
   ClipboardList, FileText, FlaskConical, ShieldAlert, ShieldCheck, Siren, Users, Wrench,
   GraduationCap, HeartPulse, List, LogOut, Map, MapPin, Menu, Settings, TriangleAlert, User,
-  Mail,
+  Mail, MessageSquare,
 } from 'lucide-react'
 import { ehsRoutes } from '@/app/routes'
 import { cn } from '@/lib/utils'
@@ -84,6 +84,10 @@ const NAV: NavGroup[] = [
       // No permission: filling in an inspection is the same kind of act as
       // filing a report.
       { label: 'Forms',              href: '/forms',         icon: ClipboardList },
+      // ★ No permission, and in the first group on purpose. Round 4 asked for
+      // "a general comments feedback place"; a place to say something is wrong
+      // that only some people can reach is not one.
+      { label: 'Feedback',           href: '/feedback',      icon: MessageSquare },
     ],
   },
   {

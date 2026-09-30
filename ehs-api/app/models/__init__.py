@@ -14,6 +14,7 @@ from app.models.document import DocumentAcknowledgement, SafetyDocument  # noqa:
 from app.models.drill import Drill, DrillParticipant  # noqa: F401
 from app.models.config import EhsConfig, Holiday  # noqa: F401
 from app.models.equipment import Equipment  # noqa: F401
+from app.models.feedback import Feedback  # noqa: F401
 from app.models.first_aid import FirstAidLog  # noqa: F401
 from app.models.form import (  # noqa: F401
     FormAnswer, FormAttachment, FormSubmission, FormTemplate, FormVersion,

@@ -325,6 +325,55 @@ async def course_tomorrow(db: AsyncSession, delivery, attendee_ids: list[uuid.UU
     )
 
 
+async def feedback_left(db: AsyncSession, row) -> None:
+    """HSE hears about a general comment.
+
+    ★ An email and nothing else. Nobody is assigned a comment: it may turn out
+    to be a defect, a request, or a misunderstanding, and raising a task for
+    something that might not be work leaves an item in somebody's list that
+    they cannot complete. HSE triages it on the screen instead.
+    """
+    people = await by_roles(db, DEFAULT_INCIDENT_ROLES)
+    if not people:
+        return
+    who = row.submitted_by_name or "Somebody"
+    where = f" (from {row.page_path})" if row.page_path else ""
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"Safety feedback from {who}",
+        body=f"{who} left a comment{where}:\n\n{row.body}",
+        doc_type=None,
+        doc_id=None,
+        template_key="feedback_left",
+        link=mail.module_link("/feedback"),
+        link_label="Open feedback",
+    )
+
+
+async def feedback_answered(db: AsyncSession, row) -> None:
+    """The person who said something hears that somebody read it.
+
+    ★ Raised in review by uniops-9a: without this, "did anybody look at my
+    comment" is answered only by going back to the screen — which is another
+    invisible state, and the reason people stop reporting things.
+    """
+    people = await mail.recipients(db, [row.submitted_by])
+    if not people:
+        return
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject="HSE has replied to your feedback",
+        body=(f"You wrote:\n\n{row.body}\n\nHSE replied:\n\n{row.reply}"),
+        doc_type=None,
+        doc_id=None,
+        template_key="feedback_answered",
+        link=mail.module_link("/feedback"),
+        link_label="See the reply",
+    )
+
+
 # ── Documents and the committee ──────────────────────────────────────────────
 
 async def document_published(db: AsyncSession, document, audience_ids: list[uuid.UUID]) -> None:
