@@ -194,9 +194,12 @@ async def update_chemical(
 
 
 @router.post("/chemicals/{chemical_id}/retire", response_model=ChemicalOut)
-async def retire_chemical(chemical_id: uuid.UUID, db: SessionDep, user: CanManageDocument):  # noqa: ARG001
+async def retire_chemical(chemical_id: uuid.UUID, db: SessionDep, user: CanManageDocument):
     chemical = await crud.get_chemical(db, chemical_id)
-    return (await _with_sheet(db, [await crud.retire(db, chemical)]))[0]
+    # The user is passed on because retiring discharges the sheet's review
+    # clock, and who discharged an obligation is part of the record.
+    retired = await crud.retire(db, chemical, user_id=_user_id(user))
+    return (await _with_sheet(db, [retired]))[0]
 
 
 # ── Data sheets ──────────────────────────────────────────────────────────────

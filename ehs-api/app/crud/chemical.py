@@ -157,13 +157,43 @@ async def _rename_labels(db: AsyncSession, chemical: Chemical, was_called: str) 
     await db.flush()
 
 
-async def retire(db: AsyncSession, chemical: Chemical) -> Chemical:
+async def retire(
+    db: AsyncSession, chemical: Chemical, *, user_id: uuid.UUID | None = None,
+) -> Chemical:
     """Off site, but not gone.
 
     An incident two years ago may name this product, and deleting it would
     leave that record pointing at nothing.
+
+    ★ Retiring also stops the three-year review clock on its data sheets. The
+    obligation is to hold a current sheet for a product kept on site; once it
+    is not kept on site there is nothing to review. This was not done, and the
+    two screens disagreed about the same obligation: "Needs attention" counts
+    only products on site, while the compliance calendar showed retired ones as
+    overdue reviews — two in the dev database, which is how it was found.
     """
     chemical.is_active = False
+    sheets = list((await db.execute(
+        select(SafetyDataSheet.id)
+        .where(SafetyDataSheet.chemical_id == chemical.id))).scalars())
+    if sheets:
+        open_clocks = (await db.execute(
+            select(StatutoryDeadline).where(
+                StatutoryDeadline.source_type == "sds",
+                StatutoryDeadline.source_id.in_(sheets),
+                StatutoryDeadline.satisfied_at.is_(None),
+            ))).scalars()
+        for deadline in open_clocks:
+            # Through the service, because closing the prompt is half of it.
+            await deadline_service.satisfy(
+                db, deadline,
+                # The name as well as the id: the module keeps a name snapshot
+                # beside every user reference, and an audit pack that says
+                # "satisfied by —" is the reason for the rule.
+                user_id=user_id, user_name=await _name(db, user_id),
+                evidence_note="Product no longer kept on site",
+                when=datetime.now(timezone.utc),
+            )
     await db.flush()
     return chemical
 

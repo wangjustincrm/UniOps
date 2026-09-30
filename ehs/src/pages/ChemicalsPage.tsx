@@ -16,7 +16,8 @@
  * actually asked of this are "what is in this drum" and "what is stored in
  * here", and both are asked standing in front of it.
  */
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, Download, FileText, FlaskConical, Plus, Printer,
@@ -81,7 +82,28 @@ type TabKey = (typeof TABS)[number]['key']
 export default function ChemicalsPage() {
   const { can } = usePermissions()
   const mayManage = can('ehs.document.manage')
-  const [tab, setTab] = useState<TabKey>('gaps')
+  // ★ Arrived from the compliance calendar or a task: `?sheet=<id>` names a
+  // data sheet whose three-year review is owed. The id is the *sheet*, not the
+  // product, because that is what the deadline row carries.
+  const [params] = useSearchParams()
+  const openSheet = params.get('sheet')
+  // ★ And `/chemicals/:id` names a product. That route has existed since the
+  // QR codes were built — scanning a drum is supposed to land on its row — and
+  // this page never read the id, so every scan landed on the top of the plain
+  // inventory list. Same class of defect as the calendar rows, found while
+  // fixing them.
+  const { id: openChemical } = useParams<{ id?: string }>()
+  const asked = openSheet ?? openChemical ?? null
+  const [tab, setTab] = useState<TabKey>(asked ? 'inventory' : 'gaps')
+  // Follow the parameter rather than only reading it once. The tab shell keys
+  // a kept-alive page on its path without the search string, so arriving here
+  // a second time with a different sheet id does not remount this component
+  // and the initial state above would never be read again.
+  const [lastAsked, setLastAsked] = useState<string | null>(asked)
+  if (asked !== lastAsked) {
+    setLastAsked(asked)
+    if (asked) setTab('inventory')
+  }
 
   const gaps = useQuery({
     queryKey: ['chemical-gaps'],
@@ -101,7 +123,10 @@ export default function ChemicalsPage() {
       />
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
       {tab === 'gaps' && <GapsTab gaps={gaps.data} loading={gaps.isLoading} />}
-      {tab === 'inventory' && <InventoryTab mayManage={mayManage} />}
+      {tab === 'inventory' && (
+        <InventoryTab mayManage={mayManage}
+                      openSheet={openSheet} openChemical={openChemical ?? null} />
+      )}
     </div>
   )
 }
@@ -190,7 +215,9 @@ function GapsTab({ gaps, loading }: { gaps: Gaps | undefined; loading: boolean }
   )
 }
 
-function InventoryTab({ mayManage }: { mayManage: boolean }) {
+function InventoryTab({ mayManage, openSheet, openChemical }: {
+  mayManage: boolean; openSheet?: string | null; openChemical?: string | null
+}) {
   const [search, setSearch] = useState('')
   const [locationId, setLocationId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -210,9 +237,35 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
     queryKey: ['chemicals', search.trim(), locationId, showRetired],
     queryFn: () => api.get<Chemical[]>(`/api/v1/chemicals${query ? `?${query}` : ''}`),
   })
+  // The product the link named, if it is in this list at all. A superseded
+  // sheet's clock is satisfied when the new revision is filed, so a review
+  // that is still owed is always on the product's current sheet — which is the
+  // one the list rows carry.
+  const wanted = openSheet ?? openChemical ?? null
+  const asked = wanted
+    ? (chemicals.data ?? []).find((c) => (openSheet
+        ? c.current_sheet?.id === openSheet
+        : c.id === openChemical))
+    : undefined
+  // Hoisted to the front so it is on the first page. Without this the row
+  // could be expanded three pages down and the screen would look unchanged.
+  const ordered = useMemo(() => {
+    const all = chemicals.data ?? []
+    if (!asked) return all
+    return [asked, ...all.filter((c) => c.id !== asked.id)]
+  }, [chemicals.data, asked])
   // Search and the area filter go to the server; the pager is over what came
   // back, which is the whole list at this plant's scale.
-  const page = useListView(chemicals.data, () => [])
+  const page = useListView(ordered, () => [])
+
+  // Expand it once the list has arrived. Gated on the data being there: on the
+  // first render it is not, and consuming the parameter then would leave the
+  // row closed for good.
+  const [shown, setShown] = useState<string | null>(null)
+  if (wanted !== shown && chemicals.data) {
+    setShown(wanted)
+    setOpen(asked?.id ?? null)
+  }
 
   return (
     <>
@@ -249,6 +302,19 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
 
       {creating && <ChemicalForm onClose={() => setCreating(false)} />}
 
+      {/* Rather than silently landing on the top of the list. The usual reason
+          is that the product has been retired, which takes it off this list
+          while its sheet's review clock keeps running. */}
+      {wanted && chemicals.data && !asked && (
+        <p className="mb-3 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">
+          {openSheet
+            ? 'The data sheet you followed is not in this list.'
+            : 'The product you scanned is not in this list.'}
+          {' '}It may be one no longer kept on site — tick the box above to
+          include those.
+        </p>
+      )}
+
       {chemicals.data?.length === 0 && !creating ? (
         <Empty>
           {search || locationId
@@ -259,7 +325,8 @@ function InventoryTab({ mayManage }: { mayManage: boolean }) {
         <ul className="flex flex-col gap-2">
           {page.pageRows.map((c) => (
             <li key={c.id}>
-              <Card className="!p-0">
+              <Card className={`!p-0 ${
+                asked?.id === c.id ? 'ring-2 ring-primary-300' : ''}`}>
                 <button type="button" onClick={() => setOpen(open === c.id ? null : c.id)}
                         className="flex w-full items-start gap-3 p-3.5 text-left">
                   <FlaskConical className="mt-0.5 h-5 w-5 shrink-0 text-neutral-400" aria-hidden />

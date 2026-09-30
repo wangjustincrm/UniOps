@@ -1,4 +1,5 @@
 """Chemicals, their data sheets, and the workplace labels printed from them."""
+import sqlalchemy as sa
 
 
 
@@ -124,3 +125,50 @@ async def test_the_label_wording_can_be_corrected_by_hand(hse_manager):
     assert after["supplier"] == "Brenntag Canada"
     assert after["first_aid"] == "Rinse with water for 15 minutes.", (
         "changing the supplier must not clear the first aid wording")
+
+
+async def test_retiring_a_product_stops_its_review_clock(hse_manager, db_session):
+    """★ Two screens disagreed about the same obligation.
+
+    WHMIS's three-year review is owed on a product kept on site. "Needs
+    attention" counted only products on site; the compliance calendar listed
+    retired ones as overdue reviews, because retiring never discharged the
+    clock. Two of the overdue reviews in the dev database were products nobody
+    keeps any more.
+    """
+    _, client = hse_manager
+    chem = (await client.post("/api/v1/chemicals", json={
+        "name": "Sample solvent, no longer stocked",
+    })).json()
+    filed = await client.post(f"/api/v1/chemicals/{chem['id']}/sds", json={
+        "revision": "1", "revision_date": "2023-01-10",
+    })
+    assert filed.status_code in (200, 201), filed.text
+    sheet_id = filed.json()["id"]
+
+    # Running to begin with — otherwise the assertion below is satisfied by
+    # there being no clock at all.
+    rows = (await client.get("/api/v1/deadlines?limit=500")).json()
+    mine = [d for d in rows if d["source_id"] == sheet_id]
+    assert mine, "filing a data sheet must start its three-year review"
+    assert mine[0]["satisfied_at"] is None
+    # And reachable, which is the other half of this round's calendar work.
+    assert mine[0]["path"] == f"/chemicals?sheet={sheet_id}"
+
+    retired = await client.post(f"/api/v1/chemicals/{chem['id']}/retire")
+    assert retired.status_code == 200, retired.text
+
+    after = (await client.get("/api/v1/deadlines?limit=500")).json()
+    assert not [d for d in after if d["source_id"] == sheet_id], (
+        "a retired product's review must leave the calendar")
+    listed = (await client.get(
+        "/api/v1/deadlines?include_satisfied=true&limit=500")).json()
+    closed = [d for d in listed if d["source_id"] == sheet_id]
+    assert closed and closed[0]["satisfied_at"] is not None
+    # The note is on the record rather than in the response: an auditor has to
+    # be able to see the review was answered by the product leaving, not by a
+    # review that never happened.
+    note = (await db_session.execute(sa.text(
+        "select evidence_note from ehs_statutory_deadlines where source_id = :s"),
+        {"s": sheet_id})).scalar()
+    assert note == "Product no longer kept on site"

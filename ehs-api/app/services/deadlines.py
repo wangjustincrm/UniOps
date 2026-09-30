@@ -33,7 +33,7 @@ DEADLINE_DOC_TYPE = {
     "cert": task_service.DOC_CERT,
     "jhsc_rec": task_service.DOC_JHSC,
     "document": task_service.DOC_DOCUMENT,
-    "sds": "ehs_sds",
+    "sds": task_service.DOC_SDS,
 }
 
 

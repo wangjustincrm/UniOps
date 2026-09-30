@@ -16,6 +16,8 @@ from sqlalchemy import select
 from app.core.deps import SessionDep
 from app.core.permissions import CanReadIncident
 from app.models.statutory import StatutoryDeadline
+from app.services import tasks as task_service
+from app.services.deadlines import DEADLINE_DOC_TYPE
 
 router = APIRouter()
 
@@ -33,6 +35,14 @@ class DeadlineRow(BaseModel):
     starts_at: datetime
     due_at: datetime
     satisfied_at: datetime | None
+    # ★ Where this row opens. Round 4: "every item in the compliance calendar
+    # should be clickable and take the user to that item." Only incidents were
+    # links; a certificate expiry, an SDS review and a committee reply rendered
+    # as plain rows, and the screen's own comment admitted it. Computed from the
+    # same map the task inbox uses rather than from a second one on the client —
+    # two maps of the same thing drift, and one of these paths changed this
+    # round.
+    path: str = ""
     escalation_level: int
 
 
@@ -58,4 +68,12 @@ async def list_deadlines(
             StatutoryDeadline.satisfied_at.is_(None),
         )
     rows = (await db.execute(stmt.order_by(StatutoryDeadline.due_at).limit(limit))).scalars()
-    return [DeadlineRow.model_validate(r) for r in rows]
+
+    out = []
+    for r in rows:
+        row = DeadlineRow.model_validate(r)
+        doc_type = DEADLINE_DOC_TYPE.get(r.source_type)
+        template = task_service.DOC_PATHS.get(doc_type) if doc_type else None
+        row.path = template.format(id=r.source_id) if template and r.source_id else ""
+        out.append(row)
+    return out

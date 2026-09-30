@@ -37,6 +37,12 @@ DOC_JHSC = "ehs_jhsc"
 DOC_DOCUMENT = "ehs_doc"
 DOC_ASSET = "ehs_asset"
 DOC_PERMIT = "ehs_ptw"
+# A safety data sheet. No task hangs off one — the three-year review is
+# chased through the deadline sweep — but the compliance calendar needs a
+# path for it, and DEADLINE_DOC_TYPE used to name this one as a bare string
+# while every other clock named a constant here. A test now asserts every
+# deadline document type has a path in this map.
+DOC_SDS = "ehs_sds"
 
 # Task types. None of these may start with "approve".
 TASK_DO_ACTION = "ehs_do_action"
@@ -61,6 +67,42 @@ TASK_ASSET_INSPECT = "ehs_asset_inspect"
 # the role every UniOps account actually holds.
 ROLE_ANY_EMPLOYEE = "requester"
 TASK_CLOSE_PERMIT = "ehs_close_permit"
+
+
+# Where each kind of record is actually opened. A document type that is not
+# here is still listed — it says what it is and who it is for — but without a
+# link, which is better than a link that goes nowhere.
+#
+# ★ Lives here rather than beside the task endpoint because the compliance
+# calendar needs the same answers. It had its own idea of where a row opens,
+# which covered incidents and nothing else — and two maps of the same thing
+# drift: "/jhsc?rec={id}" was corrected in one of them this round.
+# ★ Where a task opens. The id goes in the path wherever the screen can use
+# it: a task that lands on a register is a task that has told somebody to go
+# and find their own work, which is the thing an inbox is for.
+DOC_PATHS: dict[str, str] = {
+    "ehs_tbt": "/toolbox-talks?delivery={id}",
+    "ehs_run": "/forms",
+    "ehs_doc": "/documents/{id}",
+    "ehs_crs": "/training",
+    "ehs_cert": "/training",
+    "ehs_asset": "/equipment",
+    "ehs_inc": "/incidents/{id}",
+    # ★ To the recommendation, now that the task hangs off one. It was "/jhsc" —
+    # the committee's list page — so somebody told to write a statutory reply
+    # landed on a list of meetings and had to find which meeting and which
+    # recommendation it meant. Raised in review by uniops-9a: changing the
+    # document without changing this would have left the link technically valid
+    # and practically useless.
+    "ehs_jhsc": "/jhsc?rec={id}",
+    "ehs_ptw": "/permits/{id}",
+    # ★ The id here is the data *sheet*, not the chemical — that is what a
+    # "sds" deadline carries as its source_id (app/crud/chemical.py). The
+    # page opens the product holding that sheet. It can match on the
+    # current sheet because superseding a revision satisfies the old
+    # sheet's clock, so an outstanding review is always on the current one.
+    "ehs_sds": "/chemicals?sheet={id}",
+}
 
 
 async def open_task(

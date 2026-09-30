@@ -8,7 +8,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.models.incident import Incident
-from app.services.deadlines import clocks_for_incident
+from app.services import tasks as task_service
+from app.services.deadlines import DEADLINE_DOC_TYPE, clocks_for_incident
 
 ET = ZoneInfo("America/Toronto")
 
@@ -145,3 +146,44 @@ async def test_sending_a_recommendation_records_who_and_when_without_moving_the_
     assert due_after == due_before, (
         "sending must not move the statutory deadline — otherwise not sending "
         "extends it forever")
+
+
+# ── Every clock has somewhere to go ─────────────────────────────────────────
+
+
+class TestEveryDeadlineIsReachable:
+    """A new kind of statutory clock must not be unclickable in the calendar.
+
+    Round 4: "every item in the compliance calendar should be clickable and
+    take the user to that item." The screen now renders a path the server
+    computes, which means adding a source_type without adding its path renders
+    a plain row again — and the way that gets found is Kirk reporting that a
+    row will not open, a round later. This fails at once instead.
+    """
+
+    def test_every_source_type_maps_to_a_document(self):
+        for source_type, doc_type in DEADLINE_DOC_TYPE.items():
+            assert doc_type, f"{source_type} has no document type"
+
+    def test_every_document_type_has_a_path(self):
+        for source_type, doc_type in DEADLINE_DOC_TYPE.items():
+            assert doc_type in task_service.DOC_PATHS, (
+                f"a {source_type!r} deadline resolves to {doc_type!r}, which has "
+                f"no entry in DOC_PATHS — its row in the compliance calendar "
+                f"would not open")
+
+    def test_every_path_formats_against_a_record_id(self):
+        # The endpoint formats with `id=`. A template that names the field
+        # anything else raises KeyError on a live row rather than here.
+        #
+        # Not every template names the id: a certificate expiry opens the
+        # Training screen rather than the one record, because there is no page
+        # for a single record to open. That is a real limit of the link, not of
+        # this check — listed for round 5 so HSE can say whether landing on the
+        # screen is enough.
+        for source_type, doc_type in DEADLINE_DOC_TYPE.items():
+            template = task_service.DOC_PATHS[doc_type]
+            path = template.format(id="00000000-0000-0000-0000-000000000000")
+            assert path.startswith("/"), f"{source_type} path is not absolute"
+            if "{id}" in template:
+                assert "00000000" in path

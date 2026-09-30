@@ -22,6 +22,10 @@ interface CalendarDeadline extends Deadline {
    *  link to. */
   source_id: string | null
   source_ref: string | null
+  /** Where this row opens, computed by the server from the same map the task
+   *  inbox uses. Empty when the clock's kind has no page — which a test on the
+   *  server now prevents, so in practice every row has one. */
+  path: string
 }
 
 export default function ComplianceCalendarPage() {
@@ -70,9 +74,15 @@ function Section({ title, rows, empty }: {
   )
 }
 
-/** A clock, linked to whatever it is running against. Only incidents have a
- *  detail page today; other source types render as plain rows rather than as
- *  links that go nowhere. */
+/** A clock, linked to whatever it is running against.
+ *
+ * ★ HSE, round 4: "every item in the compliance calendar should be clickable
+ * and take the user to that item." This used to link incidents only and render
+ * a certificate expiry, an SDS review and a committee reply as plain rows. The
+ * destination comes from the server rather than from a second map here,
+ * because the task inbox has one already and two copies drift — the committee
+ * reply's link moved this round. A row with no path still renders, as a plain
+ * row; it just cannot happen for the clocks that exist. */
 function DeadlineRow({ d }: { d: CalendarDeadline }) {
   const body = (
     <>
@@ -89,10 +99,10 @@ function DeadlineRow({ d }: { d: CalendarDeadline }) {
   )
   const card = 'block rounded-xl border border-neutral-200 bg-white p-3.5'
 
-  if (d.source_type === 'incident' && d.source_id) {
+  if (d.path) {
     return (
       <Link
-        to={`/incidents/${d.source_id}`}
+        to={d.path}
         className={`${card} transition-colors hover:border-primary-300 hover:bg-primary-50/40`}
       >
         {body}

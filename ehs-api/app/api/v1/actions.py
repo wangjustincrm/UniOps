@@ -147,31 +147,6 @@ class AssignedTaskOut(BaseModel):
     path: str
 
 
-# Where each kind of work is actually done. A task whose type is not here is
-# still listed — it says what it is and who it is for — but without a link,
-# which is better than a link that goes nowhere.
-# ★ Where a task opens. The id goes in the path wherever the screen can use
-# it: a task that lands on a register is a task that has told somebody to go
-# and find their own work, which is the thing an inbox is for.
-TASK_PATHS: dict[str, str] = {
-    "ehs_tbt": "/toolbox-talks?delivery={id}",
-    "ehs_run": "/forms",
-    "ehs_doc": "/documents/{id}",
-    "ehs_crs": "/training",
-    "ehs_cert": "/training",
-    "ehs_asset": "/equipment",
-    "ehs_inc": "/incidents/{id}",
-    # ★ To the recommendation, now that the task hangs off one. It was "/jhsc" —
-    # the committee's list page — so somebody told to write a statutory reply
-    # landed on a list of meetings and had to find which meeting and which
-    # recommendation it meant. Raised in review by uniops-9a: changing the
-    # document without changing this would have left the link technically valid
-    # and practically useless.
-    "ehs_jhsc": "/jhsc?rec={id}",
-    "ehs_ptw": "/permits/{id}",
-}
-
-
 class UnattributedOut(BaseModel):
     """Work that belongs to a part of the plant nobody is down for."""
 
@@ -283,7 +258,7 @@ async def my_tasks(db: SessionDep, user: CanReportIncident):
 
     out = []
     for t in rows:
-        template = TASK_PATHS.get(t.document_type)
+        template = task_service.DOC_PATHS.get(t.document_type)
         out.append(AssignedTaskOut(
             id=t.id, type=t.type, title=t.title, description=t.description,
             priority=t.priority, document_type=t.document_type,
