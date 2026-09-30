@@ -159,7 +159,8 @@ class UserRolesPut(BaseModel):
     additional: list[str] = []
 
 
-_POST_ROLES = frozenset({"gm", "opm", "vendor_manager", "finance_manager", "procurement_manager"})
+_POST_ROLES = frozenset({"gm", "opm", "vendor_manager", "finance_manager", "procurement_manager",
+                         "finance_director"})
 
 
 async def _post_conflict(db, user_id: uuid.UUID, wanted: set[str]) -> dict | None:
