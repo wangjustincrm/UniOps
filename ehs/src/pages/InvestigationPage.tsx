@@ -240,6 +240,12 @@ export default function InvestigationPage() {
               : null,
           })),
       })
+      // ★ The drafts are spent the moment that call returns. This save has more
+      // steps after it, and one of them failing leaves the page open with the
+      // action still in its state — press save again and the same action is
+      // raised a second time, because the cause it was attached to now has a
+      // different label and counts as new. Found in review by uniops-9a.
+      setCauses((cs) => cs.map((c) => (c.action ? { ...c, action: undefined } : c)))
       if (showMedical) {
         // Built field by field rather than spread from what the GET returned:
         // the response carries its own id, incident id and recorded-by name,

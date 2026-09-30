@@ -1005,7 +1005,11 @@ class TestTheAreaOwnerHearsAboutIt:
         # ★ And the message says why they got it. An email with no stated reason
         # reads as a circular, and the next one gets ignored.
         assert "Production/103 – Filling" in (mail.body_text or "")
-        assert "down for" in (mail.body_text or "")
+        # ★ Third person: this is one email to everybody on the list, so "you
+        # are down for this area" was telling HSE and the notify group that they
+        # are responsible for somewhere they are not.
+        assert "Area Owner Person is copied as the area owner" in (mail.body_text or "")
+        assert "You are receiving this because you" not in (mail.body_text or "")
 
     async def test_an_incident_with_no_area_still_notifies_hse(self, hse_manager, db_session):
         """★ The admission. Adding a recipient must not become a requirement for
@@ -1025,5 +1029,5 @@ class TestTheAreaOwnerHearsAboutIt:
             .where(Communication.doc_id == uuid.UUID(made.json()["id"]),
                    Communication.template_key == "incident_reported"))).scalars().first()
         assert mail is not None, "an incident with no area told nobody"
-        assert "down for" not in (mail.body_text or ""), (
+        assert "area owner" not in (mail.body_text or ""), (
             "it claims an area owner when there is no area")

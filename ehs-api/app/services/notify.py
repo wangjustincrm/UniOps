@@ -124,10 +124,16 @@ async def incident_reported(db: AsyncSession, incident) -> None:
         extra = await mail.recipients(db, [uid for uid, _, _ in owners])
         known = {u.id for u in people}
         people = people + [u for u in extra if u.id not in known]
-        # Said in the message, because an email with no stated reason reads as
-        # a circular. The area is the reason.
-        named_here = ("You are receiving this because you are down for "
-                      + ", ".join(sorted({path for _, _, path in owners})) + ".")
+        # ★ Named in the third person, because this is one email to everybody.
+        # It read "You are receiving this because you are down for …", which is
+        # addressed to the area owner and goes to HSE and the notify group as
+        # well — so most recipients were told they are responsible for an area
+        # they are not. Found in review by uniops-9a. Still stated, because an
+        # email with no reason reads as a circular and the area is the reason.
+        who = ", ".join(sorted({name for _, name, _ in owners if name}))
+        where = ", ".join(sorted({path for _, _, path in owners}))
+        named_here = (f"{who} is copied as the area owner for {where}."
+                      if who else f"Nobody is down for {where}.")
 
     if not people:
         return

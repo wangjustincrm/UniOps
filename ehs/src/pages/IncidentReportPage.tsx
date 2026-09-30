@@ -382,7 +382,11 @@ export default function IncidentReportPage() {
   // between a corrected typo and a rejected form.
   const inTheFuture = Boolean(form.date) && (() => {
     const [y, m, d] = form.date.split('-').map(Number)
-    const [hh, mm] = (form.time || '23:59').split(':').map(Number)
+    // ★ The same default the submit uses. It read '23:59' here and '00:00'
+    // there, so clearing the time on today's incident made this judge it as
+    // future and grey the button out until midnight — while the server would
+    // have accepted it. Found in review by uniops-9a.
+    const [hh, mm] = (form.time || '00:00').split(':').map(Number)
     // Built from parts rather than parsed: `new Date('2026-09-29')` is midnight
     // UTC, which is the previous evening here and has caused this exact class of
     // off-by-a-day across the whole of UniOps.

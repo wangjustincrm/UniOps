@@ -12,6 +12,8 @@ import { api } from '@/lib/api'
 import { daysOverdue, formatDate } from '@/lib/formatDate'
 import type { ActionListItem } from '@/lib/types'
 import { StatusBadge } from '@/components/StatusBadge'
+import { LoadFailedNote } from '@/components/ui'
+import { anyFailed } from '@/lib/anyFailed'
 
 function Lateness({ dueDate }: { dueDate: string }) {
   const late = daysOverdue(dueDate)
@@ -148,8 +150,24 @@ export default function MyActionsPage() {
   const actions = data ?? []
   const other = tasks.data ?? []
   const verifying = toVerify.data ?? []
+  // ★ The two I missed in the round-3 sweep, found in review by uniops-9a. On
+  // this page an empty list is the sentence "nothing is assigned to you", and a
+  // request that failed produces exactly that sentence — about the screen
+  // somebody opens to find out what they have been asked to do.
+  const partial = anyFailed(tasks, toVerify)
 
   if (actions.length === 0 && other.length === 0 && verifying.length === 0) {
+    if (partial) {
+      return (
+        <div className="p-4">
+          <LoadFailedNote>
+            Some of your work could not be loaded, so this may not be everything
+            — and it is not "nothing". Nothing assigned to you has been lost;
+            try again in a moment.
+          </LoadFailedNote>
+        </div>
+      )
+    }
     return (
       <div className="flex flex-col items-center gap-2 p-10 text-center">
         <CheckCircle2 className="h-8 w-8 text-success-500" aria-hidden />
@@ -186,6 +204,7 @@ export default function MyActionsPage() {
 
   return (
     <div className="flex flex-col gap-2 p-4">
+      {partial && <LoadFailedNote what="Some of your work" />}
       <section className="mb-1 rounded-xl border border-neutral-200 bg-white p-4">
         <p className="flex items-baseline gap-2.5">
           <span className="text-3xl font-bold tabular-nums leading-none text-neutral-900">

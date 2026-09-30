@@ -19,9 +19,11 @@ import { Check, Plus, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
+import { useEhsAuth } from '@/store/auth'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
   Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, LoadProblem,
+  LoadFailedNote,
 } from '@/components/ui'
 
 interface Session {
@@ -47,7 +49,13 @@ export default function CourseSessionPage() {
   const { id = '' } = useParams()
   const queryClient = useQueryClient()
   const { can } = usePermissions()
-  const mayWrite = can('ehs.training.write')
+  // ★ Or whoever is running this session. The backend was opened up to the
+  // coordinator — HSE nominates anybody, including people with no training
+  // permission at all — and this was left on the permission alone, so the
+  // person named to run it got in and found no buttons. Fifth time in this
+  // module that a gate was widened on one side only; found in review by
+  // uniops-9a.
+  const me = useEhsAuth((st) => st.user?.id) ?? null
 
   const session = useQuery({
     queryKey: ['course-session', id],
@@ -79,6 +87,8 @@ export default function CourseSessionPage() {
   if (session.isError) return <LoadProblem error={session.error} noun="course session" />
   if (!session.data) return <LoadProblem error={null} noun="course session" />
   const s = session.data
+  // Whoever may manage training at all, or the person this session was given to.
+  const mayRun = can('ehs.training.write') || (Boolean(me) && s.coordinator_id === me)
   const open = s.status === 'scheduled'
 
   return (
@@ -106,13 +116,20 @@ export default function CourseSessionPage() {
           <Detail label="Instructor">{s.instructor_name ?? 'Not recorded yet'}</Detail>
         </dl>
         {s.notes && <p className="mt-2 text-sm text-neutral-700">{s.notes}</p>}
-        {mayWrite && open && <InstructorField session={s} onSaved={invalidate} />}
+        {mayRun && open && <InstructorField session={s} onSaved={invalidate} />}
       </Card>
 
-      <RosterPanel
-        session={s} roster={roster.data ?? []} mayWrite={mayWrite}
-        onChanged={invalidate}
-      />
+      {/* ★ A failed roster read is not an empty roster: "Nobody on the roster"
+          is a statement about the session, and making it on the strength of a
+          request that never answered is how somebody enrols a student twice. */}
+      {roster.isError ? (
+        <Card className="mt-4"><LoadFailedNote what="The roster" /></Card>
+      ) : (
+        <RosterPanel
+          session={s} roster={roster.data ?? []} mayWrite={mayRun}
+          onChanged={invalidate}
+        />
+      )}
     </div>
   )
 }
