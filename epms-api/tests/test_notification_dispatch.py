@@ -160,6 +160,37 @@ async def test_requester_task_without_assignee_never_broadcasts(captured_emails)
         "admins must be alerted when a requester task has no assignee"
 
 
+async def test_requester_alert_escapes_task_title_but_keeps_its_own_markup(monkeypatch):
+    """The no-assignee admin alert is hand-built HTML that bypasses _render, so
+    it escapes the task's values itself — while its own <b> / <a href> must
+    still render."""
+    bodies: list[tuple[str, str]] = []
+
+    async def _capture(to, subject, html, **kwargs):
+        bodies.append((to, html))
+
+    monkeypatch.setattr("app.services.email.send_email", _capture)
+
+    async with session_module.AsyncSessionLocal() as db:
+        await _set_notif_settings(db, default_channel="email_only")
+        requester = await _make_user(db)
+        admin = await _make_user_with_role(db, "system_admin", "Alert Admin")
+        task = _make_task(requester)
+        task.assigned_user_id = None
+        task.title = 'Ack <a href="https://evil.example">login</a>'
+        db.add(task)
+        await db.commit()
+        await notification.dispatch_task_notification(task, db)
+        await db.commit()
+
+    mine = [html for to, html in bodies if to == admin.email]
+    assert len(mine) == 1
+    assert "Task <b>Ack &lt;a href=&quot;https://evil.example&quot;&gt;login&lt;/a&gt;</b>" in mine[0]
+    assert '<a href="https://evil.example"' not in mine[0]
+    assert "<b>PR-TEST-1</b>" in mine[0]
+    assert '">Open document</a>' in mine[0]
+
+
 # ── Role shared mailbox ──────────────────────────────────────────────────────
 
 from app.crud.config import role_display_name  # noqa: E402

@@ -10,6 +10,7 @@ Usage (fire-and-forget from API layer):
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import re
 from dataclasses import dataclass
@@ -68,15 +69,43 @@ def _task_link(document_type: str, document_id: Any, task_type: str | None = Non
 
 # ── Template rendering ────────────────────────────────────────────────────────
 
-def _render(template: str, variables: dict[str, Any]) -> str:
-    """Replace {var} placeholders; unknown vars are left as-is."""
+def _render(template: str, variables: dict[str, Any], *, escape: bool) -> str:
+    """Replace {var} placeholders; unknown vars are left as-is.
+
+    ``escape`` is required so every caller has to decide what it is rendering:
+    True for an HTML email body, False for plain text (an email subject, a
+    Teams Adaptive Card, whose TextBlocks are markdown, not HTML). Escaping a
+    subject would show recipients a literal ``&amp;`` / ``&#x27;``.
+
+    Only the substituted VALUES are escaped, never the template: admin-written
+    templates in company_config carry intentional markup (``<b>``, ``<a href>``),
+    while the values (vendor names, task titles, visitor names, ...) are
+    user-writable. Unescaped, anyone able to write such a field could have
+    EPMS mail arbitrary HTML — a fake login link, say — from the company's own
+    address under the EPMS header.
+    """
     def replace(m: re.Match) -> str:
         key = m.group(1)
         val = variables.get(key)
         if val is None:
             return m.group(0)
-        return str(val)
+        return html.escape(str(val)) if escape else str(val)
     return re.sub(r"\{(\w+)\}", replace, template)
+
+
+def _render_task_body(tpl: dict | None, task: Task, variables: dict[str, Any]) -> str:
+    """HTML email body for a task: the admin template's body, else task.description.
+
+    task.description is NOT a trusted template — it is plain text that the
+    task's creator formats from document data (vendor names, VMS visitor
+    names, GR storage locations, custom claim types). It is escaped as a whole
+    before rendering; escaping leaves ``{var}`` placeholders intact, so a
+    description carrying ``{recipient_name}`` still renders.
+    """
+    body = tpl.get("body") if tpl else None
+    if body is None:
+        body = html.escape(task.description or ("" if tpl else task.title))
+    return _render(body, variables, escape=True)
 
 
 def _build_email_html(body_text: str) -> str:
@@ -297,16 +326,19 @@ async def _dispatch(
             )
             doc_link = _task_link(task.document_type, task.document_id, task_type=task.type)
             subject = f"[EPMS] Requester task has no assignee — {task.document_number}"
+            # Deliberate HTML, so it bypasses _render: escape the task's own
+            # values here by hand.
             body = (
-                f"Task <b>{task.title}</b> for {task.document_type.upper()} "
-                f"<b>{task.document_number}</b> is addressed to the requester role but has "
+                f"Task <b>{html.escape(task.title)}</b> for "
+                f"{html.escape(task.document_type.upper())} "
+                f"<b>{html.escape(task.document_number)}</b> is addressed to the requester role but has "
                 f"no concrete assignee, so there is nobody to notify.\n\n"
                 f"'requester' is not a role pool, so the role-wide email fan-out was "
                 f"suppressed. Two things produce this: the task was created without "
                 f"resolving an owner, or the document really has no linked PR (typically "
                 f"an imported PO). Open the document to see which — if it does have a PR, "
                 f"the task was mis-created and needs reassigning, not re-linking.\n\n"
-                f'<a href="{doc_link}">Open document</a>'
+                f'<a href="{html.escape(doc_link)}">Open document</a>'
             )
             for admin in await _admin_recipients(db):
                 await _send_with_retry(
@@ -349,17 +381,14 @@ async def _dispatch(
             **base_vars,
             "recipient_name": f"{role_display_name(cfg, task.assigned_role)} Team",
         }
-        if tpl:
-            subject = _render(tpl.get("subject", task.title), team_vars)
-            html_body = _render(tpl.get("body", task.description or ""), team_vars)
-        else:
-            subject = task.title
-            html_body = _render(task.description or task.title, team_vars)
-
-        html = _build_email_html(html_body)
+        subject = (
+            _render(tpl.get("subject", task.title), team_vars, escape=False)
+            if tpl else task.title
+        )
+        body_html = _build_email_html(_render_task_body(tpl, task, team_vars))
         await _send_with_retry(
             "email", task, None, tpl_key, db,
-            send_fn=lambda: send_email(shared_mailbox, subject, html, **_smtp_kwargs(cfg)),
+            send_fn=lambda: send_email(shared_mailbox, subject, body_html, **_smtp_kwargs(cfg)),
             max_retries=max_retries,
             recipient_email=shared_mailbox,
         )
@@ -374,30 +403,27 @@ async def _dispatch(
 
         # ── Email ───────────────────────────────────────────────────────────
         if channel in ("email_only", "both") and user.email:
-            if tpl:
-                subject = _render(tpl.get("subject", task.title), user_vars)
-                html_body = _render(tpl.get("body", task.description or ""), user_vars)
-            else:
-                subject = task.title
-                # 与共享邮箱分支保持一致:无模板时也要渲染占位符,
-                # 否则收件人会看到字面量 {recipient_name}。
-                html_body = _render(task.description or task.title, user_vars)
-
-            html = _build_email_html(html_body)
+            subject = (
+                _render(tpl.get("subject", task.title), user_vars, escape=False)
+                if tpl else task.title
+            )
+            # 与共享邮箱分支保持一致:无模板时也要渲染占位符,
+            # 否则收件人会看到字面量 {recipient_name}。
+            body_html = _build_email_html(_render_task_body(tpl, task, user_vars))
             await _send_with_retry(
                 "email", task, user, tpl_key, db,
-                send_fn=lambda: send_email(user.email, subject, html, **_smtp_kwargs(cfg)),
+                send_fn=lambda: send_email(user.email, subject, body_html, **_smtp_kwargs(cfg)),
                 max_retries=max_retries,
             )
 
         # ── Teams ───────────────────────────────────────────────────────────
         if channel in ("teams_only", "both") and user.teams_account and teams_webhook:
             if tpl:
-                card_title = _render(tpl.get("subject", task.title), user_vars)
-                card_body = _render(tpl.get("body", task.description or ""), user_vars)
+                card_title = _render(tpl.get("subject", task.title), user_vars, escape=False)
+                card_body = _render(tpl.get("body", task.description or ""), user_vars, escape=False)
             else:
                 card_title = task.title
-                card_body = _render(task.description or task.title, user_vars)
+                card_body = _render(task.description or task.title, user_vars, escape=False)
 
             await _send_with_retry(
                 "teams", task, user, tpl_key, db,
@@ -519,10 +545,10 @@ async def send_admin_alert(subject: str, body_html: str, db: AsyncSession | None
         if (cfg.notification_settings or {}).get("default_channel") == "none":
             logger.info("Admin alert suppressed (default_channel=none): %s", subject)
             return
-        html = _build_email_html(body_html)
+        wrapped = _build_email_html(body_html)
         for admin in await _admin_recipients(db):
             try:
-                await send_email(admin.email, subject, html, **_smtp_kwargs(cfg))
+                await send_email(admin.email, subject, wrapped, **_smtp_kwargs(cfg))
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Admin alert to %s failed: %s", admin.email, exc)
     except Exception as exc:  # noqa: BLE001
@@ -578,8 +604,8 @@ async def send_signoff_complete(po_id, db: AsyncSession | None = None) -> None:
             "signatories": signatories,
             "link": _task_link("posign", po.id),
         }
-        subject = _render(tpl.get("subject", "PO {po_number} is fully signed"), variables)
-        body = _render(tpl.get("body", "PO {po_number} has been signed."), variables)
+        subject = _render(tpl.get("subject", "PO {po_number} is fully signed"), variables, escape=False)
+        body = _render(tpl.get("body", "PO {po_number} has been signed."), variables, escape=True)
         await send_email(recipient.email, subject, _build_email_html(body), **_smtp_kwargs(cfg))
     except Exception as exc:  # noqa: BLE001
         logger.error("send_signoff_complete failed for PO %s: %s", po_id, exc)

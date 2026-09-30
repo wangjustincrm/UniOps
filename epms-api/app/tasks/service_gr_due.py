@@ -238,8 +238,8 @@ async def _escalate_to_manager(
         "company_name": cfg.name,
         "link": _task_link(task.document_type, task.document_id, task_type=task.type),
     }
-    subject = _render(tpl["subject"], variables)
-    html = _build_email_html(_render(tpl["body"], variables))
+    subject = _render(tpl["subject"], variables, escape=False)
+    html = _build_email_html(_render(tpl["body"], variables, escape=True))
 
     await _send_with_retry(
         "email", task, manager, ESCALATION_TEMPLATE, db,
