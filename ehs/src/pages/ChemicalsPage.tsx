@@ -802,7 +802,8 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
         <p className="mb-2 max-w-[68ch] rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800">
           A newer data sheet has been filed since the last label was approved, so
           that label can no longer be printed — the hazards may have changed.
-          Start a new one and check it against the current sheet.
+          Refresh it below: the hazards are read off the current sheet and it
+          has to be approved again before it prints.
         </p>
       )}
 
@@ -817,7 +818,16 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
             <button type="button" className={secondaryButton} disabled={draft.isPending}
                     onClick={() => { if (!draft.isPending) draft.mutate() }}>
               <Plus className="h-4 w-4" aria-hidden />
-              {draft.isPending ? 'Starting…' : 'Start a label'}
+              {/* ★ Round 4, TC-15: "need a button and approval review process
+                  to refresh the workplace label after a revision has been
+                  created." The process was here — start a draft, read the
+                  hazards off the new sheet, approve it — and the button said
+                  "Start a label", which does not read as the answer to "the
+                  sheet changed, now what". Named for what it is doing when
+                  that is what it is doing. */}
+              {draft.isPending ? 'Starting…'
+                : supersededByRevision ? 'Refresh the label from the new sheet'
+                : 'Start a label'}
             </button>
           )}
         </>
