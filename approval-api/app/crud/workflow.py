@@ -39,15 +39,16 @@ async def get_workflow(db: AsyncSession, doc_type: str) -> list[dict]:
     return defaults.get(doc_type, [])
 
 
-_POST_CODES = ("gm", "opm", "vendor_manager", "finance_manager", "procurement_manager")
+_POST_CODES = ("gm", "opm", "vendor_manager", "finance_manager", "procurement_manager",
+               "finance_director")
 
 
 async def _post_holders(db: AsyncSession) -> dict[str, list[str]]:
     """code -> [user_id str].
 
-    The five SINGLETON posts in _POST_CODES (gm/opm/vendor_manager/
-    finance_manager/procurement_manager) are company-unique POSITIONS —
-    identity-api enforces one holder each (migration 0003_post_role_singleton
+    The SINGLETON posts in _POST_CODES (gm/opm/vendor_manager/
+    finance_manager/procurement_manager/finance_director) are company-unique
+    POSITIONS — identity-api enforces one holder each (migration 0003_post_role_singleton
     + the cross-table 409 in PUT /authz/users/{id}/roles). If a user's
     PRIMARY role (users.role) IS the post, they genuinely hold that position,
     so PRIMARY (users.role) UNION ADDITIONAL (user_roles) both count.
@@ -89,7 +90,8 @@ async def _post_holders(db: AsyncSession) -> dict[str, list[str]]:
 
 async def post_holder_ids(db: AsyncSession, role: str) -> set:
     """Active user ids holding the given post role ('gm' | 'opm' |
-    'finance_manager' | 'procurement_manager' | 'vendor_manager' | 'finance_bp').
+    'finance_manager' | 'procurement_manager' | 'vendor_manager' |
+    'finance_director' | 'finance_bp').
 
     Full holder SET (PRIMARY users.role ∪ ADDITIONAL identity user_roles), unlike
     get_role_management()'s `<role>_user_id`, which collapses a post to a SINGLE
@@ -191,6 +193,7 @@ def actor_holds_role(
         "finance_manager":      rm.get("finance_manager_user_id"),
         "procurement_manager":  rm.get("procurement_manager_user_id"),
         "vendor_manager":       rm.get("vendor_manager_user_id"),
+        "finance_director":     rm.get("finance_director_user_id"),
     }
     assigned = role_map.get(role)
     return assigned is not None and assigned == actor_str

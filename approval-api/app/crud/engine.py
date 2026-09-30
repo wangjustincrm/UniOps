@@ -374,6 +374,7 @@ def _build_role_map(rm: dict, dept_gm_opm: dict, department_id: uuid.UUID | None
         "finance_manager": _uid("finance_manager_user_id"),
         "procurement_manager": _uid("procurement_manager_user_id"),
         "vendor_manager": _uid("vendor_manager_user_id"),
+        "finance_director": _uid("finance_director_user_id"),
     }
 
     # gm_or_opm resolves via dept mapping
@@ -448,9 +449,9 @@ async def _actor_is_step_holder(
         return director_uid is not None and actor_id == director_uid
     if step_role == "supervisor":
         return supervisor_uid is not None and actor_id == supervisor_uid
-    # Named post role (gm/opm/finance_manager/procurement_manager/vendor_manager
-    # as a direct step): membership in the holder set, not equality to the
-    # single collapsed rm['<role>_user_id'].
+    # Named post role (gm/opm/finance_manager/procurement_manager/vendor_manager/
+    # finance_director as a direct step): membership in the holder set, not
+    # equality to the single collapsed rm['<role>_user_id'].
     return actor_id in await post_holder_ids(db, step_role)
 
 
