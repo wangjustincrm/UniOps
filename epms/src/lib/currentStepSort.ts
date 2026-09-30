@@ -3,7 +3,8 @@ import type { CurrentStep } from '@/types'
 // Mirrors ROLE_ORDER in epms-api/app/crud/current_step.py — chain order, not alphabetical.
 const ROLE_ORDER: Record<string, number> = {
   supervisor: 10, dept_manager: 20, director: 30, procurement_manager: 35,
-  gm_or_opm: 40, finance_bp: 50, finance_manager: 60, vendor_manager: 70,
+  gm_or_opm: 40, finance_bp: 50, finance_manager: 60, finance_director: 65,
+  vendor_manager: 70,
 }
 
 type Rowish = { status: string; current_step?: CurrentStep | null }

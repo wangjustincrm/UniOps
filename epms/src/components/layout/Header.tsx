@@ -294,7 +294,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
     gm: 'General Manager', opm: 'Operations Manager',
     procurement_officer: 'Procurement Officer', procurement_manager: 'Procurement Manager',
     ap_clerk: 'AP Clerk', finance_bp: 'Finance Business Partner',
-    finance_manager: 'Finance Manager', cfo: 'CFO',
+    finance_manager: 'Finance Manager', finance_director: 'Finance Director', cfo: 'CFO',
     requester: 'Requester', auditor: 'Auditor',
     vendor_manager: 'Vendor Manager', warehouse: 'Warehouse',
   }
