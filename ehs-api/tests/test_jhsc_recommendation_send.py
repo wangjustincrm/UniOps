@@ -195,6 +195,50 @@ async def test_the_preview_numbers_the_recommendation_as_it_will_be_numbered(
     assert recorded.json()["seq"] == preview["seq_will_be"]
 
 
+async def test_previewing_an_existing_recommendation_uses_its_own_number(
+        hse_manager, manager_with_email):
+    """★ Re-sending #1 previewed as #3 and sent as #1 — the send was right and the
+    preview was not, which is the one thing this screen exists to prevent. Found
+    in review by uniops-9a."""
+    _, client = hse_manager
+    meeting = await _a_meeting(client)
+
+    first = (await client.post(
+        f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations",
+        json={"recommendation": "The first thing"})).json()
+    await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations",
+                      json={"recommendation": "The second thing"})
+
+    # Without the id: the next one to be recorded, which is #3.
+    fresh = (await client.post("/api/v1/jhsc/recommendations/preview", json={
+        "meeting_id": meeting["id"], "recommendation": "A third thing",
+        "user_ids": [str(manager_with_email.id)]})).json()
+    assert fresh["seq_will_be"] == 3
+
+    # ★ With it: the one being re-sent.
+    again = (await client.post("/api/v1/jhsc/recommendations/preview", json={
+        "meeting_id": meeting["id"], "recommendation": first["recommendation"],
+        "recommendation_id": first["id"],
+        "user_ids": [str(manager_with_email.id)]})).json()
+    assert again["seq_will_be"] == 1, again
+    assert "#1" in again["subject"], again["subject"]
+
+
+async def test_a_recommendation_from_another_meeting_is_refused(hse_manager):
+    """One meeting's heading over another meeting's recommendation."""
+    _, client = hse_manager
+    a = await _a_meeting(client)
+    b = await _a_meeting(client)
+    rec = (await client.post(f"/api/v1/jhsc/meetings/{a['id']}/recommendations",
+                             json={"recommendation": "Belongs to A"})).json()
+
+    refused = await client.post("/api/v1/jhsc/recommendations/preview", json={
+        "meeting_id": b["id"], "recommendation": "Belongs to A",
+        "recommendation_id": rec["id"]})
+    assert refused.status_code == 409, refused.text
+    assert "different meeting" in refused.json()["detail"]
+
+
 async def test_a_worker_cannot_preview_a_committee_notice(worker):
     """It composes what the committee is about to send, so it is theirs."""
     _, client = worker

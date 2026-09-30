@@ -408,6 +408,12 @@ class PreviewIn(BaseModel):
 
     meeting_id: uuid.UUID
     recommendation: str = Field(min_length=1)
+    # ★ Set when previewing a recommendation that already exists, which is what
+    # "record who this was sent to" does. Without it the preview numbered every
+    # message as the next one to be recorded — so re-sending #1 previewed as #3
+    # and sent as #1. The send was right and the preview was not, which is the
+    # one thing this screen exists to prevent. Found in review by uniops-9a.
+    recommendation_id: uuid.UUID | None = None
     user_ids: list[uuid.UUID] = Field(default_factory=list)
     # A draft the sender has already edited, so a second look shows their words.
     message: str | None = None
@@ -449,11 +455,27 @@ async def preview_recommendation(
     out. Nothing is written by this request.
     """
     meeting = await crud.get_meeting(db, payload.meeting_id)
-    seq = await crud.next_recommendation_seq(db, meeting.id)
+
+    if payload.recommendation_id is not None:
+        # An existing one: its own number, and its own wording as recorded.
+        existing = await crud.get_recommendation(db, payload.recommendation_id)
+        # ★ And it has to belong to the meeting named, or the preview carries one
+        # meeting's heading over another meeting's recommendation. Only reachable
+        # by a caller passing the wrong pair, which is exactly when a preview
+        # must not quietly agree. Raised in review by uniops-9a.
+        if existing.meeting_id != meeting.id:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "That recommendation belongs to a different meeting.")
+        seq = existing.seq
+        wording = payload.recommendation or existing.recommendation
+    else:
+        seq = await crud.next_recommendation_seq(db, meeting.id)
+        wording = payload.recommendation
 
     # A stand-in with the fields the message needs, so that no half-built row
     # reaches the database on the way to a preview.
-    draft = SimpleNamespace(seq=seq, recommendation=payload.recommendation)
+    draft = SimpleNamespace(seq=seq, recommendation=wording)
     subject, default_body = notify.jhsc_recommendation_message(meeting, draft)
 
     people = list((await db.execute(

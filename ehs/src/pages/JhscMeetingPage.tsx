@@ -42,7 +42,21 @@ function RecommendationComposer({
   const [text, setText] = useState(recommendationText ?? '')
   const [preview, setPreview] = useState<Preview | null>(null)
   // The body once somebody has edited it. Null means "as the server composed it".
+  //
+  // ★ `touched` is the point. This used to hold whatever the first preview
+  // returned and send it back on every later call — so after pressing Back,
+  // rewording the recommendation and previewing again, the record kept the new
+  // wording and the email carried the old one. A statutory notice that does not
+  // match the record it notifies. Found in review by uniops-9a.
   const [edited, setEdited] = useState<string | null>(null)
+  const [touched, setTouched] = useState(false)
+  // ★ Which wording the edited message was written against. Even with `touched`,
+  // editing the message, going Back, rewording the recommendation and sending
+  // leaves the record saying one thing and the email saying another — rarer than
+  // before and the same outcome. Found in the second pass of the same review.
+  // Neither silently overwritten nor silently sent: the reader is told and
+  // chooses. */
+  const [editedFor, setEditedFor] = useState('')
 
   const writing = recId === undefined
   const people = useQuery({
@@ -51,20 +65,38 @@ function RecommendationComposer({
       '/api/v1/toolbox-talks/supervisors?everyone=true'),
   })
 
+  // ★ The body to preview is passed in, never read from the closure.
+  //
+  // It used to be `message: touched ? edited : null`, and "Use the new wording"
+  // called `setTouched(false); setEdited(null); draft.mutate()` — three things
+  // whose order is React's business, not this component's. It happened to work,
+  // because react-query re-reads `mutationFn` on every render, and that is a
+  // fact about the library rather than about the code: the next person reading
+  // this would have to know it to believe the button. Raised in review by
+  // uniops-9a, whose reading of it was the one this code deserved.
   const draft = useMutation({
-    mutationFn: () => api.post<Preview>('/api/v1/jhsc/recommendations/preview', {
-      meeting_id: meetingId, recommendation: text, user_ids: chosen,
-      message: edited,
-    }),
-    onSuccess: (p) => { setPreview(p); setEdited(p.body) },
+    mutationFn: (vars: { message: string | null }) =>
+      api.post<Preview>('/api/v1/jhsc/recommendations/preview', {
+        meeting_id: meetingId, recommendation: text, user_ids: chosen,
+        // Which recommendation this is about, when it is one that exists. The
+        // preview numbered everything as the next one otherwise.
+        recommendation_id: recId ?? null,
+        message: vars.message,
+      }),
+    // Judged on what was sent, not on what the state happens to say now.
+    onSuccess: (p, vars) => {
+      setPreview(p)
+      if (vars.message === null) { setEdited(p.body); setTouched(false); setEditedFor('') }
+    },
   })
 
   const submit = useMutation({
     mutationFn: () => (writing
       ? api.post(`/api/v1/jhsc/meetings/${meetingId}/recommendations`,
-                 { recommendation: text, send_to: chosen, message: edited })
+                 { recommendation: text, send_to: chosen,
+                   message: touched ? edited : null })
       : api.post(`/api/v1/jhsc/recommendations/${recId}/send`,
-                 { user_ids: chosen, message: edited })),
+                 { user_ids: chosen, message: touched ? edited : null })),
     onSuccess: onDone,
   })
 
@@ -112,12 +144,27 @@ function RecommendationComposer({
             owed — tell them another way.
           </p>
         )}
+        {touched && editedFor !== text && (
+          <p className="mb-1.5 flex flex-wrap items-center gap-2 rounded-lg bg-warning-50 px-2.5 py-2 text-xs text-warning-800">
+            <span>
+              You changed the recommendation after editing this message, so the
+              message below still carries the old wording.
+            </span>
+            <button type="button"
+                    onClick={() => draft.mutate({ message: null })}
+                    className="font-semibold text-warning-900 underline">
+              Use the new wording
+            </button>
+          </p>
+        )}
         <label className="mb-1 block text-xs text-neutral-500" htmlFor="rec-body">
           Message — edit it if the committee worded it differently
         </label>
         <textarea id="rec-body" rows={6} className={`${inputClass} py-2 text-sm`}
                   value={edited ?? preview.body}
-                  onChange={(e) => setEdited(e.target.value)} />
+                  onChange={(e) => {
+                   setEdited(e.target.value); setTouched(true); setEditedFor(text)
+                 }} />
         <ErrorNote error={submit.error} />
         <div className="mt-2 flex justify-end gap-2">
           <button type="button" className={secondaryButton} disabled={busy}
@@ -173,7 +220,11 @@ function RecommendationComposer({
         )}
         <button type="button" className={primaryButton}
                 disabled={!ready || chosen.length === 0 || busy}
-                onClick={() => { if (ready && chosen.length > 0 && !busy) draft.mutate() }}>
+                onClick={() => {
+                  if (ready && chosen.length > 0 && !busy) {
+                    draft.mutate({ message: touched ? edited : null })
+                  }
+                }}>
           {draft.isPending ? 'Composing…' : 'Review the message'}
         </button>
       </div>
