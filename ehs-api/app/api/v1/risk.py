@@ -118,7 +118,7 @@ async def _rate(db: SessionDep, likelihood_code: str, severity_level: int) -> tu
 async def create_assessment(
     payload: AssessmentIn, db: SessionDep, user: CanReportIncident,
 ):
-    if not await _may_see(db, user, payload.source_type, payload.source_id):
+    if not await _may_see(db, user, payload.source_id):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "You can only assess incidents you reported or were involved in")
@@ -160,7 +160,7 @@ async def create_assessment(
     return row
 
 
-async def _may_see(db, user: dict, source_type: str | None, source_id: uuid.UUID | None) -> bool:
+async def _may_see(db, user: dict, source_id: uuid.UUID | None) -> bool:
     """Whether this caller may read the assessments of that record.
 
     ★ An assessment belongs to the record it is about, so it follows that
@@ -175,12 +175,27 @@ async def _may_see(db, user: dict, source_type: str | None, source_id: uuid.UUID
     plant-wide safety information a worker is meant to consult before starting,
     and their own registers are readable on the same permission.
     """
-    if source_type == "incident" and source_id is not None:
-        incident = await db.get(Incident, source_id)
-        if incident is None:
-            return True  # nothing exists to disclose; the empty list is honest
-        return await _may_read(db, user, incident)
-    return True
+    if source_id is None:
+        return True  # the caller named no record; the register check handles that
+
+    # ★ Ask the source table, not the caller and not the assessments.
+    #
+    # Two ways round this have already been found in review. Trusting
+    # `source_type` from the query string left `?source_id=<somebody else's
+    # incident>` with no type at all as a way in, and `?source_type=hazard` with
+    # the same id as another. Reading the type off the assessments already
+    # recorded fixed the reading and reopened the writing: creating the *first*
+    # assessment on somebody else's incident found no rows to read a type from,
+    # so it went through — and a risk assessment of another department's injury,
+    # signed by whoever wrote it, had been filed.
+    #
+    # Only an incident has a gate, so only an incident has to be identified: if
+    # this id names one, it is judged as one, whatever it was called. A hazard or
+    # a job analysis is plant-wide safety information and stays open.
+    incident = await db.get(Incident, source_id)
+    if incident is None:
+        return True
+    return await _may_read(db, user, incident)
 
 
 @router.get("/assessments", response_model=list[AssessmentOut])
@@ -200,7 +215,7 @@ async def list_assessments(
                 status.HTTP_403_FORBIDDEN,
                 "Say which record's assessments you want. Listing them across "
                 "records needs permission to browse the incident register.")
-    elif not await _may_see(db, user, source_type, source_id):
+    elif not await _may_see(db, user, source_id):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "You can only see the assessments of incidents you reported or "

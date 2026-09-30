@@ -15,7 +15,7 @@ failed — three times, by building something an HSE manager could reach and a
 worker could not.
 """
 import uuid
-from datetime import date
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -48,7 +48,10 @@ async def _an_incident_by_somebody_else(client, db_session) -> Incident:
     r = await client.post("/api/v1/incidents", json={
         "form_kind": "medical",
         "title": "Somebody else's incident",
-        "occurred_at": f"{date.today().isoformat()}T09:00:00Z",
+        # ★ Relative to now, never a fixed hour on today's date: an incident
+        # cannot be dated in the future, and "today at 09:00" is in the future
+        # for the first nine hours of every UTC day.
+        "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
         "description": "Caught a finger at the capping head",
     })
     assert r.status_code in (200, 201), r.text
@@ -98,7 +101,7 @@ class TestRiskAssessmentsFollowTheirRecord:
 
         mine = await wc.post("/api/v1/incidents", json={
             "form_kind": "near_miss", "title": "I reported this one",
-            "occurred_at": f"{date.today().isoformat()}T10:00:00Z",
+            "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
             "description": "Nearly walked into a reversing forklift",
         })
         assert mine.status_code in (200, 201), mine.text
@@ -152,6 +155,38 @@ class TestRiskAssessmentsFollowTheirRecord:
         _, hse = hse_manager
         assert (await wc.get("/api/v1/risk/assessments")).status_code == 403
         assert (await hse.get("/api/v1/risk/assessments")).status_code == 200
+
+    async def test_naming_the_record_without_its_type_is_still_refused(
+            self, hse_manager, worker, db_session, risk_matrix):
+        """★ The round-3 fix was half a fix, found in review by uniops-9a.
+
+        `_may_see` only checked anything when the query said "incident", so
+        asking for the same record with no type at all passed the gate and the
+        filter returned that incident's assessments anyway. The type now comes
+        from the record, never from the caller — and neither does claiming it is
+        something else.
+        """
+        _, hse = hse_manager
+        _, wc = worker
+        incident = await _an_incident_by_somebody_else(hse, db_session)
+        made = await hse.post("/api/v1/risk/assessments", json={
+            "source_type": "incident", "source_id": str(incident.id),
+            "consequence_type": "people", "likelihood_code": "C", "severity_level": 3,
+        })
+        assert made.status_code in (200, 201), made.text
+
+        # No type at all — the shape that got through.
+        bare = await wc.get(f"/api/v1/risk/assessments?source_id={incident.id}")
+        assert bare.status_code == 403, bare.text
+
+        # And calling it something else does not help.
+        lied = await wc.get(
+            f"/api/v1/risk/assessments?source_type=hazard&source_id={incident.id}")
+        assert lied.status_code == 403, lied.text
+
+        # ★ The admission: HSE reads it either way.
+        assert (await hse.get(
+            f"/api/v1/risk/assessments?source_id={incident.id}")).status_code == 200
 
     async def test_a_worker_cannot_assess_an_incident_they_cannot_open(
             self, hse_manager, worker, db_session, risk_matrix):
@@ -241,7 +276,7 @@ class TestSubmittingSomebodyElsesDraft:
         _, wc = worker
         mine = await wc.post("/api/v1/incidents", json={
             "form_kind": "near_miss", "title": "Mine to file",
-            "occurred_at": f"{date.today().isoformat()}T11:00:00Z",
+            "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),
             "description": "Pallet stacked too high in the aisle",
         })
         assert mine.status_code in (200, 201), mine.text
