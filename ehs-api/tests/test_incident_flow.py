@@ -1031,3 +1031,37 @@ class TestTheAreaOwnerHearsAboutIt:
         assert mail is not None, "an incident with no area told nobody"
         assert "area owner" not in (mail.body_text or ""), (
             "it claims an area owner when there is no area")
+
+
+async def test_the_report_says_which_kind_of_incident_was_chosen(hse_manager):
+    """★ Round 4, on the submitted report: "the kind of incident … not
+    displayed on the submitted form".
+
+    The screen showed the form kind — medical, equipment, near miss — which is
+    the form it arrived on, not the choice the reporter made from HSE's twelve
+    options. The choice was stored, read by the notifier when deciding who to
+    tell, and shown back to nobody.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    _, client = hse_manager
+    created = await client.post("/api/v1/incidents", json={
+        "form_kind": "equipment", "title": "Forklift backed into a pillar",
+        "incident_type": "property_damage",
+        "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+    })
+    assert created.status_code in (200, 201), created.text
+    assert created.json()["incident_type_label"] == "Property / Asset Damage"
+
+    back = (await client.get(f"/api/v1/incidents/{created.json()['id']}")).json()
+    assert back["incident_type_label"] == "Property / Asset Damage"
+
+    # And a report filed before the field existed says nothing rather than
+    # guessing — 59 of the 60 incidents on the dev database carry a type, and
+    # the one that does not must not be labelled as something.
+    plain = await client.post("/api/v1/incidents", json={
+        "form_kind": "equipment", "title": "No type chosen",
+        "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+    })
+    assert plain.status_code in (200, 201), plain.text
+    assert plain.json()["incident_type_label"] is None

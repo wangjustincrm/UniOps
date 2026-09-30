@@ -6,7 +6,9 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.services import incident_type
-from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
+from pydantic import (
+    BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator,
+)
 
 FORM_KINDS = ("medical", "equipment", "near_miss")
 INJURY_CLASSES = ("first_aid", "medical_aid", "lost_time")
@@ -231,6 +233,27 @@ class IncidentOut(BaseModel):
     created_at: datetime
     persons: list[IncidentPersonOut] = Field(default_factory=list)
     deadlines: list[DeadlineOut] = Field(default_factory=list)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def incident_type_label(self) -> str | None:
+        """Which of HSE's twelve options the reporter picked.
+
+        ★ Round 4, on the submitted report: "the kind of incident … not
+        displayed on the submitted form". The screen showed `form_kind` —
+        medical, equipment, near miss — which is the form it came in on, not
+        the choice the reporter made. The type itself was stored, read by the
+        notifier, and shown back to nobody.
+
+        Derived here rather than in the frontend for the same reason the
+        mapping lives on the server: the list will change again, and a second
+        copy of it drifts.
+        """
+        code = (self.extra or {}).get("incident_type")
+        if not isinstance(code, str):
+            return None
+        chosen = incident_type.BY_CODE.get(code)
+        return chosen.label if chosen else None
 
 
 class IncidentListItem(BaseModel):

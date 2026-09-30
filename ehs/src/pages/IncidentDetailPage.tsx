@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, FileText, Plus } from 'lucide-react'
 import { api, apiBlob, ApiError } from '@/lib/api'
 import {
-  PageHeader, SectionTitle,
+  LoadFailedNote, PageHeader, SectionTitle,
 } from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
 import { Countdown } from '@/components/Countdown'
@@ -46,6 +46,9 @@ interface Incident {
   reopened_at: string | null; reopened_by_name: string | null
   /** Answers belonging to one form kind only — the near-miss operator questions. */
   extra: Record<string, unknown>
+  /** Which of HSE's twelve options the reporter picked, in words. The server
+   *  derives it from the stored code so the list lives in one place. */
+  incident_type_label: string | null
   classified_at: string | null; classified_by_name: string | null
   submitted_at: string | null; closed_at: string | null; created_at: string
   persons: Person[]; deadlines: Deadline[]
@@ -272,8 +275,17 @@ export default function IncidentDetailPage() {
         <section className="p-4">
           <SectionTitle className="mb-2.5">What was reported</SectionTitle>
           <dl className="rounded-lg border border-neutral-200 bg-white p-3.5">
-            <Row label="Type" value={KIND_LABELS[inc.form_kind] ?? inc.form_kind} />
-            <Row label="Description" value={inc.description} block />
+            <Row label="Form" value={KIND_LABELS[inc.form_kind] ?? inc.form_kind} />
+            {/* ★ Round 4: "the kind of incident … not displayed on the
+                submitted form". The row above is the form it arrived on; this
+                is the choice the reporter made, and it was stored, read by the
+                notifier and shown to nobody. */}
+            <Row label="What kind of incident" value={inc.incident_type_label} />
+            {/* ★ Named as the form names it. It was "Description", which is
+                what the column is called — and the same round reported "what
+                else should we know" as not displayed, when it was, under a
+                heading nobody had typed anything under. */}
+            <Row label="What else should we know" value={inc.description} block />
             <Row label="Equipment" value={inc.equipment_involved} />
             <Row label="Witnesses" value={inc.witnesses_note} block />
             <Row label="Action taken at the time" value={inc.immediate_action_taken} block />
@@ -303,14 +315,26 @@ export default function IncidentDetailPage() {
         </section>
 
         {/* ── Photographs ───────────────────────────────────────────────── */}
-        {photos.data && photos.data.length > 0 && (
-          <section className="px-4 pb-4">
-            <SectionTitle className="mb-2.5">Photographs</SectionTitle>
+        {/* ★ Always a section, whatever the answer. It was drawn only when the
+            list came back non-empty, so a report with no photographs and a
+            request that failed looked the same as each other and the same as a
+            screen that does not show photographs at all — which is how round 4
+            read it. The same "loading or failed read as fact" shape this module
+            has been through four times. */}
+        <section className="px-4 pb-4">
+          <SectionTitle className="mb-2.5">Photographs</SectionTitle>
+          {photos.isError ? (
+            <LoadFailedNote what="The photographs" />
+          ) : photos.isLoading ? (
+            <p className="text-sm text-neutral-500">Loading…</p>
+          ) : (photos.data ?? []).length === 0 ? (
+            <p className="text-sm text-neutral-500">None were attached to this report.</p>
+          ) : (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {photos.data.map((a) => <Photo key={a.id} incidentId={id} att={a} />)}
+              {(photos.data ?? []).map((a) => <Photo key={a.id} incidentId={id} att={a} />)}
             </div>
-          </section>
-        )}
+          )}
+        </section>
 
         {/* ── Risk assessment ───────────────────────────────────────────── */}
         {/* ★ Its own section, because it had none. The button was here and what
