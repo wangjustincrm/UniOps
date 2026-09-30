@@ -577,3 +577,85 @@ class TestWhoeverIsRunningItCanRunIt:
         # And HSE, who holds the register, still can.
         assert (await hse.get(f"/api/v1/course-sessions/{sid}")).status_code == 200
         assert (await hse.get(f"/api/v1/course-sessions/{sid}/roster")).status_code == 200
+
+
+async def test_the_register_prints_with_its_filter_on_it(hse_manager, db_session):
+    """★ Round 4, TC-10: "create a way to print training records based on the
+    filter created."
+
+    The print takes the same parameters as the list, and says at the top what
+    was asked for. A page of rows with nothing stating the filter reads as
+    "these are the trained people", which is a different and much stronger
+    claim than "these match a search".
+    """
+    _, client = hse_manager
+    plain = await client.get("/api/v1/training/records/print")
+    assert plain.status_code == 200, plain.text
+    assert plain.headers["content-type"] == "application/pdf"
+    assert plain.content.startswith(b"%PDF")
+    unfiltered_len = len(plain.content)
+    assert unfiltered_len > 800, "a PDF this small has no page in it"
+
+    filtered = await client.get(
+        "/api/v1/training/records/print?search=forklift&completed_from=2026-03-01")
+    assert filtered.status_code == 200, filtered.text
+    assert filtered.content.startswith(b"%PDF")
+    # Not a byte comparison of the pages — the timestamp differs anyway. What
+    # matters is that the filter reached the query rather than being ignored.
+    assert len(filtered.content) != unfiltered_len
+
+    # ★ And it is not readable by somebody with no business in the register.
+    # A denial assertion on its own is satisfied by everybody being denied, so
+    # the admission above is the other half.
+    refused = await client.get("/api/v1/training/records/print",
+                               headers={"Authorization": "Bearer nonsense"})
+    assert refused.status_code in (401, 403)
+
+
+def test_the_printed_filter_says_what_was_narrowed():
+    """The words on the page, without rendering one."""
+    from datetime import date
+
+    from app.services import training_pdf
+
+    assert training_pdf.describe(
+        search=None, completed_from=None, completed_to=None,
+        person=None, course=None) == []
+
+    lines = training_pdf.describe(
+        search="forklift", completed_from=date(2026, 3, 1),
+        completed_to=date(2026, 3, 31), person="Marie Tremblay", course=None)
+    assert lines[0] == "Person: Marie Tremblay"
+    assert any("forklift" in line for line in lines)
+    assert any("2026-03-01" in line and "2026-03-31" in line for line in lines)
+
+    # One-sided ranges read as one-sided, rather than inventing the other end.
+    assert training_pdf.describe(
+        search=None, completed_from=date(2026, 3, 1), completed_to=None,
+        person=None, course=None) == ["Completed on or after 2026-03-01"]
+
+
+async def test_printing_one_person_with_no_training_still_names_them(
+        hse_manager, worker):
+    """★ "Nobody has any training" and "this person has none" are different
+    pages, and the second is the one somebody needs to hand over.
+
+    Raised in review by uniops-9a: the filter description was read off the
+    first row, so filtered to a person with no records there was no row and the
+    page printed an empty table with no name on it.
+    """
+    from app.services import training_pdf
+
+    _, client = hse_manager
+    person, _ = worker
+
+    printed = await client.get(f"/api/v1/training/records/print?user_id={person.id}")
+    assert printed.status_code == 200, printed.text
+    assert printed.content.startswith(b"%PDF")
+
+    # The words, checked where they are decided — the PDF's own bytes are
+    # compressed, so asserting on them would pass for the wrong reason.
+    lines = training_pdf.describe(
+        search=None, completed_from=None, completed_to=None,
+        person=person.full_name, course=None)
+    assert lines == [f"Person: {person.full_name}"]

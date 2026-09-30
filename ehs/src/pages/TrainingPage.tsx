@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { CalendarDays, Plus, Upload, X, Paperclip } from 'lucide-react'
+import { CalendarDays, Plus, Printer, Upload, X, Paperclip } from 'lucide-react'
 import { api, apiBlob, openFile, useFileOpener } from '@/lib/api'
 import { Pagination, SearchBox, useListView, DateRangeFilter, useDateFilter } from '@/components/ListView'
 import { formatDate, todayForInput } from '@/lib/formatDate'
@@ -359,15 +359,35 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
   // that was already narrowed, and hide rows for a reason nobody could see.
   const recordPage = useListView(records.data, () => [])
 
+  // ★ Round 4: "create a way to print training records based on the filter
+  // created." The same query goes to the server, so what prints is what is on
+  // screen — and the page states the filter, because a list of rows with
+  // nothing saying what was asked for reads as "these are the trained people".
+  // Through the shared opener, which carries its own busy and error state and
+  // the pop-up-blocked fallback every other download here goes through.
+  const printer = useFileOpener()
+
   return (
     <>
-      {mayWrite && (
-        <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex flex-wrap justify-end gap-2">
+        <button type="button" className={secondaryButton} disabled={printer.busy}
+                onClick={() => printer.open(
+                  `/api/v1/training/records/print${query ? `?${query}` : ''}`,
+                  'training-records.pdf')}>
+          <Printer className="h-4 w-4" aria-hidden />
+          {printer.busy ? 'Preparing…' : 'Print these records'}
+        </button>
+        {mayWrite && (
           <button type="button" className={primaryButton} onClick={() => setAdding(true)}>
             <Upload className="h-4 w-4" aria-hidden />
             Record training taken elsewhere
           </button>
-        </div>
+        )}
+      </div>
+      {printer.error && (
+        <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">
+          {printer.error}
+        </p>
       )}
 
       {adding && (

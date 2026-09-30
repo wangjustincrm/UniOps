@@ -14,11 +14,12 @@ from sqlalchemy import select
 
 from uniops_authz import has_permission
 from app.models.config import EhsConfig
-from app.services import certificate_pdf
+from app.services import certificate_pdf, training_pdf
 from app.services.http_headers import content_disposition
 
 from app.crud.incident import _resolve_name
 from app.models.course import CourseMaterial
+from app.models.training import Course
 from app.services.attachments import (
     MAX_FILE_SIZE, delete_from_file_server, proxy_download, upload_to_file_server,
 )
@@ -242,6 +243,65 @@ async def list_records(
                 db, user_id=user_id, course_id=course_id, search=search,
                 completed_from=completed_from, completed_to=completed_to,
                 order=order)]
+
+
+@router.get("/records/print")
+async def print_records(
+    db: SessionDep,
+    user: CanReadTraining,
+    user_id: uuid.UUID | None = None,
+    course_id: uuid.UUID | None = None,
+    search: str | None = Query(default=None, description="Person or course name"),
+    completed_from: date | None = None,
+    completed_to: date | None = None,
+    order: str = Query(default="date", pattern="^(date|person|topic)$"),
+):
+    """The same list, as a page somebody can hand over.
+
+    Round 4, TC-10: "create a way to print training records based on the filter
+    created." It took the same parameters as the list on purpose — a print that
+    can disagree with the screen it was printed from is worse than no print.
+
+    ★ The filter is printed on the page. "These twelve people are trained" and
+    "these twelve records match a search for forklift in March" are different
+    claims, and a page of rows with nothing saying which one it is will be read
+    as the first.
+    """
+    rows = await crud.list_training(
+        db, user_id=user_id, course_id=course_id, search=search,
+        completed_from=completed_from, completed_to=completed_to, order=order)
+
+    # The names, not the ids, because the reader of a printed page cannot look
+    # a uuid up.
+    #
+    # ★ Read from the tables rather than off the first row. Raised in review by
+    # uniops-9a: filtered to one person who has done nothing, there is no first
+    # row, and the page would have printed an empty table with no name on it —
+    # which reads as "there are no training records" rather than "this person
+    # has none". That print is exactly the one somebody needs to hand over.
+    person = await _resolve_name(db, user_id) if user_id else None
+    course = None
+    if course_id:
+        course = (await db.execute(
+            select(Course.name).where(Course.id == course_id))).scalar()
+
+    pdf = training_pdf.render(
+        rows=[{
+            "user_name": r.user_name,
+            "course_label": r.course_label,
+            "completed_on": r.completed_on.isoformat() if r.completed_on else None,
+            "expires_on": r.expires_on.isoformat() if r.expires_on else "Does not expire",
+            "delivery": "Elsewhere" if r.delivery == "external" else "Here",
+            "recorded_by_name": r.recorded_by_name,
+        } for r in rows],
+        filters=training_pdf.describe(
+            search=search, completed_from=completed_from, completed_to=completed_to,
+            person=person, course=course),
+        printed_by=await _resolve_name(db, _user_id(user)),
+    )
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": content_disposition("training-records")})
 
 
 @router.post("/records/{record_id}/certificate", response_model=TrainingRecordOut)
