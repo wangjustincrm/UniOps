@@ -27,7 +27,11 @@ down_revision = "20260929_0048"
 branch_labels = None
 depends_on = None
 
-NOTE = "Product no longer kept on site"
+# ★ Deliberately not word-for-word what `retire()` writes at runtime. The
+# downgrade below matches on this text, and with identical wording it would also
+# reopen clocks that a person retired a product to close, after this ran. The
+# suffix says which rows a migration closed rather than a person.
+NOTE = "Product no longer kept on site (backfill 0049)"
 
 
 def upgrade() -> None:
@@ -65,7 +69,22 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Only the ones this migration closed are identifiable, by the note.
+    # Only the ones this migration closed, by the note it alone writes.
+    #
+    # The reminders come back with them: a clock running with nobody's name
+    # against it is the state this module has already been in once, and it is
+    # invisible. Which task belonged to which clock is not recorded, so this
+    # reopens the statutory task on those sheets — right unless something else
+    # completed one in between, which nothing but satisfying the clock does.
+    op.execute(f"""
+        UPDATE tasks t
+           SET is_completed = FALSE, completed_at = NULL
+         WHERE t.document_type = 'ehs_sds'
+           AND t.type = 'ehs_statutory'
+           AND t.document_id IN (
+                 SELECT d.source_id FROM ehs_statutory_deadlines d
+                  WHERE d.source_type = 'sds' AND d.evidence_note = '{NOTE}')
+    """)
     op.execute(f"""
         UPDATE ehs_statutory_deadlines
            SET satisfied_at = NULL, evidence_note = NULL
