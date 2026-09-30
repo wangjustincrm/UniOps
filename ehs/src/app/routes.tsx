@@ -39,6 +39,7 @@ import PositionsPage from '@/pages/settings/PositionsPage'
 import MyTrainingPage from '@/pages/MyTrainingPage'
 import AreaOwnersPage from '@/pages/settings/AreaOwnersPage'
 import RulesPage from '@/pages/settings/RulesPage'
+import NotifyGroupsPage from '@/pages/settings/NotifyGroupsPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
 
 export const ehsRoutes: RouteDef[] = [
@@ -269,6 +270,11 @@ export const ehsRoutes: RouteDef[] = [
     path: '/settings/areas',
     element: <LocationsPage />,
     tab: { title: 'Plant areas', icon: 'Map', keyStrategy: 'static' },
+  },
+  {
+    path: '/settings/notify-groups',
+    element: <NotifyGroupsPage />,
+    tab: { title: 'Who is told', icon: 'Mail', keyStrategy: 'static' },
   },
   {
     path: '/settings/rules',

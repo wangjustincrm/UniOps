@@ -4,9 +4,11 @@ The test database is built with create_all rather than by running migrations,
 so the vocabularies the seed migration would provide are created here.
 """
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import sqlalchemy
+from sqlalchemy import select
 
 from app.models.config import EhsConfig
 from app.models.vocabulary import Vocabulary, VocabularyItem
@@ -596,3 +598,73 @@ class TestTheLostTimeGuidanceReachesTheReporter:
         theirs = await wc.get("/api/v1/settings/reporting-guidance")
         assert theirs.status_code == 200, theirs.text
         assert theirs.json()["lost_time_guidance"] is None
+
+
+class TestWhoIsToldAboutAnIncident:
+    """★ HSE, round 4: "provide a way to manage the recipients list on incidents,
+    not on each form, rather create a master email distribution list where the
+    email templates are stored and editable by the HSE role."
+
+    `incident_notify_groups` has been read by the notifier since the first
+    release and had no screen, so every notice went to the role fallback
+    whatever kind of incident it was.
+
+    ★ Keyed on the incident type rather than the category, which uniops-9a
+    caught before the screen was built: on the dev database 60 incidents carry 4
+    categories between them, because only five of the twelve types imply one. A
+    list per category would have applied to four incidents and silently fallen
+    through for the rest. Every incident has a type.
+    """
+
+    async def test_the_list_decides_who_is_emailed(
+            self, hse_manager, config_row, test_engine, db_session):
+        from app.models.communication import Communication
+        from tests.conftest import make_user
+
+        _, client = hse_manager
+        named = await make_user(test_engine, role="requester", full_name="Told Person")
+
+        saved = await client.put("/api/v1/settings/config", json={
+            "incident_notify_groups": {"property_damage": [str(named.id)]}})
+        assert saved.status_code == 200, saved.text
+
+        made = await client.post("/api/v1/incidents", json={
+            "form_kind": "equipment", "title": "Forklift into the racking",
+            "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            "incident_type": "property_damage"})
+        assert made.status_code in (200, 201), made.text
+
+        mail = (await db_session.execute(
+            select(Communication).where(
+                Communication.doc_id == uuid.UUID(made.json()["id"]),
+                Communication.template_key == "incident_reported"))).scalars().first()
+        assert mail is not None, "nothing was queued"
+        assert mail.to_addrs == [named.email], mail.to_addrs
+
+    async def test_a_type_with_nobody_named_falls_through(
+            self, hse_manager, config_row, test_engine, db_session):
+        """★ The half that keeps an unconfigured list safe. A kind of incident
+        with nobody against it uses the catch-all, and an injury reported to
+        nobody is the one outcome this must never produce."""
+        from app.models.communication import Communication
+        from tests.conftest import make_user
+
+        _, client = hse_manager
+        catch_all = await make_user(test_engine, role="requester", full_name="Catch All")
+
+        assert (await client.put("/api/v1/settings/config", json={
+            "incident_notify_groups": {"*": [str(catch_all.id)],
+                                       "property_damage": []}})).status_code == 200
+
+        made = await client.post("/api/v1/incidents", json={
+            "form_kind": "medical", "title": "Cut to a finger",
+            "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            "incident_type": "first_aid"})
+        assert made.status_code in (200, 201), made.text
+
+        mail = (await db_session.execute(
+            select(Communication).where(
+                Communication.doc_id == uuid.UUID(made.json()["id"]),
+                Communication.template_key == "incident_reported"))).scalars().first()
+        assert mail is not None, "an incident with no list for its type told nobody"
+        assert mail.to_addrs == [catch_all.email], mail.to_addrs

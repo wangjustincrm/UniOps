@@ -85,10 +85,28 @@ async def _config(db: AsyncSession) -> EhsConfig | None:
     return (await db.execute(select(EhsConfig).where(EhsConfig.id == 1))).scalar_one_or_none()
 
 
-async def _incident_audience(db: AsyncSession, category_code: str | None) -> list[User]:
+async def _incident_audience(db: AsyncSession, incident_type: str | None) -> list[User]:
+    """Who hears about an incident of this kind.
+
+    ★ Keyed on the incident type — first_aid, lost_time, near_miss and the rest
+    of HSE's twelve — not on the category.
+    #
+    Two reasons, and the second is the one that matters. The parameter used to be
+    named `category_code` while the caller passed `incident.category_label`, so
+    no configured group could ever have matched; nothing had noticed because
+    there was no screen to configure one with. But keying it on the category at
+    all would have been the same fault wearing a fix: on the dev database 60
+    incidents carry 4 categories between them, because only five of the twelve
+    types imply one. A list configured per category would have applied to four
+    incidents and silently fallen through for the other fifty-six.
+    #
+    Every incident has a type — 59 of those 60 — it is what the reporter picks on
+    the form, and its code is an enum in this codebase rather than a vocabulary
+    entry, so it cannot be renamed out from under a recipient list.
+    """
     cfg = await _config(db)
     groups = (cfg.incident_notify_groups if cfg else None) or {}
-    configured = groups.get(category_code or "", []) or groups.get("*", [])
+    configured = groups.get(incident_type or "", []) or groups.get("*", [])
     if configured:
         picked = await mail.recipients(
             db, [uuid.UUID(str(u)) for u in configured])
@@ -106,7 +124,8 @@ async def incident_reported(db: AsyncSession, incident) -> None:
     Not a task: nobody on this list has been assigned anything yet. Whoever
     ends up investigating gets a task when the incident is classified.
     """
-    people = await _incident_audience(db, incident.category_label)
+    people = await _incident_audience(
+        db, (incident.extra or {}).get("incident_type"))
 
     # ★ And whoever is answerable for the area it happened in. Round 4: "when the
     # location where the incident is recorded on a form, ensure the area

@@ -6,6 +6,7 @@ import {
   ArrowLeft, BarChart3, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck,
   ClipboardList, FileText, FlaskConical, ShieldAlert, ShieldCheck, Siren, Users, Wrench,
   GraduationCap, HeartPulse, List, LogOut, Map, MapPin, Menu, Settings, TriangleAlert, User,
+  Mail,
 } from 'lucide-react'
 import { ehsRoutes } from '@/app/routes'
 import { cn } from '@/lib/utils'
@@ -157,6 +158,7 @@ const SETTINGS_NAV: NavItem[] = [
   // The divisor for every injury rate. Without it the dashboard's rate tiles
   // are empty, which is why it sits in the menu rather than inside a report.
   { label: 'Hours Worked', href: '/settings/hours', icon: CalendarClock, permission: 'ehs.settings.manage' },
+  { label: 'Who is told', href: '/settings/notify-groups', icon: Mail, permission: 'ehs.settings.manage' },
   { label: 'Rules',       href: '/settings/rules', icon: Settings, permission: 'ehs.settings.manage' },
 ]
 
