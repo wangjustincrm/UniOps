@@ -13,8 +13,8 @@ AIGC:
 
 ---
 
-**Document Version**: V2.7  
-**Creation Date**: April 2026 (First Draft) / May 2026 (V2.0 — UniOps Integration) / May 2026 (V2.1 — Role Model Refactoring) / May 2026 (V2.2 — Approval Workflow Customization + Notification Contacts) / May 2026 (V2.3 — Integration Reconciliation: port → 8008, schema flattened to `public.vms_*`, approval-api cfm-style integration, VMS-local quality_manager, Portal Module + Task Inbox integration) / June 2026 (V2.4 — Multi-visitor visits, phone optional, Host defaults to current user, badge print loops per visitor, CFIA report one row per visitor) / June 2026 (V2.5 — Host-opt-in per-visitor PPE requests, per-visitor training/PPE compliance with 12-month TTL + HR/Janitor confirmation tasks, in-VMS approval actions + Task Inbox, VMS-local SMTP settings, training/PPE notifications deferred to post-approval) / June 2026 (V2.6 — Doc reconciliation to as-built: compliance is post-entry not a print gate, reports ship as streamed CSV, background scheduler implemented for reminders/no-show/overdue) / September 2026 (V2.7 — full code audit against `origin/main @bb8d0a9a`: implementation status on every requirement, as-built routes / endpoints / roles / task types, production configuration snapshot, known defects list)  
+**Document Version**: V2.8  
+**Creation Date**: April 2026 (First Draft) / May 2026 (V2.0 — UniOps Integration) / May 2026 (V2.1 — Role Model Refactoring) / May 2026 (V2.2 — Approval Workflow Customization + Notification Contacts) / May 2026 (V2.3 — Integration Reconciliation: port → 8008, schema flattened to `public.vms_*`, approval-api cfm-style integration, VMS-local quality_manager, Portal Module + Task Inbox integration) / June 2026 (V2.4 — Multi-visitor visits, phone optional, Host defaults to current user, badge print loops per visitor, CFIA report one row per visitor) / June 2026 (V2.5 — Host-opt-in per-visitor PPE requests, per-visitor training/PPE compliance with 12-month TTL + HR/Janitor confirmation tasks, in-VMS approval actions + Task Inbox, VMS-local SMTP settings, training/PPE notifications deferred to post-approval) / June 2026 (V2.6 — Doc reconciliation to as-built: compliance is post-entry not a print gate, reports ship as streamed CSV, background scheduler implemented for reminders/no-show/overdue) / September 2026 (V2.7 — full code audit against `origin/main @bb8d0a9a`: implementation status on every requirement, as-built routes / endpoints / roles / task types, production configuration snapshot, known defects list) / October 2026 (V2.8 — fixes for the §12 defects on branch `vms/known-issues-fixes`, pending release; see §13)  
 **Document Status**: Revised — V2.7 is an as-built reconciliation. Every requirement table now carries a **Status** column (✅ Built · ◐ Partial / differs · ✗ Not built). Where the spec and the code disagree, the text states what the code does today; open defects are collected in [§12](#12-known-defects-and-gaps-v27).  
 **Code baseline**: `origin/main @bb8d0a9a` (production as of 2026-09-30)  
 **Scope**: Canada Royal Milk ULC factory and office areas  
@@ -45,6 +45,7 @@ AIGC:
 10. [Success Metrics](#10-success-metrics-kpis)
 11. [Appendix](#11-appendix)
 12. [Known Defects and Gaps (V2.7)](#12-known-defects-and-gaps-v27)
+13. [V2.8 Behaviour Changes](#13-v28-behaviour-changes-branch-vmsknown-issues-fixes-pending-release)
 
 ---
 
@@ -175,7 +176,7 @@ Employees (Hosts) can pre-register upcoming visitor information in the system to
 | Production (Non-GMP) | Department Manager | — | — | Orange `#EA580C`, MEDIUM RISK |
 | Production (GMP Clean Zone) | Department Manager → Quality Manager | ✓ every visitor must pass | ✓ | Red `#DC2626`, HIGH RISK |
 | Laboratory | Department Manager → Quality Manager | ✓ every visitor must pass | ✓ | Red `#DC2626`, HIGH RISK |
-| Entire Plant | Department Manager → Quality Manager | **✗ (not required — §12 D-08)** | ✓ | Red `#DC2626`, HIGH RISK |
+| Entire Plant | Department Manager → Quality Manager | ✓ every visitor must pass *(V2.8; was ✗ — §12 D-08)* | ✓ | Red `#DC2626`, HIGH RISK |
 
 The per-area confirmations in the V2.6 table — hard hat / safety shoes for Warehouse, dress code for Non-GMP, lab safety briefing for Laboratory — are **✗ not built**.
 
@@ -193,10 +194,10 @@ The per-area confirmations in the V2.6 table — hard hat / safety shoes for War
 | Requirement ID | Description | Priority | Status (V2.7) |
 |----------------|-------------|----------|---------------|
 | VMS-PR-015 | Status lifecycle | P0 | ✅ As built (UI label ← stored value): **Pending Approval** ← `pending_approval`, **Confirmed** ← `confirmed`, **On-Site** ← `checked_in`, **Departed** ← `checked_out`, **Cancelled** ← `cancelled`, **No Show** ← `no_show`; plus the derived red **Overdue** badge. A rejected visit is shown as **Cancelled** — there is no separate "Rejected" status |
-| VMS-PR-016 | Host can modify / cancel own appointments before check-in | P1 | ◐ **Cancel**: UI button on Confirmed / Pending visits; the API allows the **creator** (not a Host who did not create it), a system_admin, or a dept_manager of the Host's department. **Modify**: API only (`PATCH`), no edit screen. ⚠ Changing `access_area` via PATCH does not re-run approval — §12 D-02 |
+| VMS-PR-016 | Host can modify / cancel own appointments before check-in | P1 | ✅ *(V2.8)* "Edit visit" on the visit page (date, times, purpose, area, notes) and "Cancel visit", for the creator, the **Host**, the Host's dept_manager and system_admin; on a confirmed visit the area can only move to the same or a lower approval tier. *Before V2.8:* ◐ **Cancel**: UI button on Confirmed / Pending visits; the API allows the **creator** (not a Host who did not create it), a system_admin, or a dept_manager of the Host's department. **Modify**: API only (`PATCH`), no edit screen. ⚠ Changing `access_area` via PATCH does not re-run approval — §12 D-02 |
 | VMS-PR-017 | Host sees own appointments; Manager sees department appointments | P0 | ✅ Visibility: creator or Host → own; dept_manager → plus visits whose Host is in their department; assigned Quality Manager → that visit; auditor / system_admin → all. Lists: Today's Visits, All Visits (**latest 50 only, no paging**), On-Site Now |
 | VMS-PR-018 | Global search: visitor name, company, Host, date range | P1 | ✗ Not built — no search or filter on visit lists |
-| VMS-PR-019 | Auto-mark no-show 2 hours after planned arrival | P2 | ✅ Applies to **Confirmed** visits only; a visit still Pending Approval never becomes No Show |
+| VMS-PR-019 | Auto-mark no-show 2 hours after planned arrival | P2 | ✅ Confirmed **and** (V2.8) Pending Approval visits; a pending one also has its approval cancelled and its tasks closed |
 
 ---
 
@@ -237,7 +238,7 @@ The Host can print badges in two scenarios:
 | Requirement ID | Description | Priority | Status (V2.7) |
 |----------------|-------------|----------|---------------|
 | VMS-CI-010 | Health declaration questionnaire forced before the badge prints for GMP visitors; Host asks verbally or visitor self-fills | P0 | ✅ **Per visitor**, for **GMP and Laboratory** (not Entire Plant). Filed from the visit detail page ("Declare"), **before check-in** — the Declare / Re-file buttons disappear once the visit is checked in. Questions come from VMS Admin → Health Questions; production uses the 4 built-in defaults (symptoms in last 24 h / open wounds / contact with infectious disease / carrying food allergens). A "Yes" to any default question = Failed. Submit needs every question answered **and** "Food-safety briefing confirmed" ticked |
-| VMS-CI-011 | Failed visitors marked "Restricted Access", badge auto-downgraded to office | P0 | ✗ Not built. A failed declaration blocks the badge for the **whole appointment**. The failure banner tells the user to change the access area, but the UI has no way to do that: cancel the visit and create a new Office visit instead |
+| VMS-CI-011 | Failed visitors marked "Restricted Access", badge auto-downgraded to office | P0 | ◐ *(V2.8)* Manual downgrade: "Edit visit" → Office / Lobby, then print (no automatic restricted status). *Before V2.8:* ✗ Not built. A failed declaration blocks the badge for the **whole appointment**. The failure banner tells the user to change the access area, but the UI has no way to do that: cancel the visit and create a new Office visit instead |
 | VMS-CI-012 | Food-safety training confirmation for GMP visitors | P0 | ◐ The "Food-safety briefing confirmed" checkbox inside the declaration (Host confirmation). A signature pad is shown but is **optional** |
 | VMS-CI-013 | PPE issuance record at check-in | P1 | ✗ No issuance record. PPE is covered by the Janitor's 12-month confirmation (CI-020..023) and the "PPE returned" flag at check-out |
 
@@ -549,7 +550,7 @@ Production or Laboratory.
 [Open task → visit detail page → panel "This visit needs your approval (dept manager | quality manager)"]
     ↓
     ├─ "Approve"          → optional comment → next step or Confirmed
-    ├─ "Return for edit"  → reason required  → ⚠ dead end today, see §12 D-03 — prefer Reject
+    ├─ "Return for edit"  → reason required  → Host sees the comment, uses "Edit visit", then "Submit for approval" (V2.8)
     └─ "Reject"           → reason required  → visit shows as Cancelled, Host emailed
 ```
 
@@ -989,8 +990,8 @@ VMS decides per-visit whether to invoke approval based on `access_area`:
 | Requirement ID | Description | Priority | Status (V2.7) |
 |----------------|-------------|----------|---------------|
 | VMS-AP-001 | VMS **Task Inbox** lists the current user's pending VMS tasks, sourced from epms-api `/tasks?is_completed=false` filtered to `vms_visit` / `vms_train` / `vms_ppe`; sidebar shows a live count | P0 | ✅ Grouped "Visits", "Training Confirmations", "PPE Confirmations"; refreshes every 60 s |
-| VMS-AP-002 | VisitDetail shows Approve / Return for edit / Reject when the user holds a task for the visit; Reject / Return require a comment | P0 | ◐ The panel is shown whenever the user has **any** open `vms_visit` task on that visit — including the requester's "Revise" task after a return, where the buttons then fail (§12 D-03) |
-| VMS-AP-003 | Dashboard nudge "N visit(s) waiting on your approval" | P1 | ◐ N counts **all** open VMS tasks (training, PPE, check-out, prepare-PPE), not only approvals |
+| VMS-AP-002 | VisitDetail shows Approve / Return for edit / Reject when the user holds a task for the visit; Reject / Return require a comment | P0 | ✅ *(V2.8)* only for an open `approve_vms_visit` task; a returned visit shows the approver's comment with "Edit visit" / "Submit for approval". *Before V2.8:* ◐ The panel is shown whenever the user has **any** open `vms_visit` task on that visit — including the requester's "Revise" task after a return, where the buttons then fail (§12 D-03) |
+| VMS-AP-003 | Dashboard nudge "N visit(s) waiting on your approval" | P1 | ✅ *(V2.8)* wording follows the task mix. *Before V2.8:* ◐ N counts **all** open VMS tasks (training, PPE, check-out, prepare-PPE), not only approvals |
 | VMS-AP-004 | VMS doc types excluded from the EPMS inbox; shown in the Portal inbox with deep-links into VMS | P0 | ✅ Portal groups them under "Visitor" |
 
 **Task types (V2.7)** — all live in the shared `tasks` table:
@@ -1594,36 +1595,64 @@ The V2.6 `/check-in` route does not exist. Sidebar footer: "Back to UniOps Porta
 
 ## 12. Known Defects and Gaps (V2.7)
 
-Found in the V2.7 code audit (`origin/main @bb8d0a9a`). Severity reflects compliance and data impact. None is fixed by this document; each needs its own change.
+Found in the V2.7 code audit (`origin/main @bb8d0a9a`). Severity reflects compliance and data impact. V2.8 records the fix for each on branch `vms/known-issues-fixes` — **not yet released**; until it is, production behaves as in "Effect before V2.8".
 
-| ID | Severity | Defect | Where | Effect today |
-|---|:---:|---|---|---|
-| D-01 | **High** | If submitting a new visit for approval fails for any reason (no dept_manager in the creator's department, approval-api down, engine 4xx), vms-api resets the visit to `confirmed` and returns 502 | `vms-api/app/api/v1/visits.py:246-257` | The visit exists, is Confirmed and prints a badge — **approval bypassed**, incl. GMP. The user sees an error and may create a duplicate |
-| D-02 | **High** | `PATCH /visits/{id}` can change `access_area` without re-running approval | `vms-api/app/crud/visit.py:270-278` | Book Office (auto-confirmed) then patch to GMP → no approval. API only; no UI path |
-| D-03 | **High** | "Return for edit" is a dead end: `approval_status='returned'` but `status` stays Pending Approval; no edit / resubmit path (and the engine only accepts submit from `draft`); the requester's "Revise" task shows the approval panel whose buttons fail; cancelling fails silently in the engine (`valid_cancel` excludes `returned`) so the Revise task never closes | `approval-api/app/crud/engine.py:197-209`, `vms-api/app/services/approval.py:139-160` | Visit stuck until cancelled; orphan task. **Training guidance: use Reject, not Return** |
-| D-04 | Medium | Re-filing a health declaration overwrites the earlier answers, result and signature in place; the audit log keeps only `result=` | `vms-api/app/crud/health_decl.py:125-129` | A Failed visitor can be re-declared Passed with no record of the original answers (conflicts with VMS-AU-013) |
-| D-05 | Medium | The badge page reads `GET /admin/badge-config`, which is system_admin-only; everyone else silently falls back to the code defaults | `vms/src/services/api.ts:936-941`, `vms-api/app/api/v1/admin.py:371-380` | Admin badge customisation applies only to badges printed by an admin. No effect yet (production uses defaults) |
-| D-06 | Medium | "Prepare PPE" task links to the visit page, but the Janitor usually cannot see the visit | `vms-api/app/crud/visit.py:210-234` | Janitor sees "Visit not found"; the email carries the details |
-| D-07 | Medium | "Today" is taken from the UTC date in the frontend (Today's Visits, Dashboard, New Visit default date, Reports default range) and in the dashboard API | `vms/src/pages/VisitListPage.tsx:8`, `DashboardPage.tsx:18`, `VisitCreatePage.tsx:170`, `ReportsPage.tsx:39-40`; `vms-api/app/api/v1/dashboard.py:48,69-70` | After 20:00 EDT (19:00 EST) lists show tomorrow and New Visit defaults to tomorrow's date |
-| D-08 | Medium | Entire Plant is treated inconsistently: QM approval and training / PPE tasks yes; health declaration no; frontend GMP hint and compliance banner no; GMP reports and KPI exclude it | `crud/badge.py:35-37`, `services/compliance.py:36-40`, `services/reports.py:193`, `VisitCreatePage.tsx:268-274` | The broadest-access visit has the weakest health gate |
-| D-09 | Medium | A Host who cancels their own pending visit is emailed "Visit rejected by an approver" (derived from code, not reproduced) | `vms-api/app/crud/visit.py:160-182` | Misleading email |
-| D-10 | Medium | Approval routes by the **creator's** department; dept_manager visibility uses the **Host's** department | `approval-api/app/crud/engine.py:645-657` vs `vms-api/app/crud/visit.py:228-233` | When someone books for a Host in another department, the approver may get "Visit not found" on their own task |
-| D-11 | Low | No same-approver skip at submit | `approval-api/app/crud/engine.py` | A dept_manager approves their own visits |
-| D-12 | Low | Pending visits never become No Show | `services/scheduled_jobs.py:88-122` | Stale approval tasks can sit in inboxes indefinitely |
-| D-13 | Low | Portal inbox de-duplicates by document number; approval task title repeats the visitor text | `portal/src/pages/PortalHome.tsx:613-617`; engine title build | Training and PPE tasks for the same visitor collapse into one row when one person holds both roles |
-| D-14 | Low | Attachment `download_url` uses the internal file-api URL and opens without a Bearer token (not reproduced) | `vms-api/app/services/attachments.py:55` | Downloads likely fail from the browser |
-| D-15 | Low | Audit log "Action type" filter lists only a subset of the logged action types (no approve / reject / return, no_show, health_decl, confirm_*, admin.*, export_*); "Entity type" lacks `vms_config` and `report` | `vms/src/pages/AuditLogPage.tsx:306-314` | Those events can only be found unfiltered |
-| D-16 | Low | Disabled "Print badge & check in" always says "Verify visitor ID first", even when the real blocker is a missing or failed health declaration | `vms/src/pages/VisitDetailPage.tsx:111` | User confusion |
-| D-17 | Low | Dashboard nudge "N visit(s) waiting on your approval" counts all VMS tasks | `vms/src/pages/DashboardPage.tsx:43-61` | Wrong wording for HR / Janitor / Hosts |
-| D-18 | Low | Overdue / escalation emails print UTC times; "after-hours" hour is extracted in the DB session time zone | `services/notifications.py` `_fmt_dt`; `services/reports.py:260-265` | Times off by 4–5 h |
-| D-19 | Low | `POST /admin/run-scheduled-jobs` does not take the advisory lock | `services/scheduler.py` | A manual run overlapping a tick could double-send |
-| D-20 | Policy | Portal Data Maintenance can hard-delete visits and visitors | `vms-api/app/api/v1/admin.py` generic entity routes | Conflicts with the ≥3-year retention goal (§10.2) — see §11.4 #16 |
-| D-21 | Gap | Only the primary role counts in VMS; no `vms.*` permissions | `core/deps.py`, `AppLayout.tsx:53-54` | Additional roles granted in Portal do nothing in VMS |
-| D-22 | Gap | Visitor search matches one column at a time | `vms-api/app/crud/visitor.py:21-30` | Full-name search finds nothing → duplicate visitors |
+| ID | Severity | Defect | Where | Effect before V2.8 | Status (V2.8, branch `vms/known-issues-fixes`) |
+|---|:---:|---|---|---|---|
+| D-00 | **High** | *(found while fixing D-01)* approval-api read `approval_step_idx < len(workflow)` before branching on the action (since `e9f39159`, 2026-09-13); `vms_visits.approval_step_idx` is NULL until the first submit, so **every** VMS submit raised TypeError | `approval-api/app/crud/engine.py` `_step_of` | Combined with D-01: every new non-office visit since that commit is confirmed **without approval**. No non-office visit was booked in production after 2026-08-19, so none slipped through yet | ✅ Fixed — NULL step = 0; regression test |
+| D-01 | **High** | If submitting a new visit for approval fails for any reason (no dept_manager in the creator's department, approval-api down, engine 4xx), vms-api resets the visit to `confirmed` and returns 502 | `vms-api/app/api/v1/visits.py:246-257` | The visit exists, is Confirmed and prints a badge — **approval bypassed**, incl. GMP. The user sees an error and may create a duplicate | ✅ Fixed — visit stays Pending Approval ("draft"); "Submit for approval" retries |
+| D-02 | **High** | `PATCH /visits/{id}` can change `access_area` without re-running approval | `vms-api/app/crud/visit.py:270-278` | Book Office (auto-confirmed) then patch to GMP → no approval. API only; no UI path | ✅ Fixed — area locked while approval is in flight; a confirmed visit may only move to the same or lower approval tier |
+| D-03 | **High** | "Return for edit" is a dead end: `approval_status='returned'` but `status` stays Pending Approval; no edit / resubmit path (and the engine only accepts submit from `draft`); the requester's "Revise" task shows the approval panel whose buttons fail; cancelling fails silently in the engine (`valid_cancel` excludes `returned`) so the Revise task never closes | `approval-api/app/crud/engine.py:197-209`, `vms-api/app/services/approval.py:139-160` | Visit stuck until cancelled; orphan task. **Training guidance: use Reject, not Return** | ✅ Fixed — Edit visit + Submit for approval; engine accepts submit / cancel from `returned`; Revise task closes |
+| D-04 | Medium | Re-filing a health declaration overwrites the earlier answers, result and signature in place; the audit log keeps only `result=` | `vms-api/app/crud/health_decl.py:125-129` | A Failed visitor can be re-declared Passed with no record of the original answers (conflicts with VMS-AU-013) | ✅ Fixed — the replaced declaration (answers, result, signature) is written in full to the audit log |
+| D-05 | Medium | The badge page reads `GET /admin/badge-config`, which is system_admin-only; everyone else silently falls back to the code defaults | `vms/src/services/api.ts:936-941`, `vms-api/app/api/v1/admin.py:371-380` | Admin badge customisation applies only to badges printed by an admin. No effect yet (production uses defaults) | ✅ Fixed — printing reads `GET /badge/config` (any user) |
+| D-06 | Medium | "Prepare PPE" task links to the visit page, but the Janitor usually cannot see the visit | `vms-api/app/crud/visit.py:210-234` | Janitor sees "Visit not found"; the email carries the details | ✅ Fixed — anyone holding a task on a visit can open it |
+| D-07 | Medium | "Today" is taken from the UTC date in the frontend (Today's Visits, Dashboard, New Visit default date, Reports default range) and in the dashboard API | `vms/src/pages/VisitListPage.tsx:8`, `DashboardPage.tsx:18`, `VisitCreatePage.tsx:170`, `ReportsPage.tsx:39-40`; `vms-api/app/api/v1/dashboard.py:48,69-70` | After 20:00 EDT (19:00 EST) lists show tomorrow and New Visit defaults to tomorrow's date | ✅ Fixed — frontend `localToday()`; dashboard API uses plant time |
+| D-08 | Medium | Entire Plant is treated inconsistently: QM approval and training / PPE tasks yes; health declaration no; frontend GMP hint and compliance banner no; GMP reports and KPI exclude it | `crud/badge.py:35-37`, `services/compliance.py:36-40`, `services/reports.py:193`, `VisitCreatePage.tsx:268-274` | The broadest-access visit has the weakest health gate | ✅ Fixed (QA decision 2026-10-01: Entire Plant = GMP-grade) — one rule source `services/area_rules.py`, served at `GET /area-rules` |
+| D-09 | Medium | A Host who cancels their own pending visit is emailed "Visit rejected by an approver" (derived from code, not reproduced) | `vms-api/app/crud/visit.py:160-182` | Misleading email | ✅ Fixed — cancel sends "Visit cancelled", never "rejected" |
+| D-10 | Medium | Approval routes by the **creator's** department; dept_manager visibility uses the **Host's** department | `approval-api/app/crud/engine.py:645-657` vs `vms-api/app/crud/visit.py:228-233` | When someone books for a Host in another department, the approver may get "Visit not found" on their own task | ✅ Fixed — same task-holder rule as D-06 |
+| D-11 | Low | No same-approver skip at submit | `approval-api/app/crud/engine.py` | A dept_manager approves their own visits | Kept by decision (2026-10-01) — self-approval is recorded; changing submit-time skip would touch every doc type |
+| D-12 | Low | Pending visits never become No Show | `services/scheduled_jobs.py:88-122` | Stale approval tasks can sit in inboxes indefinitely | ✅ Fixed — no-show also closes pending visits, cancels their approval and tasks |
+| D-13 | Low | Portal inbox de-duplicates by document number; approval task title repeats the visitor text | `portal/src/pages/PortalHome.tsx:613-617`; engine title build | Training and PPE tasks for the same visitor collapse into one row when one person holds both roles | ✅ Fixed — Portal keys VMS tasks by task id; title now "Approve visitor visit: <visitor> — <area>, <date>" |
+| D-14 | Low | Attachment `download_url` uses the internal file-api URL and opens without a Bearer token (not reproduced) | `vms-api/app/services/attachments.py:55` | Downloads likely fail from the browser | ✅ Fixed — download through `GET /visits/{id}/attachments/{file_id}/download` |
+| D-15 | Low | Audit log "Action type" filter lists only a subset of the logged action types (no approve / reject / return, no_show, health_decl, confirm_*, admin.*, export_*); "Entity type" lacks `vms_config` and `report` | `vms/src/pages/AuditLogPage.tsx:306-314` | Those events can only be found unfiltered | ✅ Fixed — filters come from `GET /audit-logs/facets` (types actually logged) |
+| D-16 | Low | Disabled "Print badge & check in" always says "Verify visitor ID first", even when the real blocker is a missing or failed health declaration | `vms/src/pages/VisitDetailPage.tsx:111` | User confusion | ✅ Fixed — the page lists the real blockers |
+| D-17 | Low | Dashboard nudge "N visit(s) waiting on your approval" counts all VMS tasks | `vms/src/pages/DashboardPage.tsx:43-61` | Wrong wording for HR / Janitor / Hosts | ✅ Fixed — "waiting on your approval" only when every task is an approval |
+| D-18 | Low | Overdue / escalation emails print UTC times; "after-hours" hour is extracted in the DB session time zone | `services/notifications.py` `_fmt_dt`; `services/reports.py:260-265` | Times off by 4–5 h | ✅ Fixed — emails in plant time (e.g. "2026-10-01 14:30 EDT"); after-hours evaluated in America/Toronto |
+| D-19 | Low | `POST /admin/run-scheduled-jobs` does not take the advisory lock | `services/scheduler.py` | A manual run overlapping a tick could double-send | ✅ Fixed — manual run shares the lock; returns 409 while a run is in progress |
+| D-20 | Policy | Portal Data Maintenance can hard-delete visits and visitors | `vms-api/app/api/v1/admin.py` generic entity routes | Conflicts with the ≥3-year retention goal (§10.2) — see §11.4 #16 | ✅ Fixed by decision (2026-10-01) — VMS records are edit-only in Data Maintenance (409 on delete; Portal hides Delete) |
+| D-21 | Gap | Only the primary role counts in VMS; no `vms.*` permissions | `core/deps.py`, `AppLayout.tsx:53-54` | Additional roles granted in Portal do nothing in VMS | Deferred by decision (2026-10-01) — separate project (authz matrix + `vms.*` codes) |
+| D-22 | Gap | Visitor search matches one column at a time | `vms-api/app/crud/visitor.py:21-30` | Full-name search finds nothing → duplicate visitors | ✅ Fixed — every word must match some column |
 
 ---
 
-**Document Version**: V2.7  
+## 13. V2.8 Behaviour Changes (branch `vms/known-issues-fixes`, pending release)
+
+| Area | Before | After |
+|---|---|---|
+| Approval hand-off fails at create | Visit confirmed, printable without approval | Saved as Pending Approval ("draft"); banner "Not sent for approval yet" + **Submit for approval** (`POST /visits/{id}/submit`) |
+| Return for edit | Dead end | Banner shows who returned it and their comment; **Edit visit**, then **Submit for approval**; a visit edited down to Office is confirmed without approval |
+| Who can edit / cancel | Creator, dept_manager, admin | + the **Host**; the page shows those buttons only to people who may use them (`can_manage`) |
+| Changing access area | Any change, no re-approval | Locked while approval is in flight; a confirmed visit only to the same or a lower approval tier |
+| Cancel | Engine refused Host / manager cancels → stale tasks; Host emailed "rejected" | vms-api closes the visit's tasks; Host emailed "Visit cancelled" when someone else cancels |
+| Entire Plant | QM approval, no health declaration | Same as GMP: health declaration for every visitor; counted in GMP / Lab reports and KPIs |
+| Area rules | Copied in five places | One source (`services/area_rules.py`); `GET /api/v1/area-rules` drives the frontend hints |
+| Health declaration re-file | Overwrote the previous answers | Previous answers, result and signature kept in full in the audit log |
+| Visibility | Creator / Host / QM / dept of Host | + anyone holding a task on the visit (Janitor "Prepare PPE", cross-department approver) |
+| Pending visit past arrival + 2 h | Stayed pending | No Show; approval cancelled; tasks closed |
+| Badge layout | Admin configuration applied only to admin prints | `GET /api/v1/badge/config` for every printer |
+| Times | UTC "today", UTC in emails, after-hours in DB time zone | Plant time (America/Toronto) throughout |
+| Attachments | Link to internal file-api, no token | `GET /visits/{id}/attachments/{file_id}/download` through vms-api |
+| Visitor search | One column at a time | Every word must match some column ("John Smith" works) |
+| Audit log filters | Hard-coded, outdated | `GET /api/v1/audit-logs/facets` (types actually logged) |
+| Data Maintenance | Hard delete of VMS records | Edit-only (`allow_delete: false`; 409 on delete; Portal hides Delete) |
+| Portal inbox | De-duplicated by document number (hid tasks); title repeated the visitor | VMS tasks keyed by task id; "Approve visitor visit: <visitor> — <area>, <date>" |
+| Approval engine | NULL `approval_step_idx` crashed every VMS submit (since `e9f39159`) | NULL treated as step 0 |
+
+**Release notes**: no database migration. Services touched: vms-api, approval-api, vms (frontend), portal (frontend), epms-api (guide-layer text only). The training deck's "Known issues" slide describes production **before** this release and must be revised when it ships.
+
+---
+
+**Document Version**: V2.8  
 **Creation Date**: April 2026 (First Draft) / May 2026 (V2.0 — UniOps Integration) / May 2026 (V2.1 — Role Model Refactoring) / May 2026 (V2.2 — Approval Workflow Customization + Notification Contacts) / May 2026 (V2.3 — Integration Reconciliation) / June 2026 (V2.4 — Multi-visitor visits + intake-flow tweaks) / June 2026 (V2.5 — PPE + compliance + notification workflow) / June 2026 (V2.6 — as-built reconciliation + scheduler) / September 2026 (V2.7 — full code audit)  
 **Document Status**: V2.7 — as-built. Requirement status columns and §12 reflect `origin/main @bb8d0a9a`.  
 **Next Review Date**: after the §12 High items are fixed  
@@ -1665,3 +1694,4 @@ Found in the V2.7 code audit (`origin/main @bb8d0a9a`). Severity reflects compli
 *  ② **Changes since V2.6 documented**: overdue reminder repeats every 24 h until check-out + "Check out visitor" task (`bf2d2f83`); "Prepare PPE" task for the Janitor (`7c75d728`); tab shell, Task Inbox grouping, date-only fix.*
 *  ③ **Corrections**: check-in is recorded when the badge page loads (before the print dialog); HR training email fires at check-in regardless of freshness; PPE email is immediate for Office only; no auto-skip at submit; seeded chain is dept_manager only (production has both steps); approval routes by creator's department; health declaration is per visitor and not required for Entire Plant; ID verification is permanent on the visitor record.*
 *  ④ **§4 flows, §6.5 endpoints, §6.8 routes, §6.9 Portal, task-type table** rewritten as built; **§11.4** updated, **§11.5** production snapshot and **§12** known defects (D-01 … D-22) added.*
+*V2.8 (October 2026) fixes for §12 on branch `vms/known-issues-fixes` (not yet released): see §13. Decisions taken 2026-10-01: Entire Plant is GMP-grade (D-08); self-approval kept (D-11); VMS records edit-only in Data Maintenance (D-20); permission-matrix integration deferred (D-21). New defect D-00 (approval engine NULL step) found and fixed.*

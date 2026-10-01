@@ -97,6 +97,18 @@ modules:
       - Register a visitor and the areas they need access to
       - Get the visit approved before they arrive
       - Print a badge on the day
+    notes:
+      - >-
+        The access area decides the route: Office / Lobby is confirmed at
+        once; Warehouse and non-GMP production need the Department Manager;
+        GMP, Laboratory and Entire Plant also need the Quality Manager, and
+        every visitor needs a passing health declaration before the badge
+        prints.
+      - >-
+        A visit an approver returns for edit comes back to its Host or the
+        person who booked it: open the visit, use Edit visit, then Submit for
+        approval. The Host can also cancel a visit someone else booked for
+        them.
 
   - key: finance
     label: Finance
