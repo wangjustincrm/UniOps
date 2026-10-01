@@ -65,11 +65,7 @@ async def print_visit_badge(
 
     meta = await load_request_meta(db, user, request)
     host_dept = await visit_crud.fetch_host_department(db, visit.host_id)
-    if not visit_crud.is_visible(
-        visit,
-        user_id=meta.user_id, role=meta.role,
-        department_id=meta.department_id, host_department_id=host_dept,
-    ):
+    if not await visit_crud.visible_to(db, visit, meta, host_dept):
         raise HTTPException(status_code=404, detail="Visit not found")
 
     # Training + PPE are NOT a pre-print gate. A visitor must check in and get
@@ -152,11 +148,7 @@ async def get_badge_history(
         raise HTTPException(status_code=404, detail="Visit not found")
     meta = await load_request_meta(db, user, request)
     host_dept = await visit_crud.fetch_host_department(db, visit.host_id)
-    if not visit_crud.is_visible(
-        visit,
-        user_id=meta.user_id, role=meta.role,
-        department_id=meta.department_id, host_department_id=host_dept,
-    ):
+    if not await visit_crud.visible_to(db, visit, meta, host_dept):
         raise HTTPException(status_code=404, detail="Visit not found")
 
     rows = await badge_crud.list_badge_prints(db, visit_id)

@@ -18,6 +18,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.task_mirror import Task
 from app.models.user_mirror import User
 from app.models.visit import Visit, VisitStatus
 from app.schemas.visit import VisitCheckOut, VisitCreate, VisitUpdate
@@ -27,6 +28,22 @@ from app.schemas.visit import VisitCheckOut, VisitCreate, VisitUpdate
 
 # Roles that bypass scoping and see everything.
 _FULL_SCOPE_ROLES = frozenset({"system_admin", "auditor"})
+
+
+def _task_visit_ids(user_id: uuid.UUID):
+    return select(Task.document_id).where(
+        Task.document_type == "vms_visit", Task.assigned_user_id == user_id,
+    )
+
+
+async def has_task_on(db: AsyncSession, visit_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    return (await db.execute(
+        select(Task.id).where(
+            Task.document_type == "vms_visit",
+            Task.document_id == visit_id,
+            Task.assigned_user_id == user_id,
+        ).limit(1)
+    )).first() is not None
 
 
 def apply_visibility_scope(
@@ -43,7 +60,10 @@ def apply_visibility_scope(
     # Anyone assigned as the visit's Quality Manager (per-visit role, not
     # tied to UniOps `role` column) gets visibility on that visit. Without
     # this, a QM clicking the task in their inbox hits 404 on the deep-link.
-    qm_clause = Visit.quality_approver_id == user_id
+    # Likewise anyone holding a task on the visit (open or done): the Janitor's
+    # "Prepare PPE", a department manager approving a visit booked by someone
+    # in their department for a Host in another — their task links here.
+    qm_clause = or_(Visit.quality_approver_id == user_id, Visit.id.in_(_task_visit_ids(user_id)))
 
     if role == "dept_manager" and department_id is not None:
         # Manager sees their own visits + every visit whose host is in their dept.
@@ -214,6 +234,7 @@ def is_visible(
     role: str,
     department_id: uuid.UUID | None,
     host_department_id: uuid.UUID | None = None,
+    has_task: bool = False,
 ) -> bool:
     """Single-row visibility check (mirrors `apply_visibility_scope`)."""
     if role in _FULL_SCOPE_ROLES:
@@ -224,6 +245,8 @@ def is_visible(
     # their task-inbox deep-link even though their UniOps role (e.g. opm)
     # has no dept-scope claim on this visit.
     if visit.quality_approver_id is not None and visit.quality_approver_id == user_id:
+        return True
+    if has_task:
         return True
     if (
         role == "dept_manager"
@@ -245,6 +268,7 @@ async def visible_to(db: AsyncSession, visit: Visit, meta, host_department_id=No
         role=meta.role,
         department_id=meta.department_id,
         host_department_id=host_department_id,
+        has_task=await has_task_on(db, visit.id, meta.user_id),
     )
 
 

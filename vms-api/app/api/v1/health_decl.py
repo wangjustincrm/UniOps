@@ -97,11 +97,7 @@ async def submit_health_declaration(
 
     meta = await load_request_meta(db, user, request)
     host_dept = await visit_crud.fetch_host_department(db, visit.host_id)
-    if not visit_crud.is_visible(
-        visit,
-        user_id=meta.user_id, role=meta.role,
-        department_id=meta.department_id, host_department_id=host_dept,
-    ):
+    if not await visit_crud.visible_to(db, visit, meta, host_dept):
         raise HTTPException(status_code=404, detail="Visit not found")
 
     # Auditor is read-only.
@@ -179,11 +175,7 @@ async def list_health_declarations(
 
     meta = await load_request_meta(db, user, request)
     host_dept = await visit_crud.fetch_host_department(db, visit.host_id)
-    if not visit_crud.is_visible(
-        visit,
-        user_id=meta.user_id, role=meta.role,
-        department_id=meta.department_id, host_department_id=host_dept,
-    ):
+    if not await visit_crud.visible_to(db, visit, meta, host_dept):
         raise HTTPException(status_code=404, detail="Visit not found")
 
     rows = await health_crud.get_all_for_visit(db, visit_id)

@@ -145,13 +145,7 @@ async def get_visit(
         )
     meta = await load_request_meta(db, user, request)
     host_dept = await visit_crud.fetch_host_department(db, row.host_id)
-    if not visit_crud.is_visible(
-        row,
-        user_id=meta.user_id,
-        role=meta.role,
-        department_id=meta.department_id,
-        host_department_id=host_dept,
-    ):
+    if not await visit_crud.visible_to(db, row, meta, host_dept):
         # 404 (not 403) — don't leak the existence of visits outside the scope.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found"
@@ -408,13 +402,7 @@ async def patch_visit(
 
     meta = await load_request_meta(db, user, request)
     host_dept = await visit_crud.fetch_host_department(db, row.host_id)
-    if not visit_crud.is_visible(
-        row,
-        user_id=meta.user_id,
-        role=meta.role,
-        department_id=meta.department_id,
-        host_department_id=host_dept,
-    ):
+    if not await visit_crud.visible_to(db, row, meta, host_dept):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found"
         )
@@ -496,13 +484,7 @@ async def cancel_visit(
 
     # Visibility check first: if the caller can't even see the visit, return
     # 404 to avoid leaking its existence (matches GET /visits/{id} behavior).
-    if not visit_crud.is_visible(
-        row,
-        user_id=meta.user_id,
-        role=meta.role,
-        department_id=meta.department_id,
-        host_department_id=host_dept,
-    ):
+    if not await visit_crud.visible_to(db, row, meta, host_dept):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found"
         )
@@ -647,13 +629,7 @@ async def check_out_visit(
 
     meta = await load_request_meta(db, user, request)
     host_dept = await visit_crud.fetch_host_department(db, row.host_id)
-    if not visit_crud.is_visible(
-        row,
-        user_id=meta.user_id,
-        role=meta.role,
-        department_id=meta.department_id,
-        host_department_id=host_dept,
-    ):
+    if not await visit_crud.visible_to(db, row, meta, host_dept):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found"
         )
@@ -756,11 +732,7 @@ async def list_visit_attachments(
 
     meta = await load_request_meta(db, user, request)
     host_dept = await visit_crud.fetch_host_department(db, row.host_id)
-    if not visit_crud.is_visible(
-        row,
-        user_id=meta.user_id, role=meta.role,
-        department_id=meta.department_id, host_department_id=host_dept,
-    ):
+    if not await visit_crud.visible_to(db, row, meta, host_dept):
         raise HTTPException(status_code=404, detail="Visit not found")
 
     return await attachments_svc.list_attachments(db, visit_id)
@@ -786,11 +758,7 @@ async def upload_visit_attachment(
 
     meta = await load_request_meta(db, user, request)
     host_dept = await visit_crud.fetch_host_department(db, row.host_id)
-    if not visit_crud.is_visible(
-        row,
-        user_id=meta.user_id, role=meta.role,
-        department_id=meta.department_id, host_department_id=host_dept,
-    ):
+    if not await visit_crud.visible_to(db, row, meta, host_dept):
         raise HTTPException(status_code=404, detail="Visit not found")
     if meta.role == "auditor":
         raise HTTPException(status_code=403, detail="Auditors cannot upload attachments")
