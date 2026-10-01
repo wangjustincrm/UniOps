@@ -7,6 +7,7 @@ import { useRef, useState } from 'react'
 import { Paperclip, Upload, Loader2, FileText, AlertCircle } from 'lucide-react'
 import {
   useUploadVisitAttachment, useVisitAttachments, type VisitAttachment,
+  openAttachment,
 } from '@/services/api'
 import { formatDateTime } from '@/lib/utils'
 
@@ -96,14 +97,13 @@ function AttachmentRow({ att }: { att: VisitAttachment }) {
       <div className="flex min-w-0 items-center gap-2">
         <FileText className="h-4 w-4 shrink-0 text-neutral-400" />
         <div className="min-w-0">
-          <a
-            href={att.download_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="truncate text-primary-700 hover:underline"
+          <button
+            type="button"
+            onClick={() => openAttachment(att).catch((e: Error) => alert(`Could not open the file: ${e.message}`))}
+            className="truncate text-left text-primary-700 hover:underline"
           >
             {att.original_filename}
-          </a>
+          </button>
           <p className="text-[11px] text-neutral-400">
             {formatBytes(att.file_size)} ·{' '}
             {att.created_at ? formatDateTime(att.created_at) : 'unknown date'}

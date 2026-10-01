@@ -4,11 +4,12 @@ import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, AlertCircle, Calendar, Clock, Printer, X, Loader2, RotateCw, LogOut,
   ShieldCheck, ShieldAlert, ThumbsUp, ThumbsDown, Undo2, Users, HardHat, Eye,
+  Pencil, Send,
 } from 'lucide-react'
 import {
   useVisit, useVisitor, useUserBrief, useCancelVisit, useVerifyVisitorId,
   useBadgeHistory, useCheckOutVisit, useHealthDeclarations,
-  useMyVmsTasks, useVisitAction, isComplianceFresh,
+  useMyVmsTasks, useVisitAction, isComplianceFresh, useAreaRules, useSubmitVisit,
   type Visitor, type VisitApprovalAction, type HealthDeclaration,
 } from '@/services/api'
 import { StatusBadge, AccessAreaBadge, OverdueBadge, isVisitOverdue } from '@/components/StatusBadge'
@@ -16,6 +17,7 @@ import { CheckOutConfirm } from '@/components/CheckOutConfirm'
 import { HealthDeclForm } from '@/components/HealthDeclForm'
 import { HealthDeclView } from '@/components/HealthDeclView'
 import { VisitAttachments } from '@/components/VisitAttachments'
+import { EditVisitModal } from '@/components/EditVisitModal'
 import { formatDateTime } from '@/lib/utils'
 
 function getRole(): string | null {
@@ -28,8 +30,6 @@ function getRole(): string | null {
     return null
   } catch { return null }
 }
-
-const GMP_AREAS = new Set(['production_gmp', 'laboratory'])
 
 export default function VisitDetailPage() {
   const { visitId } = useParams<{ visitId: string }>()
@@ -46,10 +46,17 @@ export default function VisitDetailPage() {
   const verifyId                = useVerifyVisitorId()
   const checkOut                = useCheckOutVisit(visitId)
   const action                  = useVisitAction(visitId ?? '')
+  const submit                  = useSubmitVisit(visitId)
+  const { data: areaRules }     = useAreaRules()
+  const [showEdit, setShowEdit] = useState(false)
 
-  // Am I the assigned approver for this visit? — yes iff epms-api's
-  // `/tasks` for me includes a row with document_id == this visit.
-  const myTaskForThisVisit = myTasks?.find((t) => t.document_id === visitId)
+  // Am I the assigned approver for this visit? Only an open *approve* task
+  // counts — the requester's "Revise" task after a return is also a
+  // vms_visit task on this visit, and used to show them Approve / Reject
+  // buttons that could only fail.
+  const myTaskForThisVisit = myTasks?.find(
+    (t) => t.document_id === visitId && t.type === 'approve_vms_visit',
+  )
 
   // Approve / Reject / Return modal
   const [approvalKind, setApprovalKind] = useState<VisitApprovalAction | null>(null)
@@ -88,10 +95,17 @@ export default function VisitDetailPage() {
   const isClosed = visit.status === 'cancelled' || visit.status === 'checked_out' || visit.status === 'no_show'
   const hasVisitorId = !!visitor
 
-  // GMP / Lab visits require a passing health declaration before badge can print.
-  const isGmpZone = GMP_AREAS.has(visit.access_area)
+  // Area rules come from vms-api (the rules it enforces): GMP, Laboratory and
+  // Entire Plant need a passing health declaration for every visitor.
+  const rule = areaRules?.[visit.access_area]
+  const isGmpZone = !!rule?.requires_health_declaration
+  const showComplianceGate = !!rule?.compliance_tasks_at_check_in
   const healthPassed = visit.health_decl_status === 'passed'
   const healthRequired = isGmpZone && !healthPassed   // any state other than `passed` blocks GMP print
+  const canManage = !!visit.can_manage
+  const awaitingSubmit = isPendingApproval && visit.approval_status === 'draft'
+  const returnedForEdit = isPendingApproval && visit.approval_status === 'returned'
+  const canEdit = canManage && !isClosed && !isCheckedIn
 
   // Every person on the visit (primary + companions). Both gates below are
   // per-visitor: ID verification and health declarations apply to each one.
@@ -109,9 +123,16 @@ export default function VisitDetailPage() {
   const canDeclare = !isClosed && !isCheckedIn
 
   const canPrint = hasVisitorId && allIdVerified && !isPendingApproval && !isClosed && !healthRequired
+  // Say what is actually missing — the hint used to read "Verify visitor ID
+  // first" even when the blocker was a health declaration.
+  const printBlockers = [
+    !allIdVerified && 'tick “ID Verified” for every visitor',
+    isGmpZone && visit.health_decl_status === 'failed' && 'a health declaration failed — use “Edit visit” to move the visit to Office / Lobby, or cancel it',
+    isGmpZone && visit.health_decl_status !== 'failed' && !healthPassed && 'every visitor needs a passing health declaration',
+  ].filter(Boolean) as string[]
 
   const onCancel = () => {
-    if (!confirm('Cancel this visit? The Host will be notified.')) return
+    if (!confirm('Cancel this visit? Its approval tasks are closed and the Host is notified if it is not you.')) return
     cancel.mutate(undefined, { onSuccess: () => navigate('/') })
   }
 
@@ -268,7 +289,7 @@ export default function VisitDetailPage() {
       )}
 
       {/* Training + PPE compliance gate (GMP / Lab only) */}
-      {!isClosed && !isPendingApproval && isGmpZone && visitor && (
+      {!isClosed && !isPendingApproval && showComplianceGate && visitor && (
         <ComplianceGate primary={visitor} extras={visit.additional_visitors} />
       )}
 
@@ -309,7 +330,7 @@ export default function VisitDetailPage() {
                     {status === 'passed'
                       ? `Cleared${decl ? ` · ${formatDateTime(decl.updated_at)}` : ''}`
                       : status === 'failed'
-                      ? 'Failed — cannot enter GMP / Lab today'
+                      ? 'Failed — cannot enter this area today'
                       : 'Not declared yet'}
                   </p>
                 </div>
@@ -386,6 +407,76 @@ export default function VisitDetailPage() {
         </div>
       )}
 
+      {/* Not yet with the approvers: the first hand-off failed. */}
+      {awaitingSubmit && (
+        <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          <p className="font-semibold">Not sent for approval yet</p>
+          <p className="mt-0.5 text-xs">
+            The approval service did not accept this visit when it was created. It is saved, but nobody
+            has been asked to approve it and the badge cannot print until it is submitted.
+          </p>
+          {canManage && (
+            <button
+              onClick={() => submit.mutate()}
+              disabled={submit.isPending}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+            >
+              {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Submit for approval
+            </button>
+          )}
+          {submit.error && <p className="mt-2 text-xs text-danger-600">{submit.error.message}</p>}
+        </div>
+      )}
+
+      {/* Returned for edit: show why, let the Host fix it and resubmit. */}
+      {returnedForEdit && (
+        <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          <p className="flex items-center gap-1.5 font-semibold">
+            <Undo2 className="h-4 w-4" />
+            Returned for edit{visit.approval_note?.actor_name ? ` by ${visit.approval_note.actor_name}` : ''}
+          </p>
+          {visit.approval_note?.comment && (
+            <p className="mt-1 whitespace-pre-line rounded border border-amber-200 bg-white px-3 py-2 text-sm text-neutral-800">
+              {visit.approval_note.comment}
+            </p>
+          )}
+          {canManage ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => setShowEdit(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-amber-400 bg-white px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100"
+              >
+                <Pencil className="h-4 w-4" /> Edit visit
+              </button>
+              <button
+                onClick={() => submit.mutate()}
+                disabled={submit.isPending}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Submit for approval
+              </button>
+            </div>
+          ) : (
+            <p className="mt-1 text-xs">Waiting for the person who booked it, or the Host, to edit and resubmit.</p>
+          )}
+          {submit.error && <p className="mt-2 text-xs text-danger-600">{submit.error.message}</p>}
+        </div>
+      )}
+
+      {/* Rejected: the visit shows as Cancelled; say who rejected it and why. */}
+      {visit.status === 'cancelled' && visit.approval_status === 'rejected' && visit.approval_note && (
+        <div className="mt-6 rounded-lg border border-red-200 bg-danger-50 p-4 text-sm text-danger-600">
+          <p className="font-semibold">
+            Rejected{visit.approval_note.actor_name ? ` by ${visit.approval_note.actor_name}` : ''}
+          </p>
+          {visit.approval_note.comment && (
+            <p className="mt-1 whitespace-pre-line text-neutral-800">{visit.approval_note.comment}</p>
+          )}
+        </div>
+      )}
+
       {/* Approval panel — only when I'm the assigned approver. */}
       {isPendingApproval && myTaskForThisVisit && (
         <div className="mt-6 rounded-lg border border-primary-200 bg-primary-50/40 p-4">
@@ -431,7 +522,7 @@ export default function VisitDetailPage() {
 
       {/* Actions */}
       <div className="mt-6 flex flex-wrap items-center gap-3">
-        {isPendingApproval && !myTaskForThisVisit && (
+        {isPendingApproval && !myTaskForThisVisit && !awaitingSubmit && !returnedForEdit && (
           <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
             Awaiting approval — badge cannot print yet.
           </p>
@@ -441,7 +532,7 @@ export default function VisitDetailPage() {
           <button
             onClick={() => goPrint()}
             disabled={!canPrint}
-            title={canPrint ? undefined : 'Verify visitor ID first'}
+            title={canPrint ? undefined : `Before printing: ${printBlockers.join('; ')}`}
             className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
           >
             <Printer className="h-4 w-4" />
@@ -468,7 +559,17 @@ export default function VisitDetailPage() {
           </>
         )}
 
-        {isCancellable && (
+        {canEdit && !returnedForEdit && (
+          <button
+            onClick={() => setShowEdit(true)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+          >
+            <Pencil className="h-4 w-4" />
+            Edit visit
+          </button>
+        )}
+
+        {isCancellable && canManage && (
           <button
             onClick={onCancel}
             disabled={cancel.isPending}
@@ -481,6 +582,13 @@ export default function VisitDetailPage() {
           </button>
         )}
       </div>
+
+      {!canPrint && !isPendingApproval && !isClosed && isFirstPrint && printBlockers.length > 0 && (
+        <p className="mt-2 text-xs text-neutral-500">Before printing: {printBlockers.join('; ')}.</p>
+      )}
+      {cancel.error && <p className="mt-2 text-xs text-danger-600">{cancel.error.message}</p>}
+
+      {showEdit && <EditVisitModal visit={visit} onClose={() => setShowEdit(false)} />}
 
       {/* Health declaration modal */}
       {declaringVisitor && (
@@ -668,7 +776,7 @@ function ComplianceGate({ primary, extras }: { primary: Visitor; extras: Visitor
         Training / PPE confirmation required
       </p>
       <p className="mt-1 text-xs">
-        GMP / Lab access needs a fresh training + PPE record (within 12
+        GMP, Laboratory and Entire Plant access need a fresh training + PPE record (within 12
         months) for every visitor. Confirmations are done by HR (training)
         and Janitor (PPE) on the visitor's compliance page.
       </p>

@@ -12,6 +12,7 @@ import {
   type Visit, type Visitor, type UserBrief,
 } from '@/services/api'
 import { BadgePreview } from '@/components/BadgePreview'
+import { localToday } from '@/lib/utils'
 
 const AREA_ORDER: AccessArea[] = [
   'office', 'warehouse', 'production_non_gmp', 'production_gmp', 'laboratory', 'all',
@@ -20,7 +21,7 @@ const AREA_ORDER: AccessArea[] = [
 // Sample data so the preview shows a realistic badge while editing.
 const SAMPLE_VISIT = {
   id: '00000000-0000-0000-0000-000000000000',
-  visit_date: new Date().toISOString().slice(0, 10),
+  visit_date: localToday(),
   planned_departure: new Date(Date.now() + 2 * 3600_000).toISOString(),
   visit_purpose: 'meeting',
   access_area: 'production_gmp',

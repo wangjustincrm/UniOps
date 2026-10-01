@@ -136,6 +136,10 @@ class VisitResponse(BaseModel):
     # Create / submit only: why the visit could not be sent for approval. The
     # visit is saved and stays in Pending Approval ("draft") until resubmitted.
     approval_submit_error: str | None = None
+    # Detail view only: may the caller edit / resubmit / cancel this visit
+    # (same rule the endpoints enforce — creator, Host, Host's dept manager,
+    # system_admin). Lets the page show only the buttons that will work.
+    can_manage: bool | None = None
 
 
 class ApprovalNote(BaseModel):

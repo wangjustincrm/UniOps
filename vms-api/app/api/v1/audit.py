@@ -46,6 +46,23 @@ async def list_audit_logs(
     )
 
 
+# ── Filter options ──────────────────────────────────────────────────────────-
+
+@router.get("/facets")
+async def audit_log_facets(db: SessionDep, _: AuditDep):
+    """The action and entity types actually present in the log, for the Audit
+    Log page's filters. The page used to hard-code a list that had fallen far
+    behind (no approvals, no-shows, health declarations, admin changes,
+    exports), so those events could not be filtered."""
+    from sqlalchemy import distinct, select
+
+    from app.models.audit_log import AuditLog
+
+    actions = (await db.execute(select(distinct(AuditLog.action_type)).order_by(AuditLog.action_type))).scalars().all()
+    entities = (await db.execute(select(distinct(AuditLog.entity_type)).order_by(AuditLog.entity_type))).scalars().all()
+    return {"action_types": list(actions), "entity_types": list(entities)}
+
+
 # ── CSV export (streaming) ──────────────────────────────────────────────────-
 
 _CSV_COLUMNS = [

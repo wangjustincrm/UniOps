@@ -579,7 +579,13 @@ export default function PortalHome() {
       // key on the plan id (document_id) — otherwise every cost center's plan
       // collapses into a single row. Other doc types keep numbering by docNumber
       // so an OA claim and its EPMS echo still merge.
-      const dedupKey = t.document_type.toLowerCase() === 'budget_plan'
+      // VMS tasks never echo from the OA feed, and their numbers are not unique
+      // (a visitor's training and PPE tasks share one; two visits by the same
+      // visitor share one) — keying on the number hid real tasks. Key on the
+      // task itself.
+      const dedupKey = isVms
+        ? `vms:${t.id}`
+        : t.document_type.toLowerCase() === 'budget_plan'
         ? `budget_plan:${t.document_id}`
         : t.document_number
       let groupKey: string

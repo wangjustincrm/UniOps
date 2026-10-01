@@ -42,7 +42,11 @@ async def test_janitor_with_prepare_ppe_task_can_open_visit(test_engine, request
     async with authed_client(make_token(janitor.id, janitor.role)) as jc:
         assert (await jc.get(f"/api/v1/visits/{vid}")).status_code == 404  # no task yet
         await _task(vid, janitor)
-        assert (await jc.get(f"/api/v1/visits/{vid}")).status_code == 200
+        seen = await jc.get(f"/api/v1/visits/{vid}")
+        assert seen.status_code == 200
+        assert seen.json()["can_manage"] is False  # may look, not edit / cancel
+    assert (await client.get(f"/api/v1/visits/{vid}")).json()["can_manage"] is True
+    async with authed_client(make_token(janitor.id, janitor.role)) as jc:
         # …and it stays visible after the task is done (audit / history).
         listed = (await jc.get("/api/v1/visits", params={"page_size": 100})).json()
         assert vid in [i["id"] for i in listed["items"]]

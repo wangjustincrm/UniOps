@@ -153,7 +153,7 @@ async def get_visit(
             status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found"
         )
     items = await _attach_visitors(db, [row])
-    resp = items[0]
+    resp = items[0].model_copy(update={"can_manage": _can_manage(row, meta, host_dept)})
     if row.approval_status in ("returned", "rejected"):
         resp = resp.model_copy(update={"approval_note": await _latest_approval_note(db, row.id)})
     return resp

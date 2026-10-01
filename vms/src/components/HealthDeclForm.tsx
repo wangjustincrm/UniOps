@@ -71,7 +71,7 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
               Health declaration{visitorName ? ` — ${visitorName}` : ''}
             </h3>
             <p className="mt-0.5 text-xs text-neutral-500">
-              Required before printing a badge for GMP / Laboratory zones.
+              Required before printing a badge for GMP, Laboratory and Entire Plant visits.
               Ask the visitor each question; mark “Yes” / “No” based on their answer.
             </p>
           </div>
@@ -97,11 +97,11 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
           <div className="border-b border-red-200 bg-danger-50 px-5 py-3 text-sm text-danger-600">
             <p className="flex items-center gap-1.5 font-medium">
               <AlertCircle className="h-4 w-4" />
-              Declaration failed — visitor cannot enter GMP / Lab areas today.
+              Declaration failed — visitor cannot enter GMP, Laboratory or Entire Plant areas today.
             </p>
             <p className="mt-1 text-xs">
-              To allow office-only access, change the access area on the visit
-              and reprint at the downgraded badge.
+              To allow office-only access, use “Edit visit” on the visit page to
+              change the access area to Office / Lobby, then print the badge.
             </p>
           </div>
         )}
