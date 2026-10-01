@@ -13,9 +13,10 @@ AIGC:
 
 ---
 
-**Document Version**: V2.6  
-**Creation Date**: April 2026 (First Draft) / May 2026 (V2.0 — UniOps Integration) / May 2026 (V2.1 — Role Model Refactoring) / May 2026 (V2.2 — Approval Workflow Customization + Notification Contacts) / May 2026 (V2.3 — Integration Reconciliation: port → 8008, schema flattened to `public.vms_*`, approval-api cfm-style integration, VMS-local quality_manager, Portal Module + Task Inbox integration) / June 2026 (V2.4 — Multi-visitor visits, phone optional, Host defaults to current user, badge print loops per visitor, CFIA report one row per visitor) / June 2026 (V2.5 — Host-opt-in per-visitor PPE requests, per-visitor training/PPE compliance with 12-month TTL + HR/Janitor confirmation tasks, in-VMS approval actions + Task Inbox, VMS-local SMTP settings, training/PPE notifications deferred to post-approval) / June 2026 (V2.6 — Doc reconciliation to as-built: compliance is post-entry not a print gate, reports ship as streamed CSV, background scheduler implemented for reminders/no-show/overdue)  
-**Document Status**: Revised — V2.6 reconciles the spec with the as-built implementation (compliance gate, report format) and documents the newly-implemented background scheduler  
+**Document Version**: V2.7  
+**Creation Date**: April 2026 (First Draft) / May 2026 (V2.0 — UniOps Integration) / May 2026 (V2.1 — Role Model Refactoring) / May 2026 (V2.2 — Approval Workflow Customization + Notification Contacts) / May 2026 (V2.3 — Integration Reconciliation: port → 8008, schema flattened to `public.vms_*`, approval-api cfm-style integration, VMS-local quality_manager, Portal Module + Task Inbox integration) / June 2026 (V2.4 — Multi-visitor visits, phone optional, Host defaults to current user, badge print loops per visitor, CFIA report one row per visitor) / June 2026 (V2.5 — Host-opt-in per-visitor PPE requests, per-visitor training/PPE compliance with 12-month TTL + HR/Janitor confirmation tasks, in-VMS approval actions + Task Inbox, VMS-local SMTP settings, training/PPE notifications deferred to post-approval) / June 2026 (V2.6 — Doc reconciliation to as-built: compliance is post-entry not a print gate, reports ship as streamed CSV, background scheduler implemented for reminders/no-show/overdue) / September 2026 (V2.7 — full code audit against `origin/main @bb8d0a9a`: implementation status on every requirement, as-built routes / endpoints / roles / task types, production configuration snapshot, known defects list)  
+**Document Status**: Revised — V2.7 is an as-built reconciliation. Every requirement table now carries a **Status** column (✅ Built · ◐ Partial / differs · ✗ Not built). Where the spec and the code disagree, the text states what the code does today; open defects are collected in [§12](#12-known-defects-and-gaps-v27).  
+**Code baseline**: `origin/main @bb8d0a9a` (production as of 2026-09-30)  
 **Scope**: Canada Royal Milk ULC factory and office areas  
 **Integration Platform**: UniOps Enterprise Operations Platform (Monorepo)  
 
@@ -43,6 +44,7 @@ AIGC:
 9. [Implementation Roadmap](#9-implementation-roadmap-uniops-integrated)
 10. [Success Metrics](#10-success-metrics-kpis)
 11. [Appendix](#11-appendix)
+12. [Known Defects and Gaps (V2.7)](#12-known-defects-and-gaps-v27)
 
 ---
 
@@ -85,12 +87,17 @@ Build a digital Visitor Management System (VMS) to manage the full lifecycle of 
 
 | User Role | UniOps Role | Responsibilities | Primary Features |
 |-----------|:-----------:|------------------|------------------|
-| **Employee (Host)** | `requester` (default) | Invite visitors, pre-register, print badges (= check-in), scan QR code to check out, view own visitor records | Appointment creation, badge printing, QR check-out, visitor history |
-| **Department Manager** | `dept_manager` | All Host permissions + approve high-risk area access + view department visitor stats | Access approval, department statistics |
-| **Auditor** | `auditor` | Export audit data, inspect compliance (read-only) | Audit log query, compliance report export |
-| **System Administrator** | `system_admin` | System configuration, user management, badge template maintenance, full data access | Admin backend, badge template management |
+| **Employee (Host)** | any role (default `requester`) | Invite visitors, pre-register, print badges (= check-in), scan QR code to check out, view own visitor records | Appointment creation, badge printing, QR check-out |
+| **Department Manager** | `dept_manager` | All Host permissions + first-step approval + sees visits whose Host is in their department | Access approval, department visits |
+| **Quality Manager** *(VMS-local)* | any role, listed in VMS Admin → Quality Managers | Second-step approval for GMP / Laboratory / Entire Plant visits | Access approval |
+| **HR Training Contact** *(VMS-local)* | any role, whose email = VMS Admin → Notification Contacts → Training | Confirms a visitor's food-safety training (12-month validity) | Task Inbox → visitor compliance page |
+| **Janitor PPE Contact** *(VMS-local)* | any role, whose email = VMS Admin → Notification Contacts → PPE | Stages requested PPE; confirms PPE issuance (12-month validity) | Task Inbox → visitor compliance page |
+| **Auditor** | `auditor` | Sees all visits; audit log, compliance reports, health declarations | Audit log query, CSV exports |
+| **System Administrator** | `system_admin` | Everything, plus VMS Admin panel and end-of-day batch check-out | Admin panel |
 
-> **Note**: VMS does not define standalone receptionist or security roles. All hosting operations (check-in, badge printing, check-out) are performed by the Host in a self-service model. The four roles above all reuse the existing UniOps `public.users.role` field — no new roles are created.
+> **Note**: VMS does not define standalone receptionist or security roles. All hosting operations (check-in, badge printing, check-out) are performed by the Host in a self-service model. Platform roles reuse `public.users.role`; the three VMS-local roles are configured inside VMS.
+>
+> **V2.7 — primary role only**: vms-api and the VMS frontend read the single `role` claim in the JWT (the user's *primary* role). Additional roles granted through the Portal permission matrix (`user_roles`) have **no effect** in VMS, and there are no `vms.*` permission codes in identity-api / `packages/authz`. Example: a user whose primary role is `requester` with `auditor` as an additional role does **not** see the Compliance menu in VMS.
 
 ---
 
@@ -106,79 +113,90 @@ Employees (Hosts) can pre-register upcoming visitor information in the system to
 
 ##### (1) Appointment Creation
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-PR-001 | Host can create a visitor appointment with basic info: name (first / last, required), company (required), job title (optional), phone (optional — see V2.4 note), email (optional) | P0 (Must) |
-| VMS-PR-002 | Select visitor type: Supplier, Contractor, Inspector, Auditor, Customer, Job Candidate, Other | P0 |
-| VMS-PR-003 | Set visit date, planned arrival time, planned departure time | P0 |
-| VMS-PR-004 | Select visit purpose: Business Meeting, Equipment Maintenance, Factory Tour, Audit/Inspection, Interview, Delivery, Other | P0 |
-| VMS-PR-005 | Specify the Host (person being visited): select from employee directory with search. **Host defaults to the currently logged-in user** (the "I'm hosting this visitor" common case); operator can pick a different employee via the "Change" affordance | P0 |
-| VMS-PR-006 | Select access area: Office, Production A, Production B, Warehouse, Laboratory, Entire Plant | P0 |
-| VMS-PR-007 | For food production areas (GMP zones), the system automatically triggers additional requirements: whether a health questionnaire is needed, whether food safety training confirmation is needed → notifies Training Contact (see VMS-PR-021), whether PPE is needed → notifies PPE Contact (see VMS-PR-022) | P1 (Important) |
-| VMS-PR-008 | Upload attachments: visitor ID, work permit, insurance certificate, etc. | P2 (General) |
-| VMS-PR-009 | Appointment copy: for frequent visitors, copy the last appointment with one click | P2 |
-| VMS-PR-010 | Batch import: import multiple appointments via Excel template | P2 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-PR-001 | Host can create a visitor appointment with basic info: name (first / last, required), company, job title, phone, email (all optional) | P0 (Must) | ◐ Company is **optional** in both the UI ("Company (optional)") and the API (defaults to an empty string) — the V2.4 intent was "required", the build relaxed it. Job title exists on the Visitor record but is not on the inline "Register a new visitor" form |
+| VMS-PR-002 | Select visitor type: Supplier, Contractor, Regulatory Inspector, Third-party Auditor, Customer / Partner, Job Candidate, Other | P0 | ✅ Default = Supplier |
+| VMS-PR-003 | Set visit date, planned arrival time, planned departure time | P0 | ✅ Defaults: today / 09:00 / 17:00; departure can be cleared. No validation that departure is after arrival. ⚠ "today" is computed in UTC — see §12 D-07 |
+| VMS-PR-004 | Select visit purpose: Business Meeting, Equipment Maintenance, Factory Tour, Audit / Inspection, Interview, Delivery, Other | P0 | ✅ Default = Business Meeting |
+| VMS-PR-005 | Specify the Host (person being visited): select from employee directory with search. **Host defaults to the currently logged-in user**; operator can pick a different employee via "Change" | P0 | ✅ Host search needs at least 2 characters |
+| VMS-PR-006 | Select access area: Office / Lobby, Warehouse, Production (Non-GMP), Production (GMP Clean Zone), Laboratory, Entire Plant | P0 | ✅ Six fixed values. Admin can rename them and recolour them **on the badge only**; areas cannot be added or removed |
+| VMS-PR-007 | For high-risk areas the system triggers additional requirements (health declaration, food-safety training, PPE) | P1 (Important) | ◐ As built, see the rule table in (2): health declaration is required for GMP + Laboratory only; training / PPE confirmation tasks are raised for GMP + Laboratory + Entire Plant **at check-in**, not at booking; PPE staging is Host opt-in (VMS-PR-040) |
+| VMS-PR-008 | Upload attachments: visitor ID, work permit, insurance certificate, etc. | P2 (General) | ◐ Uploaded from the **visit detail page** after the visit is created (not on the New Visit form). Types: pdf, png, jpg, jpeg, gif, doc, docx, xls, xlsx. No delete. Auditors cannot upload. Download link may not open — §12 D-14 |
+| VMS-PR-009 | Appointment copy: for frequent visitors, copy the last appointment with one click | P2 | ✗ Not built |
+| VMS-PR-010 | Batch import: import multiple appointments via Excel template | P2 | ✗ Not built |
+
+> **Visitor search (as built)**: the search box matches first name, last name, company and email **each separately** as a substring, returning at most 20 rows. Typing a full name such as "John Smith" matches nothing, and the UI then offers "Register a new visitor" — a common way to create duplicate visitor records. Search by first name *or* last name *or* company.
 
 ##### (1.0.1) Multi-Visitor Visits (added in V2.4)
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-PR-030 | A single appointment can carry **one primary visitor + N companions**. Common case: a supplier tour where 3–5 people from the same company arrive together. Host registers them under one appointment (one date, one access area, one Host) | P0 |
-| VMS-PR-031 | Companions share the appointment's schedule, access area, visit purpose, and Host with the primary visitor. Each companion keeps their own Visitor row (own name, company, optional phone/email, own ID-verification flag) | P0 |
-| VMS-PR-032 | The New Visit form supports adding companions via an "Add another visitor" affordance (chip layout). Operator can search the visitor registry or register a new visitor inline for any slot. Single-visitor visits leave the companion list empty — backward-compatible with V2.3 visits | P0 |
-| VMS-PR-033 | The visit detail page shows all visitors (primary + companions) with each visitor's ID-verified status. Removing the primary promotes the first companion so a visit always has a primary visitor | P1 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-PR-030 | A single appointment can carry **one primary visitor + N companions** (one date, one access area, one Host) | P0 | ✅ |
+| VMS-PR-031 | Companions share the appointment's schedule, access area, purpose and Host. Each companion keeps their own Visitor row (own name, company, contact, own ID-verification flag) | P0 | ✅ |
+| VMS-PR-032 | The New Visit form supports adding companions ("Add another visitor (companion)"). Operator can search the registry or register a new visitor inline for any slot | P0 | ✅ Already-added visitors show "(already added)" in results. Cards are labelled PRIMARY / COMPANION |
+| VMS-PR-033 | The visit detail page shows all visitors with each one's ID-verified status. Removing the primary promotes the first companion | P1 | ◐ Promotion works on the **New Visit form only**. After creation the visitor list cannot be changed — there is no edit UI and the PATCH API does not accept visitor lists |
 
-> **Implementation note**: stored as `vms_visits.additional_visitor_ids JSONB` (UUID list). Single-visitor visits = empty list. We chose JSONB over a proper M2M join table to keep existing queries against `vms_visits` working unchanged (reports, search, badge printing iterate the list explicitly). Migrate to a join table if downstream consumers need to filter or join companions in SQL.
+> **Implementation note**: stored as `vms_visits.additional_visitor_ids JSONB` (UUID list, no FK). Single-visitor visits = empty list. We chose JSONB over a proper M2M join table to keep existing queries against `vms_visits` working unchanged (reports, search, badge printing iterate the list explicitly). Migrate to a join table if downstream consumers need to filter or join companions in SQL.
 
 ##### (1.1) Notification Contact Configuration (Admin)
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-PR-020 | VMS Admin panel provides "Notification Contacts" configuration: **Training Contact Email** (HR-designated person, notified when a visitor requires food safety training) and **PPE Contact Email** (Janitor-designated person, notified when a visitor requires personal protective equipment) | P0 |
-| VMS-PR-021 | When a GMP/Lab visit's access area triggers training requirements (see VMS-PR-007), the system sends an email to the Training Contact **after the visit is approved** (not at create time — see V2.5 note), including: visitor name, visit date, access area, Host name. Skipped when the visitor's training record is still fresh (VMS-CI-021) | P0 |
-| VMS-PR-022 | When the Host opts into PPE staging (VMS-PR-040), the system emails the PPE Contact **after the visit is approved** with the per-visitor gear list (clothing size, footwear, shoe size). For auto-confirming visits (office / warehouse) the email fires immediately on create | P0 |
-| VMS-PR-023 | Training Contact and PPE Contact email addresses can be modified by Admin in the VMS admin panel at any time; changes take effect immediately | P1 |
-| VMS-PR-024 | VMS Admin panel provides an **Email Settings** tab: VMS-local SMTP host / port / user / password / STARTTLS / from-address. When set, VMS uses these for all outbound mail instead of the shared EPMS `company_config` SMTP. Includes a "Send test email" action that exercises the production send path. Password is masked on read; the literal mask round-trips as "keep existing" (V2.5) | P0 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-PR-020 | VMS Admin → "Notification Contacts": **Training Contact email** (HR) and **PPE Contact email** (Janitor) | P0 | ✅ Leaving a field blank disables that channel |
+| VMS-PR-021 | Training Contact receives a heads-up email for GMP / Lab visits: visitor name, visit date, access area, Host | P0 | ◐ Sent at the **first badge print (= check-in)**, not after approval, and sent **whether or not** the visitor's training is still fresh (the freshness check only governs the confirmation *task*) |
+| VMS-PR-022 | When the Host opts into PPE (VMS-PR-040), the PPE Contact receives the per-visitor gear list | P0 | ✅ Timing as built: **Office** visits (the only auto-confirmed area) email at creation; every other area emails once the visit is approved — the send happens the first time anyone opens the visit after approval (read-driven hook). V2.7: a **"Prepare PPE" task** is also opened for the Janitor (commit `7c75d728`) and auto-closes once the visit is checked in, cancelled or no-show |
+| VMS-PR-023 | Contacts can be changed by Admin at any time; effective immediately | P1 | ✅ |
+| VMS-PR-024 | VMS Admin → **Email Settings**: VMS-local SMTP (host / port / user / password / STARTTLS / from) with "Send test"; falls back to the shared `company_config` SMTP when unset. Password masked on read; the mask round-trips as "keep existing" | P0 | ✅ "Send test" uses the **saved** settings — save first |
 
-> **V2.5 deferral rule**: Training and PPE notifications (VMS-PR-021/022) and the HR/Janitor confirmation tasks (VMS-CI-022) fire **only after the visit is approved**, not at appointment creation. Rationale: every compliance-requiring area (GMP / Lab / all-zones) routes through approval, and pinging HR / Janitor for a visit that may still be rejected creates noise + wasted prep. Implementation: read-driven hook fires once when the visit first reaches the approved state (same mechanism as the Host result email).
+> **V2.7 timing rule (replaces the V2.5 deferral rule)**:
+> - **PPE staging email + "Prepare PPE" task** → at creation for Office; after approval for every other area.
+> - **HR training email + HR / Janitor confirmation tasks** → at the first badge print (= check-in) of a GMP / Laboratory / Entire Plant visit.
+>
+> **Contacts must be real users**: a confirmation or "Prepare PPE" task is only created when the configured email equals the email of an **active** UniOps user. Otherwise only the email goes out and nobody can confirm in the system (confirmation is authorised by exact email match — VMS-CI-023).
 
 ##### (1.2) Per-Visitor PPE Request (added in V2.5)
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-PR-040 | At visit creation the Host can tick **"PPE needed"**. PPE is opt-in per visit — it is no longer auto-triggered by access area alone | P0 |
-| VMS-PR-041 | When PPE is needed, the Host specifies, **per visitor on the appointment** (primary + companions): clothing size (XS / S / M / L / XL / XXL / other-with-free-text) and footwear (shoe covers, or safety shoes with US shoe size 7–14 / other-with-free-text) | P0 |
-| VMS-PR-042 | An optional group-level notes field applies to the whole PPE request | P1 |
-| VMS-PR-043 | After approval, the Janitor PPE Contact receives one email listing each visitor's name + requested gear so they can pre-stage everything in one trip. Idempotent — sent once (`ppe_notified_at`) | P0 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-PR-040 | At visit creation the Host can tick **"PPE needed"**. PPE is opt-in per visit, not auto-triggered by area | P0 | ✅ |
+| VMS-PR-041 | Per visitor: clothing size (XS–XXL / other + text) and footwear (shoe covers, or safety shoes with US size 7–14 / other + text) | P0 | ✅ Defaults: M, Shoe covers, size 10. Shoe size is not enforced server-side |
+| VMS-PR-042 | Optional group-level notes | P1 | ✅ max 500 chars |
+| VMS-PR-043 | The PPE Contact receives one email listing each visitor's gear. Idempotent (`ppe_notified_at`) | P0 | ✅ + "Prepare PPE" task (see above) |
 
 ##### (2) Access Area Control Rules
 
-| Access Area | Risk Level | Pre-Registration Requirements |
-|-------------|:----------:|-------------------------------|
-| Office (Lobby / Office) | Low | Basic info only |
-| Warehouse | Medium | Basic + hard hat / safety shoes confirmation |
-| Production (Non-GMP) | Medium | Basic + dress code confirmation |
-| Production (GMP / Clean Zone) | High | Basic + health declaration + food safety training + gowning procedure |
-| Laboratory | High | Basic + lab safety briefing confirmation |
+> **V2.7 — as-built rule table** (replaces the V2.6 table; code: `services/approval.py`, `crud/badge.py`, `services/compliance.py`, `services/badge_config.py`).
+
+| Access area (UI label) | Approval steps | Health declaration blocks the badge | Training / PPE confirmation tasks at check-in | Badge band (default) |
+|---|---|:---:|:---:|---|
+| Office / Lobby | none — auto-confirmed | — | — | Green `#10B981`, LOW RISK |
+| Warehouse | Department Manager | — | — | Amber `#F59E0B`, MEDIUM RISK |
+| Production (Non-GMP) | Department Manager | — | — | Orange `#EA580C`, MEDIUM RISK |
+| Production (GMP Clean Zone) | Department Manager → Quality Manager | ✓ every visitor must pass | ✓ | Red `#DC2626`, HIGH RISK |
+| Laboratory | Department Manager → Quality Manager | ✓ every visitor must pass | ✓ | Red `#DC2626`, HIGH RISK |
+| Entire Plant | Department Manager → Quality Manager | **✗ (not required — §12 D-08)** | ✓ | Red `#DC2626`, HIGH RISK |
+
+The per-area confirmations in the V2.6 table — hard hat / safety shoes for Warehouse, dress code for Non-GMP, lab safety briefing for Laboratory — are **✗ not built**.
 
 ##### (3) Notification Mechanism
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-PR-011 | After appointment submission, system auto-sends email notification to Host | P0 |
-| VMS-PR-012 | One day before visit, system auto-sends reminder to Host | P1 |
-| VMS-PR-013 | Approval (if needed): high-risk area visits require Department Manager approval; Host is notified upon approval | P1 |
-| VMS-PR-014 | Visitor receives confirmation email with visit instructions, navigation, parking info | P2 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-PR-011 | After appointment submission, system emails the Host | P0 | ✗ Not built. Approvers also get **no email** for a new approval task — it appears only in the Task Inbox (VMS and Portal) |
+| VMS-PR-012 | One day before the visit, reminder to Host | P1 | ✅ Sent on the first scheduler tick after midnight Toronto time (≈ 00:00–00:15) for the next day's **confirmed** visits. A visit still pending approval gets no reminder |
+| VMS-PR-013 | High-risk visits need approval; Host notified of the result | P1 | ✅ Host is emailed once on final approval, rejection or cancellation. No email on "Return for edit" |
+| VMS-PR-014 | Visitor receives confirmation email with instructions, navigation, parking | P2 | ✗ Not built — VMS never emails visitors |
 
 ##### (4) Appointment Management
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-PR-015 | Status lifecycle: Pending Approval → Confirmed → Checked In → Checked Out → Cancelled | P0 |
-| VMS-PR-016 | Host can modify/cancel their own appointments (only before check-in) | P1 |
-| VMS-PR-017 | Host can view all their own appointments sorted by time; Manager can view all department appointments | P0 |
-| VMS-PR-018 | Global search: by visitor name, company, Host, date range | P1 |
-| VMS-PR-019 | Auto-mark no-show: appointments not checked in within 2 hours of planned arrival are marked "No Show" | P2 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-PR-015 | Status lifecycle | P0 | ✅ As built (UI label ← stored value): **Pending Approval** ← `pending_approval`, **Confirmed** ← `confirmed`, **On-Site** ← `checked_in`, **Departed** ← `checked_out`, **Cancelled** ← `cancelled`, **No Show** ← `no_show`; plus the derived red **Overdue** badge. A rejected visit is shown as **Cancelled** — there is no separate "Rejected" status |
+| VMS-PR-016 | Host can modify / cancel own appointments before check-in | P1 | ◐ **Cancel**: UI button on Confirmed / Pending visits; the API allows the **creator** (not a Host who did not create it), a system_admin, or a dept_manager of the Host's department. **Modify**: API only (`PATCH`), no edit screen. ⚠ Changing `access_area` via PATCH does not re-run approval — §12 D-02 |
+| VMS-PR-017 | Host sees own appointments; Manager sees department appointments | P0 | ✅ Visibility: creator or Host → own; dept_manager → plus visits whose Host is in their department; assigned Quality Manager → that visit; auditor / system_admin → all. Lists: Today's Visits, All Visits (**latest 50 only, no paging**), On-Site Now |
+| VMS-PR-018 | Global search: visitor name, company, Host, date range | P1 | ✗ Not built — no search or filter on visit lists |
+| VMS-PR-019 | Auto-mark no-show 2 hours after planned arrival | P2 | ✅ Applies to **Confirmed** visits only; a visit still Pending Approval never becomes No Show |
 
 ---
 
@@ -194,44 +212,46 @@ The Host can print badges in two scenarios:
 
 #### 2.2.2 Detailed Requirements
 
+> **V2.7 — what "print" actually does**: "Print badge & check in" on the visit detail page opens the badge page. **The badge page records the check-in as soon as it loads**, then opens the browser print dialog. Cancelling the print dialog does **not** undo the check-in; use "Reprint badge" (reason required) to print again.
+
 ##### (1) Print = Check-In (With Appointment)
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-CI-001 | Host finds the appointment in "My Appointments" or "Today's Appointments", clicks "Print Badge". System automatically: ① generates badge page → ② triggers browser print → ③ records `actual_arrival` → ④ status → `checked_in` | P0 |
-| VMS-CI-002 | System records actual arrival time (to the second), equal to badge print time | P0 |
-| VMS-CI-003 | Quick search by name / company | P0 |
-| VMS-CI-004 | Before printing, Host can supplement/correct: accompanying count, license plate, equipment carried | P1 |
-| VMS-CI-005 | Before printing, Host confirms they have verified the visitor's photo ID (driver's license, passport, etc.) and checks "ID Verified" | P1 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-CI-001 | Host finds the appointment and clicks "Print badge & check in"; the system records `actual_arrival`, sets status to `checked_in`, and opens the browser print | P0 | ✅ Order as described in the note above |
+| VMS-CI-002 | Actual arrival time recorded to the second = first print time | P0 | ✅ |
+| VMS-CI-003 | Quick search by name / company | P0 | ✗ No search. Visits are found through Today's Visits, Dashboard → Today's appointments, or the Task Inbox |
+| VMS-CI-004 | Before printing, Host can supplement: accompanying count, license plate, equipment | P1 | ✗ Not in the UI (the "Vehicle plate" field on the detail page is always "—") |
+| VMS-CI-005 | Host confirms they checked each visitor's photo ID ("ID Verified") | P1 | ◐ One checkbox per visitor in the "ID verification" section. The print button stays disabled until **every** visitor is verified. The flag is stored **on the Visitor record, permanently** — a returning visitor is already verified next time — and cannot be unticked in the UI. The server does not enforce it |
 
 ##### (2) Instant Registration (No Appointment)
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-CI-006 | For walk-in visitors, Host can instantly create a visitor record + print badge in one action (one-click registration + check-in) | P0 |
-| VMS-CI-007 | Instant registration form contains the same required fields as pre-registration | P0 |
-| VMS-CI-008 | System auto-associates the currently logged-in Host as the visited person | P1 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-CI-006 | Walk-in: create visitor + print badge in one action | P0 | ◐ No dedicated "Instant Registration" entry. Use **New Visit** with area **Office / Lobby** (auto-confirmed) → Create visit → tick ID Verified → Print badge & check in. Any other area waits for approval first |
+| VMS-CI-007 | Same required fields as pre-registration | P0 | ✅ It is the same form |
+| VMS-CI-008 | Logged-in user auto-set as Host | P1 | ✅ |
 
 ##### (3) Health & Safety Confirmation (High Priority — Food Factory Specific)
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-CI-010 | For GMP area visitors, before printing the badge the system forces a health declaration questionnaire: Have you had fever, cough, or diarrhea in the past 24 hours? Do you have open wounds or skin infections? Have you been in contact with anyone with an infectious disease? Are you carrying food allergen substances? The Host verbally asks the visitor and fills it in, or the visitor fills it in on the public computer | P0 |
-| VMS-CI-011 | Visitors who fail the health declaration are marked "Restricted Access" — office area only; badge area indicator is automatically downgraded | P0 |
-| VMS-CI-012 | Food safety training confirmation: GMP area visitors must confirm they have read and understood basic food safety requirements (Host confirmation or visitor e-signature) | P0 |
-| VMS-CI-013 | PPE issuance record: Host can record equipment issued to the visitor (hard hat, protective clothing, shoe covers, etc.) | P1 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-CI-010 | Health declaration questionnaire forced before the badge prints for GMP visitors; Host asks verbally or visitor self-fills | P0 | ✅ **Per visitor**, for **GMP and Laboratory** (not Entire Plant). Filed from the visit detail page ("Declare"), **before check-in** — the Declare / Re-file buttons disappear once the visit is checked in. Questions come from VMS Admin → Health Questions; production uses the 4 built-in defaults (symptoms in last 24 h / open wounds / contact with infectious disease / carrying food allergens). A "Yes" to any default question = Failed. Submit needs every question answered **and** "Food-safety briefing confirmed" ticked |
+| VMS-CI-011 | Failed visitors marked "Restricted Access", badge auto-downgraded to office | P0 | ✗ Not built. A failed declaration blocks the badge for the **whole appointment**. The failure banner tells the user to change the access area, but the UI has no way to do that: cancel the visit and create a new Office visit instead |
+| VMS-CI-012 | Food-safety training confirmation for GMP visitors | P0 | ◐ The "Food-safety briefing confirmed" checkbox inside the declaration (Host confirmation). A signature pad is shown but is **optional** |
+| VMS-CI-013 | PPE issuance record at check-in | P1 | ✗ No issuance record. PPE is covered by the Janitor's 12-month confirmation (CI-020..023) and the "PPE returned" flag at check-out |
 
 ##### (4) Per-Visitor Training + PPE Compliance (added in V2.5)
 
-> Training and PPE compliance are tracked **on the Visitor record**, not per-visit — a frequent supplier who trained last month shouldn't re-train every visit. A 12-month rolling freshness window applies.
+> Training and PPE compliance are tracked **on the Visitor record**, not per-visit — a frequent supplier who trained last month shouldn't re-train every visit. A 12-month rolling freshness window applies (365 days, in code).
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-CI-020 | Each Visitor carries `safety_training_confirmed_at` / `_by` and `ppe_issued_at` / `_by` timestamps. A record is "fresh" if confirmed within the last 12 months (window lives in code, not schema) | P0 |
-| VMS-CI-021 | For a GMP / Lab visit, badge printing is **not blocked** on compliance freshness — see the V2.6 implementation note below. The visitor must check in (= first badge print) and physically enter the site **before** receiving PPE / training; gating the badge would create a chicken-and-egg deadlock. Instead, on the first print (= check-in) the system opens a confirmation Task for each stale gate so HR / Janitor close it on-site (see VMS-CI-022). Freshness is surfaced (not enforced) on the visitor compliance page (VMS-CI-024) | P0 |
-| VMS-CI-022 | On the first badge print (= check-in) of a GMP / Lab / all-zones visit, the system opens a confirmation Task for each stale gate: a **training task** assigned to the HR Training Contact and a **PPE task** assigned to the Janitor PPE Contact. Tasks appear in the unified Portal Task Inbox and the VMS Task Inbox, deep-linking to the visitor's compliance page. Idempotent: at most one open task per (visitor, gate). The HR training heads-up email also fires here | P0 |
-| VMS-CI-023 | Only the configured contact (HR for training, Janitor for PPE) — or a system_admin — can confirm the respective gate. Confirmation stamps the visitor's timestamp, completes the open task(s), and is audit-logged | P0 |
-| VMS-CI-024 | The visitor compliance page (and the VisitDetail compliance banner) show each gate's freshness + last-confirmed date; stale gates link to the confirm action | P1 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-CI-020 | Each Visitor carries `safety_training_confirmed_at` / `_by` and `ppe_issued_at` / `_by`; "fresh" = within the last 12 months | P0 | ✅ |
+| VMS-CI-021 | Badge printing is **not blocked** on compliance freshness (see V2.6 note below) | P0 | ✅ |
+| VMS-CI-022 | On the first print of a GMP / Lab / Entire Plant visit, open a **training task** (HR) and a **PPE task** (Janitor) for each stale gate; idempotent per (visitor, gate); HR heads-up email | P0 | ✅ Tasks appear in the VMS and Portal Task Inbox and open the visitor compliance page. Created only when the contact email maps to an active user |
+| VMS-CI-023 | Only the configured contact (or a system_admin) can confirm; confirmation stamps the visitor, completes open tasks, is audit-logged | P0 | ✅ Non-contacts get "Only the configured HR training contact can confirm training" / "Only the configured PPE contact can confirm PPE issuance" |
+| VMS-CI-024 | Visitor compliance page and VisitDetail banner show each gate's freshness | P1 | ✅ The VisitDetail banner appears for GMP and Laboratory only (not Entire Plant) |
 
 > **V2.6 implementation note — compliance is post-entry, not a print gate**: V2.5 originally specified a hard 422 block on badge printing until every visitor's training + PPE records were fresh (the original VMS-CI-021). Operator UAT showed this deadlocks the real flow: a visitor cannot be issued PPE or briefed on training *before* they have a badge and are physically on-site, so blocking the badge blocks the very step that makes the record fresh. The implemented behavior instead lets the badge print unconditionally and, at check-in, **opens HR / Janitor confirmation tasks** for any stale gate (idempotent — one open task per visitor + gate) plus the HR training heads-up email. Compliance freshness remains fully visible on the visitor compliance page and the VisitDetail banner (VMS-CI-024) so an auditor can see who still owes a confirmation, but it is not an entry gate. The 12-month freshness math, the per-visitor timestamps, and the confirm-by-configured-contact authorization (VMS-CI-023) are unchanged.
 
@@ -247,33 +267,33 @@ When the Host prints the badge, the system generates a browser print page with a
 
 ##### (1) Badge Content
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-LB-001 | Badge must include: Visitor full name (large font, prominent), Company name, Visit date, Validity period (day-specific / time window), Host name, Access area (color-coded), QR Code (containing visit UUID) | P0 |
-| VMS-LB-002 | Area color coding: 🟢 Green = Office, 🟡 Yellow = Warehouse/Non-Production, 🟠 Orange = Production Non-GMP, 🔴 Red = GMP Clean Zone / Laboratory | P0 |
-| VMS-LB-003 | "Escort Required" indicator when applicable | P1 |
-| VMS-LB-004 | Footer text: "Must be accompanied by Host at all times", "Please return badge when leaving" | P1 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-LB-001 | Badge includes: full name (large), company, visit date, validity, Host, access area (colour-coded), QR code (visit UUID) | P0 | ✅ Default layout: top band "VISITOR" + area name + "LOW / MEDIUM / HIGH RISK"; name (upper case) and company; detail rows Date / Host / Valid until (Vehicle, Accompanying, Purpose available but hidden by default); QR code with caption "Scan to check out"; footer lines |
+| VMS-LB-002 | Area colour coding | P0 | ✅ Green = Office, Amber = Warehouse, Orange = Production Non-GMP, Red = GMP / Laboratory / Entire Plant (exact colours in §2.1.2(2)) |
+| VMS-LB-003 | "Escort Required" indicator | P1 | ✗ No separate indicator; the footer line covers it |
+| VMS-LB-004 | Footer: "Must be accompanied by Host at all times", "Please return badge when leaving" | P1 | ✅ |
 
 ##### (2) Printing Method
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-LB-005 | Browser native printing (`window.print()` + CSS `@media print`), output to standard office printer (A4 / Letter paper) | P0 |
-| VMS-LB-006 | Print page uses a dedicated badge card layout; CSS controls sizing so one A4 sheet can fit 1–2 badge cards. Cut out and insert into a standard badge holder | P0 |
-| VMS-LB-007 | Clicking "Print Badge": ① opens browser print dialog → ② user confirms → ③ system auto-executes check-in (records `actual_arrival` + `status=checked_in`) | P0 |
-| VMS-LB-008 | Manual reprint supported (damaged badge, info change, etc.); reprint does NOT re-check-in | P1 |
-| VMS-LB-009 | Badge print log: timestamp, printed by, print count, reprint reason | P2 |
-| VMS-LB-013 | **Multi-visitor visits print one badge per visitor** (V2.4). The print page lays out N badge cards (primary + companions) with `page-break-after: always` between them; the single browser print dialog covers all of them. Check-in is a single event for the appointment (one `actual_arrival` timestamp for the visit row) | P0 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-LB-005 | Browser native printing (`window.print()` + `@media print`) to a standard office printer | P0 | ✅ |
+| VMS-LB-006 | Dedicated badge card layout sized for cutting out | P0 | ◐ Two identical cards side by side per visitor, one visitor per page, **landscape Letter** |
+| VMS-LB-007 | Print dialog first, then check-in on confirmation | P0 | ◐ **Reversed**: check-in is recorded when the badge page loads, before the dialog (§2.2.2 note) |
+| VMS-LB-008 | Manual reprint; reprint does NOT re-check-in | P1 | ✅ "Reprint badge" on the visit detail page (after check-in), reason required |
+| VMS-LB-009 | Badge print log: timestamp, printed by, print count, reprint reason | P2 | ✅ "Badge prints" section: "Original" / "Reprint #n (reason)" |
+| VMS-LB-013 | Multi-visitor visits print one badge per visitor in one print dialog; single check-in event | P0 | ✅ |
 
 > **Design Decision**: No dedicated label printer integration (Zebra/Brother/DYMO). Rationale: ① eliminates hardware procurement and maintenance cost; ② Host can print from their own desk without going to a specific printer; ③ plain paper + badge holder solution adequately meets visitor badging needs.
 
 ##### (3) Badge Template Management
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-LB-010 | Badge templates are HTML/CSS snippets; Admin can edit layout, field positions, font sizes, company logo via admin backend | P1 |
-| VMS-LB-011 | Multiple templates supported: Standard Visitor, VIP Visitor, Contractor, etc., differentiated by CSS classes | P2 |
-| VMS-LB-012 | Bilingual templates (English / French) | P2 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-LB-010 | Admin can edit badge layout | P1 | ◐ Replaced by a **structured badge configuration** (VMS Admin → Badge, `vms_config.badge_config`, migration 0011) with live preview: top band title / show zone / show risk; per-area label, background, text colour, risk level; name & company; detail rows (whitelist: visit date, host, valid until, vehicle plate, accompanying count, purpose); QR on/off + caption; footer lines; font style. No free HTML and no logo. The legacy HTML-template API (`/badge/templates`) is still present but unused by the UI. ⚠ The configuration is applied only when a system_admin prints — §12 D-05. Production still uses the defaults (checked 2026-09-30) |
+| VMS-LB-011 | Multiple templates (Standard / VIP / Contractor) | P2 | ✗ Not built — one configuration |
+| VMS-LB-012 | Bilingual templates (EN / FR) | P2 | ✗ Not built |
 
 ##### (4) Badge Layout Mockup
 
@@ -313,48 +333,51 @@ Upon scanning, the system identifies the visit ID, records departure time, and u
 
 ##### (1) QR Code Check-Out
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-CO-001 | Badge QR Code contains the visit UUID. Host scans it; system auto-locates the visit record | P0 |
-| VMS-CO-002 | Desktop: barcode scanner input or manual QR code entry into search field; displays visit details + confirmation button | P0 |
-| VMS-CO-003 | Mobile: browser calls `getUserMedia` API to open camera, scans QR code in real-time; auto-popup confirmation dialog on recognition | P0 |
-| VMS-CO-004 | Confirming check-out: ① system records `actual_departure` → ② status → `checked_out` → ③ badge return status recorded | P0 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-CO-001 | Badge QR contains the visit UUID; scanning locates the visit | P0 | ✅ |
+| VMS-CO-002 | Desktop: barcode scanner or manual entry, then details + confirm | P0 | ✅ Check out page → "Scanner / type" mode → "Visit ID" field → "Look up" |
+| VMS-CO-003 | Mobile: camera scan via `getUserMedia`, auto-popup on recognition | P0 | ✅ "Camera" mode (default on screens narrower than 768 px). Needs HTTPS and camera permission |
+| VMS-CO-004 | Confirm: record `actual_departure`, status → `checked_out`, badge return recorded | P0 | ✅ |
+
+> **Who can check a visitor out**: the scanning user must be able to see the visit, otherwise the page reports "Visit not found". The API allows the visit's creator, its Host, a dept_manager of the Host's department, and system_admin. Scanning an already-departed badge shows "This visitor has already checked out." After a successful check-out the page clears, ready for the next scan. The same confirmation dialog is also reachable from the visit detail page ("Check out").
 
 ##### (2) Departure Confirmation
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-CO-005 | System records actual departure time (to the second) | P0 |
-| VMS-CO-006 | Host confirms badge returned; system records return status | P1 |
-| VMS-CO-007 | PPE return confirmation: records whether hard hat, protective clothing, etc. have been returned | P1 |
-| VMS-CO-008 | After check-out, system can send Host a "Your visitor has left" confirmation | P2 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-CO-005 | Departure time to the second | P0 | ✅ |
+| VMS-CO-006 | Host confirms badge returned | P1 | ✅ "Badge returned" checkbox (ticked by default) |
+| VMS-CO-007 | PPE return confirmation | P1 | ✅ "PPE returned" checkbox (ticked by default), stored in `ppe_issued.returned` |
+| VMS-CO-008 | "Your visitor has left" confirmation to Host | P2 | ✗ Not built |
 
 ##### (3) Overtime Alerts
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-CO-009 | Visitors still checked in past planned departure are auto-marked "Overdue" | P1 |
-| VMS-CO-010 | 1 hour overdue: system sends reminder to Host | P1 |
-| VMS-CO-011 | 4 hours overdue or past business hours: system escalates notification to Department Manager | P2 |
-| VMS-CO-012 | On-site visitor dashboard: Host and Manager can view all currently on-site visitors and their stay duration | P1 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-CO-009 | Visitors past planned departure are shown as "Overdue" | P1 | ✅ Derived red "Overdue" badge on lists and detail; Dashboard "Overdue" card (not clickable). Visits without a planned departure never become overdue |
+| VMS-CO-010 | 1 hour overdue: reminder to Host | P1 | ✅ **Changed (commit `bf2d2f83`)**: the reminder is **repeated every 24 hours until check-out**, and a **"Check out visitor" task** is opened for the Host (closed automatically once the visit is no longer on-site) |
+| VMS-CO-011 | 4 hours overdue or past business hours: escalate to Department Manager | P2 | ◐ 4 hours only (no business-hours branch). Sent once to the first active user with primary role `dept_manager` in the Host's department; if the department has none, it retries each tick until one exists |
+| VMS-CO-012 | On-site visitor list with stay duration | P1 | ✅ "On-Site Now" page, refreshes every 60 s, filtered to what the user can see (the Dashboard counters are plant-wide) |
 
-> **V2.6 implementation note — background scheduler (now implemented)**: The time-based notifications are driven by an in-process scheduler in `vms-api` (`app/services/scheduler.py` → `app/services/scheduled_jobs.py`). It is a single asyncio task started in the FastAPI lifespan that runs every `SCHEDULER_INTERVAL_SECONDS` (default **900s / 15 min**) and executes, in order:
+> **Background scheduler (V2.6, updated V2.7)**: an in-process asyncio loop in `vms-api` (`app/services/scheduler.py` → `app/services/scheduled_jobs.py`) runs every `SCHEDULER_INTERVAL_SECONDS` (default **900 s / 15 min**, minimum 60 s) under a Postgres advisory lock, in this order:
 >
-> | Job | Requirement | Rule | Idempotency |
-> |---|---|---|---|
-> | `mark_no_shows` | VMS-PR-019 | `confirmed` visit, never arrived, `planned_arrival + 2h < now` → `no_show` (audit-logged under a system actor) | status transition |
-> | `send_day_before_reminders` | VMS-PR-012 | `confirmed` visit whose `visit_date` is tomorrow (plant-local tz) → email Host | `vms_visits.reminder_sent_at` |
-> | `send_overdue_reminders` | VMS-CO-009/-010 | `checked_in` visit, `planned_departure + 1h < now` → email Host | `vms_visits.overdue_reminder_sent_at` |
-> | `escalate_overdue` | VMS-CO-011 | `checked_in` visit, `planned_departure + 4h < now` → email the Host's dept_manager | `vms_visits.overdue_escalated_at` |
+> | # | Job | Requirement | Rule | Repeat / idempotency |
+> |---|---|---|---|---|
+> | 1 | `mark_no_shows` | VMS-PR-019 | `confirmed`, never arrived, `planned_arrival + 2h < now` → `no_show` (audit actor "VMS Scheduler") | status transition |
+> | 2 | `send_day_before_reminders` | VMS-PR-012 | `confirmed` and `visit_date` = tomorrow in America/Toronto → email Host | once (`reminder_sent_at`) |
+> | 3 | `send_overdue_reminders` | VMS-CO-009/-010 | `checked_in`, `planned_departure + 1h < now` → email Host + "Check out visitor" task | **every 24 h until check-out** (`overdue_reminder_sent_at` = last send time) |
+> | 4 | `escalate_overdue` | VMS-CO-011 | `checked_in`, `planned_departure + 4h < now` → email the Host's dept_manager | once (`overdue_escalated_at`) |
+> | 5 | `close_settled_visit_tasks` | — (V2.7) | closes "Check out visitor" tasks once the visit is no longer `checked_in`, and "Prepare PPE" tasks once it is no longer pending / confirmed | every tick |
 >
-> Design notes: (1) **"Overdue" (VMS-CO-009) is a derived state**, not a stored status — there is no `overdue` value in `VisitStatus`; the dashboard already counts it (`count_overdue`) and these jobs layer the reminder/escalation on top. (2) Each reminder/escalation flag is set **only when delivery is attempted**, so a transient SMTP outage retries next tick rather than silently dropping the notice (no-show needs no flag). (3) **Multi-replica safety**: every tick takes a Postgres session-level advisory lock (`pg_try_advisory_lock`), so scaling vms-api to N workers never double-fires. (4) VMS-CO-011's "past business hours" branch is implemented as the concrete **4h** threshold. (5) Ops can force a run via `POST /api/v1/admin/run-scheduled-jobs` (system_admin) instead of waiting for the tick. (6) Disable entirely with `SCHEDULER_ENABLED=false` (used in tests / one-off CLI). Emails reuse the VMS-local-or-shared SMTP resolution (VMS-PR-024).
+> Flags are set only when a send is attempted, so an SMTP outage retries on the next tick. `SCHEDULER_ENABLED` defaults to true and is not overridden in production. Ops can force a run via `POST /api/v1/admin/run-scheduled-jobs` (system_admin) — note this manual path does not take the advisory lock (§12 D-19). Times inside the overdue / escalation emails are printed in UTC (§12 D-18).
 
 ##### (4) Manual / Batch Check-Out
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-CO-013 | End-of-day one-click batch check-out for all on-site visitors (with secondary confirmation) | P1 |
-| VMS-CO-014 | Batch check-out auto-logged as "System Batch Check-Out" with reason recorded | P2 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-CO-013 | End-of-day one-click batch check-out with secondary confirmation | P1 | ◐ "Batch check-out" on On-Site Now — **system_admin only**, closes **every on-site visit in the plant**, browser confirmation "Close all N on-site visitors now?". Records badge returned = false and PPE returned = false for every visit (this raises the "Unreturned badges" KPI) |
+| VMS-CO-014 | Batch check-out logged as "System Batch Check-Out" with reason | P2 | ◐ Logged as `visit.check_out` with the fixed note "System Batch Check-Out"; no custom reason |
 
 ---
 
@@ -368,198 +391,179 @@ The system must provide a complete audit trail — recording all user operations
 
 ##### (1) Operation Audit Log
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-AU-001 | Auto-log all user operations: appointment create/modify/cancel, visitor check-in/check-out, badge print/reprint, info modification, permission changes, data export | P0 |
-| VMS-AU-002 | Each log entry includes: timestamp (to second), user, IP address, action type, entity type, entity ID, before/after values (JSON) | P0 |
-| VMS-AU-003 | Audit logs are immutable (Write-Once, Read-Many); query and export only | P0 |
-| VMS-AU-004 | Retention: minimum 3 years (configurable); auto-archive on expiry | P1 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-AU-001 | Log all user operations | P0 | ◐ Logged action types: `visitor.create / update / confirm_training / confirm_ppe`; `visit.create / update / cancel / approve / reject / return / check_in / check_out / no_show / attachment.upload`; `badge.reprint`; `health_decl.submit`; `badge_template.upsert / update`; `admin.quality_managers.update`, `admin.notification_contacts.update`, `admin.health_questions.update`, `admin.smtp_settings.update`, `admin.smtp_test`, `admin.badge_config.update`, `admin.run_scheduled_jobs`; `export_cfia_visit_log`, `export_gmp_area_summary`. **Not logged**: the audit-log CSV export itself, scheduler emails and task creation, the read-side status sync after rejection, and Portal Data Maintenance edits / deletes (those go to the shared `admin_audit_log`) |
+| VMS-AU-002 | Entry: timestamp, user, IP, action, entity type / id, before / after JSON | P0 | ✅ plus user agent and notes |
+| VMS-AU-003 | Immutable | P0 | ✅ DB-level `REVOKE UPDATE, DELETE ... FROM epms` (migration 0002) |
+| VMS-AU-004 | Retention ≥ 3 years, auto-archive | P1 | ✗ No retention or archive job |
 
 ##### (2) Visitor History Query
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-AU-005 | Search by: visitor name/company, date range, Host, access area, visitor type, visit status | P0 |
-| VMS-AU-006 | Export results to Excel / PDF | P0 |
-| VMS-AU-007 | Single visitor profile view: all historical visits, health declarations, training confirmations | P1 |
-| VMS-AU-008 | Full-text search: visitor notes, visit purpose, etc. | P2 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-AU-005 | Search by visitor, date range, Host, area, type, status | P0 | ◐ Audit log filters only (action type, entity type, user ID, from / to date). Health declarations page filters by date and visitor / company. No visit search |
+| VMS-AU-006 | Export to Excel / PDF | P0 | ◐ CSV only (audit log, two reports) |
+| VMS-AU-007 | Single visitor profile: all visits, declarations, training | P1 | ◐ Only the visitor compliance page (training / PPE freshness). No visit history view |
+| VMS-AU-008 | Full-text search | P2 | ✗ |
 
 ##### (3) Compliance Audit Reports
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-AU-009 | Pre-built report templates: CFIA Visit Log Report (CFIA-format production area visitor records — **emits one row per (visit, visitor)** so multi-visitor visits expand to N rows and the regulator headcount matches the actual on-site presence, V2.4), GMP Area Access Summary (clean zone visitor count, frequency, health decl compliance rate — counts visits / appointments, not individual visitors), Contractor Access Report, Monthly Visitor Statistics (by type, area, department) | P0 |
-| VMS-AU-010 | One-click report generation with time range and filter selection | P0 |
-| VMS-AU-011 | Report formats: **CSV (interim, implemented)** — opens directly in Excel and streams at plant scale. PDF (formal archive) and native `.xlsx` are deferred until CFIA hands over the final mandated layout; adding `openpyxl`/a PDF engine now would be a dependency for a "looks like .xlsx" cosmetic with no compliance gain. See the V2.6 note below | P0 |
-| VMS-AU-012 | Scheduled auto-generation and email delivery to designated personnel (e.g., monthly compliance report) | P2 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-AU-009 | Pre-built reports: CFIA Visit Log, GMP Area Access Summary, Contractor Access Report, Monthly Visitor Statistics | P0 | ◐ **CFIA Visit Log** (16 columns, one row per (visit, visitor), excludes pending and cancelled visits; the health / training columns carry the visit-level value, not each visitor's own) and **GMP / Lab Area Summary** (per area: total, passed, failed, restricted, not required, no declaration, after-hours, unreturned — GMP and Laboratory only, Entire Plant excluded). Contractor and Monthly reports ✗ |
+| VMS-AU-010 | One-click generation with time range | P0 | ✅ Reports page, From / To (default: first of the month → today) |
+| VMS-AU-011 | Formats | P0 | ✅ streamed CSV (see V2.6 note) |
+| VMS-AU-012 | Scheduled auto-generation by email | P2 | ✗ |
 
-> **V2.6 implementation note — reports ship as streamed CSV**: Both pre-built reports (CFIA Visit Log, GMP Area Summary) are served as streamed `text/csv` via `StreamingResponse`, never materializing the whole report in memory. CSV was chosen over `.xlsx`/PDF as the interim format because Excel opens it natively and the regulator has not yet handed over a final mandated layout — a binary writer would be churn for no compliance value until that layout is fixed. The route + filter contract (date range, one-row-per-(visit, visitor) for CFIA) is final; only the serialization format is interim. VMS-AU-012 (scheduled monthly auto-email) remains P2 / not yet implemented.
+> **V2.6 implementation note — reports ship as streamed CSV**: Both pre-built reports (CFIA Visit Log, GMP Area Summary) are served as streamed `text/csv` via `StreamingResponse`, never materializing the whole report in memory. CSV was chosen over `.xlsx`/PDF as the interim format because Excel opens it natively and the regulator has not yet handed over a final mandated layout — a binary writer would be churn for no compliance value until that layout is fixed. The route + filter contract (date range, one-row-per-(visit, visitor) for CFIA) is final; only the serialization format is interim.
 
 ##### (4) Data Integrity
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-AU-013 | Electronic signatures: health declarations and safety training confirmations require visitor e-signature; signature is bound to the record and tamper-proof | P0 |
-| VMS-AU-014 | Data validation: modifications to critical fields (access area, arrival time) must record reason and retain original value | P1 |
-| VMS-AU-015 | Export includes hash checksum to verify data has not been tampered with | P2 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-AU-013 | E-signature on health declarations and training confirmations, tamper-proof | P0 | ✗ Signature is **optional**. Re-filing a declaration **overwrites** the previous answers, result and signature in place — §12 D-04 |
+| VMS-AU-014 | Critical-field changes record a reason and keep the original | P1 | ✗ Audit before / after snapshot only, no reason |
+| VMS-AU-015 | Export hash checksum | P2 | ✗ |
 
 ##### (5) Audit Dashboard
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-AU-016 | Dashboard displays key compliance indicators: monthly GMP area visits and health decl pass rate, unreturned badge count, overdue visitor count, abnormal visits (e.g., after-hours) | P1 |
-| VMS-AU-017 | Drill-down support: click a metric to see detailed records | P1 |
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-AU-016 | Compliance indicators | P1 | ◐ Dashboard, visible to **every user**, numbers are **plant-wide** (not filtered to the user's visits): On-site now, Today's visits, Past 7 days, Overdue; "Compliance — this month": GMP/Lab visits, Health pass rate, Unreturned badges (all time, not this month), After-hours today (arrival before 07:00 or from 19:00, evaluated in the database time zone — §12 D-18) |
+| VMS-AU-017 | Drill-down | P1 | ◐ On-site / Today / Past 7 days cards open the matching list (filtered to the user's scope, so counts can differ). Overdue and compliance cards do not drill down |
 
 ---
 
 ## 3. User Roles and Permissions
 
-> **Core Design**: VMS reuses the UniOps `public.users` table as the user master. **Any authenticated UniOps user (regardless of role) can act as a Host** — appointment creation, badge printing, and QR check-out are open to all employees. Three platform-level permission tiers (Host / Auditor / Admin) map to existing UniOps roles in [VALID_ROLES](epms-api/app/schemas/user.py#L7-L12). One VMS-local role (**Quality Manager**) is defined inside VMS only — not added to the UniOps `VALID_ROLES` set.
+> **Core Design**: VMS reuses the UniOps `public.users` table as the user master. **Any authenticated UniOps user can act as a Host.** Platform tiers map to the user's **primary** UniOps role (`auditor`, `system_admin`, `dept_manager`); three VMS-local roles (Quality Manager, HR Training Contact, Janitor PPE Contact) are configured inside the VMS Admin panel. There are no `vms.*` permission codes and the Portal permission matrix does not apply to VMS (see §1.3 V2.7 note).
 
 ### 3.1 Role Definitions
 
 | VMS Role | Source | Permission Scope | Typical Function |
 |----------|:------:|------------------|------------------|
-| **Host (Employee)** | Any UniOps role (default: all logged-in users) | Create / modify / cancel own appointments, print badges (= check-in), QR scan check-out, view own visitor history as Host | All employees |
-| **Auditor** | UniOps role `auditor` | Read-only: view all audit logs, export audit reports, query visitor history | Compliance / audit personnel |
-| **Admin (System Admin)** | UniOps role `system_admin` | All functions + system configuration + notification contact management + badge template management + Quality Manager roster management | IT administrators |
-| **Quality Manager** *(VMS-local)* | Configured in VMS admin panel; references `public.users.id` | Second-step approver for GMP / Laboratory access requests (see §6.2.1). Not a UniOps platform role; not added to `VALID_ROLES`. | QC / QA personnel designated by Admin |
+| **Host (Employee)** | Any UniOps user | Create visits; cancel visits they created; ID verification, health declaration, print badge (= check-in) and check-out on visits they can see | All employees |
+| **Department Manager** | primary role `dept_manager` | Host rights + sees visits whose Host is in their department + approves the Department Manager step | Line managers |
+| **Quality Manager** *(VMS-local)* | VMS Admin → Quality Managers roster | Approves the second step of GMP / Laboratory / Entire Plant visits; sees the visits assigned to them | QA |
+| **HR Training Contact** *(VMS-local)* | VMS Admin → Notification Contacts (email must match an active user) | Confirms food-safety training on the visitor compliance page | HR |
+| **Janitor PPE Contact** *(VMS-local)* | VMS Admin → Notification Contacts (email must match an active user) | Stages PPE; confirms PPE issuance | Janitorial |
+| **Auditor** | primary role `auditor` | Sees all visits; Audit log, Reports, Health declarations | Compliance |
+| **Admin (System Admin)** | primary role `system_admin` | Everything, VMS Admin panel, batch check-out, can act on any approval step | IT |
 
-> **Note 1 — Host eligibility**: VMS does not restrict Host creation by UniOps role. Any active user in `public.users` — `requester`, `dept_manager`, `gm`, `opm`, `procurement_manager`, `cfo`, etc. — can create visit appointments. Department-scoped visibility (a manager seeing department stats) is enforced via the `department_id` field, not via a separate role gate.
->
-> **Note 2 — Quality Manager as VMS-local role**: The UniOps platform does not have a `quality_manager` role. Instead, VMS Admin maintains a roster (stored in `vms_config.quality_manager_user_ids: JSONB`) of UniOps users designated as Quality Managers. When a visit needs GMP-zone approval, vms-api resolves the second-step approver by reading this roster and passes a concrete `user_id` to approval-api at submit-time (see §6.2.1). This keeps the UniOps role system untouched while supporting the dual-approval workflow.
+> **Quality Manager assignment**: vms-api picks the **first active user** in the roster (order matters, set with ▲▼ in the Admin panel) and stores it on `vms_visits.quality_approver_id` at submission. There is no round-robin and no "any QM can approve". If the roster is empty or everyone on it is inactive, the Quality Manager step is **skipped** and a GMP visit needs only the Department Manager.
 
-### 3.2 Permission Matrix (Core Functions)
+### 3.2 Permission Matrix (as built, V2.7)
 
-> Manager-level permissions (approve high-risk access, view department stats) are derived from the underlying UniOps role of the logged-in user: a user with UniOps role `dept_manager` automatically gets dept-scoped views. There is no separate "VMS Manager" gate.
+| Function | Host (any user) | Dept Manager | Quality Manager | HR / Janitor contact | Auditor | System Admin |
+|----------|:---:|:---:|:---:|:---:|:---:|:---:|
+| Create visit | ✓ | ✓ | ✓ | ✓ | ✓ (not blocked) | ✓ |
+| See visits | created by me or I am Host | + Host in my department | + visits assigned to me | as Host | all | all |
+| Cancel visit (Confirmed / Pending) | only visits I **created** | + Host in my department | as Host | as Host | ✗ | ✓ |
+| Edit visit (API only, no UI) | only visits I created | + Host in my department | as Host | as Host | ✗ | ✓ |
+| Verify ID, health declaration | visits I can see | visits I can see | visits I can see | visits I can see | ID only | ✓ |
+| Print badge (= check-in) / reprint | visits I can see | visits I can see | visits I can see | visits I can see | ✓ (all — not blocked) | ✓ |
+| Check out | created by me or I am Host | + Host in my department | as Host | as Host | ✗ | ✓ |
+| Batch check-out (whole plant) | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
+| Upload attachments | visits I can see | visits I can see | visits I can see | visits I can see | ✗ | ✓ |
+| Approve / return / reject | — | Department Manager step (see §6.2.1) | Quality Manager step (assigned) | — | ✗ | any step |
+| Confirm training / PPE | ✗ | ✗ | ✗ | own gate only | ✗ | ✓ |
+| Dashboard (plant-wide numbers) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Audit log, Reports, Health declarations menu | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
+| VMS Admin panel | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
+| Approval chain shape (Portal Admin → Approval Routing → VMS Visit) | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ (Portal) |
 
-| Function | Admin | Host (any user) | Auditor | Quality Manager *(VMS-local)* |
-|----------|:-----:|:---------------:|:-------:|:------------------------------:|
-| Create appointment | ✓ | ✓ | ✗ | ✓ (as Host) |
-| Modify / cancel appointment | ✓ | Own only | ✗ | Own only |
-| Print badge (= check-in) | ✓ | Own only | ✗ | Own only |
-| QR scan check-out | ✓ | Own only | ✗ | Own only |
-| View on-site visitors | ✓ | ✓ | ✓ | ✓ |
-| Query visitor history | ✓ | Own only (Dept-wide if UniOps role is `dept_manager`) | ✓ | Dept-wide |
-| Export audit reports | ✓ | ✗ | ✓ | ✗ |
-| View operation logs | ✓ | ✗ | ✓ | ✗ |
-| Approve dept_manager step | ✗ | Auto (if UniOps role is `dept_manager` and dept matches) | ✗ | ✗ |
-| Approve Quality Manager step (GMP / Lab) | ✗ | ✗ | ✗ | ✓ (only for visits assigned to them) |
-| Quality Manager roster management | ✓ | ✗ | ✗ | ✗ |
-| Badge template management | ✓ | ✗ | ✗ | ✗ |
+> **V2.7 differences from the V2.6 matrix**: auditors are not blocked from creating visits or printing badges; a Host who did not create the visit cannot cancel it (the Cancel button is shown but returns "Cannot cancel a visit you did not create"); batch check-out is admin-only; "view on-site visitors" is scoped to the user's visibility; system_admin can approve any step. The approver list and matrix above are what the code enforces today; whether auditors *should* be able to check visitors in is an open product question (§11.4 #14).
 
 ---
 
 ## 4. User Interaction Flows
 
+> **V2.7**: the flows below are rewritten to match the screens as built. UI labels are quoted exactly.
+
 ### 4.1 Standard Visitor Flow (With Appointment)
 
 ```
-[Host creates appointment]
+[Host: New Visit]
+    ↓  Search visitor, or "Register a new visitor" → "Save visitor"
+    ↓  (optional) "Add another visitor (companion)"
+    ↓  Host = me (or "Change"), Date, Planned arrival / departure, Visit purpose, Access area
+    ↓  (optional) "PPE needed" → size per visitor
+    ↓  "Create visit"  → lands on the visit detail page
     ↓
-[Fill in visitor info, visit time, access area]
+[Access area decides the route]
+    ├─ Office / Lobby ──────────────────────────────→ Confirmed
+    ├─ Warehouse, Production (Non-GMP) → Dept Manager approves → Confirmed
+    └─ GMP, Laboratory, Entire Plant → Dept Manager → Quality Manager → Confirmed
+    ↓  Host is emailed the result; "Prepare PPE" email + task to Janitor if PPE was requested
     ↓
-[High-risk area?]
-    ├─ Yes → [Submit for approval] → [Manager approves] → [Approved]
-    └─ No → [Direct confirmation]
-    ↓
-[System sends confirmation email to visitor and Host]
-    ↓
-[1 day before visit: system sends reminder]
+[Midnight before the visit: reminder email to Host]
     ↓
 ================ Visitor Arrival Day ================
     ↓
-[Visitor arrives, calls Host]
-    ↓
-[Host opens VMS]
-    ├─ Desk scenario: open VMS on office computer, find appointment
-    └─ Public PC scenario: go to shared computer downstairs, log into VMS, find appointment
-    ↓
-[Host clicks "Print Badge"]
-    ↓
-[Identity verification: Host confirms they have checked visitor's photo ID]
-    ↓
-[GMP area access?]
-    ├─ Yes → [Health declaration questionnaire pops up] → [Host asks visitor verbally and fills in / visitor fills in on public PC]
-    │       ↓ [Fail → area restricted, badge zone indicator auto-downgraded]
-    │       ↓ [Pass]
-    │       [Food safety training confirmation pops up] → [Visitor e-signature]
-    │       ↓
-    └─ No → [Continue]
-    ↓
-[Browser opens print dialog → Host confirms print]
-    ↓
-[System auto-completes check-in: records actual_arrival + status=checked_in]
-    ↓
-[Host takes printed badge, inserts into card holder]
-    ↓
-[Host goes downstairs to greet visitor, hands over badge + PPE if needed]
+[Host opens the visit (Today's Visits / Dashboard)]
+    ↓  "ID verification": tick "ID Verified" for EVERY visitor
+    ↓  GMP / Laboratory only: "Health declarations" → "Declare" for EVERY visitor
+    │        (all questions + "Food-safety briefing confirmed"; signature optional)
+    │        Failed → this visit cannot print; cancel and book an Office visit instead
+    ↓  "Print badge & check in"
+    ↓  Badge page opens → CHECK-IN IS RECORDED NOW → browser print dialog
+    ↓  GMP / Lab / Entire Plant: training / PPE confirmation tasks to HR / Janitor for stale visitors,
+    │        HR heads-up email
+    ↓  Cut out badge, insert in holder, meet the visitor, hand over PPE
     ↓
 ================ Visitor On-Site ================
-    ↓
-[System displays: on-site visitors + stay duration]
-[Overtime auto-alert → notify Host]
+    ↓  Status "On-Site"; listed on "On-Site Now"
+    ↓  Past planned departure → red "Overdue"
+    ↓  +1 h → email + "Check out visitor" task to Host (repeats daily)
+    ↓  +4 h → email to the Host's Department Manager
     ↓
 ================ Visitor Departure ================
-    ↓
-[Host opens VMS Check-Out page on desktop or mobile]
-    ↓
-[Scan badge QR code]
-    ├─ Desktop: barcode scanner / manual input
-    └─ Mobile: browser camera scans QR code
-    ↓
-[System identifies visit → confirmation dialog pops up]
-    ↓
-[Host confirms departure → confirms badge returned → confirms PPE returned]
-    ↓
-[System records departure: actual_departure + status=checked_out]
-    ↓
-[Visit record archived]
+    ↓  "Check out" page → Camera or "Scanner / type" → scan badge QR
+    │   (or "Check out" on the visit detail page)
+    ↓  "Badge returned" / "PPE returned" → "Confirm departure"
+    ↓  Status "Departed"
 ```
 
-### 4.2 Instant Registration Flow (No Appointment)
+### 4.2 Walk-In Flow (No Appointment)
 
 ```
-[Visitor arrives, calls Host, no appointment]
+[Visitor arrives without an appointment]
     ↓
-[Host opens VMS, clicks "Instant Registration"]
+[Host: New Visit → Access area "Office / Lobby"] → "Create visit" (auto-confirmed)
     ↓
-[Fill in visitor basic info (name, company, phone, etc.)]
+[Tick "ID Verified" for each visitor] → "Print badge & check in"
     ↓
-[Host auto-set as visited person]
-[Select access area, visit purpose]
-    ↓
-[GMP area? → Health declaration + training confirmation]
-    ↓
-[Click "Print Badge" → browser print → auto check-in]
-    ↓
-[Host brings badge downstairs to greet visitor]
-    ↓
-[Same as standard flow from this point]
+[Same as the standard flow from here]
+
+Any other access area goes through approval first — there is no instant path for Warehouse,
+Production or Laboratory.
 ```
 
-### 4.3 Host Creates Appointment (Web)
+### 4.3 Approver Flow
 
 ```
-[Host logs in]
+[Task appears in VMS "Task Inbox" (group "Visits") and Portal "My Task Inbox" (group "Visitor")]
+    │  (no email is sent for new approval tasks)
     ↓
-[Clicks "New Appointment"]
+[Open task → visit detail page → panel "This visit needs your approval (dept manager | quality manager)"]
     ↓
-[Enter visitor information]
-    ├─ First-time visitor: complete all fields
-    └─ Returning visitor: select/search from history → auto-fill
+    ├─ "Approve"          → optional comment → next step or Confirmed
+    ├─ "Return for edit"  → reason required  → ⚠ dead end today, see §12 D-03 — prefer Reject
+    └─ "Reject"           → reason required  → visit shows as Cancelled, Host emailed
+```
+
+### 4.4 HR / Janitor Compliance Flow
+
+```
+[Janitor: "Prepare PPE — <visitor>" task + email with each person's sizes]  (after approval)
+    ↓  stage the gear before the visit (work from the email — opening this task shows
+    │  "Visit not found" for a Janitor who is not the Host, §12 D-06; it closes by itself at check-in)
+[Visitor checked in on a GMP / Lab / Entire Plant visit]
     ↓
-[Select visit date and time]
-    ↓
-[Select access area]
-    ↓
-[Visit purpose notes (optional)]
-    ↓
-[Upload attachment (optional)]
-    ↓
-[Submit appointment]
-    ↓
-[System auto-notifies: visitor confirmation email]
+[HR: "Confirm food-safety training — <visitor>" task]   [Janitor: "Confirm PPE issuance — <visitor>" task]
+    ↓                                                     ↓
+[Visitor compliance page → "Confirm now"] (valid 12 months; "Confirmed" greyed out when already fresh)
 ```
 
 ---
@@ -619,7 +623,9 @@ The system must provide a complete audit trail — recording all user operations
 |  notification_contacts (JSONB):                  |
 |    { training_email: "...", ppe_email: "..." }  |
 |  quality_manager_user_ids (JSONB list of UUIDs)  |  ← VMS-local Quality Manager roster
-|  badge_templates (JSONB)                         |
+|  badge_templates (JSONB, legacy, unused by UI)   |
+|  badge_config (JSONB, structured badge — V2.7)   |
+|  health_questions, smtp_settings (JSONB)         |
 +--------------------------------------------------+
 
          ┌─── approval-api reads/writes ───┐
@@ -727,10 +733,16 @@ class Visit(UUIDPrimaryKey, TimestampMixin, Base):
     notes:              Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by:         Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     host_notified_at:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # one-shot Host approval-result email flag
+    # V2.6 scheduler flags (migration 0013)
+    reminder_sent_at:         Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # day-before reminder, once
+    overdue_reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # LAST overdue reminder (repeats every 24 h)
+    overdue_escalated_at:     Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 4 h escalation, once
 
     # ── Approval workflow fields (consumed by approval-api, see §6.2.1) ────────
     # Mirror fields that approval-api reads/writes via its thin Visit model.
+    approval_status:         Mapped[str | None] = mapped_column(String(20), nullable=True)  # engine state: draft / submitted / in_review / approved / returned / rejected / cancelled
     approval_step_idx:       Mapped[int | None] = mapped_column(Integer, nullable=True)  # current step in workflow_defs["vms_visit"]
+    visit_title:             Mapped[str] = mapped_column(String(255), nullable=False, default="")   # "VMS Visit — First Last (Company)", shown as the task's document number
     submitted_at:            Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Per-instance approver assignment for the VMS-local Quality Manager step.
     # vms-api populates this from vms_config.quality_manager_user_ids when submitting a GMP-zone visit.
@@ -769,9 +781,10 @@ import uuid
 class HealthDeclaration(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "vms_health_declarations"
     visit_id:           Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("vms_visits.id", ondelete="CASCADE"), nullable=False)
+    visitor_id:         Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("vms_visitors.id"), nullable=False)  # V2.7 doc: one declaration per visitor; UNIQUE (visit_id, visitor_id), migration 0012
     questionnaire_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
     result:             Mapped[HealthDeclStatus] = mapped_column(SAEnum(HealthDeclStatus), nullable=False)
-    signature:          Mapped[str | None] = mapped_column(Text, nullable=True)
+    signature:          Mapped[str | None] = mapped_column(Text, nullable=True)   # base64 PNG, optional
 
 # vms-api/app/models/audit_log.py
 from sqlalchemy import BigInteger, DateTime, String, Text, func
@@ -805,11 +818,11 @@ All VMS tables live in the default `public` schema with a `vms_` prefix — cons
 | `public` | `vms_visitors` | Visitor basic info | Core table |
 | `public` | `vms_visits` | Visit records | `host_id`, `created_by`, `quality_approver_id` → `public.users.id` (real FKs) |
 | `public` | `vms_badge_prints` | Badge print records | One row per print |
-| `public` | `vms_health_declarations` | Health declarations | Required for GMP areas |
+| `public` | `vms_health_declarations` | Health declarations | One per (visit, visitor); required for GMP + Laboratory |
 | `public` | `vms_audit_logs` | Audit logs | BIGINT auto-increment, immutable (enforced via DB `REVOKE UPDATE, DELETE` migration; see §2.5.2 VMS-AU-003) |
-| `public` | `vms_config` | VMS system configuration (notification contact emails, `quality_manager_user_ids: JSONB`, badge templates, `smtp_settings: JSONB` (V2.5 — VMS-local outbound mail), health questions) | Admin-managed |
+| `public` | `vms_config` | VMS system configuration (notification contact emails, `quality_manager_user_ids: JSONB`, `badge_config: JSONB` (structured badge, replaces the legacy `badge_templates`), `smtp_settings: JSONB` (V2.5 — VMS-local outbound mail), health questions) | Admin-managed |
 | `public` | `users` | Employees (reused) | epms-api existing table; no new table created |
-| `public` | `tasks` | Approval + compliance tasks (reused) | approval-api existing table; populated with `doc_type` in {`vms_visit`, `vms_train`, `vms_ppe`} rows |
+| `public` | `tasks` | Approval + compliance tasks (reused) | approval-api existing table; populated with `document_type` in {`vms_visit`, `vms_train`, `vms_ppe`}; task types in §6.2.1(4.1) |
 | `public` | `approval_events` | Approval audit (reused) | approval-api existing table |
 | `public` | `company_config` | Workflow defs (reused) | `workflow_defs["vms_visit"]` configured here |
 
@@ -950,32 +963,48 @@ VMS decides per-visit whether to invoke approval based on `access_area`:
 | `access_area` | Goes through approval-api? | Workflow steps applied |
 |---|:---:|---|
 | `office` | No (auto-confirmed) | — |
-| `warehouse`, `production_non_gmp` | Yes | All steps from `workflow_defs["vms_visit"]` except `quality_manager` |
-| `production_gmp`, `laboratory`, `all` | Yes | All steps including `quality_manager` |
+| `warehouse`, `production_non_gmp` | Yes | All steps from `workflow_defs["vms_visit"]`; the `quality_manager` step is auto-skipped because `quality_approver_id` is null |
+| `production_gmp`, `laboratory`, `all` | Yes | All steps including `quality_manager` (skipped if the roster has no active user) |
 
-**Submit sequence**:
+**Submit sequence (as built, V2.7)**:
 
-1. Host creates visit → vms-api persists `vms_visits` row with `status="confirmed"` (or `"pending_approval"` if approval needed).
-2. If GMP/Lab: vms-api reads `vms_config.quality_manager_user_ids`, picks one (round-robin or first-active), and writes the chosen `user_id` into `vms_visits.quality_approver_id`.
-3. vms-api calls approval-api: `POST /approval/v1/approvals/vms_visit/{visit_id}/action` with `{"action": "submit"}` (the real endpoint — there is no `/approval/v1/submit`).
-4. approval-api applies `_DOC_META["vms_visit"]`, advances `approval_step_idx`, creates a `tasks` row for the resolved step approver:
-   - `dept_manager` step → resolved via existing `_get_dept_manager_id` lookup on the Host's department
-   - `quality_manager` step → uses `quality_approver_id` directly
-5. Approver acts via **either** the Portal Task Inbox (§6.8) **or the in-VMS approval UI** (V2.5). Both call `POST /api/v1/visits/{id}/action` (vms-api proxy → approval-api) with `approve` / `reject` / `return` + optional comment. The assigned approver sees Approve / Reject / Return buttons on the VisitDetail page when a task for that visit is in their inbox.
-6. On final approve: approval-api flips `vms_visits.status` to `confirmed`; on `return` / `reject`: VMS notifies Host. No callback endpoint needed — approval-api updates the shared row directly.
+1. Host submits the New Visit form → vms-api inserts the `vms_visits` row with `status="pending_approval"`, `approval_status="draft"` and a `visit_title` ("VMS Visit — First Last (Company)") used as the task's document number. Office visits are inserted as `confirmed` and stop here.
+2. GMP / Lab / Entire Plant: vms-api writes the **first active user** of `vms_config.quality_manager_user_ids` into `quality_approver_id`.
+3. vms-api commits, then calls `POST /approval/v1/approvals/vms_visit/{visit_id}/action` with `{"action": "submit"}` and the user's token.
+4. approval-api advances `approval_step_idx` and creates an `approve_vms_visit` task:
+   - `dept_manager` step → the dept_manager of the **visit creator's** department (`_routing_user_id` falls back to `created_by` for `vms_visit`). If that department has no active dept_manager the submit fails — see ⚠ below.
+   - `quality_manager` step → `quality_approver_id` directly.
+5. The approver acts from the VMS visit detail page (the Portal task row only deep-links there). VMS calls `POST /api/v1/visits/{id}/action` (proxy → approval-api) with `approve` / `return` / `reject`. The UI requires a comment for Return and Reject; the API does not.
+6. Final approve → approval-api's `_post_approve_vms_visit` sets `vms_visits.status='confirmed'`. Reject / cancel → vms-api maps `approval_status` to `status='cancelled'` on the next read (no engine hook). The Host result email is sent once, on that read.
 
-> **No new auto-skip needed**: existing approval-api auto-skip logic (same user holds consecutive roles) still applies. If the Host is also the `dept_manager` of their own department, that step is skipped automatically.
+> **⚠ V2.7 corrections to earlier versions**:
+> - **No auto-skip at submit.** The engine's same-approver skip only runs *after* an approve, for the following steps. A dept_manager who books a visit gets the approval task for their own visit (the earlier "Host is also the dept_manager → step skipped" statement was wrong).
+> - **Seeded chain**: the engine default for `vms_visit` is still the single `dept_manager` step (`approval-api/app/crud/engine.py` `_WORKFLOW_DEFAULTS`). The V2.5 note saying the seed "now includes" `quality_manager` is not what the code does; the second step exists only where an admin added it in Portal → Approval Routing. **Production has both steps configured** (checked 2026-09-30).
+> - **Routing department vs. visibility department**: approval routes by the *creator's* department, while dept_manager visibility in vms-api uses the *Host's* department. When they differ, the approver can get "Visit not found" opening their own task (§12 D-10).
+> - **Submit failure = no approval** (§12 D-01): if the submit call fails for any reason, vms-api resets the visit to `confirmed` and returns 502; the visit then prints without approval.
+> - **Return for edit** has no resubmission path (§12 D-03).
 
-> **V2.5 quality_manager step fix**: the seeded `vms_visit` workflow now includes the `quality_manager` step in `company_config.workflow_defs` (previously only `dept_manager` was seeded, so the QM step never fired). The engine auto-skips the QM step when `quality_approver_id is None` (non-GMP areas). The assigned QM also gets explicit visibility on the visit (`Visit.quality_approver_id == user_id`) so the task deep-link doesn't 404 for an approver whose UniOps role has no dept claim on the visit.
+##### (4.1) In-VMS Approval + Task Inbox (added in V2.5, updated V2.7)
 
-##### (4.1) In-VMS Approval + Task Inbox (added in V2.5)
+| Requirement ID | Description | Priority | Status (V2.7) |
+|----------------|-------------|----------|---------------|
+| VMS-AP-001 | VMS **Task Inbox** lists the current user's pending VMS tasks, sourced from epms-api `/tasks?is_completed=false` filtered to `vms_visit` / `vms_train` / `vms_ppe`; sidebar shows a live count | P0 | ✅ Grouped "Visits", "Training Confirmations", "PPE Confirmations"; refreshes every 60 s |
+| VMS-AP-002 | VisitDetail shows Approve / Return for edit / Reject when the user holds a task for the visit; Reject / Return require a comment | P0 | ◐ The panel is shown whenever the user has **any** open `vms_visit` task on that visit — including the requester's "Revise" task after a return, where the buttons then fail (§12 D-03) |
+| VMS-AP-003 | Dashboard nudge "N visit(s) waiting on your approval" | P1 | ◐ N counts **all** open VMS tasks (training, PPE, check-out, prepare-PPE), not only approvals |
+| VMS-AP-004 | VMS doc types excluded from the EPMS inbox; shown in the Portal inbox with deep-links into VMS | P0 | ✅ Portal groups them under "Visitor" |
 
-| Requirement ID | Description | Priority |
-|----------------|-------------|----------|
-| VMS-AP-001 | VMS has its own **Task Inbox** page listing the current user's pending VMS tasks (visit approvals `vms_visit`, training confirmations `vms_train`, PPE confirmations `vms_ppe`), sourced from epms-api `/tasks` filtered to VMS doc types. Sidebar shows a live unread badge | P0 |
-| VMS-AP-002 | The VisitDetail page shows Approve / Reject / Return controls when the current user is the assigned approver for that visit's pending step. Reject / Return require a comment | P0 |
-| VMS-AP-003 | The Dashboard surfaces a "visits waiting on your approval" nudge when the user has pending VMS approval tasks | P1 |
-| VMS-AP-004 | VMS doc types (`vms_visit` / `vms_train` / `vms_ppe`) are excluded from the **EPMS** task inbox (they belong to VMS), while the **Portal** unified inbox shows them with correct deep-links into the VMS frontend | P0 |
+**Task types (V2.7)** — all live in the shared `tasks` table:
+
+| `type` | `document_type` | Assignee | Opened | Closed | Opens in VMS |
+|---|---|---|---|---|---|
+| `approve_vms_visit` | `vms_visit` | Dept manager, then Quality Manager | submit / next step | by the approval action | visit detail |
+| `revise_vms_visit` | `vms_visit` | visit creator | "Return for edit" | **never** (§12 D-03) | visit detail |
+| `vms_confirm_training` | `vms_train` | HR Training Contact | first print, training stale | "Confirm now" | visitor compliance page |
+| `vms_confirm_ppe` | `vms_ppe` | Janitor PPE Contact | first print, PPE stale | "Confirm now" | visitor compliance page |
+| `check_out_visitor` *(V2.7)* | `vms_visit` | Host | 1 h overdue | scheduler, once no longer on-site | visit detail |
+| `prepare_ppe` *(V2.7)* | `vms_visit` | Janitor PPE Contact | PPE email sent | scheduler, once checked in / cancelled / no-show | visit detail (⚠ §12 D-06) |
+
+Task titles as shown: "Approve VMS_VISIT: VMS Visit — First Last (Company) — …" (the visitor text appears twice because `vms_visit` has no label mapping in the engine), "Confirm food-safety training — First Last (Company)", "Confirm PPE issuance — …", "Check out visitor — …", "Prepare PPE — …".
 
 ### 6.3 Technology Stack (Fully Aligned with UniOps)
 
@@ -1103,71 +1132,89 @@ UniOps/                              # <- Existing Monorepo root
     +-- VMS_PRD_Visitor_Management_System.md  # <- This document
 ```
 
-### 6.5 API Endpoint Design (UniOps REST Specification)
+### 6.5 API Endpoint Design (as built, V2.7)
 
-> All endpoints prefixed `/api/v1/`, authentication `Authorization: Bearer <JWT>`, fully consistent with epms-api / expense-api.
+> All endpoints are prefixed `/api/v1/` and authenticated with `Authorization: Bearer <JWT>`. "Any" = any authenticated user; "+ scope" = further limited to visits the user can see (§3.2; out-of-scope visits return 404). Gates read the primary role only.
 
 #### 6.5.1 Visitors
 
-| Method | Path | Description | Role |
+| Method | Path | Description | Access |
 |--------|------|-------------|------|
-| `GET` | `/api/v1/visitors` | Search visitors `?search=&type=&page=1&page_size=20` | Host |
-| `GET` | `/api/v1/visitors/{id}` | Visitor details + visit history | Host |
-| `POST` | `/api/v1/visitors` | Create visitor (instant registration) | Host |
-| `PATCH` | `/api/v1/visitors/{id}` | Update visitor info | Host, Admin |
+| `GET` | `/visitors?search=&page=&page_size≤100` | Search by first / last / company / email (each column separately) | Any |
+| `GET` | `/visitors/{id}` | Visitor details (no visit history) | Any |
+| `POST` | `/visitors` | Create visitor | Any |
+| `PATCH` | `/visitors/{id}` | Update visitor, incl. `id_verified` | Any (auditors not blocked) |
+| `POST` | `/visitors/{id}/confirm-training` | Stamp training, close open training tasks | Configured HR contact or system_admin |
+| `POST` | `/visitors/{id}/confirm-ppe` | Stamp PPE issuance, close open PPE tasks | Configured PPE contact or system_admin |
 
 #### 6.5.2 Visits
 
-| Method | Path | Description | Role |
+| Method | Path | Description | Access |
 |--------|------|-------------|------|
-| `GET` | `/api/v1/visits` | Query `?date=&status=&host_id=&area=&page=1&page_size=20` | All |
-| `GET` | `/api/v1/visits/{id}` | Visit details (incl. health declaration, badge records) | All |
-| `POST` | `/api/v1/visits` | Create appointment (Host pre-registration) | Host, Manager |
-| `PATCH` | `/api/v1/visits/{id}` | Update appointment (before check-in) | Host |
-| `POST` | `/api/v1/visits/{id}/check-in` | Execute check-in -> record actual_arrival (usually auto-triggered by print-badge) | Host |
-| `POST` | `/api/v1/visits/{id}/check-out` | Execute check-out -> record actual_departure (usually triggered by QR scan) | Host |
-| `POST` | `/api/v1/visits/{id}/cancel` | Cancel appointment | Host |
-| `GET` | `/api/v1/visits/active` | Currently on-site visitors (status=checked_in) | Host |
-| `POST` | `/api/v1/visits/batch-checkout` | Batch check-out (end of day) | Host |
+| `GET` | `/visits?status=&host_id=&date_from=&date_to=&page=&page_size≤100` | List (no area / text search) | Any + scope |
+| `GET` | `/visits/active` | On-site visits | Any + scope |
+| `GET` | `/visits/{id}` | Detail with primary visitor and companions (declarations and badge prints are separate calls) | Any + scope |
+| `POST` | `/visits` | Create; auto-submits for approval by area (§6.2.1) | Any |
+| `PATCH` | `/visits/{id}` | Edit date / times / purpose / area / count / plate / notes / `ppe_issued` while Confirmed or Pending (no UI) | Creator, dept_manager of Host's dept, system_admin |
+| `POST` | `/visits/{id}/cancel` | Cancel; also cancels the in-flight approval | Creator, dept_manager of Host's dept, system_admin |
+| `POST` | `/visits/{id}/action` | `approve` / `reject` / `return` proxy to approval-api | Any; approval-api checks the approver |
+| `POST` | `/visits/{id}/check-out` | `{badge_returned, ppe_returned, notes}` | Creator, Host, dept_manager of Host's dept, system_admin |
+| `POST` | `/visits/batch-checkout` | Check out every on-site visit | system_admin |
+| `GET` / `POST` | `/visits/{id}/attachments` | List / upload (proxy to file-api) | Any + scope; auditors cannot upload |
+
+There is **no** `/visits/{id}/check-in` endpoint — check-in happens only through `print-badge`.
 
 #### 6.5.3 Badge
 
-| Method | Path | Description | Role |
+| Method | Path | Description | Access |
 |--------|------|-------------|------|
-| `POST` | `/api/v1/visits/{id}/print-badge` | Print badge -> auto-records badge_prints + auto-executes check-in (records actual_arrival, status->checked_in) | Host |
-| `GET` | `/api/v1/visits/{id}/badge-history` | Badge print history | Host, Admin |
-| `GET` | `/api/v1/badge/templates` | Available badge template list | Admin |
-| `PUT` | `/api/v1/badge/templates/{id}` | Update badge template | Admin |
+| `POST` | `/visits/{id}/print-badge` | First call = check-in; later calls = reprint (reason required) | Any + scope |
+| `GET` | `/visits/{id}/badge-history` | Print history | Any + scope |
+| `GET` | `/badge/templates` | Legacy HTML templates (unused by UI) | Any |
+| `PUT` | `/badge/templates/{name}` | Legacy template write | system_admin |
 
 #### 6.5.4 Health
 
-| Method | Path | Description | Role |
+| Method | Path | Description | Access |
 |--------|------|-------------|------|
-| `POST` | `/api/v1/visits/{id}/health-declaration` | Submit health declaration (incl. e-signature, Host fills in on behalf of visitor or visitor self-fills) | Host |
-| `GET` | `/api/v1/visits/{id}/health-declaration` | View health declaration details | Host, Auditor |
+| `GET` | `/health-questions` | Current questionnaire | Any |
+| `POST` | `/visits/{id}/health-declaration` | Submit (or overwrite) one visitor's declaration: `visitor_id`, answers, `safety_training_confirmed`, optional `signature` | Any + scope, not auditor |
+| `GET` | `/visits/{id}/health-declaration` | **List**, one entry per visitor | Any + scope |
+| `GET` | `/health-declarations?from=&to=&q=` | Browse declarations across visits | Any + scope |
 
-#### 6.5.5 Audit & Dashboard
+#### 6.5.5 Audit, Dashboard, Reports
 
-| Method | Path | Description | Role |
+| Method | Path | Description | Access |
 |--------|------|-------------|------|
-| `GET` | `/api/v1/audit-logs` | Audit log query `?user_id=&action=&entity=&from=&to=` | Auditor, Admin |
-| `GET` | `/api/v1/audit-logs/export` | Export audit logs (PDF/Excel) | Auditor |
-| `GET` | `/api/v1/dashboard/overview` | Dashboard overview data | Manager, Auditor |
-| `GET` | `/api/v1/reports/cfia-visit-log` | CFIA-format visitor log report | Auditor |
-| `GET` | `/api/v1/reports/gmp-area-summary` | GMP area access summary report | Auditor |
+| `GET` | `/audit-logs?user_id=&action_type=&entity_type=&entity_id=&from=&to=` | Query | auditor, system_admin |
+| `GET` | `/audit-logs/export` | CSV | auditor, system_admin |
+| `GET` | `/dashboard/overview` | On-site, today, 7 days, overdue (plant-wide) | Any |
+| `GET` | `/dashboard/compliance` | GMP visits, pass rate, unreturned badges, after-hours (plant-wide) | Any |
+| `GET` | `/reports/cfia-visit-log?from=&to=` | CSV | auditor, system_admin |
+| `GET` | `/reports/gmp-area-summary?from=&to=` | CSV | auditor, system_admin |
 
-#### 6.5.6 Cross-Service Calls
+#### 6.5.6 Admin
+
+| Method | Path | Description | Access |
+|--------|------|-------------|------|
+| `GET` / `PUT` | `/admin/quality-managers` | QM roster (ordered UUID list) | system_admin |
+| `GET` / `PUT` | `/admin/notification-contacts` | Training / PPE emails | system_admin |
+| `GET` / `PUT` | `/admin/health-questions` | Questionnaire (version + questions, replaced as a whole) | system_admin |
+| `GET` / `PUT`, `POST` | `/admin/smtp-settings`, `/admin/smtp-test` | VMS-local SMTP | system_admin |
+| `GET` / `PUT` | `/admin/badge-config` | Structured badge configuration | system_admin (⚠ the badge page also reads this — §12 D-05) |
+| `POST` | `/admin/run-scheduled-jobs` | Run the scheduler once | system_admin |
+| `GET` / `PATCH` / `DELETE`, `POST` | `/admin/entities`, `/admin/{entity}[/{id}]`, `/admin/{entity}/bulk-delete` | Portal Data Maintenance: edit any field incl. status, **hard-delete** visits / visitors (cascades to prints, declarations, tasks); logged in `admin_audit_log` | system_admin |
+
+#### 6.5.7 Cross-Service Calls
 
 | Call Direction | Endpoint | Purpose |
 |----------------|----------|---------|
-| vms-api → epms-api | `GET /api/v1/users/directory?search=` *(new public endpoint, see §6.2)* | Host search by any authenticated user |
-| vms-api → epms-api | `GET /api/v1/users/directory/{id}` *(new)* | Brief Host details (full_name / department_id) |
-| vms-api → approval-api | `POST /approval/v1/approvals/vms_visit/{visit_id}/action` with `{"action": "submit"}` | Submit visit for approval |
-| vms-api → approval-api | `POST /approval/v1/approvals/vms_visit/{visit_id}/action` with `{"action": "cancel"}` | Cancel an in-flight approval |
-| vms-api ← approval-api | (no callback; approval-api updates `vms_visits.status` directly on the shared DB row) | Status sync |
-| Portal → approval-api | `GET /approval/v1/workflows/vms_visit` | Admin reads/edits VMS workflow chain |
-| Portal → approval-api | (existing task inbox query, now includes `doc_type="vms_visit"`) | Task Inbox aggregation |
-| vms-api → file-api | `POST /files/v1/upload` (`entity_type="vms_visit"`) | Upload appointment attachment |
+| VMS frontend → epms-api | `GET /api/v1/users/directory?search=` | Host search (returns id, full_name, email, department_id, role, department_name). vms-api itself does not call epms-api |
+| VMS frontend → epms-api | `GET /api/v1/tasks?is_completed=false` | VMS Task Inbox |
+| vms-api → approval-api | `POST /approval/v1/approvals/vms_visit/{visit_id}/action` — `submit` / `cancel` / `approve` / `reject` / `return` | Approval |
+| vms-api ← approval-api | no callback; approval-api writes `vms_visits` directly (`approval_status`, `status` on final approve) | Status sync |
+| Portal → approval-api | `GET/PUT /approval/v1/workflows/vms_visit` | Approval Routing editor |
+| vms-api → file-api | upload with `entity_type="vms_visit"`; listing reads the shared `file_metadata` table | Attachments |
 
 ### 6.7 Docker Compose Integration
 
@@ -1248,80 +1295,35 @@ volumes:
 
 > **Also**: portal-frontend env must add `VITE_VMS_URL: http://localhost:5176` and `VITE_VMS_API_URL: http://localhost:8008` so Portal can build the launcher link + Task Inbox deep links (see §6.8).
 
-### 6.8 Frontend Route Design (Standalone VMS Application)
+### 6.8 Frontend Route Design (as built, V2.7)
 
-```typescript
-// vms/src/App.tsx — React Router 7 route configuration
-{
-  path: "/",
-  element: <AppLayout />,  // VMS standalone layout (sidebar nav: Visits / Dashboard / Admin)
-  children: [
-    { index: true, element: <VisitListPage /> },          // /
-    { path: "new", element: <VisitCreatePage /> },         // /new
-    { path: ":visitId", element: <VisitDetailPage /> },    // /:visitId
-    { path: "check-in", element: <CheckInPage /> },        // /check-in
-    { path: "dashboard", element: <DashboardPage /> },     // /dashboard
-    { path: "badge/:visitId", element: <BadgePrintPage /> }, // /badge/:visitId
-    { path: "admin/quality-managers", element: <QualityManagerRosterPage /> }, // Admin-only
-    { path: "admin/notification-contacts", element: <NotificationContactsPage /> }, // Admin-only
-  ]
-}
-```
+VMS runs inside the shared UniOps tab shell (`@uniops/shell`): every page opens as a tab; Dashboard is a pinned tab. Routes (`vms/src/app/routes.tsx`), sidebar menu gating by primary role (`vms/src/components/layout/AppLayout.tsx`):
 
-The VMS frontend, as a standalone UniOps application (port 5176), uses the Portal (`:5174`) for unified authentication login and is sibling to EPMS (`:5173`) and OA (`:5175`). Auth flow is identical to OA: when no local token is present, redirect to Portal; after Portal login, the token is returned via the `#__session=` hash fragment. localStorage key: `vms-auth` (with fallback to `portal-auth`), mirroring the [oa/src/lib/api.ts:9-10](oa/src/lib/api.ts#L9-L10) pattern.
+| Path | Tab / page title | Sidebar | Who |
+|---|---|---|---|
+| `/dashboard` | Dashboard | yes (pinned tab) | everyone |
+| `/tasks` | Task Inbox | yes, with count | everyone |
+| `/` | Today's Visits | yes | everyone (scoped) |
+| `/all` | All Visits (latest 50) | yes | everyone (scoped) |
+| `/active` | On-Site Now | yes | everyone (scoped) |
+| `/new` | New Visit | yes | everyone |
+| `/check-out` | Check Out | yes | everyone |
+| `/audit-log` | Audit Log | "Compliance" group | auditor, system_admin |
+| `/reports` | Reports ("Compliance Reports") | "Compliance" group | auditor, system_admin |
+| `/health-declarations` | Health Declarations | "Compliance" group | auditor, system_admin (menu); API scoped |
+| `/admin/*` | VMS Admin — tabs Quality Managers, Notification Contacts, Email Settings, Health Questions, Badge | "Admin" group | system_admin |
+| `/:visitId` | Visit *First Last* | — (from lists / tasks) | scoped |
+| `/badge/:visitId` | Badge *First Last* | — (from "Print badge & check in") | scoped |
+| `/visitor/:visitorId/compliance` | Compliance *First Last* | — (from training / PPE tasks) | everyone; confirm restricted |
+
+The V2.6 `/check-in` route does not exist. Sidebar footer: "Back to UniOps Portal"; user menu: "Portal Home", "Sign Out". Without a token the app shows "Redirecting to portal for authentication…" and returns via Portal login (`#__session=` hash, stored as `vms-auth`); any 401 sends the user to the Portal logout.
 
 ### 6.9 Portal Integration (Module Launcher + Task Inbox)
 
-VMS is added to the Portal as a top-level Module — same level as EPMS and OA — and its approval tasks are surfaced in the Portal Task Inbox.
-
-#### (1) Portal Sidebar — add VMS to the Modules section
-
-```diff
-// portal/src/pages/PortalHome.tsx — NAV_SECTIONS
-  {
-    title: 'MODULES',
-    items: [
-      { label: 'Procurement', icon: ShoppingCart, href: 'epms' },
-      { label: 'OA',          icon: Wallet,       href: 'oa' },
-+     { label: 'VMS',         icon: UserCheck,    href: 'vms' },
-    ],
-  },
-```
-
-```diff
-// portal/src/pages/PortalHome.tsx — resolveHref
-  const resolveHref = (key: string | null) => {
-    if (key === null) return '#'
-    if (key === 'epms') return epmsHref
-    if (key === 'oa')   return oaHref
-+   if (key === 'vms')  return vmsHref
-    // …
-  }
-```
-
-Mirror the `epmsHref` / `oaHref` construction to build `vmsHref` — a redirect to `http://localhost:5176/#__session=<jwt>` so the session handoff lands a logged-in user directly in VMS without re-authenticating.
-
-#### (2) Portal Task Inbox — surface `vms_visit` tasks
-
-Portal's existing task aggregation (which today pulls tasks for `doc_type ∈ {pr, po, pa, exp, mil, trv, cfm*}`) gains `vms_visit` as another doc_type. Each task row deep-links to VMS:
-
-| Task field | Value for VMS visit |
-|---|---|
-| `doc_type` | `"vms_visit"` |
-| Display label | `"Visitor approval: {visitor.first_name} {visitor.last_name} ({company_name}) → {access_area}"` |
-| Deep-link URL | `${VITE_VMS_URL}/${visit_id}#__session=<jwt>` |
-| Approval actions | `approve` / `return` / `cancel` — submitted to `POST /approval/v1/approvals/vms_visit/{visit_id}/action` (same as PR/PO) |
-
-Implementation:
-
-- The Portal task fetcher currently queries the approval-api `tasks` table filtered by `assignee_id == current_user`. Once approval-api accepts `vms_visit` in `_DOC_META`, tasks for visits land in the same table automatically — Portal only needs to register the `doc_type → label + deep-link` mapping.
-- Number display: visits have no `number` field; the Portal task row uses `Visit.id` short prefix or the `display_name` rendered from the visitor name + date. The mapping is configured in Portal frontend (`DOC_PATH` / `STATUS_LABEL` constants in [PortalHome.tsx:100-112](portal/src/pages/PortalHome.tsx#L100-L112)).
-
-#### (3) Portal Admin — Workflow Defs editor
-
-The existing Portal Admin "Workflow Defs" page (which today edits `workflow_defs["pr"|"po"|"pa"]`) gains a fourth tab: **VMS Visit**. Editing it writes to `company_config.workflow_defs["vms_visit"]`. This works automatically once `vms_visit` is added to approval-api `workflows.py:_DOC_TYPES` (see §6.2.1(1)).
-
-> **Quality Manager roster is *not* edited here** — it's a VMS-local concept and lives in the VMS Admin panel (`vms_config.quality_manager_user_ids`). Portal Admin only edits the workflow chain shape; VMS Admin controls who fills the `quality_manager` step.
+- **Launcher**: Portal sidebar MODULES → "VMS", and the Portal home module card "VMS — Visitor appointments, badge printing, on-site tracking". Visible to every user (no permission gate).
+- **Task Inbox**: VMS tasks show in Portal "My Task Inbox" under the **Visitor** group (Visits / Training Confirmations / PPE Confirmations), tag "VISITOR", title as in §6.2.1(4.1). A row click opens VMS at `/{visitId}` or `/visitor/{visitorId}/compliance`. **The Portal row has no approve buttons** — approval happens on the VMS visit page. ⚠ Portal de-duplicates rows by document number, which can hide a training or PPE task when the same person is both contacts (§12 D-13); the VMS Task Inbox shows all.
+- **Approval chain**: Portal Admin → Approval Routing → "VMS Visit" tab edits `company_config.workflow_defs["vms_visit"]`. The Quality Manager roster itself lives in VMS Admin.
+- **Branding**: company name, logo and the VMS tagline come from Portal Admin → Company Settings.
 
 ---
 
@@ -1548,21 +1550,25 @@ The existing Portal Admin "Workflow Defs" page (which today edits `workflow_defs
 
 ### 11.4 Items to Confirm
 
-| # | Item | Confirming Party | Status |
+| # | Item | Confirming Party | Status (V2.7) |
 |:-:|------|:----------------:|:------:|
-| 1 | Current paper visitor registration form template (to understand existing data fields) | Administration | Open |
-| 2 | Specific GMP area health declaration question checklist | QC / Quality Assurance | Open |
-| 3 | Existing office printer model and paper spec (A4 / Letter) | IT | Open |
-| 4 | Whether integration with existing access card system is needed | IT | Open |
-| 5 | Specific format requirements for audit reports (CFIA standard) | Compliance | Open |
-| 6 | UniOps server resource assessment for vms-api (port 8008) deployment | IT | Open |
-| 7 | Initial Quality Manager roster — list of UniOps users to seed into `vms_config.quality_manager_user_ids` | QA Leadership + IT | Open (direction confirmed: VMS-local roster in Admin panel) |
-| 8 | Quality Manager assignment policy: single-approver (round-robin) vs all-approvers (any-can-approve) for parallel routing | QA Leadership | Open |
-| 9 | Training Contact (HR) and PPE Contact (Janitor) email addresses | HR / Administration | Open (personnel confirmed; emails pending) |
-| 10 | Final default workflow chain for `workflow_defs["vms_visit"]` at system seed time | IT / Management | Confirmed (single-step `dept_manager`; Admin may add `quality_manager` step) |
-| 11 | When approval is triggered per `access_area` — confirm office=no, warehouse=yes, GMP=yes-with-QM | Compliance / IT | Confirmed (see §6.2.1(3) table) |
-| 12 | epms-api public `GET /api/v1/users/directory` endpoint — fields exposed: `id`, `full_name`, `email`, `department_id` | IT (epms-api owner) | New endpoint — needs design review |
-| 13 | Audit log immutability mechanism: DB-level `REVOKE UPDATE, DELETE ON vms_audit_logs FROM epms` migration vs service-layer only | Compliance / IT | Open (Compliance to confirm DB-level requirement) |
+| 1 | Current paper visitor registration form template | Administration | Open |
+| 2 | GMP health declaration question checklist | QC / Quality Assurance | Built with 4 default questions (symptoms in 24 h, open wounds, infectious-disease contact, food allergens); Admin can edit. **QA sign-off of the wording still open** |
+| 3 | Office printer model and paper (A4 / Letter) | IT | Badge prints landscape Letter; printer model open |
+| 4 | Integration with the access card system | IT | Not built; open |
+| 5 | CFIA audit report format | Compliance | Interim 16-column CSV; final layout open |
+| 6 | Server resources for vms-api (8008) | IT | ✅ Deployed in production |
+| 7 | Initial Quality Manager roster | QA Leadership + IT | ✅ Configured: 1 active user (checked 2026-09-30). One person = single point of failure for every GMP / Lab visit |
+| 8 | QM assignment policy | QA Leadership | ✅ Decided by the code: first active user in the roster, single approver |
+| 9 | Training Contact (HR) and PPE Contact (Janitor) emails | HR / Administration | ✅ Configured; both map to active users (checked 2026-09-30) |
+| 10 | Default workflow chain for `vms_visit` | IT / Management | ✅ Engine default = `dept_manager` only; **production = `dept_manager` → `quality_manager`** |
+| 11 | Approval by access area | Compliance / IT | ✅ See §6.2.1(3) |
+| 12 | epms-api `GET /api/v1/users/directory` | IT | ✅ Built (also returns role and department_name) |
+| 13 | Audit log immutability mechanism | Compliance / IT | ✅ DB-level REVOKE (migration 0002), effective for the `epms` login role |
+| 14 | *(new)* Should auditors be able to create visits, verify ID and print badges (= check visitors in)? The code does not block them | Compliance | Open |
+| 15 | *(new)* Should Entire Plant visits require a health declaration like GMP / Laboratory? (§12 D-08) | QA | Open |
+| 16 | *(new)* Is Portal Data Maintenance hard-delete of visit records acceptable under CFIA / PIPEDA retention? | Compliance | Open |
+| 17 | *(new)* Should additional roles from the Portal permission matrix apply in VMS (today only the primary role counts)? | IT | Open |
 
 > **Integration plan reconciliation (V2.3)**: All items below are now ✅ resolved and require **no further confirmation**, because they were architecturally decided after reviewing the actual UniOps codebase:
 >
@@ -1573,14 +1579,57 @@ The existing Portal Admin "Workflow Defs" page (which today edits `workflow_defs
 > - **User master** — shared `public.users`; any authenticated UniOps user can be a Host
 > - **Portal integration** — VMS in MODULES section (sibling to EPMS/OA); Portal Task Inbox aggregates `doc_type="vms_visit"` tasks with deep-link to vms frontend
 
+### 11.5 Production Snapshot (read-only check, 2026-09-30)
+
+| Item | Value |
+|---|---|
+| Approval chain `workflow_defs["vms_visit"]` | Department Manager → Quality Manager |
+| Quality Manager roster | 1 user, active |
+| Training / PPE contacts | both set; both match active users |
+| SMTP | VMS-local settings saved |
+| Health questions / badge configuration | not customised — code defaults in use |
+| Usage | 13 visits (2026-07-06 → 2026-09-15), 15 visitors: 11 departed (10 Office, 1 GMP), 2 no-show (1 Office, 1 Non-GMP); nothing pending or on-site |
+
 ---
 
-**Document Version**: V2.5  
-**Creation Date**: April 2026 (First Draft) / May 2026 (V2.0 — UniOps Integration) / May 2026 (V2.1 — Role Model Refactoring) / May 2026 (V2.2 — Approval Workflow Customization + Notification Contacts) / May 2026 (V2.3 — Integration Reconciliation) / June 2026 (V2.4 — Multi-visitor visits + intake-flow tweaks) / June 2026 (V2.5 — PPE + compliance + notification workflow)  
-**Document Status**: V2.5 captures compliance + notification workflow changes from operator UAT during S2-E rollout (no platform-architecture changes — same ports, role model as V2.3; additive schema columns only).  
-**Next Review Date**: TBD  
+## 12. Known Defects and Gaps (V2.7)
+
+Found in the V2.7 code audit (`origin/main @bb8d0a9a`). Severity reflects compliance and data impact. None is fixed by this document; each needs its own change.
+
+| ID | Severity | Defect | Where | Effect today |
+|---|:---:|---|---|---|
+| D-01 | **High** | If submitting a new visit for approval fails for any reason (no dept_manager in the creator's department, approval-api down, engine 4xx), vms-api resets the visit to `confirmed` and returns 502 | `vms-api/app/api/v1/visits.py:246-257` | The visit exists, is Confirmed and prints a badge — **approval bypassed**, incl. GMP. The user sees an error and may create a duplicate |
+| D-02 | **High** | `PATCH /visits/{id}` can change `access_area` without re-running approval | `vms-api/app/crud/visit.py:270-278` | Book Office (auto-confirmed) then patch to GMP → no approval. API only; no UI path |
+| D-03 | **High** | "Return for edit" is a dead end: `approval_status='returned'` but `status` stays Pending Approval; no edit / resubmit path (and the engine only accepts submit from `draft`); the requester's "Revise" task shows the approval panel whose buttons fail; cancelling fails silently in the engine (`valid_cancel` excludes `returned`) so the Revise task never closes | `approval-api/app/crud/engine.py:197-209`, `vms-api/app/services/approval.py:139-160` | Visit stuck until cancelled; orphan task. **Training guidance: use Reject, not Return** |
+| D-04 | Medium | Re-filing a health declaration overwrites the earlier answers, result and signature in place; the audit log keeps only `result=` | `vms-api/app/crud/health_decl.py:125-129` | A Failed visitor can be re-declared Passed with no record of the original answers (conflicts with VMS-AU-013) |
+| D-05 | Medium | The badge page reads `GET /admin/badge-config`, which is system_admin-only; everyone else silently falls back to the code defaults | `vms/src/services/api.ts:936-941`, `vms-api/app/api/v1/admin.py:371-380` | Admin badge customisation applies only to badges printed by an admin. No effect yet (production uses defaults) |
+| D-06 | Medium | "Prepare PPE" task links to the visit page, but the Janitor usually cannot see the visit | `vms-api/app/crud/visit.py:210-234` | Janitor sees "Visit not found"; the email carries the details |
+| D-07 | Medium | "Today" is taken from the UTC date in the frontend (Today's Visits, Dashboard, New Visit default date, Reports default range) and in the dashboard API | `vms/src/pages/VisitListPage.tsx:8`, `DashboardPage.tsx:18`, `VisitCreatePage.tsx:170`, `ReportsPage.tsx:39-40`; `vms-api/app/api/v1/dashboard.py:48,69-70` | After 20:00 EDT (19:00 EST) lists show tomorrow and New Visit defaults to tomorrow's date |
+| D-08 | Medium | Entire Plant is treated inconsistently: QM approval and training / PPE tasks yes; health declaration no; frontend GMP hint and compliance banner no; GMP reports and KPI exclude it | `crud/badge.py:35-37`, `services/compliance.py:36-40`, `services/reports.py:193`, `VisitCreatePage.tsx:268-274` | The broadest-access visit has the weakest health gate |
+| D-09 | Medium | A Host who cancels their own pending visit is emailed "Visit rejected by an approver" (derived from code, not reproduced) | `vms-api/app/crud/visit.py:160-182` | Misleading email |
+| D-10 | Medium | Approval routes by the **creator's** department; dept_manager visibility uses the **Host's** department | `approval-api/app/crud/engine.py:645-657` vs `vms-api/app/crud/visit.py:228-233` | When someone books for a Host in another department, the approver may get "Visit not found" on their own task |
+| D-11 | Low | No same-approver skip at submit | `approval-api/app/crud/engine.py` | A dept_manager approves their own visits |
+| D-12 | Low | Pending visits never become No Show | `services/scheduled_jobs.py:88-122` | Stale approval tasks can sit in inboxes indefinitely |
+| D-13 | Low | Portal inbox de-duplicates by document number; approval task title repeats the visitor text | `portal/src/pages/PortalHome.tsx:613-617`; engine title build | Training and PPE tasks for the same visitor collapse into one row when one person holds both roles |
+| D-14 | Low | Attachment `download_url` uses the internal file-api URL and opens without a Bearer token (not reproduced) | `vms-api/app/services/attachments.py:55` | Downloads likely fail from the browser |
+| D-15 | Low | Audit log "Action type" filter lists only a subset of the logged action types (no approve / reject / return, no_show, health_decl, confirm_*, admin.*, export_*); "Entity type" lacks `vms_config` and `report` | `vms/src/pages/AuditLogPage.tsx:306-314` | Those events can only be found unfiltered |
+| D-16 | Low | Disabled "Print badge & check in" always says "Verify visitor ID first", even when the real blocker is a missing or failed health declaration | `vms/src/pages/VisitDetailPage.tsx:111` | User confusion |
+| D-17 | Low | Dashboard nudge "N visit(s) waiting on your approval" counts all VMS tasks | `vms/src/pages/DashboardPage.tsx:43-61` | Wrong wording for HR / Janitor / Hosts |
+| D-18 | Low | Overdue / escalation emails print UTC times; "after-hours" hour is extracted in the DB session time zone | `services/notifications.py` `_fmt_dt`; `services/reports.py:260-265` | Times off by 4–5 h |
+| D-19 | Low | `POST /admin/run-scheduled-jobs` does not take the advisory lock | `services/scheduler.py` | A manual run overlapping a tick could double-send |
+| D-20 | Policy | Portal Data Maintenance can hard-delete visits and visitors | `vms-api/app/api/v1/admin.py` generic entity routes | Conflicts with the ≥3-year retention goal (§10.2) — see §11.4 #16 |
+| D-21 | Gap | Only the primary role counts in VMS; no `vms.*` permissions | `core/deps.py`, `AppLayout.tsx:53-54` | Additional roles granted in Portal do nothing in VMS |
+| D-22 | Gap | Visitor search matches one column at a time | `vms-api/app/crud/visitor.py:21-30` | Full-name search finds nothing → duplicate visitors |
 
 ---
+
+**Document Version**: V2.7  
+**Creation Date**: April 2026 (First Draft) / May 2026 (V2.0 — UniOps Integration) / May 2026 (V2.1 — Role Model Refactoring) / May 2026 (V2.2 — Approval Workflow Customization + Notification Contacts) / May 2026 (V2.3 — Integration Reconciliation) / June 2026 (V2.4 — Multi-visitor visits + intake-flow tweaks) / June 2026 (V2.5 — PPE + compliance + notification workflow) / June 2026 (V2.6 — as-built reconciliation + scheduler) / September 2026 (V2.7 — full code audit)  
+**Document Status**: V2.7 — as-built. Requirement status columns and §12 reflect `origin/main @bb8d0a9a`.  
+**Next Review Date**: after the §12 High items are fixed  
+
+---
+
 
 *This document V1.0 was generated by DeepSeek Agent AI in April 2026, based on 5 core requirements (visitor pre-registration, on-site registration, badge printing, departure status update, audit) provided by the user, with further elaboration.*  
 *V2.0 (May 2026) rewrote the technical chapters (§5, §6, §9) to align with the actual UniOps platform architecture (Monorepo, microservices, Docker Compose, React+FastAPI stack), ensuring VMS is implemented as a native platform module.*  
@@ -1611,3 +1660,8 @@ The existing Portal Admin "Workflow Defs" page (which today edits `workflow_defs
 *  ① **Compliance is post-entry, not a print gate** (supersedes V2.5 ② / original VMS-CI-021): badge printing is NOT blocked by training/PPE freshness. A 422 block deadlocks the flow (you can't gear up a visitor who has no badge and isn't on-site). The badge prints unconditionally; at check-in the system opens idempotent HR/Janitor confirmation tasks for stale gates + the HR heads-up email. Freshness is surfaced (VMS-CI-024), not enforced. Per-visitor timestamps, 12-month TTL, and confirm-authorization (VMS-CI-023) unchanged.*
 *  ② **Reports ship as streamed CSV** (VMS-AU-011): CFIA Visit Log + GMP Area Summary stream as `text/csv` via `StreamingResponse`. `.xlsx`/PDF deferred until CFIA fixes the mandated layout — Excel opens CSV natively, so a binary writer is churn for no compliance gain. Route/filter contract is final; only serialization is interim.*
 *  ③ **Background scheduler implemented** (VMS-PR-012/-019, VMS-CO-009/-010/-011): in-process asyncio loop in vms-api (`app/services/scheduler.py` + `scheduled_jobs.py`), 15-min default tick, Postgres advisory lock for multi-replica safety. Jobs: auto no-show (2h), day-before reminder, 1h-overdue host reminder, 4h-overdue dept_manager escalation. One-shot timestamp flags added to `vms_visits` (`reminder_sent_at`, `overdue_reminder_sent_at`, `overdue_escalated_at`; migration 0013). Manual run via `POST /api/v1/admin/run-scheduled-jobs`; toggle with `SCHEDULER_ENABLED`. VMS-AU-012 (scheduled report auto-email) remains P2 / not yet implemented.*
+*V2.7 (September 2026) full code audit against `origin/main @bb8d0a9a` plus a read-only production configuration check:*
+*  ① **Status column** on every requirement table (✅ / ◐ / ✗); as-built access-area rule table; permission matrix rewritten to what the code enforces (primary role only, no `vms.*` codes, auditors not blocked from check-in, cancel = creator only, batch check-out = admin only).*
+*  ② **Changes since V2.6 documented**: overdue reminder repeats every 24 h until check-out + "Check out visitor" task (`bf2d2f83`); "Prepare PPE" task for the Janitor (`7c75d728`); tab shell, Task Inbox grouping, date-only fix.*
+*  ③ **Corrections**: check-in is recorded when the badge page loads (before the print dialog); HR training email fires at check-in regardless of freshness; PPE email is immediate for Office only; no auto-skip at submit; seeded chain is dept_manager only (production has both steps); approval routes by creator's department; health declaration is per visitor and not required for Entire Plant; ID verification is permanent on the visitor record.*
+*  ④ **§4 flows, §6.5 endpoints, §6.8 routes, §6.9 Portal, task-type table** rewritten as built; **§11.4** updated, **§11.5** production snapshot and **§12** known defects (D-01 … D-22) added.*
