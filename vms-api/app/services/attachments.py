@@ -52,7 +52,9 @@ async def list_attachments(db: AsyncSession, visit_id: uuid.UUID) -> list[dict[s
             "doc_id":            str(r[6]),
             "uploaded_by":       str(r[7]) if r[7] else None,
             "created_at":        r[8].isoformat() if r[8] else None,
-            "download_url":      f"{settings.FILE_SERVER_URL}/files/{r[0]}",
+            # Through vms-api, not file-api: file-api's address is internal and
+            # its download needs a bearer token a plain link cannot carry.
+            "download_url":      f"/api/v1/visits/{visit_id}/attachments/{r[0]}/download",
         })
     return out
 
@@ -84,3 +86,27 @@ async def upload_attachment(
         )
         resp.raise_for_status()
         return resp.json()
+
+
+async def fetch_attachment(
+    db: AsyncSession, *, visit_id: uuid.UUID, file_id: uuid.UUID, bearer_token: str,
+) -> tuple[bytes, str, str] | None:
+    """(content, content_type, filename) of one of the visit's attachments, or
+    None when the file is not attached to this visit. The caller has already
+    checked the visit is visible to the user."""
+    row = (await db.execute(
+        text(
+            "SELECT original_filename, content_type FROM file_metadata "
+            "WHERE id = :fid AND doc_type = 'vms_visit' AND doc_id = :vid AND is_deleted = FALSE"
+        ),
+        {"fid": file_id, "vid": visit_id},
+    )).first()
+    if row is None:
+        return None
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.get(
+            f"{settings.FILE_SERVER_URL}/files/{file_id}",
+            headers={"Authorization": f"Bearer {bearer_token}"},
+        )
+        resp.raise_for_status()
+        return resp.content, row[1] or "application/octet-stream", row[0]

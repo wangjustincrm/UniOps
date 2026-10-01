@@ -9,7 +9,9 @@ approval-api `vms_visit` doc_type is added in S2-B).
 import uuid
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, status
 from sqlalchemy import select
 
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
@@ -736,6 +738,36 @@ async def list_visit_attachments(
         raise HTTPException(status_code=404, detail="Visit not found")
 
     return await attachments_svc.list_attachments(db, visit_id)
+
+
+@router.get("/{visit_id}/attachments/{file_id}/download")
+async def download_visit_attachment(
+    visit_id: uuid.UUID,
+    file_id: uuid.UUID,
+    request: Request,
+    db: SessionDep,
+    user: CurrentUserPayload,
+    token: BearerToken,
+):
+    """Stream one attachment to whoever can see the visit. The listing used to
+    hand out file-api's own URL — internal, and needing a bearer token that a
+    link click cannot send — so attachments could not be opened."""
+    row = await visit_crud.get_visit(db, visit_id)
+    if row is None or not await visit_crud.visible_to(db, row, await load_request_meta(db, user, request)):
+        raise HTTPException(status_code=404, detail="Visit not found")
+    try:
+        got = await attachments_svc.fetch_attachment(db, visit_id=visit_id, file_id=file_id, bearer_token=token)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"file-api download failed: {e}") from e
+    if got is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    content, content_type, filename = got
+    safe = filename.replace('"', "'")
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{safe}"; filename*=UTF-8\'\'{quote(filename)}'},
+    )
 
 
 @router.post(
