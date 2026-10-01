@@ -24,3 +24,4 @@ from app.models.department_mirror import Department  # noqa: F401  # epms-api
 from app.models.company_config_mirror import CompanyConfig  # noqa: F401  # epms-api
 from app.models.file_metadata_mirror import FileMetadata  # noqa: F401  # file-api
 from app.models.task_mirror import Task  # noqa: F401  # epms-api
+from app.models.approval_event_mirror import ApprovalEvent  # noqa: F401  # approval-api

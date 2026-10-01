@@ -372,6 +372,37 @@ async def notify_host_approval_resolved(
     return await _send_email(cfg=smtp_cfg, to=host.email, subject=subject, body=body)
 
 
+async def notify_host_visit_cancelled(
+    db: AsyncSession,
+    *,
+    visit: Visit,
+    visitor: Visitor,
+    host: User | None,
+    cancelled_by: str,
+) -> bool:
+    """Tell the Host that someone else cancelled a visit they were hosting.
+
+    A cancel used to fall through to the approval-result email and reach the
+    Host as "rejected by an approver". The cancel endpoint now marks the visit
+    notified itself and sends this instead — only when the canceller is not
+    the Host.
+    """
+    if not host or not host.email:
+        return False
+    name = f"{visitor.first_name} {visitor.last_name}"
+    subject = f"VMS — Visit cancelled: {name}"
+    body = (
+        f"A visit you were hosting has been cancelled by {cancelled_by}.\n\n"
+        f"Visitor:     {name}\n"
+        f"Company:     {visitor.company_name}\n"
+        f"Visit date:  {visit.visit_date.isoformat()}\n"
+        f"Access area: {visit.access_area.value.replace('_', ' ')}\n"
+        f"Visit ID:    {visit.id}\n"
+    )
+    smtp_cfg = await _load_smtp_config(db)
+    return await _send_email(cfg=smtp_cfg, to=host.email, subject=subject, body=body)
+
+
 # ── Scheduler emails (reminders / overdue alerts) ───────────────────────────-
 
 def _fmt_dt(value) -> str:

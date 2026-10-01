@@ -21,7 +21,9 @@ from app.models.user_mirror import User
 from app.models.visit import Visit, VisitStatus
 from app.models.visitor import Visitor
 from app.models.vms_config import VmsConfig
+from app.models.approval_event_mirror import ApprovalEvent
 from app.schemas.visit import (
+    ApprovalNote,
     VisitCheckOut,
     VisitCreate,
     VisitListResponse,
@@ -32,6 +34,7 @@ from app.schemas.visitor import VisitorResponse
 from app.services import approval as approval_svc
 from app.services import attachments as attachments_svc
 from app.services import notifications as notifications_svc
+from app.services import visit_tasks as visit_tasks_svc
 
 router = APIRouter(prefix="/visits", tags=["visits"])
 
@@ -154,7 +157,29 @@ async def get_visit(
             status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found"
         )
     items = await _attach_visitors(db, [row])
-    return items[0]
+    resp = items[0]
+    if row.approval_status in ("returned", "rejected"):
+        resp = resp.model_copy(update={"approval_note": await _latest_approval_note(db, row.id)})
+    return resp
+
+
+async def _latest_approval_note(db, visit_id: uuid.UUID) -> ApprovalNote | None:
+    """The approver's comment on the most recent return / reject, so the Host
+    sees what to fix without hunting through the approval history."""
+    ev = (await db.execute(
+        select(ApprovalEvent)
+        .where(
+            ApprovalEvent.document_type == "vms_visit",
+            ApprovalEvent.document_id == visit_id,
+            ApprovalEvent.action.in_(("return", "reject")),
+        )
+        .order_by(ApprovalEvent.created_at.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    if ev is None:
+        return None
+    actor = (await db.execute(select(User.full_name).where(User.id == ev.actor_id))).scalar_one_or_none()
+    return ApprovalNote(action=ev.action, comment=ev.comment, actor_name=actor, at=ev.created_at)
 
 
 # ── Create / update ─────────────────────────────────────────────────────────
@@ -201,63 +226,12 @@ async def create_visit(
     row = await visit_crud.create_visit(db, payload, created_by=meta.user_id)
 
     # Approval branching ---------------------------------------------------
+    # Areas beyond the office go to approval-api (§6.2.1). If the hand-off
+    # fails the visit is still saved, but stays Pending Approval ("draft") —
+    # it cannot be badged until POST /visits/{id}/submit succeeds.
+    submit_error: str | None = None
     if approval_svc.access_requires_approval(row.access_area):
-        visitor = await visitor_crud.get_visitor(db, row.visitor_id)
-        if visitor is None:
-            # Should not happen — we just created the visit pointing at this id.
-            raise HTTPException(500, detail="Visitor missing post-create")
-
-        row.visit_title = approval_svc.make_visit_title(
-            first_name=visitor.first_name,
-            last_name=visitor.last_name,
-            company=visitor.company_name,
-        )
-        row.approval_status = "draft"
-        row.status = VisitStatus.pending_approval
-
-        # Quality Manager — required for GMP / Lab; the engine workflow may
-        # or may not include the QM step depending on `workflow_defs`. Even
-        # so we pre-resolve and write the candidate so the engine's special-
-        # case lookup (engine.py `_create_approve_task` quality_manager branch)
-        # has data to read.
-        if approval_svc.access_requires_quality_manager(row.access_area):
-            cfg = (await db.execute(select(VmsConfig).limit(1))).scalar_one_or_none()
-            roster = (cfg.quality_manager_user_ids if cfg else []) or []
-            # Resolve roster → active set so we don't pick a deactivated user.
-            try:
-                roster_uuids = [uuid.UUID(str(r)) for r in roster]
-            except (ValueError, TypeError):
-                roster_uuids = []
-            if roster_uuids:
-                active_rows = (await db.execute(
-                    select(User.id).where(User.id.in_(roster_uuids), User.is_active.is_(True))
-                )).scalars().all()
-                row.quality_approver_id = approval_svc.pick_quality_manager(
-                    roster=roster, active_user_ids=set(active_rows),
-                )
-
-        # COMMIT before the HTTP call so approval-api's separate session can
-        # see the row under READ COMMITTED isolation. The trailing commit in
-        # `get_session()` becomes a no-op for this request's main tx.
-        await db.commit()
-
-        # HTTP call to approval-api. In tests we monkey-patch
-        # `approval_svc.submit_for_approval` so this doesn't actually fire.
-        try:
-            await approval_svc.submit_for_approval(row.id, token)
-        except Exception as e:
-            # The visit is already committed; mark it as unsubmitted via a
-            # new transaction so the caller sees a coherent state.
-            row.approval_status = None
-            row.status = VisitStatus.confirmed
-            await db.commit()
-            raise HTTPException(
-                status_code=502,
-                detail=f"Could not submit visit for approval: {e}",
-            ) from e
-
-        # Re-read so the response reflects whatever approval-api wrote.
-        await db.refresh(row)
+        submit_error = await approval_svc.prepare_and_submit(db, row, token)
 
     # Compliance gates (training/PPE confirmation tasks) and the HR training
     # heads-up email are NOT sent here. They fire only once the visit is
@@ -300,7 +274,120 @@ async def create_visit(
         ip_address=meta.ip_address,
         user_agent=meta.user_agent,
         new_value=audit_crud.snapshot(row),
-        notes=f"notifications: {','.join(dispatched)}" if dispatched else None,
+        notes="; ".join(filter(None, [
+            f"notifications: {','.join(dispatched)}" if dispatched else None,
+            f"approval submit failed: {submit_error}" if submit_error else None,
+        ])) or None,
+    )
+    resp = VisitResponse.model_validate(row)
+    if submit_error:
+        resp = resp.model_copy(update={"approval_submit_error": submit_error})
+    return resp
+
+
+def _can_manage(row: Visit, meta, host_dept) -> bool:
+    """Who may edit, resubmit or cancel a visit: its creator, its Host, a
+    department manager of the Host's department, or system_admin. Auditors
+    are read-only. (The Host was missing — a visit booked on someone's behalf
+    could only be cancelled by whoever typed it in.)"""
+    if meta.role == "auditor":
+        return False
+    return (
+        meta.role == "system_admin"
+        or row.created_by == meta.user_id
+        or row.host_id == meta.user_id
+        or (meta.role == "dept_manager" and host_dept == meta.department_id)
+    )
+
+
+async def _send_ppe_request_if_due(db, row: Visit) -> bool:
+    """Janitor PPE email for a visit that has just become Confirmed without
+    going through approval. Approved visits get it from the read-side hook."""
+    if not (row.ppe_requested and row.status == VisitStatus.confirmed and row.ppe_notified_at is None):
+        return False
+    visitor = await visitor_crud.get_visitor(db, row.visitor_id)
+    host_user = (await db.execute(select(User).where(User.id == row.host_id))).scalar_one_or_none()
+    if visitor is None:
+        return False
+    if await notifications_svc.notify_janitor_ppe_request(db, visit=row, visitor=visitor, host=host_user):
+        row.ppe_notified_at = datetime.now(timezone.utc)
+        return True
+    return False
+
+
+# ── Submit / resubmit for approval ──────────────────────────────────────────
+
+@router.post("/{visit_id}/submit", response_model=VisitResponse)
+async def submit_visit(
+    visit_id: uuid.UUID,
+    request: Request,
+    db: SessionDep,
+    user: CurrentUserPayload,
+    token: BearerToken,
+):
+    """Send a visit (again) for approval.
+
+    Two cases reach here: the first hand-off to approval-api failed when the
+    visit was created ("draft"), or an approver chose "Return for edit"
+    ("returned") and the Host has made their changes. If the visit's area no
+    longer needs approval (edited down to the office), it is confirmed here
+    and the returned approval is withdrawn.
+    """
+    row = await visit_crud.get_visit(db, visit_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found")
+    meta = await load_request_meta(db, user, request)
+    host_dept = await visit_crud.fetch_host_department(db, row.host_id)
+    if not await visit_crud.visible_to(db, row, meta, host_dept):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found")
+    if not _can_manage(row, meta, host_dept):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the person who booked the visit, its Host, or their manager can submit it",
+        )
+    if row.status != VisitStatus.pending_approval or row.approval_status not in approval_svc.RESUBMITTABLE_STATES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This visit is not waiting to be submitted",
+        )
+
+    before = audit_crud.snapshot(row)
+    notes = None
+    if not approval_svc.access_requires_approval(row.access_area):
+        if row.approval_status == "returned":
+            try:
+                await approval_svc.cancel_approval(row.id, token)
+            except Exception:  # noqa: BLE001 — local state below is authoritative
+                pass
+            await db.refresh(row)
+        await visit_tasks_svc.close_open_visit_tasks(db, row.id)
+        row.approval_status = None
+        row.status = VisitStatus.confirmed
+        row.host_notified_at = datetime.now(timezone.utc)  # no approval-result email
+        await db.flush()
+        notes = "no approval needed for this access area — confirmed"
+        if await _send_ppe_request_if_due(db, row):
+            notes += "; notifications: ppe_request"
+    else:
+        error = await approval_svc.prepare_and_submit(db, row, token)
+        if error:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Could not send the visit for approval: {error}. Please try again.",
+            )
+
+    await audit_crud.log_event(
+        db,
+        user_id=meta.user_id,
+        user_name=meta.user_name,
+        action_type="visit.submit",
+        entity_type="visit",
+        entity_id=row.id,
+        ip_address=meta.ip_address,
+        user_agent=meta.user_agent,
+        old_value=before,
+        new_value=audit_crud.snapshot(row),
+        notes=notes,
     )
     return VisitResponse.model_validate(row)
 
@@ -332,20 +419,10 @@ async def patch_visit(
             status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found"
         )
 
-    # Only the creator (or system_admin) can edit; dept_manager can edit
-    # their dept visits too.
-    can_edit = (
-        meta.role in ("system_admin", "auditor")  # auditor is read-only — see below
-        or row.created_by == meta.user_id
-        or (meta.role == "dept_manager" and host_dept == meta.department_id)
-    )
-    # auditor must remain read-only; strip them out explicitly.
-    if meta.role == "auditor":
-        can_edit = False
-    if not can_edit:
+    if not _can_manage(row, meta, host_dept):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot edit a visit you did not create",
+            detail="Cannot edit a visit you did not book or host",
         )
 
     if not visit_crud.is_editable(row):
@@ -353,6 +430,33 @@ async def patch_visit(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot edit a visit in status '{row.status.value}'",
         )
+
+    # The access area decides the approval route, so changing it must not
+    # sidestep approval (it used to: book Office, then patch to GMP).
+    new_area = payload.access_area
+    if new_area is not None and new_area != row.access_area:
+        if row.approval_status in ("submitted", "in_review"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This visit is waiting for approval, so its access area cannot be "
+                    "changed now. Ask the approver to return it for edit, or cancel it "
+                    "and book again."
+                ),
+            )
+        if (
+            row.status == VisitStatus.confirmed
+            and approval_svc.approval_tier(new_area) > approval_svc.approval_tier(row.access_area)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "That access area needs approval this visit does not have. "
+                    "Cancel it and book a new visit for that area."
+                ),
+            )
+        # Draft / returned visits may change freely — the next submit routes
+        # by the new area. Confirmed visits may only move down.
 
     before = audit_crud.snapshot(row)
     row = await visit_crud.update_visit(db, row, payload)
@@ -403,17 +507,10 @@ async def cancel_visit(
             status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found"
         )
 
-    # Caller can see it but may not have authority to cancel.
-    # auditor is read-only even though they have full visibility.
-    can_cancel = (
-        meta.role == "system_admin"
-        or row.created_by == meta.user_id
-        or (meta.role == "dept_manager" and host_dept == meta.department_id)
-    )
-    if not can_cancel:
+    if not _can_manage(row, meta, host_dept):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot cancel a visit you did not create",
+            detail="Cannot cancel a visit you did not book or host",
         )
 
     if row.status not in (VisitStatus.confirmed, VisitStatus.pending_approval):
@@ -424,20 +521,32 @@ async def cancel_visit(
 
     before = audit_crud.snapshot(row)
 
-    # If approval is in flight, cascade cancel to approval-api first so the
-    # task disappears from the approver's inbox.
-    if row.status == VisitStatus.pending_approval and row.approval_status not in (
-        None, "cancelled", "rejected", "approved",
-    ):
+    # If approval is in flight, cancel it in approval-api first. The engine
+    # only lets the creator, the current approver or an admin cancel; for the
+    # Host / a department manager it refuses, so vms-api closes the remaining
+    # tasks itself below rather than leaving them in someone's inbox.
+    if row.status == VisitStatus.pending_approval and row.approval_status in approval_svc.IN_FLIGHT_STATES:
         try:
             await approval_svc.cancel_approval(row.id, token)
-        except Exception:
-            # Tolerate engine failure — local cancel proceeds. The approval
-            # task may be stale until next admin cleanup but VMS state is
-            # consistent (Visit.status = cancelled).
+        except Exception:  # noqa: BLE001 — local cancel below is authoritative
             pass
+        await db.refresh(row)
+        if row.approval_status in approval_svc.IN_FLIGHT_STATES:
+            row.approval_status = "cancelled"
+    await visit_tasks_svc.close_open_visit_tasks(db, row.id)
+
+    # A cancel is not a rejection: suppress the read-side approval-result
+    # email ("rejected by an approver") and tell the Host plainly instead.
+    row.host_notified_at = datetime.now(timezone.utc)
 
     row = await visit_crud.cancel_visit(db, row)
+    if row.host_id != meta.user_id:
+        visitor = await visitor_crud.get_visitor(db, row.visitor_id)
+        host_user = (await db.execute(select(User).where(User.id == row.host_id))).scalar_one_or_none()
+        if visitor is not None:
+            await notifications_svc.notify_host_visit_cancelled(
+                db, visit=row, visitor=visitor, host=host_user, cancelled_by=meta.user_name,
+            )
     await audit_crud.log_event(
         db,
         user_id=meta.user_id,

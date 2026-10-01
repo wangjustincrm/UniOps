@@ -131,7 +131,23 @@ class VisitResponse(BaseModel):
     visitor: VisitorResponse | None = None
     additional_visitors: list[VisitorResponse] = []
 
+    # Detail view only: the approver's note on the latest return / reject.
+    approval_note: "ApprovalNote | None" = None
+    # Create / submit only: why the visit could not be sent for approval. The
+    # visit is saved and stays in Pending Approval ("draft") until resubmitted.
+    approval_submit_error: str | None = None
+
+
+class ApprovalNote(BaseModel):
+    action: str            # "return" | "reject"
+    comment: str | None
+    actor_name: str | None
+    at: datetime
+
 
 class VisitListResponse(BaseModel):
     items: list[VisitResponse]
     total: int
+
+
+VisitResponse.model_rebuild()

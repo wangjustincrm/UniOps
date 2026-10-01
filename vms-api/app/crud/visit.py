@@ -234,6 +234,20 @@ def is_visible(
     return False
 
 
+async def visible_to(db: AsyncSession, visit: Visit, meta, host_department_id=None) -> bool:
+    """`is_visible` for a request: resolves the Host's department when the
+    caller has not already."""
+    if host_department_id is None:
+        host_department_id = await fetch_host_department(db, visit.host_id)
+    return is_visible(
+        visit,
+        user_id=meta.user_id,
+        role=meta.role,
+        department_id=meta.department_id,
+        host_department_id=host_department_id,
+    )
+
+
 # ── Create / update / cancel ─────────────────────────────────────────────────
 
 async def create_visit(
