@@ -259,8 +259,8 @@ async def stream_gmp_area_summary(
 
         after_hours = (await db.execute(
             base.with_only_columns(func.count(Visit.id)).where(
-                (func.extract("hour", Visit.planned_arrival) < _BUSINESS_HOUR_START)
-                | (func.extract("hour", Visit.planned_arrival) >= _BUSINESS_HOUR_END)
+                (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) < _BUSINESS_HOUR_START)
+                | (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) >= _BUSINESS_HOUR_END)
             )
         )).scalar_one()
 
@@ -352,8 +352,8 @@ async def compliance_metrics(
                     VisitStatus.checked_out,
                 ]
             ),
-            (func.extract("hour", Visit.planned_arrival) < _BUSINESS_HOUR_START)
-            | (func.extract("hour", Visit.planned_arrival) >= _BUSINESS_HOUR_END),
+            (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) < _BUSINESS_HOUR_START)
+            | (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) >= _BUSINESS_HOUR_END),
         )
     )).scalar_one()
 

@@ -29,6 +29,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user_mirror import User
+from app.core.plant_time import fmt_local
 from app.services import area_rules
 from app.models.visit import AccessArea, Visit
 from app.models.visitor import Visitor
@@ -403,8 +404,9 @@ async def notify_host_visit_cancelled(
 # ── Scheduler emails (reminders / overdue alerts) ───────────────────────────-
 
 def _fmt_dt(value) -> str:
-    """Render a datetime/date for email bodies; empty string when None."""
-    return value.isoformat() if value is not None else "—"
+    """Render a datetime/date for email bodies in the plant's local time
+    (was raw UTC isoformat — four or five hours off for the reader)."""
+    return fmt_local(value)
 
 
 async def notify_host_visit_reminder(

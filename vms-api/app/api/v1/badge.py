@@ -2,6 +2,7 @@
 
   - `POST /api/v1/visits/{id}/print-badge` — atomic print + check-in.
   - `GET  /api/v1/visits/{id}/badge-history` — chronological prints.
+  - `GET  /api/v1/badge/config` — the configured badge layout (any user; printing).
   - `GET  /api/v1/badge/templates` — list configured templates.
   - `PUT  /api/v1/badge/templates/{name}` — admin upserts a template.
 """
@@ -24,7 +25,9 @@ from app.schemas.badge_print import (
     BadgePrintResponse,
     BadgeTemplate,
 )
+from app.schemas.badge_config import BadgeConfig
 from app.schemas.visit import VisitResponse
+from app.services.badge_config import DEFAULT_BADGE_CONFIG, deep_merge
 from app.services import compliance as compliance_svc
 from app.services import notifications as notifications_svc
 
@@ -165,6 +168,19 @@ async def _load_config(db) -> VmsConfig:
             detail="vms_config singleton missing — re-run migrations",
         )
     return cfg
+
+
+@template_router.get("/config", response_model=BadgeConfig)
+async def get_badge_config_for_printing(db: SessionDep, _: CurrentUserPayload):
+    """The badge layout the admin configured, for whoever is printing.
+
+    The badge page used to read GET /admin/badge-config, which is admin-only:
+    every other user got 403 and silently printed the built-in defaults, so an
+    admin's badge changes only ever showed on badges printed by an admin.
+    Read-only; editing stays on the admin endpoint.
+    """
+    cfg = await _load_config(db)
+    return BadgeConfig.model_validate(deep_merge(DEFAULT_BADGE_CONFIG, cfg.badge_config or {}))
 
 
 @template_router.get("/templates", response_model=dict[str, BadgeTemplate])

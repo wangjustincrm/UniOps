@@ -33,6 +33,10 @@ class EntitySchema:
     search_fields: list[str]
     order_by: str
     fields: list[FieldSpec] = field(default_factory=list)
+    # False = records are edit-only here. VMS visits, visitors and health
+    # declarations are compliance records (CFIA / PIPEDA retention); a visit
+    # that should not have happened is cancelled, never deleted.
+    allow_delete: bool = True
 
     def to_dict(self) -> dict:
         return {
@@ -42,6 +46,7 @@ class EntitySchema:
             "list_columns": self.list_columns,
             "search_fields": self.search_fields,
             "order_by": self.order_by,
+            "allow_delete": self.allow_delete,
             "fields": [f.to_dict() for f in self.fields],
         }
 

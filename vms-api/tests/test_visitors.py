@@ -91,3 +91,19 @@ async def test_patch_updates_fields(requester):
     assert body["id_verified"] is True
     # Untouched fields preserved.
     assert body["first_name"] == "John"
+
+
+async def test_search_by_full_name_and_name_plus_company(requester):
+    """Each word must match some column — a full name used to find nothing."""
+    _u, client = requester
+    tag = uuid.uuid4().hex[:6]
+    r = await client.post("/api/v1/visitors", json={
+        "first_name": f"Johnny{tag}", "last_name": f"Smithers{tag}",
+        "company_name": f"Acme{tag}", "visitor_type": "supplier",
+    })
+    vid = r.json()["id"]
+    for q in (f"Johnny{tag} Smithers{tag}", f"Smithers{tag} Acme{tag}", f"  johnny{tag}  "):
+        ids = [v["id"] for v in (await client.get("/api/v1/visitors", params={"search": q})).json()["items"]]
+        assert vid in ids, q
+    none = (await client.get("/api/v1/visitors", params={"search": f"Johnny{tag} Nobody{tag}"})).json()
+    assert none["total"] == 0

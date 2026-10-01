@@ -30,6 +30,7 @@ export interface EntitySchema {
   search_fields: string[]
   order_by: string
   allow_edit?: boolean   // false = delete-only (no edit). Missing → editable.
+  allow_delete?: boolean // false = edit-only (VMS compliance records). Missing → deletable.
   fields: FieldSpec[]
   child?: ChildSchema | null
 }

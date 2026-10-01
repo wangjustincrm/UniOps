@@ -20,6 +20,8 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
   const { data, isLoading } = useAdminList(schema.system, schema.key, page, search)
 
   const cols = schema.list_columns
+  // VMS compliance records are edit-only (backend refuses delete with 409).
+  const canDelete = schema.allow_delete !== false
   const totalPages = data ? Math.max(1, Math.ceil(data.total / 20)) : 1
   const pageIds = (data?.items ?? []).map((r) => String(r.id))
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
@@ -67,7 +69,7 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
           placeholder={`Search ${schema.label}…`}
           className="h-9 w-72 rounded-lg border border-neutral-300 px-3 text-sm"
         />
-        {selected.size > 0 && (
+        {canDelete && selected.size > 0 && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => setBulkOpen(true)}
@@ -80,7 +82,7 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
         )}
       </div>
 
-      {(showSelectAllMatching || allMatching) && (
+      {canDelete && (showSelectAllMatching || allMatching) && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
           {allMatching ? (
             <>All <strong>{selected.size}</strong> matching {schema.label} records are selected.</>
@@ -99,11 +101,13 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
         <table className="w-full text-sm">
           <thead className="bg-neutral-50">
             <tr>
-              <th className="w-10 px-3 py-2">
-                <input type="checkbox" aria-label="Select all on page"
-                  checked={allPageSelected} onChange={togglePage}
-                  className="h-4 w-4 rounded border-neutral-300" />
-              </th>
+              {canDelete && (
+                <th className="w-10 px-3 py-2">
+                  <input type="checkbox" aria-label="Select all on page"
+                    checked={allPageSelected} onChange={togglePage}
+                    className="h-4 w-4 rounded border-neutral-300" />
+                </th>
+              )}
               {cols.map((c) => (
                 <th key={c} className="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-500">{c}</th>
               ))}
@@ -111,16 +115,18 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
             </tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={cols.length + 2} className="px-3 py-6 text-center text-neutral-400">Loading…</td></tr>}
+            {isLoading && <tr><td colSpan={cols.length + (canDelete ? 2 : 1)} className="px-3 py-6 text-center text-neutral-400">Loading…</td></tr>}
             {data?.items.map((row) => {
               const id = String(row.id)
               return (
                 <tr key={id} className={`border-t border-neutral-100 ${selected.has(id) ? 'bg-primary-50/40' : ''}`}>
-                  <td className="px-3 py-2">
-                    <input type="checkbox" aria-label="Select row"
-                      checked={selected.has(id)} onChange={() => toggleRow(id)}
-                      className="h-4 w-4 rounded border-neutral-300" />
-                  </td>
+                  {canDelete && (
+                    <td className="px-3 py-2">
+                      <input type="checkbox" aria-label="Select row"
+                        checked={selected.has(id)} onChange={() => toggleRow(id)}
+                        className="h-4 w-4 rounded border-neutral-300" />
+                    </td>
+                  )}
                   {cols.map((c) => (
                     <td key={c} className="px-3 py-2 text-neutral-800">{String(row[c] ?? '')}</td>
                   ))}
@@ -128,13 +134,15 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
                     {schema.allow_edit !== false && (
                       <button onClick={() => onEdit(row)} className="text-xs text-primary-600 hover:underline mr-3">Edit</button>
                     )}
-                    <button onClick={() => onDelete(row)} className="text-xs text-red-600 hover:underline">Delete</button>
+                    {canDelete && (
+                      <button onClick={() => onDelete(row)} className="text-xs text-red-600 hover:underline">Delete</button>
+                    )}
                   </td>
                 </tr>
               )
             })}
             {data && data.items.length === 0 && (
-              <tr><td colSpan={cols.length + 2} className="px-3 py-6 text-center text-neutral-400">No records</td></tr>
+              <tr><td colSpan={cols.length + (canDelete ? 2 : 1)} className="px-3 py-6 text-center text-neutral-400">No records</td></tr>
             )}
           </tbody>
         </table>
