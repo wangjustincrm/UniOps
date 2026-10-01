@@ -19,6 +19,10 @@ import {
 } from '@/services/api'
 import { BadgePreview } from '@/components/BadgePreview'
 
+/** Printed badge size as a fraction of the designed size (140mm wide).
+ *  0.7 is what operators were setting by hand in the print dialog. */
+const BADGE_PRINT_SCALE = 0.7
+
 export default function BadgePrintPage() {
   const { visitId } = useParams<{ visitId: string }>()
   const [searchParams] = useSearchParams()
@@ -125,8 +129,10 @@ export default function BadgePrintPage() {
       )}
 
       {/* Print layout: landscape, two copies per row, one visitor pair per page.
-          Badges stay full size (140mm); the pair is wider than the sheet, so
-          the operator prints at ~60% scale to fit both in a row. */}
+          The badge is designed at 140mm; printed at that size it does not fit
+          the badge holder, and operators had to set Scale = 70% in the print
+          dialog by hand every time. The print CSS now applies that 70% itself
+          (BADGE_PRINT_SCALE), so the dialog is left at its default 100%. */}
       <style>{`
         .badge-pair {
           display: flex;
@@ -137,6 +143,25 @@ export default function BadgePrintPage() {
         }
         .badge-pair > .badge-card { flex: 0 0 auto; }
         @media print {
+          /* Same as "Scale 70%" in the print dialog: \`zoom\` shrinks the
+             layout box (fonts, QR, mm sizes and page breaks alike), unlike
+             transform: scale(), which would leave page breaks at full size.
+             140mm × 0.7 ≈ 98mm per badge; the pair ≈ 199mm, well inside the
+             259mm printable width of landscape Letter. */
+          .badge-pair { zoom: ${BADGE_PRINT_SCALE}; }
+          /* The tab shell renders each page inside fixed-height, absolutely
+             positioned, scrolling boxes (AppLayout h-screen + TabHost
+             "absolute inset-0 overflow-y-auto"). On paper that box is one
+             screen tall, so a visit with several visitors printed only the
+             first page. Put every ancestor of the badges back into normal
+             flow for printing — scoped with :has() so nothing else changes. */
+          *:has(.badge-pair) {
+            position: static !important;
+            inset: auto !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
           /* Landscape Letter via explicit swapped dimensions — the
              "letter landscape" keyword is ignored by some Chrome/Edge builds. */
           @page { size: 11in 8.5in; margin: 1cm; }

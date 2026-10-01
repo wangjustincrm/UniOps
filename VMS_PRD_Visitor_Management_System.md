@@ -280,7 +280,7 @@ When the Host prints the badge, the system generates a browser print page with a
 | Requirement ID | Description | Priority | Status (V2.7) |
 |----------------|-------------|----------|---------------|
 | VMS-LB-005 | Browser native printing (`window.print()` + `@media print`) to a standard office printer | P0 | ✅ |
-| VMS-LB-006 | Dedicated badge card layout sized for cutting out | P0 | ◐ Two identical cards side by side per visitor, one visitor per page, **landscape Letter** |
+| VMS-LB-006 | Dedicated badge card layout sized for cutting out | P0 | ◐ Two identical cards side by side per visitor, one visitor per page, **landscape Letter**. *(V2.8)* Printed at **70%** of the 140 × 100 mm design = **98 × 70 mm** per card, applied by the print CSS (`zoom`), so the print dialog stays at 100% — operators used to set Scale 70% by hand |
 | VMS-LB-007 | Print dialog first, then check-in on confirmation | P0 | ◐ **Reversed**: check-in is recorded when the badge page loads, before the dialog (§2.2.2 note) |
 | VMS-LB-008 | Manual reprint; reprint does NOT re-check-in | P1 | ✅ "Reprint badge" on the visit detail page (after check-in), reason required |
 | VMS-LB-009 | Badge print log: timestamp, printed by, print count, reprint reason | P2 | ✅ "Badge prints" section: "Original" / "Reprint #n (reason)" |
@@ -1647,6 +1647,8 @@ Found in the V2.7 code audit (`origin/main @bb8d0a9a`). Severity reflects compli
 | Data Maintenance | Hard delete of VMS records | Edit-only (`allow_delete: false`; 409 on delete; Portal hides Delete) |
 | Portal inbox | De-duplicated by document number (hid tasks); title repeated the visitor | VMS tasks keyed by task id; "Approve visitor visit: <visitor> — <area>, <date>" |
 | Approval engine | NULL `approval_step_idx` crashed every VMS submit (since `e9f39159`) | NULL treated as step 0 |
+| Badge print size | 140 × 100 mm; operator set Scale 70% in the print dialog each time | Printed at 70% automatically (98 × 70 mm); leave the dialog at 100% |
+| Badge print page | Tab bar and grey page background printed; a multi-visitor visit printed only the first page (badges clipped to one screen height by the tab shell) | Only the badges print, on white, one page per visitor |
 
 **Release notes**: no database migration. Services touched: vms-api, approval-api, vms (frontend), portal (frontend), epms-api (guide-layer text only). The training deck's "Known issues" slide describes production **before** this release and must be revised when it ships.
 
