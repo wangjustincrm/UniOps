@@ -15,9 +15,9 @@ Per S2_ARCHITECTURE_REVIEW.md F3 (real title column):
     Portal task titles without doing a cross-table join.
 """
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +33,7 @@ class Visit(UUIDPrimaryKey, Base):
     host_id:     Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     created_by:  Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     access_area: Mapped[str]       = mapped_column(String(40), nullable=False)
+    visit_date:  Mapped[date | None] = mapped_column(Date, nullable=True)
     visit_title: Mapped[str]       = mapped_column(String(255), nullable=False, default="")
     quality_approver_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -48,5 +49,23 @@ class Visit(UUIDPrimaryKey, Base):
     # ── Synthetic attributes the engine reads via _DOC_META["…_attr"] keys ──
     @property
     def title(self) -> str:
-        """Engine line ~345 does `doc.title` directly when rendering task title."""
-        return self.visit_title or f"VMS Visit {str(self.id)[:8]}"
+        """The part of the task title after the document number.
+
+        The number is already `visit_title` (who is visiting), so the title
+        adds where and when — repeating `visit_title` here printed the visitor
+        twice in every approval task.
+        """
+        area = _AREA_LABELS.get(self.access_area, self.access_area or "")
+        when = self.visit_date.isoformat() if self.visit_date else ""
+        return ", ".join(p for p in (area, when) if p) or f"Visit {str(self.id)[:8]}"
+
+
+# Same wording as the VMS frontend's area badges.
+_AREA_LABELS = {
+    "office": "Office",
+    "warehouse": "Warehouse",
+    "production_non_gmp": "Production (Non-GMP)",
+    "production_gmp": "Production (GMP)",
+    "laboratory": "Laboratory",
+    "all": "Entire Plant",
+}

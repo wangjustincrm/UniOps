@@ -52,7 +52,11 @@ def _set_status(meta: dict, doc: Any, value: str) -> None:
 # belongs to the PO's own approval chain and must not be touched). Default is
 # "approval_step_idx", so every existing doc_type is unchanged.
 def _step_of(meta: dict, doc: Any) -> int:
-    return getattr(doc, meta.get("step_attr", "approval_step_idx"))
+    # NULL = never submitted = step 0. vms_visits.approval_step_idx is nullable
+    # with no default, and since execute_action started reading the step before
+    # branching on the action (e9f39159), a NULL here raised TypeError on every
+    # VMS submit — which vms-api then turned into "confirmed without approval".
+    return getattr(doc, meta.get("step_attr", "approval_step_idx")) or 0
 
 
 def _set_step(meta: dict, doc: Any, value: int) -> None:
@@ -202,10 +206,17 @@ _DOC_META: dict[str, dict] = {
         "task_approve": "approve_vms_visit",
         "task_revise":  "revise_vms_visit",
         "status_attr":  "approval_status",
-        "valid_submit":  ("draft",),
+        # `returned` belongs in both, as for every other doc_type: a visit sent
+        # back for edit is resubmitted (vms-api POST /visits/{id}/submit) or
+        # cancelled by its creator. Without it a returned visit could do
+        # neither — it sat in Pending Approval and its revise task never closed.
+        "valid_submit":  ("draft", "returned"),
         "valid_approve": ("submitted", "in_review"),
         "valid_return":  ("submitted", "in_review"),
-        "valid_cancel":  ("draft", "submitted", "in_review"),
+        "valid_cancel":  ("draft", "returned", "submitted", "in_review"),
+        # Task titles read "Approve visitor visit: <visit_title> — <area, date>".
+        # Without labels the doc label fell back to "VMS_VISIT".
+        "labels": {"doc": "visitor visit", "revise": "visitor visit"},
     },
     # ── budget-api plans ──────────────────────────────────────────────────────
     "budget_plan": {

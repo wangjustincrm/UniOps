@@ -22,6 +22,7 @@ from app.models.routing import ApprovalBackup, ApprovalSetting, DeptRouting
 from app.models.agreement import PurchaseAgreement
 from app.models.task import Task
 from app.models.user import User
+from app.models.visit import Visit as VmsVisit
 
 TEST_DB = os.getenv("TEST_APPROVAL_DB", "approval_test")
 TEST_HOST = os.getenv("TEST_PG_HOST", "localhost")
@@ -81,6 +82,8 @@ _ENGINE_TABLES = [
     ApprovalBackup.__table__,
     ApprovalSetting.__table__,
     ApprovalDelegation.__table__,
+    # VMS visits (thin mirror) — test_engine_vms_visit.py
+    VmsVisit.__table__,
 ]
 
 
