@@ -190,7 +190,7 @@ _GMP_SUMMARY_HEADER = [
 _BUSINESS_HOUR_START = 7   # inclusive
 _BUSINESS_HOUR_END = 19    # exclusive
 
-_GMP_AREAS = (AccessArea.production_gmp, AccessArea.laboratory)
+_GMP_AREAS = (AccessArea.production_gmp, AccessArea.laboratory, AccessArea.all)  # = area_rules.GMP_GRADE_AREAS, ordered for the report
 
 
 async def stream_gmp_area_summary(

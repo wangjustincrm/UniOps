@@ -129,6 +129,15 @@ async def submit_health_declaration(
     }
 
     before = audit_crud.snapshot(visit)
+    # Re-filing replaces the visitor's declaration row in place, so the audit
+    # entry has to carry what was there: the previous answers, result and
+    # signature go into old_value in full. Without this a Failed declaration
+    # could be re-filed as Passed and the original answers were gone.
+    previous = await health_crud.get_declaration(db, visit_id=visit.id, visitor_id=target_visitor_id)
+    # Captured now: submit_declaration mutates this same row in place.
+    previous_result = previous.result.value if previous is not None else None
+    if previous is not None:
+        before = {**before, "declaration": health_crud.declaration_record(previous, include_signature=True)}
     row = await health_crud.submit_declaration(
         db,
         visit=visit,
@@ -149,8 +158,11 @@ async def submit_health_declaration(
         ip_address=meta.ip_address,
         user_agent=meta.user_agent,
         old_value=before,
-        new_value=audit_crud.snapshot(visit),
-        notes=f"result={result.value}",
+        new_value={**audit_crud.snapshot(visit), "declaration": health_crud.declaration_record(row)},
+        notes=(
+            f"result={result.value}; re-filed over previous result={previous_result}"
+            if previous_result else f"result={result.value}"
+        ),
     )
 
     return HealthDeclarationResponse.model_validate(row)

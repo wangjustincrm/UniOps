@@ -29,6 +29,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user_mirror import User
+from app.services import area_rules
 from app.models.visit import AccessArea, Visit
 from app.models.visitor import Visitor
 from app.models.vms_config import VmsConfig
@@ -36,11 +37,7 @@ from app.models.vms_config import VmsConfig
 log = logging.getLogger(__name__)
 
 # Areas that trigger training + PPE notifications.
-_NEEDS_TRAINING_AND_PPE = frozenset({
-    AccessArea.production_gmp,
-    AccessArea.laboratory,
-    AccessArea.all,
-})
+_NEEDS_TRAINING_AND_PPE = area_rules.COMPLIANCE_TASK_AREAS
 
 
 # ── SMTP config (read from epms-api's company_config, same DB) ──────────────-

@@ -27,22 +27,13 @@ import httpx
 
 from app.core.config import settings
 from app.models.visit import AccessArea, Visit, VisitStatus
+from app.services import area_rules
 
 # Areas that trigger approval-api involvement at all.
-_NEEDS_APPROVAL = frozenset({
-    AccessArea.warehouse,
-    AccessArea.production_non_gmp,
-    AccessArea.production_gmp,
-    AccessArea.laboratory,
-    AccessArea.all,
-})
+_NEEDS_APPROVAL = area_rules.APPROVAL_AREAS
 
 # Areas that additionally require a Quality Manager step.
-_NEEDS_QUALITY_MANAGER = frozenset({
-    AccessArea.production_gmp,
-    AccessArea.laboratory,
-    AccessArea.all,
-})
+_NEEDS_QUALITY_MANAGER = area_rules.QUALITY_MANAGER_AREAS
 
 
 def access_requires_approval(area: AccessArea) -> bool:
