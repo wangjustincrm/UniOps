@@ -932,3 +932,103 @@ async def test_a_user_with_no_department_sees_no_budget(test_engine, requester_c
         "entity": "budget_plan", "metrics": ["count"]})
     assert r.status_code == 200
     assert int(r.json()["rows"][0]["count"]) == 0
+
+
+# ── outstanding quantity on a PO line ────────────────────────────────────────
+#
+# "Not fully received" and "at least 10% still outstanding" compare two columns
+# of one row. The query language compares a column to a literal, so before
+# these fields existed the planner fetched every line and the narrator did the
+# filtering by eye over the first page — and answered "none" for a question
+# where 44 orders qualified.
+
+
+async def _seed_lines(test_engine, admin_client, rows):
+    """One PO, one line per (description, qty, received_qty)."""
+    from app.models.po import PoLineItem
+    vendor = await _seed_vendor(test_engine)
+    number = f"PO-OUT-{uuid.uuid4().hex[:6]}"
+    po_id = await _seed_po(test_engine, vendor, _user_id(admin_client),
+                           number=number, status="issued")
+    async with _factory(test_engine)() as db:
+        for desc, qty, rcv in rows:
+            db.add(PoLineItem(po_id=po_id, description=desc, qty=Decimal(qty),
+                              unit="kg", unit_price=Decimal("1"),
+                              line_total=Decimal(qty), received_qty=Decimal(rcv)))
+        await db.commit()
+    return number
+
+
+async def _outstanding(admin_client, number, where):
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "po_line", "select": ["description"],
+        "where": [{"field": "order.number", "op": "eq", "value": number}, *where],
+    })
+    assert r.status_code == 200, r.text
+    return sorted(row["description"] for row in r.json()["rows"])
+
+
+async def test_not_fully_received_is_a_filter(test_engine, admin_client):
+    number = await _seed_lines(test_engine, admin_client, [
+        ("half", "100", "50"), ("nearly", "100", "95"),
+        ("done", "100", "100"), ("over", "100", "120"),
+    ])
+    # The positive half first: an unfiltered read sees all four, so an empty
+    # result below cannot be "the lines were never readable".
+    assert await _outstanding(admin_client, number, []) == [
+        "done", "half", "nearly", "over"]
+    assert await _outstanding(admin_client, number, [
+        {"field": "outstanding_qty", "op": "gt", "value": 0}]) == ["half", "nearly"]
+
+
+async def test_share_outstanding_is_a_percent_of_the_order(test_engine, admin_client):
+    number = await _seed_lines(test_engine, admin_client, [
+        ("half", "100", "50"), ("nearly", "100", "95"),
+        ("exactly ten", "200", "180"), ("zero qty", "0", "0"),
+    ])
+    assert await _outstanding(admin_client, number, [
+        {"field": "outstanding_pct", "op": "gte", "value": 10}]) == [
+        "exactly ten", "half"]
+    # A line ordered at zero has no share; it must not fall on either side.
+    assert await _outstanding(admin_client, number, [
+        {"field": "outstanding_pct", "op": "lt", "value": 10}]) == ["nearly"]
+
+
+async def test_comparing_a_field_to_a_field_says_what_to_do(admin_client):
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "po_line",
+        "where": [{"field": "received_qty", "op": "lt", "value": "qty"}],
+    })
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "is a field, not a value" in detail
+    # And a real number on the same field still passes the same check.
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "po_line",
+        "where": [{"field": "received_qty", "op": "lt", "value": "5"}],
+    })
+    assert r.status_code == 200, r.text
+
+
+async def test_milk_orders_can_be_excluded_by_status(test_engine, admin_client):
+    vendor = await _seed_vendor(test_engine)
+    tag = uuid.uuid4().hex[:6]
+    for status in ("issued", "nc_milk"):
+        await _seed_po(test_engine, vendor, _user_id(admin_client),
+                       number=f"PO-MILK-{tag}-{status}", status=status)
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "purchase_order", "select": ["number", "status"],
+        "where": [{"field": "number", "op": "like", "value": f"PO-MILK-{tag}"},
+                  {"field": "status", "op": "ne", "value": "nc_milk"}],
+    })
+    assert r.status_code == 200, r.text
+    assert [row["status"] for row in r.json()["rows"]] == ["issued"]
+    # The reply side is told what nc_milk means, not just the code.
+    assert "Milk" in r.json()["value_labels"]["status"]["nc_milk"]
+
+
+async def test_not_like_excludes_a_fragment(test_engine, admin_client):
+    number = await _seed_lines(test_engine, admin_client, [
+        ("Raw Cows Milk", "1", "0"), ("Carton 500g", "1", "0")])
+    assert await _outstanding(admin_client, number, [
+        {"field": "description", "op": "not_like", "value": "milk"}]) == ["Carton 500g"]

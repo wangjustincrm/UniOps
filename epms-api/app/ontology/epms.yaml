@@ -53,10 +53,12 @@ entities:
           5: "Fixed Asset"
           6: "Project"
 
+      # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
+      # found values in the data the planner had never been told about.
       status:
         kind: enum
         label: "Status"
-        values: [draft, submitted, approved, rejected, cancelled]
+        values: [draft, submitted, in_review, approved, rejected, returned, cancelled]
       amount: {kind: money, label: "Amount"}
       currency: {kind: text, label: "Currency", enumerate: true}
       vendor_name: {kind: text, label: "Vendor name"}
@@ -160,10 +162,36 @@ entities:
           5: "Fixed Asset"
           6: "Project"
 
+      # The list used to be the six statuses of the EPMS approval flow. Orders
+      # mirrored from NC — which is nearly all of type 1 — carry four more, and
+      # the planner, told those six were the ONLY values, had no way to name
+      # them: "exclude milk orders" could not be expressed, so it was not, and
+      # the answer was built over milk lines. Measured on production 2026-10-02
+      # (type 1: 159 nc_milk, 143 issued, 123 closed, 2 nc_pending, ...).
+      # test_every_enum_value_in_the_database_is_declared keeps this in step.
+      #
+      # value_labels rather than bare values because two of these are not
+      # self-explanatory and one of them IS the answer to a question people ask:
+      # "milk type" is not a field anywhere, it is status nc_milk.
       status:
         kind: enum
         label: "Status"
-        values: [draft, submitted, approved, rejected, cancelled, closed]
+        values: [draft, submitted, in_review, approved, rejected, issued,
+                 partially_received, fully_received, closed, cancelled,
+                 nc_pending, nc_milk]
+        value_labels:
+          draft: "Draft"
+          submitted: "Submitted"
+          in_review: "In review"
+          approved: "Approved"
+          rejected: "Rejected"
+          issued: "Issued to the vendor and still open. Every open NC raw-material/packaging order sits here whatever has arrived — how much is received is on the lines (po_line.outstanding_qty), not in this status"
+          partially_received: "Partially received"
+          fully_received: "Fully received"
+          closed: "Closed"
+          cancelled: "Cancelled"
+          nc_pending: "Not yet approved in NC — of any trade type, milk included; a milk order only becomes nc_milk once NC approves it"
+          nc_milk: "Milk order (\"Milk type\") — an NC order of any trade type other than raw material/packaging; raw cow/goat milk, skim, evaporated milk. Received and stocked in NC by hand, so its received quantities here are not kept up to date"
       total: {kind: money, label: "Total including tax"}
       subtotal: {kind: money, label: "Total before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
@@ -252,6 +280,20 @@ entities:
       # How much of this line has actually arrived. The gap between this and qty
       # is what is still outstanding, per line rather than per order.
       received_qty: {kind: money, label: "Quantity received so far"}
+      # Computed on the model (hybrid properties), not stored. They are here
+      # because the query language compares a field to a literal and nothing
+      # else: "not fully received" is received_qty < qty, which cannot be said
+      # without them. The planner wrote exactly that — value "qty" — and was
+      # rejected twice ("I could not build a valid query").
+      outstanding_qty:
+        kind: money
+        label: "Quantity still to receive (qty - received_qty). Greater than 0
+          means NOT fully received; 0 or less means fully received"
+      outstanding_pct:
+        kind: money
+        label: "Percent of the ordered quantity still to receive, 0-100. Use
+          for share-of-order rules: \"at least 10% still outstanding\" is
+          outstanding_pct gte 10"
       sample: {kind: text, label: "Sample required"}
       planned_arrival_date: {kind: date, label: "Planned arrival (NC orders only)"}
     metrics:
@@ -313,10 +355,13 @@ entities:
     fields:
       number: {kind: text, label: "GR number"}
       title: {kind: text, label: "Title"}
+      # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
+      # found values in the data the planner had never been told about.
       status:
         kind: enum
         label: "Status"
-        values: [pending_ack, acknowledged, cancelled]
+        values: [pending_ack, acknowledged, collection_pending, collected,
+                 confirmed, cancelled]
       po_number: {kind: text, label: "PO number"}
       pr_number: {kind: text, label: "PR number"}
       vendor_name: {kind: text, label: "Vendor name"}
@@ -361,10 +406,12 @@ entities:
       internal_ref: {kind: text, label: "Internal reference"}
       vendor_invoice_number: {kind: text, label: "Vendor's own invoice number"}
       vendor_name: {kind: text, label: "Vendor name"}
+      # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
+      # found values in the data the planner had never been told about.
       status:
         kind: enum
         label: "Matching status"
-        values: [unmatched, matched, exception, paid, cancelled]
+        values: [unmatched, match_review, matched, exception, paid, cancelled]
       amount: {kind: money, label: "Amount before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
       total_amount: {kind: money, label: "Total including tax"}
@@ -406,10 +453,13 @@ entities:
     fields:
       pa_number: {kind: text, label: "PA number"}
       title: {kind: text, label: "Title"}
+      # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
+      # found values in the data the planner had never been told about.
       status:
         kind: enum
         label: "Status"
-        values: [draft, submitted, approved, rejected, cancelled, paid]
+        values: [draft, submitted, in_review, approved, rejected, returned,
+                 processed, cancelled, paid]
       pa_type:
         kind: enum
         label: "Payment type"

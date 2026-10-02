@@ -50,7 +50,7 @@ _MATCHED = "__matched_rows"
 # building queries that are technically valid SQL but meaningless (LIKE against
 # a money column) or expensive (LIKE against an unindexed date).
 _OPS_BY_KIND: dict[str, frozenset[str]] = {
-    TEXT: frozenset({"eq", "ne", "in", "not_in", "like"}),
+    TEXT: frozenset({"eq", "ne", "in", "not_in", "like", "not_like"}),
     ENUM: frozenset({"eq", "ne", "in", "not_in"}),
     MONEY: frozenset({"eq", "ne", "gt", "gte", "lt", "lte", "between"}),
     INT: frozenset({"eq", "ne", "gt", "gte", "lt", "lte", "between"}),
@@ -230,6 +230,30 @@ def _apply_default_filter(stmt, entity: Entity, clauses: list[dict], hops: list,
     return stmt.where(col.is_(True) if value is True else col == value), True
 
 
+def _refuse_column_as_value(entity: Entity, name: str, kind: str, value: Any) -> None:
+    """Reject `received_qty lt "qty"` with a reason the planner can act on.
+
+    A value is always a literal. When it is instead the name of another field,
+    the planner is trying to compare two columns — "not fully received" is
+    received_qty < qty — and the generic "'qty' is not a valid money" sent it
+    round the same loop twice before the person was told nothing could be built.
+    """
+    if kind not in (MONEY, INT, DATE, DATETIME) or not isinstance(value, str):
+        return
+    owner = entity
+    for step in name.split(".")[:-1]:
+        owner = REGISTRY[owner.links[step].target]
+    if value.strip() not in owner.fields:
+        return
+    _reject(
+        f"'{value}' is a field, not a value: comparing one field to another is "
+        f"not supported, every value must be a literal. Look in {owner.name}'s "
+        f"fields for one that already expresses the comparison (a difference or "
+        f"a share) and filter that against a number; if none does, answer "
+        f"cannot_answer and name the condition that cannot be expressed."
+    )
+
+
 def _apply_where(stmt, entity: Entity, clauses: list[dict], hops: list):
     for clause in clauses:
         name = clause.get("field")
@@ -262,13 +286,21 @@ def _apply_where(stmt, entity: Entity, clauses: list[dict], hops: list):
             stmt = stmt.where(col.between(lo, hi))
             continue
 
-        if op == "like":
+        if op in ("like", "not_like"):
             text = _coerce(TEXT, value)
             # The planner supplies a bare term; the wildcards are ours so it
             # cannot inject a leading % that forces a full scan on every column.
             safe = re.sub(r"[%_\\]", lambda m: "\\" + m.group(0), text)
-            stmt = stmt.where(col.ilike(f"%{safe}%"))
+            if op == "like":
+                stmt = stmt.where(col.ilike(f"%{safe}%"))
+            else:
+                # NULL is "does not contain it" too. A plain NOT ILIKE drops NULL
+                # rows, so "lines whose notes don't mention X" would silently
+                # lose every line with no notes at all.
+                stmt = stmt.where(sa.or_(col.is_(None), col.notilike(f"%{safe}%")))
             continue
+
+        _refuse_column_as_value(entity, name, kind, value)
 
         operand = _coerce(kind, value)
         ops = {"eq": col.__eq__, "ne": col.__ne__, "gt": col.__gt__,

@@ -559,3 +559,47 @@ def test_a_default_filter_must_explain_itself():
             assert entity.default_filter_stand_down, (
                 f"{entity.name} has no way to ask about the dimension it "
                 f"filters on, which makes it a scope wearing a default's name")
+
+
+async def test_every_enum_value_in_the_database_is_declared():
+    """An enum's `values` are told to the planner as the ONLY values there are.
+
+    purchase_order.status listed the six EPMS approval statuses while the table
+    held ten, four of them from the NC mirror. "Exclude milk orders" is status
+    nc_milk, a value the planner had never been shown — so it built the query
+    without that condition and the answer was computed over milk lines.
+
+    Real database, not the test one (which is built from these declarations).
+    """
+    import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.core.config import settings
+    from app.core.ontology import _TABLE_MODELS
+
+    problems: list[str] = []
+    checked = 0
+    engine = create_async_engine(str(settings.DATABASE_URL))
+    try:
+        async with engine.connect() as conn:
+            for entity in REGISTRY.values():
+                table = entity.model.__tablename__
+                if table in _TABLE_MODELS:
+                    continue  # table entities are covered by the column check
+                for fname, field in entity.fields.items():
+                    if field.kind != "enum" or not field.values:
+                        continue
+                    found = {v for (v,) in (await conn.execute(sa.text(
+                        f"SELECT DISTINCT {fname} FROM {table} "
+                        f"WHERE {fname} IS NOT NULL"))).all()}
+                    checked += 1
+                    missing = found - set(field.values)
+                    if missing:
+                        problems.append(f"{entity.name}.{fname}: {sorted(missing)}")
+    finally:
+        await engine.dispose()
+
+    assert checked, "no enum fields were checked — has the registry changed?"
+    assert not problems, (
+        "values present in the data but not declared, so the planner cannot "
+        "filter on them:\n  " + "\n  ".join(problems))

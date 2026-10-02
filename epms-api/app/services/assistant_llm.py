@@ -29,6 +29,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from app.core.config import settings
+from app.services.controlled_query import _OPS_BY_KIND as cq_ops
 
 log = logging.getLogger(__name__)
 
@@ -131,6 +132,33 @@ Rules:
 - If the question cannot be answered from this schema — it is about something
   not modelled, or it needs data that is not here — call cannot_answer. Saying
   so is a correct answer. Guessing is not.
+- EVERY condition in the question becomes a `where` clause — inclusions and
+  exclusions alike ("not fully received", "leave out milk orders", "skip lines
+  with under 10% outstanding"). The rows you fetch are handed to someone who
+  may not filter them: a condition left out of the query is a condition the
+  answer silently ignores, and the narrator sees only the first page. If one
+  condition cannot be written as a filter, call cannot_answer and name that
+  condition — never fetch broader rows hoping it gets applied later.
+- A value is always a literal. To compare two fields of the same row (received
+  vs ordered), look for a field that already expresses the comparison — a
+  difference or a share — and filter it against a number.
+- On a follow-up ("drop the second rule", "now only for vendor X", "去掉第二个
+  条件"), rebuild the WHOLE previous query from the conversation and apply the
+  change to it. The new question alone is not the request. The previous turn
+  carries "[query that ran: ...]" — start from exactly that. Each of its
+  clauses says in `because` which part of the question it came from: drop the
+  clauses whose `because` is the rule being removed, keep all the others.
+  "The second rule" is numbered the way THE PERSON numbered it in their
+  question, never by position in the query's `where` list, which is in no
+  order they can see. Find what their rule 2 said, remove only the clause(s)
+  that implement it, and keep every other clause exactly as it was — including
+  the ones that came from the main sentence rather than from a numbered rule.
+  Example: "list type 1 POs not fully received, except: 1. milk orders 2. lines
+  under 10% outstanding", then "drop the second rule". Their rule 2 is "lines
+  under 10% outstanding" — remove outstanding_pct, and KEEP type 1, KEEP not
+  fully received (outstanding_qty gt 0), KEEP the milk exclusion. "Type 1" and
+  "not fully received" are the request itself, not rules 1 and 2. Keep each
+  clause's `because` text unchanged so the numbering stays theirs.
 - If they are asking what THEY should do — what is waiting for them, what is in
   their inbox, what they owe — call whats_next.
 - "How many X can we make from what we have", "which material runs out first",
@@ -244,7 +272,18 @@ results are the only facts you have.
   your reply — never wrapped in quotation marks. Include the currency if the rows
   carry one.
 - If the result was truncated, say that what you are showing is the first N, not
-  all of them.
+  all of them. A truncated result is a sample: never conclude "none of them" or
+  "all of them" from it.
+- When the question changes an earlier one ("drop the second rule", "now only
+  vendor X"), say in one clause which condition was removed or changed, using
+  the clause's `because` text — e.g. "Without rule 2 (under 10% outstanding):".
+  If that was not the condition they meant, this is how they find out.
+- Every condition in the question should appear in query_that_ran's `where`.
+  If one does not — the question excluded something the query did not — do NOT
+  apply it yourself by reading the rows. Say plainly that this condition was
+  not applied, and answer only for what the query did filter. Filtering by eye
+  over one page and reporting the outcome is how "none qualify" was once given
+  for a question where 44 orders did.
 - If the results are empty, say so plainly — do not speculate about why.
 - Empty is "nothing matched this query", NOT "this never happened". When the
   query filtered on a name the person typed, say that no records matched that
@@ -288,12 +327,27 @@ _QUERY_TOOL = {
                         "field": {"type": "string"},
                         "op": {
                             "type": "string",
-                            "enum": ["eq", "ne", "in", "not_in", "like", "gt",
-                                     "gte", "lt", "lte", "between"],
+                            # From the query layer, not a copy of it: this list
+                            # lacked not_like after the executor accepted it.
+                            "enum": sorted(set().union(*cq_ops.values())),
                         },
                         "value": {},
+                        # Never read by the executor. It travels back in the
+                        # query shown as evidence and in the history of the next
+                        # turn, which is what lets "drop the second rule" find
+                        # its clause: told only to count, the planner removed
+                        # "not fully received" in four runs out of five.
+                        "because": {
+                            "type": "string",
+                            "description": (
+                                "The part of the question this clause "
+                                "implements, quoted in the person's own words "
+                                "and keeping their numbering, e.g. \"2. skip "
+                                "lines under 10% outstanding\"."
+                            ),
+                        },
                     },
-                    "required": ["field", "op", "value"],
+                    "required": ["field", "op", "value", "because"],
                 },
             },
             "group_by": {"type": "array", "items": {"type": "string"}},

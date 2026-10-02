@@ -3,8 +3,9 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, case, func
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -154,6 +155,46 @@ class PoLineItem(UUIDPrimaryKey, Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     po: Mapped["PurchaseOrder"] = relationship("PurchaseOrder", back_populates="line_items")
+
+    # What is still owed on this line, as a quantity and as a share of what was
+    # ordered. Not stored: both follow from qty and received_qty, and a stored
+    # copy would be one more thing for the GR path to keep in step.
+    #
+    # They exist for the assistant. "Not yet fully received" and "less than 10%
+    # still outstanding" compare two columns of the same row, and its query
+    # language compares a column to a literal, nothing else. Without these the
+    # planner fetched every line and left the filtering to the narrator, which
+    # did it in its head over the first 100 rows — all of them milk — and
+    # answered "none" where 44 orders qualified.
+    #
+    # Negative when more arrived than was ordered (NC allows over-receipt), so
+    # "fully received" is outstanding_qty <= 0, not = 0.
+    @hybrid_property
+    def outstanding_qty(self) -> Decimal:
+        return self.qty - (self.received_qty or Decimal("0"))
+
+    @outstanding_qty.inplace.expression
+    @classmethod
+    def _outstanding_qty_expression(cls):
+        return cls.qty - func.coalesce(cls.received_qty, 0)
+
+    # Percent, 0-100, of the ordered quantity not yet received. NULL for a line
+    # ordered at quantity zero, where a share of nothing has no meaning — and a
+    # NULL is excluded by any comparison, which is the right reading.
+    @hybrid_property
+    def outstanding_pct(self) -> Decimal | None:
+        if not self.qty:
+            return None
+        return (self.qty - (self.received_qty or Decimal("0"))) * 100 / self.qty
+
+    @outstanding_pct.inplace.expression
+    @classmethod
+    def _outstanding_pct_expression(cls):
+        return case(
+            (cls.qty > 0,
+             (cls.qty - func.coalesce(cls.received_qty, 0)) * 100 / cls.qty),
+            else_=None,
+        )
 
     @property
     def nc_sourced(self) -> bool:

@@ -15,6 +15,7 @@ answer. It cannot answer with someone else's data.
 Responses carry the query that ran. An answer nobody can check is not worth much
 in a finance system, and this is the cheapest possible form of showing the work.
 """
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException
@@ -53,6 +54,22 @@ class ChatContext(BaseModel):
 class ChatTurn(BaseModel):
     role: str = Field(pattern="^(user|assistant)$")
     text: str = Field(max_length=4000)
+    # The query an assistant turn ran, as the panel received it. Without it a
+    # follow-up — "drop the second rule" — has only the previous answer's prose
+    # to rebuild from, and the prose does not say which filters ran. Asked that,
+    # the planner kept the vendor and dropped "not fully received" along with
+    # the rule it was told to drop.
+    query: dict | None = None
+
+
+def _turn_content(t: ChatTurn) -> str:
+    if t.role != "assistant" or not t.query:
+        return t.text
+    ran = json.dumps(t.query, ensure_ascii=False, default=str)
+    if len(ran) > 4000:
+        # A runaway query should cost a truncated receipt, not the whole turn.
+        ran = ran[:4000] + "…"
+    return f"{t.text}\n\n[query that ran: {ran}]"
 
 
 class ChatRequest(BaseModel):
@@ -86,7 +103,7 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
     scope = await build_scope(db, user)
     actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
     history = [
-        {"role": t.role, "content": t.text}
+        {"role": t.role, "content": _turn_content(t)}
         for t in (body.history or [])[-_MAX_HISTORY_TURNS:]
         if t.text.strip()
     ]
