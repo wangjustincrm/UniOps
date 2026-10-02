@@ -124,3 +124,34 @@ export interface AssistantMessage {
   /** Set when the request itself failed, as opposed to the model declining. */
   error?: boolean
 }
+
+/** One prior turn sent back with a question, so follow-ups have a referent. */
+export interface AssistantTurn {
+  role: 'user' | 'assistant'
+  text: string
+  /** The query an assistant turn ran, if any — what a follow-up modifies. */
+  query?: Record<string, unknown> | null
+}
+
+/** A question the person marked to ask again with one click. */
+export interface AssistantSavedQuestion {
+  id: string
+  question: string
+}
+
+/** The person's marked questions, and how many they may keep (from the server). */
+export interface AssistantSavedList {
+  items: AssistantSavedQuestion[]
+  limit: number
+}
+
+/**
+ * The host app's way to the person's marked questions. Each call resolves to
+ * the whole list as it now stands, so the panel never has to reconcile.
+ * Throw with a readable message on failure — it is shown as-is.
+ */
+export interface AssistantSavedApi {
+  list: () => Promise<AssistantSavedList>
+  add: (question: string) => Promise<AssistantSavedList>
+  remove: (id: string) => Promise<AssistantSavedList>
+}

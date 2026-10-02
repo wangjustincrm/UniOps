@@ -14,7 +14,7 @@
  * and nothing else, exactly as they would anywhere.
  */
 import { useLocation } from 'react-router-dom'
-import { Assistant, type AssistantContext, type AssistantReply } from '@uniops/shell'
+import { Assistant, type AssistantContext, type AssistantReply, type AssistantSavedApi, type AssistantSavedList } from '@uniops/shell'
 import { epmsApi, epmsPostDownload } from '@/lib/api'
 import { useMrpAuth } from '@/store/auth'
 
@@ -42,6 +42,16 @@ async function exportQuery(
                          'report.xlsx')
 }
 
+/**
+ * The person's marked questions. Kept by EPMS against their own user, so the
+ * same list shows up in every app that has the panel.
+ */
+const saved: AssistantSavedApi = {
+  list: () => epmsApi.get<AssistantSavedList>('/api/v1/assistant/saved'),
+  add: (question) => epmsApi.post<AssistantSavedList>('/api/v1/assistant/saved', { question }),
+  remove: (id) => epmsApi.delete<AssistantSavedList>(`/api/v1/assistant/saved/${id}`),
+}
+
 export function AssistantMount() {
   const { pathname } = useLocation()
   const isAuthenticated = useMrpAuth((s) => s.isAuthenticated)
@@ -53,6 +63,7 @@ export function AssistantMount() {
       ask={ask}
       describeScope={describeScope}
       exportQuery={exportQuery}
+      saved={saved}
       context={{ app: 'mrp', route: pathname }}
     />
   )

@@ -119,6 +119,7 @@ async function epmsRequest<T>(path: string, method = 'GET', body?: unknown): Pro
 export const epmsApi = {
   get: <T>(path: string) => epmsRequest<T>(path),
   post: <T>(path: string, body: unknown) => epmsRequest<T>(path, 'POST', body),
+  delete: <T>(path: string) => epmsRequest<T>(path, 'DELETE'),
 }
 
 /**

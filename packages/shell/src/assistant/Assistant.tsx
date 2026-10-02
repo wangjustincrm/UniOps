@@ -25,11 +25,12 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import {
-  AlertTriangle, Check, ChevronDown, Download, Loader2, MessageSquare, Send, X,
+  AlertTriangle, Check, ChevronDown, Download, Loader2, MessageSquare, Send, Star, X,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
 import type {
   AssistantCheck, AssistantContext, AssistantMessage, AssistantReply,
+  AssistantSavedApi, AssistantSavedList, AssistantTurn,
 } from './types'
 
 export interface AssistantProps {
@@ -43,7 +44,7 @@ export interface AssistantProps {
   ask: (
     message: string,
     context: AssistantContext,
-    history: { role: 'user' | 'assistant'; text: string }[]
+    history: AssistantTurn[]
   ) => Promise<AssistantReply>
   /**
    * Lists what this person can actually be answered about. Called once when the
@@ -64,6 +65,12 @@ export interface AssistantProps {
    * decided it is right.
    */
   exportQuery?: (query: Record<string, unknown>, question: string) => Promise<void>
+  /**
+   * The person's marked questions — the reports they ask for every week, kept
+   * so asking again is one click instead of retyping. Omit it and the panel has
+   * no star buttons and no Marked list.
+   */
+  saved?: AssistantSavedApi
   /** Where the user currently is. Re-read on every send, so keep it current. */
   context?: AssistantContext
   /** Shown once, above the first message. */
@@ -80,12 +87,16 @@ const SUGGESTIONS = [
 let seq = 0
 const nextId = () => `m${++seq}`
 
-export function Assistant({ ask, describeScope, exportQuery, context, greeting, className }: AssistantProps) {
+export function Assistant({
+  ask, describeScope, exportQuery, saved, context, greeting, className,
+}: AssistantProps) {
   const [open, setOpen] = React.useState(false)
   const [messages, setMessages] = React.useState<AssistantMessage[]>([])
   const [draft, setDraft] = React.useState('')
   const [busy, setBusy] = React.useState(false)
   const [scope, setScope] = React.useState<string[] | null>(null)
+  const marked = useMarked(saved, open)
+  const [showMarked, setShowMarked] = React.useState(false)
   const listRef = React.useRef<HTMLDivElement>(null)
   const inputRef = React.useRef<HTMLTextAreaElement>(null)
 
@@ -124,9 +135,12 @@ export function Assistant({ ask, describeScope, exportQuery, context, greeting, 
       setDraft('')
       // Snapshot before appending: the new question goes in `message`, not in
       // the history, or the model sees it twice.
-      const priorTurns = messages
+      // An answer's query rides along with its text: a follow-up like "drop the
+      // second rule" has to be rebuilt from what actually ran, and the prose
+      // does not say which filters that was.
+      const priorTurns: AssistantTurn[] = messages
         .filter((m) => !m.error)
-        .map((m) => ({ role: m.role, text: m.text }))
+        .map((m) => ({ role: m.role, text: m.text, query: m.reply?.query ?? null }))
       setMessages((m) => [...m, { id: nextId(), role: 'user', text: question }])
       setBusy(true)
       try {
@@ -174,16 +188,47 @@ export function Assistant({ ask, describeScope, exportQuery, context, greeting, 
             <MessageSquare className="h-4 w-4 text-primary-600" aria-hidden />
             <span className="text-sm font-semibold text-neutral-900">Assistant</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            disabled={busy}
-            aria-label="Close"
-            className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-40"
-          >
-            <X className="h-4 w-4" aria-hidden />
-          </button>
+          <div className="flex items-center gap-1">
+            {saved && messages.length > 0 && (
+              // Mid-conversation the list is one click away rather than in the
+              // way; on an empty panel it is shown inline instead.
+              <button
+                type="button"
+                onClick={() => setShowMarked((v) => !v)}
+                aria-expanded={showMarked}
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
+              >
+                <Star
+                  className={cn('h-3.5 w-3.5', (marked.list?.items.length ?? 0) > 0 && 'fill-current text-warning-500')}
+                  aria-hidden
+                />
+                Marked{marked.list ? ` (${marked.list.items.length})` : ''}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              disabled={busy}
+              aria-label="Close"
+              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-40"
+            >
+              <X className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
         </header>
+
+        {saved && messages.length > 0 && showMarked && (
+          <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-3">
+            <MarkedList
+              marked={marked}
+              disabled={busy}
+              onAsk={(q) => {
+                setShowMarked(false)
+                send(q)
+              }}
+            />
+          </div>
+        )}
 
         <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
           {messages.length === 0 && (
@@ -196,6 +241,9 @@ export function Assistant({ ask, describeScope, exportQuery, context, greeting, 
                 <p className="text-xs text-neutral-500">
                   I can currently answer about {scope.join(', ')}.
                 </p>
+              )}
+              {saved && (
+                <MarkedList marked={marked} disabled={busy} onAsk={send} hideWhenEmpty />
               )}
               <div className="space-y-1.5">
                 {SUGGESTIONS.map((s) => (
@@ -216,6 +264,7 @@ export function Assistant({ ask, describeScope, exportQuery, context, greeting, 
             <MessageRow
               key={m.id}
               message={m}
+              marked={saved ? marked : undefined}
               exportQuery={exportQuery}
               // The question this answer came from, so the sheet can be headed
               // with it rather than with the entity name.
@@ -287,15 +336,17 @@ export function Assistant({ ask, describeScope, exportQuery, context, greeting, 
 }
 
 function MessageRow({
-  message, exportQuery, question,
+  message, marked, exportQuery, question,
 }: {
   message: AssistantMessage
+  marked?: Marked
   exportQuery?: AssistantProps['exportQuery']
   question?: string
 }) {
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end">
+      <div className="flex items-start justify-end gap-1">
+        {marked && <MarkToggle marked={marked} question={message.text} />}
         <div className="max-w-[85%] rounded-lg rounded-br-sm bg-primary-600 px-3 py-2 text-sm text-white">
           {message.text}
         </div>
@@ -584,6 +635,141 @@ function Evidence({ reply }: { reply: AssistantReply }) {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Marked questions ──────────────────────────────────────────────────────────
+
+interface Marked {
+  list: AssistantSavedList | null
+  /** A mark/unmark/load in flight; every control waits on it. */
+  pending: boolean
+  error: string | null
+  find: (question: string) => string | undefined
+  add: (question: string) => Promise<void>
+  remove: (id: string) => Promise<void>
+}
+
+/** Loaded the first time the panel opens, then kept from each call's reply. */
+function useMarked(api: AssistantSavedApi | undefined, open: boolean): Marked {
+  const [list, setList] = React.useState<AssistantSavedList | null>(null)
+  const [pending, setPending] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!api || !open || list) return
+    let live = true
+    api.list()
+      .then((l) => { if (live) setList(l) })
+      .catch(() => { /* the list is a convenience; asking still works without it */ })
+    return () => { live = false }
+  }, [api, open, list])
+
+  const run = React.useCallback(
+    async (call: () => Promise<AssistantSavedList>) => {
+      if (pending) return
+      setPending(true)
+      setError(null)
+      try {
+        setList(await call())
+      } catch (err) {
+        setError(err instanceof Error && err.message ? err.message : 'Could not update marked questions.')
+      } finally {
+        setPending(false)
+      }
+    },
+    [pending]
+  )
+
+  return {
+    list,
+    pending,
+    error,
+    // Same normalisation the server applies, so a question marked with a
+    // trailing space still shows as marked.
+    find: (q) => list?.items.find((i) => i.question === q.trim())?.id,
+    add: (q) => run(() => api!.add(q.trim())),
+    remove: (id) => run(() => api!.remove(id)),
+  }
+}
+
+function MarkToggle({ marked, question }: { marked: Marked; question: string }) {
+  const id = marked.find(question)
+  const full = !id && !!marked.list && marked.list.items.length >= marked.list.limit
+  const label = id
+    ? 'Unmark this question'
+    : full
+      ? `You can keep ${marked.list?.limit} marked questions — unmark one first`
+      : 'Mark this question to ask again later'
+  return (
+    <button
+      type="button"
+      // Not disabled when full: clicking still goes to the server, whose
+      // refusal is the message shown. Disabling would hide why.
+      disabled={marked.pending || !marked.list}
+      onClick={() => (id ? marked.remove(id) : marked.add(question))}
+      aria-label={label}
+      aria-pressed={!!id}
+      title={label}
+      className="mt-1.5 shrink-0 rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-warning-500 disabled:opacity-40"
+    >
+      <Star className={cn('h-3.5 w-3.5', id && 'fill-current text-warning-500')} aria-hidden />
+    </button>
+  )
+}
+
+function MarkedList({
+  marked, disabled, onAsk, hideWhenEmpty,
+}: {
+  marked: Marked
+  disabled: boolean
+  onAsk: (question: string) => void
+  hideWhenEmpty?: boolean
+}) {
+  const items = marked.list?.items ?? []
+  if (hideWhenEmpty && items.length === 0 && !marked.error) return null
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+        Marked questions
+        {marked.list && (
+          <span className="ml-1 font-normal normal-case tracking-normal text-neutral-400">
+            {items.length}/{marked.list.limit}
+          </span>
+        )}
+      </p>
+      {items.length === 0 && !marked.error && (
+        <p className="text-xs text-neutral-500">
+          None yet. Click the star next to a question you ask often.
+        </p>
+      )}
+      <ul className="space-y-1">
+        {items.map((i) => (
+          <li key={i.id} className="flex items-start gap-1">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onAsk(i.question)}
+              title="Ask this again"
+              className="block min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-left text-xs text-neutral-700 transition-colors hover:border-primary-600 hover:bg-primary-600/5 disabled:opacity-50"
+            >
+              {i.question}
+            </button>
+            <button
+              type="button"
+              disabled={marked.pending}
+              onClick={() => marked.remove(i.id)}
+              aria-label={`Unmark: ${i.question}`}
+              title="Unmark"
+              className="mt-1 shrink-0 rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-40"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {marked.error && <p className="text-xs text-danger-600">{marked.error}</p>}
     </div>
   )
 }

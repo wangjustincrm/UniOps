@@ -20,7 +20,8 @@ export { Assistant } from './assistant/Assistant'
 export type { AssistantProps } from './assistant/Assistant'
 export type {
   AssistantCheck, AssistantContext, AssistantKind, AssistantMessage,
-  AssistantPreflight, AssistantReply, AssistantSources,
+  AssistantPreflight, AssistantReply, AssistantSavedApi, AssistantSavedList, AssistantSavedQuestion,
+  AssistantSources, AssistantTurn,
   AssistantWorkflow, AssistantWorkflowEvent, AssistantWorkflowStep,
 } from './assistant/types'
 

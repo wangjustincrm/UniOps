@@ -15,7 +15,7 @@
  * not documents; "this PO" has no referent here, and inventing one from a URL
  * that does not contain a document id would be worse than leaving it out.
  */
-import { Assistant, type AssistantContext, type AssistantReply } from '@uniops/shell'
+import { Assistant, type AssistantContext, type AssistantReply, type AssistantSavedApi, type AssistantSavedList } from '@uniops/shell'
 import { epmsApi, epmsPostDownload } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 import { useLocation } from 'react-router-dom'
@@ -42,6 +42,16 @@ async function exportQuery(
   await epmsPostDownload('/assistant/export', { ...query, question }, 'report.xlsx')
 }
 
+/**
+ * The person's marked questions. Kept by EPMS against their own user, so the
+ * same list shows up in every app that has the panel.
+ */
+const saved: AssistantSavedApi = {
+  list: () => epmsApi.get<AssistantSavedList>('/assistant/saved'),
+  add: (question) => epmsApi.post<AssistantSavedList>('/assistant/saved', { question }),
+  remove: (id) => epmsApi.delete<AssistantSavedList>(`/assistant/saved/${id}`),
+}
+
 export function AssistantMount() {
   const { pathname } = useLocation()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -54,6 +64,7 @@ export function AssistantMount() {
       ask={ask}
       describeScope={describeScope}
       exportQuery={exportQuery}
+      saved={saved}
       context={{ app: 'portal', route: pathname }}
     />
   )

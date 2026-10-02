@@ -11,7 +11,7 @@
  * and a global overlay must never be the reason a page fails to render.
  */
 import { useLocation } from 'react-router-dom'
-import { Assistant, type AssistantContext, type AssistantReply } from '@uniops/shell'
+import { Assistant, type AssistantContext, type AssistantReply, type AssistantSavedApi, type AssistantSavedList } from '@uniops/shell'
 import { api } from '@/lib/api'
 
 const API_BASE =
@@ -84,6 +84,16 @@ async function describeScope(): Promise<string[]> {
   return res.entities.map((e) => e.label.split('—')[0].trim())
 }
 
+/**
+ * The person's marked questions. Kept by EPMS against their own user, so the
+ * same list shows up in every app that has the panel.
+ */
+const saved: AssistantSavedApi = {
+  list: () => api.get<AssistantSavedList>('/assistant/saved'),
+  add: (question) => api.post<AssistantSavedList>('/assistant/saved', { question }),
+  remove: (id) => api.delete<AssistantSavedList>(`/assistant/saved/${id}`),
+}
+
 export function AssistantMount() {
   const { pathname } = useLocation()
   // Same field AppLayout gates on, rather than a second definition of
@@ -99,6 +109,7 @@ export function AssistantMount() {
       ask={ask}
       describeScope={describeScope}
       exportQuery={exportQuery}
+      saved={saved}
       context={deriveContext(pathname)}
     />
   )
