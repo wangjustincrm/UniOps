@@ -19,6 +19,12 @@ export interface ChildSchema {
   table_label: string
   fk_field: string
   fields: FieldSpec[]
+  /** line_total = qty_field × price_field ("qty_received" on GR lines). */
+  qty_field?: string
+  price_field?: string
+  /** false = existing lines editable/deletable only, no "+ Add row". */
+  allow_add?: boolean
+  note?: string | null
 }
 
 export interface EntitySchema {

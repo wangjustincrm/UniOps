@@ -15,6 +15,7 @@ from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
 from app.crud.agreement_schedule import reassign_open_confirm_tasks
 from app.crud.gr import resync_po_received_qty, sync_po_receipt_status
+from app.crud.invoice import _apply_gr_selection
 from app.crud.pr import reassign_open_receipt_tasks
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.approval import ApprovalEvent
@@ -271,13 +272,29 @@ async def _apply_line_items(db, spec, row, items: list[dict]):
     existing = {li.id: li for li in (await db.execute(
         select(Model).where(getattr(Model, child.fk_field) == row.id))).scalars().all()}
 
+    columns = Model.__table__.c
     seen: set = set()
     for idx, item in enumerate(items):
         raw_id = item.get("id")
-        qty = item.get("qty"); price = item.get("unit_price")
+        if not raw_id and not child.allow_add:
+            raise ValueError("New line items cannot be added here — only existing lines can be edited or removed")
+        qty = item.get(child.qty_field); price = item.get(child.price_field)
         if qty in (None, "") or price in (None, ""):
             raise ValueError("Each line item needs a quantity and unit price")
-        payload = {k: v for k, v in item.items() if k in editable and k != "line_total" and v != ""}
+        payload = {}
+        for k, v in item.items():
+            if k not in editable or k == "line_total":
+                continue
+            if v == "":
+                # A cleared input arrives as "". On an existing line that is the
+                # operator emptying the field — store NULL where the column allows
+                # it (GR actual_qty: NULL is what hands the PO count back to
+                # qty_received). Dropping it instead kept the old value, so a
+                # nullable field could be set here but never cleared.
+                if raw_id and columns[k].nullable:
+                    payload[k] = None
+                continue
+            payload[k] = v
         payload.setdefault("sort_order", idx)
         lt = _line_total(qty, price)
         if raw_id:
@@ -320,6 +337,26 @@ async def _recompute_pa_from_stored_lines(db, spec, row, *, rate_changed: bool):
         totals = recompute_pa_header_only(row, rate_changed=rate_changed)
     for hk, hv in totals.items():
         setattr(row, hk, hv)
+
+
+async def _refresh_invoice_gr_value(db, gr) -> int:
+    """Re-derive gr_value on every invoice matched to this GR. Returns how many
+    actually changed."""
+    # The GR's line_items relationship was loaded before the edit; reload it so
+    # _apply_gr_selection sums the lines as they are now.
+    await db.refresh(gr, ["line_items"])
+    invoices = (await db.execute(select(Invoice).where(or_(
+        Invoice.gr_id == gr.id,
+        Invoice.gr_ids.contains([str(gr.id)]),
+    )))).scalars().all()
+    changed = 0
+    for inv in invoices:
+        ids = [uuid.UUID(str(x)) for x in (inv.gr_ids or [])] or [inv.gr_id]
+        old = inv.gr_value
+        await _apply_gr_selection(db, inv, ids)
+        if inv.gr_value != old:
+            changed += 1
+    return changed
 
 
 async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch: dict,
@@ -384,14 +421,23 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
             # derived from it, so a corrected quantity has to drag the status with
             # it or the PO advertises a receipt state its own lines contradict.
             await sync_po_receipt_status(db, row.id)
-    if entity == "gr" and before.get("status") != getattr(row, "status", None):
+    invoices_gr_value_refreshed = 0
+    if entity == "gr" and (line_items is not None
+                           or before.get("status") != getattr(row, "status", None)):
         # Editing a GR here can move it into or out of crud.gr.COUNTED_GR_STATUSES,
         # but the accumulator that originally added its quantities to the PO only
         # runs on the GR workflow actions and never again. Without this, cancelling
         # a confirmed GR leaves the PO crediting itself for goods the GR no longer
-        # claims — the same hole as deleting one.
+        # claims — the same hole as deleting one. A line edit (qty_received /
+        # actual_qty / a deleted line) moves the same sum, so it resyncs too.
         await db.flush()
         received_qty_resynced = await resync_po_received_qty(db, row.po_id)
+    if entity == "gr" and line_items is not None:
+        # invoices.gr_value is a snapshot of the matched GRs' line totals, taken
+        # when the GR was selected (crud.invoice._apply_gr_selection) and never
+        # revisited. Re-take it from the edited lines, or 3-Way Match keeps
+        # comparing the invoice against the receipt as it was before the fix.
+        invoices_gr_value_refreshed = await _refresh_invoice_gr_value(db, row)
 
     receipt_tasks_reassigned = 0
     if entity == "pr" and before.get("owner_id") != (
@@ -434,6 +480,8 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
         after["_line_items_count"] = len(line_items)
     if received_qty_resynced:
         after["po_lines_received_qty_resynced"] = received_qty_resynced
+    if invoices_gr_value_refreshed:
+        after["invoices_gr_value_refreshed"] = invoices_gr_value_refreshed
     if confirm_tasks_reassigned:
         after["confirm_tasks_reassigned"] = confirm_tasks_reassigned
     if receipt_tasks_reassigned:

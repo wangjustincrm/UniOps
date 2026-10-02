@@ -13,6 +13,10 @@ const dec = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n
 
 export function LineItemsEditor({ child, rows, onChange }: Props) {
   const editable = child.fields.filter((f) => f.editable)
+  const qtyField = child.qty_field ?? 'qty'
+  const priceField = child.price_field ?? 'unit_price'
+  const allowAdd = child.allow_add !== false
+  const lineTotal = (r: LineRow) => dec(r[qtyField]) * dec(r[priceField])
 
   const set = (i: number, name: string, value: string) => {
     const next = rows.map((r, j) => (j === i ? { ...r, [name]: value } : r))
@@ -22,14 +26,16 @@ export function LineItemsEditor({ child, rows, onChange }: Props) {
   const delRow = (i: number) => onChange(rows.filter((_, j) => j !== i))
 
   const subtotal = useMemo(
-    () => rows.reduce((s, r) => s + dec(r.qty) * dec(r.unit_price), 0), [rows])
+    () => rows.reduce((s, r) => s + lineTotal(r), 0), [rows, qtyField, priceField])
 
   return (
     <div className="rounded-lg border border-neutral-200">
       <div className="flex items-center justify-between border-b border-neutral-100 px-3 py-2">
         <span className="text-sm font-medium">{child.table_label}</span>
-        <button type="button" onClick={addRow}
-          className="rounded bg-primary-600 px-2 py-1 text-xs font-semibold text-white hover:bg-primary-700">+ Add row</button>
+        {allowAdd && (
+          <button type="button" onClick={addRow}
+            className="rounded bg-primary-600 px-2 py-1 text-xs font-semibold text-white hover:bg-primary-700">+ Add row</button>
+        )}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -45,12 +51,21 @@ export function LineItemsEditor({ child, rows, onChange }: Props) {
               <tr key={r.id ?? `new-${i}`} className="border-t border-neutral-100">
                 {editable.map((f) => (
                   <td key={f.name} className="px-1 py-1">
-                    <input value={r[f.name] == null ? '' : String(r[f.name])}
-                      onChange={(e) => set(i, f.name, e.target.value)}
-                      className="h-8 w-full min-w-[6rem] rounded border border-neutral-300 px-2" />
+                    {f.type === 'enum' && f.options ? (
+                      <select value={r[f.name] == null ? '' : String(r[f.name])}
+                        onChange={(e) => set(i, f.name, e.target.value)}
+                        className="h-8 w-full min-w-[6rem] rounded border border-neutral-300 px-1">
+                        {r[f.name] == null && <option value="" />}
+                        {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    ) : (
+                      <input value={r[f.name] == null ? '' : String(r[f.name])}
+                        onChange={(e) => set(i, f.name, e.target.value)}
+                        className="h-8 w-full min-w-[6rem] rounded border border-neutral-300 px-2" />
+                    )}
                   </td>
                 ))}
-                <td className="px-2 py-1 tabular-nums">{(dec(r.qty) * dec(r.unit_price)).toFixed(2)}</td>
+                <td className="px-2 py-1 tabular-nums">{lineTotal(r).toFixed(2)}</td>
                 <td className="px-1 py-1">
                   <button type="button" onClick={() => delRow(i)}
                     className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50">Delete</button>
@@ -70,7 +85,7 @@ export function LineItemsEditor({ child, rows, onChange }: Props) {
           </tfoot>
         </table>
       </div>
-      <p className="px-3 py-1 text-[11px] text-neutral-400">Server recomputes line totals, subtotal, tax and total on save.</p>
+      <p className="px-3 py-1 text-[11px] text-neutral-400">{child.note ?? 'Server recomputes line totals, subtotal, tax and total on save.'}</p>
     </div>
   )
 }
