@@ -40,12 +40,24 @@ class ChildSchema:
     model: type
     fk_field: str                              # child column pointing back at the parent id
     fields: list[FieldSpec] = field(default_factory=list)
+    # line_total = qty_field × price_field. PR/PO/PA lines say "qty"; a GR line's
+    # money quantity is what was received (crud/gr.py, schemas/gr.py).
+    qty_field: str = "qty"
+    price_field: str = "unit_price"
+    # False = existing lines can be edited/deleted but no new ones added (the
+    # editor hides "+ Add row"; the server refuses a line without an id).
+    allow_add: bool = True
+    note: str | None = None                    # footer hint under the editor
 
     def to_dict(self) -> dict:
         return {
             "table_label": self.table_label,
             "fk_field": self.fk_field,
             "fields": [f.to_dict() for f in self.fields],
+            "qty_field": self.qty_field,
+            "price_field": self.price_field,
+            "allow_add": self.allow_add,
+            "note": self.note,
         }
 
     def editable_field_names(self) -> set[str]:

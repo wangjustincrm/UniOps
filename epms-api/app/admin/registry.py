@@ -47,7 +47,7 @@ from app.models.agreement_receipt import AgreementReceipt
 from app.models.agreement_receipt_attachment import AgreementReceiptAttachment
 from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.approval import ApprovalEvent
-from app.models.gr import GoodsReceipt
+from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
 from app.crud import pa as pa_crud
 from app.crud.pa_links import pa_ids_for_po, po_ids_of_pa
@@ -577,6 +577,34 @@ _PA_CHILD = ChildSchema(
     ],
 )
 
+# GR lines: the money quantity is qty_received (line_total = qty_received ×
+# unit_price, same as crud/gr.py). No "+ Add row": what ties a receipt line to
+# the order is po_line_id, and a line added here would have none — it would sit
+# on the GR, count toward its value, and never reach the PO's received_qty
+# (resync_po_received_qty only sums lines with a po_line_id). Edit and delete
+# are safe: admin/service.py re-derives the PO quantities and the GR value
+# snapshotted on matched invoices after every line edit.
+_GR_CHILD = ChildSchema(
+    table_label="Line Items", model=GrLineItem, fk_field="gr_id",
+    qty_field="qty_received", allow_add=False,
+    note=("Server recomputes line totals on save, then re-derives the PO's received "
+          "quantities and the GR value on matched invoices. Received qty counts toward "
+          "the PO unless Actual Qty is set."),
+    fields=[
+        FieldSpec("description", "string", True),
+        FieldSpec("material_id", "string", True),
+        FieldSpec("qty_ordered", "decimal", True, label="Qty Ordered"),
+        FieldSpec("qty_received", "decimal", True, label="Qty Received"),
+        FieldSpec("actual_qty", "decimal", True, label="Actual Qty"),
+        FieldSpec("unit", "string", True),
+        FieldSpec("unit_price", "decimal", True),
+        FieldSpec("line_total", "decimal", False),   # server-computed
+        FieldSpec("condition", "enum", True, options=["good", "discrepancy", "damaged"]),
+        FieldSpec("discrepancy_notes", "string", True, label="Discrepancy Notes"),
+        FieldSpec("sort_order", "number", True),
+    ],
+)
+
 # ── Schemas ──────────────────────────────────────────────────────────────────
 # Field names verified against the ORM models. Identity/number/created_by/totals
 # are read-only; status, names, amounts, notes, dates are editable.
@@ -660,6 +688,7 @@ _GR_SCHEMA = EntitySchema(
         FieldSpec("notes", "string", True),
         FieldSpec("created_at", "datetime", False),
     ],
+    child=_GR_CHILD,
 )
 
 _INVOICE_SCHEMA = EntitySchema(
