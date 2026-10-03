@@ -730,6 +730,17 @@ async def _release_agreement_evidence(db: AsyncSession, invoice: Invoice) -> Non
                 AgreementPaymentSchedule.id == invoice.schedule_id)
         )).scalar_one_or_none()
         if claimed_row is not None:
+            # 一期多票(2026-10-03):成员关系以 invoice.schedule_id 为准,
+            # row.invoice_id 只是"第一张"。这一期还剩别的发票时,行保持
+            # received、确认与任务原样不动(剩下的票确认人都看过),只把
+            # row.invoice_id 挪到剩下的某一张上。
+            remaining = (
+                await agreement_schedule_crud.period_invoices(db, claimed_row.id, exclude_id=invoice.id)
+                if claimed_row.schedule_type == "period" else []
+            )
+            if remaining:
+                if claimed_row.invoice_id == invoice.id:
+                    claimed_row.invoice_id = remaining[0].id
             # Deferred minor from Task 6, folded in here: only release a row this
             # SAME invoice actually holds. invoice.schedule_id should always point
             # back at a row whose invoice_id mirrors it (both are only ever set
@@ -737,7 +748,7 @@ async def _release_agreement_evidence(db: AsyncSession, invoice: Invoice) -> Non
             # claim_milestone) — but if that invariant were ever broken by a bug
             # elsewhere, blindly releasing here would silently steal a period a
             # DIFFERENT invoice is legitimately holding.
-            if claimed_row.invoice_id != invoice.id:
+            elif claimed_row.invoice_id not in (invoice.id, None):
                 logger.error(
                     "_release_agreement_evidence: schedule row %s is claimed by "
                     "invoice %s, not %s (invoice.schedule_id pointed at it "
@@ -1710,22 +1721,26 @@ async def assign_billing_period(
     exists to enforce:
       • recurring agreements only — milestone picks its stage at match time and
         house_account has no schedule at all;
-      • only when the invoice currently has NO period, so it can never move a
-        claim from one period to another (that would silently free a period
-        that has already been paid against);
-      • the period must be unclaimed and belong to this agreement
+      • the period must belong to this agreement and not be waived
         (claim_specific_period's own guards, reused rather than re-implemented).
+        It MAY already hold other invoices — one period, several invoices
+        (2026-10-03: a vendor billing two annual fees in the same month).
+
+    Moving an invoice that is ALREADY linked to a period is allowed only while
+    no live PA references it. That used to be refused outright ("would release
+    a period that may already have been paid against"), which was the right
+    worry but the wrong test: before one-period-many-invoices existed, the
+    second invoice of a month was auto-claimed into a FUTURE period and there
+    was no way to pull it back. The real hazard is a payment already raised
+    against the old period, so that is what blocks the move. The old period is
+    released through _release_agreement_evidence — the same path a rejection
+    takes — so it drops back to pending (and its open confirmation task closes)
+    only if no other invoice is left in it.
 
     Raises ValueError; the endpoint maps it to 422.
     """
-    from app.crud import agreement_schedule as agreement_schedule_crud
-
     if invoice.agreement_id is None:
         raise ValueError("This invoice is not matched to an agreement")
-    if invoice.schedule_id is not None:
-        raise ValueError(
-            "This invoice is already linked to a billing period. Reassigning it "
-            "would release a period that may already have been paid against.")
     agr = (await db.execute(
         select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
     )).scalar_one_or_none()
@@ -1733,6 +1748,29 @@ async def assign_billing_period(
         raise ValueError("Agreement not found")
     if agr.agreement_type != "recurring":
         raise ValueError("Only a recurring agreement bills from scheduled periods")
+
+    if invoice.schedule_id is not None:
+        if invoice.schedule_id == schedule_id:
+            raise ValueError("This invoice is already linked to that billing period")
+        pa = await _invoice_referenced_by_active_pa(db, invoice.id)
+        if pa is not None:
+            raise ValueError(
+                f"This invoice is already on payment application {pa.pa_number} "
+                f"({pa.status}), so its billing period can no longer be changed. "
+                "Cancel or remove it from that PA first.")
+        # Validate the target BEFORE releasing the old period, so a bad pick
+        # never leaves the invoice stranded with no period at all.
+        target = (await db.execute(
+            select(AgreementPaymentSchedule).where(AgreementPaymentSchedule.id == schedule_id)
+        )).scalar_one_or_none()
+        if (target is None or target.agreement_id != agr.id
+                or target.schedule_type != "period"):
+            raise ValueError("That billing period does not belong to this agreement")
+        if target.status == "waived":
+            raise ValueError(
+                f"{target.period_label} has been waived and cannot take an invoice")
+        await _release_agreement_evidence(db, invoice)
+        await db.flush()
 
     claimed = await agreement_schedule_crud.claim_specific_period(
         db, agr, invoice, schedule_id)

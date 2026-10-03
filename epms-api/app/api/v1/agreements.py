@@ -14,6 +14,7 @@ from app.crud import agreement_schedule as agr_sched_crud
 from app.crud import vendor as vendor_crud
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_schedule import AgreementPaymentSchedule
+from app.models.invoice import Invoice
 from app.models.task import Task
 from app.schemas.agreement import (
     AgreementActionRequest,
@@ -22,6 +23,7 @@ from app.schemas.agreement import (
     AgreementResponse,
     AgreementUpdate,
     ScheduleListResponse,
+    ScheduleRowInvoice,
     ScheduleRowResponse,
 )
 from app.schemas.pr import ApprovalEventResponse
@@ -238,7 +240,22 @@ async def agreement_action(
 @router.get("/{agreement_id}/schedule", response_model=ScheduleListResponse)
 async def list_schedule(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep):
     agr = await _visible_agreement_or_404(db, user, agreement_id)
-    return {"items": await agr_sched_crud.list_rows(db, agreement_id)}
+    rows = await agr_sched_crud.list_rows(db, agreement_id)
+    # 一期多票:按 invoice.schedule_id 一次查齐,别逐行查。
+    by_row: dict[uuid.UUID, list[Invoice]] = {}
+    if rows:
+        invs = (await db.execute(
+            select(Invoice).where(Invoice.schedule_id.in_([r.id for r in rows]))
+            .order_by(Invoice.invoice_date, Invoice.created_at)
+        )).scalars().all()
+        for inv in invs:
+            by_row.setdefault(inv.schedule_id, []).append(inv)
+    items = []
+    for r in rows:
+        item = ScheduleRowResponse.model_validate(r)
+        item.invoices = [ScheduleRowInvoice.model_validate(i) for i in by_row.get(r.id, [])]
+        items.append(item)
+    return {"items": items}
 
 
 @router.post("/{agreement_id}/schedule/{row_id}/confirm", response_model=ScheduleRowResponse)

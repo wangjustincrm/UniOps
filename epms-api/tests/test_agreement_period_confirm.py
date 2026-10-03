@@ -48,13 +48,13 @@ async def _seed(db, **over):
     return agr, vendor, user
 
 
-async def _invoice(db, agr, vendor, user, total="1200.00"):
+async def _invoice(db, agr, vendor, user, total="1200.00", invoice_date=date(2026, 2, 3)):
     inv = Invoice(
         internal_ref=f"INV-{uuid.uuid4().hex[:8]}",
         vendor_invoice_number=f"B{uuid.uuid4().hex[:6]}",
         vendor_id=vendor.id, vendor_name=vendor.name,
         amount=Decimal(total), tax_amount=Decimal("0"), total_amount=Decimal(total),
-        currency="CAD", invoice_date=date(2026, 2, 3), due_date=date(2026, 3, 3),
+        currency="CAD", invoice_date=invoice_date, due_date=date(2026, 3, 3),
         status="unmatched", line_items=[], uploaded_by=user.id,
     )
     db.add(inv)
@@ -130,8 +130,10 @@ async def test_confirm_completes_only_the_matching_period_task(test_engine):
         agr.owner_id = user.id
         await sched_crud.ensure_period_rows(db, agr)
         rows = []
-        for _ in range(2):
-            inv = await _invoice(db, agr, vendor, user)
+        # Dated a month apart: one period can hold several invoices now, so
+        # two same-dated bills would share a period instead of spanning two.
+        for d in (date(2026, 2, 3), date(2026, 3, 3)):
+            inv = await _invoice(db, agr, vendor, user, invoice_date=d)
             r = await sched_crud.claim_next_period(db, agr, inv)
             await sched_crud.create_confirm_task(db, agr, r)
             rows.append(r)
@@ -431,7 +433,9 @@ async def test_confirm_endpoint_refuses_a_different_period_than_the_holders_task
         row1 = await sched_crud.claim_next_period(db, agr, inv1)
         await sched_crud.create_confirm_task(db, agr, row1)   # assigned to userA
 
-        inv2 = await _invoice(db, agr, vendor, userA)
+        # A month later, so it lands on the next period (same-dated invoices
+        # would now share period 1).
+        inv2 = await _invoice(db, agr, vendor, userA, invoice_date=date(2026, 3, 3))
         row2 = await sched_crud.claim_next_period(db, agr, inv2)
         other_user = await user_crud.create(db, RegisterRequest(
             email=f"other-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",

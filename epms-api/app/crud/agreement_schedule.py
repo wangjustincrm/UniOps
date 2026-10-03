@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_schedule import AgreementPaymentSchedule
+from app.models.invoice import Invoice
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.agreement import MilestoneRowIn
@@ -106,10 +107,48 @@ async def ensure_period_rows(db: AsyncSession, agr: PurchaseAgreement) -> int:
     return len(rows)
 
 
+async def period_invoices(
+    db: AsyncSession, row_id: uuid.UUID, *, exclude_id: uuid.UUID | None = None,
+) -> list[Invoice]:
+    """挂在某个 period 行上的全部发票(按 invoice.schedule_id 认)。
+
+    **一期多票(2026-10-03 用户需求)**:period 行原来只有一个 invoice_id 槽位,
+    认领规则于是只在"空着的期次"里挑 —— GS1 Canada 那份协议每年 10 月同时开
+    两张票(EASL1 + PCERTO5),第二张就被挤到了下一个出账月 2027-01,把一个
+    还没发生的期次提前"收到"了。
+
+    从此**成员关系以 invoice.schedule_id 为准**(多对一,天然支持多票);
+    row.invoice_id 降级为"该期第一张仍挂着的发票",只为 milestone(仍是一期
+    一票)和老读者保留,不能再拿它判断"这张发票是不是这一期的"。
+    """
+    q = select(Invoice).where(Invoice.schedule_id == row_id)
+    if exclude_id is not None:
+        q = q.where(Invoice.id != exclude_id)
+    return list((await db.execute(q.order_by(Invoice.created_at))).scalars().all())
+
+
+async def _attach_invoice(
+    db: AsyncSession, row: AgreementPaymentSchedule, invoice
+) -> None:
+    """把发票挂到 period 行上(调用方随后写 invoice.schedule_id = row.id)。
+
+    该期如果**已经确认过**,确认作废、重新派任务(调用方的 create_confirm_task):
+    确认人当时看到的是另一组发票,新来的这张没人看过 —— recurring 免 GR,
+    履约确认是付款前唯一的人工关口,不能让新票搭旧确认的便车。
+    """
+    if row.invoice_id is None:
+        row.invoice_id = invoice.id
+    row.status = "received"
+    if row.accepted_at is not None:
+        row.accepted_at = None
+        row.accepted_by = None
+    await db.flush()
+
+
 async def claim_next_period(
     db: AsyncSession, agr: PurchaseAgreement, invoice
 ) -> AgreementPaymentSchedule | None:
-    """按发票日期认领 —— 取 expected_date 离 invoice_date 最近的那个未认领期次。
+    """按发票日期认领 —— 取 expected_date 离 invoice_date 最近的那个期次。
 
     **这条规则取代了原来的 FIFO(按 sequence 取第一个)。** 原注释担心的是
     "8 月的网络费 9/3 才开票,按发票日期会错配一整期" —— 但那个担心的前提是
@@ -122,6 +161,13 @@ async def claim_next_period(
     每一张票都撞容差、每一张票都掉进 match_review,那道闸门就此变成噪音。
     用户实测反馈:2026-08 的发票被认到 2025-01 上。
 
+    **候选包括已经收到发票的期次(一期多票,2026-10-03)。** 原来只在 pending/
+    overdue 里挑,同一期的第二张票于是被挤到下一个空期 —— 对 special_monthly
+    这种隔几个月才出账的协议,就是挤到三个月后、把未来的期次提前标成已收到。
+    一期确实只该有一张票的协议(固定月费)靠金额校验兜住:比的是**该期累计**
+    税前额,第二张票一叠上去就超容差,照旧停在 match_review 由人判断。
+    只排除 waived(人工豁免的期次不该再收钱)。
+
     乱序到达(供应商补开上上个月的票)仍然落到最近的那一期;确实需要人工指定
     的,claim_specific_period 那条逃生舱照旧。
 
@@ -132,7 +178,7 @@ async def claim_next_period(
         select(AgreementPaymentSchedule)
         .where(AgreementPaymentSchedule.agreement_id == agr.id,
                AgreementPaymentSchedule.schedule_type == "period",
-               AgreementPaymentSchedule.status.in_(("pending", "overdue")))
+               AgreementPaymentSchedule.status != "waived")
         .order_by(AgreementPaymentSchedule.sequence)
     )).scalars().all())
     if not rows:
@@ -157,15 +203,21 @@ async def claim_next_period(
     # tolerance_pct 为 **NULL = 不做金额校验**;显式填 0 才是"必须分毫不差"。
     # 原来 `or Decimal("0")` 把两者混为一谈,于是"容差没填"被解释成了系统里
     # 最严的那档 —— 与字段留空的直觉正好相反。
+    #
+    # 一期多票之后比的是**该期累计**(已挂发票 + 这一张):预期金额是整期的
+    # 合同额,不是单张票的。
     if row.expected_amount is not None and row.tolerance_pct is not None:
         span = row.expected_amount * row.tolerance_pct / Decimal("100")
-        amount = Decimal(str(invoice.amount))
+        already = sum(
+            (Decimal(str(i.amount)) for i in
+             await period_invoices(db, row.id, exclude_id=invoice.id)),
+            Decimal("0"),
+        )
+        amount = already + Decimal(str(invoice.amount))
         if not (row.expected_amount - span <= amount <= row.expected_amount + span):
             return None
 
-    row.status = "received"
-    row.invoice_id = invoice.id
-    await db.flush()
+    await _attach_invoice(db, row, invoice)
     return row
 
 
@@ -180,20 +232,21 @@ async def claim_specific_period(
     过不去。这里让人工显式指定是哪一行,并且跳过金额容差校验 —— 人在主动
     覆盖它,校验的意义已经不在了,跟 claim_milestone 完全不做金额校验是
     同一个道理(设计 §5.2:预期与实际并排显示给人眼判断,不是让机器拦)。
-    仍然要挡住跨协议 / 非 period 类型 / 已被认领的行,拒绝方式照抄
-    claim_milestone。
+    仍然要挡住跨协议 / 非 period 类型 / 已豁免的行。
+
+    已经有发票的期次**可以**再指定(一期多票,2026-10-03)—— 原来这里拒收,
+    同一期的第二张票就只能被硬塞进一个错误的期次。
     """
     row = (await db.execute(
         select(AgreementPaymentSchedule).where(AgreementPaymentSchedule.id == row_id)
     )).scalar_one_or_none()
     if row is None or row.agreement_id != agr.id or row.schedule_type != "period":
         raise ValueError("That billing period does not belong to this agreement")
-    if row.invoice_id is not None:
-        raise ValueError(
-            f"{row.period_label} already has an invoice matched to it")
-    row.status = "received"
-    row.invoice_id = invoice.id
-    await db.flush()
+    if row.status == "waived":
+        raise ValueError(f"{row.period_label} has been waived and cannot take an invoice")
+    if invoice.schedule_id == row.id:
+        raise ValueError(f"This invoice is already linked to {row.period_label}")
+    await _attach_invoice(db, row, invoice)
     return row
 
 
@@ -261,6 +314,19 @@ async def create_confirm_task(
     这是普通任务,不是审批流 —— 不进 workflow_defs,不需要新的 action key。
     期次塞在 document_number 里而不是给 tasks 加列:tasks 被三个服务镜像。
     """
+    # 一期多票:同一期的第二张票进来时,如果这一期的确认任务还开着,那条任务
+    # 本来就覆盖整期(确认针对的是期次,不是某一张票),再建一条只会让确认人
+    # 收件箱里出现两条一模一样的待办。已确认过的期次 _attach_invoice 会把确认
+    # 作废,那时旧任务已完成,这里照常新建。
+    open_task = (await db.execute(
+        select(Task.id).where(Task.document_type == "agr", Task.document_id == agr.id,
+                              Task.type == "confirm_period",
+                              Task.document_number == f"{agr.number} · {row.period_label}",
+                              Task.is_completed.is_(False)).limit(1)
+    )).first()
+    if open_task is not None:
+        return
+
     assignee_id, assigned_role = await _confirm_assignee(db, agr)
     if assignee_id is None:
         # 没有 owner、也没有(哪怕算上附加角色)在职部门经理可指派。这里不能像

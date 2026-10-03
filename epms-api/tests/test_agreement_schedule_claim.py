@@ -113,19 +113,116 @@ async def test_a_mid_life_agreement_claims_the_current_period_not_the_first(test
         await db.commit()
 
 
-async def test_claim_skips_already_received_rows(test_engine):
+async def _claim(db, agr, inv):
+    """claim_next_period + 调用方那一半(invoice.schedule_id),与 crud.invoice
+    的匹配路径一致 —— 一期多票的成员关系以 invoice.schedule_id 为准,只调前一半
+    的话下一张票看不见这张。"""
+    row = await sched_crud.claim_next_period(db, agr, inv)
+    if row is not None:
+        inv.agreement_id = agr.id
+        inv.schedule_id = row.id
+        await db.flush()
+    return row
+
+
+async def test_a_second_invoice_in_the_same_period_joins_it_instead_of_jumping_ahead(test_engine):
+    """The reported bug (2026-10-03, AGR-202610-0001 GS1 Canada): a special
+    monthly agreement billing in Jan/Apr/May/Oct receives two annual fees in
+    October, both dated 2026-10-01. The second one used to skip the already-
+    received 2026-10 row and land on 2027-01 — marking a period three months in
+    the future as received."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(
+            db, recurring_type="special_monthly", active_months=[1, 4, 5, 10],
+            expected_invoice_day=7, valid_from=date(2026, 10, 1),
+            valid_to=date(2027, 12, 31),
+            expected_amount_per_period=None, tolerance_pct=None)
+        await sched_crud.ensure_period_rows(db, agr)
+        easl = await _invoice(db, agr, vendor, user, total="1575.00",
+                              invoice_date=date(2026, 10, 1))
+        pcert = await _invoice(db, agr, vendor, user, total="1050.00",
+                               invoice_date=date(2026, 10, 1))
+        r1 = await _claim(db, agr, easl)
+        r2 = await _claim(db, agr, pcert)
+        assert r1.period_label == r2.period_label == "2026-10"
+        assert r1.id == r2.id
+        assert r1.invoice_id == easl.id, "row.invoice_id stays on the first invoice"
+        members = await sched_crud.period_invoices(db, r1.id)
+        assert {i.id for i in members} == {easl.id, pcert.id}
+        jan = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.agreement_id == agr.id,
+            AgreementPaymentSchedule.period_label == "2027-01"))).scalar_one()
+        assert jan.status == "pending" and jan.invoice_id is None
+        await db.commit()
+
+
+async def test_a_second_invoice_that_overshoots_the_period_total_goes_to_review(test_engine):
+    """A fixed monthly fee has one invoice per period; with stacking allowed the
+    tolerance has to be checked against the period's RUNNING total, or a
+    duplicate bill would sail into an already-received month."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)  # expected 1200 ± 5%
+        await sched_crud.ensure_period_rows(db, agr)
+        first = await _invoice(db, agr, vendor, user)
+        assert await _claim(db, agr, first) is not None
+        dup = await _invoice(db, agr, vendor, user)
+        assert await _claim(db, agr, dup) is None
+        await db.commit()
+
+
+async def test_a_split_bill_completes_the_period_on_its_running_total(test_engine):
+    """The check is on the period total, in both directions: once the first
+    half is in (placed by hand — on its own it is under tolerance), the
+    second half that brings the period to its expected amount auto-claims."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)  # expected 1200 ± 5%
+        await sched_crud.ensure_period_rows(db, agr)
+        a = await _invoice(db, agr, vendor, user, total="700.00")
+        assert await _claim(db, agr, a) is None
+        feb = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.agreement_id == agr.id,
+            AgreementPaymentSchedule.period_label == "2026-02"))).scalar_one()
+        await sched_crud.claim_specific_period(db, agr, a, feb.id)
+        a.schedule_id = feb.id
+        await db.flush()
+        b = await _invoice(db, agr, vendor, user, total="500.00")
+        row = await _claim(db, agr, b)
+        assert row is not None and row.id == feb.id
+        await db.commit()
+
+
+async def test_waived_rows_are_never_claimed(test_engine):
     async with _factory(test_engine)() as db:
         agr, vendor, user = await _seed(db)
         await sched_crud.ensure_period_rows(db, agr)
-        first = (await db.execute(
-            select(AgreementPaymentSchedule)
-            .where(AgreementPaymentSchedule.agreement_id == agr.id)
-            .order_by(AgreementPaymentSchedule.sequence).limit(1))).scalar_one()
-        first.status = "received"
+        feb = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.agreement_id == agr.id,
+            AgreementPaymentSchedule.period_label == "2026-02"))).scalar_one()
+        feb.status = "waived"
         await db.flush()
-        inv = await _invoice(db, agr, vendor, user)
-        row = await sched_crud.claim_next_period(db, agr, inv)
-        assert row.sequence == 2
+        inv = await _invoice(db, agr, vendor, user)  # dated 2026-02-03
+        row = await _claim(db, agr, inv)
+        assert row is not None and row.period_label != "2026-02"
+        await db.commit()
+
+
+async def test_joining_a_confirmed_period_voids_the_confirmation(test_engine):
+    """Confirmation is the recurring route's only human checkpoint before
+    payment. The confirmer saw the invoices that were in the period at the
+    time — a new one arriving later must not ride on that."""
+    from datetime import datetime, timezone
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db, tolerance_pct=None)
+        await sched_crud.ensure_period_rows(db, agr)
+        first = await _invoice(db, agr, vendor, user)
+        row = await _claim(db, agr, first)
+        row.accepted_at = datetime.now(timezone.utc)
+        row.accepted_by = user.id
+        await db.flush()
+        second = await _invoice(db, agr, vendor, user)
+        again = await _claim(db, agr, second)
+        assert again.id == row.id
+        assert again.accepted_at is None and again.accepted_by is None
         await db.commit()
 
 
@@ -208,7 +305,7 @@ async def test_no_candidate_rows_returns_none(test_engine):
         await sched_crud.ensure_period_rows(db, agr)
         for r in (await db.execute(select(AgreementPaymentSchedule).where(
                 AgreementPaymentSchedule.agreement_id == agr.id))).scalars().all():
-            r.status = "received"
+            r.status = "waived"
         await db.flush()
         inv = await _invoice(db, agr, vendor, user)
         assert await sched_crud.claim_next_period(db, agr, inv) is None
@@ -296,46 +393,129 @@ async def test_assign_billing_period_links_a_matched_invoice(test_engine):
         await db.commit()
 
 
-async def test_assign_billing_period_refuses_to_move_an_existing_link(test_engine):
-    """Reassigning would release a period that may already have been paid
-    against — a silent double-claim of the schedule."""
+async def test_assign_billing_period_moves_an_invoice_out_of_a_wrong_period(test_engine):
+    """The way back for invoices auto-claimed into a future period before one
+    period could hold several invoices (AGR-202610-0001: INV-2026-0598 sat on
+    2027-01). The vacated period drops back to pending and its open
+    confirmation task closes; the target gains the invoice."""
     from app.crud import invoice as invoice_crud
+    from app.models.task import Task
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db, tolerance_pct=None)
+        await sched_crud.ensure_period_rows(db, agr)
+        rows = (await db.execute(
+            select(AgreementPaymentSchedule)
+            .where(AgreementPaymentSchedule.agreement_id == agr.id)
+            .order_by(AgreementPaymentSchedule.sequence))).scalars().all()
+        jan, feb, mar = rows
+        keep = await _invoice(db, agr, vendor, user, invoice_date=date(2026, 2, 3))
+        await _claim(db, agr, keep)
+        stray = await _invoice(db, agr, vendor, user, invoice_date=date(2026, 2, 3))
+        stray.agreement_id = agr.id
+        await sched_crud.claim_specific_period(db, agr, stray, mar.id)
+        stray.schedule_id = mar.id
+        stray.status = "matched"
+        await sched_crud.create_confirm_task(db, agr, mar)
+        await db.flush()
+
+        await invoice_crud.assign_billing_period(db, stray, feb.id)
+        assert stray.schedule_id == feb.id
+        await db.refresh(mar)
+        assert mar.status == "pending" and mar.invoice_id is None
+        open_mar = (await db.execute(select(Task).where(
+            Task.document_id == agr.id, Task.type == "confirm_period",
+            Task.document_number == f"{agr.number} · 2026-03",
+            Task.is_completed.is_(False)))).scalars().all()
+        assert open_mar == []
+        assert {i.id for i in await sched_crud.period_invoices(db, feb.id)} == {keep.id, stray.id}
+        await db.commit()
+
+
+async def test_assign_billing_period_refuses_to_move_an_invoice_already_on_a_pa(test_engine):
+    """Once a payment has been raised the period it pays for is fixed."""
+    from app.crud import invoice as invoice_crud
+    from app.models.pa import PaymentApplication
     async with _factory(test_engine)() as db:
         agr, vendor, user = await _seed(db)
         await sched_crud.ensure_period_rows(db, agr)
         inv = await _invoice(db, agr, vendor, user)
-        row = await sched_crud.claim_next_period(db, agr, inv)
-        assert row is not None
-        inv.agreement_id = agr.id
-        inv.schedule_id = row.id
+        row = await _claim(db, agr, inv)
+        db.add(PaymentApplication(
+            id=uuid.uuid4(), pa_number=f"PA-T-{uuid.uuid4().hex[:6]}", title="t",
+            vendor_id=vendor.id, vendor_name=vendor.name, invoice_ids=[str(inv.id)],
+            gr_ids=[], subtotal=Decimal("1200"), payment_amount=Decimal("1200"),
+            created_by=user.id, agreement_id=agr.id))
         await db.flush()
-
         other = (await db.execute(
             select(AgreementPaymentSchedule)
             .where(AgreementPaymentSchedule.agreement_id == agr.id,
                    AgreementPaymentSchedule.id != row.id)
             .order_by(AgreementPaymentSchedule.sequence))).scalars().first()
-        with pytest.raises(ValueError, match="already linked"):
+        with pytest.raises(ValueError, match="payment application"):
             await invoice_crud.assign_billing_period(db, inv, other.id)
+        assert inv.schedule_id == row.id, "a refused move leaves the link untouched"
         await db.rollback()
 
 
-async def test_assign_billing_period_refuses_a_taken_period(test_engine):
+async def test_assign_billing_period_can_join_a_period_that_already_has_an_invoice(test_engine):
     from app.crud import invoice as invoice_crud
     async with _factory(test_engine)() as db:
         agr, vendor, user = await _seed(db)
         await sched_crud.ensure_period_rows(db, agr)
         first = await _invoice(db, agr, vendor, user)
-        taken = await sched_crud.claim_next_period(db, agr, first)
+        taken = await _claim(db, agr, first)
         assert taken is not None
 
         second = await _invoice(db, agr, vendor, user, total="2237.40")
         second.agreement_id = agr.id
         second.status = "matched"
         await db.flush()
-        with pytest.raises(ValueError, match="already has an invoice"):
-            await invoice_crud.assign_billing_period(db, second, taken.id)
-        await db.rollback()
+        await invoice_crud.assign_billing_period(db, second, taken.id)
+        assert second.schedule_id == taken.id
+        assert taken.invoice_id == first.id
+        await db.commit()
+
+
+async def test_releasing_one_of_two_invoices_keeps_the_period_received(test_engine):
+    from datetime import datetime, timezone
+    from app.crud.invoice import _release_agreement_evidence
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db, tolerance_pct=None)
+        await sched_crud.ensure_period_rows(db, agr)
+        a = await _invoice(db, agr, vendor, user)
+        b = await _invoice(db, agr, vendor, user)
+        row = await _claim(db, agr, a)
+        await _claim(db, agr, b)
+        row.accepted_at = datetime.now(timezone.utc)
+        row.accepted_by = user.id
+        await db.flush()
+
+        await _release_agreement_evidence(db, a)
+        await db.flush()
+        assert row.status == "received"
+        assert row.invoice_id == b.id, "the row's pointer moves to the invoice still in it"
+        assert row.accepted_at is not None, "the remaining invoice was confirmed — keep it"
+
+        await _release_agreement_evidence(db, b)
+        await db.flush()
+        assert row.status == "pending" and row.invoice_id is None and row.accepted_at is None
+        await db.commit()
+
+
+async def test_a_second_invoice_does_not_open_a_second_confirm_task(test_engine):
+    from app.models.task import Task
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db, tolerance_pct=None, owner_id=None)
+        await sched_crud.ensure_period_rows(db, agr)
+        for _ in range(2):
+            inv = await _invoice(db, agr, vendor, user)
+            row = await _claim(db, agr, inv)
+            await sched_crud.create_confirm_task(db, agr, row)
+        tasks = (await db.execute(select(Task).where(
+            Task.document_id == agr.id, Task.type == "confirm_period",
+            Task.is_completed.is_(False)))).scalars().all()
+        assert len(tasks) == 1
+        await db.commit()
 
 
 # ── The amount check's two rules (user's ruling, 2026-08-13) ────────────────

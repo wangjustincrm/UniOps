@@ -50,6 +50,20 @@ values:
         Special monthly is for charges that fall in only some months of the
         year — you tick the months that actually bill.
       - For a weekly cycle the expected day is a weekday, 1 to 7, Monday first.
+      - >-
+        An arriving invoice is claimed against the period whose expected date
+        is nearest the invoice date. One period can hold several invoices — a
+        vendor billing two fees in the same month puts both in that month,
+        rather than pushing the second into a later period. When the agreement
+        has an expected amount and a tolerance, the check is on the period's
+        running total, so an extra bill on a fixed monthly fee goes to review.
+      - >-
+        Service confirmation covers the whole period. If another invoice joins
+        a period after it was confirmed, the confirmation is cleared and has to
+        be given again.
+      - >-
+        An invoice in the wrong period can be moved from the invoice page
+        (Change period) until a payment application is raised on it.
 
   - value: milestone
     label: Milestone

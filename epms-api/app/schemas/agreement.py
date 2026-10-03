@@ -164,6 +164,18 @@ def validate_milestones(
             "agreement, or enter absolute amounts on the stages")
 
 
+class ScheduleRowInvoice(BaseModel):
+    """一期多票(2026-10-03):排期表每行列出挂在这一期上的全部发票。"""
+    id: uuid.UUID
+    internal_ref: str | None
+    invoice_date: date | None
+    amount: Decimal
+    total_amount: Decimal
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
 class ScheduleRowResponse(BaseModel):
     id: uuid.UUID
     agreement_id: uuid.UUID
@@ -181,6 +193,9 @@ class ScheduleRowResponse(BaseModel):
     amount_pct: Decimal | None
     accepted_by: uuid.UUID | None
     accepted_at: datetime | None
+    # period 行:按 invoice.schedule_id 挂上来的全部发票(成员关系的真值);
+    # invoice_id 只是其中第一张。只有 list 端点填,其余返回单行的端点给空表。
+    invoices: list[ScheduleRowInvoice] = []
 
     model_config = {"from_attributes": True}
 
