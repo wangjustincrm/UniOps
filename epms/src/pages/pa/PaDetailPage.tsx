@@ -644,7 +644,7 @@ export default function PaDetailPage() {
                 {pa.notes && (
                   <div className="mt-4 pt-4 border-t border-neutral-100">
                     <p className="text-xs text-neutral-500 mb-1">Notes</p>
-                    <p className="text-sm text-neutral-700">{pa.notes}</p>
+                    <p className="whitespace-pre-wrap break-words text-sm text-neutral-700">{pa.notes}</p>
                   </div>
                 )}
               </div>
@@ -770,7 +770,7 @@ export default function PaDetailPage() {
                               <td className="px-4 py-3 text-center text-neutral-400 text-xs">{idx + 1}</td>
                               <td className="px-4 py-3">
                                 <div className="text-neutral-800">{line.description}</div>
-                                {line.notes && <div className="text-xs text-neutral-400 mt-0.5">{line.notes}</div>}
+                                {line.notes && <div className="whitespace-pre-wrap break-words text-xs text-neutral-400 mt-0.5">{line.notes}</div>}
                               </td>
                               <td className="px-4 py-3 text-right font-mono text-xs text-neutral-700">{line.qty}</td>
                               <td className="px-4 py-3 text-xs text-neutral-500">{line.unit}</td>

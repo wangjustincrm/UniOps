@@ -422,7 +422,8 @@ export default function PrDetailPage() {
                   ] as [string, string][]).map(([label, value]) => (
                     <div key={label} className="flex flex-col gap-0.5">
                       <dt className="text-xs font-medium text-neutral-500">{label}</dt>
-                      <dd className="text-neutral-900">{value}</dd>
+                      {/* pre-wrap: Notes / Delivery Address are typed with line breaks */}
+                      <dd className="whitespace-pre-wrap break-words text-neutral-900">{value}</dd>
                     </div>
                   ))}
                 </dl>

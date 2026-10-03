@@ -571,7 +571,7 @@ export default function AgreementDetailPage() {
                 ))}
                 <div className="flex flex-col gap-0.5 sm:col-span-2">
                   <dt className="text-xs font-medium text-neutral-500">Notes</dt>
-                  <dd className="text-neutral-900">{agreement.notes || '—'}</dd>
+                  <dd className="whitespace-pre-wrap break-words text-neutral-900">{agreement.notes || '—'}</dd>
                 </div>
               </dl>
             </section>
