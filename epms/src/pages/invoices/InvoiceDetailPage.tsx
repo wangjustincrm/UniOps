@@ -1137,11 +1137,21 @@ export default function InvoiceDetailPage() {
                       surrounding isAgreementRoute branch also covers
                       recurring/milestone, which have no receipts at all. */}
                   <InvoiceReceiptsPanel invoice={inv} />
-                  {/* Renders only in the dead end it exists for: matched to a
-                      recurring agreement with no billing period claimed, which
-                      until now could never be paid and could never be fixed
-                      (see the component). */}
-                  <InvoiceBillingPeriodPanel invoice={inv} />
+                  {/* Recurring agreements only (component-internal gate):
+                      assigns a period when the automatic claim could not, and
+                      moves a linked invoice to another period until a PA is
+                      raised on it — same PA rule as Unmatch above. */}
+                  <InvoiceBillingPeriodPanel
+                    invoice={inv}
+                    canChange={canUnmatch}
+                    changeBlockedReason={
+                      inv.status === 'approved' || inv.status === 'paid'
+                        ? `This invoice has already entered payment (status "${inv.status}"), so its billing period is fixed.`
+                        : blockedPa
+                          ? `Payment Application ${blockedPa} already covers this invoice, so its billing period is fixed.`
+                          : null
+                    }
+                  />
                 </div>
               ) : (
                 <>

@@ -49,6 +49,20 @@ export interface ApiScheduleRow {
   amount_pct: string | null
   accepted_by: string | null
   accepted_at: string | null
+  // One period, several invoices (2026-10-03): every invoice linked to this
+  // row via invoice.schedule_id — that link is the source of truth;
+  // `invoice_id` is only the first of them. Filled by GET .../schedule only;
+  // endpoints returning a single row send [].
+  invoices: ApiScheduleRowInvoice[]
+}
+
+export interface ApiScheduleRowInvoice {
+  id: string
+  internal_ref: string | null
+  invoice_date: string | null
+  amount: string        // pre-tax
+  total_amount: string
+  status: string
 }
 
 export interface MilestoneRowIn {

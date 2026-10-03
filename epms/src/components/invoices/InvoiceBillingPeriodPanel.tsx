@@ -8,65 +8,142 @@ import type { ApiInvoice } from '@/services/invoices'
 import type { ApiScheduleRow } from '@/services/agreement'
 
 /**
- * The way out of "Invoice not linked to a billing period".
+ * The invoice's billing period on a recurring agreement — and the way to set
+ * or change it.
  *
- * A recurring invoice claims a scheduled period when it is matched. When the
- * automatic claim cannot place it — the amount falls outside the period's
- * tolerance, or the schedule has no candidate row — it lands in match_review
- * with no period, and approving it there never assigns one. From that point on
- * the invoice was unpayable and unfixable: /match refuses to run twice, and the
- * agreement's recurrence fields (tolerance included) are locked once it is
- * active. The only surface that offered the manual assignment was MatchPanel,
- * which is unreachable for an already-matched invoice.
+ * Unlinked (the original dead end): a recurring invoice claims a scheduled
+ * period when it is matched. When the automatic claim cannot place it — the
+ * amount falls outside the period's tolerance, or the schedule has no
+ * candidate row — it lands in match_review with no period, and approving it
+ * there never assigns one. From that point on the invoice was unpayable and
+ * unfixable: /match refuses to run twice, and the agreement's recurrence
+ * fields (tolerance included) are locked once it is active. This offers the
+ * same explicit assignment /match takes, which deliberately skips the amount
+ * check: a person is overriding that decision on purpose.
  *
- * So this renders only in exactly that dead end — matched to a recurring
- * agreement, no period — and offers the same explicit assignment /match takes,
- * which deliberately skips the amount check: a person is overriding that
- * decision on purpose, which is the entire point of the escape hatch.
+ * Linked (2026-10-03): one period can now hold several invoices. Before that,
+ * the second invoice of a month was auto-claimed into the NEXT period — for a
+ * special-monthly agreement, months in the future — and there was no way to
+ * pull it back. So a linked invoice shows its period and can be moved, as long
+ * as no payment application has been raised on it yet (`changeBlockedReason`,
+ * resolved by the page from the invoice chain; the server enforces the same
+ * rule).
  */
-export function InvoiceBillingPeriodPanel({ invoice }: { invoice: ApiInvoice }) {
-  if (
-    !invoice.agreement_id ||
-    invoice.agreement_type !== 'recurring' ||
-    invoice.schedule_id
-  ) return null
+export function InvoiceBillingPeriodPanel({
+  invoice, canChange, changeBlockedReason,
+}: {
+  invoice: ApiInvoice
+  // Same gate as Unmatch on this page (epms.invoice.match / system_admin).
+  canChange: boolean
+  changeBlockedReason: string | null
+}) {
+  if (!invoice.agreement_id || invoice.agreement_type !== 'recurring') return null
 
-  return <InvoiceBillingPeriodPanelBody invoice={invoice} agreementId={invoice.agreement_id} />
+  return (
+    <InvoiceBillingPeriodPanelBody
+      invoice={invoice}
+      agreementId={invoice.agreement_id}
+      canChange={canChange}
+      changeBlockedReason={changeBlockedReason}
+    />
+  )
 }
 
 function InvoiceBillingPeriodPanelBody({
-  invoice, agreementId,
-}: { invoice: ApiInvoice; agreementId: string }) {
+  invoice, agreementId, canChange, changeBlockedReason,
+}: {
+  invoice: ApiInvoice; agreementId: string; canChange: boolean; changeBlockedReason: string | null
+}) {
   const scheduleQuery = useAgreementSchedule(agreementId)
   const assign = useAssignBillingPeriod()
   const [selectedId, setSelectedId] = useState('')
+  const [changing, setChanging] = useState(false)
 
   const rows: ApiScheduleRow[] = scheduleQuery.data?.items ?? []
-  const openPeriods = rows
-    .filter((r) => r.schedule_type === 'period' && r.invoice_id === null)
+  const linked = !!invoice.schedule_id
+  const currentRow = linked ? rows.find((r) => r.id === invoice.schedule_id) : undefined
+  // Any period except a waived one — including periods that already hold
+  // invoices (one period, several invoices) — and never the current one.
+  const candidatePeriods = rows
+    .filter((r) => r.schedule_type === 'period' && r.status !== 'waived' && r.id !== invoice.schedule_id)
     .sort((a, b) => a.sequence - b.sequence)
 
   const invoiceTotal = Number(invoice.total_amount)
 
-  return (
-    <div className="flex flex-col gap-3 rounded-lg border border-warning-200 bg-warning-50 p-4">
-      <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-700" />
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium text-warning-800">Not linked to a billing period</p>
-          {/* States the cause, because it is not visible anywhere else: the
-              automatic claim compares the invoice total against the period's
-              expected amount, and an agreement with no tolerance set requires
-              them to be equal to the cent. */}
-          <p className="text-xs text-warning-800">
-            This invoice was matched to the agreement but never claimed a scheduled period —
-            its total fell outside the period's tolerance, or no period was available at the
-            time. A payment cannot be raised against it until one is assigned. Pick the period
-            it pays for; the amount check is skipped because you are making that call
-            deliberately.
-          </p>
+  if (linked && !changing) {
+    const others = (currentRow?.invoices ?? []).filter((i) => i.id !== invoice.id)
+    return (
+      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-0.5">
+            <p className="text-xs font-medium text-neutral-500">Billing period</p>
+            <p className="text-sm font-medium text-neutral-900">
+              {currentRow
+                ? (currentRow.period_label ?? `Period #${currentRow.sequence}`)
+                : scheduleQuery.isLoading ? 'Loading…' : 'Linked'}
+              {currentRow?.expected_date && (
+                <span className="ml-1.5 text-xs font-normal text-neutral-500">
+                  · expected {formatDate(currentRow.expected_date)}
+                </span>
+              )}
+            </p>
+            {others.length > 0 && (
+              <p className="text-xs text-neutral-500">
+                Shared with {others.map((i) => i.internal_ref ?? 'another invoice').join(', ')}
+              </p>
+            )}
+          </div>
+          {canChange && !changeBlockedReason && (
+            <Button size="sm" variant="secondary" onClick={() => { setChanging(true); assign.reset() }}>
+              Change period
+            </Button>
+          )}
         </div>
+        {canChange && changeBlockedReason && (
+          <p className="text-xs text-neutral-500">{changeBlockedReason}</p>
+        )}
       </div>
+    )
+  }
+
+  return (
+    <div className={cn(
+      'flex flex-col gap-3 rounded-lg border p-4',
+      linked ? 'border-neutral-200 bg-white' : 'border-warning-200 bg-warning-50',
+    )}>
+      {linked ? (
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium text-neutral-900">Move to another billing period</p>
+            <p className="text-xs text-neutral-500">
+              Currently in {currentRow?.period_label ?? 'a period'}. If no other invoice is left there, that
+              period goes back to pending and its open confirmation task is closed. A period that already
+              holds invoices can take this one too.
+            </p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => { setChanging(false); setSelectedId('') }}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-700" />
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium text-warning-800">Not linked to a billing period</p>
+            {/* States the cause, because it is not visible anywhere else: the
+                automatic claim compares the invoice total against the period's
+                expected amount, and an agreement with no tolerance set requires
+                them to be equal to the cent. */}
+            <p className="text-xs text-warning-800">
+              This invoice was matched to the agreement but never claimed a scheduled period —
+              its total fell outside the period's tolerance, or no period was available at the
+              time. A payment cannot be raised against it until one is assigned. Pick the period
+              it pays for; the amount check is skipped because you are making that call
+              deliberately.
+            </p>
+          </div>
+        </div>
+      )}
 
       {scheduleQuery.isLoading ? (
         <p className="rounded-lg border border-warning-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
@@ -81,16 +158,16 @@ function InvoiceBillingPeriodPanelBody({
           Couldn't load the payment schedule — you may not have permission to view it. Someone
           with access to the agreement can assign the period.
         </p>
-      ) : openPeriods.length === 0 ? (
+      ) : candidatePeriods.length === 0 ? (
         <p className="rounded-lg border border-warning-200 bg-white px-3 py-2.5 text-xs text-warning-800">
-          Every period on this agreement is already claimed by another invoice. The schedule may
-          need extending before this invoice can be paid.
+          No other period on this agreement can take an invoice. The schedule may need extending.
         </p>
       ) : (
         <>
           <div className="flex max-h-64 flex-col gap-1.5 overflow-y-auto">
-            {openPeriods.map((row) => {
+            {candidatePeriods.map((row) => {
               const expected = row.expected_amount != null ? Number(row.expected_amount) : null
+              const existing = row.invoices ?? []
               return (
                 <label
                   key={row.id}
@@ -118,11 +195,15 @@ function InvoiceBillingPeriodPanelBody({
                     <p className="text-[11px] text-neutral-500">
                       Expected {formatDate(row.expected_date ?? '')}
                       {expected !== null && <> · expected {formatAmount(expected, invoice.currency)}</>}
+                      {existing.length > 0 && (
+                        <> · already has {existing.map((i) => i.internal_ref ?? 'an invoice').join(', ')}</>
+                      )}
                     </p>
                   </div>
                   {/* The difference is shown, not hidden: assigning across a
                       gap this large is a decision worth seeing the size of. */}
-                  {expected !== null && Math.round(expected * 100) !== Math.round(invoiceTotal * 100) && (
+                  {expected !== null && existing.length === 0 &&
+                    Math.round(expected * 100) !== Math.round(invoiceTotal * 100) && (
                     <span className="shrink-0 text-[11px] font-medium text-warning-700">
                       {formatAmount(invoiceTotal - expected, invoice.currency)} vs invoice
                     </span>
@@ -135,9 +216,14 @@ function InvoiceBillingPeriodPanelBody({
             <Button
               size="sm"
               disabled={!selectedId || assign.isPending}
-              onClick={() => assign.mutate({ id: invoice.id, schedule_id: selectedId })}
+              onClick={() => assign.mutate(
+                { id: invoice.id, schedule_id: selectedId },
+                { onSuccess: () => { setChanging(false); setSelectedId('') } },
+              )}
             >
-              {assign.isPending ? 'Assigning…' : 'Assign Billing Period'}
+              {assign.isPending
+                ? (linked ? 'Moving…' : 'Assigning…')
+                : (linked ? 'Move to This Period' : 'Assign Billing Period')}
             </Button>
           </div>
         </>
