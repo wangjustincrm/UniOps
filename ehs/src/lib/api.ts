@@ -169,8 +169,26 @@ export interface DirectoryPerson {
  * attachment" in this module goes through here — three of them were built as
  * an upload with no way back down, which is the half people actually use.
  */
-/** Types a browser will render in a tab. Anything else is a download. */
-const INLINE_TYPES = ['application/pdf', 'image/', 'text/']
+/**
+ * Types a browser will render in a tab. Anything else is a download.
+ *
+ * ★★ Exact types, not prefixes. `image/` and `text/` would admit
+ * `image/svg+xml` and `text/html` — and a `blob:` URL inherits the origin of
+ * the page that made it, so opening one of those in a tab runs its script
+ * **as Safety, with the viewer signed in**. Stored XSS, by way of a file
+ * somebody attached.
+ *
+ * Nothing this module accepts today is an SVG or an HTML file; every upload
+ * path has its own allow-list of PDF, JPEG, PNG, WebP, HEIC and DOCX. This is
+ * the second lock rather than the only one, because the list of what may be
+ * uploaded is eight files away from the code that opens it. Raised in review by
+ * uniops-41.
+ */
+const INLINE_TYPES = [
+  'application/pdf',
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+  'text/plain',
+]
 
 export async function openFile(path: string, filename?: string): Promise<void> {
   const blob = await apiBlob(path)
@@ -183,8 +201,11 @@ export async function openFile(path: string, filename?: string): Promise<void> {
   //
   // Judged on the blob's own type, with the filename as the fallback for a
   // server that sent none.
-  const inline = INLINE_TYPES.some((t) => blob.type.startsWith(t))
-    || (!blob.type && (filename ?? '').endsWith('.pdf'))
+  // Compared whole, and the type is split on ';' because a server may send
+  // `text/plain; charset=utf-8`.
+  const sent = blob.type.split(';')[0].trim().toLowerCase()
+  const inline = INLINE_TYPES.includes(sent)
+    || (!sent && (filename ?? '').endsWith('.pdf'))
   if (!inline && filename) {
     const a = document.createElement('a')
     a.href = url
