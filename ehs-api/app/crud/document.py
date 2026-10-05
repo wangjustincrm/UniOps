@@ -123,10 +123,20 @@ async def publish(
 
     # Retire whatever this replaces, in the same transaction, so there is never
     # a moment when two versions are both current.
+    #
+    # ★ Round 5, TC-22: "policy documents that are Superseded by a later version
+    # still show up in the My actions list to sign and yet when it is opened
+    # there is no way to sign the superseeded document."
+    #
+    # This set the column and nothing else, while `retire()` three screens away
+    # also closed the outstanding read-and-sign tasks. Two places retiring a
+    # document, one of them doing half the job — so everybody who had not yet
+    # signed v1 kept a task pointing at a version they are no longer allowed to
+    # sign, *and* got a new task for v2. Through the one function now.
     if doc.supersedes_id:
         previous = await db.get(SafetyDocument, doc.supersedes_id)
         if previous is not None and previous.status == "published":
-            previous.status = "retired"
+            await retire(db, previous)
 
     await db.flush()
     await deadline_service.ensure_document_review_deadline(db, doc)
@@ -182,6 +192,22 @@ async def retire(db: AsyncSession, doc: SafetyDocument) -> SafetyDocument:
     await task_service.close_tasks_for(db, doc_type=DOC_DOCUMENT, doc_id=doc.id)
     await db.flush()
     return doc
+
+
+async def replacement_for(
+    db: AsyncSession, doc: SafetyDocument
+) -> SafetyDocument | None:
+    """The version that superseded this one, if any.
+
+    The link is stored on the newer document pointing back, so this is the
+    reverse lookup. The newest wins if a document was superseded twice — that
+    is the one somebody has to read.
+    """
+    return (await db.execute(
+        select(SafetyDocument)
+        .where(SafetyDocument.supersedes_id == doc.id)
+        .order_by(SafetyDocument.created_at.desc())
+        .limit(1))).scalar_one_or_none()
 
 
 async def _audience(db: AsyncSession, doc: SafetyDocument) -> list[User]:

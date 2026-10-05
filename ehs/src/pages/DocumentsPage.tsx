@@ -27,6 +27,10 @@ export interface SafetyDoc {
   status: string; published_at: string | null; published_by_name: string | null
   supersedes_id: string | null; requires_ack: boolean; ack_roles: string[]
   qr_token: string | null; owner_name: string | null
+  /** When this version has been retired by a newer one — only the single
+   *  document read fills these in. */
+  superseded_by_id?: string | null
+  superseded_by_version?: string | null
 }
 
 export const CATEGORY_LABELS: Record<string, string> = {

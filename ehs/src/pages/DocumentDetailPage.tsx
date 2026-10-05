@@ -12,7 +12,7 @@
  */
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
 import { Check, Download, Upload, Users } from 'lucide-react'
@@ -108,6 +108,29 @@ export default function DocumentDetailPage() {
         </dl>
       </Card>
 
+      {/* ★ Round 5, TC-22: "policy documents that are Superseded by a later
+          version still show up in the My actions list to sign and yet when it
+          is opened there is no way to sign the superseeded document."
+          The task is now closed when the version is retired, so nobody is sent
+          here any more — but old links, bookmarks and the document list still
+          arrive, and a page with no way to sign and no reason given is a dead
+          end. */}
+      {d.status === 'retired' && d.superseded_by_id && (
+        <section className="mb-4 rounded-xl border border-neutral-300 bg-neutral-50 p-3.5">
+          <h2 className="text-sm font-semibold text-neutral-800">
+            This version has been replaced
+          </h2>
+          <p className="mt-0.5 text-xs text-neutral-600">
+            Version {d.version} is kept as a record of what was in force. There is
+            nothing to sign here — a signature on a retired version would say
+            somebody had read the wrong document.
+          </p>
+          <Link to={`/documents/${d.superseded_by_id}`}
+                className="mt-2 inline-block text-sm font-semibold text-primary-700 underline">
+            Open version {d.superseded_by_version} — the one in force
+          </Link>
+        </section>
+      )}
       {iOweASignature && <SignPanel doc={d} onSigned={invalidate} />}
 
       {mayManage && d.status === 'draft' && <DraftControls doc={d} onChanged={invalidate} />}

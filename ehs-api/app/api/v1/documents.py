@@ -91,6 +91,12 @@ class DocumentOut(BaseModel):
     ack_user_ids: list[uuid.UUID]
     qr_token: str | None
     owner_name: str | None
+    # ★ What replaced this one, when it has been retired by a newer version.
+    # Round 5, TC-22: landing on a superseded policy with no way to sign it and
+    # nothing saying why is a dead end — and old links and bookmarks keep
+    # arriving here long after the task that pointed at it was closed.
+    superseded_by_id: uuid.UUID | None = None
+    superseded_by_version: str | None = None
 
 
 class AckIn(BaseModel):
@@ -149,7 +155,16 @@ async def create_document(payload: DocumentIn, db: SessionDep, user: CanManageDo
 
 @router.get("/{document_id}", response_model=DocumentOut)
 async def get_document(document_id: uuid.UUID, db: SessionDep, user: CanReadDocument):  # noqa: ARG001
-    return await crud.get_document(db, document_id)
+    doc = await crud.get_document(db, document_id)
+    out = DocumentOut.model_validate(doc)
+    # Only looked up for a retired one: on a current document there is nothing
+    # to say, and it would be a query per read for every list.
+    if doc.status == "retired":
+        replacement = await crud.replacement_for(db, doc)
+        if replacement is not None:
+            out.superseded_by_id = replacement.id
+            out.superseded_by_version = replacement.version
+    return out
 
 
 @router.patch("/{document_id}", response_model=DocumentOut)
