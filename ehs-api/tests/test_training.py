@@ -550,6 +550,82 @@ class TestWhoeverIsRunningItCanRunIt:
         assert marked.status_code == 200, marked.text
         assert marked.json()[0]["result"] == "passed"
 
+    async def test_the_coordinator_can_change_their_own_session(
+            self, worker, session_run_by_a_worker):
+        """★ Round 5, TC-07: "worker gets Insufficient permissions when trying to
+        open a training session where they are the run by person."
+
+        This endpoint was the one the round-4 work missed — six were opened up
+        and the PATCH kept `ehs.training.write`, while the screen shows the
+        instructor editor to whoever may run the session. So the coordinator got
+        in, saw the roster, marked it, and was refused the moment they filled in
+        the instructor. The sixth one-sided gate in this module.
+
+        Round 5 settled the scope: their session, their arrangements — the
+        instructor, the notes, the date and the place.
+        """
+        _, wc = worker
+        sid = session_run_by_a_worker["id"]
+
+        named = await wc.patch(f"/api/v1/course-sessions/{sid}",
+                               json={"instructor_name": "A visiting trainer"})
+        assert named.status_code == 200, named.text
+        assert named.json()["instructor_name"] == "A visiting trainer"
+
+        moved = await wc.patch(f"/api/v1/course-sessions/{sid}", json={
+            "session_date": (date.today() + timedelta(days=3)).isoformat(),
+            "location_text": "Training Room 107",
+            "notes": "Moved so the night shift can attend.",
+        })
+        assert moved.status_code == 200, moved.text
+        assert moved.json()["location_text"] == "Training Room 107"
+
+    async def test_the_coordinator_cannot_hand_the_session_to_somebody_else(
+            self, worker, hse_manager, session_run_by_a_worker, test_engine):
+        """★ The one field that is not theirs.
+
+        Who runs a session is HSE's nomination — the chain HSE specified two
+        rounds ago — and reassigning it would let one ordinary employee give
+        another edit rights over it.
+        """
+        from tests.conftest import make_user
+
+        _, wc = worker
+        _, hse = hse_manager
+        sid = session_run_by_a_worker["id"]
+        other = await make_user(test_engine, role="requester", full_name="Someone Else")
+
+        refused = await wc.patch(f"/api/v1/course-sessions/{sid}",
+                                 json={"coordinator_id": str(other.id)})
+        assert refused.status_code == 403, refused.text
+        assert "HSE" in refused.json()["detail"]
+
+        # And HSE still can, which is what makes the refusal mean something.
+        moved = await hse.patch(f"/api/v1/course-sessions/{sid}",
+                                json={"coordinator_id": str(other.id)})
+        assert moved.status_code == 200, moved.text
+
+    async def test_somebody_else_cannot_change_a_session_either(
+            self, hse_manager, test_engine, courses, db_session):
+        """Widening it to the coordinator must not widen it to everybody."""
+        from tests.conftest import authed_client, make_token, make_user
+
+        _, hse = hse_manager
+        nobody = await make_user(test_engine, role="requester", full_name="Not Running It")
+        made = await hse.post("/api/v1/course-sessions", json={
+            "course_id": str(courses["forklift"].id),
+            "course_label": "Forklift",
+            "title": "Forklift",
+            "session_date": date.today().isoformat(),
+        })
+        assert made.status_code in (200, 201), made.text
+        sid = made.json()["id"]
+
+        async with authed_client(make_token(nobody.id, nobody.role), db_session) as theirs:
+            refused = await theirs.patch(f"/api/v1/course-sessions/{sid}",
+                                         json={"notes": "I was never asked to run this"})
+            assert refused.status_code == 403, refused.text
+
     async def test_somebody_else_s_session_is_still_refused(
             self, worker, hse_manager, test_engine, courses, db_session):
         """★ The admission's opposite. Opening this up to the coordinator must

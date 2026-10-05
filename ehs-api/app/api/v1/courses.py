@@ -195,14 +195,45 @@ async def get_session(delivery_id: uuid.UUID, db: SessionDep, user: CanReportInc
 
 @router.patch("/{delivery_id}", response_model=DeliveryOut)
 async def update_session(
-    delivery_id: uuid.UUID, payload: DeliveryPatch, db: SessionDep, user: CanWriteTraining,  # noqa: ARG001
+    delivery_id: uuid.UUID, payload: DeliveryPatch, db: SessionDep, user: CanReportIncident,
 ):
+    """Whoever is running it can change it.
+
+    ★ Round 5, TC-07: "worker gets Insufficient permissions when trying to open
+    a training session where they are the run by person on the training form."
+
+    This endpoint was the one the round-4 work missed. Six endpoints were opened
+    up to the nominated coordinator; this one kept `ehs.training.write`, and
+    `CourseSessionPage` shows the instructor editor to whoever may run the
+    session — so the coordinator could open the session, see the roster, mark
+    it and close it, and got a flat refusal the moment they filled in the
+    instructor. The sixth time in this module that a gate was widened on one
+    side only, and the first five are all in the history of this file and its
+    neighbours.
+
+    Round 5 settled the scope: the person running it changes the instructor, the
+    notes, the date and the place. Their session, their arrangements.
+
+    ★ Reassigning it is not theirs. `coordinator_id` is HSE's nomination — the
+    chain HSE specified is that HSE names a coordinator and the coordinator runs
+    it — and handing a session to somebody else would let one ordinary employee
+    give another edit rights over it. That stays with training-write, and it is
+    the only field that does.
+    """
     delivery = await crud.get_delivery(db, delivery_id)
+    await _require_session_access(db, user, delivery)
     fields = payload.model_dump(exclude_unset=True)
-    # Reassigning has to move the task as well, so it goes through crud rather
-    # than being set like the rest.
     if "coordinator_id" in fields:
-        await crud.set_coordinator(db, delivery, fields.pop("coordinator_id"))
+        new_coordinator = fields.pop("coordinator_id")
+        if not await has_permission(
+                db, _user_id(user), user.get("role", ""), "ehs.training.write"):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Who runs a session is HSE's to decide. You can change its "
+                "details, not hand it to somebody else.")
+        # Reassigning has to move the task as well, so it goes through crud
+        # rather than being set like the rest.
+        await crud.set_coordinator(db, delivery, new_coordinator)
     for key, value in fields.items():
         setattr(delivery, key, value)
     await db.flush()
