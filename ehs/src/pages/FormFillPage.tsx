@@ -123,7 +123,14 @@ export default function FormFillPage() {
   const me = useEhsAuth((st) => st.user)
 
   useEffect(() => {
-    if (loaded || answers.isLoading || !submission.data) return
+    // ★ A failed answers request leaves `data` undefined exactly as an empty
+    // form does, and the seeding below treats "no rows" as "nobody has filled
+    // this in yet" — so a form that already had an inspector and a date would
+    // have had today's date and whoever opened it queued over the top, and the
+    // first edit would have written them. Raised in review by uniops-41. The
+    // same shape as the four `?? []` reads found in round 4, one level deeper:
+    // here the empty list does not just read as a fact, it overwrites one.
+    if (loaded || answers.isLoading || answers.isError || !submission.data) return
     const rows = answers.data ?? []
     const next = toValues(rows)
 
@@ -215,6 +222,23 @@ export default function FormFillPage() {
   if (submission.isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
   if (submission.isError) {
     return <p className="p-4 text-sm text-danger-700">{(submission.error as ApiError).message}</p>
+  }
+
+  // ★ The answers, separately. The form itself loaded, so the page renders —
+  // but an empty form and a form whose answers could not be fetched look
+  // identical, and this one can be typed into. Refusing to show the questions is
+  // the only honest option: anything typed would be written over answers that
+  // are there and cannot be seen.
+  if (answers.isError) {
+    return (
+      <div className="p-4">
+        <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          What has already been filled in on this form could not be loaded, so it
+          is not being shown — filling it in now would write over answers that
+          are there. Try again in a moment.
+        </p>
+      </div>
+    )
   }
 
   const sub = submission.data!
