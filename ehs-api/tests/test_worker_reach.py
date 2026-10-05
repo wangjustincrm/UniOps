@@ -241,6 +241,37 @@ class TestTheSigningRosterIsForWhoeverManagesDocuments:
         assert (await hse.get(
             f"/api/v1/documents/{a_published_policy}/signing-status")).status_code == 200
 
+    async def test_a_supervisor_can_see_who_has_signed(
+            self, hse_manager, a_published_policy, test_engine, db_session):
+        """★ Round 5, box 5: "give supervisors the whole roster as they may have
+        staff fro other departments with them."
+
+        Round 5 narrowed this to whoever manages documents, which took it away
+        from the supervisors who do the chasing. It is `ehs.worker.read` now —
+        the permission for facts about people, held by HSE, the coordinator and
+        area supervisors, and by nobody else.
+
+        The whole roster, not their own department: HSE's reason is that a
+        supervisor runs crews from more than one.
+        """
+        from tests.conftest import authed_client, make_token, make_user
+
+        sup = await make_user(test_engine, role="area_supervisor",
+                              full_name="Crew Supervisor")
+        async with authed_client(make_token(sup.id, sup.role), db_session) as sc:
+            roster = await sc.get(
+                f"/api/v1/documents/{a_published_policy}/acknowledgements")
+            assert roster.status_code == 200, roster.text
+            status_ = await sc.get(
+                f"/api/v1/documents/{a_published_policy}/signing-status")
+            assert status_.status_code == 200, status_.text
+            assert "outstanding" in status_.json() or "audience" in status_.json()
+
+            # And it is still not a licence to publish or revise.
+            assert (await sc.post(
+                f"/api/v1/documents/{a_published_policy}/retire", json={})
+            ).status_code == 403
+
     async def test_a_worker_can_still_read_and_sign_the_policy_itself(
             self, worker, a_published_policy):
         """★ The point of the whole feature, and what the narrowing must not break.

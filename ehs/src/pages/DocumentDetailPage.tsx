@@ -42,6 +42,12 @@ export default function DocumentDetailPage() {
   const queryClient = useQueryClient()
   const { can } = usePermissions()
   const mayManage = can('ehs.document.manage')
+  // ★ Round 5, box 5: "give supervisors the whole roster as they may have staff
+  // fro other departments with them." Seeing who has signed is a supervisor's
+  // job; publishing and revising is not. Two gates, because they are two
+  // different questions — and gating the panel on `mayManage` alone is what
+  // took the roster away from supervisors in the first place.
+  const maySeeWhoSigned = can('ehs.worker.read')
 
   const doc = useQuery({
     queryKey: ['document', id],
@@ -141,7 +147,7 @@ export default function DocumentDetailPage() {
           panel as well as the endpoint matters: without this, the narrowing
           would have shown them a permission error where there used to be a
           list, which reads as a fault rather than as none of their business. */}
-      {mayManage && d.requires_ack && d.status !== 'draft' && <SigningPanel doc={d} />}
+      {maySeeWhoSigned && d.requires_ack && d.status !== 'draft' && <SigningPanel doc={d} />}
 
       {mayManage && d.status === 'published' && <PublishedControls doc={d} onChanged={invalidate} />}
 

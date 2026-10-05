@@ -14,7 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
-from app.core.permissions import CanManageDocument, CanReadDocument
+from app.core.permissions import (
+    CanManageDocument, CanReadDocument, CanReadWorker,
+)
 from app.crud import document as crud
 from app.services.attachments import MAX_FILE_SIZE, proxy_download, upload_to_file_server
 
@@ -212,24 +214,35 @@ async def acknowledge(
 
 @router.get("/{document_id}/acknowledgements", response_model=list[AckOut])
 async def list_acknowledgements(
-    document_id: uuid.UUID, db: SessionDep, user: CanManageDocument,  # noqa: ARG001
+    document_id: uuid.UUID, db: SessionDep, user: CanReadWorker,  # noqa: ARG001
 ):
     """Everybody who has signed it.
 
-    ★ Was readable by anyone who could read the document, which is everybody —
-    so an employee could see which of their colleagues had not signed the
-    harassment policy yet. Whether somebody has complied is a management fact
-    about them. Their own is on their own record; this is the roster.
+    Round 4 made this readable by anyone who could read the document, which is
+    everybody — so an employee could see which of their colleagues had not
+    signed the harassment policy. Whether somebody has complied is a management
+    fact about them, so round 5 narrowed it to whoever manages documents.
+
+    ★ That went too far the other way, and round 5 said so: "give supervisors
+    the whole roster as they may have staff from other departments with them."
+    A supervisor who cannot see who on their crew has signed cannot chase them,
+    which is most of what the roster is for.
+
+    So it is `ehs.worker.read` — HSE, the coordinator and area supervisors. It
+    is the permission for facts about people, which is what this is, and it is
+    held by exactly the three roles that chase compliance. The whole roster,
+    not their own department: Kirk's reason is that a supervisor runs crews from
+    more than one.
     """
     return await crud.acknowledgements(db, await crud.get_document(db, document_id))
 
 
 @router.get("/{document_id}/signing-status", response_model=SigningStatusOut)
-async def signing_status(document_id: uuid.UUID, db: SessionDep, user: CanManageDocument):  # noqa: ARG001
+async def signing_status(document_id: uuid.UUID, db: SessionDep, user: CanReadWorker):  # noqa: ARG001
     """Who has signed, and — the half that gets used — who has not.
 
-    The same narrowing as the roster above, and for the sharper reason: this one
-    names the people who have *not* complied.
+    The same audience as the roster above, for the same reason: chasing the
+    people who have not signed is a supervisor's job as much as HSE's.
     """
     return await crud.signing_status(db, await crud.get_document(db, document_id))
 
