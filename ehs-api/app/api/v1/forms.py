@@ -67,6 +67,11 @@ class TemplateOut(BaseModel):
     # started at all. Derived, not stored.
     published: bool = False
     fail_criteria: int = 0
+    # ★ Whether this kind of form has a verdict at all. Minutes, a talk and a
+    # job analysis record what was said; an inspection records whether
+    # something was found acceptable. The editor and the screens read this
+    # rather than each deciding for themselves.
+    can_fail: bool = True
 
 
 class VersionOut(BaseModel):
@@ -195,7 +200,10 @@ async def _with_criteria(db, templates: list) -> list[TemplateOut]:
         item = TemplateOut.model_validate(t)
         schema = latest.get(t.id)
         item.published = schema is not None
-        item.fail_criteria = sum(1 for q in (schema or []) if q.get("fail_on"))
+        item.can_fail = form_engine.kind_can_fail(item.category)
+        item.fail_criteria = (
+            sum(1 for q in (schema or []) if q.get("fail_on"))
+            if item.can_fail else 0)
         out.append(item)
     return out
 
@@ -211,17 +219,28 @@ async def list_templates(
 
 @router.post("/templates", response_model=TemplateOut, status_code=201)
 async def create_template(payload: TemplateIn, db: SessionDep, user: CanManageSettings):
-    return await crud.create_template(
+    # ★ Through the same enrichment as the list and the single read, so a
+    # template describes itself the same way however it was fetched. It did
+    # not, and the builder opened straight from a create would have been told
+    # a minutes form has a verdict.
+    created = await crud.create_template(
         db, code=payload.code, name=payload.name, description=payload.description,
         category=payload.category, creator_id=_user_id(user))
+    return (await _with_criteria(db, [created]))[0]
 
 
 @router.get("/templates/{template_id}", response_model=TemplateOut)
 async def get_template(template_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
     """One template. The builder needs it to say which form is being edited —
     it showed only "Form builder", which with four similarly-named inspections
-    open is not enough to tell them apart."""
-    return await crud.get_template(db, template_id)
+    open is not enough to tell them apart.
+
+    Through the same enrichment as the list, so `can_fail` and the criteria
+    count mean the same thing on both — the builder reads this one, and a
+    field present on the list and missing here is how a screen ends up
+    deciding for itself.
+    """
+    return (await _with_criteria(db, [await crud.get_template(db, template_id)]))[0]
 
 
 @router.get("/templates/{template_id}/versions", response_model=list[VersionOut])

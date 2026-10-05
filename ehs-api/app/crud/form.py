@@ -108,6 +108,26 @@ async def save_draft_schema(
         form_engine.validate_schema(schema)
     except form_engine.SchemaError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from None
+
+    # ★ Round 5, TC-09: "minutes are a documentation of a meeting, there is no
+    # pass or fail in the form nor in the minutes."
+    #
+    # Refused rather than quietly stripped. A fail condition that is saved and
+    # never fires is the shape this module has been caught by twice — a field
+    # built and never read — and the editor does not offer the box for these
+    # kinds, so the only way one arrives is from a template that changed kind
+    # or from a caller that should be told.
+    template = await get_template(db, template_id)
+    if not form_engine.kind_can_fail(template.category):
+        offending = [q.get("key") for q in schema if q.get("fail_on")]
+        if offending:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"A {template.category} form has no pass or fail — it records what "
+                f"was said or agreed, not a verdict. Remove the fail condition on: "
+                f"{', '.join(str(k) for k in offending)}.",
+            )
+
     v = await draft_version(db, template_id)
     v.schema = schema
     await db.flush()

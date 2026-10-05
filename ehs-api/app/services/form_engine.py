@@ -64,6 +64,25 @@ TYPES: tuple[QuestionType, ...] = (
 BY_CODE = {t.code: t for t in TYPES}
 
 
+# ★ Which kinds of form have a verdict at all.
+#
+# Round 5, TC-09: "minutes are a documentation of a meeting, there is no pass
+# or fail in the form nor in the minutes." He is right, and it was not only the
+# minutes: the builder offered a fail condition on every yes/no question of
+# every template, so a toolbox talk and a job analysis carried the apparatus of
+# an inspection verdict too.
+#
+# An inspection, an audit and a permit check record whether something was found
+# acceptable — that is what they are for, and a failure takes equipment out of
+# service. Minutes, a talk, an orientation and a job analysis record what was
+# said or agreed. Nothing about them passes or fails.
+KINDS_WITH_A_VERDICT = frozenset({"inspection", "audit", "permit"})
+
+
+def kind_can_fail(category: str | None) -> bool:
+    return (category or "") in KINDS_WITH_A_VERDICT
+
+
 class SchemaError(ValueError):
     """A template that cannot be published."""
 

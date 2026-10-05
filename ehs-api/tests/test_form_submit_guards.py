@@ -321,3 +321,72 @@ class TestADateAnswerCanBeSaved:
         assert cleared.status_code == 200, cleared.text
         row = next(a for a in cleared.json() if a["question_key"] == "when")
         assert row["value_date"] is None
+
+
+class TestOnlySomeKindsOfFormHaveAVerdict:
+    """★ Round 5, TC-09: "minutes are a documentation of a meeting, there is no
+    pass or fail in the form nor in the minutes."
+
+    He is right, and it was not only the minutes: the builder offered a fail
+    condition on every yes/no question of every template, so a toolbox talk and
+    a job analysis carried the apparatus of an inspection verdict too.
+    """
+
+    async def _template(self, client, category: str):
+        created = await client.post("/api/v1/forms/templates", json={
+            "code": f"k-{uuid.uuid4().hex[:5]}", "name": f"A {category} form",
+            "category": category,
+        })
+        assert created.status_code in (200, 201), created.text
+        return created.json()
+
+    async def test_an_inspection_has_a_verdict(self, hse_manager):
+        _, client = hse_manager
+        t = await self._template(client, "inspection")
+        assert t["can_fail"] is True
+
+        saved = await client.put(f"/api/v1/forms/templates/{t['id']}/schema", json={
+            "schema": [{"key": "ok", "type": "yes_no_na", "label": "Is it sound?",
+                        "fail_on": {"equals": "no"}}],
+        })
+        assert saved.status_code in (200, 201), saved.text
+        back = (await client.get(f"/api/v1/forms/templates/{t['id']}")).json()
+        assert back["can_fail"] is True
+
+    async def test_minutes_have_none_and_the_condition_is_refused(self, hse_manager):
+        """★ Refused rather than quietly dropped.
+
+        A fail condition saved and never fired is the shape this module has
+        been caught by twice — a field built and never read.
+        """
+        _, client = hse_manager
+        t = await self._template(client, "other")
+        assert t["can_fail"] is False
+
+        refused = await client.put(f"/api/v1/forms/templates/{t['id']}/schema", json={
+            "schema": [{"key": "ok", "type": "yes_no_na", "label": "Agreed?",
+                        "fail_on": {"equals": "no"}}],
+        })
+        assert refused.status_code == 422, refused.text
+        assert "no pass or fail" in refused.text
+        assert "ok" in refused.text, "it must name the question to fix"
+
+    async def test_the_same_form_saves_fine_without_one(self, hse_manager):
+        """The admission beside the denial: minutes are not blocked, only the
+        verdict is."""
+        _, client = hse_manager
+        t = await self._template(client, "other")
+        saved = await client.put(f"/api/v1/forms/templates/{t['id']}/schema", json={
+            "schema": [{"key": "ok", "type": "yes_no_na", "label": "Agreed?"},
+                       {"key": "notes", "type": "textarea", "label": "Discussion"}],
+        })
+        assert saved.status_code in (200, 201), saved.text
+
+    async def test_which_kinds_have_one(self, hse_manager):
+        """Stated once, read by every screen."""
+        from app.services import form_engine
+
+        for kind in ("inspection", "audit", "permit"):
+            assert form_engine.kind_can_fail(kind), kind
+        for kind in ("jsa", "orientation", "toolbox_talk", "other", None, ""):
+            assert not form_engine.kind_can_fail(kind), kind

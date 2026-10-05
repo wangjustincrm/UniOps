@@ -62,7 +62,11 @@ function keyFrom(label: string, taken: Set<string>): string {
 }
 
 interface VocabularySummary { code: string; name: string }
-interface TemplateSummary { id: string; code: string; name: string; category: string | null }
+interface TemplateSummary {
+  id: string; code: string; name: string; category: string | null
+  /** Whether this kind of form has a verdict at all — the server decides. */
+  can_fail?: boolean
+}
 
 export default function FormBuilderPage() {
   const { id = '' } = useParams()
@@ -77,6 +81,10 @@ export default function FormBuilderPage() {
     queryFn: () => api.get<VocabularySummary[]>('/api/v1/settings/vocabularies'),
     staleTime: 10 * 60_000,
   })
+  // Older responses may not carry it; a missing answer means "can fail",
+  // which is what every template did before this round.
+  const kindCanFail = template.data?.can_fail !== false
+
   const queryClient = useQueryClient()
 
   const types = useQuery({
@@ -259,7 +267,14 @@ export default function FormBuilderPage() {
                     Required
                   </label>
 
-                  {spec?.can_fail && (
+                  {/* ★ Round 5, TC-09: "minutes are a documentation of a
+                      meeting, there is no pass or fail in the form nor in the
+                      minutes." The box was offered on every yes/no question of
+                      every template, so a toolbox talk and a job analysis
+                      carried an inspection's apparatus too. Whether this kind
+                      of form has a verdict is the server's answer, not each
+                      screen's. */}
+                  {spec?.can_fail && kindCanFail && (
                     <label className="flex items-center gap-1.5 text-xs text-neutral-700">
                       Fails when
                       <input
@@ -271,7 +286,7 @@ export default function FormBuilderPage() {
                     </label>
                   )}
                 </div>
-                {spec?.can_fail && q.fail_on && (
+                {spec?.can_fail && kindCanFail && q.fail_on && (
                   <p className="mt-1 text-xs text-neutral-500">
                     An answer matching this raises a corrective action when the form is submitted.
                   </p>
