@@ -58,6 +58,11 @@ GHS_RED = HexColor("#D0021B")
 
 MARGIN_X = 10 * mm
 
+# The QR's side at scale 1. Named because the text column's width is derived
+# from it: the two have to move together or a pictogram ends up over the code,
+# and the code is the only thing on the label that reaches the data sheet.
+QR_SIDE = 26 * mm
+
 
 class LabelTooLarge(ValueError):
     """The content does not fit the chosen label, even at the smallest type."""
@@ -171,7 +176,12 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
     left = MARGIN_X
     y = top
     inner = left + 6 * mm
-    text_w = size.width - 12 * mm - 34 * mm  # room for the QR on the right
+    # ★ Derived from the QR rather than a fixed 34 mm. The code's width scales
+    # with the type (`QR_SIDE * scale` below) and the reservation did not, so the
+    # clearance was a coincidence — 1.5 mm at the largest size, and gone the
+    # moment anybody nudged that scale or made the code bigger. Raised in review
+    # by uniops-41 after the overlap it had already caught once.
+    text_w = size.width - 12 * mm - (QR_SIDE * scale + 8 * mm)
 
     def at(points: float) -> float:
         return points * scale
@@ -202,7 +212,14 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
     if label.pictograms:
         side = 20 * mm * scale
         x = inner
-        room = size.width - 12 * mm
+        # ★ The text column's width, not the label's. The QR sits in the
+        # top-right corner, and taking the caps off the pictogram row let the
+        # sixth one walk underneath it — on a label whose whole purpose on the
+        # drum is that somebody can scan the code and reach the current data
+        # sheet. A pictogram over the QR breaks the entry point to the SDS, so
+        # the row wraps at the same boundary the text does. Raised in review by
+        # uniops-41, against a cap I had removed.
+        room = text_w
         for name in list(label.pictograms):
             if x + side > left + room:          # wrap onto the next row
                 x = inner
@@ -258,7 +275,7 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
         target = f"{settings.SAFETY_WEB_URL.rstrip('/')}/chemicals/{chemical_id}"
         widget = qr.QrCodeWidget(target)
         bounds = widget.getBounds()
-        side = 26 * mm * scale
+        side = QR_SIDE * scale
         drawing = Drawing(side, side, transform=[
             side / (bounds[2] - bounds[0]), 0, 0, side / (bounds[3] - bounds[1]),
             0, 0])

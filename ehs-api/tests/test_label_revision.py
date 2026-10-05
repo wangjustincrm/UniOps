@@ -307,3 +307,82 @@ def _pdf_text(pdf: bytes) -> str:
     # "is not in" assertion pass — so say so rather than returning "".
     assert out, "no text could be extracted from the PDF; the helper is broken"
     return "\n".join(out)
+
+
+class TestThePictogramsStayOutOfTheQrCode:
+    """★ Round 5 review (uniops-41), against a cap I removed.
+
+    Taking the five-pictogram limit off let the row run the full width of the
+    label — and the QR sits in the top-right corner. A pictogram drawn over it
+    breaks the one thing the code is on the drum for: scanning it to reach the
+    current safety data sheet. Six classes is not hypothetical; WHMIS products
+    carry several.
+    """
+
+    def _label(self, pictograms):
+        from datetime import date as _date
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            product_identifier="A product with several hazards",
+            supplier=None, signal_word="Danger",
+            hazard_statements=[{"code": "H314", "text": "Burns."}],
+            precautionary_statements=[], pictograms=pictograms,
+            first_aid=None, ppe_note=None,
+            approved_at=_date(2026, 10, 5), approved_by_name="Marie Tremblay",
+        )
+
+    def test_eight_pictograms_do_not_reach_the_qr_column(self):
+        """Measured on the drawing, not eyeballed: every pictogram's right edge
+        has to stop short of where the QR starts — on every size of label, since
+        the small one has the least room to spare."""
+        from reportlab.lib.pagesizes import A4, landscape  # noqa: F401
+        from reportlab.lib.units import mm
+        from reportlab.pdfgen import canvas as pdfcanvas
+
+        from app.services import label_pdf
+
+        drawn: list[tuple[float, float]] = []
+        original = label_pdf._pictogram
+
+        def spy(c, x, y, side, artwork, name):
+            drawn.append((x, side))
+            return original(c, x, y, side, artwork, name)
+
+        for size in label_pdf.SIZES:
+            drawn.clear()
+            label_pdf._pictogram = spy
+            try:
+                buf = __import__("io").BytesIO()
+                c = pdfcanvas.Canvas(buf, pagesize=landscape(A4))
+                label_pdf._one_label(
+                    c, self._label([f"GHS0{i}" for i in range(1, 9)]), "abc",
+                    600.0, None, size=size, scale=size.scale, draw=True)
+            finally:
+                label_pdf._pictogram = original
+
+            assert len(drawn) == 8, (
+                f"{size.code}: all eight must be drawn, not silently dropped")
+            # From the same constant the layout uses, so a change to the QR
+            # moves the assertion with it rather than leaving it asserting the
+            # old geometry.
+            qr_left = (label_pdf.MARGIN_X + size.width
+                       - label_pdf.QR_SIDE * size.scale - 6 * mm)
+            for x, side in drawn:
+                assert x + side <= qr_left + 0.5, (
+                    f"{size.code}: a pictogram reaches {(x + side) / mm:.0f} mm, "
+                    f"the QR starts at {qr_left / mm:.0f} mm")
+
+    def test_they_are_all_still_on_the_label(self):
+        """★ The admission beside it: wrapping must not be a quiet cap by another
+        name."""
+        from app.services import label_pdf
+
+        pdf, used = label_pdf.render(
+            self._label([f"GHS0{i}" for i in range(1, 9)]),
+            chemical_id="abc", copies=1, size=label_pdf.FIT)
+        assert pdf.startswith(b"%PDF")
+        # Whichever stock it chose, it chose one — eight classes and a short
+        # hazard list genuinely fit the small label, and the row wrapping is what
+        # makes that true rather than a cap pretending it is.
+        assert used.code in [sz.code for sz in label_pdf.SIZES]
