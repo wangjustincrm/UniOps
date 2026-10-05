@@ -153,6 +153,8 @@ class IncidentTypeOption(BaseModel):
     # report itself. Served rather than decided in the frontend for the same
     # reason the list is: a second copy of the rule would drift from this one.
     injury_detail: bool
+    # What the injury picker opens on for this type. None means no default.
+    default_injury_class: str | None = None
 
 
 @router.get("/types", response_model=list[IncidentTypeOption])
@@ -165,6 +167,7 @@ async def list_incident_types(form_kind: str | None = None):
     types = incident_type.for_form(form_kind) if form_kind else list(incident_type.TYPES)
     return [IncidentTypeOption(code=t.code, label=t.label, form_kind=t.form_kind,
                                asks_injury_class=t.asks_injury_class,
+                               default_injury_class=t.default_injury_class,
                                injury_detail=t.injury_detail) for t in types]
 
 

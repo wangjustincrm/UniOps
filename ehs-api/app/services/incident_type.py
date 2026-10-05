@@ -35,9 +35,23 @@ class IncidentType:
     # Vocabulary item code in `incident_category`, for the five that are neither
     # an injury severity nor a form kind.
     category_code: str | None = None
-    # True where the type says nothing about injury severity and the reporter
-    # must be asked separately.
+    # True where the picker is shown. Round 5 widened this: HSE asked for the
+    # question to appear on the three types that imply their own answer too, so
+    # that what the dashboard counts is visible on the form rather than
+    # inferred behind it.
     asks_injury_class: bool = False
+    # What the picker opens on when this type is chosen. Round 5: "when
+    # selecting unconscious, automatically default to medical aid … first aid
+    # injury should default the HB picker to first aid. lost time kind of
+    # incident is a HB lost time", and from the same round's answers, "if we
+    # record a Report Only, no injury can be inferred".
+    #
+    # ★ A default, not a rule. The reporter can change it and their choice is
+    # what is stored — `crud.create` reads `payload.injury_class or
+    # t.injury_class`, so the picker wins and the type is only the fallback.
+    # A first-aid case that turns out to be lost time is a real thing and the
+    # form must not argue with the person filling it in.
+    default_injury_class: str | None = None
     # True where the type is one where somebody was actually hurt, and the
     # WSIB detail — Section B on HSE's form — is worth asking for while the
     # first aider still remembers it. Occupational illness is in because it is
@@ -47,7 +61,8 @@ class IncidentType:
 
 TYPES: tuple[IncidentType, ...] = (
     IncidentType("report_only", "Report Only / No Injury", "medical",
-                 category_code="report_only_no_injury"),
+                 category_code="report_only_no_injury",
+                 asks_injury_class=True, default_injury_class="none"),
     # ★ Asked on everything except the two HSE named. Round 4: "add 'how bad was
     # the person hurt' to all 'what kind of incident was this' to allow for
     # dashboard reporting, except report only/no injury and fatality selections."
@@ -58,15 +73,20 @@ TYPES: tuple[IncidentType, ...] = (
     # all and were invisible to every injury figure.
     IncidentType("near_miss", "Near Miss — no injury but has the potential to cause one",
                  "near_miss", asks_injury_class=True),
-    # These three *are* the severity. Asking again would be asking the same
-    # question twice and inviting the two answers to disagree.
+    # ★ These three *are* the severity, so the picker opens on the matching
+    # answer rather than being hidden. Round 5 asked for it to be shown: the
+    # dashboard counts this field, and a figure driven by something the form
+    # never displayed is one nobody can check.
     IncidentType("first_aid", "First Aid Injury — managed using existing first aid equipment",
-                 "medical", injury_class="first_aid", injury_detail=True),
+                 "medical", injury_class="first_aid", injury_detail=True,
+                 asks_injury_class=True, default_injury_class="first_aid"),
     IncidentType("medical_aid",
                  "Medical Aid by clinic, hospital or other health care facility",
-                 "medical", injury_class="medical_aid", injury_detail=True),
+                 "medical", injury_class="medical_aid", injury_detail=True,
+                 asks_injury_class=True, default_injury_class="medical_aid"),
     IncidentType("lost_time", "Lost Time as defined by WSIB", "medical",
-                 injury_class="lost_time", injury_detail=True),
+                 injury_class="lost_time", injury_detail=True,
+                 asks_injury_class=True, default_injury_class="lost_time"),
     IncidentType("property_damage", "Property / Asset Damage", "equipment",
                  asks_injury_class=True),
     IncidentType("occupational_illness", "Occupational Illness", "medical",
@@ -88,7 +108,7 @@ TYPES: tuple[IncidentType, ...] = (
                  injury_detail=True),
     IncidentType("unconscious", "Unconscious — MOL must be notified immediately",
                  "medical", mol_reportable=True, asks_injury_class=True,
-                 injury_detail=True),
+                 default_injury_class="medical_aid", injury_detail=True),
 )
 
 BY_CODE = {t.code: t for t in TYPES}

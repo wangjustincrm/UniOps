@@ -63,6 +63,8 @@ interface IncidentTypeOption {
   /** Fatality and Unconscious are MOL-reportable and say nothing about lost
    *  time, so the form asks for the injury class separately. */
   asks_injury_class: boolean
+  /** What the injury picker opens on for this type. */
+  default_injury_class: string | null
   /** Whether somebody was actually hurt, and so whether the WSIB detail is
    *  worth asking for here. Served rather than decided on this side, for the
    *  same reason the list of types is. */
@@ -451,8 +453,25 @@ export default function IncidentReportPage() {
       )}
 
       <Field label="What kind of incident was this?" required>
+        {/* ★ Round 5: "when selecting unconscious, automatically default to
+            medical aid … first aid injury should default the HB picker to
+            first aid. lost time kind of incident is a HB lost time", and from
+            the answers, Report Only implies nobody was hurt.
+
+            The default is applied when the type is chosen and then left alone
+            — a default is a starting point, not a rule. Somebody who changes
+            it has their answer kept, which is the behaviour the stored value
+            already had: the type is only the fallback. */}
         <select className={inputClass} value={form.incidentType}
-                onChange={(e) => set('incidentType', e.target.value)}>
+                onChange={(e) => {
+                  const code = e.target.value
+                  const picked = (incidentTypes ?? []).find((t) => t.code === code)
+                  setForm((f) => ({
+                    ...f,
+                    incidentType: code,
+                    injuryClass: picked?.default_injury_class ?? '',
+                  }))
+                }}>
           <option value="">Select the type</option>
           {(incidentTypes ?? []).map((t) => (
             <option key={t.code} value={t.code}>{t.label}</option>

@@ -885,21 +885,29 @@ class TestWhichTypesAskHowBadlySomebodyWasHurt:
     it is not asked because the answer is not in doubt, and the type carries it.
     """
 
-    async def test_the_types_that_ask_and_the_types_that_do_not(self, hse_manager):
+    async def test_the_types_that_ask_and_the_type_that_does_not(self, hse_manager):
+        """★ Rewritten in round 5, same scenario and the opposite expectation.
+
+        Round 4 hid the question on the three types that imply their own
+        severity, and on Report Only, to stop two answers disagreeing. Round 5
+        asked for it back, opened on the matching answer — "first aid injury
+        should default the HB picker to first aid" — because the dashboard
+        counts this field and a figure driven by something the form never
+        displayed is one nobody can check. The disagreement it was protecting
+        against is handled by the default instead, and an override is a real
+        case: a first-aid injury can turn into a lost-time one.
+
+        Fatality is now the only exclusion, confirmed in round 5: "there is no
+        value in asking how bad the person was hurt on a fatality, we can infer
+        it."
+        """
         _, client = hse_manager
         types = {t["code"]: t for t in (await client.get("/api/v1/incidents/types")).json()}
 
-        # HSE's two exclusions.
-        assert types["report_only"]["asks_injury_class"] is False
         assert types["fatality"]["asks_injury_class"] is False
 
-        # The three that *are* the severity: asking again would invite the two
-        # answers to disagree.
-        for code in ("first_aid", "medical_aid", "lost_time"):
-            assert types[code]["asks_injury_class"] is False, code
-
-        # Everything else asks.
-        for code in ("near_miss", "property_damage", "occupational_illness",
+        for code in ("report_only", "first_aid", "medical_aid", "lost_time",
+                     "near_miss", "property_damage", "occupational_illness",
                      "environmental", "security", "drug_alcohol", "unconscious"):
             assert types[code]["asks_injury_class"] is True, code
 
@@ -1065,3 +1073,84 @@ async def test_the_report_says_which_kind_of_incident_was_chosen(hse_manager):
     })
     assert plain.status_code in (200, 201), plain.text
     assert plain.json()["incident_type_label"] is None
+
+
+class TestTheInjuryPickerOpensOnTheRightAnswer:
+    """★ Round 5, TC-03: "when selecting unconscious, automatically default to
+    medical aid for how badly was the person hurt. first aid injury should
+    default the HB picker to first aid. lost time kind of incident is a HB lost
+    time" — and from the same round's answers, "if we record a Report Only, no
+    injury can be inferred and the picker can be automatically updated."
+
+    The three types that imply their own severity used to hide the question
+    altogether. They ask it now, opened on the matching answer: the dashboard
+    counts this field, and a figure driven by something the form never showed
+    is one nobody can check.
+    """
+
+    async def test_every_type_that_asks_says_what_to_open_on(self, hse_manager):
+        _, client = hse_manager
+        types = (await client.get("/api/v1/incidents/types")).json()
+        by_code = {t["code"]: t for t in types}
+
+        expected = {
+            "report_only": "none",
+            "first_aid": "first_aid",
+            "medical_aid": "medical_aid",
+            "lost_time": "lost_time",
+            "unconscious": "medical_aid",
+        }
+        for code, default in expected.items():
+            assert by_code[code]["asks_injury_class"] is True, f"{code} must ask"
+            assert by_code[code]["default_injury_class"] == default, code
+
+    async def test_a_fatality_is_still_not_asked(self, hse_manager):
+        """Confirmed in round 5: "there is no value in asking how bad the person
+        was hurt on a fatality, we can infer it"."""
+        _, client = hse_manager
+        types = {t["code"]: t for t in
+                 (await client.get("/api/v1/incidents/types")).json()}
+        assert types["fatality"]["asks_injury_class"] is False
+        assert types["fatality"]["default_injury_class"] is None
+
+    async def test_the_types_that_ask_without_a_default_still_ask(self, hse_manager):
+        """A near miss or a damaged machine usually hurt nobody, but either can
+        turn out to have — so the question is asked with nothing pre-chosen."""
+        _, client = hse_manager
+        types = {t["code"]: t for t in
+                 (await client.get("/api/v1/incidents/types")).json()}
+        for code in ("near_miss", "property_damage", "environmental"):
+            assert types[code]["asks_injury_class"] is True
+            assert types[code]["default_injury_class"] is None
+
+    async def test_what_the_reporter_picks_beats_the_type(self, hse_manager):
+        """★ The default is a starting point, not a rule.
+
+        A first-aid case that turns out to be lost time is a real thing, and
+        the form must not argue with the person filling it in.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        _, client = hse_manager
+        created = await client.post("/api/v1/incidents", json={
+            "form_kind": "medical", "title": "Cut that needed stitches after all",
+            "incident_type": "first_aid",
+            "injury_class": "lost_time",
+            "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),
+        })
+        assert created.status_code in (200, 201), created.text
+        assert created.json()["injury_class"] == "lost_time"
+
+    async def test_leaving_it_empty_still_falls_back_to_the_type(self, hse_manager):
+        """And an untouched picker is not a regression: the type is the
+        fallback, which is what it has always been."""
+        from datetime import datetime, timedelta, timezone
+
+        _, client = hse_manager
+        created = await client.post("/api/v1/incidents", json={
+            "form_kind": "medical", "title": "Plain first aid case",
+            "incident_type": "first_aid",
+            "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),
+        })
+        assert created.status_code in (200, 201), created.text
+        assert created.json()["injury_class"] == "first_aid"
