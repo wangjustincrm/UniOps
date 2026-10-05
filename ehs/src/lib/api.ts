@@ -130,7 +130,20 @@ export async function apiBlob(path: string): Promise<Blob> {
     onUnauthorized()
     throw new ApiError(401, 'Your session has expired. Sign in again.', null)
   }
-  if (!res.ok) throw new ApiError(res.status, `Could not load file (${res.status})`, null)
+  if (!res.ok) {
+    // ★ The body, where there is one. These endpoints refuse with a reason —
+    // "this label needs about 16 mm more than the label has" — and throwing
+    // `Could not load file (409)` threw that reason away, so the explanation
+    // existed on the wire and nowhere a person could read it. Raised in review
+    // by uniops-41, against my own claim that the message reached the screen.
+    let detail: string | null = null
+    try {
+      const body = await res.json()
+      if (typeof body?.detail === 'string') detail = body.detail
+    } catch { /* not JSON — fall back to the status */ }
+    throw new ApiError(
+      res.status, detail ?? `Could not load file (${res.status})`, null)
+  }
   return res.blob()
 }
 
@@ -156,9 +169,30 @@ export interface DirectoryPerson {
  * attachment" in this module goes through here — three of them were built as
  * an upload with no way back down, which is the half people actually use.
  */
+/** Types a browser will render in a tab. Anything else is a download. */
+const INLINE_TYPES = ['application/pdf', 'image/', 'text/']
+
 export async function openFile(path: string, filename?: string): Promise<void> {
   const blob = await apiBlob(path)
   const url = URL.createObjectURL(blob)
+
+  // ★ A spreadsheet is saved, not viewed. `window.open` on a blob a browser
+  // cannot render leaves a blank tab behind and saves the file under the blob's
+  // random uuid instead of its name — so an export arrived as
+  // "a3f1c2…" with no extension. Raised in review by uniops-41.
+  //
+  // Judged on the blob's own type, with the filename as the fallback for a
+  // server that sent none.
+  const inline = INLINE_TYPES.some((t) => blob.type.startsWith(t))
+    || (!blob.type && (filename ?? '').endsWith('.pdf'))
+  if (!inline && filename) {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    return
+  }
 
   // ★ No `noopener` in the feature string. The spec says `window.open`
   // returns null whenever it is given, so the blocked-pop-up branch below
