@@ -221,7 +221,14 @@ async def update_session(
     the only field that does.
     """
     delivery = await crud.get_delivery(db, delivery_id)
-    await _require_session_access(db, user, delivery)
+    # ★★ The *write* gate, not `_require_session_access`. That one admits anybody
+    # holding `ehs.training.read` — which includes `auditor`, a role that exists
+    # to read and nothing else, and `area_supervisor` for sessions that are not
+    # theirs. Raised in review by uniops-41: widening this endpoint to the
+    # coordinator had quietly widened it to every read-only role as well, which
+    # is the same shape as the TC-19 holes and the reason that round's rule is
+    # "pair every denial with an admission".
+    await _require_roster_rights(db, user, delivery)
     fields = payload.model_dump(exclude_unset=True)
     if "coordinator_id" in fields:
         new_coordinator = fields.pop("coordinator_id")

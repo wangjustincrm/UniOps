@@ -735,3 +735,202 @@ async def test_printing_one_person_with_no_training_still_names_them(
         search=None, completed_from=None, completed_to=None,
         person=person.full_name, course=None)
     assert lines == [f"Person: {person.full_name}"]
+
+
+async def test_the_register_exports_as_a_workbook(hse_manager, db_session):
+    """★ Round 5, TC-08: "provide a way to export the report to a xls file."
+
+    A real workbook rather than a CSV named `.xls`: the register is full of names
+    and course titles with commas and accents in them, and Excel guesses at a
+    CSV's encoding. A workbook also keeps the dates as dates, so the column
+    sorts.
+    """
+    import io
+    import zipfile
+
+    _, client = hse_manager
+    got = await client.get("/api/v1/training/records/export")
+    assert got.status_code == 200, got.text
+    assert got.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    assert "training-records.xlsx" in got.headers["content-disposition"]
+
+    # A .xlsx is a zip. Opening it is the only honest check that it is one.
+    book = zipfile.ZipFile(io.BytesIO(got.content))
+    assert "xl/workbook.xml" in book.namelist()
+
+    from openpyxl import load_workbook
+
+    sheet = load_workbook(io.BytesIO(got.content)).active
+    text = "\n".join(
+        str(c.value) for row in sheet.iter_rows() for c in row if c.value is not None)
+    assert "Training records" in text
+    assert "Every record on file, unfiltered." in text
+    # ★ The columns HSE asked for, and not the one they asked to lose.
+    assert "Run by" in text and "Instructor" in text
+    assert "How" not in text.split("\n")
+
+
+async def test_the_export_carries_its_filter_like_the_print_does(hse_manager):
+    """The two documents take the same parameters, so they cannot disagree about
+    what was asked for — which is the whole of what makes either one evidence."""
+    import io
+
+    from openpyxl import load_workbook
+
+    _, client = hse_manager
+    got = await client.get("/api/v1/training/records/export?search=whmis")
+    assert got.status_code == 200, got.text
+    sheet = load_workbook(io.BytesIO(got.content)).active
+    text = "\n".join(
+        str(c.value) for row in sheet.iter_rows() for c in row if c.value is not None)
+    assert "whmis" in text
+
+
+async def test_a_record_from_a_session_knows_who_ran_it(hse_manager, worker, courses):
+    """★ Round 5, TC-08 needs the run-by and instructor names, which live on the
+    session. A training record had no link to one — the gap round 4 noted and
+    left open. Migration 0052 adds it and marking a session fills it in.
+    """
+    _, client = hse_manager
+    student, _ = worker
+
+    made = await client.post("/api/v1/course-sessions", json={
+        "course_id": str(courses["whmis"].id),
+        "course_label": "WHMIS",
+        "title": "WHMIS for the night shift",
+        "session_date": date.today().isoformat(),
+        "coordinator_id": str(student.id),
+    })
+    assert made.status_code in (200, 201), made.text
+    session = made.json()
+    await client.patch(f"/api/v1/course-sessions/{session['id']}",
+                       json={"instructor_name": "An outside trainer"})
+    enrolled = await client.post(f"/api/v1/course-sessions/{session['id']}/roster",
+                                 json={"user_ids": [str(student.id)]})
+    assert enrolled.status_code in (200, 201), enrolled.text
+    marked = await client.post(f"/api/v1/course-sessions/{session['id']}/results", json={
+        "results": [{"enrolment_id": enrolled.json()[0]["id"], "result": "passed"}],
+        "complete": True,
+    })
+    assert marked.status_code == 200, marked.text
+
+    records = (await client.get(
+        f"/api/v1/training/records?user_id={student.id}")).json()
+    mine = [r for r in records if r["course_label"] == "WHMIS"]
+    assert mine, "passing a session must produce a record"
+    assert mine[0]["delivery_id"] == session["id"]
+    assert mine[0]["run_by_name"] == student.full_name
+    assert mine[0]["instructor_name"] == "An outside trainer"
+
+
+async def test_a_record_entered_by_hand_has_no_session(hse_manager, worker, courses):
+    """★ And prints a dash rather than a blank. There was no session; saying so
+    is different from having nothing to say."""
+    _, client = hse_manager
+    person, _ = worker
+
+    made = await client.post("/api/v1/training/records", json={
+        "user_id": str(person.id),
+        "course_id": str(courses["whmis"].id),
+        "completed_on": date.today().isoformat(),
+        "delivery": "external",
+    })
+    assert made.status_code in (200, 201), made.text
+    assert made.json()["delivery_id"] is None
+
+    listed = (await client.get(
+        f"/api/v1/training/records?user_id={person.id}")).json()
+    external = [r for r in listed if r["delivery"] == "external"]
+    assert external and external[0]["run_by_name"] is None
+
+
+async def test_a_read_only_role_cannot_change_a_session(
+        hse_manager, test_engine, courses, db_session):
+    """★★ Round 5 review (uniops-41): opening the session PATCH to the
+    coordinator had opened it to every role holding `ehs.training.read` — which
+    includes `auditor`, a role that exists to read and nothing else, and
+    `area_supervisor` for sessions that are not theirs.
+
+    The same shape as the TC-19 holes: a record was gated and something about it
+    was not. My own test covered the coordinator and a requester with no training
+    permission at all, and a requester is refused by either gate — so it could
+    not tell the read gate from the write gate apart. This is the case that can.
+    """
+    from tests.conftest import authed_client, make_token, make_user
+
+    _, hse = hse_manager
+    made = await hse.post("/api/v1/course-sessions", json={
+        "course_id": str(courses["whmis"].id), "course_label": "WHMIS",
+        "title": "WHMIS", "session_date": date.today().isoformat(),
+    })
+    assert made.status_code in (200, 201), made.text
+    sid = made.json()["id"]
+
+    auditor = await make_user(test_engine, role="auditor", full_name="Read Only")
+    async with authed_client(make_token(auditor.id, auditor.role), db_session) as ac:
+        # The admission: an auditor may read the session, which is the whole
+        # point of the role.
+        assert (await ac.get(f"/api/v1/course-sessions/{sid}")).status_code == 200
+
+        # And may not change a word of it.
+        for body in ({"title": "Renamed by an auditor"},
+                     {"session_date": (date.today() + timedelta(days=1)).isoformat()},
+                     {"instructor_name": "Someone"},
+                     {"notes": "..."}):
+            refused = await ac.patch(f"/api/v1/course-sessions/{sid}", json=body)
+            assert refused.status_code == 403, f"{body} was accepted: {refused.text}"
+
+
+async def test_a_name_that_looks_like_a_formula_stays_text(hse_manager, worker, courses):
+    """★★ Round 5 review (uniops-41): openpyxl writes a string beginning with
+    `=` as a *formula*. The instructor is typed in by hand and the filter line
+    carries the search text, so both reach a cell — and
+    `=HYPERLINK("http://elsewhere","Your certificate")` in the instructor field
+    becomes a live link in a spreadsheet that came from us.
+
+    UniOps has been here before: Budget Actual's export silently dropped text
+    beginning with `=`.
+    """
+    import io
+
+    from openpyxl import load_workbook
+
+    _, client = hse_manager
+    student, _ = worker
+    made = await client.post("/api/v1/course-sessions", json={
+        "course_id": str(courses["whmis"].id), "course_label": "WHMIS",
+        "title": "WHMIS", "session_date": date.today().isoformat(),
+    })
+    sid = made.json()["id"]
+    await client.patch(f"/api/v1/course-sessions/{sid}", json={
+        "instructor_name": '=HYPERLINK("http://elsewhere","Your certificate")'})
+    enrolled = await client.post(f"/api/v1/course-sessions/{sid}/roster",
+                                 json={"user_ids": [str(student.id)]})
+    await client.post(f"/api/v1/course-sessions/{sid}/results", json={
+        "results": [{"enrolment_id": enrolled.json()[0]["id"], "result": "passed"}],
+        "complete": True,
+    })
+
+    got = await client.get("/api/v1/training/records/export")
+    assert got.status_code == 200, got.text
+    sheet = load_workbook(io.BytesIO(got.content)).active
+
+    hit = None
+    for row in sheet.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and "HYPERLINK" in cell.value:
+                hit = cell
+    assert hit is not None, "the instructor name should be on the sheet"
+    # ★ Text, not a formula — and the value is what was typed, with no stray
+    # apostrophe in front of it.
+    assert hit.data_type == "s"
+    assert hit.value == '=HYPERLINK("http://elsewhere","Your certificate")'
+
+    # And the filter line, which carries whatever was searched for.
+    search = await client.get("/api/v1/training/records/export?search=%3D1%2B1")
+    assert search.status_code == 200, search.text
+    cells = [c for row in load_workbook(io.BytesIO(search.content)).active.iter_rows()
+             for c in row if isinstance(c.value, str) and "=1+1" in c.value]
+    assert cells, "the search text should be stated on the sheet"
+    assert all(c.data_type == "s" for c in cells)
