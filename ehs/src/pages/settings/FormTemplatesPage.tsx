@@ -9,14 +9,18 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, ClipboardList, Plus } from 'lucide-react'
+import { Archive, CalendarClock, ClipboardList, Plus } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
-import { PageHeader } from '@/components/ui'
+import {
+  dangerButton, ErrorNote, PageHeader, secondaryButton,
+} from '@/components/ui'
 
 interface Template {
   id: string; code: string; name: string; description: string | null
   category: string; is_active: boolean
 }
+interface References { submissions: number; schedules: number; equipment: number }
+
 interface Schedule {
   id: string; template_id: string; name: string; frequency: string
   rotation: string; next_due_on: string; is_active: boolean; assigned_role: string | null
@@ -31,9 +35,14 @@ export default function FormTemplatesPage() {
   const [adding, setAdding] = useState(false)
   const [scheduling, setScheduling] = useState<Template | null>(null)
 
+  // ★ Round 5, box 7: "provide a way to delete or archive all the forms."
+  // Archived ones are shown on request rather than vanishing, because the way
+  // back has to be somewhere — an archive you cannot see is a delete.
+  const [showArchived, setShowArchived] = useState(false)
   const templates = useQuery({
-    queryKey: ['form-templates', 'all'],
-    queryFn: () => api.get<Template[]>('/api/v1/forms/templates?include_inactive=true'),
+    queryKey: ['form-templates', showArchived],
+    queryFn: () => api.get<Template[]>(
+      `/api/v1/forms/templates${showArchived ? '?include_inactive=true' : ''}`),
   })
   const schedules = useQuery({
     queryKey: ['form-schedules'],
@@ -54,6 +63,12 @@ export default function FormTemplatesPage() {
           New form
         </button>
       </PageHeader>
+
+      <label className="mb-3 flex items-center gap-2 text-xs text-neutral-600">
+        <input type="checkbox" checked={showArchived}
+               onChange={(e) => setShowArchived(e.target.checked)} />
+        Include archived forms
+      </label>
 
       {templates.data?.length === 0 && (
         <p className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">
@@ -79,7 +94,17 @@ export default function FormTemplatesPage() {
                 <CalendarClock className="h-3.5 w-3.5" aria-hidden />
                 Schedule
               </button>
+              <TemplateLifecycle template={t} onChanged={() => {
+                queryClient.invalidateQueries({ queryKey: ['form-templates'] })
+                queryClient.invalidateQueries({ queryKey: ['form-schedules'] })
+              }} />
             </div>
+            {!t.is_active && (
+              <p className="mt-1.5 text-xs text-neutral-500">
+                Archived — not offered on any form list. Everything filled in on
+                it is still readable.
+              </p>
+            )}
 
             {(byTemplate.get(t.id) ?? []).map((s) => (
               <p key={s.id} className="mt-2 rounded-md bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-600">
@@ -270,6 +295,93 @@ function NewScheduleDialog({ template, onClose, onDone }: {
             {create.isPending ? 'Saving…' : 'Save'}
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Archive, restore, delete.
+ *
+ * ★ Round 5, box 7: "provide a way to delete or archive all the forms."
+ * `is_active` had been on the template since the first migration with no
+ * endpoint to set it, so nothing could ever be taken out of the list.
+ *
+ * What refers to the form is fetched *before* the question is asked, so the
+ * confirmation can say what will happen rather than the person finding out from
+ * a refusal. Delete is only offered when nothing points at it at all — the
+ * server refuses anyway, and offering a button that always fails is how people
+ * learn to distrust the others.
+ */
+function TemplateLifecycle({ template, onChanged }: {
+  template: Template; onChanged: () => void
+}) {
+  const [asking, setAsking] = useState(false)
+  const refs = useQuery({
+    queryKey: ['form-template-refs', template.id],
+    queryFn: () => api.get<References>(
+      `/api/v1/forms/templates/${template.id}/references`),
+    enabled: asking,
+  })
+
+  const act = useMutation({
+    mutationFn: (what: 'archive' | 'restore' | 'delete') => (
+      what === 'delete'
+        ? api.del(`/api/v1/forms/templates/${template.id}`)
+        : api.post(`/api/v1/forms/templates/${template.id}/${what}`, {})
+    ),
+    onSuccess: () => { setAsking(false); onChanged() },
+  })
+
+  const used = refs.data
+    ? refs.data.submissions + refs.data.schedules + refs.data.equipment
+    : null
+
+  if (!asking) {
+    return (
+      <button type="button" onClick={() => setAsking(true)}
+              className="flex min-h-[36px] items-center gap-1 rounded-lg border border-neutral-300 px-2.5 text-xs font-medium text-neutral-700">
+        <Archive className="h-3.5 w-3.5" aria-hidden />
+        {template.is_active ? 'Archive' : 'Restore'}
+      </button>
+    )
+  }
+
+  return (
+    <div className="w-full rounded-lg border border-neutral-300 bg-neutral-50 p-2.5">
+      {refs.isLoading && <p className="text-xs text-neutral-500">Checking what uses it…</p>}
+      {refs.isError && <p className="text-xs text-danger-700">
+        Could not check what uses this form. Nothing has been changed.
+      </p>}
+      {refs.data && (
+        <p className="text-xs text-neutral-700">
+          {used === 0
+            ? 'Nothing has been filled in on this form and nothing points at it.'
+            : `${refs.data.submissions} filled in · ${refs.data.schedules} schedule(s) · ${refs.data.equipment} item(s) scan to it.`}
+        </p>
+      )}
+      <ErrorNote error={act.error} />
+      <div className="mt-2 flex flex-wrap gap-2">
+        {template.is_active ? (
+          <button type="button" className={secondaryButton} disabled={act.isPending}
+                  onClick={() => { if (!act.isPending) act.mutate('archive') }}>
+            {act.isPending ? 'Working…' : 'Archive it'}
+          </button>
+        ) : (
+          <button type="button" className={secondaryButton} disabled={act.isPending}
+                  onClick={() => { if (!act.isPending) act.mutate('restore') }}>
+            {act.isPending ? 'Working…' : 'Put it back'}
+          </button>
+        )}
+        {used === 0 && (
+          <button type="button" className={dangerButton} disabled={act.isPending}
+                  onClick={() => { if (!act.isPending) act.mutate('delete') }}>
+            Delete it for good
+          </button>
+        )}
+        <button type="button" className={secondaryButton} onClick={() => setAsking(false)}>
+          Cancel
+        </button>
       </div>
     </div>
   )

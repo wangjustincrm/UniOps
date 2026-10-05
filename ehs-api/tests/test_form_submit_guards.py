@@ -390,3 +390,98 @@ class TestOnlySomeKindsOfFormHaveAVerdict:
             assert form_engine.kind_can_fail(kind), kind
         for kind in ("jsa", "orientation", "toolbox_talk", "other", None, ""):
             assert not form_engine.kind_can_fail(kind), kind
+
+
+class TestArchivingAndDeletingATemplate:
+    """Round 5, box 7: "none of the forms are finalized and specifically the ones
+    mentioned they are scratch templates and can be deleted, in fact provide a
+    way to delete or archive all the forms."
+
+    There was neither. `is_active` had been on the template since the first
+    migration with no endpoint to set it, so nothing could ever be taken out of
+    the list.
+    """
+
+    async def _template(self, client, category: str = "inspection"):
+        made = await client.post("/api/v1/forms/templates", json={
+            "code": f"a-{uuid.uuid4().hex[:5]}", "name": "Scratch", "category": category,
+        })
+        assert made.status_code in (200, 201), made.text
+        return made.json()
+
+    async def test_a_scratch_template_can_be_deleted(self, hse_manager):
+        _, client = hse_manager
+        t = await self._template(client)
+
+        gone = await client.delete(f"/api/v1/forms/templates/{t['id']}")
+        assert gone.status_code == 204, gone.text
+        assert (await client.get(f"/api/v1/forms/templates/{t['id']}")).status_code == 404
+
+    async def test_a_template_somebody_has_filled_in_is_not_deleted(self, hse_manager):
+        """★ Whatever is asked. The submission carries its own snapshot of the
+        questions, but a statutory record whose form no longer exists is the kind
+        of gap an auditor finds."""
+        _, client = hse_manager
+        t = await self._template(client)
+        await client.put(f"/api/v1/forms/templates/{t['id']}/schema", json={
+            "schema": [{"key": "ok", "type": "yes_no_na", "label": "Sound?"}]})
+        await client.post(f"/api/v1/forms/templates/{t['id']}/publish",
+                          json={"change_note": "v1"})
+        await _a_submission(client, t["id"])
+
+        refused = await client.delete(f"/api/v1/forms/templates/{t['id']}")
+        assert refused.status_code == 409, refused.text
+        assert "1 submissions" in refused.text
+        assert "Archive it instead" in refused.text
+
+        # And archiving, which is what it tells you to do, works.
+        archived = await client.post(f"/api/v1/forms/templates/{t['id']}/archive")
+        assert archived.status_code == 200, archived.text
+        assert archived.json()["is_active"] is False
+
+    async def test_an_archived_template_is_off_the_list_and_can_come_back(
+            self, hse_manager):
+        _, client = hse_manager
+        t = await self._template(client)
+        await client.post(f"/api/v1/forms/templates/{t['id']}/archive")
+
+        listed = [x["id"] for x in (await client.get("/api/v1/forms/templates")).json()]
+        assert t["id"] not in listed
+
+        with_archived = [x["id"] for x in (await client.get(
+            "/api/v1/forms/templates?include_inactive=true")).json()]
+        assert t["id"] in with_archived
+
+        back = await client.post(f"/api/v1/forms/templates/{t['id']}/restore")
+        assert back.status_code == 200, back.text
+        assert t["id"] in [x["id"] for x in
+                           (await client.get("/api/v1/forms/templates")).json()]
+
+    async def test_archiving_is_refused_while_equipment_scans_to_it(
+            self, hse_manager, db_session):
+        """★ Counted, not assumed. Archiving a form an eyewash station opens by
+        QR code would leave somebody scanning it and landing on a form nobody
+        maintains."""
+        import uuid as _uuid
+
+        from app.models.asset import SafetyAsset
+
+        _, client = hse_manager
+        t = await self._template(client)
+        db_session.add(SafetyAsset(
+            id=_uuid.uuid4(), asset_no="EQ-TEST-1", name="An eyewash station",
+            asset_type_label="Eye Wash", status="in_service",
+            inspection_template_id=_uuid.UUID(t["id"])))
+        await db_session.flush()
+
+        refused = await client.post(f"/api/v1/forms/templates/{t['id']}/archive")
+        assert refused.status_code == 409, refused.text
+        assert "scanned" in refused.text
+
+    async def test_references_are_reported_before_anything_is_asked(self, hse_manager):
+        """The screen can say what will happen rather than finding out."""
+        _, client = hse_manager
+        t = await self._template(client)
+        refs = (await client.get(
+            f"/api/v1/forms/templates/{t['id']}/references")).json()
+        assert refs == {"submissions": 0, "schedules": 0, "equipment": 0}

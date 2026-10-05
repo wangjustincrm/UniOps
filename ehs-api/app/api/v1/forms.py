@@ -248,6 +248,49 @@ async def list_versions(template_id: uuid.UUID, db: SessionDep, user: CanManageS
     return await crud.list_versions(db, template_id)
 
 
+@router.get("/templates/{template_id}/references")
+async def template_references(
+    template_id: uuid.UUID, db: SessionDep, user: CanManageSettings,  # noqa: ARG001
+):
+    """What points at this template, so the screen can say before it asks."""
+    return await crud.references_to(db, template_id)
+
+
+@router.post("/templates/{template_id}/archive", response_model=TemplateOut)
+async def archive_template(
+    template_id: uuid.UUID, db: SessionDep, user: CanManageSettings,  # noqa: ARG001
+):
+    """Stop offering it. Everything filled in on it stays readable."""
+    archived = await crud.set_template_active(db, template_id, active=False)
+    return (await _with_criteria(db, [archived]))[0]
+
+
+@router.post("/templates/{template_id}/restore", response_model=TemplateOut)
+async def restore_template(
+    template_id: uuid.UUID, db: SessionDep, user: CanManageSettings,  # noqa: ARG001
+):
+    """Put an archived template back in the list."""
+    restored = await crud.set_template_active(db, template_id, active=True)
+    return (await _with_criteria(db, [restored]))[0]
+
+
+@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_template(
+    template_id: uuid.UUID, db: SessionDep, user: CanManageSettings,  # noqa: ARG001
+):
+    """Delete a template nothing has ever used.
+
+    Round 5, box 7: the two templates with no pass/fail conditions "are scratch
+    templates and can be deleted, in fact provide a way to delete or archive all
+    the forms."
+
+    ★ Refused once anything points at it, naming what — a statutory record whose
+    form no longer exists is a gap an auditor finds, and archiving does the job
+    for everything except a scratch template nobody filled in.
+    """
+    await crud.delete_template(db, template_id)
+
+
 @router.put("/templates/{template_id}/schema", response_model=VersionOut)
 async def save_schema(
     template_id: uuid.UUID, payload: SchemaIn, db: SessionDep, user: CanManageSettings,  # noqa: ARG001

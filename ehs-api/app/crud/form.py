@@ -405,3 +405,101 @@ async def start_from_run(
     run.submission_id = sub.id
     await db.flush()
     return sub
+
+
+async def references_to(db: AsyncSession, template_id: uuid.UUID) -> dict[str, int]:
+    """What would break if this template went away.
+
+    ★ Counted rather than assumed. Four things point at a template — the forms
+    filled in on it, the schedules that raise it, and the safety items that open
+    it when their code is scanned — and this module has twice shipped a change
+    that forgot one whole consumer.
+    """
+    from app.models.asset import SafetyAsset
+    from app.models.schedule import FormSchedule
+
+    async def count(model, column) -> int:
+        return (await db.execute(
+            select(func.count()).select_from(model).where(column == template_id)
+        )).scalar() or 0
+
+    return {
+        "submissions": await count(FormSubmission, FormSubmission.template_id),
+        "schedules": await count(FormSchedule, FormSchedule.template_id),
+        "equipment": await count(SafetyAsset, SafetyAsset.inspection_template_id),
+    }
+
+
+async def set_template_active(
+    db: AsyncSession, template_id: uuid.UUID, *, active: bool
+) -> FormTemplate:
+    """Archive a template, or bring it back.
+
+    Archiving stops it being offered and leaves everything filled in on it
+    exactly where it is — a submitted form is a record, and the template is how
+    you read it.
+
+    ★ Refused while a piece of equipment still opens it by QR code. Archiving it
+    then would leave somebody scanning an eyewash station and landing on a form
+    nobody maintains, which is worse than leaving the template in the list. The
+    message says how many, so the fix is obvious.
+
+    ★ Its schedules are switched off with it. A schedule that keeps raising
+    inspections on an archived form is the "task outlives the thing" shape this
+    module keeps finding, and it would be invisible — the template is no longer
+    in the list to notice.
+    """
+    from app.models.schedule import FormSchedule
+
+    template = await get_template(db, template_id)
+    if not active:
+        refs = await references_to(db, template_id)
+        if refs["equipment"]:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"{refs['equipment']} piece(s) of equipment open this form when "
+                f"their code is scanned. Point them at another form first, or "
+                f"they will scan to a form nobody maintains.")
+        for sched in (await db.execute(
+                select(FormSchedule).where(
+                    FormSchedule.template_id == template_id,
+                    FormSchedule.is_active.is_(True)))).scalars():
+            sched.is_active = False
+
+    template.is_active = active
+    await db.flush()
+    return template
+
+
+async def delete_template(db: AsyncSession, template_id: uuid.UUID) -> None:
+    """Remove a template outright — only one nothing has ever used.
+
+    Round 5, box 7: "none of the forms are finalized and specifically the ones
+    mentioned they are scratch templates and can be deleted, in fact provide a
+    way to delete or archive all the forms."
+
+    ★ A template with a submission against it is never deleted, whatever is
+    asked. The submission holds its own snapshot of the questions, but the
+    template is the thing that says what the form *is*, and a statutory record
+    whose form no longer exists is the kind of gap an auditor finds. Archiving is
+    offered in the same breath and does the job for everything except a scratch
+    template nobody ever filled in.
+    """
+    from app.models.form import FormVersion
+
+    template = await get_template(db, template_id)
+    refs = await references_to(db, template_id)
+    blocking = {k: v for k, v in refs.items() if v}
+    if blocking:
+        detail = ", ".join(f"{v} {k}" for k, v in blocking.items())
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"This form cannot be deleted — {detail} point at it. Archive it "
+            f"instead: it stops being offered and everything filled in on it "
+            f"stays readable.")
+
+    for version in (await db.execute(
+            select(FormVersion).where(FormVersion.template_id == template_id))).scalars():
+        await db.delete(version)
+    await db.delete(template)
+    await db.flush()
