@@ -24,6 +24,8 @@ from app.core.permissions import CanManageDocument, CanReadDocument
 from app.crud import chemical as chemical_crud
 from app.crud import label as crud
 from app.services.http_headers import content_disposition
+from reportlab.lib.units import mm
+
 from app.services import ghs, label_pdf, pictograms
 from app.services.attachments import fetch_file_bytes, proxy_download
 
@@ -192,10 +194,31 @@ async def approve_label(label_id: uuid.UUID, db: SessionDep, user: CanManageDocu
     return await _out(db, await crud.approve(db, label, user_id=_user_id(user)))
 
 
+@router.get("/label-sizes")
+async def label_sizes(user: CanReadDocument):  # noqa: ARG001
+    """The label stock on offer, named by what it goes on.
+
+    Served rather than listed in the frontend for the usual reason: the sizes and
+    the layout that honours them are one decision, and a second copy of the list
+    drifts from the one that does the measuring.
+    """
+    return [{"code": label_pdf.FIT,
+             "label": "Fit automatically — the smallest that holds it all",
+             "width_mm": None, "height_mm": None, "per_page": None}] + [
+            {"code": s.code, "label": s.label,
+             "width_mm": round(s.width / mm), "height_mm": round(s.height / mm),
+             "per_page": s.per_page}
+            for s in label_pdf.SIZES]
+
+
 @router.get("/labels/{label_id}/pdf")
 async def label_pdf_download(
     label_id: uuid.UUID, db: SessionDep, user: CanReadDocument, token: BearerToken,  # noqa: ARG001
     copies: int = Query(default=2, ge=1, le=20),
+    size: str = Query(
+        default=label_pdf.DEFAULT_SIZE,
+        description="Which label stock, or 'fit' for the smallest that holds it all: "
+                    + ", ".join(label_pdf.CHOICES)),
 ):
     """The printable sheet.
 
@@ -232,8 +255,19 @@ async def label_pdf_download(
         for key in {pic.code.upper(), pic.label.strip().upper()}:
             artwork[key] = data
 
-    pdf = label_pdf.render(label, chemical_id=str(label.chemical_id), copies=copies,
-                           artwork=artwork)
+    if size not in label_pdf.CHOICES:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Unknown label size '{size}'. Choose one of: "
+            + ", ".join(label_pdf.CHOICES))
+    try:
+        pdf, used = label_pdf.render(label, chemical_id=str(label.chemical_id),
+                                     copies=copies, artwork=artwork, size=size)
+    except label_pdf.LabelTooLarge as e:
+        # ★ Round 5, TC-21: "some of the data is being cut off". It used to cut
+        # it off silently. A label short of a hazard statement is a WHMIS
+        # problem, so this says what will not fit instead of printing it anyway.
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
     await crud.record_print(db, label)
     return Response(
         content=pdf,
@@ -242,5 +276,8 @@ async def label_pdf_download(
         # as-is, and this printed the label fine and then answered 500 on the
         # way out.
         headers={"Content-Disposition": content_disposition(
-            f"label-{label.product_identifier[:40]}")},
+            f"label-{label.product_identifier[:40]}"),
+            # Which stock it was actually laid out for — the point of asking
+            # for 'fit' is not knowing in advance.
+            "X-Label-Size": used.code},
     )

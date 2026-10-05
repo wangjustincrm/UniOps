@@ -20,10 +20,28 @@ plants already do it, and it is honest about what the system produced.
 The QR is reportlab's own barcode widget rather than a new dependency, and it
 points at the product record — so somebody holding the drum reaches the current
 data sheet, which is the point of putting a code on it at all.
+
+**Sizes, and why nothing is truncated any more.** Round 5, TC-21: "need a means
+to resize the label as some of the data is being cut off and PPE required
+freeform text is not being copied to the label."
+
+Both were real. The PPE note was stored on the label and drawn nowhere. And the
+layout was a fixed box with caps written into it — the first six hazard
+statements, two lines each, five pictograms — so a product with seven statements
+printed six and said nothing. **A workplace label that silently omits a hazard
+statement is a WHMIS problem, not a cosmetic one.**
+
+So the layout is measured before it is drawn. The same routine runs twice: once
+to find out how tall the content is, then again to draw it. If it does not fit,
+the type shrinks within a floor; if it still does not fit at the floor, rendering
+*fails* and names what overflowed, so the answer is a bigger label rather than a
+quietly incomplete one. Three sizes are offered, and the caller can ask for any
+of them.
 """
 from __future__ import annotations
 
 import io
+from dataclasses import dataclass
 
 from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
@@ -38,12 +56,57 @@ from app.core.config import settings
 
 GHS_RED = HexColor("#D0021B")
 
-LABEL_W = 190 * mm
-LABEL_H = 128 * mm
 MARGIN_X = 10 * mm
 
 
-def _wrap(c: pdfcanvas.Canvas, text: str, font: str, size: int, width: float) -> list[str]:
+class LabelTooLarge(ValueError):
+    """The content does not fit the chosen label, even at the smallest type."""
+
+
+@dataclass(frozen=True)
+class LabelSize:
+    code: str
+    label: str
+    width: float
+    height: float
+    # How many fit on one A4 sheet, stacked.
+    per_page: int
+    # Type scale at this size. A small label is read closer, so the type does
+    # not shrink in proportion to the box.
+    scale: float
+
+
+# ★ Named by what somebody is sticking it on, not by millimetres, because the
+# person choosing is holding the container.
+SIZES: tuple[LabelSize, ...] = (
+    LabelSize("bottle", "Small — a bottle or a spray can", 95 * mm, 62 * mm, 4, 0.52),
+    LabelSize("drum", "Standard — a drum or a pail", 190 * mm, 128 * mm, 2, 1.0),
+    LabelSize("sheet", "Large — a full page, for a tank or a store room",
+              190 * mm, 258 * mm, 1, 1.25),
+)
+BY_SIZE = {s.code: s for s in SIZES}
+
+# ★ The default is to fit, not to pick. A real label on the dev database — six
+# hazard statements and eight precautionary ones — does not fit a half-A4 sheet
+# at type you can read at arm's length. Before this round it printed anyway,
+# six of each, silently. Refusing instead would be correct and would also make
+# the Print button fail out of the box, which reads as broken.
+#
+# So FIT walks the stock from smallest up and uses the first that holds
+# everything. The chooser is still there for somebody who knows what is in the
+# printer, and the size actually used comes back in a header.
+FIT = "fit"
+DEFAULT_SIZE = FIT
+CHOICES = (FIT,) + tuple(s.code for s in SIZES)
+
+# How far the type may shrink before the label is declared too small. Below
+# this a hazard statement stops being readable at arm's length, which is the
+# whole function of the label.
+MIN_SCALE_FACTOR = 0.72
+
+
+def _wrap(c: pdfcanvas.Canvas, text: str, font: str, size: float,
+          width: float) -> list[str]:
     """Greedy wrap. reportlab has Paragraph for this, but a label is four short
     blocks and a full flowable document costs more than it saves."""
     c.setFont(font, size)
@@ -94,127 +157,200 @@ def _pictogram(c: pdfcanvas.Canvas, x: float, y: float, size: float,
 
 
 def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
-               artwork: dict[str, bytes] | None = None) -> None:
+               artwork: dict[str, bytes] | None = None, *,
+               size: LabelSize, scale: float, draw: bool = True) -> float:
+    """Lay one label out, and return how much height it needed.
+
+    ★ The same routine measures and draws. Two routines would drift, and a
+    measurement that disagrees with the drawing is worse than no measurement:
+    it would promise the content fits and then cut it off anyway.
+
+    `draw=False` still calls `setFont` — `stringWidth` needs it — but puts no
+    marks on the canvas.
+    """
     left = MARGIN_X
     y = top
-
-    c.setStrokeColor(black)
-    c.setLineWidth(1)
-    c.rect(left, top - LABEL_H, LABEL_W, LABEL_H)
-
     inner = left + 6 * mm
-    text_w = LABEL_W - 12 * mm - 30 * mm  # room for the QR on the right
-    y -= 12 * mm
+    text_w = size.width - 12 * mm - 34 * mm  # room for the QR on the right
+
+    def at(points: float) -> float:
+        return points * scale
+
+    def line(text: str, font: str, pts: float, lead: float, colour=black) -> None:
+        nonlocal y
+        for wrapped in _wrap(c, text, font, at(pts), text_w):
+            c.setFont(font, at(pts))
+            if draw:
+                c.setFillColor(colour)
+                c.drawString(inner, y, wrapped)
+                c.setFillColor(black)
+            y -= at(lead)
+
+    if draw:
+        c.setStrokeColor(black)
+        c.setLineWidth(1)
+        c.rect(left, top - size.height, size.width, size.height)
+
+    y -= 12 * mm * scale
 
     # ── Product identifier ──────────────────────────────────────────────────
-    for line in _wrap(c, label.product_identifier, "Helvetica-Bold", 20, text_w)[:2]:
-        c.setFont("Helvetica-Bold", 20)
-        c.setFillColor(black)
-        c.drawString(inner, y, line)
-        y -= 8 * mm
+    line(label.product_identifier, "Helvetica-Bold", 20, 8 * mm / scale)
 
     # ── Pictograms, then the signal word ────────────────────────────────────
     # WHMIS 2015 orders the elements: product identifier, pictograms, signal
     # word, hazard statements, precautionary statements, supplier identifier.
-    # The supplier used to sit under the product name at the top, which put the
-    # least urgent thing on the label above the two that carry the warning.
     if label.pictograms:
-        size = 20 * mm
+        side = 20 * mm * scale
         x = inner
-        for name in list(label.pictograms)[:5]:
+        room = size.width - 12 * mm
+        for name in list(label.pictograms):
+            if x + side > left + room:          # wrap onto the next row
+                x = inner
+                y -= side + 3 * mm * scale
             key = str(name).strip().upper()
-            _pictogram(c, x, y - size, size, (artwork or {}).get(key), str(name))
-            x += size + 4 * mm
-        y -= size + 5 * mm
+            if draw:
+                _pictogram(c, x, y - side, side, (artwork or {}).get(key), str(name))
+            x += side + 4 * mm * scale
+        y -= side + 5 * mm * scale
 
     if label.signal_word:
-        c.setFont("Helvetica-Bold", 24)
-        c.setFillColor(GHS_RED if label.signal_word == "Danger" else black)
-        c.drawString(inner, y, label.signal_word.upper())
-        c.setFillColor(black)
-        y -= 10 * mm
+        c.setFont("Helvetica-Bold", at(24))
+        if draw:
+            c.setFillColor(GHS_RED if label.signal_word == "Danger" else black)
+            c.drawString(inner, y, label.signal_word.upper())
+            c.setFillColor(black)
+        y -= 10 * mm * scale
 
     # ── Hazard statements ───────────────────────────────────────────────────
-    for entry in list(label.hazard_statements or [])[:6]:
-        code = entry.get("code") if isinstance(entry, dict) else None
-        text = entry.get("text") if isinstance(entry, dict) else str(entry)
-        line = f"{code} {text}".strip() if code else str(text)
-        for wrapped in _wrap(c, line, "Helvetica-Bold", 9.5, text_w)[:2]:
-            c.setFont("Helvetica-Bold", 9.5)
-            c.drawString(inner, y, wrapped)
-            y -= 4.6 * mm
+    # ★ No cap. Six of seven statements printed, with nothing saying so, is the
+    # fault this round reported as "data is being cut off".
+    for entry in list(label.hazard_statements or []):
+        line(_statement(entry), "Helvetica-Bold", 9.5, 4.6 * mm / scale)
 
-    y -= 1 * mm
-    for entry in list(label.precautionary_statements or [])[:6]:
-        code = entry.get("code") if isinstance(entry, dict) else None
-        text = entry.get("text") if isinstance(entry, dict) else str(entry)
-        line = f"{code} {text}".strip() if code else str(text)
-        for wrapped in _wrap(c, line, "Helvetica", 8.5, text_w)[:2]:
-            c.setFont("Helvetica", 8.5)
-            c.drawString(inner, y, wrapped)
-            y -= 4.1 * mm
+    y -= 1 * mm * scale
+    for entry in list(label.precautionary_statements or []):
+        line(_statement(entry), "Helvetica", 8.5, 4.1 * mm / scale)
+
+    # ── PPE, then first aid ─────────────────────────────────────────────────
+    # ★ Round 5: "PPE required freeform text is not being copied to the label."
+    # It was stored on the label and drawn nowhere. Before first aid, because it
+    # is what somebody needs *before* opening the container.
+    if label.ppe_note:
+        y -= 1.5 * mm * scale
+        line("PPE REQUIRED", "Helvetica-Bold", 8.5, 4.2 * mm / scale)
+        line(label.ppe_note, "Helvetica", 8.5, 4.1 * mm / scale)
 
     if label.first_aid:
-        y -= 1.5 * mm
-        c.setFont("Helvetica-Bold", 8.5)
-        c.setFillColor(GHS_RED)
-        c.drawString(inner, y, "FIRST AID")
-        c.setFillColor(black)
-        y -= 4.2 * mm
-        for wrapped in _wrap(c, label.first_aid, "Helvetica", 8.5, text_w)[:2]:
-            c.setFont("Helvetica", 8.5)
-            c.drawString(inner, y, wrapped)
-            y -= 4.1 * mm
+        y -= 1.5 * mm * scale
+        line("FIRST AID", "Helvetica-Bold", 8.5, 4.2 * mm / scale, colour=GHS_RED)
+        line(label.first_aid, "Helvetica", 8.5, 4.1 * mm / scale)
 
     # ── Supplier identifier ─────────────────────────────────────────────────
     if label.supplier:
-        y -= 2 * mm
-        c.setFont("Helvetica", 8)
-        c.setFillColor(HexColor("#444444"))
-        for wrapped in _wrap(c, label.supplier, "Helvetica", 8, text_w)[:2]:
-            c.drawString(inner, y, wrapped)
-            y -= 4 * mm
-        c.setFillColor(black)
+        y -= 2 * mm * scale
+        line(label.supplier, "Helvetica", 8, 4 * mm / scale,
+             colour=HexColor("#444444"))
+
+    content_height = top - y
 
     # ── QR to the product record ────────────────────────────────────────────
-    target = f"{settings.SAFETY_WEB_URL.rstrip('/')}/chemicals/{chemical_id}"
-    widget = qr.QrCodeWidget(target)
-    bounds = widget.getBounds()
-    side = 26 * mm
-    drawing = Drawing(side, side, transform=[
-        side / (bounds[2] - bounds[0]), 0, 0, side / (bounds[3] - bounds[1]),
-        0, 0])
-    drawing.add(widget)
-    renderPDF.draw(drawing, c, left + LABEL_W - 32 * mm, top - 38 * mm)
-    c.setFont("Helvetica", 6)
-    c.drawCentredString(left + LABEL_W - 32 * mm + side / 2, top - 42 * mm,
-                        "Scan for the data sheet")
+    if draw:
+        target = f"{settings.SAFETY_WEB_URL.rstrip('/')}/chemicals/{chemical_id}"
+        widget = qr.QrCodeWidget(target)
+        bounds = widget.getBounds()
+        side = 26 * mm * scale
+        drawing = Drawing(side, side, transform=[
+            side / (bounds[2] - bounds[0]), 0, 0, side / (bounds[3] - bounds[1]),
+            0, 0])
+        drawing.add(widget)
+        qr_x = left + size.width - side - 6 * mm
+        renderPDF.draw(drawing, c, qr_x, top - side - 12 * mm * scale)
+        c.setFont("Helvetica", at(6))
+        c.drawCentredString(qr_x + side / 2, top - side - 16 * mm * scale,
+                            "Scan for the data sheet")
 
-    # ── Footer ──────────────────────────────────────────────────────────────
-    c.setFont("Helvetica-Oblique", 6.5)
-    c.setFillColor(HexColor("#666666"))
-    footer = (f"Approved {label.approved_at:%Y-%m-%d} by "
-              f"{label.approved_by_name or 'HSE'} · "
-              "a safety data sheet for this product is available — scan the code")
-    c.drawString(inner, top - LABEL_H + 4 * mm, footer[:150])
-    c.setFillColor(black)
+        # ── Footer ──────────────────────────────────────────────────────────
+        c.setFont("Helvetica-Oblique", at(6.5))
+        c.setFillColor(HexColor("#666666"))
+        approved = (f"{label.approved_at:%Y-%m-%d}" if label.approved_at else "—")
+        footer = (f"Approved {approved} by {label.approved_by_name or 'HSE'} · "
+                  "a safety data sheet for this product is available — scan the code")
+        c.drawString(inner, top - size.height + 4 * mm, footer[:150])
+        c.setFillColor(black)
+
+    # The footer sits at the bottom of the box, so the content has to stop
+    # above it rather than merely inside the box.
+    return content_height + 7 * mm
+
+
+def _statement(entry) -> str:
+    """One hazard or precautionary statement as a line of text."""
+    if isinstance(entry, dict):
+        code = entry.get("code")
+        text = entry.get("text") or ""
+        return f"{code} {text}".strip() if code else str(text)
+    return str(entry)
 
 
 def render(label, *, chemical_id: str, copies: int = 2,
-           artwork: dict[str, bytes] | None = None) -> bytes:
-    """Two labels to an A4 sheet, laid out for a laminator."""
+           artwork: dict[str, bytes] | None = None,
+           size: str = DEFAULT_SIZE) -> tuple[bytes, LabelSize]:
+    """One or more labels to an A4 sheet, laid out for a laminator.
+
+    ★ Measured before it is drawn. The type shrinks to fit within a floor, and
+    if the content will not fit even there this raises `LabelTooLarge` naming
+    what overflowed — because the alternative, which is what this did before, is
+    a label missing a hazard statement and saying nothing about it.
+    """
+    if size == FIT:
+        # Smallest first. The last one is tried without a net so its own
+        # overflow message is the one that reaches the caller.
+        for candidate in SIZES[:-1]:
+            try:
+                return render(label, chemical_id=chemical_id, copies=copies,
+                              artwork=artwork, size=candidate.code)
+            except LabelTooLarge:
+                continue
+        return render(label, chemical_id=chemical_id, copies=copies,
+                      artwork=artwork, size=SIZES[-1].code)
+
+    chosen = BY_SIZE.get(size) or SIZES[1]
+
     buffer = io.BytesIO()
     c = pdfcanvas.Canvas(buffer, pagesize=A4)
-    width, height = A4  # noqa: F841 - width unused, kept for readability
+    _, page_height = A4
 
-    per_page = 2
+    # ── Find a scale that fits ──────────────────────────────────────────────
+    # Stepped rather than solved: the layout is not linear in the scale, because
+    # wrapping changes the number of lines.
+    usable = chosen.height - 10 * mm
+    scale = chosen.scale
+    needed = _one_label(c, label, chemical_id, page_height - 10 * mm, artwork,
+                        size=chosen, scale=scale, draw=False)
+    floor = chosen.scale * MIN_SCALE_FACTOR
+    while needed > usable and scale > floor:
+        scale = max(floor, scale - 0.04)
+        needed = _one_label(c, label, chemical_id, page_height - 10 * mm, artwork,
+                            size=chosen, scale=scale, draw=False)
+
+    if needed > usable:
+        over = (needed - usable) / mm
+        raise LabelTooLarge(
+            f"This label does not fit {chosen.label.split(' — ')[0].lower()} — "
+            f"it needs about {over:.0f} mm more than the label has, with "
+            f"{len(label.hazard_statements or [])} hazard statements and "
+            f"{len(label.precautionary_statements or [])} precautionary ones. "
+            f"Print it on a larger label, or shorten the PPE and first-aid notes."
+        )
+
+    per_page = chosen.per_page
     for index in range(max(1, copies)):
         slot = index % per_page
         if slot == 0 and index:
             c.showPage()
-        top = height - 10 * mm - slot * (LABEL_H + 8 * mm)
-        _one_label(c, label, chemical_id, top, artwork)
+        top = page_height - 10 * mm - slot * (chosen.height + 8 * mm)
+        _one_label(c, label, chemical_id, top, artwork, size=chosen, scale=scale)
 
     c.showPage()
     c.save()
-    return buffer.getvalue()
+    return buffer.getvalue(), chosen

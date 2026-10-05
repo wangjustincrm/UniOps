@@ -22,7 +22,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, Download, FileText, FlaskConical, Plus, Printer,
   Search, Sparkles, Upload, X, QrCode } from 'lucide-react'
-import { api, apiBlob } from '@/lib/api'
+import { api, apiBlob, ApiError } from '@/lib/api'
 import { Pagination, useListView } from '@/components/ListView'
 import QrPanel from '@/components/QrPanel'
 import { formatDate } from '@/lib/formatDate'
@@ -32,6 +32,12 @@ import { VocabularyMultiSelect } from '@/components/VocabularyPicker'
 import {
   Card, Empty, ErrorNote, Field, inputClass, inputSized, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
 } from '@/components/ui'
+
+interface LabelSize {
+  code: string; label: string
+  /** Null on the automatic choice, which has no fixed size. */
+  width_mm: number | null; height_mm: number | null; per_page: number | null
+}
 
 interface Sheet {
   id: string; chemical_id: string; revision: string | null
@@ -774,15 +780,35 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
   const supersededByRevision =
     !current && (labels.data ?? []).some((l) => l.status === 'superseded')
 
+  // ★ Round 5, TC-21: "need a means to resize the label as some of the data is
+  // being cut off". The sizes come from the server, which is also what does the
+  // measuring — a list here would drift from the layout that honours it.
+  const sizes = useQuery({
+    queryKey: ['label-sizes'],
+    queryFn: () => api.get<LabelSize[]>('/api/v1/label-sizes'),
+  })
+  // Fit by default: the smallest stock that holds everything on the label.
+  const [labelSize, setLabelSize] = useState('fit')
+  const [printError, setPrintError] = useState<string | null>(null)
+
   const print = async (labelId: string) => {
     if (busy) return
     setBusy(true)
+    setPrintError(null)
     try {
-      const blob = await apiBlob(`/api/v1/labels/${labelId}/pdf?copies=2`)
+      const blob = await apiBlob(
+        `/api/v1/labels/${labelId}/pdf?copies=2&size=${encodeURIComponent(labelSize)}`)
       const url = URL.createObjectURL(blob)
       window.open(url, '_blank', 'noopener')
       setTimeout(() => URL.revokeObjectURL(url), 60_000)
       invalidate()
+    } catch (e) {
+      // ★ The server refuses rather than printing a label short of a hazard
+      // statement, and it says how much does not fit. That message is the whole
+      // value of the refusal, so it goes on screen verbatim.
+      setPrintError(e instanceof ApiError
+        ? e.message
+        : 'The label could not be produced. Try again in a moment.')
     } finally {
       setBusy(false)
     }
@@ -904,13 +930,31 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
                 </>
               )}
               {(current.status === 'approved' || current.status === 'printed') && (
-                <button type="button" className={primaryButton} disabled={busy}
-                        onClick={() => print(current.id)}>
-                  <Printer className="h-4 w-4" aria-hidden />
-                  {busy ? 'Opening…' : 'Print'}
-                </button>
+                <>
+                  <label className="flex items-center gap-1.5 text-xs text-neutral-600">
+                    On
+                    <select className={inputSized('w-56')}
+                            value={labelSize}
+                            onChange={(e) => { setLabelSize(e.target.value); setPrintError(null) }}
+                            aria-label="Label size">
+                      {(sizes.data ?? []).map((sz) => (
+                        <option key={sz.code} value={sz.code}>{sz.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" className={primaryButton} disabled={busy}
+                          onClick={() => print(current.id)}>
+                    <Printer className="h-4 w-4" aria-hidden />
+                    {busy ? 'Opening…' : 'Print'}
+                  </button>
+                </>
               )}
             </div>
+          )}
+          {printError && (
+            <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">
+              {printError}
+            </p>
           )}
           {current.status === 'draft' && (
             <p className="mt-1.5 text-xs text-neutral-500">
