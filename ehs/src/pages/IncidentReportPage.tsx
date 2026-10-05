@@ -230,8 +230,12 @@ export default function IncidentReportPage() {
         incident_type: form.incidentType || null,
         // 'none' is this screen's way of saying nobody was hurt, which the
         // record holds as no injury class at all.
-        injury_class: (form.injuryClass && form.injuryClass !== 'none')
-          ? form.injuryClass : null,
+        // ★ 'none' is sent through rather than turned into null. The server
+        // falls back to what the incident type implies when nothing was
+        // answered, so a null here made "Nobody was hurt" on a First Aid Injury
+        // store `first_aid` anyway, silently. Chosen and unanswered are
+        // different facts; only the second one may be overridden.
+        injury_class: form.injuryClass || null,
       }
       if (form.kind === 'medical' && form.injured.name.trim()) {
         // An employee match carries a user id; a written-in name does not, and

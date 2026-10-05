@@ -1154,3 +1154,35 @@ class TestTheInjuryPickerOpensOnTheRightAnswer:
         })
         assert created.status_code in (200, 201), created.text
         assert created.json()["injury_class"] == "first_aid"
+
+
+async def test_nobody_was_hurt_beats_the_type_default(hse_manager):
+    """★ Round 5 review (uniops-41): the picker was added to the three types that
+    imply their own severity, and "Nobody was hurt" sent null — which the server
+    reads as "not answered" and fills from the type. So a First Aid Injury marked
+    as nobody hurt stored `first_aid` anyway, silently, which is the opposite of
+    what the change claimed to do.
+
+    Chosen and unanswered are different facts. Only the second may be overridden.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    _, client = hse_manager
+    when = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+
+    said_nobody = await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Logged as first aid, nobody hurt",
+        "incident_type": "first_aid", "injury_class": "none",
+        "occurred_at": when,
+    })
+    assert said_nobody.status_code in (200, 201), said_nobody.text
+    assert said_nobody.json()["injury_class"] is None
+
+    # Unanswered still falls back, which is what keeps the existing records and
+    # the dashboard honest.
+    unanswered = await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Logged as first aid, nothing said",
+        "incident_type": "first_aid", "occurred_at": when,
+    })
+    assert unanswered.status_code in (200, 201), unanswered.text
+    assert unanswered.json()["injury_class"] == "first_aid"

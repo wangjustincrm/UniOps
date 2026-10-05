@@ -114,7 +114,15 @@ class IncidentClassify(BaseModel):
     they start different clocks from different instants.
     """
 
-    injury_class: str | None = Field(default=None, pattern="^(first_aid|medical_aid|lost_time)$")
+    # ★ "none" means the reporter was asked and said nobody was hurt. It is not
+    # the same as not answering, and the difference decides whether the type's
+    # own class is used as a fallback — round 5 added the picker to the three
+    # types that imply their own severity, so "Nobody was hurt" on a First Aid
+    # Injury has to be able to disagree with the type and win. Raised in review
+    # by uniops-41, whose reading of the code was right and whose reading of my
+    # commit message was that it claimed the opposite.
+    injury_class: str | None = Field(
+        default=None, pattern="^(first_aid|medical_aid|lost_time|none)$")
     mol_reportable: bool = False
     mol_reportable_reason: str | None = Field(default=None, pattern="^(critical_injury|fatality)$")
     # When the employer learned of the reporting obligation. Starts the WSIB

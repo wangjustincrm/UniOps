@@ -115,14 +115,20 @@ async def create(
         t = incident_type.BY_CODE.get(payload.incident_type)
         if t is None:
             raise ValueError(f"Unknown incident type '{payload.incident_type}'")
-        incident.injury_class = payload.injury_class or t.injury_class
+        # ★ Three outcomes, not two: a class the reporter chose, an explicit
+        # "nobody was hurt", and no answer at all — which falls back to what the
+        # type implies.
+        if payload.injury_class == "none":
+            incident.injury_class = None
+        else:
+            incident.injury_class = payload.injury_class or t.injury_class
         incident.mol_reportable = t.mol_reportable
         if t.category_code:
             incident.category_id, incident.category_label = await _resolve_category(
                 db, t.category_code)
         incident.extra = {**(incident.extra or {}), "incident_type": t.code}
     elif payload.injury_class:
-        incident.injury_class = payload.injury_class
+        incident.injury_class = None if payload.injury_class == "none" else payload.injury_class
     # An anonymous report keeps the reporter id for administrative recovery but
     # drops the name, which is what actually appears on screen and in exports.
     if payload.is_anonymous:
