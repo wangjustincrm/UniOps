@@ -13,6 +13,8 @@ import { cn } from '@/lib/utils'
 import { signOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
 import { usePermissions } from '@/hooks/usePermissions'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api'
 
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 
@@ -48,6 +50,15 @@ interface NavItem {
    * this the endpoint's fallback would be unreachable: correct, and invisible.
    */
   labelWithoutPermission?: string
+  /**
+   * Draws a count beside the entry. Round 5, TC-20: "can an indicator be
+   * placed on the word feedback reference item as a flag that there are new
+   * messages, like notifications on a phone app."
+   *
+   * Only one entry uses it today, so it names the thing to count rather than
+   * being a generic hook with one caller.
+   */
+  badge?: 'feedback-unread'
 }
 
 /**
@@ -87,7 +98,7 @@ const NAV: NavGroup[] = [
       // ★ No permission, and in the first group on purpose. Round 4 asked for
       // "a general comments feedback place"; a place to say something is wrong
       // that only some people can reach is not one.
-      { label: 'Feedback',           href: '/feedback',      icon: MessageSquare },
+      { label: 'Feedback',           href: '/feedback',      icon: MessageSquare, badge: 'feedback-unread' },
     ],
   },
   {
@@ -180,6 +191,25 @@ function Sidebar({
   const { data: branding } = useBranding()
   const { can, isLoading } = usePermissions()
 
+  // ★ How many comments nobody has looked at. Only HSE is counted, because
+  // only HSE can read everybody's — and the endpoint says so, so asking as
+  // anyone else would be a 403 on every page load.
+  //
+  // A failed request draws no badge rather than a zero: the page behind it is
+  // the truth, and a badge that appeared when the count could not be fetched
+  // would be worse than one that is missing.
+  const mayTriageFeedback = can('ehs.settings.manage')
+  const feedbackCount = useQuery({
+    queryKey: ['feedback', 'unread-count'],
+    queryFn: () => api.get<{ count: number }>('/api/v1/feedback/unread-count'),
+    enabled: mayTriageFeedback,
+    // It is a hint, not a register. Polled gently so a comment left while
+    // somebody is working shows up without them reloading.
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  })
+  const unreadFeedback = feedbackCount.data?.count ?? 0
+
   const brandName = branding?.name || 'UniOps'
   const brandTagline = branding?.tagline || 'Safety'
   const brandLogo = branding?.logo_data_url || null
@@ -220,20 +250,35 @@ function Sidebar({
       </p>
     ))
 
-  const renderLink = ({ label, href, icon: Icon }: NavItem) => (
-    <NavLink
-      key={href}
-      to={href}
-      onClick={onClose}
-      title={collapsed ? label : undefined}
-      className={({ isActive }) =>
-        cn(navLinkCls(isActive || location.pathname.startsWith(href + '/')), 'relative')
-      }
-    >
-      <Icon className="h-4 w-4 shrink-0" />
-      {!collapsed && <span className="truncate">{label}</span>}
-    </NavLink>
-  )
+  const renderLink = ({ label, href, icon: Icon, badge }: NavItem) => {
+    const count = badge === 'feedback-unread' ? unreadFeedback : 0
+    return (
+      <NavLink
+        key={href}
+        to={href}
+        onClick={onClose}
+        title={collapsed ? label : undefined}
+        className={({ isActive }) =>
+          cn(navLinkCls(isActive || location.pathname.startsWith(href + '/')), 'relative')
+        }
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        {!collapsed && <span className="truncate">{label}</span>}
+        {count > 0 && (
+          <span
+            className={cn(
+              'ml-auto shrink-0 rounded-full bg-danger-600 px-1.5 text-[11px] font-bold',
+              'leading-[18px] text-white',
+              collapsed && 'absolute right-1 top-1 ml-0 px-1 leading-[16px]',
+            )}
+            aria-label={`${count} new`}
+          >
+            {count > 99 ? '99+' : count}
+          </span>
+        )}
+      </NavLink>
+    )
+  }
 
   return (
     <aside className={cn(
