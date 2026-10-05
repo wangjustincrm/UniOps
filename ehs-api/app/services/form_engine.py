@@ -20,9 +20,11 @@ countable.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
+
+from fastapi import HTTPException, status
 
 
 @dataclass(frozen=True)
@@ -143,6 +145,43 @@ def is_failure(question: dict, value: Any) -> bool:
     return False
 
 
+def _as_date(value: Any) -> date:
+    """A date answer, as a date.
+
+    ★★ This column is a DATE and was being handed the string. asyncpg asks the
+    value for `toordinal()` and a str has none, so every save of a date answer
+    answered 500 — and the front end queues today's date into every date
+    question the moment a form is opened, so the first keystroke on *any* form
+    with a date on it hit this. The submit guard added in round 4 then did its
+    job: the batch never cleared, so the form could not be submitted at all.
+
+    Round 5 reported it three times over as "What you typed has not been saved
+    yet" — on an equipment inspection, a ladder inspection and the committee
+    minutes. One bug, three cases, and the only reason it read as a connection
+    problem is that the message on the screen was about the batch rather than
+    about the answer.
+
+    A malformed date is 422 rather than 500: it is the caller's input.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    try:
+        # Trailing time is tolerated — a browser date input sends a bare date,
+        # but an imported value may carry one.
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        # ★ The message quotes what was sent, not the first ten characters of
+        # it: "'last Tuesd' is not a date" reads like the software lost half
+        # the answer.
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"'{text[:40]}' is not a date. Dates are yyyy-mm-dd.",
+        ) from None
+
+
 def normalise(question: dict, value: Any) -> dict:
     """One answer, spread across the typed columns.
 
@@ -170,7 +209,7 @@ def normalise(question: dict, value: Any) -> dict:
     if spec.storage == "number":
         row["value_number"] = _as_decimal(value)
     elif spec.storage == "date":
-        row["value_date"] = value if isinstance(value, date) else str(value)[:10]
+        row["value_date"] = _as_date(value)
     elif spec.storage == "bool":
         row["value_bool"] = bool(value)
     elif spec.storage == "ids":

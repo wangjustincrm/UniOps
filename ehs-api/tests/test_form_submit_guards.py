@@ -214,3 +214,110 @@ class TestPublishingMinutesWrittenOnTheForm:
             "held_on": date.today().isoformat()})).json()
         refused = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/publish")
         assert refused.status_code == 422, refused.text
+
+
+@pytest.fixture
+async def dated_template(hse_manager):
+    """A published form with a date on it — which is most of them.
+
+    Every inspection HSE has shown us asks when it was carried out, and the form
+    engine's own seed templates all carry one.
+    """
+    _, client = hse_manager
+    created = await client.post("/api/v1/forms/templates", json={
+        "code": f"dated-{uuid.uuid4().hex[:5]}",
+        "name": "Something with a date on it",
+        "category": "inspection",
+    })
+    assert created.status_code in (200, 201), created.text
+    template = created.json()
+    saved = await client.put(f"/api/v1/forms/templates/{template['id']}/schema", json={
+        "schema": [
+            {"key": "when", "type": "date", "label": "Date of inspection",
+             "required": False},
+            {"key": "notes", "type": "textarea", "label": "Notes", "required": False},
+        ],
+    })
+    assert saved.status_code in (200, 201), saved.text
+    published = await client.post(
+        f"/api/v1/forms/templates/{template['id']}/publish",
+        json={"change_note": "First version"})
+    assert published.status_code in (200, 201), published.text
+    return template
+
+
+class TestADateAnswerCanBeSaved:
+    """★★ Round 5, reported three times over as “What you typed has not been
+    saved yet, so this has not been submitted” — on an equipment inspection, a
+    ladder inspection and the committee minutes.
+
+    One bug behind all three. `value_date` is a DATE column and was being handed
+    the string: asyncpg asks the value for `toordinal()`, a str has none, so
+    every save of a date answer answered 500. The front end queues today's date
+    into every date question the moment a form is opened, so the first keystroke
+    on any form with a date on it hit it — and the round-4 submit guard then
+    correctly refused to submit, because the batch never cleared.
+
+    It read as a connection problem because the message on screen was about the
+    batch rather than about the answer.
+    """
+
+    async def test_saving_a_date_answer_stores_it(self, hse_manager, dated_template):
+        _, client = hse_manager
+        sub = await _a_submission(client, dated_template["id"])
+
+        saved = await client.put(
+            f"/api/v1/forms/submissions/{sub['id']}/answers",
+            json={"values": {"when": "2026-10-05"}})
+        assert saved.status_code == 200, saved.text
+        row = next(a for a in saved.json() if a["question_key"] == "when")
+        assert row["value_date"] == "2026-10-05"
+
+    async def test_a_form_with_a_date_can_be_submitted(self, hse_manager, dated_template):
+        """The whole path the three failures were on, end to end."""
+        _, client = hse_manager
+        sub = await _a_submission(client, dated_template["id"])
+        first = await client.put(
+            f"/api/v1/forms/submissions/{sub['id']}/answers",
+            json={"values": {"when": date.today().isoformat(), "notes": "Checked."}})
+        assert first.status_code == 200, first.text
+
+        done = await client.post(f"/api/v1/forms/submissions/{sub['id']}/submit", json={})
+        assert done.status_code == 200, done.text
+        assert done.json()["status"] == "submitted"
+
+    async def test_a_date_already_parsed_still_works(self, hse_manager, dated_template):
+        """Belt and braces: the scheduler and the asset path pass a real date."""
+        from app.services import form_engine
+
+        row = form_engine.normalise(
+            {"key": "when", "type": "date", "label": "Date"}, date(2026, 10, 5))
+        assert row["value_date"] == date(2026, 10, 5)
+
+    async def test_rubbish_is_refused_rather_than_crashing(
+            self, hse_manager, dated_template):
+        """★ 422, not 500, and not silently dropped either.
+
+        Dropping it would leave a dated statutory record with no date on it and
+        nothing on screen to say so — worse than a refusal the person can see.
+        """
+        _, client = hse_manager
+        sub = await _a_submission(client, dated_template["id"])
+        bad = await client.put(
+            f"/api/v1/forms/submissions/{sub['id']}/answers",
+            json={"values": {"when": "last Tuesday"}})
+        assert bad.status_code == 422, bad.text
+        assert "yyyy-mm-dd" in bad.text
+
+    async def test_clearing_a_date_is_allowed(self, hse_manager, dated_template):
+        """An emptied date is empty, not a parse failure."""
+        _, client = hse_manager
+        sub = await _a_submission(client, dated_template["id"])
+        await client.put(f"/api/v1/forms/submissions/{sub['id']}/answers",
+                         json={"values": {"when": "2026-10-05"}})
+        cleared = await client.put(
+            f"/api/v1/forms/submissions/{sub['id']}/answers",
+            json={"values": {"when": ""}})
+        assert cleared.status_code == 200, cleared.text
+        row = next(a for a in cleared.json() if a["question_key"] == "when")
+        assert row["value_date"] is None
