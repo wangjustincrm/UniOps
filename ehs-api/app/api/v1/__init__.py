@@ -13,7 +13,6 @@ from app.api.v1.change_log import router as change_log_router
 from app.api.v1.drills import router as drills_router
 from app.api.v1.drill_attachments import router as drill_attachments_router
 from app.api.v1.equipment import router as equipment_router
-from app.api.v1.first_aid import router as first_aid_router
 from app.api.v1.forms import router as forms_router
 from app.api.v1.hazards import router as hazards_router
 from app.api.v1.health import router as health_router
@@ -93,6 +92,5 @@ api_router.include_router(qr_router, tags=["qr"])
 api_router.include_router(communications_router, tags=["communications"])
 api_router.include_router(toolbox_router, tags=["toolbox"])
 api_router.include_router(feedback_router, tags=["feedback"])
-api_router.include_router(first_aid_router, prefix="/first-aid", tags=["first-aid"])
 api_router.include_router(forms_router, tags=["forms"])
 api_router.include_router(deadlines_router, prefix="/deadlines", tags=["statutory"])

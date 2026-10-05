@@ -5,7 +5,7 @@ import type { TabMeta } from '@uniops/shell'
 import {
   ArrowLeft, BarChart3, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck,
   ClipboardList, FileText, FlaskConical, ShieldAlert, ShieldCheck, Siren, Users, Wrench,
-  GraduationCap, HeartPulse, List, LogOut, Map, MapPin, Menu, Settings, TriangleAlert, User,
+  GraduationCap, List, LogOut, Map, MapPin, Menu, Settings, TriangleAlert, User,
   Mail, MessageSquare,
 } from 'lucide-react'
 import { ehsRoutes } from '@/app/routes'
@@ -105,7 +105,6 @@ const NAV: NavGroup[] = [
     title: 'Incidents and injuries',
     items: [
       { label: 'Incidents',          href: '/incidents',     icon: TriangleAlert,   permission: 'ehs.incident.read', labelWithoutPermission: 'My Reports' },
-      { label: 'First Aid Register', href: '/first-aid',     icon: HeartPulse,      permission: 'ehs.incident.read' },
     ],
   },
   {

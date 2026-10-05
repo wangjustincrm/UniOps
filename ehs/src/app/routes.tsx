@@ -13,7 +13,6 @@ import DocumentsPage from '@/pages/DocumentsPage'
 import EmergencyPage from '@/pages/EmergencyPage'
 import HazardsPage from '@/pages/HazardsPage'
 import HoursWorkedPage from '@/pages/settings/HoursWorkedPage'
-import FirstAidLogPage from '@/pages/FirstAidLogPage'
 import IncidentDetailPage from '@/pages/IncidentDetailPage'
 import IncidentListPage from '@/pages/IncidentListPage'
 import DashboardPage from '@/pages/DashboardPage'
@@ -107,11 +106,6 @@ export const ehsRoutes: RouteDef[] = [
     path: '/toolbox-talks',
     element: <ToolboxTalksPage />,
     tab: { title: 'Toolbox talks', icon: 'GraduationCap', keyStrategy: 'static' },
-  },
-  {
-    path: '/first-aid',
-    element: <FirstAidLogPage />,
-    tab: { title: 'First aid', icon: 'HeartPulse', keyStrategy: 'static' },
   },
   {
     path: '/feedback',

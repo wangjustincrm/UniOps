@@ -44,7 +44,11 @@ _OPAQUE_SUFFIXES = ("signature", "_file_id", "storage_key", "qr_token", "passwor
 _SENSITIVE_TABLES = {
     "ehs_incident_medical",
     "ehs_worker_profiles",
-    "ehs_first_aid_entries",
+    # ★ "ehs_first_aid_entries" used to be listed here. No such table has ever
+    # existed — the register's table is `ehs_first_aid_log` — so register edits
+    # were never treated as health information by the audit trail. The register
+    # screen went in round 5 and first aid is recorded on the injury form, whose
+    # medical detail is the first entry above.
 }
 
 # How much of a value is kept. Long enough for a sentence somebody would read

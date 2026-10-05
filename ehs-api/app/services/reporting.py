@@ -45,6 +45,11 @@ class Entity:
     date_column: str
     # Dimensions this entity actually has. Not every table carries every one.
     dimensions: tuple[str, ...]
+    # A fixed narrowing, where the entity is a slice of a table rather than the
+    # whole of it. A constant written here, never anything a caller sends — the
+    # rule for this engine is that nothing from a request reaches the SQL as
+    # text.
+    where: str | None = None
 
 
 # Every entity here is one HSE listed. Adding a ninth is a row, not a rewrite.
@@ -54,8 +59,14 @@ ENTITIES: tuple[Entity, ...] = (
             "status", "month")),
     Entity("action", "Corrective actions", "ehs_actions", "created_at",
            ("status", "priority", "owner", "month")),
-    Entity("first_aid", "First aid", "ehs_first_aid_log", "occurred_at",
-           ("location", "month")),
+    # ★ Round 5: the register was rewritten into incidents and its screen
+    # removed, so "first aid" is a slice of the incident register now. Pointed at
+    # the table that holds the records rather than left on the one they were
+    # moved out of — a report that quietly returns nothing is worse than one
+    # that is gone.
+    Entity("first_aid", "First aid", "ehs_incidents", "occurred_at",
+           ("location", "department", "shift", "status", "month"),
+           where="injury_class = 'first_aid'"),
     Entity("inspection", "Inspections", "ehs_form_submissions", "occurred_at",
            ("location", "department", "status", "month")),
     Entity("risk", "Risk assessments", "ehs_risk_assessments", "assessed_at",
@@ -132,6 +143,11 @@ async def group_by(
 
     where = ["1=1"]
     params: dict[str, object] = {}
+    # The entity's own narrowing, where it is a slice of a table rather than
+    # the whole of it. A constant from the table above, never anything a
+    # caller sent — nothing from a request reaches this SQL as text.
+    if ent.where:
+        where.append(f"t.{ent.where}")
     if date_from:
         where.append(f"t.{ent.date_column} >= :date_from")
         params["date_from"] = date_from
