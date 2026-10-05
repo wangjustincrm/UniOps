@@ -22,6 +22,7 @@ import { ehsRoutes } from '@/app/routes'
 import { FormRenderer, looksLikeFailure, type FormValues, type Question } from '@/components/FormRenderer'
 import { LinkedActions } from '@/components/LinkedActions'
 import { useMyProfile } from '@/hooks/useMyProfile'
+import { useEhsAuth } from '@/store/auth'
 import { todayForInput } from '@/lib/formatDate'
 import { formatAreaPath } from '@/lib/areaPath'
 import type { CompressedImage } from '@/lib/imageCompress'
@@ -119,6 +120,8 @@ export default function FormFillPage() {
     timer.current = setTimeout(flush, 900)
   }
 
+  const me = useEhsAuth((st) => st.user)
+
   useEffect(() => {
     if (loaded || answers.isLoading || !submission.data) return
     const rows = answers.data ?? []
@@ -136,17 +139,33 @@ export default function FormFillPage() {
     // Queued is enough — the first edit and the submit both flush.
     if (rows.length === 0 && submission.data.status !== 'submitted') {
       const today = todayForInput()
+      // ★ Round 5, TC-06: "the logged in user should be the default inspector
+      // when opening inspection forms."
+      //
+      // Only the first single-person question, and only while the form is
+      // untouched. A form can ask for more than one person — who carried it
+      // out, who was present — and filling them all with whoever opened it
+      // would be worse than filling none. The first one is "who is doing
+      // this" by convention on every template HSE has shown us; a form where
+      // it is not can have it changed, which is the point of a default.
+      let inspectorSeeded = false
       for (const q of submission.data.schema_snapshot ?? []) {
         if (q.type === 'date' && next[q.key] === undefined) {
           next[q.key] = today
           pending.current[q.key] = today
+        }
+        if (q.type === 'person' && !inspectorSeeded && next[q.key] === undefined && me) {
+          inspectorSeeded = true
+          const value = [{ id: me.id, label: me.full_name }]
+          next[q.key] = value
+          pending.current[q.key] = value
         }
       }
     }
 
     setValues(next)
     setLoaded(true)
-  }, [loaded, answers.isLoading, answers.data, submission.data])
+  }, [loaded, answers.isLoading, answers.data, submission.data, me])
 
   // A form closed mid-edit still saves what was typed.
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
