@@ -79,6 +79,11 @@ class TrainingRecordOut(BaseModel):
     certificate_file_id: uuid.UUID | None
     recorded_by_name: str | None
     created_at: datetime
+    delivery_id: uuid.UUID | None = None
+    # Read from the session this record came from, not stored here. Empty on a
+    # record entered by hand, which had no session.
+    run_by_name: str | None = None
+    instructor_name: str | None = None
 
 
 class CertificationIn(BaseModel):

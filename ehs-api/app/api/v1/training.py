@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from uniops_authz import has_permission
 from app.models.config import EhsConfig
-from app.services import certificate_pdf, training_pdf
+from app.services import certificate_pdf, training_pdf, training_xlsx
 from app.services.http_headers import content_disposition
 
 from app.crud.incident import _resolve_name
@@ -211,6 +211,21 @@ async def download_course_material(
     return await proxy_download(course.material_file_id, token)
 
 
+async def _with_who_ran_them(db, records) -> list[TrainingRecordOut]:
+    """Records, each carrying who ran the session and who taught it.
+
+    One query for the lot. Filled from the session rather than from the record,
+    so a corrected instructor name shows everywhere at once.
+    """
+    ran = await crud.who_ran_them(db, records)
+    out = []
+    for r in records:
+        item = TrainingRecordOut.model_validate(r)
+        item.run_by_name, item.instructor_name = ran.get(r.id, (None, None))
+        out.append(item)
+    return out
+
+
 @router.get("/records/mine", response_model=list[TrainingRecordOut])
 async def my_records(db: SessionDep, user: CanReportIncident):
     """What this person has been trained on.
@@ -221,8 +236,8 @@ async def my_records(db: SessionDep, user: CanReportIncident):
     certificate the module issues them would exist and be unreachable, which is
     where this module keeps ending up.
     """
-    return [TrainingRecordOut.model_validate(r) for r in await crud.list_training(
-        db, user_id=_user_id(user), order="date")]
+    return await _with_who_ran_them(db, await crud.list_training(
+        db, user_id=_user_id(user), order="date"))
 
 
 @router.get("/records", response_model=list[TrainingRecordOut])
@@ -238,11 +253,74 @@ async def list_records(
 ):
     """The register. "Who has done this course", "what has this person done"
     and "what happened in March" are three questions of the same list."""
-    return [TrainingRecordOut.model_validate(r) for r in
-            await crud.list_training(
-                db, user_id=user_id, course_id=course_id, search=search,
-                completed_from=completed_from, completed_to=completed_to,
-                order=order)]
+    return await _with_who_ran_them(db, await crud.list_training(
+        db, user_id=user_id, course_id=course_id, search=search,
+        completed_from=completed_from, completed_to=completed_to, order=order))
+
+
+async def _register_for_export(
+    db, user, *, user_id, course_id, search, completed_from, completed_to, order,
+) -> tuple[list[dict], list[str], str | None]:
+    """The rows, the filter in words, and who asked for them.
+
+    Shared by the printed page and the spreadsheet so the two cannot disagree
+    about what was asked for — which, on a document somebody mails on, is the
+    whole thing that makes it evidence.
+    """
+    rows = await crud.list_training(
+        db, user_id=user_id, course_id=course_id, search=search,
+        completed_from=completed_from, completed_to=completed_to, order=order)
+    ran = await crud.who_ran_them(db, rows)
+
+    # ★ The names from their own tables, not off the first row: filtered to one
+    # person who has done nothing there is no first row, and the page would say
+    # nothing about who it is about.
+    person = await _resolve_name(db, user_id) if user_id else None
+    course = None
+    if course_id:
+        course = (await db.execute(
+            select(Course.name).where(Course.id == course_id))).scalar()
+
+    out = [{
+        "user_name": r.user_name,
+        "course_label": r.course_label,
+        "completed_on": r.completed_on,
+        "expires_on": r.expires_on,
+        "run_by_name": ran.get(r.id, (None, None))[0],
+        "instructor_name": ran.get(r.id, (None, None))[1],
+        "recorded_by_name": r.recorded_by_name,
+    } for r in rows]
+    described = training_pdf.describe(
+        search=search, completed_from=completed_from, completed_to=completed_to,
+        person=person, course=course)
+    return out, described, await _resolve_name(db, _user_id(user))
+
+
+@router.get("/records/export")
+async def export_records(
+    db: SessionDep,
+    user: CanReadTraining,
+    user_id: uuid.UUID | None = None,
+    course_id: uuid.UUID | None = None,
+    search: str | None = Query(default=None, description="Person or course name"),
+    completed_from: date | None = None,
+    completed_to: date | None = None,
+    order: str = Query(default="date", pattern="^(date|person|topic)$"),
+):
+    """The same register as a spreadsheet. Round 5, TC-08.
+
+    Same parameters as the list and the printed page, for the same reason: three
+    documents that can disagree about what was asked for are worse than one.
+    """
+    rows, described, by = await _register_for_export(
+        db, user, user_id=user_id, course_id=course_id, search=search,
+        completed_from=completed_from, completed_to=completed_to, order=order)
+    book = training_xlsx.render(rows=rows, filters=described, printed_by=by)
+    return Response(
+        content=book,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": content_disposition(
+            "training-records", extension="xlsx")})
 
 
 @router.get("/records/print")
@@ -267,38 +345,18 @@ async def print_records(
     claims, and a page of rows with nothing saying which one it is will be read
     as the first.
     """
-    rows = await crud.list_training(
-        db, user_id=user_id, course_id=course_id, search=search,
+    rows, described, by = await _register_for_export(
+        db, user, user_id=user_id, course_id=course_id, search=search,
         completed_from=completed_from, completed_to=completed_to, order=order)
-
-    # The names, not the ids, because the reader of a printed page cannot look
-    # a uuid up.
-    #
-    # ★ Read from the tables rather than off the first row. Raised in review by
-    # uniops-9a: filtered to one person who has done nothing, there is no first
-    # row, and the page would have printed an empty table with no name on it —
-    # which reads as "there are no training records" rather than "this person
-    # has none". That print is exactly the one somebody needs to hand over.
-    person = await _resolve_name(db, user_id) if user_id else None
-    course = None
-    if course_id:
-        course = (await db.execute(
-            select(Course.name).where(Course.id == course_id))).scalar()
-
     pdf = training_pdf.render(
-        rows=[{
-            "user_name": r.user_name,
-            "course_label": r.course_label,
-            "completed_on": r.completed_on.isoformat() if r.completed_on else None,
-            "expires_on": r.expires_on.isoformat() if r.expires_on else "Does not expire",
-            "delivery": "Elsewhere" if r.delivery == "external" else "Here",
-            "recorded_by_name": r.recorded_by_name,
-        } for r in rows],
-        filters=training_pdf.describe(
-            search=search, completed_from=completed_from, completed_to=completed_to,
-            person=person, course=course),
-        printed_by=await _resolve_name(db, _user_id(user)),
-    )
+        # Dates as text for the page; the spreadsheet keeps them as dates so the
+        # column sorts.
+        rows=[{**r,
+               "completed_on": r["completed_on"].isoformat() if r["completed_on"] else None,
+               "expires_on": (r["expires_on"].isoformat() if r["expires_on"]
+                              else "Does not expire")}
+              for r in rows],
+        filters=described, printed_by=by)
     return Response(
         content=pdf, media_type="application/pdf",
         headers={"Content-Disposition": content_disposition("training-records")})

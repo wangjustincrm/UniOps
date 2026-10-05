@@ -267,6 +267,9 @@ async def _issue_record(
         completed_on=delivery.session_date,
         expires_on=expires_on,
         delivery="internal",
+        # Which session produced it. Round 5, TC-08 wants the report to name who
+        # ran the course and who taught it, and both live on the session.
+        delivery_id=delivery.id,
         recorded_by=recorded_by,
         recorded_by_name=recorded_by_name,
     )

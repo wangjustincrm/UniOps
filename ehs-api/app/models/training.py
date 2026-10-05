@@ -68,9 +68,18 @@ class TrainingRecord(UUIDPrimaryKey, TimestampMixin, Base):
     course_label: Mapped[str] = mapped_column(String(200), nullable=False)
     completed_on: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     expires_on: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    # internal or external — how the course was taken, not which session.
     delivery: Mapped[str] = mapped_column(
         String(15), nullable=False, default="internal", server_default="internal",
     )
+    # ★ Which session produced it, where one did. The link rather than copies of
+    # the coordinator and instructor names: both can be corrected after the fact
+    # and a snapshot here would print the old spelling forever. A record entered
+    # by hand has none, and prints a dash.
+    delivery_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ehs_course_deliveries.id", ondelete="SET NULL"),
+        nullable=True, index=True)
     certificate_file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     recorded_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True,

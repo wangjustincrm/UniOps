@@ -39,13 +39,22 @@ PAGE_W, PAGE_H = landscape(A4)
 MARGIN = 14 * mm
 # Person · Course · Completed · Expires · How · Entered by. Widths are in mm and
 # add up to the printable width; the two that identify a row get the room.
+# ★ Round 5, TC-08: "report has a heading called HOW and the data shows here.
+# remove how and add the run by name and the instructors name."
+#
+# `How` was internal-or-external, which is true and is not what anybody reading
+# a training record wants to know. Who ran the session and who taught it are,
+# and both come from the session the record points at — a record entered by hand
+# has no session and prints a dash, which is the honest answer rather than a
+# blank that reads as missing data.
 COLUMNS: tuple[tuple[str, float], ...] = (
-    ("Person", 62),
-    ("Course", 82),
-    ("Completed", 26),
-    ("Expires", 26),
-    ("How", 20),
-    ("Entered by", 45),
+    ("Person", 46),
+    ("Course", 58),
+    ("Completed", 23),
+    ("Expires", 23),
+    ("Run by", 40),
+    ("Instructor", 40),
+    ("Entered by", 39),
 )
 ROW_H = 6.2 * mm
 # ★ Set once, with the size. ReportLab's leading defaults to 12 whatever the
@@ -160,7 +169,8 @@ def render(
             r["course_label"],
             r["completed_on"],
             r["expires_on"],
-            r["delivery"],
+            r["run_by_name"],
+            r["instructor_name"],
             r["recorded_by_name"],
         )
         for (label, w), value in zip(COLUMNS, values, strict=True):

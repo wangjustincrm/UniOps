@@ -156,6 +156,34 @@ async def list_training(
     return list((await db.execute(stmt)).scalars())
 
 
+async def who_ran_them(
+    db: AsyncSession, records: list[TrainingRecord]
+) -> dict[uuid.UUID, tuple[str | None, str | None]]:
+    """(run by, instructor) for each record that came from a session.
+
+    Round 5, TC-08: the report has to name both, and both live on the session.
+
+    ★ Read through the link rather than copied onto the record when it was
+    created. The instructor is typed in by hand and gets corrected; a snapshot
+    would print the old spelling forever while the session showed the new one.
+
+    One query for the lot rather than one per row — this is called from a print
+    of the whole register.
+    """
+    from app.models.course import CourseDelivery
+
+    ids = {r.delivery_id for r in records if r.delivery_id}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(CourseDelivery.id, CourseDelivery.coordinator_name,
+               CourseDelivery.instructor_name)
+        .where(CourseDelivery.id.in_(ids)))).all()
+    by_delivery = {r[0]: (r[1], r[2]) for r in rows}
+    return {r.id: by_delivery.get(r.delivery_id, (None, None))
+            for r in records if r.delivery_id}
+
+
 async def add_certification(
     db: AsyncSession, payload: CertificationIn
 ) -> WorkerCertification:

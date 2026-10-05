@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { CalendarDays, Plus, Printer, Upload, X, Paperclip } from 'lucide-react'
+import { CalendarDays, Plus, Printer, Sheet, Upload, X, Paperclip } from 'lucide-react'
 import { api, apiBlob, openFile, useFileOpener } from '@/lib/api'
 import { Pagination, SearchBox, useListView, DateRangeFilter, useDateFilter } from '@/components/ListView'
 import { formatDate, todayForInput } from '@/lib/formatDate'
@@ -366,6 +366,7 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
   // Through the shared opener, which carries its own busy and error state and
   // the pop-up-blocked fallback every other download here goes through.
   const printer = useFileOpener()
+  const exporter = useFileOpener()
 
   return (
     <>
@@ -377,6 +378,16 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
           <Printer className="h-4 w-4" aria-hidden />
           {printer.busy ? 'Preparing…' : 'Print these records'}
         </button>
+        {/* ★ Round 5, TC-08: "provide a way to export the report to a xls
+            file." The same query as the list and the print, so the three cannot
+            disagree about what was asked for. */}
+        <button type="button" className={secondaryButton} disabled={exporter.busy}
+                onClick={() => exporter.open(
+                  `/api/v1/training/records/export${query ? `?${query}` : ''}`,
+                  'training-records.xlsx')}>
+          <Sheet className="h-4 w-4" aria-hidden />
+          {exporter.busy ? 'Preparing…' : 'Export to Excel'}
+        </button>
         {mayWrite && (
           <button type="button" className={primaryButton} onClick={() => setAdding(true)}>
             <Upload className="h-4 w-4" aria-hidden />
@@ -384,9 +395,9 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
           </button>
         )}
       </div>
-      {printer.error && (
+      {(printer.error || exporter.error) && (
         <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">
-          {printer.error}
+          {printer.error || exporter.error}
         </p>
       )}
 
