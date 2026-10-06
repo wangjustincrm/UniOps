@@ -226,3 +226,27 @@ class TestCausesOnTheHazardRegister:
         inc_read = await client.get(f"/api/v1/incidents/{incident['id']}/cause-tree")
         assert inc_read.status_code == 200, inc_read.text
         assert [c["label"] for c in inc_read.json()["root"]] == ["The incident's own"]
+
+
+async def test_an_action_raised_with_its_cause_keeps_its_priority(hse_manager, worker):
+    """★ Round 5, TC-04: the inline form and the "Raise a corrective action" form
+    are to be the same. The dialog asked for a priority and the inline one did
+    not, so one action raised two ways came out differently."""
+    from datetime import date, timedelta
+
+    _, client = hse_manager
+    owner, _ = worker
+    made = await client.post("/api/v1/hazards", json={"title": "Wet floor at the dock"})
+    hazard = made.json()
+    saved = await client.put(f"/api/v1/hazards/{hazard['id']}/causes", json={
+        "causes": [{
+            "cause_type": "root", "label": "Door seal failed",
+            "action": {"title": "Replace the dock door seal",
+                       "owner_id": str(owner.id), "priority": "high",
+                       "due_date": (date.today() + timedelta(days=3)).isoformat()},
+        }],
+    })
+    assert saved.status_code == 200, saved.text
+    tree = saved.json()
+    action = tree["actions"][tree["root"][0]["id"]][0]
+    assert action["priority"] == "high"

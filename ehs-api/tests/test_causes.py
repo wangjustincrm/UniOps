@@ -98,3 +98,51 @@ class TestExactlyOneOwner:
         left = (await db_session.execute(
             select(Cause).where(Cause.hazard_id == hazard.id))).scalars().all()
         assert left == []
+
+
+class TestACallerCannotAddressEveryCauseAtOnce:
+    """★★ Round 5 review (uniops-41). `crud/cause.py` was generalised so that more
+    callers would use it. Passing neither owner used to produce `hazard_id IS
+    NULL` — every incident's causes in the plant — and `replace` would then delete
+    every one of those with no action on it. One forgotten argument away from
+    wiping the root causes of every investigation on file.
+    """
+
+    async def test_neither_owner_is_refused_before_anything_is_touched(
+            self, hse_manager, db_session):
+        from sqlalchemy import func, select
+
+        from app.crud import cause as cause_crud
+
+        _, client = hse_manager
+        incident_id = await _an_incident(client)
+        await client.post(f"/api/v1/incidents/{incident_id}/submit")
+        await client.put(f"/api/v1/incidents/{incident_id}/causes", json={
+            "causes": [{"cause_type": "root", "label": "Must survive"}]})
+        before = (await db_session.execute(
+            select(func.count()).select_from(Cause))).scalar()
+        assert before >= 1, "there must be something to lose, or this proves nothing"
+
+        with pytest.raises(ValueError, match="exactly one record"):
+            await cause_crud.replace(
+                db_session, causes=[], source_type="manual",
+                source_id=uuid.uuid4(), source_ref=None)
+
+        after = (await db_session.execute(
+            select(func.count()).select_from(Cause))).scalar()
+        assert after == before, "a refused call must not have deleted anything"
+
+    async def test_both_owners_are_refused(self, db_session):
+        from app.crud import cause as cause_crud
+
+        with pytest.raises(ValueError, match="exactly one record"):
+            await cause_crud.list_for(
+                db_session, incident_id=uuid.uuid4(), hazard_id=uuid.uuid4())
+
+    async def test_reading_needs_an_owner_too(self, db_session):
+        """Reading every cause by accident is less destructive than deleting them,
+        and still wrong: a screen would show another record's causes as its own."""
+        from app.crud import cause as cause_crud
+
+        with pytest.raises(ValueError, match="exactly one record"):
+            await cause_crud.list_for(db_session)

@@ -28,6 +28,23 @@ from app.schemas.action import ActionCreate
 
 
 def _owner_filter(*, incident_id: uuid.UUID | None, hazard_id: uuid.UUID | None):
+    """The WHERE clause for one record's causes — and a refusal for anything else.
+
+    ★★ Raised in review by uniops-41, and the failure it prevents is the worst
+    one in this module. Without the check, a caller passing neither owner got
+    `hazard_id == None`, which SQLAlchemy renders as `hazard_id IS NULL` — every
+    incident's causes in the plant. `replace` then deletes every one of those that
+    has no action attached. A forgotten argument would have silently wiped the
+    root causes of every investigation on file.
+
+    It is not hypothetical in the way it looks: this function was generalised
+    precisely so that more callers would use it, and the next one is a job
+    analysis. Both entry points go through here, so neither can be called wrong.
+    """
+    if (incident_id is None) == (hazard_id is None):
+        raise ValueError(
+            "A cause belongs to exactly one record: pass incident_id or hazard_id, "
+            "not both and not neither")
     if incident_id is not None:
         return Cause.incident_id == incident_id
     return Cause.hazard_id == hazard_id
@@ -61,6 +78,10 @@ async def replace(
     are separate because an action's `source_type` is a wider vocabulary than the
     two columns a cause can hang off.
     """
+    # Checked before anything is read, let alone deleted. `list_for` checks too,
+    # but this is the function that deletes, and the guard belongs where a reader
+    # of the deleting code can see it.
+    _owner_filter(incident_id=incident_id, hazard_id=hazard_id)
     existing = await list_for(db, incident_id=incident_id, hazard_id=hazard_id)
     attached = {
         c_id for (c_id,) in (
@@ -114,6 +135,7 @@ async def replace(
             owner_id=item.action.owner_id,
             due_date=item.action.due_date,
             hierarchy_of_control=item.action.hierarchy_of_control,
+            priority=item.action.priority,
         ), source_ref=source_ref)
     await db.flush()
     return result

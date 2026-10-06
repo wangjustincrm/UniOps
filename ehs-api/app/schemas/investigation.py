@@ -54,6 +54,11 @@ class CauseActionIn(BaseModel):
     owner_id: uuid.UUID
     due_date: date
     hierarchy_of_control: str | None = None
+    # ★ Round 5, TC-04: "make the 'What is being done about it' form look the
+    # same as the 'Raise a corrective action' form to ensure consistency." The
+    # dialog asked for a priority and this did not, so the same action raised two
+    # ways came out different. Same field, same default.
+    priority: str = Field(default="normal", pattern="^(low|normal|high)$")
 
 
 class CauseIn(BaseModel):
