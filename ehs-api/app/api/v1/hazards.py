@@ -20,6 +20,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.api.v1.incidents import _user_id
 from app.core.deps import SessionDep
 from app.core.permissions import CanReadAction, CanReportIncident, CanWriteAction
+from app.crud import cause as cause_crud
+from app.schemas.action import ActionOut
+from app.schemas.investigation import CausesReplace
 from app.crud import hazard as crud
 
 router = APIRouter()
@@ -37,6 +40,9 @@ class HazardIn(BaseModel):
 
     title: str = Field(min_length=1, max_length=250)
     description: str | None = None
+    # What was found when somebody went and looked, as distinct from what the
+    # hazard is.
+    findings: str | None = None
     hazard_type_id: uuid.UUID | None = None
     hazard_type_label: str | None = Field(default=None, max_length=200)
     location_id: uuid.UUID | None = None
@@ -66,6 +72,7 @@ class HazardOut(BaseModel):
     hazard_no: str
     title: str
     description: str | None
+    findings: str | None = None
     # Both halves: the label is the snapshot that keeps an old record readable
     # after the vocabulary is renamed, the id is what puts the picker back on
     # the right entry when the record is reopened for correction. Returning
@@ -104,6 +111,71 @@ async def list_hazards(
     """Ranked worst first — the register's only real use is as that list."""
     return await crud.list_hazards(
         db, status_in=status_in, location_id=location_id, rating=rating)
+
+
+class HazardCauseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    cause_type: str
+    vocabulary_item_id: uuid.UUID | None
+    label: str
+    note: str | None
+    sort_order: int
+
+
+class HazardCauseTree(BaseModel):
+    """The register entry's causes, split the way the screen shows them, with
+    the actions raised against each one.
+
+    Same shape as the investigation's tree, because it is the same question asked
+    of a different record — and a root cause with nothing under it has to read as
+    visibly incomplete in both places.
+    """
+
+    hazard_no: str
+    immediate: list[HazardCauseOut]
+    root: list[HazardCauseOut]
+    actions: dict[uuid.UUID, list[ActionOut]]
+
+
+@router.get("/hazards/{hazard_id}/causes", response_model=HazardCauseTree)
+async def hazard_causes(hazard_id: uuid.UUID, db: SessionDep, user: CanReadAction):  # noqa: ARG001
+    hazard = await crud.get_hazard(db, hazard_id)
+    rows = await cause_crud.list_for(db, hazard_id=hazard.id)
+    grouped = await cause_crud.actions_by_cause(
+        db, source_type="hazard", source_id=hazard.id)
+    return HazardCauseTree(
+        hazard_no=hazard.hazard_no,
+        immediate=[HazardCauseOut.model_validate(c) for c in rows
+                   if c.cause_type == "immediate"],
+        root=[HazardCauseOut.model_validate(c) for c in rows if c.cause_type == "root"],
+        actions={cid: [ActionOut.model_validate(a) for a in acts]
+                 for cid, acts in grouped.items()},
+    )
+
+
+@router.put("/hazards/{hazard_id}/causes", response_model=HazardCauseTree)
+async def replace_hazard_causes(
+    hazard_id: uuid.UUID, payload: CausesReplace, db: SessionDep, user: CanWriteAction,
+):
+    """Record what caused it, and raise the work in the same request.
+
+    ★ Round 5, answer box 11. The action travels with the cause for the reason it
+    does on an investigation: an action points at a cause and a cause has no id
+    until it is saved, so doing it in two steps from the client means guessing
+    which id belongs to which of the rows just typed.
+    """
+    hazard = await crud.get_hazard(db, hazard_id)
+    await cause_crud.replace(
+        db,
+        causes=payload.causes,
+        source_type="hazard",
+        source_id=hazard.id,
+        source_ref=hazard.hazard_no,
+        hazard_id=hazard.id,
+    )
+    return await hazard_causes(hazard_id, db, user)
 
 
 @router.get("/hazards/summary", response_model=list[RatingCount])

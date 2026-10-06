@@ -61,6 +61,11 @@ class Hazard(UUIDPrimaryKey, TimestampMixin, Base):
     current_rating: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     residual_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
+    # ★ What was found when somebody went and looked, as distinct from what the
+    # hazard is. Round 5 put the investigation's apparatus on the register: an
+    # incident records this under "What happened", and a hazard had nowhere for
+    # it.
+    findings: Mapped[str | None] = mapped_column(Text, nullable=True)
     existing_controls: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Which level of the hierarchy the controls sit at — elimination through
     # PPE. An auditor asks this, and "we gave them gloves" reads differently

@@ -8,11 +8,10 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud.action import create as create_action
+from app.crud import cause as cause_crud
 from app.models.action import Action
-from app.models.incident import Incident, Cause, IncidentInvestigation
+from app.models.incident import Cause, Incident, IncidentInvestigation
 from app.models.mirrors import User
-from app.schemas.action import ActionCreate
 from app.schemas.investigation import CausesReplace, InvestigationIn
 
 # Actions in these states are no longer being worked, so a cause whose only
@@ -94,11 +93,7 @@ async def sign_investigation(
 
 
 async def list_causes(db: AsyncSession, incident_id: uuid.UUID) -> list[Cause]:
-    return list((await db.execute(
-        select(Cause)
-        .where(Cause.incident_id == incident_id)
-        .order_by(Cause.cause_type, Cause.sort_order)
-    )).scalars())
+    return await cause_crud.list_for(db, incident_id=incident_id)
 
 
 async def replace_causes(
@@ -106,96 +101,33 @@ async def replace_causes(
 ) -> list[Cause]:
     """Replace the incident's causes with the given set.
 
-    A cause that already has a corrective action attached is kept rather than
-    deleted, matched on its label — dropping it would orphan the action and
-    lose the link between a root cause and what is being done about it.
+    The rules — keeping a cause that has an action, raising an action with its
+    cause, not raising it twice — are in `crud/cause.py`, because round 5 put the
+    same apparatus on the hazard register and two copies of rules nobody can
+    guess at is how they drift apart.
 
-    Refused on a draft for the same reason `upsert_investigation` refuses: the
-    two are halves of one screen, and a rule that holds on one half and not the
-    other lets causes be recorded against an incident nobody has reported yet.
+    What stays here is the one rule that is this screen's own: refused on a
+    draft, for the same reason `upsert_investigation` refuses. The two are halves
+    of one screen, and a rule that holds on one half and not the other lets
+    causes be recorded against an incident nobody has reported yet.
     """
     if incident.status == "draft":
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Submit the incident before recording its causes",
         )
-    existing = await list_causes(db, incident.id)
-    attached = {
-        c_id for (c_id,) in (
-            await db.execute(select(Action.cause_id).where(Action.cause_id.is_not(None)))
-        ).all()
-    }
-    keep_by_label = {c.label: c for c in existing if c.id in attached}
-
-    for cause in existing:
-        if cause.id not in attached:
-            await db.delete(cause)
-    await db.flush()
-
-    result: list[Cause] = []
-    for order, item in enumerate(payload.causes):
-        kept = keep_by_label.pop(item.label, None)
-        if kept is not None:
-            kept.cause_type = item.cause_type
-            kept.vocabulary_item_id = item.vocabulary_item_id
-            kept.note = item.note
-            kept.sort_order = order
-            result.append(kept)
-            continue
-        cause = Cause(
-            id=uuid.uuid4(),
-            incident_id=incident.id,
-            cause_type=item.cause_type,
-            vocabulary_item_id=item.vocabulary_item_id,
-            label=item.label,
-            note=item.note,
-            sort_order=order,
-        )
-        db.add(cause)
-        result.append(cause)
-
-    # Anything still here had an action attached but was dropped from the new
-    # set. Keep it, so the action still points at something explaining itself.
-    result.extend(keep_by_label.values())
-    await db.flush()
-
-    # ★ Actions raised with their cause, in this request. The client cannot do
-    # this itself: an action points at a cause and a cause has no id until it is
-    # saved, so doing it there means save, read back which id is which of the
-    # rows just typed, then post — and the middle step is a guess. Here the
-    # correspondence is just the loop above.
-    #
-    # Only where the cause has none yet. `replace_causes` runs on every save of
-    # the investigation, so a payload that still carries the action it raised
-    # last time must not raise it again.
-    for cause, item in zip(result, payload.causes, strict=False):
-        if item.action is None or cause.id in attached:
-            continue
-        await create_action(db, ActionCreate(
-            source_type="incident",
-            source_id=incident.id,
-            cause_id=cause.id,
-            title=item.action.title,
-            description=item.action.description,
-            owner_id=item.action.owner_id,
-            due_date=item.action.due_date,
-            hierarchy_of_control=item.action.hierarchy_of_control,
-        ), source_ref=incident.incident_no)
-    await db.flush()
-    return result
+    return await cause_crud.replace(
+        db,
+        causes=payload.causes,
+        source_type="incident",
+        source_id=incident.id,
+        source_ref=incident.incident_no,
+        incident_id=incident.id,
+    )
 
 
 async def actions_by_cause(
     db: AsyncSession, incident_id: uuid.UUID
 ) -> dict[uuid.UUID, list[Action]]:
-    rows = (await db.execute(
-        select(Action)
-        .where(Action.source_type == "incident", Action.source_id == incident_id)
-        .order_by(Action.due_date)
-    )).scalars()
-    grouped: dict[uuid.UUID, list[Action]] = {}
-    for action in rows:
-        if action.cause_id is None:
-            continue
-        grouped.setdefault(action.cause_id, []).append(action)
-    return grouped
+    return await cause_crud.actions_by_cause(
+        db, source_type="incident", source_id=incident_id)
