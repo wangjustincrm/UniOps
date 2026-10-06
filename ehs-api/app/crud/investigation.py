@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.action import create as create_action
 from app.models.action import Action
-from app.models.incident import Incident, IncidentCause, IncidentInvestigation
+from app.models.incident import Incident, Cause, IncidentInvestigation
 from app.models.mirrors import User
 from app.schemas.action import ActionCreate
 from app.schemas.investigation import CausesReplace, InvestigationIn
@@ -93,17 +93,17 @@ async def sign_investigation(
     return inv
 
 
-async def list_causes(db: AsyncSession, incident_id: uuid.UUID) -> list[IncidentCause]:
+async def list_causes(db: AsyncSession, incident_id: uuid.UUID) -> list[Cause]:
     return list((await db.execute(
-        select(IncidentCause)
-        .where(IncidentCause.incident_id == incident_id)
-        .order_by(IncidentCause.cause_type, IncidentCause.sort_order)
+        select(Cause)
+        .where(Cause.incident_id == incident_id)
+        .order_by(Cause.cause_type, Cause.sort_order)
     )).scalars())
 
 
 async def replace_causes(
     db: AsyncSession, incident: Incident, payload: CausesReplace
-) -> list[IncidentCause]:
+) -> list[Cause]:
     """Replace the incident's causes with the given set.
 
     A cause that already has a corrective action attached is kept rather than
@@ -132,7 +132,7 @@ async def replace_causes(
             await db.delete(cause)
     await db.flush()
 
-    result: list[IncidentCause] = []
+    result: list[Cause] = []
     for order, item in enumerate(payload.causes):
         kept = keep_by_label.pop(item.label, None)
         if kept is not None:
@@ -142,7 +142,7 @@ async def replace_causes(
             kept.sort_order = order
             result.append(kept)
             continue
-        cause = IncidentCause(
+        cause = Cause(
             id=uuid.uuid4(),
             incident_id=incident.id,
             cause_type=item.cause_type,

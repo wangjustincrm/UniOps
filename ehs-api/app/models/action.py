@@ -50,7 +50,7 @@ class Action(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
     # The specific root cause this action addresses, when it came from an
     # investigation. Null for actions raised from anything else.
     cause_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("ehs_incident_causes.id", ondelete="SET NULL"),
+        UUID(as_uuid=True), ForeignKey("ehs_causes.id", ondelete="SET NULL"),
         nullable=True, index=True,
     )
 

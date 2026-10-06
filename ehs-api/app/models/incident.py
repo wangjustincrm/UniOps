@@ -28,7 +28,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import CheckConstraint, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -204,7 +204,7 @@ class IncidentInvestigation(UUIDPrimaryKey, TimestampMixin, Base):
     signature: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class IncidentCause(UUIDPrimaryKey, TimestampMixin, Base):
+class Cause(UUIDPrimaryKey, TimestampMixin, Base):
     """An immediate or root cause, and the hinge the corrective actions hang off.
 
     `ehs_actions.cause_id` points here. That is what lets the investigation
@@ -213,11 +213,35 @@ class IncidentCause(UUIDPrimaryKey, TimestampMixin, Base):
     visibly incomplete, which is exactly what an auditor looks for.
     """
 
-    __tablename__ = "ehs_incident_causes"
+    __tablename__ = "ehs_causes"
+    # ★ Declared here as well as in the migration. The test database is built
+    # with `create_all` from these models, so a constraint that lives only in a
+    # migration does not exist while the tests run — a row with both owners, or
+    # neither, would be accepted all the way through the suite and refused for
+    # the first time in production. This repository has been caught by that
+    # exact gap before, in `conftest` not building the authz foreign keys.
+    __table_args__ = (
+        CheckConstraint("num_nonnulls(incident_id, hazard_id) = 1",
+                        name="ck_ehs_causes_one_owner"),
+    )
 
-    incident_id: Mapped[uuid.UUID] = mapped_column(
+    # ★ One of these two, never both and never neither — a database CHECK says so.
+    # Round 5 put causes on the hazard register as well as on an investigation.
+    #
+    # Two nullable foreign keys rather than this module's usual polymorphic
+    # `(source_type, source_id)` pair, which is what `ehs_actions` uses. Causes
+    # come from an incident, a hazard, and one day a job analysis — three kinds,
+    # against seven or eight for an action — and both of these keep their
+    # `ON DELETE CASCADE`. Going polymorphic would have traded a working cascade
+    # for one fewer column, and then needed a guard against the orphans it
+    # created. Argued out with uniops-41 in the round-5 review, who was right.
+    incident_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ehs_incidents.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=True, index=True,
+    )
+    hazard_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_hazards.id", ondelete="CASCADE"),
+        nullable=True, index=True,
     )
     cause_type: Mapped[str] = mapped_column(String(12), nullable=False)  # immediate|root
     vocabulary_item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
