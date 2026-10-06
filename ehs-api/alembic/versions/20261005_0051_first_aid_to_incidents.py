@@ -36,8 +36,16 @@ Revises: 20260930_0050
 import json
 import uuid
 
+from zoneinfo import ZoneInfo
+
 from alembic import op
 import sqlalchemy as sa
+
+# ★ Spelled out rather than imported from `app.services.statutory`. A migration
+# has to keep running years after the application around it has been
+# rearranged; importing application code means a rename somewhere else stops an
+# old migration dead. Raised in review by uniops-41.
+ONTARIO = ZoneInfo("America/Toronto")
 
 revision = "20261005_0051"
 down_revision = "20260930_0050"
@@ -64,15 +72,26 @@ def upgrade() -> None:
 
     # Continue the incident numbering rather than inventing a parallel series:
     # these become incidents and have to look like the others in every list.
-    year = max(r["occurred_at"].year for r in rows)
-    highest = bind.execute(sa.text("""
-        SELECT COALESCE(MAX(SUBSTRING(incident_no FROM 10)::int), 0)
-          FROM ehs_incidents
-         WHERE incident_no LIKE :pattern
-    """), {"pattern": f"INC-{year}-%"}).scalar() or 0
+    #
+    # ★ Per row, by the year the injury happened — in Ontario time, which is what
+    # every other date in this module is judged in. One shared year taken from
+    # the newest row would have numbered a December 2025 treatment as INC-2026.
+    # Raised in review by uniops-41.
+    def year_of(row) -> int:
+        return row["occurred_at"].astimezone(ONTARIO).year
+
+    highest: dict[int, int] = {}
+    for row in rows:
+        year = year_of(row)
+        if year not in highest:
+            highest[year] = bind.execute(sa.text("""
+                SELECT COALESCE(MAX(SUBSTRING(incident_no FROM 10)::int), 0)
+                  FROM ehs_incidents
+                 WHERE incident_no LIKE :pattern
+            """), {"pattern": f"INC-{year}-%"}).scalar() or 0
 
     unconverted: list[str] = []
-    for offset, row in enumerate(rows, start=1):
+    for row in rows:
         if not row["treatment_given"] or not row["injured_name"]:
             # Both are NOT NULL in the register, so this cannot happen — and if
             # it somehow does, an incident with no injured person and no
@@ -91,7 +110,9 @@ def upgrade() -> None:
             continue
 
         incident_id = uuid.uuid4()
-        number = f"INC-{year}-{highest + offset:04d}"
+        year = year_of(row)
+        highest[year] += 1
+        number = f"INC-{year}-{highest[year]:04d}"
         title = f"First aid — {row['body_part_label'] or row['injured_name']}"
 
         bind.execute(sa.text("""
@@ -178,6 +199,57 @@ def downgrade() -> None:
           FROM ehs_incidents i
          WHERE i.extra ? '{MARK}'
     """)).mappings().all()
+
+    # ★ Nothing is deleted while anything hangs off it. A converted incident can
+    # have collected a corrective action, an attachment or a task since, and
+    # deleting it would either fail on a foreign key half way through or take
+    # those with it. Raised in review by uniops-41.
+    # ★★ The list is what matters here, and my first version had it backwards.
+    # I listed the tables that would *complain* — `ehs_actions`, `tasks`,
+    # `ehs_risk_assessments`, `ehs_statutory_deadlines` — which hold a
+    # `source_id` with no foreign key at all, so deleting the incident leaves
+    # orphans and says nothing. The ones that matter are the tables with
+    # `ON DELETE CASCADE` on `ehs_incidents.id`: those are **removed silently**.
+    #
+    # Read out of the database rather than off the models, after uniops-41
+    # pointed out the omission:
+    #
+    #   ehs_incident_attachments, ehs_incident_causes,
+    #   ehs_incident_investigations, ehs_incident_medical, ehs_rtw_plans
+    #
+    # All five are things HSE would normally add to a converted first-aid case —
+    # an investigation, the medical detail, a return-to-work plan. Orphans are
+    # listed too, because an action pointing at an incident that no longer exists
+    # is not better for being loud about it later.
+    #
+    # `ehs_incident_persons` is deliberately absent: this migration created those
+    # rows and the downgrade removes them itself.
+    blocked: list[str] = []
+    for row in made:
+        for table, column, what in (
+            # Silently cascaded — the dangerous ones.
+            ("ehs_incident_investigations", "incident_id", "investigation(s)"),
+            ("ehs_incident_causes", "incident_id", "recorded cause(s)"),
+            ("ehs_incident_medical", "incident_id", "medical record(s)"),
+            ("ehs_rtw_plans", "incident_id", "return-to-work plan(s)"),
+            ("ehs_incident_attachments", "incident_id", "attachment(s)"),
+            # Orphaned — no foreign key, so these would simply dangle.
+            ("ehs_actions", "source_id", "corrective action(s)"),
+            ("tasks", "document_id", "task(s)"),
+            ("ehs_risk_assessments", "source_id", "risk assessment(s)"),
+            ("ehs_statutory_deadlines", "source_id", "statutory deadline(s)"),
+        ):
+            n = bind.execute(
+                sa.text(f"SELECT COUNT(*) FROM {table} WHERE {column} = :id"),
+                {"id": row["id"]}).scalar() or 0
+            if n:
+                blocked.append(f"{row['incident_no']}: {n} {what} in {table}")
+    if blocked:
+        raise RuntimeError(
+            "These incidents were created from first-aid entries and now have "
+            "records of their own, so removing them would destroy or orphan "
+            "them. Deal with those first, then re-run the downgrade:\n  "
+            + "\n  ".join(blocked))
 
     for row in made:
         extra = row["extra"] or {}

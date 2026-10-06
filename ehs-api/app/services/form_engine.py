@@ -164,7 +164,7 @@ def is_failure(question: dict, value: Any) -> bool:
     return False
 
 
-def _as_date(value: Any) -> date:
+def _as_date(value: Any, label: str | None = None) -> date:
     """A date answer, as a date.
 
     ★★ This column is a DATE and was being handed the string. asyncpg asks the
@@ -195,9 +195,13 @@ def _as_date(value: Any) -> date:
         # ★ The message quotes what was sent, not the first ten characters of
         # it: "'last Tuesd' is not a date" reads like the software lost half
         # the answer.
+        # ★ Named. A form can have several date questions, and "is not a date"
+        # without saying which one leaves the person hunting. Raised in review by
+        # uniops-41.
+        which = f" for \u201c{label[:60]}\u201d" if label else ""
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"'{text[:40]}' is not a date. Dates are yyyy-mm-dd.",
+            f"'{text[:40]}'{which} is not a date. Dates are yyyy-mm-dd.",
         ) from None
 
 
@@ -228,7 +232,7 @@ def normalise(question: dict, value: Any) -> dict:
     if spec.storage == "number":
         row["value_number"] = _as_decimal(value)
     elif spec.storage == "date":
-        row["value_date"] = _as_date(value)
+        row["value_date"] = _as_date(value, question.get("label"))
     elif spec.storage == "bool":
         row["value_bool"] = bool(value)
     elif spec.storage == "ids":

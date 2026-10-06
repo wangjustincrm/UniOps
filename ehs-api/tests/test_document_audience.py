@@ -225,3 +225,28 @@ async def test_a_retired_version_says_what_replaced_it(hse_manager, worker):
     # And the current one does not claim to have been replaced.
     current = (await client.get(f"/api/v1/documents/{revised['id']}")).json()
     assert current["superseded_by_id"] is None
+
+
+async def test_a_draft_successor_is_not_offered_as_the_one_in_force(
+        hse_manager, worker):
+    """★ Round 5 review (uniops-41): the retired page links to the replacement as
+    "the one in force". A draft is not in force, and sending somebody to sign one
+    is worse than leaving them on the retired version."""
+    _, client = hse_manager
+    named, _ = worker
+
+    first = await _published(client, ack_roles=[], ack_user_ids=[str(named.id)])
+    draft = (await client.post(f"/api/v1/documents/{first['id']}/new-version",
+                              json={"version": "2"})).json()
+
+    # The successor exists but is still a draft, and the old one is still in
+    # force — so there is nothing to point at yet.
+    still = (await client.get(f"/api/v1/documents/{first['id']}")).json()
+    assert still["superseded_by_id"] is None
+
+    await client.patch(f"/api/v1/documents/{draft['id']}",
+                       json={"file_id": first["file_id"], "filename": "v2.pdf"})
+    await client.post(f"/api/v1/documents/{draft['id']}/publish")
+
+    now = (await client.get(f"/api/v1/documents/{first['id']}")).json()
+    assert now["superseded_by_id"] == draft["id"]

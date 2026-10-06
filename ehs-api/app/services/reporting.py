@@ -49,6 +49,11 @@ class Entity:
     # whole of it. A constant written here, never anything a caller sends — the
     # rule for this engine is that nothing from a request reaches the SQL as
     # text.
+    #
+    # ★ One column, one condition: it is prefixed with the table alias as a
+    # whole (`t.{where}`), so `a = 1 AND b = 2` would come out as
+    # `t.a = 1 AND b = 2` and the second half would be unqualified. A compound
+    # condition needs the prefixing changed, not just a longer string.
     where: str | None = None
 
 

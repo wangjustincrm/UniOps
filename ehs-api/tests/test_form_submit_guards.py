@@ -761,3 +761,15 @@ class TestArchivingFinishesTheJob:
         refused = await client.post(f"/api/v1/forms/templates/{template['id']}/archive")
         assert refused.status_code == 409, refused.text
         assert "minutes" in refused.text
+
+
+async def test_a_bad_date_says_which_question(hse_manager, dated_template):
+    """★ Round 5 review (uniops-41): a form can ask for several dates, and "is
+    not a date" without naming one leaves the person hunting."""
+    _, client = hse_manager
+    sub = await _a_submission(client, dated_template["id"])
+    bad = await client.put(f"/api/v1/forms/submissions/{sub['id']}/answers",
+                           json={"values": {"when": "next Tuesday"}})
+    assert bad.status_code == 422, bad.text
+    assert "Date of inspection" in bad.text, bad.text
+    assert "next Tuesday" in bad.text

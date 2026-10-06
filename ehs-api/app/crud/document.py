@@ -203,9 +203,14 @@ async def replacement_for(
     reverse lookup. The newest wins if a document was superseded twice — that
     is the one somebody has to read.
     """
+    # ★ Published only. A draft successor is not in force, and the retired page
+    # offers this as "the one in force" with a link — sending somebody to sign a
+    # draft would be worse than leaving them on the retired version. Raised in
+    # review by uniops-41.
     return (await db.execute(
         select(SafetyDocument)
-        .where(SafetyDocument.supersedes_id == doc.id)
+        .where(SafetyDocument.supersedes_id == doc.id,
+               SafetyDocument.status == "published")
         .order_by(SafetyDocument.created_at.desc())
         .limit(1))).scalar_one_or_none()
 
