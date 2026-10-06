@@ -196,7 +196,7 @@ async def _assert_invoices_belong_to_pos(
         )
 
 
-# The latest due date on one PA may be at most this many days after the
+# The latest due date on one PO-based PA may be at most this many days after the
 # earliest. One PA is one transfer on one payment date, so bundling invoices
 # that fall due weeks apart either pays the late ones early or the early ones
 # late. Stated to the assistant in knowledge/pa_types.yaml (pinned by
@@ -208,10 +208,13 @@ PA_INVOICE_DUE_WINDOW_DAYS = 7
 async def _assert_invoice_due_dates_within_window(
     db: SessionDep, invoice_ids: list[uuid.UUID],
 ) -> None:
-    """Several invoices may share one PA only if they fall due within a week.
+    """Several invoices may share one PO-based PA only if they fall due within
+    a week.
 
-    Shared by create_pa (both routes) and update_pa, so a PATCH of the invoice
-    list cannot assemble what creation would have refused. Unknown ids are left
+    PO route only — agreement PAs are exempt by decision (2026-10-06): paying
+    an agreement's accumulated statements in one run is the normal case there.
+    Shared by create_pa and update_pa, so a PATCH of the invoice list cannot
+    assemble what creation would have refused. Unknown ids are left
     to the route-specific checks, which already 422 them with a better message.
     """
     if len(set(invoice_ids)) < 2:
@@ -411,7 +414,9 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # see _validate_agreement_pa_invoices, shared with update_pa's PATCH
         # path so the same rules apply there too.
         await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
-        await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
+        # No due-date window here: an agreement PA routinely pays a run of
+        # statements together (decided 2026-10-06) — see
+        # _assert_invoice_due_dates_within_window.
         # 收货闸门不适用:协议路线定义上就没有 GR(1A 无凭证,1B 才有)。
         created = await pa_crud.create(
             db, body,
@@ -669,7 +674,7 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWr
         if agr is None:
             raise HTTPException(status_code=404, detail="Agreement not found")
         await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
-    if body.invoice_ids is not None:
+    if pa.agreement_id is None and body.invoice_ids is not None:
         await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
 
     # ── PO-set replacement ─────────────────────────────────────────────────────

@@ -36,9 +36,10 @@ values:
       - Needs receipt evidence behind it; a PO with nothing received cannot be
         paid this way.
       - >-
-        One PA can pay several invoices from the same vendor, but only if they
-        fall due within 7 days of each other. Invoices due further apart need
-        separate payment applications.
+        A PA raised against purchase orders can pay several invoices from the
+        same vendor, but only if they fall due within 7 days of each other;
+        invoices due further apart need separate payment applications. A PA
+        raised against an agreement has no such limit.
 
   - value: prepayment
     label: Prepayment

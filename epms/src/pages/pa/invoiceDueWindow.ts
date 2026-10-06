@@ -1,5 +1,6 @@
-// Several invoices may share one payment application only if they fall due
-// within a week of each other — one PA is one transfer on one payment date.
+// Several invoices may share one PO-based payment application only if they
+// fall due within a week of each other — one PA is one transfer on one payment
+// date. Agreement PAs are exempt (they routinely pay a run of statements).
 // The server enforces this (epms-api pa.py::PA_INVOICE_DUE_WINDOW_DAYS); this
 // copy only lets the form say so before submit instead of after a 422.
 export const PA_INVOICE_DUE_WINDOW_DAYS = 7

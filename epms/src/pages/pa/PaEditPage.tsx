@@ -238,8 +238,9 @@ export default function PaEditPage() {
     if (!isAgreementMode && poIds.length === 0) return
     if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || paymentTotal <= 0) return
     if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement)) return
-    // The notice under the invoice list already names the two ends.
-    if (dueWindowViolation(poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id)))) return
+    // PO route only — agreement PAs are exempt. The notice under the invoice
+    // list already names the two ends.
+    if (!isAgreementMode && dueWindowViolation(poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id)))) return
 
     try {
       // Lines from every PO still on the payment.
@@ -500,7 +501,9 @@ export default function PaEditPage() {
                   ))}
                 </div>
               )}
-              <DueWindowNotice invoices={poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id))} />
+              {!isAgreementMode && (
+                <DueWindowNotice invoices={poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id))} />
+              )}
             </div>
 
             {/* GRs multi-select — PO route only; the agreement route never has one */}

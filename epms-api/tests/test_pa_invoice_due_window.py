@@ -1,5 +1,5 @@
-"""Several invoices may share one payment application only if they fall due
-within a week of each other.
+"""Several invoices may share one PO-based payment application only if they
+fall due within a week of each other (agreement PAs are exempt).
 
 One PA is one transfer on one payment date, so bundling invoices that fall due
 weeks apart either pays the late ones early or the early ones late. Checked on
@@ -146,3 +146,45 @@ def test_assistant_states_the_enforced_window():
     )
     stated = re.findall(r"within (\d+) days of each other", text)
     assert stated == [str(PA_INVOICE_DUE_WINDOW_DAYS)], stated
+
+
+@pytest.mark.asyncio
+async def test_agreement_pa_is_exempt_from_the_window(admin_client, test_engine):
+    """Agreement PAs routinely pay a run of statements together — the window
+    applies to PO-based PAs only, on create and on PATCH alike."""
+    from sqlalchemy import select
+    from app.models.invoice import Invoice
+    from tests.test_agreement_invoice_match import _make_active_agreement, _upload_invoice
+    from tests.test_agreement_pa import _declare_legacy_settlement
+    from tests.test_agreements import seed_vendor_and_user
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv_ids = []
+    for _ in range(3):
+        inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+        m = await admin_client.post(f"/api/v1/invoices/{inv['id']}/match",
+                                    json={"agreement_id": str(agr.id)})
+        assert m.status_code == 200, m.text
+        await _declare_legacy_settlement(test_engine, inv["id"])
+        inv_ids.append(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        for i, iid in enumerate(inv_ids):
+            row = (await db.execute(
+                select(Invoice).where(Invoice.id == _uuid.UUID(iid)))).scalar_one()
+            row.due_date = _BASE_DUE + _td(days=30 * i)
+        await db.commit()
+
+    body = {
+        "title": "Statements", "agreement_id": str(agr.id), "invoice_ids": inv_ids[:2],
+        "subtotal": "200.00", "tax_amount": "0.00", "payment_amount": "200.00",
+        "line_items": [{"description": "x", "qty": "1", "unit": "EA",
+                        "unit_price": "200.00", "line_total": "200.00"}],
+    }
+    r = await admin_client.post(PA_URL, json=body)
+    assert r.status_code == 201, r.text
+
+    r = await admin_client.patch(f"{PA_URL}/{r.json()['id']}", json={"invoice_ids": inv_ids})
+    assert r.status_code == 200, r.text

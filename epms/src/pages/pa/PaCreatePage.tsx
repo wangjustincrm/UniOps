@@ -71,11 +71,13 @@ function ReceiptEvidenceBadge({ invoice }: { invoice: ApiInvoice }) {
 // claimed by another live PA is filtered out by the caller rather than shown
 // greyed out, so every row in this list is tickable.
 function InvoiceSelectList({
-  invoices, selectedIds, onToggle,
+  invoices, selectedIds, onToggle, enforceDueWindow,
 }: {
   invoices: ApiInvoice[]
   selectedIds: Set<string>
   onToggle: (id: string) => void
+  // PO route only — agreement PAs are exempt from the due-date window.
+  enforceDueWindow: boolean
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -116,7 +118,7 @@ function InvoiceSelectList({
         )
       })}
     </div>
-    <DueWindowNotice invoices={invoices.filter((inv) => selectedIds.has(inv.id))} />
+    {enforceDueWindow && <DueWindowNotice invoices={invoices.filter((inv) => selectedIds.has(inv.id))} />}
     </div>
   )
 }
@@ -529,7 +531,7 @@ export default function PaCreatePage() {
       (inv) => inv.status === 'matched' && !lockedInvoiceIds.has(inv.id) && isPreselectableAgreementInvoice(inv)
     )
     autoSelectedForAgreementRef.current = agreementIdFromUrl
-    if (matchedInvoices.length > 0) setSelectedInvoiceIds(new Set(earliestDueGroup(matchedInvoices).map((i) => i.id)))
+    if (matchedInvoices.length > 0) setSelectedInvoiceIds(new Set(matchedInvoices.map((i) => i.id)))
   }, [isAgreementMode, agreementIdFromUrl, invoicesData, agreementActivePas]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill title when a PO or agreement is selected (if not yet typed).
@@ -578,8 +580,6 @@ export default function PaCreatePage() {
       if (!agreement) errors.push('Agreement not found')
       if (agreement && selectedInvoiceIds.size === 0)
         errors.push('Select at least one invoice matched to this agreement')
-      if (dueWindowViolation(selectedInvoices))
-        errors.push(`Selected invoices must fall due within ${PA_INVOICE_DUE_WINDOW_DAYS} days of each other`)
       if (!title.trim()) errors.push('PA Title is required')
       if (subtotalNum <= 0) errors.push('Pre-tax amount must be greater than zero')
       if (taxNum < 0) errors.push('Tax amount cannot be negative')
@@ -708,9 +708,9 @@ ${submitError}
     // A second click while the first request is still open creates a SECOND
     // payment application for the same invoices.
     if (createPa.isPending) return
-    // Both routes: the server refuses this too, but with the list in front of
-    // the operator the banner under it already says which invoices to untick.
-    if (dueWindowViolation(selectedInvoices)) return
+    // PO route only (agreement PAs are exempt): the server refuses this too,
+    // but the notice under the list already says which invoices to untick.
+    if (!isAgreementMode && dueWindowViolation(selectedInvoices)) return
     if (isAgreementMode) {
       if (!agreement) return
       if (!title.trim() || subtotalNum <= 0 || taxNum < 0) return
@@ -1073,6 +1073,7 @@ ${submitError}
                         invoices={selectablePoInvoices}
                         selectedIds={selectedInvoiceIds}
                         onToggle={toggleInvoice}
+                        enforceDueWindow
                       />
                     </div>
                     {claimedLabel(docInvoices) && (
@@ -1368,6 +1369,7 @@ ${submitError}
                       invoices={selectableAgreementInvoices}
                       selectedIds={selectedInvoiceIds}
                       onToggle={toggleInvoice}
+                      enforceDueWindow={false}
                     />
                     {claimedLabel(agreementInvoiceCandidates) && (
                       <p className="text-[11px] text-neutral-400">{claimedLabel(agreementInvoiceCandidates)}</p>
