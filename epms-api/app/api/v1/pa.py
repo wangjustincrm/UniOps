@@ -196,6 +196,45 @@ async def _assert_invoices_belong_to_pos(
         )
 
 
+# The latest due date on one PA may be at most this many days after the
+# earliest. One PA is one transfer on one payment date, so bundling invoices
+# that fall due weeks apart either pays the late ones early or the early ones
+# late. Stated to the assistant in knowledge/pa_types.yaml (pinned by
+# tests/test_pa_invoice_due_window.py); mirrored for the form in
+# epms/src/pages/pa/invoiceDueWindow.ts (pinned by its vitest).
+PA_INVOICE_DUE_WINDOW_DAYS = 7
+
+
+async def _assert_invoice_due_dates_within_window(
+    db: SessionDep, invoice_ids: list[uuid.UUID],
+) -> None:
+    """Several invoices may share one PA only if they fall due within a week.
+
+    Shared by create_pa (both routes) and update_pa, so a PATCH of the invoice
+    list cannot assemble what creation would have refused. Unknown ids are left
+    to the route-specific checks, which already 422 them with a better message.
+    """
+    if len(set(invoice_ids)) < 2:
+        return
+    rows = (await db.execute(
+        select(Invoice.internal_ref, Invoice.due_date).where(Invoice.id.in_(invoice_ids))
+    )).all()
+    if len(rows) < 2:
+        return
+    earliest = min(rows, key=lambda r: r.due_date)
+    latest = max(rows, key=lambda r: r.due_date)
+    span = (latest.due_date - earliest.due_date).days
+    if span > PA_INVOICE_DUE_WINDOW_DAYS:
+        raise HTTPException(
+            status_code=422,
+            detail=(f"Invoices on one payment application must fall due within "
+                    f"{PA_INVOICE_DUE_WINDOW_DAYS} days of each other. "
+                    f"{earliest.internal_ref} is due {earliest.due_date.isoformat()} and "
+                    f"{latest.internal_ref} is due {latest.due_date.isoformat()} "
+                    f"({span} days apart) — raise a separate payment for them."),
+        )
+
+
 async def _assert_pos_coherent(pos: list[PurchaseOrder], pa_type: str) -> None:
     """The cross-PO rules for one payment application.
 
@@ -372,6 +411,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # see _validate_agreement_pa_invoices, shared with update_pa's PATCH
         # path so the same rules apply there too.
         await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
+        await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
         # 收货闸门不适用:协议路线定义上就没有 GR(1A 无凭证,1B 才有)。
         created = await pa_crud.create(
             db, body,
@@ -528,6 +568,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
 
     # ── Invoice validation ─────────────────────────────────────────────────────
     await _assert_invoices_belong_to_pos(db, pos, body.invoice_ids)
+    await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
 
     # ── 收货闸门 —— 预付款先付后收豁免;其余类型须有 3-way matched 发票 ──
     # 每一张 PO 都要过闸:只查主 PO 会让「搭车」的第二张 PO 在完全没收货的情况下
@@ -628,6 +669,8 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWr
         if agr is None:
             raise HTTPException(status_code=404, detail="Agreement not found")
         await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
+    if body.invoice_ids is not None:
+        await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
 
     # ── PO-set replacement ─────────────────────────────────────────────────────
     # Editing which POs a draft covers runs the same gates creation does. Doing

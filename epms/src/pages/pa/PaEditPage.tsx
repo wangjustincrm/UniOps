@@ -17,6 +17,8 @@ import { useAgreement } from '@/hooks/useAgreements'
 import { useInvoices, useInvoicesForPos } from '@/hooks/useInvoices'
 import { useGrsForPos } from '@/hooks/useGrs'
 import type { ApiPo } from '@/services/po'
+import { DueWindowNotice } from './DueWindowNotice'
+import { dueWindowViolation } from './invoiceDueWindow'
 
 export default function PaEditPage() {
   const { id } = useParams<{ id: string }>()
@@ -236,6 +238,8 @@ export default function PaEditPage() {
     if (!isAgreementMode && poIds.length === 0) return
     if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || paymentTotal <= 0) return
     if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement)) return
+    // The notice under the invoice list already names the two ends.
+    if (dueWindowViolation(poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id)))) return
 
     try {
       // Lines from every PO still on the payment.
@@ -484,7 +488,7 @@ export default function PaEditPage() {
                           <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(inv.total_amount, inv.currency)}</span>
                         </div>
                         <div className="text-xs text-neutral-500 mt-0.5">
-                          #{inv.vendor_invoice_number} · {formatDate(inv.invoice_date)} · <span className="capitalize">{inv.status}</span>
+                          #{inv.vendor_invoice_number} · {formatDate(inv.invoice_date)} · Due {formatDate(inv.due_date)} · <span className="capitalize">{inv.status}</span>
                         </div>
                         <div className="flex items-center gap-3 mt-1 text-[11px] text-neutral-400">
                           <span>Pre-tax <span className="font-mono text-neutral-600">{formatAmount(inv.amount, inv.currency)}</span></span>
@@ -496,6 +500,7 @@ export default function PaEditPage() {
                   ))}
                 </div>
               )}
+              <DueWindowNotice invoices={poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id))} />
             </div>
 
             {/* GRs multi-select — PO route only; the agreement route never has one */}

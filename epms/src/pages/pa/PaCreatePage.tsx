@@ -18,6 +18,8 @@ import { useRolePermissions } from '@/hooks/useConfig'
 import type { ApiPo } from '@/services/po'
 import type { ApiInvoice } from '@/services/invoices'
 import type { DocumentStatus } from '@/types'
+import { DueWindowNotice } from './DueWindowNotice'
+import { dueWindowViolation, earliestDueGroup, PA_INVOICE_DUE_WINDOW_DAYS } from './invoiceDueWindow'
 
 // Invoice multi-select list — shared by the PO route (the PO's invoices) and
 // the agreement route (matched-but-unpaid invoices only). Both routes hand it
@@ -76,6 +78,7 @@ function InvoiceSelectList({
   onToggle: (id: string) => void
 }) {
   return (
+    <div className="flex flex-col gap-1.5">
     <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
       {invoices.map((inv) => {
         return (
@@ -101,7 +104,7 @@ function InvoiceSelectList({
                 <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(inv.total_amount, inv.currency)}</span>
               </div>
               <div className="text-xs text-neutral-500 mt-0.5">
-                #{inv.vendor_invoice_number} · {formatDate(inv.invoice_date)} · <span className="capitalize">{inv.status}</span>
+                #{inv.vendor_invoice_number} · {formatDate(inv.invoice_date)} · Due {formatDate(inv.due_date)} · <span className="capitalize">{inv.status}</span>
               </div>
               <div className="flex items-center gap-3 mt-1 text-[11px] text-neutral-400">
                 <span>Pre-tax <span className="font-mono text-neutral-600">{formatAmount(inv.amount, inv.currency)}</span></span>
@@ -112,6 +115,8 @@ function InvoiceSelectList({
           </label>
         )
       })}
+    </div>
+    <DueWindowNotice invoices={invoices.filter((inv) => selectedIds.has(inv.id))} />
     </div>
   )
 }
@@ -476,7 +481,7 @@ export default function PaCreatePage() {
     )
 
     autoSelectedForPoRef.current = poSelectionKey
-    if (matchedInvoices.length > 0) setSelectedInvoiceIds(new Set(matchedInvoices.map((i) => i.id)))
+    if (matchedInvoices.length > 0) setSelectedInvoiceIds(new Set(earliestDueGroup(matchedInvoices).map((i) => i.id)))
     // The receipts are NOT chosen here — they follow the invoice selection in
     // the effect below, which covers this first fill and every later change
     // with one rule instead of two.
@@ -524,7 +529,7 @@ export default function PaCreatePage() {
       (inv) => inv.status === 'matched' && !lockedInvoiceIds.has(inv.id) && isPreselectableAgreementInvoice(inv)
     )
     autoSelectedForAgreementRef.current = agreementIdFromUrl
-    if (matchedInvoices.length > 0) setSelectedInvoiceIds(new Set(matchedInvoices.map((i) => i.id)))
+    if (matchedInvoices.length > 0) setSelectedInvoiceIds(new Set(earliestDueGroup(matchedInvoices).map((i) => i.id)))
   }, [isAgreementMode, agreementIdFromUrl, invoicesData, agreementActivePas]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill title when a PO or agreement is selected (if not yet typed).
@@ -573,6 +578,8 @@ export default function PaCreatePage() {
       if (!agreement) errors.push('Agreement not found')
       if (agreement && selectedInvoiceIds.size === 0)
         errors.push('Select at least one invoice matched to this agreement')
+      if (dueWindowViolation(selectedInvoices))
+        errors.push(`Selected invoices must fall due within ${PA_INVOICE_DUE_WINDOW_DAYS} days of each other`)
       if (!title.trim()) errors.push('PA Title is required')
       if (subtotalNum <= 0) errors.push('Pre-tax amount must be greater than zero')
       if (taxNum < 0) errors.push('Tax amount cannot be negative')
@@ -603,6 +610,8 @@ export default function PaCreatePage() {
             ? 'No invoice on the selected PO(s) yet — a payment must settle an invoice. Upload and match the invoice first.'
             : 'Select the invoice(s) this payment settles',
         )
+      if (dueWindowViolation(selectedInvoices))
+        errors.push(`Selected invoices must fall due within ${PA_INVOICE_DUE_WINDOW_DAYS} days of each other`)
       if (!title.trim())   errors.push('PA Title is required')
       if (subtotalNum <= 0) errors.push('Pre-tax amount must be greater than zero')
       if (taxNum < 0)      errors.push('Tax amount cannot be negative')
@@ -699,6 +708,9 @@ ${submitError}
     // A second click while the first request is still open creates a SECOND
     // payment application for the same invoices.
     if (createPa.isPending) return
+    // Both routes: the server refuses this too, but with the list in front of
+    // the operator the banner under it already says which invoices to untick.
+    if (dueWindowViolation(selectedInvoices)) return
     if (isAgreementMode) {
       if (!agreement) return
       if (!title.trim() || subtotalNum <= 0 || taxNum < 0) return
