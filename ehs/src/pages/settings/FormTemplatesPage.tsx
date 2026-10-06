@@ -358,6 +358,17 @@ function TemplateLifecycle({ template, onChanged }: {
       {refs.isError && <p className="text-xs text-danger-700">
         Could not check what uses this form. Nothing has been changed.
       </p>}
+      {/* ★ Restoring does not switch the schedules back on, on purpose: a monthly
+          form archived six months ago would raise six overdue rounds the moment
+          it came back. Said here because an undocumented omission and a
+          deliberate one look the same from outside. */}
+      {!template.is_active && (
+        <p className="mb-1.5 text-xs text-neutral-600">
+          Putting it back makes it available to fill in again. Its schedule stays
+          off — start it again from <b>Schedule</b> when you want the rounds to
+          resume.
+        </p>
+      )}
       {refs.data && (
         <p className="text-xs text-neutral-700">
           {used === 0

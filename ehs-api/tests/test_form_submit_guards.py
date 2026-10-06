@@ -648,6 +648,73 @@ class TestArchivingFinishesTheJob:
             Task.is_completed.is_(False)))).scalars().all()
         assert still_open == [], "and nobody should still be chased for it"
 
+    async def test_a_missed_round_is_cancelled_too(self, hse_manager, db_session):
+        """★ Round 5 review (uniops-41): `missed` means it was chased and not
+        done. Once the form is archived there is nothing left to chase it for —
+        and left alone it stayed on the forms list as overdue work that answers
+        "this form has been archived" when you press Start.
+        """
+        from sqlalchemy import select
+
+        from app.models.schedule import FormScheduleRun
+        from app.services import schedule_sweep
+
+        _, client = hse_manager
+        template = await self._published(client)
+        made = await client.post("/api/v1/forms/schedules", json={
+            "template_id": template["id"], "name": "Every month",
+            "frequency": "monthly", "next_due_on": date.today().isoformat(),
+        })
+        assert made.status_code in (200, 201), made.text
+        runs = await schedule_sweep.generate_due(db_session, today=date.today())
+        await db_session.commit()
+        assert runs
+
+        run = await db_session.get(FormScheduleRun, runs[0].id)
+        run.status = "missed"
+        await db_session.commit()
+
+        archived = await client.post(f"/api/v1/forms/templates/{template['id']}/archive")
+        assert archived.status_code == 200, archived.text
+
+        await db_session.refresh(run)
+        assert run.status == "cancelled"
+
+        # ★ And off the default list. Asking with no filter used to return
+        # cancelled rounds as well — the screen asks for pending and missed, so
+        # nothing exercised the default.
+        listed = (await client.get("/api/v1/forms/runs")).json()
+        rows = listed if isinstance(listed, list) else listed.get("items", [])
+        assert str(run.id) not in [str(r.get("id")) for r in rows]
+
+        # Still reachable when asked for by name, because the round happened.
+        explicit = (await client.get("/api/v1/forms/runs?status=cancelled")).json()
+        explicit_rows = explicit if isinstance(explicit, list) else explicit.get("items", [])
+        assert str(run.id) in [str(r.get("id")) for r in explicit_rows]
+
+    async def test_restoring_leaves_the_schedule_off(self, hse_manager, db_session):
+        """★ Deliberate, and stated on screen. A monthly form archived six months
+        ago and restored today would otherwise raise six overdue rounds the moment
+        it came back — work nobody decided to ask for."""
+        from sqlalchemy import select
+
+        from app.models.schedule import FormSchedule
+
+        _, client = hse_manager
+        template = await self._published(client)
+        await client.post("/api/v1/forms/schedules", json={
+            "template_id": template["id"], "name": "Every month",
+            "frequency": "monthly", "next_due_on": date.today().isoformat(),
+        })
+        await client.post(f"/api/v1/forms/templates/{template['id']}/archive")
+        await client.post(f"/api/v1/forms/templates/{template['id']}/restore")
+
+        sched = (await db_session.execute(select(FormSchedule).where(
+            FormSchedule.template_id == uuid.UUID(template["id"])))).scalars().first()
+        await db_session.refresh(sched)
+        assert sched.is_active is False, (
+            "restoring must not quietly resume a schedule")
+
     async def test_an_archived_form_cannot_be_started(self, hse_manager):
         """★ Archiving took it off every list; a link, a bookmark or a QR code
         could still start one."""

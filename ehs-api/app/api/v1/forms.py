@@ -461,10 +461,19 @@ async def list_runs(
     status_in: list[str] | None = Query(default=None, alias="status"),
     limit: int = Query(default=100, le=300),
 ):
-    """Scheduled inspections. Overdue first — that is what needs attention."""
+    """Scheduled inspections. Overdue first — that is what needs attention.
+
+    ★ A round that was called off is not one of them. Archiving a form cancels
+    its outstanding rounds, and with no filter this returned those too — the
+    screen happens to ask for `pending` and `missed`, so the default was surface
+    nothing exercised. Asked for explicitly it still comes back; what changed is
+    what "no filter" means, which is now the same as what the docstring says.
+    """
     q = select(FormScheduleRun)
     if status_in:
         q = q.where(FormScheduleRun.status.in_(status_in))
+    else:
+        q = q.where(FormScheduleRun.status != "cancelled")
     return list((await db.execute(
         q.order_by(FormScheduleRun.due_on).limit(limit))).scalars().all())
 

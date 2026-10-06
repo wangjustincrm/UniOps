@@ -511,11 +511,18 @@ async def set_template_active(
         # somebody would notice. Raised in review by uniops-41.
         #
         # Cancelled rather than completed: nobody filled them in.
-        pending = (await db.execute(
+        # ★ `missed` as well as `pending`. A missed round means it was chased and
+        # not done — and once the form is archived there is nothing left to chase
+        # it for. Left alone they stayed on the forms list as overdue work, and
+        # pressing Start answered "this form has been archived". Raised in review
+        # by uniops-41, who also checked that `cancelled` disappears cleanly:
+        # the column has no constraint, the sweep only moves `pending` to
+        # `missed`, and the list reads neither.
+        outstanding = (await db.execute(
             select(FormScheduleRun).where(
                 FormScheduleRun.template_id == template_id,
-                FormScheduleRun.status == "pending"))).scalars().all()
-        for run in pending:
+                FormScheduleRun.status.in_(("pending", "missed"))))).scalars().all()
+        for run in outstanding:
             run.status = "cancelled"
             await task_service.close_tasks_for(
                 db, doc_type=task_service.DOC_RUN, doc_id=run.id,
@@ -524,6 +531,14 @@ async def set_template_active(
     template.is_active = active
     await db.flush()
     return template
+
+
+# ★ Restoring deliberately does **not** switch the schedules back on, and the
+# screen says so. A monthly form archived six months ago and restored today would
+# otherwise raise six overdue rounds the moment it came back — work nobody
+# decided to ask for. Starting the schedule again is its own decision, taken by
+# somebody looking at the calendar. Raised in review by uniops-41; stated here
+# because an undocumented omission and a deliberate one look identical.
 
 
 async def start_submission_allowed(template: FormTemplate) -> None:
