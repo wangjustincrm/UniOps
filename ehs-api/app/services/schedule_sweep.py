@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # Task type lives with the others in tasks.py; doc_type is ours and must
 # stay within tasks.document_type (varchar 20).
 TASK_DO_FORM = task_service.TASK_DO_FORM
-DOC_FORM_RUN = "ehs_run"
+DOC_FORM_RUN = task_service.DOC_RUN
 
 
 async def _department_name(db: AsyncSession, dept_id: uuid.UUID | None) -> str | None:

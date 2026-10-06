@@ -19,7 +19,11 @@ interface Template {
   id: string; code: string; name: string; description: string | null
   category: string; is_active: boolean
 }
-interface References { submissions: number; schedules: number; equipment: number }
+interface References {
+  submissions: number; schedules: number; equipment: number
+  /** 1 when this is the form Settings names for the committee's minutes. */
+  settings: number
+}
 
 interface Schedule {
   id: string; template_id: string; name: string; frequency: string
@@ -335,6 +339,7 @@ function TemplateLifecycle({ template, onChanged }: {
 
   const used = refs.data
     ? refs.data.submissions + refs.data.schedules + refs.data.equipment
+      + refs.data.settings
     : null
 
   if (!asking) {
@@ -357,7 +362,8 @@ function TemplateLifecycle({ template, onChanged }: {
         <p className="text-xs text-neutral-700">
           {used === 0
             ? 'Nothing has been filled in on this form and nothing points at it.'
-            : `${refs.data.submissions} filled in · ${refs.data.schedules} schedule(s) · ${refs.data.equipment} item(s) scan to it.`}
+            : `${refs.data.submissions} filled in · ${refs.data.schedules} schedule(s) · ${refs.data.equipment} item(s) scan to it.`
+              + (refs.data.settings ? ' This is the committee’s minutes form.' : '')}
         </p>
       )}
       <ErrorNote error={act.error} />

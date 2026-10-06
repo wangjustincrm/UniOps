@@ -14,9 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.action import create as create_action
 from app.crud.incident import _resolve_location_path, _resolve_name
+from app.models.config import EhsConfig
 from app.models.form import FormAnswer, FormSubmission, FormTemplate, FormVersion
+from app.models.schedule import FormSchedule, FormScheduleRun
 from app.schemas.action import ActionCreate
 from app.services import form_engine
+from app.services import tasks as task_service
 from app.services.numbering import next_number
 
 # How long the owner of a failed check has to deal with it. Deliberately short:
@@ -176,7 +179,7 @@ async def start_submission(
     db: AsyncSession, template_id: uuid.UUID, *, user_id: uuid.UUID,
     location_id: uuid.UUID | None, occurred_at: datetime | None,
 ) -> FormSubmission:
-    await get_template(db, template_id)
+    await start_submission_allowed(await get_template(db, template_id))
     version = await published_version(db, template_id)
 
     sub = FormSubmission(
@@ -435,17 +438,29 @@ async def references_to(db: AsyncSession, template_id: uuid.UUID) -> dict[str, i
     that forgot one whole consumer.
     """
     from app.models.asset import SafetyAsset
-    from app.models.schedule import FormSchedule
 
     async def count(model, column) -> int:
         return (await db.execute(
             select(func.count()).select_from(model).where(column == template_id)
         )).scalar() or 0
 
+    # ★ The committee minutes form is named in Settings by its *code*, not by id,
+    # so it is not a foreign key and nothing would have stopped it being archived
+    # — the next meeting would simply have found no minutes form. Raised in
+    # review by uniops-41. Counted the same way as the rest so one answer covers
+    # every caller.
+    template = await get_template(db, template_id)
+    config = (await db.execute(
+        select(EhsConfig).where(EhsConfig.id == 1))).scalar_one_or_none()
+    is_minutes_form = bool(
+        config and config.jhsc_minutes_template_code
+        and config.jhsc_minutes_template_code == template.code)
+
     return {
         "submissions": await count(FormSubmission, FormSubmission.template_id),
         "schedules": await count(FormSchedule, FormSchedule.template_id),
         "equipment": await count(SafetyAsset, SafetyAsset.inspection_template_id),
+        "settings": 1 if is_minutes_form else 0,
     }
 
 
@@ -468,11 +483,15 @@ async def set_template_active(
     module keeps finding, and it would be invisible — the template is no longer
     in the list to notice.
     """
-    from app.models.schedule import FormSchedule
-
     template = await get_template(db, template_id)
     if not active:
         refs = await references_to(db, template_id)
+        if refs.get("settings"):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "This is the form the committee's minutes are written on, named "
+                "under Settings. Point the committee at another form first, or "
+                "the next meeting will find no minutes form at all.")
         if refs["equipment"]:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
@@ -485,9 +504,41 @@ async def set_template_active(
                     FormSchedule.is_active.is_(True)))).scalars():
             sched.is_active = False
 
+        # ★ And the rounds it has already raised. Switching the schedule off
+        # stops new ones; the pending ones and their inbox tasks were left behind,
+        # so people kept being chased to fill in a form that is no longer in any
+        # list — and invisibly, because the template has left the list where
+        # somebody would notice. Raised in review by uniops-41.
+        #
+        # Cancelled rather than completed: nobody filled them in.
+        pending = (await db.execute(
+            select(FormScheduleRun).where(
+                FormScheduleRun.template_id == template_id,
+                FormScheduleRun.status == "pending"))).scalars().all()
+        for run in pending:
+            run.status = "cancelled"
+            await task_service.close_tasks_for(
+                db, doc_type=task_service.DOC_RUN, doc_id=run.id,
+                task_type=task_service.TASK_DO_FORM)
+
     template.is_active = active
     await db.flush()
     return template
+
+
+async def start_submission_allowed(template: FormTemplate) -> None:
+    """Refuse to start a form on an archived template.
+
+    ★ Archiving took it off every list and nothing stopped a direct link, a
+    bookmark or a QR code from starting one anyway — so a form could be filled
+    in and submitted on a template that had been retired, which is a record
+    nobody will look for. Raised in review by uniops-41.
+    """
+    if not template.is_active:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This form has been archived and is no longer in use. Ask HSE which "
+            "form replaces it.")
 
 
 async def delete_template(db: AsyncSession, template_id: uuid.UUID) -> None:

@@ -43,6 +43,11 @@ DOC_PERMIT = "ehs_ptw"
 # while every other clock named a constant here. A test now asserts every
 # deadline document type has a path in this map.
 DOC_SDS = "ehs_sds"
+# A scheduled round of a form — the thing that says "this inspection is due".
+# ★ Was a bare string in two places and a path-map key in a third; named here
+# for the same reason DOC_SDS is, after archiving a template left its pending
+# rounds being chased with nothing to close them.
+DOC_RUN = "ehs_run"
 
 # Task types. None of these may start with "approve".
 TASK_DO_ACTION = "ehs_do_action"
@@ -82,7 +87,7 @@ TASK_CLOSE_PERMIT = "ehs_close_permit"
 # and find their own work, which is the thing an inbox is for.
 DOC_PATHS: dict[str, str] = {
     "ehs_tbt": "/toolbox-talks?delivery={id}",
-    "ehs_run": "/forms",
+    DOC_RUN: "/forms",
     "ehs_doc": "/documents/{id}",
     "ehs_crs": "/training",
     "ehs_cert": "/training",

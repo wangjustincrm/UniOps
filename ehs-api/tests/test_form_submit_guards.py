@@ -484,7 +484,12 @@ class TestArchivingAndDeletingATemplate:
         t = await self._template(client)
         refs = (await client.get(
             f"/api/v1/forms/templates/{t['id']}/references")).json()
-        assert refs == {"submissions": 0, "schedules": 0, "equipment": 0}
+        # Every kind of reference reported, each at zero. Asserted key by key so
+        # adding a fourth kind does not silently stop being checked.
+        assert refs["submissions"] == 0
+        assert refs["schedules"] == 0
+        assert refs["equipment"] == 0
+        assert refs["settings"] == 0
 
 
 class TestAKindWithNoVerdictRaisesNoFailures:
@@ -579,3 +584,113 @@ class TestAKindWithNoVerdictRaisesNoFailures:
         done = await client.post(f"/api/v1/forms/submissions/{sub['id']}/submit", json={})
         assert done.status_code == 200, done.text
         assert done.json()["failed_count"] == 1
+
+
+class TestArchivingFinishesTheJob:
+    """★ Round 5 review (uniops-41): switching a schedule off stopped new rounds
+    and left the pending ones, their inbox tasks, and the way in.
+
+    Each of the three is the same fault in a different place — the thing outlives
+    the template, and invisibly, because the template has left the list where
+    somebody would have noticed.
+    """
+
+    async def _published(self, client, category: str = "inspection"):
+        made = await client.post("/api/v1/forms/templates", json={
+            "code": f"arch-{uuid.uuid4().hex[:5]}", "name": "Monthly something",
+            "category": category,
+        })
+        template = made.json()
+        await client.put(f"/api/v1/forms/templates/{template['id']}/schema", json={
+            "schema": [{"key": "ok", "type": "yes_no_na", "label": "Sound?"}]})
+        await client.post(f"/api/v1/forms/templates/{template['id']}/publish",
+                          json={"change_note": "v1"})
+        return template
+
+    async def test_pending_rounds_and_their_tasks_are_cancelled(
+            self, hse_manager, db_session):
+        from sqlalchemy import select
+
+        from app.models.mirrors import Task
+        from app.models.schedule import FormScheduleRun
+        from app.services import schedule_sweep, tasks as task_service
+
+        _, client = hse_manager
+        template = await self._published(client)
+        made = await client.post("/api/v1/forms/schedules", json={
+            "template_id": template["id"], "name": "Every month",
+            "frequency": "monthly", "next_due_on": date.today().isoformat(),
+        })
+        assert made.status_code in (200, 201), made.text
+
+        runs = await schedule_sweep.generate_due(db_session, today=date.today())
+        await db_session.commit()
+        assert runs, "the sweep must have raised a round, or this proves nothing"
+        run_id = runs[0].id
+
+        open_tasks = (await db_session.execute(select(Task).where(
+            Task.document_type == task_service.DOC_RUN,
+            Task.document_id == run_id,
+            Task.is_completed.is_(False)))).scalars().all()
+        assert open_tasks, "the round must be in somebody's list to begin with"
+
+        archived = await client.post(f"/api/v1/forms/templates/{template['id']}/archive")
+        assert archived.status_code == 200, archived.text
+
+        run = await db_session.get(FormScheduleRun, run_id)
+        await db_session.refresh(run)
+        assert run.status == "cancelled", (
+            "a pending round on an archived form is nobody's work")
+
+        still_open = (await db_session.execute(select(Task).where(
+            Task.document_type == task_service.DOC_RUN,
+            Task.document_id == run_id,
+            Task.is_completed.is_(False)))).scalars().all()
+        assert still_open == [], "and nobody should still be chased for it"
+
+    async def test_an_archived_form_cannot_be_started(self, hse_manager):
+        """★ Archiving took it off every list; a link, a bookmark or a QR code
+        could still start one."""
+        _, client = hse_manager
+        template = await self._published(client)
+        await client.post(f"/api/v1/forms/templates/{template['id']}/archive")
+
+        refused = await client.post(
+            f"/api/v1/forms/templates/{template['id']}/submissions", json={})
+        assert refused.status_code == 409, refused.text
+        assert "archived" in refused.text
+
+        # The admission: put it back and it works again.
+        await client.post(f"/api/v1/forms/templates/{template['id']}/restore")
+        started = await client.post(
+            f"/api/v1/forms/templates/{template['id']}/submissions", json={})
+        assert started.status_code in (200, 201), started.text
+
+    async def test_the_minutes_form_cannot_be_archived_from_under_the_committee(
+            self, hse_manager, db_session):
+        """★ Settings names the committee's minutes form by its *code*, so it is
+        not a foreign key and nothing would have stopped it being archived — the
+        next meeting would simply have found no minutes form."""
+        from sqlalchemy import select
+
+        from app.models.config import EhsConfig
+
+        _, client = hse_manager
+        template = await self._published(client, category="other")
+        # The single config row is seeded by a migration, and the test database
+        # is built with `create_all` — so it may not be here.
+        config = (await db_session.execute(
+            select(EhsConfig).where(EhsConfig.id == 1))).scalar_one_or_none()
+        if config is None:
+            config = EhsConfig(id=1)
+            db_session.add(config)
+        config.jhsc_minutes_template_code = template["code"]
+        await db_session.commit()
+
+        refs = (await client.get(
+            f"/api/v1/forms/templates/{template['id']}/references")).json()
+        assert refs["settings"] == 1, "the reference has to be visible before it is hit"
+
+        refused = await client.post(f"/api/v1/forms/templates/{template['id']}/archive")
+        assert refused.status_code == 409, refused.text
+        assert "minutes" in refused.text
