@@ -226,6 +226,20 @@ async def save_answers(
 
     by_key = {q["key"]: q for q in form_engine.answerable(submission.schema_snapshot)}
 
+    # ★★ Whether this kind of form can fail at all, decided once here — at the
+    # point the column is written rather than at each place it is read.
+    #
+    # `normalise` is handed one question and knows nothing about the template, so
+    # a leftover condition on a minutes form or a toolbox talk would mark answers
+    # as failures. Three things then read that column: `failed_count` on the
+    # submission, the "which checks fail most often" report, and the corrective
+    # actions raised on submit. Fixing it at the submit path would have left the
+    # first two saying a job analysis had two failed checks while the template
+    # list said it has no criteria at all — the same disagreement one level down.
+    # Raised in review by uniops-41, against my first attempt at exactly that.
+    template = await get_template(db, submission.template_id)
+    can_fail = form_engine.kind_can_fail(template.category)
+
     existing = {a.question_key: a for a in await answers_for(db, submission.id)}
     for key, value in values.items():
         question = by_key.get(key)
@@ -236,6 +250,8 @@ async def save_answers(
                 f"'{key}' is not a question on this form",
             )
         row = form_engine.normalise(question, value)
+        if not can_fail:
+            row["is_failure"] = False
         target = existing.get(key)
         if target is None:
             target = FormAnswer(id=uuid.uuid4(), submission_id=submission.id)
@@ -282,6 +298,9 @@ async def submit(
             + (f" (and {len(missing) - 5} more)" if len(missing) > 5 else ""),
         )
 
+    # A form whose kind has no verdict has no failing answers to find: that is
+    # settled in `save_answers`, where the column is written, so everything that
+    # reads it agrees.
     failures = [a for a in answers.values() if a.is_failure]
     submission.failed_count = len(failures)
     submission.status = "submitted"

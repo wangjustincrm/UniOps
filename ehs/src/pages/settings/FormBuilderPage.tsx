@@ -291,6 +291,28 @@ export default function FormBuilderPage() {
                     An answer matching this raises a corrective action when the form is submitted.
                   </p>
                 )}
+                {/* ★ A condition on a kind of form that has no verdict. The
+                    editor does not offer the box for these kinds and the server
+                    refuses to save one — so a template that was an inspection
+                    and is now minutes could not be saved at all, with nothing on
+                    screen to say which question was in the way. It does nothing
+                    at fill-in time either. Said plainly, with the way out beside
+                    it. Round 5 review (uniops-41). */}
+                {!kindCanFail && q.fail_on && (
+                  <div className="mt-1.5 rounded-md bg-warning-50 px-2.5 py-2">
+                    <p className="text-xs text-warning-800">
+                      This question still has a fail condition from when the form
+                      was a different kind. It does nothing now — a
+                      {' '}{template.data?.category} form has no pass or fail —
+                      and the form cannot be saved until it is removed.
+                    </p>
+                    <button type="button"
+                            className="mt-1.5 min-h-[32px] rounded border border-warning-500 bg-white px-2 text-xs font-semibold text-warning-800"
+                            onClick={() => update(i, { fail_on: null })}>
+                      Remove the fail condition
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>

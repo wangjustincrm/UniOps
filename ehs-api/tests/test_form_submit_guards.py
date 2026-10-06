@@ -485,3 +485,97 @@ class TestArchivingAndDeletingATemplate:
         refs = (await client.get(
             f"/api/v1/forms/templates/{t['id']}/references")).json()
         assert refs == {"submissions": 0, "schedules": 0, "equipment": 0}
+
+
+class TestAKindWithNoVerdictRaisesNoFailures:
+    """★ Round 5 review (uniops-41): the two halves disagreed.
+
+    `fail_criteria` on the template list reads the kind of form and reported 0
+    for a minutes form. `form_engine.normalise` reads the question's own
+    `fail_on` and knows nothing about the template, so a leftover condition on
+    such a form still produced failures — raising corrective actions, and on an
+    equipment form taking the item out of service — while the list said there
+    were no criteria at all.
+
+    Saving a condition on a kind with no verdict is refused now, so the only way
+    to hold one is a template whose kind was changed afterwards. That is exactly
+    the case this covers.
+    """
+
+    async def test_a_leftover_condition_on_a_minutes_form_fails_nothing(
+            self, hse_manager, db_session):
+        from sqlalchemy import select
+
+        from app.models.form import FormTemplate, FormVersion
+
+        _, client = hse_manager
+        # Built as an inspection, with a real fail condition…
+        made = await client.post("/api/v1/forms/templates", json={
+            "code": f"turned-{uuid.uuid4().hex[:5]}", "name": "Was an inspection",
+            "category": "inspection",
+        })
+        template = made.json()
+        await client.put(f"/api/v1/forms/templates/{template['id']}/schema", json={
+            "schema": [{"key": "ok", "type": "yes_no_na", "label": "Is it sound?",
+                        "fail_on": {"equals": "no"}}]})
+        await client.post(f"/api/v1/forms/templates/{template['id']}/publish",
+                          json={"change_note": "v1"})
+
+        # …then changed to a kind that has no verdict, which is how a condition
+        # can still be in a published schema.
+        row = (await db_session.execute(select(FormTemplate).where(
+            FormTemplate.id == uuid.UUID(template["id"])))).scalar_one()
+        row.category = "other"
+        await db_session.commit()
+
+        version = (await db_session.execute(select(FormVersion).where(
+            FormVersion.template_id == uuid.UUID(template["id"])))).scalars().first()
+        assert any(q.get("fail_on") for q in version.schema), (
+            "the condition must still be in the schema, or this proves nothing")
+
+        sub = await _a_submission(client, template["id"])
+        saved = await client.put(f"/api/v1/forms/submissions/{sub['id']}/answers",
+                                 json={"values": {"ok": "no"}})
+        assert saved.status_code == 200, saved.text
+        # ★ The column itself, not just what the submit does with it. Settled
+        # where the answer is written, so all three readers agree.
+        assert saved.json()[0]["is_failure"] is False
+
+        done = await client.post(f"/api/v1/forms/submissions/{sub['id']}/submit", json={})
+        assert done.status_code == 200, done.text
+        assert done.json()["failed_count"] == 0, (
+            "a form with no verdict cannot record a failure")
+
+        # No corrective action raised off it…
+        actions = (await client.get("/api/v1/actions?source_type=inspection")).json()
+        rows = actions if isinstance(actions, list) else actions.get("items", [])
+        assert not [a for a in rows if a.get("source_id") == sub["id"]]
+
+        # …and nothing for the "which checks fail most often" report to count,
+        # which is the reader my first attempt at this missed.
+        from app.crud import form as form_crud
+
+        counts = await form_crud.failure_counts(db_session, uuid.UUID(template["id"]))
+        assert counts == []
+
+    async def test_an_inspection_still_fails_and_raises(self, hse_manager):
+        """★ The admission. Narrowing this must not stop an inspection failing —
+        that is the whole of TC-07's "there should be a pass of fail criteria"."""
+        _, client = hse_manager
+        made = await client.post("/api/v1/forms/templates", json={
+            "code": f"insp-{uuid.uuid4().hex[:5]}", "name": "A real inspection",
+            "category": "inspection",
+        })
+        template = made.json()
+        await client.put(f"/api/v1/forms/templates/{template['id']}/schema", json={
+            "schema": [{"key": "ok", "type": "yes_no_na", "label": "Is it sound?",
+                        "fail_on": {"equals": "no"}}]})
+        await client.post(f"/api/v1/forms/templates/{template['id']}/publish",
+                          json={"change_note": "v1"})
+
+        sub = await _a_submission(client, template["id"])
+        await client.put(f"/api/v1/forms/submissions/{sub['id']}/answers",
+                         json={"values": {"ok": "no"}})
+        done = await client.post(f"/api/v1/forms/submissions/{sub['id']}/submit", json={})
+        assert done.status_code == 200, done.text
+        assert done.json()["failed_count"] == 1
