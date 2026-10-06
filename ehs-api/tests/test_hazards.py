@@ -250,3 +250,23 @@ async def test_an_action_raised_with_its_cause_keeps_its_priority(hse_manager, w
     tree = saved.json()
     action = tree["actions"][tree["root"][0]["id"]][0]
     assert action["priority"] == "high"
+
+
+async def test_what_was_found_survives_being_recorded_with_the_hazard(hse_manager):
+    """★ The create path, which my first test did not cover.
+
+    `create_hazard` copies fields one by one, so `findings` — added to the model
+    and the schema — was accepted by the API, stored by PATCH, and silently
+    dropped when the hazard was first recorded. Found by driving the form in a
+    browser, which records the finding at the same moment as the hazard.
+    """
+    _, client = hse_manager
+    made = await client.post("/api/v1/hazards", json={
+        "title": "Guard off at the sealer",
+        "findings": "Removed for a changeover and never put back.",
+    })
+    assert made.status_code in (200, 201), made.text
+    assert made.json()["findings"] == "Removed for a changeover and never put back."
+
+    back = (await client.get(f"/api/v1/hazards/{made.json()['id']}")).json()
+    assert back["findings"] == "Removed for a changeover and never put back."

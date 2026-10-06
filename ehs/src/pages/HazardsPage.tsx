@@ -16,6 +16,9 @@ import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldAlert, Plus, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import {
+  CausesEditor, causesPayload, spendActionDrafts, type CauseDraft,
+} from '@/components/CausesEditor'
 import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import { consequenceLabel, describedConsequenceTypes } from '@/lib/riskMatrix'
 import { formatDate } from '@/lib/formatDate'
@@ -25,11 +28,13 @@ import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/Perso
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import { RatingBadge, RiskScoringHistory } from '@/components/RiskScoring'
 import {
-  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle,
+  Card, Empty, ErrorNote, Field, inputClass, LoadFailedNote, PageHeader, primaryButton, secondaryButton, SectionTitle,
 } from '@/components/ui'
 
 export interface Hazard {
   id: string; hazard_no: string; title: string; description: string | null
+  /** What was found when somebody went and looked. */
+  findings: string | null
   hazard_type_id: string | null; hazard_type_label: string | null
   location_id: string | null; location_path: string | null; department_name: string | null
   risk_assessment_id: string | null
@@ -119,7 +124,12 @@ export default function HazardsPage() {
 
       {creating && <HazardForm onClose={() => setCreating(false)} />}
       {editing && (
-        <HazardForm existing={editing} onClose={() => setEditing(null)} />
+        // ★ Keyed on the hazard. The form reads an existing hazard's causes once
+        // and holds them in its own state; without a key, opening a second
+        // hazard while one is open reuses the component and carries the first
+        // one's causes across — and saving would then write them onto the
+        // second. Raised in review by uniops-41.
+        <HazardForm key={editing.id} existing={editing} onClose={() => setEditing(null)} />
       )}
 
       <label className="mb-3 flex items-center gap-2 text-xs text-neutral-600">
@@ -256,9 +266,32 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
     ? { ...EMPTY_PERSON, userId: existing.owner_id, name: existing.owner_name ?? '' }
     : EMPTY_PERSON)
   const [reviewOn, setReviewOn] = useState(existing?.review_due_on ?? '')
+  const [findings, setFindings] = useState(existing?.findings ?? '')
+  const [causes, setCauses] = useState<CauseDraft[]>([])
+  // ★ Remembered once the hazard exists. Recording it is two calls — the hazard,
+  // then its causes, because the causes need its id — and if the second fails,
+  // pressing Record again must correct the hazard already made rather than make a
+  // second one. The same shape as attaching a file on the document's create form.
+  const [createdId, setCreatedId] = useState<string | null>(null)
+  const hazardId = existing?.id ?? createdId
+
+  // An existing hazard's causes, loaded once. Kept out of the form's own state
+  // until they arrive so the editor does not open empty and then jump.
+  const existingCauses = useQuery({
+    queryKey: ['hazard', existing?.id, 'causes'],
+    queryFn: () => api.get<{ immediate: CauseDraft[]; root: CauseDraft[] }>(
+      `/api/v1/hazards/${existing!.id}/causes`),
+    enabled: Boolean(existing?.id),
+  })
+  const [causesLoaded, setCausesLoaded] = useState(false)
+  if (!causesLoaded && existingCauses.data) {
+    setCausesLoaded(true)
+    setCauses([...existingCauses.data.immediate, ...existingCauses.data.root])
+  }
 
   const body = () => ({
     title, description: description || null,
+    findings: findings || null,
     hazard_type_id: type?.id ?? null, hazard_type_label: type?.label ?? null,
     location_id: locationId,
     existing_controls: controls || null,
@@ -268,12 +301,36 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
   })
 
   const create = useMutation({
-    mutationFn: () => (editing
-      ? api.patch(`/api/v1/hazards/${existing!.id}`, body())
-      : api.post('/api/v1/hazards', body())),
+    mutationFn: async () => {
+      // ★ The hazard first, then what caused it — on the create form as well as
+      // the edit one. Round 4 asked for exactly this on the investigation:
+      // "having to save the record first and then edit the corrective action is
+      // time wasting." Asking HSE to record a hazard, close it, and reopen it to
+      // say why would be the same complaint a third time.
+      let id = hazardId
+      if (id) {
+        await api.patch(`/api/v1/hazards/${id}`, body())
+      } else {
+        const made = await api.post<Hazard>('/api/v1/hazards', body())
+        id = made.id
+        setCreatedId(made.id)
+      }
+      // ★ Never while an existing hazard's causes are unknown. Replacing is
+      // what this endpoint does, so sending the empty set the editor shows
+      // before they have loaded — or after the request for them failed — would
+      // delete every cause on file that has no action on it. The same shape as
+      // the inspection form overwriting answers it could not see.
+      const causesKnown = !existing || causesLoaded
+      if (causesKnown && (causesPayload(causes).length > 0 || existing)) {
+        await api.put(`/api/v1/hazards/${id}/causes`, { causes: causesPayload(causes) })
+        // Spent the moment that call returns. See `spendActionDrafts`.
+        setCauses(spendActionDrafts)
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['hazards'] })
       queryClient.invalidateQueries({ queryKey: ['hazard-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['hazard', hazardId, 'causes'] })
       onClose()
     },
   })
@@ -308,6 +365,17 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
                       onChange={(e) => setDescription(e.target.value)} />
           </Field>
         </div>
+        {/* ★ Round 5, answer box 11: "the what was found … need to be added to
+            the hazard register form." What was found when somebody went and
+            looked, as against what the hazard is — an investigation records the
+            same thing under "What happened". */}
+        <div className="sm:col-span-2">
+          <Field label="What was found">
+            <textarea className={`${inputClass} min-h-[70px] py-2`} value={findings}
+                      onChange={(e) => setFindings(e.target.value)}
+                      placeholder="Guard removed for a changeover and never put back" />
+          </Field>
+        </div>
         <div className="sm:col-span-2">
           <Field label="Controls already in place">
             <textarea className={`${inputClass} min-h-[60px] py-2`} value={controls}
@@ -329,11 +397,49 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
                  onChange={(e) => setReviewOn(e.target.value)} />
         </Field>
       </div>
+
+      {/* ★ Immediate and root causes, and the work raised against each root
+          cause — the same editor the investigation uses, and the same
+          "Raise a corrective action" fields, so a hazard and an incident are
+          dealt with the same way. Round 5, answer box 11. */}
+      <div className="mt-4 border-t border-neutral-100 pt-3">
+        <SectionTitle className="mb-1.5">Immediate causes</SectionTitle>
+        {existingCauses.isError ? (
+          <>
+            <LoadFailedNote what="The causes already recorded" />
+            {/* ★ Said, because the save still works and it must be clear what
+                it does. Sending the empty editor would replace the causes on
+                file with nothing, so they are left alone. */}
+            <p className="mt-1.5 text-xs text-neutral-600">
+              Saving now changes the hazard itself and leaves its causes exactly as
+              they are.
+            </p>
+          </>
+        ) : (
+          <CausesEditor type="immediate" vocabulary="immediate_cause"
+                        help="The conditions present — what you could see."
+                        causes={causes} onChange={setCauses} savedWith="the hazard" />
+        )}
+        <SectionTitle className="mb-1.5 mt-4">Root causes</SectionTitle>
+        {!existingCauses.isError && (
+          <CausesEditor type="root" vocabulary="root_cause"
+                        help="Why those conditions existed. Each root cause should end up with a corrective action against it."
+                        causes={causes} onChange={setCauses} savedWith="the hazard" />
+        )}
+      </div>
+
       <ErrorNote error={create.error} />
+      {createdId && create.isError && (
+        <p className="mt-2 text-xs text-neutral-600">
+          The hazard itself was recorded. Pressing Record again saves its causes
+          against it rather than recording it twice.
+        </p>
+      )}
       <div className="mt-3 flex justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
         <button type="button" className={primaryButton}
-                disabled={!title.trim() || create.isPending}
+                disabled={!title.trim() || create.isPending
+                          || (editing && !causesLoaded && !existingCauses.isError)}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
           {create.isPending
             ? (editing ? 'Saving…' : 'Recording…')

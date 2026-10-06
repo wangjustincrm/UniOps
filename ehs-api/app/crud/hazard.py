@@ -101,6 +101,12 @@ async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUI
         hazard_no=await next_number(db, "hazard"),
         title=payload["title"],
         description=payload.get("description"),
+        # ★ Named here as well as on the model. This constructor copies fields
+        # one by one, so a column added to the model and the schema — as
+        # `findings` was in round 5 — is accepted by the API, stored by PATCH, and
+        # silently dropped on create. Found driving the create form in a
+        # browser; the server test had only exercised PATCH.
+        findings=payload.get("findings"),
         hazard_type_id=payload.get("hazard_type_id"),
         hazard_type_label=payload.get("hazard_type_label"),
         location_id=payload.get("location_id"),
