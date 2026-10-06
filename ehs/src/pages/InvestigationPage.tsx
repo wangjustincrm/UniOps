@@ -14,7 +14,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2 } from 'lucide-react'
 import { useTabTitle } from '@uniops/shell'
 import { api, ApiError } from '@/lib/api'
 import {
@@ -26,6 +25,9 @@ import { SignaturePad } from '@/components/SignaturePad'
 import { InjuryDetailFields, type VitalsReading } from '@/components/InjuryDetail'
 import { VocabularyMultiSelect, VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import { useMyProfile } from '@/hooks/useMyProfile'
+import {
+  CausesEditor, causesPayload, spendActionDrafts, type CauseDraft,
+} from '@/components/CausesEditor'
 
 interface Investigation {
   id: string
@@ -56,25 +58,7 @@ interface Medical {
   vitals_series: VitalsReading[]
 }
 
-interface CauseActionDraft {
-  title: string
-  description: string
-  ownerId: string | null
-  /** Shown in the picker; the server is sent the id. */
-  ownerName: string
-  dueDate: string
-}
-
-interface Cause {
-  id?: string
-  cause_type: 'immediate' | 'root'
-  /** Raised with the cause when the investigator fills it in. Root causes only:
-      an immediate cause is a description of what happened, not work to do. */
-  action?: CauseActionDraft
-  vocabulary_item_id: string | null
-  label: string
-  note: string | null
-}
+type Cause = CauseDraft
 
 interface CauseTree {
   incident_no: string
@@ -216,36 +200,13 @@ export default function InvestigationPage() {
         root_cause_narrative: narrative || null,
       })
       await api.put(`/api/v1/incidents/${id}/causes`, {
-        causes: causes
-          .filter((c) => c.label.trim())
-          .map((c) => ({
-            cause_type: c.cause_type,
-            vocabulary_item_id: c.vocabulary_item_id,
-            label: c.label,
-            note: c.note || null,
-            // ★ Raised in the same request. The action points at the cause and
-            // the cause has no id until this call saves it, so the server does
-            // the matching — doing it here would mean saving, reading back which
-            // id belongs to which of the rows just typed, then posting.
-            // ★ Only when it is complete. An action must have an owner — an
-            // unowned one has no inbox to appear in — so a half-filled box is
-            // not sent, and the box says what it needs.
-            action: c.action && c.action.title.trim() && c.action.dueDate && c.action.ownerId
-              ? {
-                  title: c.action.title.trim(),
-                  description: c.action.description || null,
-                  owner_id: c.action.ownerId,
-                  due_date: c.action.dueDate,
-                }
-              : null,
-          })),
+        // ★ Through the shared serialiser, which now also carries the priority
+        // and type of control — round 5's TC-04, the inline form matching the
+        // "Raise a corrective action" dialog — and the draft is spent the moment
+        // the call returns, for the reason `spendActionDrafts` gives.
+        causes: causesPayload(causes),
       })
-      // ★ The drafts are spent the moment that call returns. This save has more
-      // steps after it, and one of them failing leaves the page open with the
-      // action still in its state — press save again and the same action is
-      // raised a second time, because the cause it was attached to now has a
-      // different label and counts as new. Found in review by uniops-9a.
-      setCauses((cs) => cs.map((c) => (c.action ? { ...c, action: undefined } : c)))
+      setCauses(spendActionDrafts)
       if (showMedical) {
         // Built field by field rather than spread from what the GET returned:
         // the response carries its own id, incident id and recorded-by name,
@@ -302,123 +263,10 @@ export default function InvestigationPage() {
     return <p className="p-4 text-sm text-danger-700">{(incident.error as ApiError).message}</p>
   }
 
-  const addCause = (type: 'immediate' | 'root') =>
-    setCauses((c) => [...c, { cause_type: type, vocabulary_item_id: null, label: '', note: null }])
-
-  const updateCause = (i: number, patch: Partial<Cause>) =>
-    setCauses((c) => c.map((x, j) => (j === i ? { ...x, ...patch } : x)))
-
-  const removeCause = (i: number) => setCauses((c) => c.filter((_, j) => j !== i))
-
   const causeRows = (type: 'immediate' | 'root', vocabulary: string, help: string) => (
-    <>
-      <p className="mb-2 text-xs text-neutral-500">{help}</p>
-      {causes.map((c, i) => c.cause_type !== type ? null : (
-        <div key={i} className="mb-2 rounded-lg border border-neutral-200 p-2.5">
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
-              <VocabularySelect
-                vocabulary={vocabulary}
-                value={c.vocabulary_item_id}
-                onChange={(item: VocabItem | null) => updateCause(i, {
-                  vocabulary_item_id: item?.id ?? null,
-                  // Snapshot the wording, per the module's rule for every
-                  // vocabulary reference on a record that gets signed.
-                  label: item ? item.label : c.label,
-                })}
-              />
-            </div>
-            <button type="button" onClick={() => removeCause(i)}
-                    className="flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400 hover:text-danger-600">
-              <Trash2 className="h-4 w-4" aria-hidden />
-              <span className="sr-only">Remove</span>
-            </button>
-          </div>
-          <input
-            value={c.note ?? ''}
-            onChange={(e) => updateCause(i, { note: e.target.value })}
-            placeholder="Note (optional)"
-            className="mt-2 min-h-[38px] w-full rounded-md border border-neutral-200 px-2.5 text-sm focus:border-primary-400 focus:outline-none"
-          />
-          {/* ★ What is being done about it, on this form. Round 4: "when adding
-              a root cause on any form, the ability to raise a corrective action
-              should be able to be completed on the same form at the same time.
-              having to save the record first and then edit the corrective action
-              is time wasting."
-
-              Root causes only. An immediate cause describes what happened; it is
-              not work to do, and offering a box there invites one action per
-              cause where the hierarchy of controls asks for one per root cause. */}
-          {type === 'root' && (
-            c.action ? (
-              <div className="mt-2 rounded-md border border-primary-200 bg-primary-50/40 p-2.5">
-                <p className="mb-1.5 flex items-center justify-between text-xs font-medium text-neutral-700">
-                  What is being done about it
-                  <button type="button" onClick={() => updateCause(i, { action: undefined })}
-                          className="text-xs font-normal text-neutral-500 hover:text-danger-600">
-                    Not now
-                  </button>
-                </p>
-                <input
-                  value={c.action.title}
-                  onChange={(e) => updateCause(i, {
-                    action: { ...c.action!, title: e.target.value } })}
-                  placeholder="Guard the nip point at the sealer entrance"
-                  className="min-h-[38px] w-full rounded-md border border-neutral-200 px-2.5 text-sm focus:border-primary-400 focus:outline-none"
-                />
-                <textarea
-                  value={c.action.description}
-                  onChange={(e) => updateCause(i, {
-                    action: { ...c.action!, description: e.target.value } })}
-                  placeholder="What exactly needs doing, for whoever picks it up"
-                  className="mt-1.5 min-h-[52px] w-full rounded-md border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-primary-400 focus:outline-none"
-                />
-                <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
-                  <PersonPicker
-                    value={{ ...EMPTY_PERSON, userId: c.action.ownerId ?? null,
-                             name: c.action.ownerName ?? '' }}
-                    allowExternal={false}
-                    onChange={(v) => updateCause(i, {
-                      action: { ...c.action!, ownerId: v.userId, ownerName: v.name } })}
-                  />
-                  <input
-                    type="date"
-                    value={c.action.dueDate}
-                    onChange={(e) => updateCause(i, {
-                      action: { ...c.action!, dueDate: e.target.value } })}
-                    className="min-h-[38px] w-full rounded-md border border-neutral-200 px-2.5 text-sm focus:border-primary-400 focus:outline-none"
-                  />
-                </div>
-                <p className={`mt-1.5 text-[11px] ${
-                  c.action.title.trim() && c.action.dueDate && c.action.ownerId
-                    ? 'text-neutral-500'
-                    : 'text-warning-700'}`}>
-                  {c.action.title.trim() && c.action.dueDate && c.action.ownerId
-                    ? 'Raised when you save the investigation.'
-                    : 'Needs what it is, who owns it and when it is due — an '
-                      + 'action nobody owns appears in nobody\'s list. Leave the '
-                      + 'whole box empty and nothing is raised.'}
-                </p>
-              </div>
-            ) : (
-              <button type="button"
-                      onClick={() => updateCause(i, {
-                        action: { title: '', description: '', ownerId: null,
-                                  ownerName: '', dueDate: '' } })}
-                      className="mt-2 flex min-h-[36px] items-center gap-1.5 text-xs font-medium text-primary-700">
-                <Plus className="h-3.5 w-3.5" aria-hidden />
-                Raise a corrective action for this
-              </button>
-            )
-          )}
-        </div>
-      ))}
-      <button type="button" onClick={() => addCause(type)}
-              className="flex min-h-[38px] items-center gap-1.5 text-sm font-medium text-primary-700">
-        <Plus className="h-4 w-4" aria-hidden />
-        Add {type === 'immediate' ? 'an immediate cause' : 'a root cause'}
-      </button>
-    </>
+    <CausesEditor type={type} vocabulary={vocabulary} help={help}
+                  causes={causes} onChange={setCauses}
+                  savedWith="the investigation" />
   )
 
   const rootCount = causes.filter((c) => c.cause_type === 'root' && c.label.trim()).length
