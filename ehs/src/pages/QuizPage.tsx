@@ -13,11 +13,11 @@
  * result explains every wrong answer rather than just scoring it. A quiz that
  * only tells you that you failed is a filter, not training.
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Check, ClipboardList, Plus, QrCode, Trash2, X } from 'lucide-react'
-import { api } from '@/lib/api'
+import { Check, ClipboardList, Plus, QrCode, Trash2, UserCheck, X } from 'lucide-react'
+import { api, ApiError } from '@/lib/api'
 import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import { formatDate } from '@/lib/formatDate'
 import QrPanel from '@/components/QrPanel'
@@ -223,8 +223,28 @@ export function TakeQuizPage() {
     queryFn: () => api.get<LearnerQuestion[]>(`/api/v1/quizzes/${id}/questions`),
   })
 
+  // ★ Round 5, box 4: scanning the code in the room puts you on that
+  // session's roster. Done as the page opens rather than on passing, because
+  // what HSE is short of is attendance — failing the quiz does not mean you
+  // were not there. It never stands between anybody and the quiz: a failed or
+  // empty join leaves the quiz exactly as it was.
+  const [joined, setJoined] = useState<JoinOut | null>(null)
+  const join = useMutation({
+    mutationFn: (deliveryId?: string) => api.post<JoinOut>(
+      `/api/v1/quizzes/${id}/join`, { delivery_id: deliveryId ?? null }),
+    onSuccess: setJoined,
+  })
+  const asked = useRef(false)
+  useEffect(() => {
+    if (asked.current || !id) return
+    asked.current = true
+    join.mutate(undefined)
+  }, [id, join])
+
   const submit = useMutation({
-    mutationFn: () => api.post<Attempt>(`/api/v1/quizzes/${id}/attempts`, { answers }),
+    mutationFn: () => api.post<Attempt>(`/api/v1/quizzes/${id}/attempts`, {
+      answers, delivery_id: joined?.joined?.id ?? null,
+    }),
     onSuccess: setResult,
   })
 
@@ -234,6 +254,10 @@ export function TakeQuizPage() {
   // be submitted and recorded as training — but it sends somebody to ask HSE
   // why a quiz they were told to take is empty.
   if (questions.isError) {
+    // A retired quiz is refused with its own message, which says what to do.
+    if (questions.error instanceof ApiError && questions.error.status === 409) {
+      return <div className="p-4"><Empty>{questions.error.message}</Empty></div>
+    }
     return <div className="p-4"><LoadFailedNote what="This quiz" /></div>
   }
   const rows = questions.data ?? []
@@ -241,7 +265,14 @@ export function TakeQuizPage() {
     return <div className="p-4"><Empty>This quiz has no questions yet.</Empty></div>
   }
 
-  if (result) return <ResultView attempt={result} quizId={id} />
+  if (result) {
+    return (
+      <>
+        <div className="mx-auto max-w-xl px-4 pt-4"><RosterNote join={join} got={joined} /></div>
+        <ResultView attempt={result} quizId={id} />
+      </>
+    )
+  }
 
   const q = rows[index]
   const chosen = answers[q.id] ?? []
@@ -265,6 +296,8 @@ export function TakeQuizPage() {
       <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
         {quiz.data?.title}
       </p>
+      <RosterNote join={join} got={joined}
+                  onPick={(deliveryId) => { if (!join.isPending) join.mutate(deliveryId) }} />
       <div className="mt-2 mb-4 flex items-center gap-2">
         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-200">
           <div className="h-full rounded-full bg-primary-500 transition-all"
@@ -340,6 +373,67 @@ export function TakeQuizPage() {
       )}
     </div>
   )
+}
+
+interface SessionChoice {
+  id: string; delivery_no: string; title: string; session_date: string
+  start_time: string | null; end_time: string | null; location_text: string | null
+}
+interface JoinOut {
+  joined: SessionChoice | null; added: boolean; choices: SessionChoice[]; note: string | null
+}
+
+function sessionLine(d: SessionChoice): string {
+  const hhmm = (t: string | null) => (t ? t.slice(0, 5) : null)
+  const times = [hhmm(d.start_time), hhmm(d.end_time)].filter(Boolean).join('–')
+  return [d.title, times || null, d.location_text].filter(Boolean).join(' · ')
+}
+
+/** Whether scanning the code put this person on the session's roster. */
+function RosterNote({ join, got, onPick }: {
+  join: { isPending: boolean; isError: boolean }
+  got: JoinOut | null
+  onPick?: (deliveryId: string) => void
+}) {
+  if (join.isError) {
+    return (
+      <p className="mb-3 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">
+        You could not be added to the session roster. Take the quiz anyway, and tell the
+        person running the course so they can add you.
+      </p>
+    )
+  }
+  if (!got) return null
+  if (got.joined) {
+    return (
+      <p className="mb-3 flex items-start gap-2 rounded-lg bg-success-50 px-3 py-2 text-xs text-success-800">
+        <UserCheck className="mt-px h-4 w-4 shrink-0" aria-hidden />
+        <span>
+          {got.added ? 'You have been added to the roster for ' : 'You are on the roster for '}
+          <span className="font-medium">{sessionLine(got.joined)}</span>.
+        </span>
+      </p>
+    )
+  }
+  if (got.choices.length > 0 && onPick) {
+    return (
+      <div className="mb-4 rounded-xl border border-neutral-200 bg-white p-3">
+        <p className="mb-2 text-sm font-medium text-neutral-800">Which session are you in?</p>
+        <p className="mb-2 text-xs text-neutral-500">{got.note}</p>
+        <ul className="flex flex-col gap-1.5">
+          {got.choices.map((d) => (
+            <li key={d.id}>
+              <button type="button" disabled={join.isPending} onClick={() => onPick(d.id)}
+                      className="min-h-[44px] w-full rounded-lg border border-neutral-300 px-3 text-left text-sm text-neutral-800 hover:border-primary-500 disabled:opacity-50">
+                {sessionLine(d)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+  return got.note ? <p className="mb-3 text-xs text-neutral-500">{got.note}</p> : null
 }
 
 /**

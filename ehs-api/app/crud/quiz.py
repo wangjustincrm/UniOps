@@ -20,9 +20,14 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy.exc import IntegrityError
+
+from app.crud import course as course_crud
+from app.models.course import CourseDelivery, CourseEnrolment
 from app.models.mirrors import User
 from app.models.quiz import Quiz, QuizAttempt, QuizQuestion
 from app.models.training import Course, TrainingRecord
+from app.services import statutory
 
 QUESTION_KINDS = ("single", "multi", "true_false")
 
@@ -55,6 +60,22 @@ async def get_quiz(db: AsyncSession, quiz_id: uuid.UUID) -> Quiz:
     if quiz is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Quiz not found")
     return quiz
+
+
+def require_active(quiz: Quiz) -> None:
+    """Refuse a retired quiz to the person taking it.
+
+    ★ Retiring is how HSE replaces an out-of-date quiz, and the old code does not
+    retire with it: it is on the wall, in a photo, in somebody's history. Without
+    this a scan of it would still join today's session, serve the old questions
+    and, on a pass, certify against them. The list hides retired quizzes; that
+    is not the same as refusing them.
+    """
+    if not quiz.is_active:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This quiz has been retired — ask the person running the session "
+            "for the current code.")
 
 
 async def by_qr_token(db: AsyncSession, token: str) -> Quiz | None:
@@ -177,10 +198,20 @@ async def score(
     credit sounds kinder and is wrong here: "name the three things you must do
     before entering a confined space" is not two-thirds satisfied by naming two.
     """
+    require_active(quiz)
     questions = await questions_for(db, quiz.id)
     if not questions:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "This quiz has no questions yet")
+
+    # ★ Only a session this person is actually on the roster of. The id comes
+    # from the browser; taken on trust it would let anyone attach their attempt
+    # to any session and, with a pass, be marked as having attended it.
+    enrolment = None
+    if delivery_id is not None:
+        enrolment = await _enrolment_for(db, quiz, user_id, delivery_id)
+        if enrolment is None:
+            delivery_id = None
 
     mine = await attempts_for(db, quiz.id, user_id=user_id)
     if quiz.max_attempts is not None and len(mine) >= quiz.max_attempts:
@@ -223,13 +254,197 @@ async def score(
     db.add(attempt)
     await db.flush()
 
-    if passed:
+    if enrolment is not None:
+        await _onto_roster(db, attempt, enrolment)
+    elif passed:
         record = await _issue_record(db, quiz, attempt)
         if record is not None:
             attempt.training_record_id = record.id
             await db.flush()
 
     return attempt, breakdown
+
+
+# Who the roster says marked a result the quiz decided. A person marking by hand
+# always sets `marked_by`; this name with no `marked_by` is how a row the quiz
+# wrote is told apart from one somebody decided.
+QUIZ_MARKER = "Online quiz"
+
+
+def _quiz_may_mark(enrolment: CourseEnrolment) -> bool:
+    """Whether the quiz may set this person's result.
+
+    ★ Never over a decision a person made. Round 4 gave the person running the
+    session the say on pass and fail; the quiz fills in what nobody has decided
+    yet — still enrolled, marked absent by closing the session, or a result the
+    quiz itself wrote on an earlier attempt.
+    """
+    return enrolment.marked_by is None and enrolment.marked_by_name in (None, QUIZ_MARKER)
+
+
+async def _enrolment_for(
+    db: AsyncSession, quiz: Quiz, user_id: uuid.UUID, delivery_id: uuid.UUID,
+) -> CourseEnrolment | None:
+    if quiz.course_id is None:
+        return None
+    return (await db.execute(
+        select(CourseEnrolment)
+        .join(CourseDelivery, CourseDelivery.id == CourseEnrolment.delivery_id)
+        .where(CourseEnrolment.delivery_id == delivery_id,
+               CourseEnrolment.user_id == user_id,
+               CourseDelivery.course_id == quiz.course_id,
+               CourseDelivery.status != "cancelled"))).scalar_one_or_none()
+
+
+async def _onto_roster(
+    db: AsyncSession, attempt: QuizAttempt, enrolment: CourseEnrolment,
+) -> None:
+    """An attempt taken at a session, written back to that session's roster.
+
+    Without this a person who scanned in and passed sits on the roster as
+    `enrolled`, and closing the session turns them into `absent`.
+
+    ★ One training record per person per session, whichever comes first. If the
+    person running it already marked them passed, the attempt points at that
+    record rather than issuing a second; if the quiz issues it, the enrolment
+    keeps it, so marking them passed by hand afterwards does not issue another.
+    """
+    if attempt.passed:
+        # A record is issued only where the quiz has the say. Somebody the
+        # person running it marked failed is not certified by passing anyway.
+        if enrolment.training_record_id is None and _quiz_may_mark(enrolment):
+            delivery = await db.get(CourseDelivery, enrolment.delivery_id)
+            record = await course_crud._issue_record(
+                db, delivery, enrolment,
+                recorded_by=attempt.user_id, recorded_by_name=attempt.user_name)
+            enrolment.training_record_id = record.id
+        attempt.training_record_id = enrolment.training_record_id
+
+    # ★ Only upward. A later pass lifts an earlier quiz fail; once passed, a
+    # retake that fails changes nothing — the result stays and so does the
+    # record, which is somebody's statutory evidence.
+    if _quiz_may_mark(enrolment) and enrolment.result != "passed":
+        enrolment.result = "passed" if attempt.passed else "failed"
+        enrolment.marked_by_name = QUIZ_MARKER
+        enrolment.marked_at = attempt.submitted_at
+    await db.flush()
+
+
+# ★ How far either side of a session's times a scan still joins it. HSE's
+# premise is that the code is only shown in the room, but it is a fixed URL: a
+# photo of it in a group chat, or a browser's history, would otherwise put
+# somebody who was not there on a statutory attendance record for the whole day.
+JOIN_OPENS_BEFORE = timedelta(minutes=30)
+JOIN_CLOSES_AFTER = timedelta(hours=2)
+
+
+def _join_window(d: CourseDelivery) -> tuple[datetime, datetime] | None:
+    """When a scan joins this session, or None for "any time that day".
+
+    A session with no start time is judged by its date alone; one with a start
+    and no end stays open until the day is over.
+    """
+    if d.start_time is None:
+        return None
+    start = datetime.combine(d.session_date, d.start_time, tzinfo=statutory.ONTARIO)
+    if d.end_time is not None:
+        end = datetime.combine(d.session_date, d.end_time, tzinfo=statutory.ONTARIO)
+        closes = end + JOIN_CLOSES_AFTER
+    else:
+        closes = datetime.combine(d.session_date + timedelta(days=1), datetime.min.time(),
+                                  tzinfo=statutory.ONTARIO)
+    return start - JOIN_OPENS_BEFORE, closes
+
+
+async def sessions_today(
+    db: AsyncSession, quiz: Quiz, *, now: datetime | None = None,
+) -> list[CourseDelivery]:
+    """This course's sessions under way now, Ontario time, roster still open."""
+    if quiz.course_id is None:
+        return []
+    now = (now or datetime.now(timezone.utc)).astimezone(statutory.ONTARIO)
+    rows = list((await db.execute(
+        select(CourseDelivery)
+        .where(CourseDelivery.course_id == quiz.course_id,
+               CourseDelivery.session_date == now.date(),
+               CourseDelivery.status == "scheduled")
+        .order_by(CourseDelivery.start_time.nulls_last(), CourseDelivery.delivery_no)
+    )).scalars())
+    out = []
+    for d in rows:
+        window = _join_window(d)
+        if window is None or window[0] <= now < window[1]:
+            out.append(d)
+    return out
+
+
+class JoinResult:
+    def __init__(self, *, joined: CourseDelivery | None = None, added: bool = False,
+                 choices: list[CourseDelivery] | None = None, note: str | None = None):
+        self.joined, self.added = joined, added
+        self.choices, self.note = choices or [], note
+
+
+async def join(
+    db: AsyncSession, quiz: Quiz, user_id: uuid.UUID, *,
+    delivery_id: uuid.UUID | None = None, now: datetime | None = None,
+) -> JoinResult:
+    """Scanning the quiz code puts you on the roster of the session it was shown at.
+
+    Round 5, answer box 4: "scanning the quiz code should allow for staff to be
+    added to the roster as the only way a code is displayed is at the end of the
+    course." So the session is the one of this course running today. One such
+    session is the usual case and needs no question; two on one day (a morning
+    and an afternoon sitting) needs the person to say which; none means there is
+    nothing to join, and the quiz still counts on its own.
+
+    Joining is at scan time rather than on passing, because what HSE is short
+    of is attendance — somebody who sat the session and failed the quiz was
+    still there.
+    """
+    require_active(quiz)
+    if quiz.course_id is None:
+        return JoinResult(note="This quiz is not part of a course, so there is no "
+                               "session roster to join.")
+    candidates = await sessions_today(db, quiz, now=now)
+    if not candidates:
+        return JoinResult(note="No session of this course is under way right now, so you "
+                               "have not been added to a roster. Your result still counts; "
+                               "ask the person running the course if you attended one.")
+
+    if delivery_id is not None:
+        chosen = next((d for d in candidates if d.id == delivery_id), None)
+        if chosen is None:
+            return JoinResult(choices=candidates,
+                              note="That session is not under way right now. "
+                                   "Pick the one you are in.")
+    else:
+        on = {e.delivery_id for e in (await db.execute(
+            select(CourseEnrolment).where(
+                CourseEnrolment.user_id == user_id,
+                CourseEnrolment.delivery_id.in_([d.id for d in candidates])))).scalars()}
+        mine = [d for d in candidates if d.id in on]
+        if len(mine) == 1:
+            return JoinResult(joined=mine[0])
+        if len(candidates) > 1:
+            return JoinResult(choices=candidates,
+                              note="This course has more than one session today. "
+                                   "Pick the one you are in.")
+        chosen = candidates[0]
+
+    already = (await db.execute(select(CourseEnrolment.id).where(
+        CourseEnrolment.delivery_id == chosen.id,
+        CourseEnrolment.user_id == user_id))).scalar()
+    if already is not None:
+        return JoinResult(joined=chosen)
+    # ★ Savepoint: a phone that sends the scan twice must not fail the second on
+    # the unique constraint and take the whole request down with it.
+    try:
+        async with db.begin_nested():
+            await course_crud.enrol(db, chosen, [user_id], via="quiz")
+    except IntegrityError:
+        return JoinResult(joined=chosen)
+    return JoinResult(joined=chosen, added=True)
 
 
 async def _issue_record(

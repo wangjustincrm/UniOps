@@ -84,6 +84,8 @@ class EnrolmentOut(BaseModel):
     department_name: str | None
     result: str
     marked_by_name: str | None
+    # roster | quiz — quiz means they scanned the code in the room.
+    joined_via: str = "roster"
     marked_at: datetime | None
     training_record_id: uuid.UUID | None
 

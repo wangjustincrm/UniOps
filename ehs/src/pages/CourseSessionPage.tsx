@@ -15,7 +15,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
-import { Check, Plus, Trash2 } from 'lucide-react'
+import { Check, Plus, QrCode, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -36,6 +36,8 @@ interface Session {
 interface Enrolment {
   id: string; user_id: string | null; user_name: string; department_name: string | null
   result: string; marked_by_name: string | null; marked_at: string | null
+  // roster | quiz — quiz means they scanned the quiz code in the room.
+  joined_via: string
   training_record_id: string | null
 }
 
@@ -246,6 +248,16 @@ function RosterPanel({
                       </span>
                       {e.department_name && (
                         <span className="block text-xs text-neutral-500">{e.department_name}</span>
+                      )}
+                      {/* ★ Round 5, box 4. The code is a fixed URL; whoever runs the
+                          session sees who let themselves in, and can remove anybody
+                          who was not in the room before closing it. */}
+                      {e.joined_via === 'quiz' && (
+                        <span className="mt-0.5 mr-2 inline-flex items-center gap-1 rounded bg-info-50 px-1.5 py-0.5 text-xs text-info-700">
+                          <QrCode className="h-3 w-3" aria-hidden />
+                          Scanned in
+                          {e.marked_by_name === 'Online quiz' && e.result !== 'enrolled' && ' · marked by the quiz'}
+                        </span>
                       )}
                       {e.training_record_id && (
                         <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-success-700">

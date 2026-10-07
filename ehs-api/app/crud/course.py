@@ -163,7 +163,8 @@ async def roster(db: AsyncSession, delivery_id: uuid.UUID) -> list[CourseEnrolme
 
 
 async def enrol(
-    db: AsyncSession, delivery: CourseDelivery, user_ids: list[uuid.UUID]
+    db: AsyncSession, delivery: CourseDelivery, user_ids: list[uuid.UUID],
+    *, via: str = "roster",
 ) -> list[CourseEnrolment]:
     """Add people to the roster. Adding somebody twice is a no-op, not an error.
 
@@ -188,7 +189,7 @@ async def enrol(
             select(Department.name).where(Department.id == user.department_id))).scalar()
         enrolment = CourseEnrolment(
             id=uuid.uuid4(), delivery_id=delivery.id, user_id=user.id,
-            user_name=user.full_name, department_name=dept,
+            user_name=user.full_name, department_name=dept, joined_via=via,
         )
         db.add(enrolment)
         added.append(enrolment)

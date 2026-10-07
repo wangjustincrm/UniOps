@@ -95,6 +95,12 @@ class CourseEnrolment(UUIDPrimaryKey, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     user_name: Mapped[str] = mapped_column(String(255), nullable=False)
     department_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # roster | quiz. How they got on the list: added by whoever built it, or by
+    # scanning the quiz code in the room. Kept apart from the marking columns,
+    # which a hand mark overwrites — the person running the session needs to see
+    # who let themselves in before closing it, whatever their result.
+    joined_via: Mapped[str] = mapped_column(String(10), nullable=False,
+                                            default="roster", server_default="roster")
 
     # enrolled | passed | failed | absent
     result: Mapped[str] = mapped_column(String(10), nullable=False,

@@ -16,7 +16,7 @@ somebody scans a code at the end of a session and answers on their own phone.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from fastapi import APIRouter, status
@@ -93,6 +93,33 @@ class AttemptIn(BaseModel):
     # {question_id: [option keys]}
     answers: dict[str, list[str]] = Field(default_factory=dict)
     delivery_id: uuid.UUID | None = None
+
+
+class SessionChoice(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    delivery_no: str
+    title: str
+    session_date: date
+    start_time: time | None
+    end_time: time | None
+    location_text: str | None
+
+
+class JoinIn(BaseModel):
+    # Only when the person picked one of several sessions running at once.
+    delivery_id: uuid.UUID | None = None
+
+
+class JoinOut(BaseModel):
+    # The session whose roster they are on, when there is one.
+    joined: SessionChoice | None
+    # True only the first time — the page says "you have been added" once.
+    added: bool
+    # More than one session under way: the person says which.
+    choices: list[SessionChoice]
+    note: str | None
 
 
 class MarkedQuestion(BaseModel):
@@ -172,8 +199,9 @@ async def get_quiz(quiz_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
 
 @router.get("/quizzes/{quiz_id}/questions", response_model=list[QuestionForLearner])
 async def get_questions(quiz_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
-    """What a learner sees. Deliberately without the answers."""
-    await crud.get_quiz(db, quiz_id)
+    """What a learner sees. Deliberately without the answers. Refused once the
+    quiz is retired, so the page says so before anybody answers it."""
+    crud.require_active(await crud.get_quiz(db, quiz_id))
     return await crud.questions_for(db, quiz_id)
 
 
@@ -192,6 +220,25 @@ async def put_questions(
     quiz = await crud.get_quiz(db, quiz_id)
     return await crud.replace_questions(
         db, quiz, [q.model_dump() for q in payload.questions])
+
+
+@router.post("/quizzes/{quiz_id}/join", response_model=JoinOut)
+async def join_session(
+    quiz_id: uuid.UUID, payload: JoinIn, db: SessionDep, user: CanReportIncident,
+):
+    """Scanning the code puts you on the roster of the session it was shown at.
+
+    Round 5, answer box 4. Called by the quiz page as it opens, so attendance is
+    recorded whether or not the quiz is then passed.
+    """
+    quiz = await crud.get_quiz(db, quiz_id)
+    got = await crud.join(db, quiz, _user_id(user), delivery_id=payload.delivery_id)
+    return JoinOut(
+        joined=SessionChoice.model_validate(got.joined) if got.joined else None,
+        added=got.added,
+        choices=[SessionChoice.model_validate(d) for d in got.choices],
+        note=got.note,
+    )
 
 
 @router.post("/quizzes/{quiz_id}/attempts", response_model=AttemptOut,

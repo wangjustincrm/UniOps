@@ -54,8 +54,11 @@ export default function QrLandingPage() {
   })
 
   // An area code has one obvious purpose. Sending someone through a menu to
-  // reach it defeats the point of putting a sticker on the wall.
-  const auto = target.data?.kind === 'location'
+  // reach it defeats the point of putting a sticker on the wall. So does a quiz
+  // code — round 5, box 4: "scan the code and get the test" — and a button
+  // reading "Open the record" in front of it was one more thing to work out
+  // standing up at the end of a session.
+  const auto = target.data?.kind === 'location' || target.data?.kind === 'quiz'
   useEffect(() => {
     if (auto && target.data) navigate(target.data.path, { replace: true })
   }, [auto, target.data, navigate])
