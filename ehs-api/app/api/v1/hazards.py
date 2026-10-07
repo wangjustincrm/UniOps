@@ -73,6 +73,8 @@ class HazardOut(BaseModel):
     title: str
     description: str | None
     findings: str | None = None
+    created_by: uuid.UUID | None = None
+    created_by_name: str | None = None
     # Both halves: the label is the snapshot that keeps an old record readable
     # after the vocabulary is renamed, the id is what puts the picker back on
     # the right entry when the record is reopened for correction. Returning

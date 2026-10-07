@@ -87,6 +87,16 @@ class Hazard(UUIDPrimaryKey, TimestampMixin, Base):
     source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
+    # ★ Who recorded it, which is not who owns it. Round 5 counts a hazard
+    # recorded this month as a supervisor's monthly hazard assessment, and the
+    # owner can be somebody else entirely — on the dev database two hazards were
+    # recorded by HSE and handed to a supervisor to own. Crediting the owner
+    # would give that supervisor an assessment they never made.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True, index=True)
+    created_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
 
 class Jsa(UUIDPrimaryKey, TimestampMixin, Base):
     """A job safety analysis: one job, its steps, and who has signed it."""

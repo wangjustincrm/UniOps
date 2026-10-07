@@ -120,6 +120,10 @@ async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUI
         review_due_on=payload.get("review_due_on"),
         source_type=payload.get("source_type"),
         source_id=payload.get("source_id"),
+        # Who recorded it, kept apart from the owner it defaults. Round 5's
+        # monthly count is about who made the assessment.
+        created_by=creator_id,
+        created_by_name=await _name(db, creator_id),
     )
     db.add(hazard)
     await db.flush()
