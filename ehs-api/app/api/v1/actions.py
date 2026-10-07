@@ -11,6 +11,7 @@ from sqlalchemy import and_, false, not_, or_, select
 from app.core.deps import SessionDep
 from uniops_authz import has_permission
 
+from app.services import monthly as monthly_service
 from app.core.permissions import (
     CanReadAction, CanReportIncident, CanWriteAction,
 )
@@ -90,6 +91,40 @@ async def list_actions(
         limit=limit, offset=offset,
     )
     return [ActionOut.model_validate(r) for r in rows]
+
+
+class MonthItemOut(BaseModel):
+    key: str
+    label: str
+    done: bool
+    detail: str
+    path: str
+    count: int = 0
+
+
+class MonthOut(BaseModel):
+    month: str
+    label: str
+    is_current: bool
+    items: list[MonthItemOut]
+
+
+@router.get("/my-month", response_model=list[MonthOut])
+async def my_month(db: SessionDep, user: CanReportIncident):
+    """What a supervisor owes this month and next: a toolbox talk, a hazard
+    assessment and a near miss.
+
+    Round 5, answer box 11 and round 4, TC-08. Derived from the records rather
+    than raised as tasks — an unmet month is "simply missed", so there is nothing
+    to chase or close. Empty for anybody who does not run a crew.
+
+    ★ Only ever the caller's own. See `services/monthly.py` on anonymous near
+    misses before building anything that shows this for somebody else.
+    """
+    months = await monthly_service.for_user(db, _user_id(user), user.get("role", ""))
+    return [MonthOut(month=m.month, label=m.label, is_current=m.is_current,
+                     items=[MonthItemOut(**i.__dict__) for i in m.items])
+            for m in months]
 
 
 @router.get("/mine", response_model=list[ActionOut])

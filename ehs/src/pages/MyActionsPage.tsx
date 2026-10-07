@@ -135,6 +135,14 @@ export default function MyActionsPage() {
     queryKey: ['actions', 'mine', 'to-verify'],
     queryFn: () => api.get<ActionListItem[]>('/api/v1/actions/mine/to-verify'),
   })
+  // ★ What a supervisor owes this month and next. Round 5, answer box 11, and
+  // round 4's TC-08: "on the my action reference page provide them a way to see
+  // what is due this month and due next month." Empty for anybody who runs no
+  // crew, so the panel simply is not drawn for them.
+  const month = useQuery({
+    queryKey: ['actions', 'mine', 'month'],
+    queryFn: () => api.get<MonthOut[]>('/api/v1/actions/my-month'),
+  })
 
   if (isLoading) {
     return <p className="p-4 text-sm text-neutral-500">Loading your actions…</p>
@@ -168,13 +176,20 @@ export default function MyActionsPage() {
         </div>
       )
     }
+    // ★ The monthly three are drawn here too. A supervisor with an empty inbox
+    // still owes a toolbox talk, a hazard assessment and a near miss this month,
+    // and returning "Nothing is assigned to you" before the panel would have hidden
+    // exactly the page this was built to show.
     return (
+      <div className="flex flex-col gap-2 p-4">
+        <MonthPanel query={month} />
       <div className="flex flex-col items-center gap-2 p-10 text-center">
         <CheckCircle2 className="h-8 w-8 text-success-500" aria-hidden />
         <p className="text-sm font-medium text-neutral-700">Nothing is assigned to you.</p>
         <p className="text-sm text-neutral-500">
           Corrective actions raised from incidents and inspections appear here.
         </p>
+      </div>
       </div>
     )
   }
@@ -205,6 +220,7 @@ export default function MyActionsPage() {
   return (
     <div className="flex flex-col gap-2 p-4">
       {partial && <LoadFailedNote what="Some of your work" />}
+      <MonthPanel query={month} />
       <section className="mb-1 rounded-xl border border-neutral-200 bg-white p-4">
         <p className="flex items-baseline gap-2.5">
           <span className="text-3xl font-bold tabular-nums leading-none text-neutral-900">
@@ -311,5 +327,75 @@ export default function MyActionsPage() {
         ))}
       </Group>
     </div>
+  )
+}
+
+interface MonthItem {
+  key: string; label: string; done: boolean; detail: string; path: string; count: number
+}
+interface MonthOut { month: string; label: string; is_current: boolean; items: MonthItem[] }
+
+/**
+ * This month and next, for a supervisor: a toolbox talk, a hazard assessment and
+ * a near miss.
+ *
+ * ★ HSE: "one of each per supervisor per calendar month, reset on the 1st. an
+ * unmet item in a month is simply missed." So there is no overdue here and no red
+ * — a month that is over is not shown at all. This month says what is done and
+ * what is not; next month says what is coming, including a talk HSE has already
+ * published for it, which is round 4's "scheduled TBT's should show up in the
+ * coming up dashboard".
+ */
+function MonthPanel({ query }: {
+  query: { data?: MonthOut[]; isError: boolean; isLoading: boolean }
+}) {
+  // A failed read must not read as "you owe nothing this month".
+  if (query.isError) {
+    return <LoadFailedNote what="Your toolbox talk, hazard assessment and near miss for this month" />
+  }
+  const months = query.data ?? []
+  if (months.length === 0) return null
+
+  return (
+    <section className="mb-1 grid gap-2 sm:grid-cols-2">
+      {months.map((m) => {
+        const done = m.items.filter((i) => i.done).length
+        return (
+          <div key={m.month} className="rounded-xl border border-neutral-200 bg-white p-3.5">
+            <p className="mb-2 flex items-baseline justify-between gap-2">
+              <span className="text-sm font-semibold text-neutral-900">
+                {m.is_current ? 'This month' : 'Next month'}
+                <span className="ml-1.5 font-normal text-neutral-500">{m.label}</span>
+              </span>
+              {m.is_current && (
+                <span className="text-xs tabular-nums text-neutral-500">
+                  {done} of {m.items.length} done
+                </span>
+              )}
+            </p>
+            <ul className="flex flex-col gap-1.5">
+              {m.items.map((it) => (
+                <li key={it.key}>
+                  <Link to={it.path}
+                        className="flex items-start gap-2 rounded-lg px-1.5 py-1 hover:bg-neutral-50">
+                    {it.done
+                      ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success-600" aria-hidden />
+                      : <span className="mt-1 h-3.5 w-3.5 shrink-0 rounded-full border-2 border-neutral-300"
+                              aria-hidden />}
+                    <span className="min-w-0">
+                      <span className="block text-sm text-neutral-800">
+                        {it.label}
+                        <span className="sr-only">{it.done ? ' — done' : ' — not yet'}</span>
+                      </span>
+                      <span className="block text-xs text-neutral-500">{it.detail}</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })}
+    </section>
   )
 }
