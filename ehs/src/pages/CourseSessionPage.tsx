@@ -118,7 +118,7 @@ export default function CourseSessionPage() {
           <Detail label="Instructor">{s.instructor_name ?? 'Not recorded yet'}</Detail>
         </dl>
         {s.notes && <p className="mt-2 text-sm text-neutral-700">{s.notes}</p>}
-        {mayRun && open && <InstructorField session={s} onSaved={invalidate} />}
+        {mayRun && open && <ArrangementsEditor key={s.id} session={s} onSaved={invalidate} />}
       </Card>
 
       {/* ★ A failed roster read is not an empty roster: "Nobody on the roster"
@@ -145,27 +145,98 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
   )
 }
 
-function InstructorField({ session, onSaved }: { session: Session; onSaved: () => void }) {
-  const [value, setValue] = useState(session.instructor_name ?? '')
+/**
+ * The session's arrangements, for whoever runs it.
+ *
+ * ★ Round 5, TC-07, answered A: the person running a session changes "the
+ * instructor, the notes, the date and the place". The server has allowed all
+ * four since then; this screen offered the instructor alone, so three of the
+ * four were reachable only by calling the API — the same one-sided shape the
+ * fix was for, the other way round. Found writing the round-6 script.
+ *
+ * Who runs it is not here: that is HSE's nomination and the server refuses it
+ * to anybody else.
+ */
+function ArrangementsEditor({ session, onSaved }: { session: Session; onSaved: () => void }) {
+  const initial = {
+    session_date: session.session_date,
+    start_time: session.start_time?.slice(0, 5) ?? '',
+    end_time: session.end_time?.slice(0, 5) ?? '',
+    location_text: session.location_text ?? '',
+    instructor_name: session.instructor_name ?? '',
+    notes: session.notes ?? '',
+  }
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState(initial)
+  const set = (k: keyof typeof initial, v: string) => setForm((f) => ({ ...f, [k]: v }))
+
+  // Only what changed, and an emptied box as null — which this endpoint reads
+  // as "clear it", not "leave it".
+  const changed = (Object.keys(initial) as (keyof typeof initial)[])
+    .filter((k) => form[k] !== initial[k])
   const save = useMutation({
     mutationFn: () => api.patch(`/api/v1/course-sessions/${session.id}`,
-                                { instructor_name: value || null }),
-    onSuccess: onSaved,
+      Object.fromEntries(changed.map((k) => [k, form[k] === '' ? null : form[k]]))),
+    onSuccess: () => { setEditing(false); onSaved() },
   })
+
+  if (!editing) {
+    return (
+      <div className="mt-3 border-t border-neutral-100 pt-3">
+        <button type="button" className={secondaryButton}
+                onClick={() => { setForm(initial); setEditing(true) }}>
+          Change the arrangements
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <div className="mt-3 border-t border-neutral-100 pt-3">
+    <div className="mt-3 grid gap-3 border-t border-neutral-100 pt-3 sm:grid-cols-2">
+      <Field label="Date">
+        <input type="date" className={inputClass} value={form.session_date}
+               onChange={(e) => set('session_date', e.target.value)} />
+      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Starts">
+          <input type="time" className={inputClass} value={form.start_time}
+                 onChange={(e) => set('start_time', e.target.value)} />
+        </Field>
+        <Field label="Ends">
+          <input type="time" className={inputClass} value={form.end_time}
+                 onChange={(e) => set('end_time', e.target.value)} />
+        </Field>
+      </div>
+      <Field label="Where">
+        <input className={inputClass} value={form.location_text}
+               onChange={(e) => set('location_text', e.target.value)}
+               placeholder="Training room, or the line itself" />
+      </Field>
       <Field label="Instructor" hint="Often an outside trainer with no UniOps account">
-        <div className="flex gap-2">
-          <input className={inputClass} value={value} onChange={(e) => setValue(e.target.value)}
-                 placeholder="Name of whoever taught it" />
-          <button type="button" className={secondaryButton}
-                  disabled={save.isPending || value === (session.instructor_name ?? '')}
+        <input className={inputClass} value={form.instructor_name}
+               onChange={(e) => set('instructor_name', e.target.value)}
+               placeholder="Name of whoever taught it" />
+      </Field>
+      <div className="sm:col-span-2">
+        <Field label="Notes">
+          <textarea className={inputClass} rows={3} value={form.notes}
+                    onChange={(e) => set('notes', e.target.value)} />
+        </Field>
+      </div>
+      <div className="sm:col-span-2">
+        <ErrorNote error={save.error} />
+        <div className="flex justify-end gap-2">
+          <button type="button" className={secondaryButton} disabled={save.isPending}
+                  onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+          <button type="button" className={primaryButton}
+                  disabled={save.isPending || changed.length === 0 || !form.session_date}
                   onClick={() => { if (!save.isPending) save.mutate() }}>
-            Save
+            {save.isPending ? 'Saving…' : 'Save the arrangements'}
           </button>
         </div>
-      </Field>
-      <ErrorNote error={save.error} />
+      </div>
     </div>
   )
 }
