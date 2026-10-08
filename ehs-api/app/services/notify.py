@@ -185,6 +185,60 @@ async def incident_reported(db: AsyncSession, incident) -> None:
     )
 
 
+# The status changes HSE can name people for. Round 5, TC-15. "Reported" is not
+# here: it already has its own lists, per kind of incident, above.
+STATUS_EVENTS: dict[str, str] = {
+    "under_investigation": "Investigation started",
+    "hse_reviewed": "Reviewed by HSE",
+    "closed": "Closed",
+    "reopened": "Reopened",
+}
+
+
+async def incident_status_changed(
+    db: AsyncSession, incident, event: str, *, by_name: str | None,
+) -> None:
+    """Tell the people HSE named for this change that it happened.
+
+    Round 5, TC-15: "provide a way to manage the recipients list on incidents
+    when every status changes on an incident form."
+
+    ★ An empty list sends nothing, unlike a new report. A report must never go
+    to nobody, so it falls back to HSE; these changes never sent anything
+    before the lists existed, and HSE is usually who made the change.
+
+    Email and no task: nobody on the list is being asked to do anything.
+    """
+    label = STATUS_EVENTS[event]
+    cfg = await _config(db)
+    ids = ((cfg.incident_status_notify if cfg else None) or {}).get(event) or []
+    if not ids:
+        return
+    people = await mail.recipients(db, [uuid.UUID(str(i)) for i in ids])
+    if not people:
+        return
+
+    lines = [f"{incident.incident_no} — {label.lower()}"
+             + (f" by {by_name}." if by_name else "."), ""]
+    if incident.title:
+        lines.append(incident.title)
+    if incident.location_path:
+        lines.append(f"Where: {incident.location_path}")
+    lines += ["", "You are on the list for this change under Settings → Who is told."]
+
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"Safety incident {incident.incident_no}: {label.lower()}",
+        body="\n".join(lines),
+        doc_type=task_service.DOC_INCIDENT,
+        doc_id=incident.id,
+        template_key=f"incident_{event}",
+        link=mail.module_link(f"/incidents/{incident.id}"),
+        link_label="Open the incident",
+    )
+
+
 async def statutory_escalated(db: AsyncSession, deadline, *, overdue: bool) -> None:
     """A legal clock is close, or has passed.
 

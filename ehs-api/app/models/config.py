@@ -69,6 +69,12 @@ class EhsConfig(TimestampMixin, Base):
     incident_notify_groups: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}",
     )
+    # {event: [user_id, ...]} — who is emailed when an incident's status
+    # changes. Events in app.services.notify.STATUS_EVENTS. Empty means nobody:
+    # these changes sent nothing before the list existed. Round 5, TC-15.
+    incident_status_notify: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}",
+    )
     email_templates: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}",
     )

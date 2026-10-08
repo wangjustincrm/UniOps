@@ -97,9 +97,7 @@ async def _to_out(db, incident) -> IncidentOut:
 @router.post("", response_model=IncidentOut, status_code=status.HTTP_201_CREATED)
 async def create_incident(payload: IncidentCreate, db: SessionDep, user: CanReportIncident):
     incident = await crud.create(db, payload, reporter_id=_user_id(user))
-    # Filed against the incident in the same transaction, so a report that
-    # fails to save cannot leave behind a note saying it was circulated.
-    await notify.incident_reported(db, incident)
+    # ★ Not told yet: this is a draft. The notice goes on submit — see below.
     return await _to_out(db, incident)
 
 
@@ -198,6 +196,12 @@ async def submit_incident(incident_id: uuid.UUID, db: SessionDep, user: CanRepor
             "You can only submit reports you filed or were involved in",
         )
     await crud.submit(db, incident)
+    # ★ Told when it is sent, not when it is created. It used to go out on
+    # create, so a report whose create landed and whose submit did not left HSE
+    # with a notice about a draft, and the submit that followed sent nothing.
+    # crud.submit refuses anything but a draft, so this runs once per incident.
+    # Same transaction: a submit that fails to save leaves no notice behind.
+    await notify.incident_reported(db, incident)
     return await _to_out(db, incident)
 
 
@@ -217,8 +221,14 @@ async def classify_incident(
     incident = await crud.get(db, incident_id)
     crud.assert_open(incident, "how it is classified")
     crud.withdraw_review(incident)
+    was = incident.status
     await crud.classify(db, incident, payload, user_id=_user_id(user),
                         now=datetime.now(timezone.utc))
+    # Only when this is what moved it. Re-classifying later is a correction to
+    # an investigation already under way, not the start of one.
+    if was != incident.status:
+        await notify.incident_status_changed(
+            db, incident, incident.status, by_name=incident.classified_by_name)
     return await _to_out(db, incident)
 
 
@@ -236,14 +246,22 @@ async def hse_review_incident(
     """
     incident = await crud.get(db, incident_id)
     await crud.hse_review(db, incident, _user_id(user))
+    await notify.incident_status_changed(
+        db, incident, "hse_reviewed", by_name=incident.hse_reviewed_by_name)
     return await _to_out(db, incident)
 
 
 @router.post("/{incident_id}/close", response_model=IncidentOut)
-async def close_incident(incident_id: uuid.UUID, db: SessionDep, user: CanCloseIncident):  # noqa: ARG001
+async def close_incident(incident_id: uuid.UUID, db: SessionDep, user: CanCloseIncident):
     """Close an incident. Refused where HSE has not reviewed one that needs it."""
     incident = await crud.get(db, incident_id)
+    was = incident.status
     await crud.close(db, incident)
+    # Closing an already-closed incident is a no-op, and says nothing twice.
+    if was != incident.status:
+        await notify.incident_status_changed(
+            db, incident, "closed",
+            by_name=await crud._resolve_name(db, _user_id(user)))
     return await _to_out(db, incident)
 
 
@@ -269,6 +287,8 @@ async def reopen_incident(
     """
     incident = await crud.get(db, incident_id)
     await crud.reopen(db, incident, _user_id(user))
+    await notify.incident_status_changed(
+        db, incident, "reopened", by_name=incident.reopened_by_name)
     return await _to_out(db, incident)
 
 

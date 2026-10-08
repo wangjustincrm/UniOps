@@ -22,6 +22,12 @@
  * The fallback is deliberate and stated on the screen: a category with nobody
  * named falls to "any incident", and if that is empty too it falls to HSE. An
  * unconfigured list must never mean an injury is reported to nobody.
+ *
+ * ★ Round 5, TC-15: "provide a way to manage the recipients list on incidents
+ * when every status changes on an incident form. add this to the list of 'who
+ * is told'." So the second half of this page: one list per change. Unlike the
+ * lists above, an empty one sends nothing — these changes sent nothing before
+ * there was a list, and HSE is usually the one making them.
  */
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -43,7 +49,18 @@ interface IncidentTypeOption {
 
 interface Config {
   incident_notify_groups: Record<string, string[]>
+  incident_status_notify: Record<string, string[]>
 }
+
+/** The changes the server sends for — app.services.notify.STATUS_EVENTS. */
+const STATUS_ROWS: { key: string; label: string; hint: string }[] = [
+  { key: 'under_investigation', label: 'Investigation started',
+    hint: 'When an incident is first classified and moves into investigation.' },
+  { key: 'hse_reviewed', label: 'Reviewed by HSE',
+    hint: 'Each time HSE records its review — the step before an injury or damage incident can close.' },
+  { key: 'closed', label: 'Closed', hint: 'When the incident is closed.' },
+  { key: 'reopened', label: 'Reopened', hint: 'When a closed incident is put back into investigation.' },
+]
 
 interface Directory {
   id: string
@@ -54,7 +71,7 @@ interface Directory {
 export default function NotifyGroupsPage() {
   const queryClient = useQueryClient()
   const [groups, setGroups] = useState<Record<string, string[]> | null>(null)
-  const [adding, setAdding] = useState<Record<string, PersonValue>>({})
+  const [onStatus, setOnStatus] = useState<Record<string, string[]> | null>(null)
 
   const config = useQuery({
     queryKey: ['settings', 'config'],
@@ -89,12 +106,15 @@ export default function NotifyGroupsPage() {
   useEffect(() => {
     if (config.data && groups === null) {
       setGroups(config.data.incident_notify_groups ?? {})
+      setOnStatus(config.data.incident_status_notify ?? {})
     }
   }, [config.data, groups])
 
   const save = useMutation({
-    mutationFn: () => api.put('/api/v1/settings/config',
-                              { incident_notify_groups: groups ?? {} }),
+    mutationFn: () => api.put('/api/v1/settings/config', {
+      incident_notify_groups: groups ?? {},
+      incident_status_notify: onStatus ?? {},
+    }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'config'] }),
   })
 
@@ -105,7 +125,7 @@ export default function NotifyGroupsPage() {
       </div>
     )
   }
-  if (!groups) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
+  if (!groups || !onStatus) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
 
   const nameOf = (id: string) =>
     (people.data?.items ?? []).find((p) => p.id === id)?.full_name ?? id
@@ -127,6 +147,8 @@ export default function NotifyGroupsPage() {
 
   const setFor = (key: string, ids: string[]) =>
     setGroups({ ...groups, [key]: ids })
+  const setStatusFor = (key: string, ids: string[]) =>
+    setOnStatus({ ...onStatus, [key]: ids })
 
   return (
     <div className="p-4">
@@ -135,6 +157,9 @@ export default function NotifyGroupsPage() {
         subtitle="One list for the plant, rather than a field on every form."
       />
 
+      {people.isError && <LoadFailedNote what="The staff directory" />}
+
+      <SectionTitle className="mb-1 mt-1">When an incident is reported</SectionTitle>
       {/* ★ Said here because it decides whether an empty list is safe. */}
       <p className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
         A kind of incident with nobody named falls through to <b>Any incident</b>,
@@ -142,55 +167,28 @@ export default function NotifyGroupsPage() {
         unconfigured list never means nobody is told.
       </p>
 
-      {people.isError && <LoadFailedNote what="The staff directory" />}
+      {rows.map((row) => (
+        <ListCard key={row.key} label={row.label} hint={row.hint}
+                  ids={groups[row.key] ?? []} nameOf={nameOf}
+                  empty={row.key === ANY
+                    ? 'Nobody named — incidents go to HSE and the coordinator.'
+                    : 'Nobody named — uses the list above.'}
+                  onChange={(ids) => setFor(row.key, ids)} />
+      ))}
 
-      {rows.map((row) => {
-        const ids = groups[row.key] ?? []
-        return (
-          <Card key={row.key} className="mb-2">
-            <SectionTitle className="mb-0.5 flex items-center gap-1.5">
-              <Mail className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
-              {row.label}
-            </SectionTitle>
-            <p className="mb-2 text-xs text-neutral-500">{row.hint}</p>
+      <SectionTitle className="mb-1 mt-6">When an incident’s status changes</SectionTitle>
+      <p className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+        Each change has its own list. <b>Nobody named means nobody is emailed</b> for that
+        change — unlike a new report, which always reaches HSE. Emailed only when the
+        status actually changes, so correcting a classification later does not send it again.
+      </p>
 
-            {ids.length === 0 ? (
-              <p className="mb-2 text-xs text-neutral-400">
-                {row.key === ANY
-                  ? 'Nobody named — incidents go to HSE and the coordinator.'
-                  : 'Nobody named — uses the list above.'}
-              </p>
-            ) : (
-              <ul className="mb-2 flex flex-wrap gap-1.5">
-                {ids.map((id) => (
-                  <li key={id}
-                      className="flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-800">
-                    {nameOf(id)}
-                    <button type="button" aria-label={`Remove ${nameOf(id)}`}
-                            onClick={() => setFor(row.key, ids.filter((x) => x !== id))}
-                            className="text-neutral-400 hover:text-danger-600">
-                      <X className="h-3 w-3" aria-hidden />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <PersonPicker
-              value={adding[row.key] ?? EMPTY_PERSON}
-              allowExternal={false}
-              onChange={(v) => {
-                if (v.userId && !ids.includes(v.userId)) {
-                  setFor(row.key, [...ids, v.userId])
-                  setAdding({ ...adding, [row.key]: EMPTY_PERSON })
-                } else {
-                  setAdding({ ...adding, [row.key]: v })
-                }
-              }}
-            />
-          </Card>
-        )
-      })}
+      {STATUS_ROWS.map((row) => (
+        <ListCard key={row.key} label={row.label} hint={row.hint}
+                  ids={onStatus[row.key] ?? []} nameOf={nameOf}
+                  empty="Nobody named — no email is sent for this change."
+                  onChange={(ids) => setStatusFor(row.key, ids)} />
+      ))}
 
       <ErrorNote error={save.error} />
       <div className="mt-3 flex items-center justify-end gap-3">
@@ -203,5 +201,53 @@ export default function NotifyGroupsPage() {
         </button>
       </div>
     </div>
+  )
+}
+
+/** One list: who is on it, a way to take somebody off, and a way to add. */
+function ListCard({ label, hint, ids, nameOf, empty, onChange }: {
+  label: string; hint: string; ids: string[]; nameOf: (id: string) => string
+  empty: string; onChange: (ids: string[]) => void
+}) {
+  const [adding, setAdding] = useState<PersonValue>(EMPTY_PERSON)
+  return (
+    <Card className="mb-2">
+      <SectionTitle className="mb-0.5 flex items-center gap-1.5">
+        <Mail className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
+        {label}
+      </SectionTitle>
+      <p className="mb-2 text-xs text-neutral-500">{hint}</p>
+
+      {ids.length === 0 ? (
+        <p className="mb-2 text-xs text-neutral-400">{empty}</p>
+      ) : (
+        <ul className="mb-2 flex flex-wrap gap-1.5">
+          {ids.map((id) => (
+            <li key={id}
+                className="flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-800">
+              {nameOf(id)}
+              <button type="button" aria-label={`Remove ${nameOf(id)} from ${label}`}
+                      onClick={() => onChange(ids.filter((x) => x !== id))}
+                      className="text-neutral-400 hover:text-danger-600">
+                <X className="h-3 w-3" aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <PersonPicker
+        value={adding}
+        allowExternal={false}
+        onChange={(v) => {
+          if (v.userId && !ids.includes(v.userId)) {
+            onChange([...ids, v.userId])
+            setAdding(EMPTY_PERSON)
+          } else {
+            setAdding(v)
+          }
+        }}
+      />
+    </Card>
   )
 }

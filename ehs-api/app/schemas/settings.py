@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class VocabularyOut(BaseModel):
@@ -69,6 +69,7 @@ class ConfigOut(BaseModel):
     allow_anonymous_report: bool
     statutory_scan_interval_minutes: int
     incident_notify_groups: dict
+    incident_status_notify: dict = Field(default_factory=dict)
     email_templates: dict
     lost_time_rules: dict
     # Null until somebody picks one — every meeting before that used the
@@ -90,6 +91,7 @@ class ConfigUpdate(BaseModel):
     # 0 disables the sweep. Capped at a day so a typo cannot park it for a year.
     statutory_scan_interval_minutes: int | None = Field(default=None, ge=0, le=1440)
     incident_notify_groups: dict | None = None
+    incident_status_notify: dict | None = None
     email_templates: dict | None = None
     lost_time_rules: dict | None = None
     # The form the JHSC minutes are written on. Empty string clears it back to
@@ -98,6 +100,27 @@ class ConfigUpdate(BaseModel):
     certificate_heading: str | None = Field(default=None, max_length=120)
     certificate_body: str | None = None
     certificate_signatory: str | None = Field(default=None, max_length=150)
+
+    @field_validator("incident_status_notify")
+    @classmethod
+    def _known_events_and_people(cls, v):
+        """Only the changes the notifier sends for, and only real user ids.
+
+        A misspelt event would be stored, shown as saved, and never fire —
+        which is the shape of fault this screen exists to remove.
+        """
+        if v is None:
+            return v
+        from app.services.notify import STATUS_EVENTS
+        out: dict[str, list[str]] = {}
+        for event, ids in v.items():
+            if event not in STATUS_EVENTS:
+                raise ValueError(
+                    f"'{event}' is not a status change. One of: {', '.join(STATUS_EVENTS)}")
+            if not isinstance(ids, list):
+                raise ValueError(f"The list for '{event}' must be a list of people")
+            out[event] = [str(uuid.UUID(str(i))) for i in dict.fromkeys(ids)]
+        return out
 
     @model_validator(mode="after")
     def _ladder_must_ascend(self):

@@ -1005,6 +1005,9 @@ class TestTheAreaOwnerHearsAboutIt:
             "location_id": str(line),
         })
         assert made.status_code in (200, 201), made.text
+        # Sent, as the form does: the notice goes on submit, not on create.
+        sent = await client.post(f"/api/v1/incidents/{made.json()['id']}/submit")
+        assert sent.status_code == 200, sent.text
 
         mail = (await db_session.execute(
             select(Communication)
@@ -1034,6 +1037,9 @@ class TestTheAreaOwnerHearsAboutIt:
             "incident_type": "first_aid",
         })
         assert made.status_code in (200, 201), made.text
+        # Sent, as the form does: the notice goes on submit, not on create.
+        sent = await client.post(f"/api/v1/incidents/{made.json()['id']}/submit")
+        assert sent.status_code == 200, sent.text
 
         mail = (await db_session.execute(
             select(Communication)
