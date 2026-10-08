@@ -252,7 +252,10 @@ export default function AppLayout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const userId = useAuthStore((s) => s.user?.id)
   const userRole = useAuthStore((s) => s.user?.role ?? null)
-  const { data: myPermissions, isLoading: permsLoading } = useRolePermissions()
+  const {
+    data: myPermissions, isLoading: permsLoading, isError: permsFailed,
+    error: permsError, refetch: refetchPerms, isFetching: permsRefetching,
+  } = useRolePermissions()
   const perms = myPermissions?.permissions
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -286,6 +289,37 @@ export default function AppLayout() {
   // Wait for the permission matrix before building the (permission-derived) shell.
   if (permsLoading) {
     return <div className="flex h-screen items-center justify-center text-sm text-neutral-500">Loading…</div>
+  }
+
+  // A failed permission request must not read as "no access": with no matrix
+  // every item is hidden, which looked exactly like a revoked role when the
+  // real cause was the browser never reaching EPMS (e.g. Chrome blocking the
+  // call under VPN — local network access).
+  if (permsFailed && !myPermissions) {
+    // fetch() rejects with a TypeError when the request never got a response
+    // (network down, CORS / local-network-access block); anything else is a
+    // server answer and its message is worth showing.
+    const unreachable = permsError instanceof TypeError
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-3 px-4 text-center text-sm text-neutral-500">
+        <p className="font-medium text-neutral-700">Couldn't load your Finance permissions.</p>
+        <p className="max-w-md">
+          {unreachable
+            ? "Your browser couldn't reach the UniOps server. Check your network or VPN connection; if Chrome asked about local network access for this site, allow it in Site settings."
+            : `The server returned an error: ${permsError?.message ?? 'unknown error'}`}
+        </p>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => refetchPerms()}
+            disabled={permsRefetching}
+            className="font-medium text-primary-600 hover:underline disabled:opacity-50"
+          >
+            {permsRefetching ? 'Retrying…' : 'Try again'}
+          </button>
+          <a href={PORTAL_URL} className="font-medium text-primary-600 hover:underline">Back to UniOps Portal</a>
+        </div>
+      </div>
+    )
   }
 
   if (!homePath) {
