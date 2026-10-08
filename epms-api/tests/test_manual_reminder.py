@@ -329,6 +329,73 @@ async def test_reminder_on_a_missing_document_is_404(requester_client):
     assert resp.status_code == 404
 
 
+# ── OA expense claims ────────────────────────────────────────────────────────
+# expense_claims is expense-api's table (absent from this test DB); the endpoint
+# only needs the claim id + claim_type to find approval-api's approve_<code> tasks.
+
+async def _expense_task(db, approver, *, code="exp", task_type=None):
+    claim_id = uuid.uuid4()
+    number = f"EXP-{uuid.uuid4().hex[:8]}"
+    task = Task(
+        type=task_type or f"approve_{code}",
+        document_type=code, document_id=claim_id, document_number=number,
+        assigned_role=approver.role, assigned_user_id=approver.id,
+        title=f"Approve {number}",
+    )
+    db.add(task)
+    await db.flush()
+    return claim_id, number
+
+
+async def test_expense_claim_reminder_emails_the_pending_approver(
+    requester_client, captured_emails,
+):
+    async with session_module.AsyncSessionLocal() as db:
+        await _set_notif_settings(db, default_channel="email_only")
+        approver = await _user(db, name="Expense Approver")
+        claim_id, number = await _expense_task(db, approver)
+        await db.commit()
+
+    resp = await requester_client.post(
+        f"/api/v1/expense-claims/{claim_id}/remind", json={"claim_type": "EXP"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["recipients"] == ["Expense Approver"]
+    assert resp.json()["document_number"] == number
+
+    await drain(5)
+    assert approver.email in _to(captured_emails)
+    html = next(h for to, _, h in captured_emails if to == approver.email)
+    # Deep link lands on OA's claim page, not an EPMS route.
+    assert f"/expenses/{claim_id}" in html
+
+    again = await requester_client.post(
+        f"/api/v1/expense-claims/{claim_id}/remind", json={"claim_type": "EXP"})
+    assert again.status_code == 429
+
+
+async def test_expense_claim_reminder_ignores_the_reimbursement_task(
+    requester_client, captured_emails,
+):
+    """process_expense goes to Finance BP after approval — not an approver."""
+    async with session_module.AsyncSessionLocal() as db:
+        await _set_notif_settings(db, default_channel="email_only")
+        fbp = await _user(db, role="finance_bp", name="Finance BP")
+        claim_id, _ = await _expense_task(db, fbp, task_type="process_expense")
+        await db.commit()
+
+    resp = await requester_client.post(
+        f"/api/v1/expense-claims/{claim_id}/remind", json={"claim_type": "EXP"})
+    assert resp.status_code == 409
+    await drain(5)
+    assert fbp.email not in _to(captured_emails)
+
+
+async def test_expense_claim_reminder_rejects_a_malformed_claim_type(requester_client):
+    resp = await requester_client.post(
+        f"/api/v1/expense-claims/{uuid.uuid4()}/remind", json={"claim_type": "x' OR 1=1"})
+    assert resp.status_code == 422
+
+
 # ── Template ─────────────────────────────────────────────────────────────────
 
 async def test_manual_reminder_template_is_seeded():

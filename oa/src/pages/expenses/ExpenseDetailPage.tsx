@@ -244,10 +244,33 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
 
 // ── Approval status card ──────────────────────────────────────────────────────
 
+interface ReminderResponse {
+  sent: boolean
+  document_number: string
+  recipients: string[]
+  next_allowed_at: string
+}
+
 function ApprovalStatusCard({ claimId }: { claimId: string }) {
   const { data: steps = [], isLoading } = useQuery<ApprovalStep[]>({
     queryKey: ['approval-status', claimId],
     queryFn: () => api.get<ApprovalStep[]>(`/api/v1/expenses/${claimId}/approval-status`),
+  })
+
+  // "Send reminder" under the pending step — same behaviour as EPMS's Approval
+  // Timeline. The action changes nothing on the page, so the outcome is shown
+  // next to the button; the server's 409 (nobody to remind / unreachable) and
+  // 429 (already reminded in the last 24h) are sentences meant for the user and
+  // are shown verbatim.
+  const [reminderMsg, setReminderMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const remindMutation = useMutation({
+    mutationFn: () => api.post<ReminderResponse>(`/api/v1/expenses/${claimId}/remind`, {}),
+    onMutate: () => setReminderMsg(null),
+    onSuccess: (res) => setReminderMsg({ ok: true, text: `Reminder sent to ${res.recipients.join(', ')}.` }),
+    onError: (err) => setReminderMsg({
+      ok: false,
+      text: err instanceof Error ? err.message : 'Could not send the reminder.',
+    }),
   })
 
   if (isLoading || steps.length === 0) return null
@@ -301,7 +324,22 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
                 </p>
               )}
               {s.state === 'current' && (
-                <p className="mt-0.5 text-xs text-neutral-400">Awaiting this approver</p>
+                <>
+                  <p className="mt-0.5 text-xs text-neutral-400">Awaiting this approver</p>
+                  <button
+                    type="button"
+                    onClick={() => remindMutation.mutate()}
+                    disabled={remindMutation.isPending}
+                    className="mt-1 text-xs text-primary-700 hover:underline disabled:cursor-not-allowed disabled:text-neutral-400 disabled:no-underline"
+                  >
+                    {remindMutation.isPending ? 'Sending reminder…' : 'Send reminder'}
+                  </button>
+                  {reminderMsg && !remindMutation.isPending && (
+                    <p className={cn('mt-1 text-xs', reminderMsg.ok ? 'text-success-700' : 'text-warning-700')}>
+                      {reminderMsg.text}
+                    </p>
+                  )}
+                </>
               )}
               {/* Comments are shown once, in the Approval Timeline below. */}
             </div>

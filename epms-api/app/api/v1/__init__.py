@@ -12,6 +12,7 @@ from app.api.v1.assistant_saved import router as assistant_saved_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.config import router as config_router
 from app.api.v1.dashboard import router as dashboard_router
+from app.api.v1.expense_reminders import router as expense_reminders_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.admin import router as admin_router
 # NOTE: budget router moved to budget-api (:8007). Frontend now calls budget-api directly.
@@ -67,6 +68,7 @@ api_router.include_router(agreement_receipts_router)
 api_router.include_router(agreement_receipts_all_router)
 api_router.include_router(agreement_receipt_attachments_router)
 api_router.include_router(tasks_router)
+api_router.include_router(expense_reminders_router)
 api_router.include_router(config_router)
 api_router.include_router(pms_import_router)
 api_router.include_router(dashboard_router)
