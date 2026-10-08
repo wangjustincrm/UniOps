@@ -135,6 +135,7 @@ class CompanyConfig(UUIDPrimaryKey, Base):
     # epms-api 拥有这张表。这里只声明 finance-api 用得着的列:JV 同步间隔。
     # NULL=没人设过(回落 DEFAULT_INTERVAL_MINUTES) / 0=关闭 / >0=分钟数。
     nc_jv_sync_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    nc_ap_sync_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Task(UUIDPrimaryKey, TimestampMixin, Base):

@@ -63,6 +63,34 @@ async def _get_policy(db: AsyncSession):
     return result.scalar_one_or_none()
 
 
+# Fallbacks match the seeded ExpensePolicyConfig defaults — used only when no
+# policy row exists at all (fresh install, test DB).
+_MEAL_FALLBACKS = {"breakfast": 23.0, "lunch": 23.0, "dinner": 46.0, "incidental": 17.30}
+
+
+async def _trv_over_meal_limit(db: AsyncSession, line_items) -> bool:
+    """Does any line name a meal and exceed that meal's per-diem cap?
+
+    Shared by create and update. It used to be inline in create only, so a TRV
+    could be raised inside the limits, returned, edited UP past them, and
+    resubmitted with is_over_budget still False — which matters because
+    over-limit is what injects the conditional Finance Manager step (PRD
+    WF-002). Accepts either the inbound schema objects or the persisted rows;
+    both expose .description and .net_amount.
+    """
+    policy = await _get_policy(db)
+    limits = {
+        meal: float(getattr(policy, f"meal_{meal}_limit")) if policy else default
+        for meal, default in _MEAL_FALLBACKS.items()
+    }
+    for li in line_items:
+        desc = (li.description or "").lower()
+        for meal, limit in limits.items():
+            if meal in desc and float(li.net_amount) > limit:
+                return True
+    return False
+
+
 async def create_claim(
     db: AsyncSession,
     data: ExpenseClaimCreate,
@@ -120,25 +148,13 @@ async def create_claim(
 
     elif data.claim_type == "TRV":
         # TRV uses line_items (same as EXP) + meal limit check
-        policy = await _get_policy(db)
-        meal_limits = {
-            "breakfast":   float(policy.meal_breakfast_limit)   if policy else 23.0,
-            "lunch":       float(policy.meal_lunch_limit)       if policy else 23.0,
-            "dinner":      float(policy.meal_dinner_limit)      if policy else 46.0,
-            "incidental":  float(policy.meal_incidental_limit)  if policy else 17.30,
-        }
-        is_over = False
         for li_data in data.line_items:
             db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump()))
-            desc_lower = li_data.description.lower()
-            for meal, limit in meal_limits.items():
-                if meal in desc_lower and float(li_data.net_amount) > limit:
-                    is_over = True
         await db.flush()
         await db.refresh(claim, ["line_items"])
         t, tx, net = _compute_totals_exp(claim.line_items)
         claim.total_amount, claim.tax_amount, claim.net_amount = t, tx, net
-        claim.is_over_budget = is_over
+        claim.is_over_budget = await _trv_over_meal_limit(db, claim.line_items)
 
     elif data.claim_type.startswith("CFM"):
         # CFM stores line_items as generic entries; no special totals logic
@@ -174,11 +190,33 @@ async def update_claim(
     if claim.status not in ("draft", "returned"):
         raise ValueError("Only draft or returned claims can be edited")
 
+    # Every scalar field ExpenseClaimUpdate accepts is applied here. The list
+    # used to stop after vehicle_owned_by, so the travel fields — which the
+    # schema takes and the client sends — were parsed, validated, and silently
+    # dropped: a returned TRV or TRA could not have its dates, destination or
+    # transport corrected, and the save reported success.
     for field in ("submission_date", "currency", "project_id", "notes", "purpose",
-                  "vehicle_description", "vehicle_owned_by"):
+                  "vehicle_description", "vehicle_owned_by",
+                  "travel_from_date", "travel_to_date", "travel_destination",
+                  "transport_modes", "leave_from_date", "leave_to_date",
+                  "travel_application_id"):
         val = getattr(data, field, None)
         if val is not None:
             setattr(claim, field, val)
+
+    # Traveller roster (TRA). Replace wholesale, like the line/trip collections:
+    # an empty list is a legitimate edit ("I removed everyone"), which is why
+    # this tests `is not None` rather than truthiness.
+    if data.travelers is not None:
+        for existing in list(claim.travelers):
+            await db.delete(existing)
+        await db.flush()
+        for i, tr in enumerate(data.travelers):
+            db.add(ExpenseTraveler(
+                claim_id=claim.id, user_id=tr.user_id, user_name=tr.user_name,
+                seq=tr.seq if tr.seq is not None else i))
+        await db.flush()
+        await db.refresh(claim, ["travelers"])
 
     if data.line_items is not None:
         for existing in list(claim.line_items):
@@ -190,6 +228,10 @@ async def update_claim(
         await db.refresh(claim, ["line_items"])
         t, tx, net = _compute_totals_exp(claim.line_items)
         claim.total_amount, claim.tax_amount, claim.net_amount = t, tx, net
+        # Recompute the over-limit flag on edit, not just on create — see
+        # _trv_over_meal_limit. Only TRV carries meal per-diems.
+        if claim.claim_type == "TRV":
+            claim.is_over_budget = await _trv_over_meal_limit(db, claim.line_items)
 
     if data.trip_items is not None:
         for existing in list(claim.trip_items):

@@ -190,7 +190,7 @@ _GMP_SUMMARY_HEADER = [
 _BUSINESS_HOUR_START = 7   # inclusive
 _BUSINESS_HOUR_END = 19    # exclusive
 
-_GMP_AREAS = (AccessArea.production_gmp, AccessArea.laboratory)
+_GMP_AREAS = (AccessArea.production_gmp, AccessArea.laboratory, AccessArea.all)  # = area_rules.GMP_GRADE_AREAS, ordered for the report
 
 
 async def stream_gmp_area_summary(
@@ -259,8 +259,8 @@ async def stream_gmp_area_summary(
 
         after_hours = (await db.execute(
             base.with_only_columns(func.count(Visit.id)).where(
-                (func.extract("hour", Visit.planned_arrival) < _BUSINESS_HOUR_START)
-                | (func.extract("hour", Visit.planned_arrival) >= _BUSINESS_HOUR_END)
+                (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) < _BUSINESS_HOUR_START)
+                | (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) >= _BUSINESS_HOUR_END)
             )
         )).scalar_one()
 
@@ -352,8 +352,8 @@ async def compliance_metrics(
                     VisitStatus.checked_out,
                 ]
             ),
-            (func.extract("hour", Visit.planned_arrival) < _BUSINESS_HOUR_START)
-            | (func.extract("hour", Visit.planned_arrival) >= _BUSINESS_HOUR_END),
+            (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) < _BUSINESS_HOUR_START)
+            | (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) >= _BUSINESS_HOUR_END),
         )
     )).scalar_one()
 

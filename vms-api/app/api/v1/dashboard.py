@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.plant_time import plant_today
 from app.core.deps import CurrentUserPayload, SessionDep
 from app.crud import visit as visit_crud
 from app.services import reports as reports_svc
@@ -45,7 +46,7 @@ async def dashboard_overview(
 ):
     """High-level counters for the VMS home dashboard."""
     now = datetime.now(timezone.utc)
-    today = now.date()
+    today = plant_today(now)
     return DashboardOverview(
         on_site_count=await visit_crud.count_active(db),
         today_count=await visit_crud.count_today(db, today),
@@ -67,5 +68,5 @@ async def dashboard_compliance(
     reports under /reports/*.
     """
     now = datetime.now(timezone.utc)
-    metrics = await reports_svc.compliance_metrics(db, today=now.date(), now=now)
+    metrics = await reports_svc.compliance_metrics(db, today=plant_today(now), now=now)
     return ComplianceMetrics(**metrics)

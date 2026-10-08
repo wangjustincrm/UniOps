@@ -1,4 +1,6 @@
 # Import all model modules here so that Alembic env.py can discover them.
+from app.models.assistant_usage import AssistantUsage  # noqa: F401
+from app.models.assistant_saved_question import AssistantSavedQuestion  # noqa: F401
 from app.models.agreement import PurchaseAgreement  # noqa: F401
 from app.models.agreement_attachment import AgreementAttachment  # noqa: F401
 from app.models.agreement_schedule import AgreementPaymentSchedule  # noqa: F401
@@ -13,7 +15,7 @@ from app.models.gr import GoodsReceipt, GrLineItem  # noqa: F401
 from app.models.invoice import Invoice  # noqa: F401
 from app.models.invoice_allocation import InvoicePoAllocation  # noqa: F401
 from app.models.invoice_tax_line import InvoiceTaxLine  # noqa: F401
-from app.models.nc_purchase_sync import NcPurchaseSyncRun  # noqa: F401
+from app.models.nc_purchase_sync import NcPurchaseRefetchRequest, NcPurchaseSyncRun  # noqa: F401
 from app.models.pa import PaLineItem, PaymentApplication  # noqa: F401
 from app.models.part import Part  # noqa: F401
 from app.models.po import PoLineItem, PurchaseOrder  # noqa: F401
@@ -23,6 +25,7 @@ from app.models.notification_log import NotificationLog  # noqa: F401
 from app.models.pr_attachment import PrAttachment  # noqa: F401
 from app.models.gr_attachment import GrAttachment  # noqa: F401
 from app.models.pa_attachment import PaAttachment  # noqa: F401
+from app.models.pa_po_link import PaPoLink  # noqa: F401
 from app.models.project import Project  # noqa: F401
 from app.models.task import Task  # noqa: F401
 from app.models.user import User  # noqa: F401

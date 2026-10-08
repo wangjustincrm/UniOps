@@ -147,6 +147,41 @@ export async function epmsDownload(path: string, filename: string): Promise<void
   URL.revokeObjectURL(url)
 }
 
+/**
+ * POST a body to EPMS API and save the response as a file.
+ *
+ * Separate from epmsDownload because that one is a GET; an export sends the
+ * query it should run. Both share authHeaders and the 401 sign-out so there is
+ * only one definition of "signed in" in this file.
+ *
+ * The filename comes from the response when it offers one — the server names
+ * the sheet after the entity and the day, which is more useful than anything
+ * the caller could guess.
+ */
+export async function epmsPostDownload(
+  path: string, body: unknown, fallbackName: string,
+): Promise<void> {
+  const res = await fetch(`${EPMS_API}/api/v1${path}`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (res.status === 401) { globalSignOut(); return }
+  if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`)
+
+  const blob = await res.blob()
+  const named = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = named?.[1] ?? fallbackName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // Revoking immediately can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
 /** POST a File as multipart/form-data to EPMS API. */
 export async function epmsUpload<T>(path: string, file: File, fieldName = 'file'): Promise<T> {
   const form = new FormData()
@@ -329,6 +364,8 @@ export const OA_URL   = (import.meta.env.VITE_OA_URL   as string | undefined) ||
 export const VMS_URL  = (import.meta.env.VITE_VMS_URL  as string | undefined) || 'http://localhost:5176'
 export const FINANCE_URL = (import.meta.env.VITE_FINANCE_URL as string | undefined) || 'http://localhost:5177'
 export const BOOKING_URL = (import.meta.env.VITE_BOOKING_URL as string | undefined) || 'http://localhost:5178'
+export const MRP_URL  = (import.meta.env.VITE_MRP_URL  as string | undefined) || 'http://localhost:5179'
+export const EHS_URL  = (import.meta.env.VITE_EHS_URL  as string | undefined) || 'http://localhost:5180'
 
 // btoa() only handles Latin1; user data (e.g. Chinese full_name) is UTF-8, which
 // makes btoa throw "characters outside of the Latin1 range". Encode the JSON as
@@ -343,4 +380,55 @@ function encodeUtf8Base64(str: string): string {
 // Encode a portal session for handoff to EPMS/OA via URL hash
 export function encodeSession(token: string, refreshToken: string, user: object): string {
   return encodeUtf8Base64(JSON.stringify({ token, refreshToken, user }))
+}
+
+// ── returnUrl handoff ─────────────────────────────────────────────────────────
+// Sub-apps that find themselves without a session send the user here as
+// `${PORTAL_URL}?returnUrl=<their current href>`. Portal owns the login, then
+// hands the session back to that origin via the same `#__session=` mechanism
+// the nav links use, so the user lands on the page they originally asked for.
+
+const RETURN_URL_ORIGINS = [EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, MRP_URL, EHS_URL]
+
+/**
+ * Validate a caller-supplied returnUrl against the module origins we know.
+ * Anything else — a foreign host, a javascript:/data: URL, a malformed string —
+ * yields null, so a crafted link cannot turn the login page into an open
+ * redirect. Portal's own origin is allowed (a module may bounce back an
+ * in-portal path).
+ */
+export function safeReturnUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  let target: URL
+  try {
+    target = new URL(raw, window.location.origin)
+  } catch {
+    return null
+  }
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') return null
+  if (target.origin === window.location.origin) return target.toString()
+  const known = RETURN_URL_ORIGINS.some((base) => {
+    try {
+      return new URL(base).origin === target.origin
+    } catch {
+      return false
+    }
+  })
+  return known ? target.toString() : null
+}
+
+/**
+ * Leave for a validated returnUrl, carrying the session when it points at a
+ * different origin (cross-origin localStorage is not shared — the hash handoff
+ * is how every sub-app receives a Portal session). Same-origin targets need no
+ * handoff. Appends rather than overwrites the hash so an existing fragment
+ * survives; every decoder matches `__session=([^&]+)`.
+ */
+export function goToReturnUrl(returnUrl: string, session: string): void {
+  const target = new URL(returnUrl)
+  if (target.origin !== window.location.origin) {
+    const existing = target.hash.replace(/^#/, '')
+    target.hash = existing ? `${existing}&__session=${session}` : `__session=${session}`
+  }
+  window.location.href = target.toString()
 }

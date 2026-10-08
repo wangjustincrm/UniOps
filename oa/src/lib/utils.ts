@@ -38,3 +38,22 @@ export function formatDate(date: string | Date | null | undefined): string {
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })
 }
+
+// The same UTC/local trap as above, on the writing side rather than the reading
+// side. Every create form seeded its date field with
+// `new Date().toISOString().slice(0, 10)`, which is the UTC date — so from
+// 20:00 Toronto time onward, a claim raised tonight was stamped TOMORROW. It
+// went to the approver, to the accounting period, and to the age of the
+// document, all one day out, for the last four hours of every working day.
+export function todayLocal(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+// Calendar year at the reader's desk. `getUTCFullYear()` rolls over at 20:00 on
+// 31 December here, which pointed the budget-account lookup at the next fiscal
+// year while people were still booking against this one.
+export function currentYearLocal(): number {
+  return new Date().getFullYear()
+}

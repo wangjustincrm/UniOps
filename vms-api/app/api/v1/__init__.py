@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
-    admin, audit, badge, dashboard, health, health_decl, reports,
+    admin, area_rules, audit, badge, dashboard, health, health_decl, reports,
     visitors, visits,
 )
 
@@ -18,3 +18,4 @@ api_router.include_router(health_decl.template_router)
 api_router.include_router(health_decl.declarations_router)
 api_router.include_router(admin.router)
 api_router.include_router(reports.router)
+api_router.include_router(area_rules.router)

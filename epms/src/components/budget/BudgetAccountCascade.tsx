@@ -9,6 +9,10 @@ import type { ApiBudgetL1 } from '@/services/budget'
  * component so the Agreement Create/Edit pages share one implementation
  * instead of drifting apart.
  *
+ * Use this wherever the document carries a cost center. A PO does not, and
+ * takes BudgetAccountSelect (same folder) instead — the point both share is
+ * that `budget_code` is only ever set from the catalog, never typed.
+ *
  * Controlled by the parent: `costCenterId` and `budgetCode` are the only two
  * values that leave this component (via `onChange`) — the intermediate L1
  * selection is local UI state, same as PrCreatePage's `selectedL1`.

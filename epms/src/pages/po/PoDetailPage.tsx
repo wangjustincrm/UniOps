@@ -23,9 +23,11 @@ import { downloadPdf } from '@/lib/pdf-utils'
 import { usePo, usePoAction, usePoAttachments, useUploadPoAttachment, useDeletePoAttachment, usePoEvents, usePlaceOrder, usePoWorkflowSteps, useRegeneratePoPdf } from '@/hooks/usePos'
 import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useGrs } from '@/hooks/useGrs'
-import { useInvoices } from '@/hooks/useInvoices'
+
 import { useTasks } from '@/hooks/useTasks'
+import { poService } from '@/services/po'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
+import { useApprovalReminder } from '@/hooks/useApprovalReminder'
 import type { ApiEvent } from '@/services/pr'
 import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
@@ -517,11 +519,9 @@ export default function PoDetailPage() {
   const deleteAttachment = useDeletePoAttachment(id ?? '')
   const regeneratePdf = useRegeneratePoPdf(id ?? '')
   const { data: grsData, isLoading: grsLoading } = useGrs({ po_id: id ?? '' }, Boolean(id))
-  // Drives the Create PA gate below — see the comment there for why the PO's
-  // own has_unpaid_invoice flag cannot be used on this page.
-  const { data: poInvoices } = useInvoices({ po_id: id ?? '' }, Boolean(id))
   const linkedGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
   const poAction = usePoAction(id ?? '')
+  const { reminder, sendReminder } = useApprovalReminder(() => poService.remind(id ?? ''))
   const { user } = useAuthStore()
   const { data: config } = useConfig()
   const { data: workflowSteps } = usePoWorkflowSteps(id ?? '')
@@ -587,32 +587,44 @@ export default function PoDetailPage() {
   // role granted through user_roles (e.g. a Procurement Officer allowed to raise
   // PAs on someone's behalf) never saw the button even with the matrix ticked.
   // ...and on the PO actually having something to pay. The status alone is not
-  // that: an 'issued' PO with no invoice yet offers nothing a PA could be raised
+  // that: an 'issued' PO with no invoice yet — or one whose only invoice is
+  // already on somebody's payment — offers nothing a PA could be raised
   // against, and PaCreatePage's own PO picker rejects it
-  // (`is_prepaid || has_unpaid_invoice`, PaCreatePage.tsx) — so the button was
-  // an invitation to a dead end. Mirror that same rule here so the entry point
-  // and the page it opens agree. `po.has_unpaid_invoice` cannot be used: only
-  // GET /po computes it, GET /po/{id} leaves the schema default false — hence
-  // the invoice fetch above, which uses the same header-OR-allocation rule the
-  // backend flag does (crud/invoice.py get_all).
-  const hasUnpaidInvoice = (poInvoices?.items ?? []).some((inv) => inv.status !== 'paid')
+  // (`is_prepaid || has_unpaid_invoice`, PaCreatePage.tsx), so the button would
+  // be an invitation to a dead end.
+  //
+  // This used to re-derive the rule client-side from the PO's invoices, because
+  // GET /po/{id} left has_unpaid_invoice at its schema default. It now computes
+  // it (api/v1/po.py, off crud.po::payable_invoice_po_ids), so the button and
+  // the picker read the SAME flag and cannot drift apart — which they did the
+  // moment "unpaid" stopped being sufficient.
   const canCreatePa =
     po &&
     ['issued', 'partially_received', 'fully_received'].includes(po.status) &&
-    (po.is_prepaid || hasUnpaidInvoice) &&
+    (po.is_prepaid || po.has_unpaid_invoice) &&
     (user?.role === 'system_admin' || !!paPerms?.['epms.pa.write'])
   // Types 4 (Service) and 6 (Project-Related) both run the service GR flow —
   // api/v1/gr.py has always admitted the pair. Checking only type 4 here left
   // project POs reachable from GR List but not from their own PO page.
   const isServicePo = po?.type === 4 || po?.type === 6
   // Physical PO: warehouse/procurement roles, PO must be issued or partially received
-  // Service PO: the *requester of the linked PR* (not the PO creator, not a generic
-  // 'requester' role) can confirm delivery / create the GR, from approved onwards.
-  const isPrRequester = !!po?.pr_requester_id && po.pr_requester_id === user?.id
+  // Service PO: the *owner or requester of the linked PR* (not the PO creator,
+  // not a generic 'requester' role) can confirm delivery / create the GR, from
+  // approved onwards.
+  //
+  // The UNION of pr_owner_id and pr_requester_id, matching POST /gr's own gate
+  // (epms-api api/v1/gr.py). The two differ whenever a service/project PR named
+  // someone else as its owner: the owner is who receives the confirm-service
+  // task, so gating on the requester alone would show the reminder's recipient
+  // no button — and dropping the requester arm would take the button away from
+  // someone the API still admits.
+  const canConfirmService =
+    (!!po?.pr_owner_id && po.pr_owner_id === user?.id) ||
+    (!!po?.pr_requester_id && po.pr_requester_id === user?.id)
   const canCreateGr =
     (['warehouse_staff', 'procurement_officer', 'procurement_manager', 'system_admin'].includes(user?.role ?? '') &&
       ['issued', 'partially_received'].includes(po?.status ?? '')) ||
-    (isServicePo && isPrRequester &&
+    (isServicePo && canConfirmService &&
       ['approved', 'issued', 'partially_received'].includes(po?.status ?? ''))
 
   const handleDownloadPdf = () => {
@@ -1021,7 +1033,7 @@ export default function PoDetailPage() {
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Attachments</h2>
-                {['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_pending'].includes(po.status) && (
+                {['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_pending', 'nc_milk'].includes(po.status) && (
                   <button
                     type="button"
                     onClick={() => regeneratePdf.mutate()}
@@ -1089,7 +1101,9 @@ export default function PoDetailPage() {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Approval Timeline</h2>
             <ApprovalTimeline
               steps={approvalSteps}
-              onSendReminder={(id) => console.log('remind', id)}
+              // See PrDetailPage: a draft's step 0 also renders as "current".
+              onSendReminder={APPROVABLE_STATUSES.includes(po.status) ? sendReminder : undefined}
+              reminder={reminder}
             />
 
             {/* Place Order panel for procurement officer */}

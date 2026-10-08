@@ -97,5 +97,6 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   vendor_manager: 'Vendor Manager',
   erp_pa_officer: 'ERP PA Officer',
   payment_officer: 'Payment Officer',
+  finance_director: 'Finance Director',
   system_admin: 'System Admin',
 }

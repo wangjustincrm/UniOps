@@ -225,11 +225,11 @@ async def test_gmp_summary_returns_one_row_per_area(test_engine):
         )
     assert resp.status_code == 200
     rows = list(csv.reader(io.StringIO(resp.text)))
-    # Header + production_gmp + laboratory = 3 rows.
-    assert len(rows) == 3
+    # Header + production_gmp + laboratory + all (Entire Plant is GMP-grade) = 4 rows.
+    assert len(rows) == 4
     assert rows[0][0] == "access_area"
     areas = {r[0] for r in rows[1:]}
-    assert areas == {"production_gmp", "laboratory"}
+    assert areas == {"production_gmp", "laboratory", "all"}
 
 
 @pytest.mark.asyncio

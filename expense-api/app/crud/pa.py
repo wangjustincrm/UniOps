@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pa import PaymentApplication
+from app.models.pa_po_link import PaPoLink
 
 
 async def list_pas(
@@ -43,9 +44,20 @@ async def get_by_id(db: AsyncSession, pa_id: uuid.UUID) -> PaymentApplication | 
 
 
 async def get_by_po_id(db: AsyncSession, po_id: uuid.UUID) -> list[PaymentApplication]:
+    # A PA may settle several POs; pa_po_links is the complete set (the primary
+    # po_id is in it too). Matching the header column alone would leave EPMS's
+    # document chain tree showing no payment on a PO that is covered second.
     result = await db.execute(
         select(PaymentApplication)
-        .where(PaymentApplication.po_id == po_id)
+        .where(
+            PaymentApplication.id.in_(
+                select(PaPoLink.pa_id).where(PaPoLink.po_id == po_id)
+            )
+            # Union with the header column: a PA written outside epms-api's PA
+            # crud has no link row, and dropping it here would show an empty
+            # payment list on a PO that has in fact been paid.
+            | (PaymentApplication.po_id == po_id)
+        )
         .order_by(PaymentApplication.created_at.desc())
     )
     return list(result.scalars().all())

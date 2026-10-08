@@ -18,6 +18,7 @@ from app.crud import payment_batch as batch_crud
 from app.crud import payment_execute
 from app.crud.payment_execute import PaymentPermissionError
 from app.crud.remittance import applied_credit_notes_by_payment
+from app.models.bank import BankAccount
 from app.models.mirrors import ExpenseClaim
 from app.models.payment_batch import PaymentBatch, PaymentBatchLine
 from app.models.remittance import SENT
@@ -136,6 +137,38 @@ async def _payee_names(db: AsyncSession, records: list) -> dict[uuid.UUID, str]:
     return out
 
 
+def _bank_label(acct: BankAccount) -> str:
+    """The list column's label — "Operating CAD · …0128": the account's own
+    name plus its masked number, the same label the Payment Batches funding
+    picker already shows (`bankLabel` in
+    finance/src/pages/finance/PaymentBatchPage.tsx). The masked
+    suffix is not decoration: two accounts can legitimately carry the same
+    name, and the name alone would make them indistinguishable in the list.
+
+    `bank_accounts` also holds credit cards (kind='credit_card', migration
+    0016) - a real payment source here, not a stray row - so those get a
+    trailing "· Card". Without it the live data's "RBC USD" bank account and
+    "RBC USD" credit card read as the same source with two numbers.
+    """
+    label = f"{acct.name} · …{acct.account_masked}" if acct.account_masked else acct.name
+    return f"{label} · Card" if acct.kind == "credit_card" else label
+
+
+async def _bank_labels(db: AsyncSession, records: list) -> dict[uuid.UUID, str]:
+    """payment id -> funding account label, batch-loaded once per page (the
+    same shape as _payee_names). Payments with no bank_account_id, and ids
+    whose account row no longer exists, are simply absent from the map."""
+    ids = {r.bank_account_id for r in records if r.bank_account_id}
+    if not ids:
+        return {}
+    accounts = (await db.execute(
+        select(BankAccount).where(BankAccount.id.in_(ids))
+    )).scalars().all()
+    label_by_account = {a.id: _bank_label(a) for a in accounts}
+    return {r.id: label_by_account[r.bank_account_id] for r in records
+            if r.bank_account_id in label_by_account}
+
+
 @router.get("", response_model=PaymentListResponse)
 async def list_payments(
     filters: PaymentFilters = Depends(),
@@ -149,6 +182,7 @@ async def list_payments(
         db, page=page, page_size=page_size, **filters.model_dump())
     status_by_id = await _remittance_status(db, items)
     payee_by_id = await _payee_names(db, items)
+    bank_by_id = await _bank_labels(db, items)
     # Batch-loaded once for the whole page, not per row — the payments
     # drawer is fed straight from this list response (never GET
     # /payments/{id}), so this is the only place a page read populates
@@ -158,6 +192,7 @@ async def list_payments(
     for r in items:
         d = PaymentResponse.model_validate(r).model_dump()
         d["payee_name"] = payee_by_id.get(r.id) or None
+        d["bank_account_name"] = bank_by_id.get(r.id)
         d["remittance_status"] = status_by_id.get(r.id)
         d["credit_notes"] = _credit_notes_out(notes_by_payment.get(r.id, []))
         out.append(d)
@@ -183,6 +218,7 @@ async def export_payments(filters: PaymentFilters = Depends(),
     await _authorize_read(db, user)
     rows = await payment_crud.export_rows(db, **filters.model_dump())
     payee_by_id = await _payee_names(db, rows)
+    bank_by_id = await _bank_labels(db, rows)
 
     def _iter():
         buf = io.StringIO()
@@ -190,10 +226,13 @@ async def export_payments(filters: PaymentFilters = Depends(),
         # `amount` stays the NET cash that left the bank (column position and
         # meaning unchanged for anyone with an existing import). `gross` and
         # `credit_applied` are appended so a short payment is explicable from
-        # the export alone: gross = amount + credit_applied.
+        # the export alone: gross = amount + credit_applied. `bank_account` is
+        # likewise APPENDED, never swapped in over `payment_method` the way
+        # the on-screen column was - the export's existing columns are
+        # positional for whoever already imports this file.
         w.writerow(["payment_date", "doc_kind", "doc_number", "payee", "amount",
                     "currency", "payment_method", "source", "status",
-                    "gross", "credit_applied"])
+                    "gross", "credit_applied", "bank_account"])
         yield buf.getvalue()
         for r in rows:
             buf.seek(0), buf.truncate(0)
@@ -201,7 +240,8 @@ async def export_payments(filters: PaymentFilters = Depends(),
             w.writerow([r.payment_date, r.doc_kind or "", r.doc_number or "",
                         payee_by_id.get(r.id) or "", r.amount, r.currency,
                         r.payment_method, "batch" if r.batch_id else "single",
-                        r.status, r.amount + credit, credit])
+                        r.status, r.amount + credit, credit,
+                        bank_by_id.get(r.id) or ""])
             yield buf.getvalue()
 
     return StreamingResponse(_iter(), media_type="text/csv", headers={

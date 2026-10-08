@@ -25,7 +25,7 @@ from psycopg2.extras import register_uuid
 from sqlalchemy.engine.url import make_url
 
 from app.core.config import settings
-from app.services.nc_purchase_sync import reader, writer
+from app.services.nc_purchase_sync import error_tasks, reader, writer
 from app.services.nc_purchase_sync.reader import nc_configured  # noqa: F401 — re-export
 from app.services.nc_purchase_sync.transform import transform
 
@@ -64,6 +64,79 @@ def _cutover(cur=None) -> str:
         except Exception:
             pass
     return getattr(settings, "nc_purchase_cutover", None) or _DEFAULT_CUTOVER
+
+
+def clamp_watermark_for_skipped(orders, skipped_numbers, wm_to, prev_wm) -> str | None:
+    """Hold the incremental watermark AT the earliest order this run could not
+    import, so the next run reads it again.
+
+    The watermark filter is ``changed_at >= watermark``. Advancing past an order
+    the run DROPPED (no vendor, no free document number) makes that order
+    invisible to every future incremental run: fixing the cause then changes
+    nothing, because the sync never looks at the order again. That is how
+    PO-029-2609-01 and four August orders went missing — each was read, skipped
+    for a missing vendor, and left behind by a watermark that moved on regardless.
+
+    Holding the position means those orders are re-read (and re-skipped, and the
+    Admin task refreshed) every run until somebody fixes the cause — at which
+    point the very next run imports them with no manual step. The cost is that
+    the window stops shrinking while the problem is open; the Admin task is what
+    keeps that from being permanent.
+
+    Never below ``prev_wm``: an order can enter a run through the ARRIVAL branch
+    with a change time far older than the watermark, and clamping to that would
+    walk the watermark backwards over months of history every run. Standing
+    still is enough — the same arrival still qualifies next run.
+    """
+    if wm_to is None or not skipped_numbers:
+        return wm_to
+    stamps = [ca for ca in (reader.changed_at(o) for o in orders
+                            if o.get("vbillcode") in skipped_numbers) if ca]
+    if not stamps:
+        return wm_to
+    held = min(wm_to, min(stamps))
+    if prev_wm is not None and held < prev_wm:
+        held = prev_wm
+    return held
+
+
+def pending_refetch_pks(cur) -> list:
+    """NC order pks with a standing re-fetch request (see the
+    NcPurchaseRefetchRequest model). Read on every run; normally empty."""
+    # to_regclass, not try/except: in psycopg2 a failed statement poisons the
+    # WHOLE transaction, so probing for the table by querying it would take the
+    # mirror write down with it on any deployment where the migration has not
+    # run yet (and in the test DB, which is built from create_all).
+    cur.execute("select to_regclass('nc_purchase_refetch_requests')")
+    if cur.fetchone()[0] is None:
+        return []
+    cur.execute("select nc_source_pk from nc_purchase_refetch_requests "
+                "where fulfilled_at is null")
+    return [r[0] for r in cur.fetchall()]
+
+
+def settle_refetch_requests(cur, requested, upserted_pks, in_scope_pks) -> None:
+    """Close the standing requests this run answered.
+
+    'mirrored' — the order was written back, so the delete has healed.
+    'gone_from_nc' — NC no longer lists the order at all, so there is nothing
+    left to re-read and retrying every run forever would be noise.
+    Anything else (the order reached the batch but was skipped for a missing
+    vendor or a taken number) stays PENDING on purpose: the request is the only
+    thing that will bring it back once the cause is fixed.
+    """
+    if not requested:
+        return
+    upserted = [pk for pk in requested if pk in upserted_pks]
+    gone = ([pk for pk in requested if pk not in in_scope_pks]
+            if in_scope_pks is not None else [])
+    for pks, outcome in ((upserted, "mirrored"), (gone, "gone_from_nc")):
+        if not pks:
+            continue
+        cur.execute("update nc_purchase_refetch_requests set fulfilled_at=now(), "
+                    "outcome=%s, updated_at=now() "
+                    "where nc_source_pk = any(%s) and fulfilled_at is null",
+                    (outcome, list(pks)))
 
 
 def latest_watermark(cur) -> str | None:
@@ -175,7 +248,12 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
         con = psycopg2.connect(dsn); con.autocommit = False
         cur = con.cursor()
         prev_wm = latest_watermark(cur)
-        raw = fetch(_cutover(cur), prev_wm if mode == "incremental" else None)
+        refetch = pending_refetch_pks(cur) if mode == "incremental" else []
+        if refetch:
+            logger.info("nc purchase sync %s: %d standing re-fetch request(s) join "
+                        "this run regardless of the watermark", run_id, len(refetch))
+        raw = fetch(_cutover(cur), prev_wm if mode == "incremental" else None,
+                    refetch_pks=refetch)
 
         vendor_by_erp = writer.load_vendor_map(cur)
         payload = transform(raw, vendor_by_erp)
@@ -201,6 +279,30 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
         counts = writer.upsert(cur, payload, system_user_id,
                                heartbeat=lambda: _mark(dsn, run_id))
 
+        # What this run could NOT import goes to the Admin Task Inbox, naming the
+        # order and the reason. Behind a SAVEPOINT: the mirror write is the job,
+        # and a failure in the reporting must not abort the transaction carrying
+        # it (in psycopg2 any error poisons the whole transaction, so catching
+        # the exception without the savepoint would still lose the run).
+        # Same transaction as the mirror write: a request must not read as
+        # settled unless the rows that settle it committed with it.
+        settle_refetch_requests(cur, refetch,
+                                set(counts.get("upserted_po_pks") or []),
+                                in_scope_pks)
+
+        cur.execute("savepoint nc_error_tasks")
+        try:
+            error_tasks.record_import_errors(
+                cur, run_id,
+                vendor_gaps=payload.get("vendor_gaps"),
+                collision_numbers=counts.get("collision_numbers"),
+                in_scope_numbers=raw.get("in_scope_numbers"),
+                created_by=system_user_id)
+            error_tasks.clear_run_failure(cur)
+        except Exception:  # noqa: BLE001 — reporting never breaks the mirror
+            cur.execute("rollback to savepoint nc_error_tasks")
+            logger.exception("nc purchase sync %s: error tasks not written", run_id)
+
         # superseded-run guard: if the sweeper already marked us abandoned, bail
         # without committing so we don't resurrect a dead run.
         cur.execute("select status from nc_purchase_sync_runs where id = %s for update", (run_id,))
@@ -211,6 +313,20 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
         con.commit(); con.close()
 
         wm_to = raw.get("max_modifiedtime") or prev_wm
+        # Do not step over what this run could not import — see
+        # clamp_watermark_for_skipped. Only the fixable skips count: a PO skipped
+        # because a human already consumed it downstream (skipped_consumed) is
+        # skipped forever, and holding for it would freeze the watermark for good.
+        skipped_numbers = {g["number"] for g in (payload.get("vendor_gaps") or [])}
+        skipped_numbers |= set(counts.get("collision_numbers") or [])
+        held_wm = clamp_watermark_for_skipped(
+            raw.get("orders") or [], skipped_numbers, wm_to, prev_wm)
+        if held_wm != wm_to:
+            logger.info("nc purchase sync %s: holding watermark at %s (was going to "
+                        "advance to %s) — %d order(s) could not be imported: %s",
+                        run_id, held_wm, wm_to, len(skipped_numbers),
+                        sorted(skipped_numbers)[:20])
+        wm_to = held_wm
         # In full mode the delete-guard count is authoritative for skipped_consumed
         # (upsert would re-count the same POs); in incremental it comes from upsert.
         skipped_consumed = full_skipped if mode == "full" else counts["skipped_consumed"]
@@ -233,3 +349,26 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
             pass
         _mark_terminal(dsn, run_id, status="failed", error=str(e)[:2000],
                        finished_at=datetime.now(timezone.utc))
+        _record_failure_task(dsn, run_id, str(e))
+
+
+def _record_failure_task(dsn: str, run_id, message: str) -> None:
+    """Put a failed run in the Admin inbox, over its OWN connection — the
+    worker's is rolled back and closed by the time this runs. Never raises: a
+    sync that failed must still record its terminal state, and this is the
+    reporting on top of that."""
+    con = None
+    try:
+        con = psycopg2.connect(dsn); con.autocommit = False
+        cur = con.cursor()
+        error_tasks.record_run_failure(
+            cur, run_id, message[:1000], writer.ensure_system_user_sync(cur))
+        con.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("nc purchase sync %s: failure task not written", run_id)
+    finally:
+        if con is not None:
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001
+                pass

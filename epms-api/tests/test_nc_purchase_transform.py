@@ -286,3 +286,56 @@ def test_gr_line_unit_falls_back_when_the_arrival_states_none():
     raw["arrival_lines"][0]["castunitid"] = None
     r = transform(raw, VEND)
     assert r["gr_lines"][0]["unit"] == "EA"
+
+
+# ── watermark held at what the run could not import ──────────────────────────
+#
+# The incremental filter is `changed_at >= watermark`. Advancing past a DROPPED
+# order hides it from every future run, so fixing the cause changes nothing —
+# that is exactly how PO-029-2609-01 stayed missing after its supplier was
+# known. These pin the clamp that keeps such an order reachable.
+
+def _o(code, **cols):
+    return {"vbillcode": code, **cols}
+
+
+def test_watermark_holds_at_the_earliest_skipped_order():
+    from app.services.nc_purchase_sync.service import clamp_watermark_for_skipped
+    orders = [
+        _o("PO-A", taudittime="2026-09-04 22:46:46"),
+        _o("PO-B", taudittime="2026-09-05 05:28:36"),
+        _o("PO-C", taudittime="2026-09-05 09:00:00"),
+    ]
+    held = clamp_watermark_for_skipped(
+        orders, {"PO-B", "PO-C"}, "2026-09-05 09:00:00", "2026-09-04 00:00:00")
+    # PO-B is the earliest thing that did not make it in — the filter is
+    # inclusive, so parking exactly on its stamp re-reads it next run.
+    assert held == "2026-09-05 05:28:36"
+
+
+def test_watermark_advances_normally_when_everything_imported():
+    from app.services.nc_purchase_sync.service import clamp_watermark_for_skipped
+    orders = [_o("PO-A", taudittime="2026-09-05 05:28:36")]
+    assert clamp_watermark_for_skipped(orders, set(), "2026-09-05 09:00:00",
+                                       "2026-09-04 00:00:00") == "2026-09-05 09:00:00"
+
+
+def test_watermark_never_walks_backwards_past_the_previous_run():
+    """An order can enter a run through the ARRIVAL branch with a change time
+    far older than the watermark. Clamping to that would re-read months of
+    history every run, forever. Standing still is enough: the same arrival still
+    qualifies next run."""
+    from app.services.nc_purchase_sync.service import clamp_watermark_for_skipped
+    orders = [_o("PO-OLD", creationtime="2024-03-01 08:00:00")]
+    held = clamp_watermark_for_skipped(
+        orders, {"PO-OLD"}, "2026-09-05 09:00:00", "2026-09-05 05:28:36")
+    assert held == "2026-09-05 05:28:36"
+
+
+def test_watermark_clamp_is_inert_without_a_watermark_or_a_stamp():
+    from app.services.nc_purchase_sync.service import clamp_watermark_for_skipped
+    assert clamp_watermark_for_skipped([], {"PO-A"}, None, None) is None
+    # Skipped order not in this payload (or carrying no change column at all):
+    # nothing to hold at, so the run advances as before rather than freezing.
+    assert clamp_watermark_for_skipped([_o("PO-A")], {"PO-A"},
+                                       "2026-09-05 09:00:00", None) == "2026-09-05 09:00:00"

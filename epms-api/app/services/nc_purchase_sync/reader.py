@@ -58,61 +58,127 @@ def select_incremental_order_pks(order_rows, arrival_rows, watermark) -> set:
 #: received in EPMS and inflates MRP's in-transit figure forever.
 _LATEST_VERSION = "bislatest='Y'"
 
-#: NC ``PO_ORDER.forderstatus``, measured in production: 3 = approved and in
-#: force (1,681 orders), 2 = submitted and still working through the approval
-#: chain (28), 0 = free state, never submitted (17, all of them 2021-2022
-#: leftovers under a document-number series nobody uses any more).
+#: NC ``PO_ORDER.forderstatus``: 3 = approved and in force, 2 = submitted and
+#: working through NC's own approval chain, 0 = free state (saved, not
+#: submitted).
 #:
-#: Orders still IN APPROVAL are mirrored so the buyer can print the UniOps PO
-#: PDF and get it signed off-line — the signature is what feeds NC's approval,
-#: so the PDF has to exist first. They land in the mirror under the read-only
-#: ``nc_pending`` status (see transform), which no payment, receiving or
-#: invoice-matching allow-list contains. Free-state orders stay out.
+#: **2026-09: NC's PO approval chain was switched off** to match the UniOps
+#: process. A buyer now only SAVES the order, so it sits at forderstatus=0, and
+#: the officer presses NC's one-click approve *after* UniOps has signed off —
+#: taking it straight 0 → 3. Nothing new ever reaches 2 again.
+#:
+#: That makes FREE STATE the normal "waiting on our approval" state, so it has
+#: to be mirrored: the whole point of mirroring an unapproved order is that the
+#: buyer needs the UniOps PO PDF *before* the ERP approval, because the sign-off
+#: on that PDF is what authorises the approval. Leaving free state out is why
+#: PO-081-2609-01 / PO-055-2609-01 / PO-029-2609-01 never appeared.
+#:
+#: 2 stays in scope for the handful of orders that were mid-chain when the
+#: change was made (10 live ones at the time of writing).
+#:
+#: Both land in the mirror under the read-only ``nc_pending`` status (see
+#: transform), which no payment, receiving or invoice-matching allow-list
+#: contains.
 _APPROVED = "3"
 _PENDING = "2"
+_FREE = "0"
 
-#: A pending order is in scope only while its document number has no approved
-#: sibling. NC's ``vbillcode`` is not unique, and two of the 28 pending orders
+#: Free state counts only from here. NC holds 22 live (dr=0, latest) free-state
+#: orders, and 17 of them are abandoned drafts from 2021-2022 — the era when
+#: free state meant "nobody ever submitted this" — the newest created
+#: 2022-06-08. Every order made under the new process is 2026-08 or later.
+#: Without a floor those 17 would land in EPMS as permanent ``nc_pending`` work
+#: that nobody will ever act on and the reconcile pass will never retire (NC
+#: still lists them).
+#:
+#: The main cutover cannot do this job: it filters EVERY status on dbilldate,
+#: and the mirror deliberately carries approved orders back to 2020 — 958 of
+#: them are dated before 2023 — so raising the cutover far enough to clear 17
+#: drafts would delete those 958 instead.
+_FREE_STATE_FROM = "2023-01-01 00:00:00"
+
+#: An unapproved order is in scope only while its document number has no
+#: further-along sibling. NC's ``vbillcode`` is not unique, and pending orders
 #: share a number with an approved one (PO-022-2512-01, PO-073-2307-01). Both
 #: would be mirrored — the second under a ``-2`` suffix (see writer._free_number)
 #: — leaving two documents on screen with the same ERP number and no way for a
-#: human to tell which one the ERP considers real. The approved one wins.
+#: human to tell which one the ERP considers real. The further-along one wins.
 #:
-#: ``dr`` (NC's soft-delete flag) is checked on the pending side only: every
-#: approved row in production carries dr=0, while 143 of the 160 free-state rows
-#: are deleted, so pending is where the flag actually decides anything.
-_NO_APPROVED_SIBLING = (
-    "not exists (select 1 from NCSC.PO_ORDER ap "
-    f"where ap.vbillcode = o.vbillcode and ap.forderstatus={_APPROVED} "
-    "and ap.bislatest='Y' and nvl(ap.dr,0)=0)")
+#: Comparing forderstatus rather than naming ``=3`` covers the free-state rows
+#: this scope now admits with the same rule: a draft loses to a submitted OR an
+#: approved twin, a submitted one loses only to an approved twin, and a row can
+#: never knock itself out because the comparison is strict.
+#:
+#: ``dr`` (NC's soft-delete flag) matters on the unapproved side: every approved
+#: row in production carries dr=0, while 146 of the 168 free-state rows are
+#: deleted — buyers throw drafts away, and a discarded draft must not be
+#: mirrored.
+_NO_SENIOR_SIBLING = (
+    "not exists (select 1 from NCSC.PO_ORDER sib "
+    "where sib.vbillcode = o.vbillcode and sib.pk_order <> o.pk_order "
+    "and sib.forderstatus > o.forderstatus "
+    "and sib.bislatest='Y' and nvl(sib.dr,0)=0)")
 
-#: The orders the mirror carries: approved, plus pending-with-no-approved-twin.
-_IN_SCOPE = (f"(o.forderstatus={_APPROVED} or (o.forderstatus={_PENDING} "
-             f"and nvl(o.dr,0)=0 and {_NO_APPROVED_SIBLING}))")
+#: The orders the mirror carries: approved, plus unapproved (free or in-chain)
+#: with no further-along twin — free state additionally floored at
+#: ``_FREE_STATE_FROM`` so the abandoned 2021-2022 drafts stay out.
+_IN_SCOPE = (
+    f"(o.forderstatus={_APPROVED} or ("
+    f"o.forderstatus in ({_PENDING},{_FREE}) and nvl(o.dr,0)=0 "
+    f"and (o.forderstatus={_PENDING} or o.creationtime >= '{_FREE_STATE_FROM}') "
+    f"and {_NO_SENIOR_SIBLING}))")
 
 #: When this order last changed, as NC actually records it.
 #:
-#: ``modifiedtime`` is NULL on 1,534 of the 1,681 approved orders and on 27 of
-#: the 28 pending ones — NC simply does not maintain it. An incremental run
-#: keyed on it alone therefore never sees a newly submitted order, and (the
-#: expensive one) never sees the 2→3 approval that has to flip a mirrored PO out
-#: of ``nc_pending`` into the payable flow. ``taudittime`` is set on every
-#: approved order and is the moment approval completed; ``creationtime`` covers
-#: an order that has neither. All three are CHAR 'YYYY-MM-DD HH24:MI:SS', which
-#: compares lexicographically in chronological order.
-_CHANGED_AT = "nvl(o.modifiedtime, nvl(o.taudittime, o.creationtime))"
+#: ``modifiedtime`` is NULL on the large majority of orders — NC simply does not
+#: maintain it — so it cannot carry the filter alone. ``taudittime`` is the
+#: moment approval completed, ``creationtime`` covers an order that has neither,
+#: and ``ts`` is NC's row stamp, bumped by EVERY write to the row. All four are
+#: CHAR 'YYYY-MM-DD HH24:MI:SS', which compares lexicographically in
+#: chronological order.
+#:
+#: **GREATEST, not NVL.** ``nvl()`` stops at the first non-null value, which is
+#: wrong whenever an order carries an OLD ``modifiedtime`` and a NEWER approval:
+#: PO-034-2608-02 has modifiedtime 2026-08-22 06:06:23 and was approved at
+#: taudittime 2026-08-25 03:58:08 *without* modifiedtime being touched. nvl()
+#: answers 08-22 — behind a watermark any run in between had already advanced
+#: past — so the approval is invisible to every future incremental and the PO is
+#: stuck at ``nc_pending`` for good, out of the payable flow forever. 134 orders
+#: in production carry taudittime > modifiedtime.
+#:
+#: That was survivable while free state was out of scope, because an order was
+#: only ever mirrored *after* approval. Under the new process every order is
+#: mirrored while free and approved later, so the 0→3 flip is the one event the
+#: watermark must never miss — it is what turns a printable draft into a payable
+#: PO.
+#:
+#: ``ts`` is included because it is the only column NC bumps unconditionally:
+#: measured across all 1,703 in-scope orders it is >= taudittime with zero
+#: exceptions, and 934 of them carry a ts newer than what the old expression
+#: returned.
+_TS_FLOOR = "'0000-00-00 00:00:00'"
+_CHANGED_AT = (f"greatest(nvl(o.ts,{_TS_FLOOR}), nvl(o.modifiedtime,{_TS_FLOOR}), "
+               f"nvl(o.taudittime,{_TS_FLOOR}), nvl(o.creationtime,{_TS_FLOOR}))")
+
+#: The columns ``changed_at()`` reads, newest-wins. Must stay in step with
+#: ``_CHANGED_AT`` and with the header column list, or the watermark advances
+#: past rows the query would still have returned.
+_CHANGE_COLUMNS = ("ts", "modifiedtime", "taudittime", "creationtime")
 
 
 def changed_at(order: dict) -> str | None:
     """Python-side twin of ``_CHANGED_AT`` — the two must agree, or the watermark
     advances past rows the query would still have returned."""
-    return (order.get("modifiedtime") or order.get("taudittime")
-            or order.get("creationtime") or None)
+    seen = [v for v in (order.get(c) for c in _CHANGE_COLUMNS) if v]
+    return max(seen) if seen else None
 
 
-def fetch_nc(cutover: str, watermark: str | None) -> dict:
+def fetch_nc(cutover: str, watermark: str | None, refetch_pks=None) -> dict:
     """cutover: 'YYYY-MM-DD HH24:MI:SS' (only orders with dbilldate >= cutover).
     watermark: last synced NC modifiedtime, or None for full.
+    refetch_pks: PO_ORDER pks to read even though the watermark has passed them
+    (standing requests from ``nc_purchase_refetch_requests`` — see the model).
+    Ignored in full mode, which reads everything in scope anyway.
 
     Superseded order versions are excluded at the source — see
     ``_LATEST_VERSION``. EVERY read of PO_ORDER carries the predicate;
@@ -124,7 +190,13 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
         def lookup(sql):
             cur.execute(sql)
             return {r[0]: r[1] for r in cur.fetchall()}
-        suppliers = lookup("select pk_supplier, code from NCSC.BD_SUPPLIER")
+        # Supplier NAMES are keyed by code, not pk: the only consumer is the
+        # "this ERP supplier has no UniOps vendor" error task, which knows the
+        # code and needs something a human recognises next to it.
+        cur.execute("select pk_supplier, code, name from NCSC.BD_SUPPLIER")
+        _sup_rows = cur.fetchall()
+        suppliers = {r[0]: r[1] for r in _sup_rows}
+        supplier_names = {r[1]: r[2] for r in _sup_rows}
         uoms = lookup("select pk_measdoc, code from NCSC.BD_MEASDOC")
         currencies = lookup("select pk_currtype, code from NCSC.BD_CURRTYPE")
         # Prefer the English material name (ename); fall back to name when a
@@ -135,8 +207,11 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
             for r in cur.fetchall()
         }
 
+        # ``ts`` is here for changed_at()/the watermark, not for the payload —
+        # drop it and the Python twin silently loses the one column that sees an
+        # approval, and the watermark stops advancing past it.
         _order_cols = ("pk_order, vbillcode, dbilldate, pk_supplier, corigcurrencyid, "
-                       "ntotalorigmny, forderstatus, modifiedtime, taudittime, vmemo, "
+                       "ntotalorigmny, forderstatus, modifiedtime, taudittime, ts, vmemo, "
                        "bfinalclose, dclosedate, creationtime, vtrantypecode")
 
         # Every order NC currently lists for the mirror, watermark or not. The
@@ -145,10 +220,15 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
         # watermark-filtered result set silently, so absence from an incremental
         # payload cannot be told apart from "unchanged". Only membership of this
         # set can. ~1,700 single-column rows.
-        cur.execute(f"select o.pk_order from NCSC.PO_ORDER o "
+        # vbillcode rides along for the error tasks: an order that dropped out of
+        # NC's scope (rejected, deleted, superseded) must not leave a "this order
+        # never arrived" task open forever, and the tasks are keyed by number.
+        cur.execute(f"select o.pk_order, o.vbillcode from NCSC.PO_ORDER o "
                     f"where {_IN_SCOPE} and o.{_LATEST_VERSION} "
                     "and o.dbilldate >= :cut", {"cut": cutover})
-        in_scope_pks = {r[0] for r in cur.fetchall()}
+        _in_scope_rows = cur.fetchall()
+        in_scope_pks = {r[0] for r in _in_scope_rows}
+        in_scope_numbers = {r[1] for r in _in_scope_rows}
 
         if watermark:
             # INCREMENTAL: union of (a) orders whose OWN change time advanced and
@@ -168,10 +248,13 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
                 "from NCSC.PO_ARRIVEORDER ah "
                 "join NCSC.PO_ARRIVEORDER_B ab on ab.pk_arriveorder = ah.pk_arriveorder "
                 "join NCSC.PO_ORDER o on o.pk_order = ab.pk_order "
-                # Approved orders ONLY, deliberately: an order still in approval
-                # has no arrival in NC (all 28 carry zero), and mirroring a goods
-                # receipt against a PO the ERP has not yet issued would put stock
-                # and a 3-way match behind a document that may still be withdrawn.
+                # Approved orders ONLY, deliberately: no unapproved order in NC
+                # carries an arrival — every free-state order that has arrival
+                # lines is a soft-deleted (dr=1) row, none of the live ones do —
+                # and mirroring a goods receipt against a PO the ERP has not yet
+                # issued would put stock and a 3-way match behind a document that
+                # may still be discarded. The arrivals arrive with the order on
+                # the first run after NC approves it.
                 f"where ah.fbillstatus=3 and o.forderstatus={_APPROVED} "
                 f"and o.{_LATEST_VERSION} "
                 "and o.dbilldate >= :cut "
@@ -179,7 +262,17 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
                 {"cut": cutover, "wm": watermark})
             arrival_rows = [dict(zip([c[0].lower() for c in cur.description], r))
                             for r in cur.fetchall()]
-            order_pks = list(select_incremental_order_pks(order_rows, arrival_rows, watermark))
+            wanted = select_incremental_order_pks(order_rows, arrival_rows, watermark)
+            # Standing re-fetch requests join the batch regardless of the
+            # watermark — that is the whole point of them: the order they name
+            # has not changed in NC (nothing there was touched), it is UniOps
+            # that lost its mirror row. Intersected with the in-scope set so a
+            # request can only ever reach an order NC still lists; one naming an
+            # order NC has since deleted is settled by the service as
+            # 'gone_from_nc' rather than retried forever.
+            if refetch_pks:
+                wanted |= (set(refetch_pks) & in_scope_pks)
+            order_pks = list(wanted)
             orders = []
             for chunk in _chunks(order_pks, 900):
                 ph = ",".join(f":p{i}" for i in range(len(chunk)))
@@ -271,7 +364,8 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
             "invoiced_arrivals": invoiced_arrivals,
             "suppliers": suppliers, "materials": materials, "uoms": uoms,
             "currencies": currencies, "max_modifiedtime": maxmt,
-            "in_scope_pks": in_scope_pks,
+            "in_scope_pks": in_scope_pks, "in_scope_numbers": in_scope_numbers,
+            "supplier_names": supplier_names,
         }
     finally:
         con.close()

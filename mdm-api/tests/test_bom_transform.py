@@ -586,3 +586,53 @@ def test_cm_component_substitute_cascades_dropped_via_skipped():
     out = transform(raw)
     assert out["substitutes"] == []
     assert "R1" in out["skipped"]
+
+
+def test_qty_per_batch_keeps_nc_nitemnum_verbatim():
+    """PATCH 7 (2026-09-03): alongside the normalized quotient, the line
+    keeps NC's own NITEMNUM un-divided and un-quantized, so the BOM Explorer
+    can show a planner the same number the NC BOM screen shows.
+
+    Real CS0081 numbers (live NC65): header HNPARENTNUM=1000, CR0214's
+    NITEMNUM=0.00375508. The quotient necessarily loses the 8th decimal
+    (0.0000037551 at 10dp), which is exactly why the raw value has to be
+    stored rather than reconstructed as `qty_per * batch_output_qty` —
+    that reconstruction gives 0.0037551, not 0.00375508."""
+    raw = _raw(
+        headers=[{
+            "cbomid": "PK-CS", "hcmaterialid": "MCS", "hversion": "1.0", "fbillstatus": 1,
+            "hnparentnum": 1000,
+        }],
+        lines=[{
+            "cbom_bid": "PKB1", "cbomid": "PK-CS", "cmaterialid": "M2",
+            "nitemnum": Decimal("0.00375508"), "vrowno": "10",
+        }],
+        material_codes={"MCS": "CS0081", "M2": "CR0214"},
+    )
+    ln = transform(raw)["lines"][0]
+    assert ln["qty_per_batch"] == Decimal("0.00375508")
+    assert ln["qty_per"] == Decimal("0.0000037551")  # the lossy quotient, kept as-is
+    # The whole point: the stored raw value is NOT recoverable from the pair
+    # the pre-0018 schema kept, so it must not be reconstructed downstream.
+    assert ln["qty_per"] * Decimal("1000") != ln["qty_per_batch"]
+
+
+def test_qty_per_batch_is_the_exact_numerator_of_qty_per():
+    """The stored pair (`qty_per_batch`, header `batch_output_qty`) must be
+    NC's real numerator/denominator — the S0147 case from the 2026-09-03
+    report: CS0147's CR0268 line is 610 per a 3000 kg batch."""
+    raw = _raw(
+        headers=[{
+            "cbomid": "PK-CS", "hcmaterialid": "MCS", "hversion": "1.1", "fbillstatus": 1,
+            "hnparentnum": 3000,
+        }],
+        lines=[{
+            "cbom_bid": "PKB1", "cbomid": "PK-CS", "cmaterialid": "M2",
+            "nitemnum": Decimal("610"), "vrowno": "20",
+        }],
+        material_codes={"MCS": "CS0147", "M2": "CR0268"},
+    )
+    out = transform(raw)
+    assert out["boms"][0]["batch_output_qty"] == Decimal("3000")
+    assert out["lines"][0]["qty_per_batch"] == Decimal("610")
+    assert out["lines"][0]["qty_per"] == Decimal("0.2033333333")

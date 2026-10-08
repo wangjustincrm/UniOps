@@ -1,29 +1,44 @@
-"""Mirroring NC purchase orders that are still IN APPROVAL (``forderstatus=2``).
+"""Mirroring NC purchase orders the ERP has NOT issued yet — free state
+(``forderstatus=0``) and in-approval (``forderstatus=2``).
 
-Buyers need the UniOps PO PDF *before* NC approves the order — the printed PDF
-is what gets signed off-line. So the sync now carries pending orders too, under
-a status of their own (``nc_pending``) that no payment / receiving / matching
+Buyers need the UniOps PO PDF *before* NC approves the order — the signed PDF is
+what authorises the approval. So the sync carries unapproved orders too, under a
+status of their own (``nc_pending``) that no payment / receiving / matching
 allow-list contains.
 
-Three things this file pins, each of which was measured against production NC
-(1,681 approved orders / 28 pending / 17 free-state) before it was written:
+**2026-09: NC's PO approval chain was switched off.** A buyer now only SAVES the
+order, leaving it at ``forderstatus=0``, and the officer presses NC's one-click
+approve after UniOps has signed off — 0 straight to 3, never touching 2. Free
+state is therefore the normal pre-approval state, and leaving it out of scope is
+what made PO-081-2609-01 / PO-055-2609-01 / PO-029-2609-01 invisible to EPMS.
 
-1. **Scope.** Pending orders come in, EXCEPT where the same ``vbillcode``
-   already has an approved sibling — NC reuses document numbers, and the mirror
-   would otherwise show ``PO-022-2512-01`` and ``PO-022-2512-01-2`` side by side
-   with no way for a human to tell which one is real. Arrivals stay restricted
-   to approved orders: a pending order has no goods receipt, by definition.
+Four things this file pins, each measured against production NC before it was
+written (1,700 approved orders / 8 pending / 22 live free-state):
 
-2. **The watermark.** ``PO_ORDER.modifiedtime`` is NULL on 27 of the 28 pending
-   orders — and on 1,534 of the 1,681 approved ones. An incremental run keyed on
-   it alone sees neither a newly submitted order nor, far worse, the 2→3
-   approval that should flip a mirrored PO out of ``nc_pending``. ``taudittime``
-   (set on every approved order) and ``creationtime`` are the fallbacks.
+1. **Scope.** Unapproved orders come in, EXCEPT where the same ``vbillcode``
+   already has a further-along sibling — NC reuses document numbers, and the
+   mirror would otherwise show ``PO-022-2512-01`` and ``PO-022-2512-01-2`` side
+   by side with no way for a human to tell which one is real. Arrivals stay
+   restricted to approved orders: no live unapproved order has a goods receipt.
 
-3. **Withdrawal.** An order rejected in NC drops back to ``forderstatus=0`` or
-   is soft-deleted — either way it silently leaves the incremental result set,
-   so nothing would ever update its mirror row. The reconcile pass cancels the
-   mirrored pendings NC no longer lists.
+2. **The free-state floor.** 17 of the 22 live free-state orders are abandoned
+   2021-2022 drafts from when free state meant "never submitted" (newest created
+   2022-06-08). They are floored out by ``creationtime``, not by the main
+   cutover — that one filters every status on ``dbilldate`` and the mirror
+   deliberately carries 958 approved orders dated before 2023.
+
+3. **The watermark.** ``PO_ORDER.modifiedtime`` is NULL on the large majority of
+   orders, so it cannot carry the filter alone — and, worse, NVL over the stamps
+   returns a STALE one whenever an order has an old ``modifiedtime`` and a newer
+   approval (PO-034-2608-02: modified 2026-08-22, approved 2026-08-25, and
+   ``modifiedtime`` never touched). GREATEST over ts / modifiedtime /
+   taudittime / creationtime is what makes the 0→3 flip visible — the one event
+   that turns a printable draft into a payable PO.
+
+4. **Withdrawal.** A draft the buyer throws away is soft-deleted in NC (146 of
+   168 free-state rows are), which drops it out of scope silently, so nothing
+   would ever update its mirror row. The reconcile pass cancels the mirrored
+   pendings NC no longer lists.
 """
 import re
 import uuid
@@ -111,15 +126,49 @@ def _driving_order_reads(cur) -> list[str]:
 
 # ── 1. scope ─────────────────────────────────────────────────────────────────
 
+def _unapproved_scope_reads(cur) -> list[str]:
+    """Driving reads that carry the unapproved-order scope — i.e. the ones whose
+    forderstatus test is a set rather than a bare ``=3``."""
+    return [s for s in _driving_order_reads(cur)
+            if re.search(r"forderstatus\s+in\s*\(", s, re.IGNORECASE)]
+
+
 @pytest.mark.parametrize("watermark", [None, WM], ids=["full", "incremental"])
-def test_pending_orders_are_in_scope(monkeypatch, watermark):
+def test_unapproved_orders_are_in_scope(monkeypatch, watermark):
     cur = _fake(monkeypatch)
     reader.fetch_nc(CUT, watermark)
 
     reads = _driving_order_reads(cur)
     assert reads, "expected the run to read PO_ORDER"
-    assert any(re.search(r"forderstatus\s*=\s*2", s) for s in reads), (
-        "no query admits in-approval orders:\n" + "\n---\n".join(reads))
+    scoped = _unapproved_scope_reads(cur)
+    assert scoped, ("no query admits unapproved orders:\n" + "\n---\n".join(reads))
+    for sql in scoped:
+        statuses = re.search(r"forderstatus\s+in\s*\(([^)]*)\)", sql, re.IGNORECASE)
+        admitted = {v.strip() for v in statuses.group(1).split(",")}
+        # 0 is the one that matters: NC no longer produces 2 at all, so a scope
+        # that admits only 2 mirrors nothing a buyer creates today.
+        assert "0" in admitted, sql
+        assert "2" in admitted, sql
+
+
+@pytest.mark.parametrize("watermark", [None, WM], ids=["full", "incremental"])
+def test_free_state_is_floored_so_abandoned_old_drafts_stay_out(monkeypatch, watermark):
+    """The 17 live free-state rows from 2021-2022 are drafts nobody will ever act
+    on. They must be excluded by their own creationtime floor — NOT by raising
+    the main cutover, which would take 958 approved orders down with them."""
+    cur = _fake(monkeypatch)
+    reader.fetch_nc(CUT, watermark)
+
+    scoped = _unapproved_scope_reads(cur)
+    assert scoped
+    for sql in scoped:
+        assert re.search(
+            r"creationtime\s*>=\s*'" + re.escape(reader._FREE_STATE_FROM) + r"'",
+            sql, re.IGNORECASE), sql
+        # ...and the floor applies to free state only, or the in-approval
+        # leftovers would be filtered on a date that has nothing to do with them.
+        assert re.search(r"forderstatus\s*=\s*2\s+or\s+o\.creationtime\s*>=",
+                         sql, re.IGNORECASE), sql
 
 
 @pytest.mark.parametrize("watermark", [None, WM], ids=["full", "incremental"])
@@ -128,12 +177,14 @@ def test_pending_scope_excludes_numbers_that_already_have_an_approved_sibling(
     cur = _fake(monkeypatch)
     reader.fetch_nc(CUT, watermark)
 
-    guarded = [s for s in _driving_order_reads(cur)
-               if re.search(r"forderstatus\s*=\s*2", s)]
+    guarded = _unapproved_scope_reads(cur)
     assert guarded
     for sql in guarded:
         assert re.search(r"not\s+exists", sql, re.IGNORECASE), sql
         assert re.search(r"vbillcode\s*=\s*o\.vbillcode", sql, re.IGNORECASE), sql
+        # Compared, not hard-coded to 3: a free-state draft has to lose to a
+        # SUBMITTED twin as well as to an approved one.
+        assert re.search(r"forderstatus\s*>\s*o\.forderstatus", sql, re.IGNORECASE), sql
 
 
 @pytest.mark.parametrize("watermark", [None, WM], ids=["full", "incremental"])
@@ -160,7 +211,7 @@ def test_arrivals_stay_restricted_to_approved_orders(monkeypatch):
     assert arrival_joins
     for sql in arrival_joins:
         assert re.search(r"o\.forderstatus\s*=\s*3", sql), sql
-        assert not re.search(r"forderstatus\s*=\s*2", sql), sql
+        assert not re.search(r"forderstatus\s+in\s*\(", sql, re.IGNORECASE), sql
 
 
 # ── 2. watermark ─────────────────────────────────────────────────────────────
@@ -238,6 +289,75 @@ def test_watermark_falls_all_the_way_back_to_creation_time(monkeypatch):
     assert raw["max_modifiedtime"] == "2026-08-18 07:00:00"
 
 
+@pytest.mark.parametrize("watermark", [None, WM], ids=["full", "incremental"])
+def test_order_headers_fetch_ts_for_the_watermark(monkeypatch, watermark):
+    """``changed_at()`` is the Python twin of the SQL expression and has to see
+    the same columns. Drop ``ts`` from the header select and the twin silently
+    loses the only stamp that moves on approval — the watermark then stops
+    advancing past it and every run re-reads the same orders forever."""
+    # The incremental path only re-reads headers for pks the watermark query
+    # returned, so it needs one to exist before there is a header read at all.
+    cur = _fake(monkeypatch, {
+        "changed_at from ncsc.po_order": (["PK_ORDER", "CHANGED_AT"],
+                                          [("O1", "2026-08-25 03:58:08")]),
+    })
+    reader.fetch_nc(CUT, watermark)
+
+    headers = [s for s in _driving_order_reads(cur)
+               if "ntotalorigmny" in s.lower()]
+    assert headers, "expected a full-header read of PO_ORDER"
+    for sql in headers:
+        assert re.search(r",\s*ts\s*,", sql, re.IGNORECASE), sql
+
+
+def test_incremental_filter_takes_the_latest_stamp_not_the_first_non_null(monkeypatch):
+    """NVL stops at the first non-null value. PO-034-2608-02 carries
+    modifiedtime 2026-08-22 06:06:23 and was approved at taudittime
+    2026-08-25 03:58:08 without modifiedtime being touched — NVL answers 08-22,
+    behind any watermark a run in between had advanced, so the approval is
+    invisible and the PO never leaves ``nc_pending``."""
+    cur = _fake(monkeypatch)
+    reader.fetch_nc(CUT, WM)
+
+    driving = [s for s in _driving_order_reads(cur) if ":wm" in s]
+    assert driving, "expected an incremental order query bound to the watermark"
+    for sql in driving:
+        assert re.search(r"greatest\s*\(", sql, re.IGNORECASE), sql
+        assert re.search(r"o\.ts", sql, re.IGNORECASE), sql
+        assert not re.search(r"nvl\(o\.modifiedtime,\s*nvl\(", sql, re.IGNORECASE), (
+            "the stale NVL chain is back:\n" + sql)
+
+
+def test_changed_at_twin_agrees_with_greatest():
+    """The real PO-034-2608-02 row. The old twin returned the modifiedtime."""
+    assert reader.changed_at({
+        "ts": "2026-08-25 03:58:08",
+        "modifiedtime": "2026-08-22 06:06:23",
+        "taudittime": "2026-08-25 03:58:08",
+        "creationtime": "2026-08-19 03:07:52",
+    }) == "2026-08-25 03:58:08"
+
+
+def test_changed_at_twin_handles_a_free_state_draft():
+    """A free-state draft has neither modifiedtime nor taudittime — it is
+    creationtime (or ts, once somebody edits it) or nothing."""
+    assert reader.changed_at({
+        "ts": "2026-09-03 00:01:51", "modifiedtime": None,
+        "taudittime": None, "creationtime": "2026-09-03 00:01:51",
+    }) == "2026-09-03 00:01:51"
+    assert reader.changed_at({"ts": None, "modifiedtime": None,
+                              "taudittime": None, "creationtime": None}) is None
+
+
+def test_a_newly_approved_order_is_picked_up_by_the_watermark():
+    """The 0→3 flip is the event the mirror exists to catch: it is what turns a
+    printable draft into a payable PO."""
+    approved_now = [{"pk_order": "O-JUST-APPROVED",
+                     "changed_at": "2026-08-25 03:58:08"}]
+    assert reader.select_incremental_order_pks(
+        approved_now, [], "2026-08-24 00:00:00") == {"O-JUST-APPROVED"}
+
+
 # ── 3. the pending set the reconcile pass needs ──────────────────────────────
 
 @pytest.mark.parametrize("watermark", [None, WM], ids=["full", "incremental"])
@@ -291,6 +411,19 @@ _VENDORS = {"0000415": (uuid.uuid4(), "NC Vendor 415")}
 
 def test_pending_order_is_mirrored_as_nc_pending():
     out = transform(_raw({"forderstatus": 2}), _VENDORS)
+
+    assert [o["status"] for o in out["orders"]] == ["nc_pending"]
+    assert "NC Pending Approval" in out["orders"][0]["notes"]
+
+
+@pytest.mark.parametrize("raw_status", [0, Decimal("0"), "0"],
+                         ids=["int", "decimal", "str"])
+def test_free_state_order_is_mirrored_as_nc_pending(raw_status):
+    """The saved-but-not-approved order is the normal case since NC's approval
+    chain came off. ``fetch_decimals`` makes NUMBER columns arrive as Decimal,
+    so an identity comparison would answer False for every one of them and
+    mirror the whole unapproved set as payable."""
+    out = transform(_raw({"forderstatus": raw_status}), _VENDORS)
 
     assert [o["status"] for o in out["orders"]] == ["nc_pending"]
     assert "NC Pending Approval" in out["orders"][0]["notes"]

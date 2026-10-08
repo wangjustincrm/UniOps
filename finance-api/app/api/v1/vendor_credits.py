@@ -70,7 +70,7 @@ async def create_vendor_credit(payload: VendorCreditCreate, user: CurrentUser,
     uid, name = _actor(user)
     try:
         credit = await crud.create(db, payload=payload, uploaded_by=uid,
-                                   uploaded_by_name=name)
+                                   uploaded_by_name=name, source=payload.source)
     except crud.DuplicateCredit as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except ValueError as exc:

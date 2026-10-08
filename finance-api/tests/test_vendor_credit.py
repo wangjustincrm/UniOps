@@ -732,3 +732,57 @@ async def test_list_rejects_zero_and_negative_limit(client):
 
     r = await client.get("/finance/v1/vendor-credits", params={"limit": -1}, headers=_h())
     assert r.status_code == 422
+
+
+# ── Manual credits (vendor will not issue a credit note) ─────────────────────
+
+@pytest.mark.anyio
+async def test_post_manual_credit_records_its_source(client):
+    r = await client.post(
+        "/finance/v1/vendor-credits",
+        json=_api_body(vendor_credit_number="8480321003REV", amount="-2216.15",
+                       file_name="MSC email.msg", source="manual",
+                       notes="Duplicate payment; Hema Nanjiani (MSC) email 2026-09-25"),
+        headers=_h())
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["source"] == "manual"
+    # Same review gate and sign rule as an uploaded credit note.
+    assert body["status"] == "pending_review"
+    assert body["total_amount"] == "2216.15"
+
+
+@pytest.mark.anyio
+async def test_post_without_source_is_still_an_upload(client):
+    r = await client.post("/finance/v1/vendor-credits", json=_api_body(), headers=_h())
+    assert r.json()["source"] == "upload"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("notes", [None, "", "   "])
+async def test_post_manual_credit_requires_notes(client, notes):
+    r = await client.post("/finance/v1/vendor-credits",
+                          json=_api_body(source="manual", notes=notes), headers=_h())
+    assert r.status_code == 422
+    assert "notes" in r.text
+
+
+@pytest.mark.anyio
+async def test_post_cannot_claim_the_qbo_import_source(client):
+    # qbo_import rows skip review; only the Phase C import route may write one.
+    r = await client.post("/finance/v1/vendor-credits",
+                          json=_api_body(source="qbo_import", notes="x"), headers=_h())
+    assert r.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_manual_credit_collides_with_an_uploaded_one_of_the_same_number(client):
+    # If the vendor later does issue the document, it must not double the credit.
+    vid = str(uuid.uuid4())
+    first = await client.post(
+        "/finance/v1/vendor-credits",
+        json=_api_body(vendor_id=vid, source="manual", notes="per email"), headers=_h())
+    assert first.status_code == 201
+    dup = await client.post("/finance/v1/vendor-credits",
+                            json=_api_body(vendor_id=vid), headers=_h())
+    assert dup.status_code == 409

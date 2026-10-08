@@ -1,6 +1,7 @@
 import { api, fetchAllPages } from '@/lib/api'
 import type { ApiEvent } from './pr'
 import type { WorkflowNodeDef, CurrentStep } from '@/types'
+import type { ReminderResponse } from './reminder'
 
 export type PoStatus =
   | 'draft'
@@ -66,9 +67,14 @@ export interface ApiPo {
   vendor_id: string
   vendor_name: string
   is_prepaid: boolean
+  // This PO has an invoice a NEW payment could settle: unpaid AND not already
+  // claimed by a live payment application. Both the list and the detail
+  // endpoint fill it in, off one definition in the backend — the PA create
+  // page's PO picker and the PO page's Create PA button both gate on it and
+  // must not be able to disagree.
   has_unpaid_invoice: boolean
-  // ANY invoice points at this PO — detail endpoint only. Not the same as
-  // has_unpaid_invoice, which the LIST endpoint alone computes.
+  // ANY invoice points at this PO — detail endpoint only, and regardless of
+  // whether it is paid or claimed. A different question from has_unpaid_invoice.
   has_invoice?: boolean
   budget_code?: string
   expected_delivery?: string
@@ -83,6 +89,15 @@ export interface ApiPo {
   pr_id?: string
   pr_number?: string
   pr_requester_id?: string | null
+  // The linked PR's service owner (owner_id, else its requester) — the identity
+  // epms-api admits to create the GR on a service/project PO. Gate Create GR on
+  // THIS, not on pr_requester_id.
+  pr_owner_id?: string | null
+  // Department the PO's approvals route through (PO → PR.department_id); null
+  // for a PO with no PR. A payment is approved by ONE department's reviewers
+  // (its primary PO's), so the PA screens refuse to mix departments on one
+  // payment — mirrors epms-api pa.py::_assert_pos_coherent.
+  pr_department_id?: string | null
   approval_step_idx: number
   line_items: ApiPoLineItem[]
   created_by_name?: string | null
@@ -223,6 +238,10 @@ export const poService = {
 
   workflowSteps: (id: string) =>
     api.get<WorkflowNodeDef[]>(`/po/${id}/workflow-steps`),
+
+  /** Nudge whoever holds the open approval task (Approval Timeline button). */
+  remind: (id: string) =>
+    api.post<ReminderResponse>(`/po/${id}/remind`),
 
   // ── Sign-off (NC-imported POs) ────────────────────────────────────────────
   signoff: (id: string) =>

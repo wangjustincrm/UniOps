@@ -43,8 +43,11 @@ export function isImportedEditablePo(po: ImportedEditablePo | null | undefined):
  * measured against — so the rate freezes while every other field stays open.
  *
  * Reads `has_invoice`, which only the PO DETAIL endpoint fills in.
- * `has_unpaid_invoice` is not a substitute: the list endpoint alone computes
- * that one, and it is always false on a detail response.
+ * `has_unpaid_invoice` is not a substitute — not because of where it is
+ * computed (both endpoints fill it in now), but because it asks a narrower
+ * question: is there an invoice a NEW payment could settle. An invoice that is
+ * paid, or already claimed by someone's payment, makes that false while still
+ * being the very figure the variance was measured against.
  */
 export function isImportedTaxLocked(po: ImportedEditablePo | null | undefined): boolean {
   return !!po?.has_invoice

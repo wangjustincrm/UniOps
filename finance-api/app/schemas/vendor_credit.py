@@ -8,7 +8,9 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class VendorCreditCreate(BaseModel):
@@ -24,6 +26,21 @@ class VendorCreditCreate(BaseModel):
     line_items: list[dict] = Field(default_factory=list)
     file_name: str | None = Field(default=None, max_length=255)
     notes: str | None = None
+    # 'upload' = entered from a vendor credit-note document; 'manual' = no
+    # such document exists (vendor refuses to issue one) and AP records the
+    # credit from correspondence. 'qbo_import' is deliberately not accepted
+    # here — only the Phase C import writes that, through its own route.
+    source: Literal["upload", "manual"] = "upload"
+
+    @model_validator(mode="after")
+    def _manual_needs_a_reason(self):
+        # A manual credit has no vendor document behind it, so the reviewer's
+        # only account of where the money came from is this text plus the
+        # attached email. Blank would leave the approver guessing.
+        if self.source == "manual" and not (self.notes or "").strip():
+            raise ValueError("A manual credit needs notes explaining its basis "
+                             "(e.g. who at the vendor confirmed it, and when)")
+        return self
 
 
 class VendorCreditReview(BaseModel):

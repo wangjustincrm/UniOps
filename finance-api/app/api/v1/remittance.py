@@ -11,6 +11,11 @@ so a vendor email filled in after the payment, or an invoice number attached
 later, shows up immediately. The frontend's Refresh button is just a re-fetch
 of this endpoint.
 
+Each scope also has a `render` endpoint: same body as `send`, returns the
+exact emails (From/To/Cc/subject/HTML) `send` would deliver, and sends
+nothing. The panel shows it as a confirmation step so no advice leaves on a
+single click.
+
 Mounted onto the payments router. Route order matters: the payment-scoped
 paths (`/{payment_id}/remittance/...`) must be registered before payments.py's
 catch-all `GET /{payment_id}`, declared at the very bottom of that file.
@@ -20,7 +25,7 @@ from datetime import date
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,8 +61,25 @@ class RecipientRef(BaseModel):
     resend: bool = False
 
 
+# The date the advice TELLS THE PAYEE the money left, shared by every send
+# scope. AP routinely sends the advice a day or two after the funds actually
+# moved (bank cut-off, a cheque run signed the day before, a wire released
+# late Friday), so the date stored on the payment record — the date the
+# payment was RECORDED in UniOps — is not always the date the payee's bank
+# will show. Sending a date the payee cannot reconcile against their own
+# statement is exactly the confusion this exists to remove. It overrides what
+# the advice DISPLAYS and nothing else: `PaymentRecord.payment_date` is
+# accounting data behind the GL and is never rewritten from here.
+PAYMENT_DATE_FIELD = Field(
+    default=None,
+    description="Payment date shown on the advice; defaults to each payment "
+                "record's own payment_date when omitted.",
+)
+
+
 class SendRequest(BaseModel):
     recipients: list[RecipientRef] | None = None
+    payment_date: date | None = PAYMENT_DATE_FIELD
 
 
 class SelectionRequest(BaseModel):
@@ -74,6 +96,26 @@ class SelectionSendRequest(BaseModel):
     bug (Fix 3 Round 2), not a shortcut to reintroduce here."""
     payment_ids: list[uuid.UUID]
     recipients: list[RecipientRef] | None = None
+    payment_date: date | None = PAYMENT_DATE_FIELD
+
+
+def _advice_date(value: date | None) -> date | None:
+    """Validate the operator-supplied advice date. The only rule is that it
+    cannot be in the future: this date describes money that has ALREADY
+    moved (a remittance advice is only ever sent for a `completed` payment),
+    so a future date is a typo, and one the payee would read as a promise.
+
+    Backdating is the whole point and is deliberately unbounded — see
+    PAYMENT_DATE_FIELD. Comparing against the server's `date.today()` cannot
+    reject a legitimate "today" from a Toronto operator: the server runs UTC,
+    which is never BEHIND America/Toronto, so local-today is always <= UTC
+    today. (The frontend caps its picker at local today for the same reason
+    — RemittancePanel.tsx's `todayLocal`.)
+    """
+    if value is not None and value > date.today():
+        raise HTTPException(status_code=400,
+                             detail="Payment date cannot be in the future")
+    return value
 
 
 # Who may send remittance advice. Deliberately NOT
@@ -161,6 +203,8 @@ async def _reference_for(db: AsyncSession, rec: PaymentRecord) -> str:
             inv_no = (await batch_crud.vendor_inv_no_map(db, [pa])).get(pa.id, "")
             if inv_no:
                 return inv_no
+            if pa.pa_type == "prepayment" and pa.po_number:
+                return pa.po_number
         return f"PMT-{rec.id.hex[:8].upper()}"
     return rec.doc_number or str(rec.id)
 
@@ -205,7 +249,7 @@ async def _serialize_groups(db: AsyncSession, groups: list[rem.PayeeGroup], *,
         "total": str(g.total),
         "block_reasons": g.block_reasons,
         "lines": [{
-            "reference": (l.vendor_inv_no if g.recipient_kind == "vendor"
+            "reference": (l.vendor_ref if g.recipient_kind == "vendor"
                           else l.doc_number),
             "payment_date": l.payment_date.isoformat(),
             "amount": str(l.amount),
@@ -268,9 +312,14 @@ async def _preview(db: AsyncSession, user: dict, *, scope_kind: str,
     }
 
 
-async def _send(db: AsyncSession, user: dict, body: SendRequest, *,
-                 scope_kind: str, scope_id: uuid.UUID) -> dict:
+async def _send_args(db: AsyncSession, user: dict, body: SendRequest, *,
+                     scope_kind: str, scope_id: uuid.UUID) -> dict:
+    """Everything send_groups / render_groups need for a batch or payment
+    scope, validated. One function so the confirmation preview (`_render`)
+    and the real send (`_send`) cannot resolve the scope, recipients, sender
+    or date differently."""
     await _authorize(db, user)
+    advice_date = _advice_date(body.payment_date)
     reference, method, _ = await _scope_context(db, scope_kind=scope_kind, scope_id=scope_id)
     sender = await rc.load(db)
     if sender is None:
@@ -278,15 +327,24 @@ async def _send(db: AsyncSession, user: dict, body: SendRequest, *,
                              detail="Remittance email is not configured or is switched off")
     groups = await rem.build_groups(db, await rem.resolve_scope(db, scope_kind, scope_id))
     groups, resend_ids = _apply_recipients_filter(groups, body.recipients)
+    return dict(scope_kind=scope_kind, scope_id=scope_id, groups=groups,
+                reference=reference, payment_method=method,
+                company_name=await _company_name(db), sender=sender,
+                resend_ids=resend_ids, payment_date=advice_date)
 
-    company_name = await _company_name(db)
+
+async def _render(db: AsyncSession, user: dict, body: SendRequest, *,
+                   scope_kind: str, scope_id: uuid.UUID) -> dict:
+    """The emails `_send` would send for the same body — nothing is sent."""
+    args = await _send_args(db, user, body, scope_kind=scope_kind, scope_id=scope_id)
+    return {"emails": await rsend.render_groups(db, **args)}
+
+
+async def _send(db: AsyncSession, user: dict, body: SendRequest, *,
+                 scope_kind: str, scope_id: uuid.UUID) -> dict:
+    args = await _send_args(db, user, body, scope_kind=scope_kind, scope_id=scope_id)
     results = await rsend.send_groups(
-        db, scope_kind=scope_kind, scope_id=scope_id, groups=groups,
-        reference=reference, payment_method=method,
-        company_name=company_name, sender=sender,
-        actor_id=uuid.UUID(str(user["sub"])),
-        resend_ids=resend_ids,
-    )
+        db, **args, actor_id=uuid.UUID(str(user["sub"])))
     # No trailing db.commit() here — app/crud/remittance_send.py's
     # send_groups() already commits the log row right after EACH payee's send
     # attempt (see its module docstring). A trailing commit at this level
@@ -341,9 +399,12 @@ async def _selection_preview(db: AsyncSession, user: dict,
     }
 
 
-async def _selection_send(db: AsyncSession, user: dict,
-                           body: SelectionSendRequest) -> dict:
+async def _selection_send_args(db: AsyncSession, user: dict,
+                               body: SelectionSendRequest) -> dict:
+    """Selection-scope counterpart of `_send_args` — shared by the
+    confirmation preview and the real send for the same reason."""
     await _authorize(db, user)
+    advice_date = _advice_date(body.payment_date)
     records, groups = await _resolve_selection(db, body.payment_ids)
     scope_id = rem.selection_scope_id(body.payment_ids)
     sender = await rc.load(db)
@@ -351,16 +412,24 @@ async def _selection_send(db: AsyncSession, user: dict,
         raise HTTPException(status_code=409,
                              detail="Remittance email is not configured or is switched off")
     groups, resend_ids = _apply_recipients_filter(groups, body.recipients)
+    return dict(scope_kind=SCOPE_SELECTION, scope_id=scope_id, groups=groups,
+                reference=_selection_reference(records, groups),
+                payment_method=records[0].payment_method if records else "",
+                company_name=await _company_name(db), sender=sender,
+                resend_ids=resend_ids, payment_date=advice_date)
 
-    company_name = await _company_name(db)
+
+async def _selection_render(db: AsyncSession, user: dict,
+                             body: SelectionSendRequest) -> dict:
+    args = await _selection_send_args(db, user, body)
+    return {"emails": await rsend.render_groups(db, **args)}
+
+
+async def _selection_send(db: AsyncSession, user: dict,
+                           body: SelectionSendRequest) -> dict:
+    args = await _selection_send_args(db, user, body)
     results = await rsend.send_groups(
-        db, scope_kind=SCOPE_SELECTION, scope_id=scope_id, groups=groups,
-        reference=_selection_reference(records, groups),
-        payment_method=records[0].payment_method if records else "",
-        company_name=company_name, sender=sender,
-        actor_id=uuid.UUID(str(user["sub"])),
-        resend_ids=resend_ids,
-    )
+        db, **args, actor_id=uuid.UUID(str(user["sub"])))
     # See _send's comment above — send_groups already commits per payee.
     return _send_summary(results)
 
@@ -369,6 +438,13 @@ async def _selection_send(db: AsyncSession, user: dict,
 async def preview_batch(batch_id: uuid.UUID, user: CurrentUser,
                          db: AsyncSession = Depends(get_db)):
     return await _preview(db, user, scope_kind=SCOPE_BATCH, scope_id=batch_id)
+
+
+@router.post("/batches/{batch_id}/remittance/render")
+async def render_batch(batch_id: uuid.UUID, user: CurrentUser,
+                        body: SendRequest = SendRequest(),
+                        db: AsyncSession = Depends(get_db)):
+    return await _render(db, user, body, scope_kind=SCOPE_BATCH, scope_id=batch_id)
 
 
 @router.post("/batches/{batch_id}/remittance/send")
@@ -384,6 +460,12 @@ async def preview_selection(body: SelectionRequest, user: CurrentUser,
     return await _selection_preview(db, user, body.payment_ids)
 
 
+@router.post("/remittance/selection/render")
+async def render_selection(body: SelectionSendRequest, user: CurrentUser,
+                            db: AsyncSession = Depends(get_db)):
+    return await _selection_render(db, user, body)
+
+
 @router.post("/remittance/selection/send")
 async def send_selection(body: SelectionSendRequest, user: CurrentUser,
                           db: AsyncSession = Depends(get_db)):
@@ -394,6 +476,13 @@ async def send_selection(body: SelectionSendRequest, user: CurrentUser,
 async def preview_payment(payment_id: uuid.UUID, user: CurrentUser,
                            db: AsyncSession = Depends(get_db)):
     return await _preview(db, user, scope_kind=SCOPE_PAYMENT, scope_id=payment_id)
+
+
+@router.post("/{payment_id}/remittance/render")
+async def render_payment(payment_id: uuid.UUID, user: CurrentUser,
+                          body: SendRequest = SendRequest(),
+                          db: AsyncSession = Depends(get_db)):
+    return await _render(db, user, body, scope_kind=SCOPE_PAYMENT, scope_id=payment_id)
 
 
 @router.post("/{payment_id}/remittance/send")

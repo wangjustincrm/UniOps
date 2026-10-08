@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.badge_print import BadgePrint
+from app.services import area_rules
 from app.models.visit import AccessArea, HealthDeclStatus, Visit, VisitStatus
 
 
@@ -32,9 +33,7 @@ _TERMINAL = frozenset({
 })
 
 # Access areas that require a passing health declaration before a badge prints.
-_HEALTH_DECL_REQUIRED = frozenset({
-    AccessArea.production_gmp, AccessArea.laboratory,
-})
+_HEALTH_DECL_REQUIRED = area_rules.HEALTH_DECLARATION_AREAS
 
 
 def is_printable(visit: Visit) -> tuple[bool, str | None]:

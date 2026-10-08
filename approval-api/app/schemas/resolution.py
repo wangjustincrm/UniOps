@@ -46,4 +46,6 @@ class RoleManagementResponse(BaseModel):
     procurement_manager_backup_user_id: str | None = None
     vendor_manager_user_id: str | None = None
     vendor_manager_backup_user_id: str | None = None
+    finance_director_user_id: str | None = None
+    finance_director_backup_user_id: str | None = None
     finance_bp_user_ids: list[str] = []

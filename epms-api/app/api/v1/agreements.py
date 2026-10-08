@@ -14,6 +14,7 @@ from app.crud import agreement_schedule as agr_sched_crud
 from app.crud import vendor as vendor_crud
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_schedule import AgreementPaymentSchedule
+from app.models.invoice import Invoice
 from app.models.task import Task
 from app.schemas.agreement import (
     AgreementActionRequest,
@@ -22,10 +23,12 @@ from app.schemas.agreement import (
     AgreementResponse,
     AgreementUpdate,
     ScheduleListResponse,
+    ScheduleRowInvoice,
     ScheduleRowResponse,
 )
 from app.schemas.pr import ApprovalEventResponse
 from app.services.approval_client import delegate_action
+from app.services.budget_client import ensure_known_budget_code
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +60,13 @@ async def list_agreements(
 
 
 @router.post("", response_model=AgreementResponse, status_code=status.HTTP_201_CREATED)
-async def create_agreement(body: AgreementCreate, db: SessionDep, user: AgrWriteDep):
+async def create_agreement(
+    body: AgreementCreate, db: SessionDep, user: AgrWriteDep, token: BearerToken,
+):
     vendor = await vendor_crud.get_by_id(db, body.vendor_id)
     if vendor is None:
         raise HTTPException(status_code=404, detail="Vendor not found")
+    await ensure_known_budget_code(token, body.budget_code)
     return await agr_crud.create(
         db, body, vendor_name=vendor.name, created_by=uuid.UUID(user["sub"]),
     )
@@ -110,7 +116,8 @@ async def agreement_approval_events(
 
 @router.patch("/{agreement_id}", response_model=AgreementResponse)
 async def update_agreement(
-    agreement_id: uuid.UUID, body: AgreementUpdate, db: SessionDep, user: AgrWriteDep
+    agreement_id: uuid.UUID, body: AgreementUpdate, db: SessionDep, user: AgrWriteDep,
+    token: BearerToken,
 ):
     agr = await _visible_agreement_or_404(db, user, agreement_id)
     if agr.status not in agr_crud.EDITABLE_STATUSES:
@@ -119,6 +126,9 @@ async def update_agreement(
             detail=f"Agreement is {agr.status}; only a draft agreement can be edited. "
                    "Changing terms after approval requires a new approval round.",
         )
+    # Partial payload: None means "not sent".
+    if body.budget_code is not None:
+        await ensure_known_budget_code(token, body.budget_code)
     try:
         return await agr_crud.update(db, agr, body)
     except ValueError as exc:
@@ -136,6 +146,25 @@ async def agreement_action(
     # Gated by the open approval task, not by epms.agreement.write — approval
     # authority comes from the approval engine, mirroring po.py::po_action.
     agr = await _visible_agreement_or_404(db, user, agreement_id)
+    # Owner is mandatory from the moment an agreement leaves draft. It is the
+    # first thing _confirm_assignee (crud/agreement_schedule.py) looks at when
+    # it has to decide who confirms a period; with no owner it falls back to
+    # the department's manager, and with neither it creates a task nobody but
+    # system_admin can see — which is how a live agreement ends up with a
+    # period only an admin can confirm. Enforced HERE, on the submit action,
+    # rather than on AgreementCreate: the create schema is shared with the
+    # "Save as draft" path, and a draft is allowed to be incomplete. This is
+    # also the only gate that survives a caller who skips the UI, since
+    # owner_id can no longer be edited once the agreement leaves
+    # EDITABLE_STATUSES.
+    if body.action == "submit" and agr.owner_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Set an Owner before submitting this agreement for approval — "
+                   "the owner is the person asked to confirm each period's service "
+                   "before its invoice can be paid, and the owner cannot be changed "
+                   "once the agreement is approved.",
+        )
     # Whole-branch review finding: validate_milestones never checks emptiness
     # (recurring is protected the same way by validate_recurrence's own
     # coherence rule), so a milestone agreement could be submitted and
@@ -211,7 +240,22 @@ async def agreement_action(
 @router.get("/{agreement_id}/schedule", response_model=ScheduleListResponse)
 async def list_schedule(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep):
     agr = await _visible_agreement_or_404(db, user, agreement_id)
-    return {"items": await agr_sched_crud.list_rows(db, agreement_id)}
+    rows = await agr_sched_crud.list_rows(db, agreement_id)
+    # 一期多票:按 invoice.schedule_id 一次查齐,别逐行查。
+    by_row: dict[uuid.UUID, list[Invoice]] = {}
+    if rows:
+        invs = (await db.execute(
+            select(Invoice).where(Invoice.schedule_id.in_([r.id for r in rows]))
+            .order_by(Invoice.invoice_date, Invoice.created_at)
+        )).scalars().all()
+        for inv in invs:
+            by_row.setdefault(inv.schedule_id, []).append(inv)
+    items = []
+    for r in rows:
+        item = ScheduleRowResponse.model_validate(r)
+        item.invoices = [ScheduleRowInvoice.model_validate(i) for i in by_row.get(r.id, [])]
+        items.append(item)
+    return {"items": items}
 
 
 @router.post("/{agreement_id}/schedule/{row_id}/confirm", response_model=ScheduleRowResponse)

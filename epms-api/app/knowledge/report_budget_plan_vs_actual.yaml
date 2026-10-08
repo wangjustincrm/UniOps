@@ -1,0 +1,116 @@
+# The Budget Dashboard's Monthly Plan vs Actual grid — what the numbers in it
+# mean, and which of them are actually on it.
+#
+# ── What is prose here and what is not ───────────────────────────────────────
+# Almost nothing in the answer to "where does this number come from" is prose.
+# The five expense categories, the two exclusions, posted-only, gross debit and
+# the order the cost-centre map is consulted in are read from finance-api; the
+# plan filter and the operations that count as actual are read from budget-api;
+# the mapping rules themselves are read from the table finance maintains. All of
+# it is assembled in services/report_lineage.py and none of it is written down
+# twice.
+#
+# What is left — this file — is the part no code states: which figures the
+# report puts in a cell, why, and what to look at when one is wrong. That is a
+# finance decision, not a fact about a column.
+#
+# `shows` is load-bearing, not decoration. The services report every figure
+# they can compute; this list says which of them a person is actually looking
+# at, and report_lineage.py filters by it. A figure the report stopped showing
+# goes to `retired` with the date and the reason, because "there used to be a
+# middle number, where did it go" is a question that gets asked once per person
+# and deserves an answer rather than a silence.
+topic: report
+report: budget_plan_vs_actual
+label: Monthly Plan vs Actual
+
+question_hints:
+  - where does the actual on the budget dashboard come from
+  - how do you decide which cost centre a JV line belongs to
+  - why is this cost centre charged for this
+  - what rule fills the actual column
+  - why does the budget report disagree with NC
+
+# The figures in one cell, top to bottom. Keys are the services' own figure
+# names: `plan` and `actual_docs` from budget-api, `nc_posted` from finance-api.
+shows:
+  - plan
+  - nc_posted
+
+retired:
+  - figure: actual_docs
+    label: actual (docs)
+    removed: 2026-09-17
+    why: >-
+      It promised what this cost centre had spent in UniOps, and could only ever
+      show the opening balance finance had imported: not one of the movements
+      that were meant to fill it had ever been recorded, so the line repeated a
+      single imported figure into every month of every cell under a heading that
+      said it was current spend. A number that is always wrong is worse than no
+      number. It is removed from the screen only — the API still returns it, and
+      what it holds today is still reported under `what_it_was`, so the line
+      comes back the day something really books to that ledger.
+
+where_it_lives: >-
+  EPMS → Budget → Budget Dashboard, and the same grid embedded in Finance as
+  Budget Dashboard. One row per budget account, one column per month.
+
+what_it_is: >-
+  A month-by-month comparison, for one cost centre or for all of them, of what
+  was budgeted against what has actually been spent. Every cell holds two
+  figures stacked: plan on top, NC posted actual under it, red when the actual
+  is over the plan.
+
+why_these_figures: >-
+  They are the two ends of the same money: what was approved before the year
+  started, and what has reached the accounting system and been tallied there.
+  The gap between them is the whole point of the screen.
+
+which_one_is_the_truth: >-
+  Both, for what each one is. The plan is the commitment; NC posted is the
+  spending, and it is the figure the over-budget colouring, the alert cards and
+  the export are all judged on, because it is the one that has been through
+  accounting. When someone says "actual" on this screen they mean NC posted —
+  there is no longer a second actual to confuse it with.
+
+notes:
+  - >-
+    The cost centre on a posting is decided when the voucher is mirrored from
+    NC, from the expense account together with the NC department and NC
+    cost-centre code on the line. It is not something a person picks in UniOps
+    afterwards, and changing the map does not move postings that were already
+    mirrored.
+  - >-
+    A combination the map does not cover is not quietly given a default. The
+    line ends with no cost centre and appears in the exceptions panel of the
+    finance Budget-vs-Actual grid, which is the list of what someone has to fix
+    — in NC, or by adding a rule.
+  - >-
+    Financial expenses are the one family keyed differently. NC puts no
+    income-expense item on them, so the accounting account itself is the budget
+    line — Interest income, Bank Charge and their siblings each match a budget
+    account of the same code. Everything else is keyed by income-expense item.
+  - >-
+    Payroll, depreciation and shut-down loss are missing from this report on
+    purpose. Finance tracks payroll and depreciation at category level rather
+    than per cost centre, and shut-down loss — the stop-production entry that
+    moves a share of manufacturing overhead into G&A — is not budgeted per cost
+    centre at all. So a cost centre's total here is smaller than its total in
+    the books. The live list of what is left out is in the report's lineage
+    answer, which reads it from the query itself.
+  - >-
+    With no cost centre selected the grid adds up every cost centre that has a
+    current approved budget for the year — so a cost centre whose plan was never
+    approved contributes its actuals and no plan.
+
+when_a_cell_looks_wrong: >-
+  Check them in this order. Is the plan there at all — an unapproved or
+  superseded plan shows as no plan. Is the cost on the right month — NC uses the
+  voucher's fiscal period, not the day anyone typed it. Is it charged to the
+  right cost centre — that is the mapping rule, and the map is a short list you
+  can ask to see. And is it payroll, depreciation or shut-down loss, which this
+  report leaves out.
+
+who_maintains_it: >-
+  Finance owns the mapping rules, imported from the Budget vs Actual Mapping
+  workbook. Adding a rule is a finance change, not a code change.

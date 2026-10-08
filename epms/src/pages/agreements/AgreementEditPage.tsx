@@ -16,7 +16,7 @@ import { agreementAttachmentService } from '@/services/agreementAttachments'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { userService, type ApiUserBrief } from '@/services/users'
-import { BudgetAccountCascade } from '@/components/agreements/BudgetAccountCascade'
+import { BudgetAccountCascade } from '@/components/budget/BudgetAccountCascade'
 import { RecurringFields, EMPTY_RECURRING_FIELDS, type RecurringFieldsValue } from '@/components/agreements/RecurringFields'
 import { MilestoneEditor } from '@/components/agreements/MilestoneEditor'
 
@@ -146,6 +146,7 @@ export default function AgreementEditPage() {
       recurringType: agreement.recurring_type ?? '',
       expectedInvoiceDay: agreement.expected_invoice_day != null ? String(agreement.expected_invoice_day) : '',
       anchorMonth: agreement.anchor_month != null ? String(agreement.anchor_month) : '',
+      activeMonths: agreement.active_months ?? [],
       scheduleStartDate: agreement.schedule_start_date ?? '',
       amountPerPeriod: agreement.expected_amount_per_period ?? '',
       tolerancePct: agreement.tolerance_pct ?? '',
@@ -223,6 +224,16 @@ export default function AgreementEditPage() {
   const validate = (): boolean => {
     const e: Record<string, string> = {}
     if (!title.trim()) e.title = 'Title is required'
+    // Owner is required to leave draft (epms-api rejects a submit without one)
+    // and can never be edited afterwards, so it is enforced on Save too rather
+    // than only on Submit. Read through ownerTouched, not selectedOwner alone:
+    // an untouched picker is still null for the moment it takes the directory
+    // lookup to resolve the EXISTING owner_id into a name (see the effect
+    // above), and treating that window as "no owner" would block Save on a
+    // form the user never touched.
+    if (!(ownerTouched ? !!selectedOwner : !!agreement?.owner_id)) {
+      e.owner = 'Please select an owner'
+    }
     if (!validFrom) e.validFrom = 'Valid From date is required'
     if (!validTo) e.validTo = 'Valid To date is required'
     if (validFrom && validTo && validTo < validFrom) e.validTo = 'Valid To must be on or after Valid From'
@@ -236,6 +247,11 @@ export default function AgreementEditPage() {
         !recurringValue.anchorMonth
       ) {
         e.recurring = 'Anchor month is required for a quarterly/yearly cycle'
+      } else if (
+        recurringValue.recurringType === 'special_monthly' &&
+        recurringValue.activeMonths.length === 0
+      ) {
+        e.recurring = 'Tick at least one billing month for a special monthly cycle'
       }
     }
     if (agreement?.agreement_type === 'milestone' && milestoneRows.some((r) => !r.milestone_name.trim())) {
@@ -297,6 +313,13 @@ export default function AgreementEditPage() {
         body.recurring_type = recurringValue.recurringType || null
         body.expected_invoice_day = recurringValue.expectedInvoiceDay ? Number(recurringValue.expectedInvoiceDay) : null
         body.anchor_month = recurringValue.anchorMonth ? Number(recurringValue.anchorMonth) : null
+        // Explicit null on the other cycles, not undefined: switching a
+        // special_monthly agreement to plain monthly has to CLEAR the stored
+        // month list, and PATCH uses exclude_unset — an omitted key would
+        // leave the old list behind, which the backend then rejects as
+        // "active_months only applies to a special_monthly cycle".
+        body.active_months = recurringValue.recurringType === 'special_monthly'
+          ? recurringValue.activeMonths : null
         body.schedule_start_date = recurringValue.scheduleStartDate || null
         body.expected_amount_per_period = recurringValue.amountPerPeriod ? Number(recurringValue.amountPerPeriod) : null
         body.tolerance_pct = recurringValue.tolerancePct ? Number(recurringValue.tolerancePct) : null
@@ -548,7 +571,9 @@ export default function AgreementEditPage() {
 
               {/* Owner */}
               <div ref={ownerAnchorRef} className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Owner</label>
+                <label className="text-sm font-medium text-neutral-700">
+                  Owner <span className="text-danger-600">*</span>
+                </label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                   <input
@@ -556,8 +581,11 @@ export default function AgreementEditPage() {
                     placeholder={agreement.owner_id && !selectedOwner ? 'Search to change owner…' : 'Search people by name…'}
                     value={selectedOwner ? selectedOwner.full_name : ownerQuery}
                     onFocus={() => { setOwnerOpen(true); if (selectedOwner) setOwnerQuery('') }}
-                    onChange={(e) => { setOwnerQuery(e.target.value); setSelectedOwner(null); setOwnerOpen(true) }}
-                    className="h-10 w-full rounded-md border border-neutral-300 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    onChange={(e) => { setOwnerQuery(e.target.value); setSelectedOwner(null); setOwnerOpen(true); setErrors((p) => ({ ...p, owner: '' })) }}
+                    className={cn(
+                      'h-10 w-full rounded-md border bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                      errors.owner ? 'border-danger-600' : 'border-neutral-300'
+                    )}
                   />
                   {selectedOwner && (
                     <button
@@ -576,7 +604,7 @@ export default function AgreementEditPage() {
                         key={u.id}
                         type="button"
                         className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-primary-50 text-left"
-                        onClick={() => { setSelectedOwner(u); setOwnerTouched(true); setOwnerOpen(false); setOwnerQuery('') }}
+                        onClick={() => { setSelectedOwner(u); setOwnerTouched(true); setOwnerOpen(false); setOwnerQuery(''); setErrors((p) => ({ ...p, owner: '' })) }}
                       >
                         <span>{u.full_name}</span>
                         {u.department_name && <span className="text-xs text-neutral-400">{u.department_name}</span>}
@@ -587,11 +615,12 @@ export default function AgreementEditPage() {
                     )}
                   </DropdownPortal>
                 )}
-                {agreement.owner_id && !selectedOwner && (
+                {agreement.owner_id && !selectedOwner && !ownerTouched && (
                   <p className="text-xs text-neutral-400">
                     An owner is already set. Leave blank to keep it, or search to replace it.
                   </p>
                 )}
+                {errors.owner && <p className="text-xs text-danger-600">{errors.owner}</p>}
               </div>
             </div>
           </div>

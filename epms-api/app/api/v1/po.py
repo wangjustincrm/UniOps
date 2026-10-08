@@ -10,18 +10,21 @@ from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.access_scope import build_scope
 from app.services import approval_client as approval_client
+from app.services.budget_client import ensure_known_budget_code
 from app.services.approval_client import delegate_action
 from app.crud import po as po_crud
 from app.crud import vendor as vendor_crud
 from app.crud import gr as gr_crud
 from app.crud.current_step import enrich_current_step
+from app.crud.pr_owner import get_pr_owner_id
 from app.models.admin_audit_log import AdminAuditLog
-from app.models.invoice import Invoice
-from app.models.invoice_allocation import InvoicePoAllocation
+
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.schemas.po import PlaceOrderRequest, PoActionRequest, PoCreate, PoImportedDetailsUpdate, PoListResponse, PoResponse, PoUpdate
 from app.schemas.pr import ApprovalEventResponse
+from app.schemas.reminder import ReminderResponse
+from app.services.manual_reminder import remind_document
 from app.services.notification import fire_and_forget_notify
 
 router = APIRouter(prefix="/po", tags=["purchase-orders"])
@@ -65,51 +68,44 @@ async def list_pos(
     # frontend can scope actions like PA creation to the requester's own POs.
     # Resolved here in batch because pr_requester_id is not a column on the PO.
     pr_requester_map: dict[uuid.UUID, uuid.UUID] = {}
+    pr_department_map: dict[uuid.UUID, uuid.UUID | None] = {}
     if items:
         listed_ids = [po.id for po in items]
-        rows = await db.execute(
-            select(Invoice.po_id).where(
-                Invoice.po_id.in_(listed_ids),
-                Invoice.status != "paid",
-            ).distinct()
-        )
-        unpaid_invoice_po_ids = {r for r in rows.scalars().all() if r is not None}
-        # An invoice can pay for several POs: the header links one, the rest hang
-        # off invoice_po_allocations. Counting only the header hid the allocated
-        # POs from the PA create page's PO picker (it offers
-        # `is_prepaid || has_unpaid_invoice`), so nobody could raise their PA.
-        alloc_rows = await db.execute(
-            select(InvoicePoAllocation.po_id)
-            .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
-            .where(
-                InvoicePoAllocation.po_id.in_(listed_ids),
-                Invoice.status != "paid",
-            ).distinct()
-        )
-        unpaid_invoice_po_ids |= {r for r in alloc_rows.scalars().all() if r is not None}
+        # "Has an invoice a new payment could actually settle" — unpaid AND not
+        # already claimed by a live PA, counting both the invoice header link
+        # and line allocations (one invoice can pay several POs). The single
+        # definition lives in crud.po so GET /po/{id} below answers identically;
+        # the PA create page's PO picker and the PO page's Create PA button both
+        # gate on this flag, and they must not be able to disagree.
+        unpaid_invoice_po_ids = await po_crud.payable_invoice_po_ids(db, listed_ids)
 
         pr_ids = [po.pr_id for po in items if po.pr_id is not None]
         if pr_ids:
             pr_rows = await db.execute(
-                select(PurchaseRequest.id, PurchaseRequest.created_by).where(
+                select(PurchaseRequest.id, PurchaseRequest.created_by,
+                       PurchaseRequest.department_id).where(
                     PurchaseRequest.id.in_(pr_ids)
                 )
             )
-            pr_requester_map = {pid: cby for pid, cby in pr_rows.all()}
+            for pid, cby, dept in pr_rows.all():
+                pr_requester_map[pid] = cby
+                pr_department_map[pid] = dept
     po_responses = []
     for po in items:
         data = PoResponse.model_validate(po).model_dump()
         data["has_unpaid_invoice"] = po.id in unpaid_invoice_po_ids
         data["pr_requester_id"] = pr_requester_map.get(po.pr_id) if po.pr_id else None
+        data["pr_department_id"] = pr_department_map.get(po.pr_id) if po.pr_id else None
         po_responses.append(data)
     return {"items": po_responses, "total": total}
 
 
 @router.post("", response_model=PoResponse, status_code=status.HTTP_201_CREATED)
-async def create_po(body: PoCreate, db: SessionDep, user: PoWriteDep):
+async def create_po(body: PoCreate, db: SessionDep, user: PoWriteDep, token: BearerToken):
     vendor = await vendor_crud.get_by_id(db, body.vendor_id)
     if vendor is None:
         raise HTTPException(status_code=404, detail="Vendor not found")
+    await ensure_known_budget_code(token, body.budget_code)
     return await po_crud.create(
         db, body,
         vendor_code=vendor.code,
@@ -131,17 +127,32 @@ async def get_po(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     # actual requester identity (not the PO creator / not a generic role).
     data = PoResponse.model_validate(po).model_dump()
     data["pr_requester_id"] = await gr_crud.get_pr_requester_id(db, po.pr_id)
+    # And its service OWNER — the identity POST /gr actually admits on a
+    # service/project PO. The two are the same person unless a service PR named
+    # someone else, and the PO page's Create GR button must follow the gate, not
+    # the requester label (an owner shown no button is an owner who received the
+    # reminder and cannot act on it).
+    data["pr_owner_id"] = await get_pr_owner_id(db, po.pr_id)
+    data["pr_department_id"] = await po_crud.pr_department_id(db, po.pr_id)
+    # Computed here too, not just on the list: the PO page's Create PA button
+    # gates on it, and it used to re-derive its own version client-side from the
+    # PO's invoices — which drifted the moment the list-side rule changed.
+    data["has_unpaid_invoice"] = po_id in await po_crud.payable_invoice_po_ids(db, [po_id])
     data["has_invoice"] = await po_crud.has_any_invoice(db, po_id)
     return data
 
 
 @router.patch("/{po_id}", response_model=PoResponse)
-async def update_po(po_id: uuid.UUID, body: PoUpdate, db: SessionDep, user: PoWriteDep):
+async def update_po(po_id: uuid.UUID, body: PoUpdate, db: SessionDep, user: PoWriteDep, token: BearerToken):
     po = await po_crud.get_by_id(db, po_id)
     if po is None:
         raise HTTPException(status_code=404, detail="PO not found")
     if po.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail=f"Cannot edit PO in status '{po.status}'")
+    # PoUpdate is a partial: None means "not sent", so an unrelated PATCH is not
+    # forced to re-prove a code it never touched.
+    if body.budget_code is not None:
+        await ensure_known_budget_code(token, body.budget_code)
 
     vendor_code = vendor_name = None
     if body.vendor_id is not None:
@@ -435,6 +446,21 @@ async def place_order(
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/{po_id}/remind", response_model=ReminderResponse)
+async def remind_po_approver(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """Nudge whoever holds this PO's open approval task.
+
+    Backs the "Send reminder" link under the current step of the Approval
+    Timeline — see remind_pr_approver in pr.py for why there is no role gate.
+    """
+    po = await po_crud.get_by_id(db, po_id)
+    if po is None:
+        raise HTTPException(status_code=404, detail="PO not found")
+    return await remind_document(
+        db, document_type="po", document_id=po_id, actor_id=uuid.UUID(user["sub"]),
+    )
 
 
 @router.get("/{po_id}/events", response_model=list[ApprovalEventResponse])

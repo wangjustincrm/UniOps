@@ -80,6 +80,8 @@ export interface Visit {
   accompanying_count: number | null
   vehicle_plate: string | null
   notes: string | null
+  approval_status: string | null
+  visit_title: string
   approval_step_idx: number | null
   submitted_at: string | null
   quality_approver_id: string | null
@@ -91,6 +93,41 @@ export interface Visit {
   // don't bother to join (e.g. some post-mutation echoes).
   visitor: Visitor | null
   additional_visitors: Visitor[]
+  /** Detail only: the approver's comment on the last return / reject. */
+  approval_note?: ApprovalNote | null
+  /** Create only: why the visit could not be sent for approval (it is saved
+   *  as Pending Approval and waits for "Submit for approval"). */
+  approval_submit_error?: string | null
+  /** Detail only: may I edit / resubmit / cancel it (server's own rule). */
+  can_manage?: boolean | null
+}
+
+export interface ApprovalNote {
+  action: 'return' | 'reject'
+  comment: string | null
+  actor_name: string | null
+  at: string
+}
+
+/** What each access area requires — served by vms-api, the same rules it enforces. */
+export interface AreaRule {
+  area: AccessArea
+  requires_approval: boolean
+  requires_quality_manager: boolean
+  requires_health_declaration: boolean
+  compliance_tasks_at_check_in: boolean
+  gmp_grade: boolean
+}
+
+export function useAreaRules() {
+  return useQuery<Record<string, AreaRule>>({
+    queryKey: ['vms-area-rules'],
+    queryFn: async () => {
+      const rows = await api.get<AreaRule[]>('/api/v1/area-rules')
+      return Object.fromEntries(rows.map((r) => [r.area, r]))
+    },
+    staleTime: Infinity,
+  })
 }
 
 export interface UserBrief {
@@ -243,6 +280,41 @@ export function useCancelVisit(visitId: string | undefined) {
     onSuccess: (visit) => {
       qc.invalidateQueries({ queryKey: ['vms-visits'] })
       qc.invalidateQueries({ queryKey: ['vms-visit', visit.id] })
+      qc.invalidateQueries({ queryKey: ['vms-my-tasks'] })  // cancel closes the visit's tasks
+    },
+  })
+}
+
+export interface UpdateVisitPayload {
+  visit_date?: string
+  planned_arrival?: string
+  planned_departure?: string | null
+  visit_purpose?: VisitPurpose
+  access_area?: AccessArea
+  notes?: string | null
+}
+
+export function useUpdateVisit(visitId: string | undefined) {
+  const qc = useQueryClient()
+  return useMutation<Visit, Error, UpdateVisitPayload>({
+    mutationFn: (body) => api.patch<Visit>(`/api/v1/visits/${visitId}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vms-visits'] })
+      qc.invalidateQueries({ queryKey: ['vms-visit', visitId] })
+    },
+  })
+}
+
+/** Send a visit (again) for approval — after a failed hand-off, or after the
+ *  approver returned it for edit. */
+export function useSubmitVisit(visitId: string | undefined) {
+  const qc = useQueryClient()
+  return useMutation<Visit, Error, void>({
+    mutationFn: () => api.post<Visit>(`/api/v1/visits/${visitId}/submit`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vms-visits'] })
+      qc.invalidateQueries({ queryKey: ['vms-visit', visitId] })
+      qc.invalidateQueries({ queryKey: ['vms-my-tasks'] })
     },
   })
 }
@@ -464,6 +536,38 @@ export function useUploadVisitAttachment(visitId: string) {
   })
 }
 
+/** Open an attachment. The file comes through vms-api with the caller's token
+ *  (a plain link to file-api could not authenticate), then opens in a new tab. */
+export async function openAttachment(att: VisitAttachment): Promise<void> {
+  const base = (import.meta.env.VITE_API_URL as string | undefined) || ''
+  const token = (() => {
+    for (const key of ['vms-auth', 'portal-auth']) {
+      const raw = localStorage.getItem(key)
+      const t = raw ? JSON.parse(raw)?.state?.token : null
+      if (t) return t
+    }
+    return null
+  })()
+  // Open the tab synchronously so pop-up blockers allow it, then fill it.
+  const win = window.open('', '_blank')
+  try {
+    const resp = await fetch(`${base}${att.download_url}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }))
+      throw new Error(err.detail ?? `HTTP ${resp.status}`)
+    }
+    const url = URL.createObjectURL(await resp.blob())
+    if (win) win.location.href = url
+    else window.location.href = url
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch (e) {
+    win?.close()
+    throw e
+  }
+}
+
 // ── Reports (auditor / admin) ──────────────────────────────────────────────-
 
 export type ReportKind = 'cfia-visit-log' | 'gmp-area-summary'
@@ -682,6 +786,15 @@ export function useAuditLogs(filters: AuditLogFilters = {}) {
  *  production, attaching the Bearer token via fetch + Blob URL is the
  *  right approach. Caller decides which path to use.
  */
+/** Action / entity types present in the audit log — the filter options. */
+export function useAuditFacets() {
+  return useQuery<{ action_types: string[]; entity_types: string[] }>({
+    queryKey: ['vms-audit-facets'],
+    queryFn: () => api.get('/api/v1/audit-logs/facets'),
+    staleTime: 60_000,
+  })
+}
+
 export function buildAuditCsvPath(filters: AuditLogFilters): string {
   const qs = buildAuditQs(filters)
   return `/api/v1/audit-logs/export${qs ? '?' + qs : ''}`
@@ -936,7 +1049,9 @@ export const BADGE_CONFIG_DEFAULTS: BadgeConfig = {
 export function useBadgeConfig() {
   return useQuery<BadgeConfig>({
     queryKey: ['vms-badge-config'],
-    queryFn: () => api.get<BadgeConfig>('/api/v1/admin/badge-config'),
+    // Readable by everyone who prints. The admin-only endpoint returned 403 to
+    // Hosts, so their badges silently ignored the admin's configuration.
+    queryFn: () => api.get<BadgeConfig>('/api/v1/badge/config'),
     staleTime: 30_000,
   })
 }

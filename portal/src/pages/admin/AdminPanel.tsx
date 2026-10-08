@@ -102,6 +102,7 @@ const ROLE_LABELS: Record<string,string> = {
   finance_bp:'Finance BP', cfo:'CFO', auditor:'Auditor', vendor_manager:'Vendor Manager',
   erp_pa_officer:'ERP PA Officer',
   payment_officer:'Payment Officer',
+  finance_director:'Finance Director',
   system_admin:'System Admin',
 }
 
@@ -1412,6 +1413,7 @@ const ACTION_KEY_LABELS: Record<ActionKey, string> = {
 // singleton posts are the only ones that can hold a step here.
 const SIGNOFF_ROLE_VALUES = new Set([
   'gm', 'opm', 'procurement_manager', 'finance_manager', 'vendor_manager',
+  'finance_director',
 ])
 
 const SIG_SLOTS: { value: '' | 'initials' | 'signature'; label: string }[] = [
@@ -1429,6 +1431,7 @@ const WORKFLOW_ROLES = [
   { value: 'opm',                 label: 'OPM' },
   { value: 'procurement_manager', label: 'Procurement Manager' },
   { value: 'finance_manager',     label: 'Finance Manager' },
+  { value: 'finance_director',    label: 'Finance Director' },
   { value: 'finance_bp',          label: 'Finance BP' },
   { value: 'ap_clerk',            label: 'AP Clerk' },
   // VMS-local role — vms-api resolves the specific user from
@@ -2249,7 +2252,13 @@ const SECTIONS = [
 
 export default function AdminPanel() {
   const { user } = useAuthStore()
-  const [section, setSection] = useState('company')
+  // ?section=<key> makes each panel deep-linkable — the NC sync error tasks in
+  // the Task Inbox link straight to /admin?section=nc_sync. An unknown or absent
+  // key falls back to the default panel.
+  const [section, setSection] = useState(() => {
+    const wanted = new URLSearchParams(window.location.search).get('section')
+    return wanted && SECTIONS.some((s) => s.key === wanted) ? wanted : 'company'
+  })
 
   if (user?.role !== 'system_admin') return <Navigate to="/" replace />
 

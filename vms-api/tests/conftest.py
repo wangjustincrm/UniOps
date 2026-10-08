@@ -113,7 +113,7 @@ async def _stub_approval_engine():
     async def _stub_submit(visit_id, bearer_token):
         async with session_module.AsyncSessionLocal() as db:
             row = (await db.execute(_select(_Visit).where(_Visit.id == visit_id))).scalar_one_or_none()
-            if row is not None and row.approval_status == "draft":
+            if row is not None and row.approval_status in ("draft", "returned"):
                 row.approval_status = "submitted"
                 row.approval_step_idx = 0
                 await db.commit()
@@ -122,7 +122,7 @@ async def _stub_approval_engine():
     async def _stub_cancel(visit_id, bearer_token):
         async with session_module.AsyncSessionLocal() as db:
             row = (await db.execute(_select(_Visit).where(_Visit.id == visit_id))).scalar_one_or_none()
-            if row is not None and row.approval_status in ("draft", "submitted", "in_review"):
+            if row is not None and row.approval_status in ("draft", "submitted", "in_review", "returned"):
                 row.approval_status = "cancelled"
                 await db.commit()
         return {"new_status": "cancelled"}

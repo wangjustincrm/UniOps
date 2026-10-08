@@ -215,3 +215,53 @@ async def test_upload_attachment_returns_404_for_invisible_visit(
         files={"file": ("hax.pdf", b"x", "application/pdf")},
     )
     assert resp.status_code == 404
+
+
+# ── Download through vms-api (D-14) ─────────────────────────────────────────-
+
+async def test_download_goes_through_vms_api_and_respects_scope(test_engine, requester, monkeypatch):
+    """The listing used to hand out file-api's internal URL, which a browser
+    link cannot authenticate against. Downloads now go through vms-api."""
+    user, client = requester
+    vid = await _make_visitor(client)
+    visit = (await client.post("/api/v1/visits", json=_payload(vid, str(user.id)))).json()
+    fid = await _insert_file_metadata_row(visit_id=visit["id"], filename="permit é.pdf", uploaded_by=str(user.id))
+
+    class _Resp:
+        content = b"%PDF-1.4 fake"
+        def raise_for_status(self):
+            pass
+
+    calls = []
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+        async def get(self, url, headers=None):
+            calls.append((url, headers))
+            return _Resp()
+
+    monkeypatch.setattr(attachments_svc.httpx, "AsyncClient", _Client)
+
+    listed = (await client.get(f"/api/v1/visits/{visit['id']}/attachments")).json()
+    assert listed[0]["download_url"] == f"/api/v1/visits/{visit['id']}/attachments/{fid}/download"
+
+    r = await client.get(listed[0]["download_url"])
+    assert r.status_code == 200
+    assert r.content == b"%PDF-1.4 fake"
+    assert r.headers["content-type"] == "application/pdf"
+    assert "permit" in r.headers["content-disposition"]
+    assert calls and calls[0][1]["Authorization"].startswith("Bearer ")
+
+    # A file id from another visit is not served through this visit.
+    other = (await client.post("/api/v1/visits", json=_payload(vid, str(user.id)))).json()
+    assert (await client.get(f"/api/v1/visits/{other['id']}/attachments/{fid}/download")).status_code == 404
+
+    # Someone who cannot see the visit gets 404.
+    stranger = await make_user(test_engine, role="requester")
+    async with authed_client(make_token(stranger.id, stranger.role)) as sc:
+        assert (await sc.get(listed[0]["download_url"])).status_code == 404

@@ -4,7 +4,10 @@
 
 export interface FieldSpec {
   name: string
-  type: 'string' | 'number' | 'decimal' | 'bool' | 'date' | 'datetime' | 'uuid' | 'json' | 'enum' | 'reference'
+  // 'reference_list' = a JSONB array of ids edited via ReferenceListPicker
+  // (payment_applications.invoice_ids / gr_ids). Keep in sync with
+  // epms-api/app/admin/fields.py::FieldType.
+  type: 'string' | 'number' | 'decimal' | 'bool' | 'date' | 'datetime' | 'uuid' | 'json' | 'enum' | 'reference' | 'reference_list'
   editable: boolean
   label: string
   options: string[] | null
@@ -16,6 +19,12 @@ export interface ChildSchema {
   table_label: string
   fk_field: string
   fields: FieldSpec[]
+  /** line_total = qty_field × price_field ("qty_received" on GR lines). */
+  qty_field?: string
+  price_field?: string
+  /** false = existing lines editable/deletable only, no "+ Add row". */
+  allow_add?: boolean
+  note?: string | null
 }
 
 export interface EntitySchema {
@@ -27,6 +36,7 @@ export interface EntitySchema {
   search_fields: string[]
   order_by: string
   allow_edit?: boolean   // false = delete-only (no edit). Missing → editable.
+  allow_delete?: boolean // false = edit-only (VMS compliance records). Missing → deletable.
   fields: FieldSpec[]
   child?: ChildSchema | null
 }

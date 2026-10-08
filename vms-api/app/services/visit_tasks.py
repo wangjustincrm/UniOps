@@ -151,3 +151,30 @@ async def close_settled_visit_tasks(db: AsyncSession) -> int:
         task.completed_at = now
     await db.flush()
     return len(rows)
+
+
+async def close_open_visit_tasks(
+    db: AsyncSession, visit_id: uuid.UUID, *, types: tuple[str, ...] | None = None,
+) -> int:
+    """Complete open `vms_visit` tasks on one visit (all of them, or `types`).
+
+    Used when vms-api ends a visit's approval itself — cancel by someone the
+    engine does not let cancel (the Host, a department manager), auto no-show
+    of a visit still pending, a resubmit (the engine leaves the Revise task
+    open). Without it those tasks stayed in inboxes forever.
+    """
+    q = select(Task).where(
+        Task.document_type == DOC_TYPE_VISIT,
+        Task.document_id == visit_id,
+        Task.is_completed.is_(False),
+    )
+    if types:
+        q = q.where(Task.type.in_(types))
+    rows = (await db.execute(q)).scalars().all()
+    now = datetime.now(timezone.utc)
+    for task in rows:
+        task.is_completed = True
+        task.completed_at = now
+    if rows:
+        await db.flush()
+    return len(rows)

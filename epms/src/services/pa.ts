@@ -66,6 +66,13 @@ export interface ApiPa {
   // checks need the real type).
   po_id: string | null
   po_number: string | null
+  // Every PO this payment settles, primary first — one PA may cover several
+  // POs of the same vendor. po_id/po_number above are just the primary one, so
+  // anything rendering "which PO(s)" must use these. Empty on the agreement
+  // route. Optional in the type because a cached response from before the
+  // multi-PO release has neither field.
+  po_ids?: string[]
+  po_numbers?: string[]
   // Agreement-sourced PAs (Phase 1A) carry these instead — both null for a
   // PO-sourced PA. Mirrors PaResponse.agreement_id/agreement_number
   // (epms-api/app/schemas/pa.py) — added when the agreement create route
@@ -109,6 +116,10 @@ export interface CreatePaBody {
   // epms-api/app/schemas/pa.py). The agreement route (Task 10) has no PO,
   // no GR, and no receipt-override fields — none of those apply there.
   po_id?: string
+  // Multi-PO payment: every PO this PA settles, primary first. Sent instead of
+  // po_id; the backend derives the primary from the first entry. All POs must
+  // share a vendor and a currency, and the type must be 'regular'.
+  po_ids?: string[]
   agreement_id?: string
   invoice_ids?: string[]
   gr_ids?: string[]
@@ -140,6 +151,9 @@ export interface UpdatePaBody {
   vendor_id?: string
   vendor_name?: string
   po_id?: string
+  // Replaces the PA's whole PO set (draft / returned only). Omit to leave the
+  // POs alone; [] is rejected — a PA must cover at least one PO.
+  po_ids?: string[]
   invoice_ids?: string[]
   gr_ids?: string[]
   prepayment_applied?: number

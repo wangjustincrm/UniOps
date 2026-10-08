@@ -40,7 +40,24 @@ _MODULE_BY_KEY = {
     "pa_override_receipt": "epms",
     "view_budget_dashboard": "finance", "view_budget_plans": "finance",
     "view_finance": "finance",
+    # The two halves of budget visibility. view_dept is the floor the assistant
+    # gates on; view_all widens the row scope to the whole company. Both were
+    # already in the production matrix and neither was in this seed, so a test
+    # of the distinction would have had nothing to distinguish.
+    "finance.budget.view_all": "finance", "finance.budget.view_dept": "finance",
     "view_booking": "booking", "manage_meeting_rooms": "booking",
+    # The assistant's MRP and BOM entities gate on this. It was missing here
+    # while the entities already used it, so every caller was denied — and the
+    # tests asserting a requester CANNOT see MRP data passed for the wrong
+    # reason, proving nothing. A denial test needs a matching admission test, or
+    # it is satisfied by everything being broken.
+    "mrp.report.view": "mrp",
+    # Gates the assistant's settings entities (users, departments, cost
+    # centres, the access matrix). Added by identity-api migration 0013 and
+    # granted to system_admin there — explicitly, because the assistant reads
+    # effective_permissions(), which does not short-circuit system_admin the
+    # way require_permission() does.
+    "view_system_settings": "portal",
 }
 _PERMISSION_KEYS = list(_MODULE_BY_KEY)
 
@@ -68,9 +85,20 @@ _LOCKED = {
 }
 
 _VIEW_ALL = {k: True for k in ("view_pr", "view_po", "view_gr", "view_invoice", "view_pa")}
-_FINANCE_ALL = {"view_budget_dashboard": True, "view_budget_plans": True, "view_finance": True}
+_FINANCE_ALL = {"view_budget_dashboard": True, "view_budget_plans": True,
+                "view_finance": True, "finance.budget.view_all": True}
 _BOOKING = {"view_booking": True}
 _BUDGET_VIEW = {"view_budget_dashboard": True, "view_budget_plans": True}
+# Mirrors production: nearly every non-finance role holds the department-scoped
+# half — requester, dept_manager, procurement, warehouse and so on.
+_BUDGET_DEPT = {"finance.budget.view_dept": True}
+# Mirrors production: erp_pa_officer, finance_manager, gm, opm,
+# procurement_manager and system_admin hold it. erp_pa_officer is not one of the
+# 17 built-ins seeded here.
+_MRP_REPORT = {"mrp.report.view": True}
+# Production grants this to system_admin only; an admin can widen it in
+# Portal -> Access Control.
+_SYSTEM_SETTINGS = {"view_system_settings": True}
 
 
 def _p(**kw):
@@ -80,19 +108,19 @@ def _p(**kw):
 
 
 _DEFAULTS = {
-    "requester":           _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING),
+    "requester":           _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING, **_BUDGET_DEPT),
     "dept_admin":          _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING),
-    "dept_manager":        _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BUDGET_VIEW, **_BOOKING),
+    "dept_manager":        _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BUDGET_VIEW, **_BOOKING, **_BUDGET_DEPT),
     "supervisor":          _p(view_pr=True, **_BOOKING),
     "director":            _p(view_pr=True, view_pa=True, **_BOOKING),
-    "gm":                  _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING),
-    "opm":                 _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING),
+    "gm":                  _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING, **_MRP_REPORT),
+    "opm":                 _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING, **_MRP_REPORT),
     "procurement_officer": _p(create_gr=True, vendor_master=True, parts_catalog=True, pa_override_receipt=True, **_VIEW_ALL, **_BOOKING),
-    "procurement_manager": _p(create_gr=True, vendor_master=True, parts_catalog=True, pa_override_receipt=True, **_VIEW_ALL, **_BOOKING),
+    "procurement_manager": _p(create_gr=True, vendor_master=True, parts_catalog=True, pa_override_receipt=True, **_VIEW_ALL, **_BOOKING, **_MRP_REPORT),
     "warehouse_staff":     _p(create_gr=True, view_gr=True, **_BOOKING),
     "ap_clerk":            _p(create_gr=True, invoice_upload=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
     "finance_bp":          _p(create_gr=True, pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
-    "finance_manager":     _p(create_pr=True, create_gr=True, admin_panel=True, pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "finance_manager":     _p(create_pr=True, create_gr=True, admin_panel=True, pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING, **_MRP_REPORT),
     "vendor_manager":      _p(vendor_master=True, admin_panel=True, **_BOOKING),
     "cfo":                 _p(pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
     "auditor":             _p(**_VIEW_ALL, **_BOOKING),
@@ -256,6 +284,37 @@ async def test_engine():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+
+        # Tables the assistant's ontology READS but this service does not own —
+        # finance-api's ledger, mrp-api's planning tables, mdm-api's BOMs. They
+        # are mapped on their own metadata precisely so this service never
+        # creates them in a real database; a test database is the one place that
+        # is correct, because it is built from nothing every run.
+        #
+        # Without this every query against those entities failed with
+        # "relation does not exist" — and nobody noticed, because the tests that
+        # touched them were all asserting a DENIAL and never reached the SQL.
+        from app.core.ontology import _ExternalBase
+        await conn.run_sync(_ExternalBase.metadata.create_all)
+
+        # Tables no entity maps but the scopes and expressions reach into: the
+        # NC BOM mirror carries the default-version flag, and each planning
+        # table's run registry decides which run is the current one. Only the
+        # columns those queries touch.
+        for ddl in (
+            "CREATE TABLE nc_bom (nc_source_pk varchar(64) PRIMARY KEY,"
+            " hbdefault varchar(4))",
+            "CREATE TABLE mrp_mps_runs (id uuid PRIMARY KEY, is_default boolean,"
+            " created_at timestamptz DEFAULT now())",
+            "CREATE TABLE mrp_forecast_versions (id uuid PRIMARY KEY,"
+            " status varchar(20), created_at timestamptz DEFAULT now())",
+            "CREATE TABLE mrp_purchase_runs (id uuid PRIMARY KEY,"
+            " created_at timestamptz DEFAULT now())",
+        ):
+            name = ddl.split()[2]
+            await conn.execute(text(f"DROP TABLE IF EXISTS {name} CASCADE"))
+            await conn.execute(text(ddl))
+
         # `user_roles` is identity-owned (no ORM model here — access_scope's
         # _effective_role_codes reads it directly, same physical DB in prod,
         # phase-3 Task 5). Shadow it so tests can grant additional roles.
@@ -369,6 +428,21 @@ async def _restore_default_matrix(test_engine):
         await _seed_default_matrix(db)
         await db.commit()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _clear_budget_account_cache():
+    """budget_client caches the account catalog for 60s (every document write
+    now validates budget_code against it). Module-level state outlives a test,
+    so without this the next test's MockTransport is never consulted and it
+    asserts against the previous test's stub catalog. Clear on both sides: a
+    test that populates the cache must not leak into the next one, and a test
+    that runs after a real fetch must not start from one."""
+    from app.services import budget_client
+
+    budget_client.clear_accounts_cache()
+    yield
+    budget_client.clear_accounts_cache()
 
 
 @pytest.fixture(autouse=True)

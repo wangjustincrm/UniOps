@@ -1,4 +1,5 @@
 """Balance and actuals aggregation queries."""
+import logging
 import uuid
 from decimal import Decimal
 
@@ -7,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.ledger import get_actual_spent, get_committed
 from app.models.catalog import BudgetAccount, BudgetL1
-from app.models.ledger import BudgetLedger
+from app.models.ledger import ACTUAL_OPS, COMMIT_ADDS, COMMIT_RELEASES, BudgetLedger
 from app.models.plan import BudgetPlan, BudgetPlanLine
 from app.schemas.actual import (
     AccountSummary,
@@ -17,6 +18,9 @@ from app.schemas.actual import (
     MonthlyActualsSummaryResponse,
 )
 from app.schemas.balance import BalanceResponse
+from app.services import finance_client
+
+logger = logging.getLogger(__name__)
 
 
 async def get_annual_budget(
@@ -47,14 +51,76 @@ async def get_balance(
     cost_center_id: uuid.UUID,
     account_id: uuid.UUID,
     fiscal_year: int,
+    *,
+    bearer_token: str | None = None,
 ) -> BalanceResponse:
+    """Remaining balance for one (cost center × account × year).
+
+    `actual_spent` is NC's posted actual, read from finance-api — the same
+    figure the Budget Dashboard shows. It is NOT this service's `budget_ledger`:
+    nothing ever writes the purchase chain into that table (commit / release /
+    actualize have no callers anywhere in the repo), so it holds only the
+    2026-07-07 opening import, and serving that back made a PR's over-budget
+    test compare this year's request against last year's opening balance.
+
+    `committed` stays on the ledger and stays 0 — `commit` has no writers
+    either. Until in-flight commitment is derived from the documents
+    themselves, the same budget can pass this test for any number of PRs while
+    NC has yet to post them. That is a known gap, not an oversight, and it is
+    no worse than the behaviour this replaces.
+
+    Falls back to the ledger figure when finance-api can't be reached, which
+    preserves the old (wrong, but non-zero) number rather than silently
+    treating "unknown" as "nothing spent" — the latter would report the full
+    annual budget as available and wave every PR through.
+    """
     acct = await db.get(BudgetAccount, account_id)
     if acct is None:
         # Surface 404 to caller via API layer
         raise LookupError(f"Account {account_id} not found")
     annual = await get_annual_budget(db, cost_center_id, account_id, fiscal_year)
     committed = await get_committed(db, cost_center_id, account_id, fiscal_year)
-    actual = await get_actual_spent(db, cost_center_id, account_id, fiscal_year)
+    actual = await finance_client.nc_actual_for_budget_check(
+        bearer_token=bearer_token,
+        cost_center_id=cost_center_id,
+        account_id=account_id,
+        fiscal_year=fiscal_year,
+    )
+    if actual is None:
+        # ★ TO WHOEVER DELETES budget_ledger: this line is one of its consumers,
+        # and the only one that is not a display. The table was declared dead on
+        # 2026-09-20 (the purchase chain is never being wired to it); the
+        # consumers counted at the time — the Total Committed card, the export's
+        # actual(docs) row, lineage's operation mix — all merely show a number,
+        # so removing the table makes something go blank. This one decides
+        # whether a PR needs two more approvals, so removing it without a
+        # decision makes get_actual_spent() raise or return a constant 0, and
+        # the over-budget gate changes behaviour with nobody having touched it.
+        #
+        # Know what this fallback is before you remove what it falls back to.
+        # It is not the safe default it resembles: where a (cc, account) has no
+        # opening row the ledger is already 0, so available comes back as the
+        # whole annual budget and the gate passes everything. It is strict where
+        # an opening import happens to exist and absent where it does not.
+        #
+        # ★ That it stays that way is a decision, not an oversight. Asked
+        # directly on 2026-09-23 what should happen to a PR when this figure
+        # cannot be had, the user chose to keep passing it. The alternative was
+        # priced honestly: an outage would otherwise put two extra approvals on
+        # every PR raised during it, and approvals cannot be withdrawn once the
+        # workflow has them — somebody has to go clear them by hand. Raising
+        # from here would not even buy fail-closed, since epms-api's
+        # budget_client fails open by design (crud/pr.py — `if data is None:
+        # return False, None`); it would let the PR through AND blank the budget
+        # panel. Making the gate genuinely fail-closed means changing epms-api,
+        # and that is the change the user declined. Do not quietly "fix" this
+        # into raising or into a hard zero.
+        actual = await get_actual_spent(db, cost_center_id, account_id, fiscal_year)
+        logger.warning(
+            "balance cc=%s account=%s fy=%s: finance-api unavailable, actual_spent "
+            "fell back to the budget_ledger figure (opening import only)",
+            cost_center_id, account_id, fiscal_year,
+        )
     available = annual - committed - actual
     return BalanceResponse(
         cost_center_id=cost_center_id,
@@ -110,14 +176,13 @@ async def list_monthly_actuals(
         key = (cc, aid, fy, m)
         b = bucket.setdefault(key, {"committed": Decimal("0"), "actual_spent": Decimal("0")})
         amount = Decimal(str(total))
-        if op == "commit":
+        # One statement of the rule, not a second copy of it: actualize belongs
+        # to both buckets, which is why the actual test is not an elif.
+        if op in COMMIT_ADDS:
             b["committed"] += amount
-        elif op == "release":
+        elif op in COMMIT_RELEASES:
             b["committed"] -= amount
-        elif op == "actualize":
-            b["committed"] -= amount
-            b["actual_spent"] += amount
-        elif op in ("book_expense", "opening"):
+        if op in ACTUAL_OPS:
             b["actual_spent"] += amount
 
     # Resolve account codes
@@ -142,11 +207,34 @@ async def get_actuals_summary(
     db: AsyncSession,
     *, cost_center_id: uuid.UUID | None = None, fiscal_year: int,
     cc_ids: list[uuid.UUID] | None = None,
+    bearer_token: str | None = None,
 ) -> ActualsSummaryResponse:
-    """Per-account summary: plan vs actual for the full year."""
+    """Per-account summary: plan vs actual for the full year.
+
+    `actual_spent` is NC's posted figure, for the same reason and from the same
+    source as `get_balance` — see there. This one had been left reading the
+    ledger when `/balance` was moved, and it is what the OA expense-claim
+    account picker shows, so a claimant was told CRM00301 was 1,862.65 over
+    budget on the strength of last year's opening import. (The Budget
+    Dashboard also calls this, but takes only annual_budget and committed from
+    it; its NC line it reads from finance-api itself.)
+
+    One call for every account, not one per account. When finance-api can't be
+    had, each account falls back to its ledger figure as `/balance` does.
+    """
     if cc_ids is not None and len(cc_ids) == 0:
         return ActualsSummaryResponse(
             cost_center_id=cost_center_id, fiscal_year=fiscal_year, accounts=[])
+    nc_actual = await finance_client.nc_actuals_by_account(
+        bearer_token=bearer_token, fiscal_year=fiscal_year,
+        cost_center_id=cost_center_id,
+    )
+    if nc_actual is None:
+        logger.warning(
+            "actuals summary cc=%s fy=%s: finance-api unavailable, actual_spent "
+            "fell back to the budget_ledger figure (opening import only)",
+            cost_center_id, fiscal_year,
+        )
     accts_q = (
         select(BudgetAccount, BudgetL1)
         .join(BudgetL1, BudgetAccount.l1_id == BudgetL1.id)
@@ -182,7 +270,7 @@ async def get_actuals_summary(
             actual_q = select(func.coalesce(func.sum(BudgetLedger.amount), 0)).where(
                 BudgetLedger.account_id == acct.id,
                 BudgetLedger.fiscal_year == fiscal_year,
-                BudgetLedger.operation.in_(["actualize", "book_expense", "opening"]),
+                BudgetLedger.operation.in_(ACTUAL_OPS),
             )
             if cc_ids:
                 annual_q = annual_q.where(BudgetPlan.cost_center_id.in_(cc_ids))
@@ -194,11 +282,15 @@ async def get_actuals_summary(
                        - Decimal(str((await db.execute(release_q)).scalar_one()))
             if committed < 0:
                 committed = Decimal("0")
-            actual = Decimal(str((await db.execute(actual_q)).scalar_one()))
+            if nc_actual is None:
+                actual = Decimal(str((await db.execute(actual_q)).scalar_one()))
         else:
             annual = await get_annual_budget(db, cost_center_id, acct.id, fiscal_year)
             committed = await get_committed(db, cost_center_id, acct.id, fiscal_year)
-            actual = await get_actual_spent(db, cost_center_id, acct.id, fiscal_year)
+            if nc_actual is None:
+                actual = await get_actual_spent(db, cost_center_id, acct.id, fiscal_year)
+        if nc_actual is not None:
+            actual = nc_actual.get(str(acct.id), Decimal("0"))
         available = annual - committed - actual
         utilisation = float((committed + actual) / annual * 100) if annual > 0 else 0.0
         summaries.append(AccountSummary(
@@ -271,7 +363,7 @@ async def get_monthly_actuals_summary(
         )
         .where(
             BudgetLedger.fiscal_year == fiscal_year,
-            BudgetLedger.operation.in_(["actualize", "book_expense", "opening"]),
+            BudgetLedger.operation.in_(ACTUAL_OPS),
         )
         .group_by(BudgetLedger.account_id, BudgetLedger.month)
     )

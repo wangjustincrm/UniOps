@@ -68,7 +68,23 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   // PO sign-off (NC imports) — approval-api's posign action key.
   sign_po: 'Sign Purchase Order',
   revise_po_signoff: 'Revise PO Sign-off',
+  // NC purchase sync could not import something (epms-api
+  // services/nc_purchase_sync/error_tasks.py). Admin-only.
+  import_erp_vendor: 'Import ERP Vendor',
+  resolve_nc_sync_error: 'Resolve NC Sync Error',
+  // Posted NC voucher lines whose dimensions keep them out of the Budget
+  // Dashboard (finance-api services/jv_validation_tasks.py). Admin-only, one
+  // standing task that closes itself when the findings clear.
+  resolve_jv_validation: 'Resolve JV Validation Findings',
+  // An invoice number NC has on more than one payable (finance-api
+  // services/ap_duplicate_invoice_tasks.py). ap_clerk, one standing task that
+  // closes itself when nothing unreviewed is left.
+  resolve_ap_duplicate_invoice: 'Resolve Duplicate NC Invoices',
 }
+
+// Portal origin — NC sync errors that are not a missing vendor are resolved in
+// Portal's Admin Panel (EPMS has no NC sync page of its own).
+const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 
 // ─── Navigation ────────────────────────────────────────────────────────────────
 
@@ -120,6 +136,28 @@ export function taskHref(task: TaskHrefInput): string {
   }
   if (docType.startsWith('vms_')) {
     return vmsHandoffHref(`/${task.document_id}`)
+  }
+
+  // NC purchase-sync errors. Their subject is an NC order that is NOT in EPMS,
+  // so there is no document to open — the destination is where the error gets
+  // FIXED: the vendor registry for a missing ERP supplier, Portal's NC Purchase
+  // Sync panel for everything else. document_id is the sync run, not a document.
+  if (docType === 'nc_sync') {
+    return task.type === 'import_erp_vendor'
+      ? '/vendors'
+      : `${PORTAL_URL}/admin?section=nc_sync`
+  }
+
+  // JV validation findings are voucher LINES, not a document — the destination
+  // is the Finance page that lists them. document_id is the sync run that
+  // reported them, so it cannot be part of the path.
+  if (docType === 'jv_validation') {
+    return financeHandoffHref('/finance/jv-validation')
+  }
+  // Same shape: the subject is a set of NC payables, document_id is the AP
+  // sync run.
+  if (docType === 'ap_duplicate_invoice') {
+    return financeHandoffHref('/finance/ap-duplicate-invoices')
   }
 
   // Both create_pa and create_prepayment_pa anchor on the PO and open the PA

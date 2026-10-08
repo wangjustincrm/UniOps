@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # ── Cross-service URLs ────────────────────────────────────────────────────
     APPROVAL_API_URL: str = "http://localhost:8003/approval/v1"
     EPMS_API_URL: str = "http://localhost:8000"
+    FINANCE_API_URL: str = "http://localhost:8004"
 
 
 @lru_cache

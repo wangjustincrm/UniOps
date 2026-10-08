@@ -61,9 +61,11 @@ def _migrate():
         InvoiceTaxLine, PurchaseRequest, SodRule, Task, User,
     )
     from app.models.pa import PaymentApplication
+    from app.models.pa_po_link import PaPoLink
     eng = sa.create_engine(SYNC_URL)
     Base.metadata.create_all(eng, tables=[
-        PaymentApplication.__table__, Invoice.__table__, InvoiceTaxLine.__table__,
+        PaymentApplication.__table__, PaPoLink.__table__,
+        Invoice.__table__, InvoiceTaxLine.__table__,
         CompanyConfig.__table__, ExpenseClaim.__table__, Task.__table__,
         SodRule.__table__, User.__table__, ExpenseApprovalEvent.__table__,
         ExpenseLineItem.__table__, ExpenseTripItem.__table__,
@@ -94,6 +96,61 @@ def _migrate():
             "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_use_tls boolean",
             "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_from varchar(255)",
             "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS logo_data_url text",
+            # ...and DROP the columns finance-api's OWN migrations add. The mirror
+            # model maps them (so app code can read them), create_all above
+            # therefore creates them, and then `alembic upgrade head` dies on
+            # DuplicateColumn — which failed every DB-backed test in this suite at
+            # setup with an opaque subprocess.CalledProcessError. Keep this list in
+            # step with `grep 'add_column("company_config"' alembic/versions/`.
+            "ALTER TABLE company_config DROP COLUMN IF EXISTS nc_ap_sync_interval_minutes",
+        ):
+            conn.execute(sa.text(stmt))
+        conn.commit()
+
+    # budget-api owns these two (no ORM model here — same physical DB in prod,
+    # the way budget_accounts already is). crud/budget_rollup.py reads them
+    # directly to aggregate plan by cost centre; going through budget-api's HTTP
+    # API would mean twelve round trips for one page.
+    with eng.connect() as conn:
+        conn.execute(sa.text("DROP TABLE IF EXISTS budget_plan_lines CASCADE"))
+        conn.execute(sa.text("DROP TABLE IF EXISTS budget_plans CASCADE"))
+        conn.execute(sa.text(
+            "CREATE TABLE budget_plans ("
+            " id uuid PRIMARY KEY, cost_center_id uuid NOT NULL, fiscal_year integer NOT NULL,"
+            " status varchar(20) NOT NULL, is_current boolean NOT NULL DEFAULT true,"
+            " created_at timestamptz NOT NULL DEFAULT now(),"
+            " updated_at timestamptz NOT NULL DEFAULT now())"))
+        conn.execute(sa.text(
+            "CREATE TABLE budget_plan_lines ("
+            " id uuid PRIMARY KEY,"
+            " plan_id uuid NOT NULL REFERENCES budget_plans(id) ON DELETE CASCADE,"
+            " account_id uuid NOT NULL, month integer NOT NULL,"
+            " amount numeric(15,2) NOT NULL DEFAULT 0,"
+            " created_at timestamptz NOT NULL DEFAULT now(),"
+            " updated_at timestamptz NOT NULL DEFAULT now())"))
+        conn.commit()
+
+    # `tasks` is epms-owned too, and finance-api's mirror models only the four
+    # columns the payment executor touches. jv_validation_tasks.py writes a real
+    # inbox row over raw SQL (type / title / assigned_role / document_number …),
+    # so the test schema needs the full physical shape — same pattern as
+    # company_config above. DEFAULTs are a test-schema convenience the physical
+    # table does not have: they keep the existing two-column Task(...) inserts in
+    # test_payment_execute.py working against a NOT NULL column set.
+    with eng.connect() as conn:
+        for stmt in (
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS type varchar(40) NOT NULL DEFAULT ''",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority varchar(10) NOT NULL DEFAULT 'normal'",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS document_number varchar(40) NOT NULL DEFAULT ''",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_role varchar(50) NOT NULL DEFAULT ''",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_user_id uuid",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS title varchar(255) NOT NULL DEFAULT ''",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description text",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date date",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS amount numeric(15,2)",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS vendor varchar(255)",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_by uuid",
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_by uuid",
         ):
             conn.execute(sa.text(stmt))
         conn.commit()
@@ -157,6 +214,9 @@ def _migrate():
             # uniops_authz, which drops an ADDITIONAL role without an active
             # role_defs row — these are the ones its tests assign that way.
             "dept_manager", "director", "opm",
+            # an ADDITIONAL role in production (primary is e.g. requester) —
+            # the bank-permission tests assign it that way.
+            "payment_officer",
         )):
             conn.execute(sa.text(
                 "INSERT INTO role_defs (code, label, sort, is_active) VALUES (:c, :c, :s, true)"),
@@ -170,6 +230,9 @@ def _migrate():
             # production defaults mirrored in _phase2_defaults below.
             ("finance.budget.view_all", "finance"),
             ("finance.budget.view_dept", "finance"),
+            # identity migration 0014_bank_perms
+            ("finance.bank.reconcile", "finance"),
+            ("finance.bank.settings", "finance"),
         )):
             conn.execute(sa.text(
                 "INSERT INTO permission_defs (key, module, label, sort) VALUES (:k, :m, :k, :s)"),
@@ -182,6 +245,8 @@ def _migrate():
                 "system_admin", "finance_manager", "finance_bp", "ap_clerk",
             ),
             "finance.budget.view_dept": ("requester", "dept_manager", "director", "opm"),
+            "finance.bank.reconcile": ("system_admin", "finance_manager", "payment_officer"),
+            "finance.bank.settings": ("system_admin", "finance_manager", "payment_officer"),
         }
         for key, roles in _phase2_defaults.items():
             for role in roles:

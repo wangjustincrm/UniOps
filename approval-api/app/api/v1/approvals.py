@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
-from app.crud.engine import _DOC_META, _resolve_meta, build_effective_workflow, execute_action
+from app.crud.engine import (_DOC_META, _resolve_meta, build_effective_workflow,
+                             execute_action, preflight_submit)
 from app.db.base import get_db
 from app.models.config import CompanyConfig
 from app.schemas.action import ActionRequest, ActionResult
@@ -85,3 +86,50 @@ async def workflow_steps(
 
     cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
     return await build_effective_workflow(db, doc_type, doc, cfg)
+
+
+@router.get("/{doc_type}/{doc_id}/preflight")
+async def preflight(
+    doc_type: str,
+    doc_id: uuid.UUID,
+    action: str = "submit",
+    db: AsyncSession = Depends(get_db),
+    _: CurrentUser = ...,
+) -> dict:
+    """Would this action go through, and if not, everything standing in the way.
+
+    Read-only, and deliberately NOT short-circuiting: submission stops at the
+    first failed gate, which is correct when actually submitting but turns
+    diagnosis into three round trips. Here every gate is evaluated so the caller
+    can show the whole list at once.
+
+    Only the gates approval-api owns are reported — the state machine, budget
+    mode, and approver routing. Document field rules (a PR needs a vendor) belong
+    to the service that owns the document and are merged in by the caller.
+    """
+    if action.lower() != "submit":
+        raise HTTPException(
+            status_code=400,
+            detail=f"preflight currently supports action=submit, not '{action}'",
+        )
+    try:
+        _resolve_meta(doc_type)
+    except KeyError:
+        raise HTTPException(status_code=400, detail=f"Unknown doc_type '{doc_type}'")
+
+    try:
+        checks = await preflight_submit(db, doc_type, doc_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    return {
+        "doc_type": doc_type,
+        "doc_id": str(doc_id),
+        "action": "submit",
+        "allowed": all(c.passed for c in checks),
+        "checks": [
+            {"id": c.id, "layer": c.layer, "passed": c.passed, "message": c.message,
+             "fixable_by_user": c.fixable_by_user, "owner": c.owner}
+            for c in checks
+        ],
+    }

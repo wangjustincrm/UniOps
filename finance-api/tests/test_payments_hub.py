@@ -43,9 +43,20 @@ async def client(db_session):
     app.dependency_overrides.clear()
 
 
+async def _bank(db, *, name="Operating CAD", bank_name="RBC", masked="0128",
+                currency="CAD", kind="bank"):
+    """A funding account for the payments list's Bank Account column."""
+    from app.models.bank import BankAccount
+    acct = BankAccount(name=name, bank_name=bank_name, account_masked=masked,
+                       currency=currency, kind=kind)
+    db.add(acct)
+    await db.flush()
+    return acct
+
+
 async def _rec(db, *, doc_kind="pa", amount="100.00", currency="CAD", batch_id=None,
                payment_date=date(2026, 7, 22), method="bank_transfer", doc_id=None,
-               credit_applied="0.00"):
+               credit_applied="0.00", bank_account_id=None):
     pa_id = pa_number = vendor_id = vendor_name = None
     if doc_kind != "expense_claim":
         pa = PaymentApplication(
@@ -62,7 +73,7 @@ async def _rec(db, *, doc_kind="pa", amount="100.00", currency="CAD", batch_id=N
         vendor_name=vendor_name, payment_date=payment_date, payment_method=method,
         amount=Decimal(amount), credit_applied=Decimal(credit_applied),
         currency=currency, recorded_by=uuid.uuid4(),
-        status="completed", batch_id=batch_id,
+        status="completed", batch_id=batch_id, bank_account_id=bank_account_id,
     )
     db.add(rec)
     await db.flush()
@@ -359,3 +370,66 @@ async def test_export_of_an_unnetted_payment_reports_gross_equal_to_amount(clien
     rows = list(csv.DictReader(io.StringIO(r.text)))
     assert rows[0]["gross"] == "42.00"
     assert rows[0]["credit_applied"] == "0.00"
+
+
+# ── Bank Account column (replaced Method in the list) ────────────────────────
+
+
+async def test_list_labels_the_funding_account_with_its_masked_number(client, db_session):
+    """The list column shows a label, not the raw bank_account_id — and the
+    masked number is part of it, since two accounts can share a name."""
+    acct = await _bank(db_session, name="Operating CAD", masked="0128")
+    await _rec(db_session, bank_account_id=acct.id)
+
+    r = await client.get("/finance/v1/payments", headers=_h())
+    assert r.status_code == 200
+    assert r.json()["items"][0]["bank_account_name"] == "Operating CAD · …0128"
+
+
+async def test_list_marks_a_credit_card_funding_account_as_a_card(client, db_session):
+    """bank_accounts also holds credit cards (kind='credit_card'); a card and a
+    bank account can carry the same name, so the label has to say which."""
+    acct = await _bank(db_session, name="RBC CAD", masked="7669", kind="credit_card")
+    await _rec(db_session, bank_account_id=acct.id)
+
+    r = await client.get("/finance/v1/payments", headers=_h())
+    assert r.json()["items"][0]["bank_account_name"] == "RBC CAD · …7669 · Card"
+
+
+async def test_list_reports_no_funding_account_as_null_not_an_error(client, db_session):
+    """bank_account_id is nullable — a payment recorded without one must still
+    serialize (the column renders a dash)."""
+    await _rec(db_session)
+
+    r = await client.get("/finance/v1/payments", headers=_h())
+    assert r.status_code == 200
+    assert r.json()["items"][0]["bank_account_name"] is None
+
+
+async def test_export_appends_the_bank_account_column(client, db_session):
+    """Appended, never swapped in over payment_method: the export's existing
+    columns are positional for whoever already imports this file."""
+    acct = await _bank(db_session, name="Operating CAD", masked="0128")
+    await _rec(db_session, bank_account_id=acct.id)
+
+    r = await client.get("/finance/v1/payments/export", headers=_h())
+    assert r.status_code == 200
+    rows = list(csv.DictReader(io.StringIO(r.text)))
+    assert rows[0]["bank_account"] == "Operating CAD · …0128"
+    assert rows[0]["payment_method"] == "bank_transfer"
+
+
+async def test_list_filters_by_funding_account(client, db_session):
+    """The Bank Account picker's contract: `bank_account_id` narrows the list
+    (and, sharing the same query string, the summary and export) to payments
+    made from that one account."""
+    rbc = await _bank(db_session, name="Operating CAD", masked="0128")
+    card = await _bank(db_session, name="RBC CAD", masked="7669", kind="credit_card")
+    await _rec(db_session, amount="10.00", bank_account_id=rbc.id)
+    await _rec(db_session, amount="20.00", bank_account_id=card.id)
+
+    r = await client.get(f"/finance/v1/payments?bank_account_id={card.id}", headers=_h())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["items"][0]["bank_account_name"] == "RBC CAD · …7669 · Card"

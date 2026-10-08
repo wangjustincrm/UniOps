@@ -1,10 +1,11 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   paService,
   type PaFilters,
   type CreatePaBody,
   type UpdatePaBody,
   type PaActionBody,
+  type ApiPa,
 } from '@/services/pa'
 
 // Without explicit page/page_size the caller wants the complete list, so we
@@ -16,6 +17,32 @@ export function usePas(filters?: PaFilters, enabled = true) {
     queryFn: () => (paged ? paService.list(filters) : paService.listAll(filters)),
     enabled,
   })
+}
+
+// Multi-PO payment: the active PAs on every PO being paid. Same key shape as
+// usePas({ po_id }) so the caches are shared. De-duplicated by id — a PA that
+// already covers two of the selected POs comes back from both queries, and
+// counting it twice would double its invoices in the "already claimed" lock.
+export function usePasForPos(poIds: string[], enabled = true) {
+  const results = useQueries({
+    queries: poIds.map((poId) => ({
+      queryKey: ['pas', { po_id: poId }],
+      queryFn: () => paService.listAll({ po_id: poId }),
+      enabled,
+    })),
+  })
+  const settled = poIds.length === 0 || results.every((r) => r.data !== undefined)
+  if (!settled) return { items: undefined as ApiPa[] | undefined, isLoading: true }
+  const seen = new Set<string>()
+  const items: ApiPa[] = []
+  for (const r of results) {
+    for (const pa of r.data?.items ?? []) {
+      if (seen.has(pa.id)) continue
+      seen.add(pa.id)
+      items.push(pa)
+    }
+  }
+  return { items, isLoading: false }
 }
 
 export function usePa(id: string) {

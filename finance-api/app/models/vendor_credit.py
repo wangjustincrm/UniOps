@@ -27,6 +27,11 @@ EXHAUSTED = "exhausted"
 VOID = "void"
 
 SOURCE_UPLOAD = "upload"
+# Recorded by hand where the vendor will not issue a credit note at all — e.g.
+# they tell AP by email to deduct an overpayment from the next payment. There
+# is no vendor document to OCR; the evidence is the correspondence, attached
+# like any credit file (expense-api invoice_source='credit').
+SOURCE_MANUAL = "manual"
 SOURCE_QBO_IMPORT = "qbo_import"
 
 
@@ -63,7 +68,7 @@ class VendorCredit(UUIDPrimaryKey, TimestampMixin, Base):
     file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Provenance. Phase C populates the qbo_import variants.
+    # Provenance: upload | manual | qbo_import (Phase C populates the qbo_import variants).
     source: Mapped[str] = mapped_column(String(20), nullable=False, default=SOURCE_UPLOAD)
     source_ref: Mapped[str | None] = mapped_column(String(20), nullable=True)
     opening_balance: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

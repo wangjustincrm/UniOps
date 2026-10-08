@@ -1,13 +1,19 @@
 import type { RouteDef } from '@uniops/shell'
 import AccountsPayablePage from '@/pages/finance/AccountsPayablePage'
+import ApReconciliationPage from '@/pages/finance/ApReconciliationPage'
+import ApLedgerHealthPage from '@/pages/finance/ApLedgerHealthPage'
+import ApDuplicateInvoicesPage from '@/pages/finance/ApDuplicateInvoicesPage'
+import ApCashFlowPage from '@/pages/finance/ApCashFlowPage'
 import AccountsReceivablePage from '@/pages/finance/AccountsReceivablePage'
 import GeneralLedgerPage from '@/pages/finance/GeneralLedgerPage'
 import JournalVouchersPage from '@/pages/finance/JournalVouchersPage'
 import AccountBalancePage from '@/pages/finance/AccountBalancePage'
 import BudgetActualPage from '@/pages/finance/BudgetActualPage'
+import JvValidationPage from '@/pages/finance/JvValidationPage'
 import PaymentsPage from '@/pages/finance/PaymentsPage'
 import PaymentBatchPage from '@/pages/finance/PaymentBatchPage'
 import BankReconciliationPage from '@/pages/finance/BankReconciliationPage'
+import BankStatementCsvPage from '@/pages/finance/BankStatementCsvPage'
 import CoaConfigPage from '@/pages/finance/CoaConfigPage'
 import TaxSettingsPage from '@/pages/finance/TaxSettingsPage'
 import BankSettingsPage from '@/pages/finance/BankSettingsPage'
@@ -22,14 +28,23 @@ import FactorLibraryPage from '@/pages/budget/FactorLibraryPage'
 
 export const financeRoutes: RouteDef[] = [
   { path: '/finance/ap', element: <AccountsPayablePage />, tab: { title: 'Accounts Payable', icon: 'CreditCard', keyStrategy: 'static', pinned: true } },
+  { path: '/finance/ap-recon', element: <ApReconciliationPage />, tab: { title: 'AP Reconciliation', icon: 'ClipboardCheck', keyStrategy: 'static' } },
+  { path: '/finance/ap-ledger-health', element: <ApLedgerHealthPage />, tab: { title: 'AP Subledger Health', icon: 'HeartPulse', keyStrategy: 'static' } },
+  { path: '/finance/ap-duplicate-invoices', element: <ApDuplicateInvoicesPage />, tab: { title: 'AP Duplicate Invoices', icon: 'CopyX', keyStrategy: 'static' } },
+  { path: '/finance/ap-cash-flow', element: <ApCashFlowPage />, tab: { title: 'AP Cash Flow', icon: 'TrendingUp', keyStrategy: 'static' } },
   { path: '/finance/ar', element: <AccountsReceivablePage />, tab: { title: 'Accounts Receivable', icon: 'Receipt', keyStrategy: 'static' } },
   { path: '/finance/gl', element: <GeneralLedgerPage />, tab: { title: 'General Ledger', icon: 'BookOpen', keyStrategy: 'static' } },
   { path: '/finance/journal-vouchers', element: <JournalVouchersPage />, tab: { title: 'Journal Vouchers', icon: 'FileText', keyStrategy: 'static' } },
   { path: '/finance/account-balance', element: <AccountBalancePage />, tab: { title: 'Account Balance', icon: 'Scale', keyStrategy: 'static' } },
   { path: '/finance/budget-actual', element: <BudgetActualPage />, tab: { title: 'Budget Actual', icon: 'Target', keyStrategy: 'static' } },
+  { path: '/finance/jv-validation', element: <JvValidationPage />, tab: { title: 'JV Validation', icon: 'ShieldAlert', keyStrategy: 'static' } },
   { path: '/finance/payments', element: <PaymentsPage />, tab: { title: 'Payments', icon: 'Wallet', keyStrategy: 'static' } },
   { path: '/finance/payment-batches', element: <PaymentBatchPage />, tab: { title: 'Payment Batches', icon: 'Banknote', keyStrategy: 'static' } },
   { path: '/finance/bank', element: <BankReconciliationPage />, tab: { title: 'Bank Reconciliation', icon: 'Landmark', keyStrategy: 'static' } },
+  // The CSV importer the v2 workbench replaced. Not in the sidebar — reachable
+  // from the workbench, because a bank whose PDF we cannot read yet still has
+  // to be importable.
+  { path: '/finance/bank/csv-import', element: <BankStatementCsvPage />, tab: { title: 'Statement Import (CSV)', icon: 'Landmark', keyStrategy: 'static' } },
   { path: '/finance/qbo', element: <QboMirrorPage />, tab: { title: 'QuickBooks', icon: 'RefreshCw', keyStrategy: 'static' } },
   // Throwaway: delete with QboCreditImportPage when QuickBooks is retired.
   { path: '/finance/qbo-credit-import', element: <QboCreditImportPage />, tab: { title: 'QBO Credit Import', icon: 'Download', keyStrategy: 'static' } },

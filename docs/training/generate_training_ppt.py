@@ -510,12 +510,19 @@ def build_requester():
     d.table("Step Zero — Pick the Right Procurement Type",
             ["Type", "What it covers", "Notes"],
             [
+                # Keep in step with epms-api/app/knowledge/pr_types.yaml — the
+                # assistant answers from that file, and a deck that says
+                # something different teaches people the wrong thing. See PRD
+                # §2.1. "Extra scrutiny in approval" used to sit on the Type 5
+                # row and was never true: approval routing reads department
+                # configuration and cross-department payments, and has never
+                # read procurement type.
                 ["Type 1 — Raw Mat. / Packaging", "Production raw materials and packaging", "Not available in EPMS — handled outside this system"],
                 ["Type 2 — Misc / Consumables", "Office supplies, small equipment, consumables", "Most common for everyday requests"],
                 ["Type 3 — Spare Parts", "Maintenance and repair parts", "Pick the part from the Parts Catalog per line"],
-                ["Type 4 — Service", "Contracted services, maintenance work, consulting", "Receipt is confirmed via Service Confirmation"],
-                ["Type 5 — Fixed Asset", "Capitalizable equipment and assets", "Extra scrutiny in approval — attach quotes"],
-                ["Type 6 — Project-Related", "Purchases charged to a project", "Select the Project so costs are tracked against it"],
+                ["Type 4 — Service", "Contracted services, maintenance work, consulting", "Needs an expected completion date; you confirm the work yourself"],
+                ["Type 5 — Fixed Asset", "Capitalizable equipment and assets", "Needs a Fixed Asset ID before you can submit — ask Finance"],
+                ["Type 6 — Project-Related", "Purchases charged to a project", "Needs a Project No. and a completion date; you confirm it yourself"],
             ],
             kicker="Create a PR",
             col_widths=[3.4, 5.0, 3.73],

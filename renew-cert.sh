@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 #
+# ★FALLBACK ONLY. Caddy now issues + renews certs automatically (see Caddyfile);
+# this script is only for an emergency switch back to a manual wildcard cert.
+# Its `finish` restarts Caddy, but Caddy only USES ./certs if the Caddyfile's
+# `site_tls` snippet has been pointed back at them. Run it as `sudo bash renew-cert.sh ...`.
+#
 # Let's Encrypt wildcard cert renewal for *.canadaroyalmilk.com (manual DNS-01).
 #
 # Rebel (the DNS registrar) has no API, so renewal is semi-manual: this script

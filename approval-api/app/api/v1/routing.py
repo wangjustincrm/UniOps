@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import CurrentUser
 from app.crud.engine import _resync_document, resync_inflight_approvals
 from app.db.base import get_db
+from app.models.routing import CROSS_DEPT_GM_OR_OPM
 
 _log = logging.getLogger(__name__)
 
@@ -65,7 +66,18 @@ async def _load_routing(db: AsyncSession) -> dict:
         if role_code in backups:
             backups[role_code] = backup_user_id
 
-    return {"departments": departments, "backups": backups}
+    # Engine-wide settings — not per department. Today: which post approves a
+    # payment application that spans several departments, where the per-department
+    # mapping above has no answer (one of them may say GM and another OPM).
+    cross_dept = (await db.execute(sa.text(
+        "SELECT value FROM approval_settings WHERE key = :k"),
+        {"k": CROSS_DEPT_GM_OR_OPM})).scalar_one_or_none() or "gm"
+
+    return {
+        "departments": departments,
+        "backups": backups,
+        "cross_department_gm_or_opm": cross_dept,
+    }
 
 
 @router.get("")
@@ -105,6 +117,15 @@ async def put_routing(body: dict, db: AsyncSession = Depends(get_db), user: Curr
         if role_code not in _BACKUP_ROLES:
             raise HTTPException(status_code=422, detail=f"Unknown backup role: {role_code}")
 
+    # Omitted = leave it alone. Sent = must be a real post: an invalid value here
+    # would otherwise silently fall back to GM inside the engine, and a setting
+    # that quietly ignores what the admin chose is worse than one that refuses.
+    cross_dept = body.get("cross_department_gm_or_opm")
+    if cross_dept is not None and cross_dept not in _VALID_POSTS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"cross_department_gm_or_opm must be one of {_VALID_POSTS}, got: {cross_dept}")
+
     for d in departments:
         await db.execute(sa.text(
             "INSERT INTO approval_dept_routing "
@@ -142,6 +163,14 @@ async def put_routing(body: dict, db: AsyncSession = Depends(get_db), user: Curr
                 "backup_user_id": backup_user_id,
                 "updated_by": actor_id,
             })
+
+    if cross_dept is not None:
+        await db.execute(sa.text(
+            "INSERT INTO approval_settings (key, value, updated_by, updated_at) "
+            "VALUES (:k, :v, :updated_by, now()) "
+            "ON CONFLICT (key) DO UPDATE SET "
+            "  value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()"
+        ), {"k": CROSS_DEPT_GM_OR_OPM, "v": cross_dept, "updated_by": actor_id})
 
     await db.commit()
 

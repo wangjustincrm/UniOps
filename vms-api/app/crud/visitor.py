@@ -18,8 +18,12 @@ async def list_visitors(
     page_size: int = 20,
 ) -> tuple[list[Visitor], int]:
     q = select(Visitor).order_by(Visitor.last_name, Visitor.first_name)
-    if search:
-        pattern = f"%{search}%"
+    # Every word must match some column, so "John Smith" or "Smith Acme"
+    # finds the visitor. Matching the whole string against one column at a
+    # time found nothing for a full name — and the New Visit form then offered
+    # to register a new (duplicate) visitor.
+    for word in (search or "").split():
+        pattern = f"%{word}%"
         q = q.where(
             or_(
                 Visitor.first_name.ilike(pattern),

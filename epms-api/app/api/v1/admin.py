@@ -4,14 +4,27 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from app.admin import service
 from app.admin.registry import REGISTRY
 from app.admin.resolvers import get_resolver, resolver_sources
 from app.core.deps import BearerToken, SessionDep, require_permission
-from app.services import approval_client
+from app.services import approval_client, finance_client
 
 router = APIRouter(prefix="/admin", tags=["data-maintenance"])
+
+
+def _constraint_error(e: IntegrityError) -> HTTPException:
+    """Turn a cascade that a foreign key refused into something an admin can act on.
+
+    An unhandled exception here becomes a bare 500 emitted OUTSIDE the CORS
+    middleware, which the browser can only report to the confirm dialog as
+    "Failed to fetch" — no status, no reason, nothing to search for. Naming the
+    constraint keeps the next one diagnosable from the screenshot alone.
+    """
+    detail = getattr(getattr(e, "orig", None), "__cause__", None) or e.orig
+    return HTTPException(409, f"Database refused the delete: {detail}")
 
 AdminUser = Annotated[dict, Depends(require_permission("data_maintenance"))]
 
@@ -89,6 +102,21 @@ async def edit_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: A
             result["routing_resync"] = "ok"
         except Exception as e:
             result["routing_resync"] = f"failed: {e}"
+    # Same post-commit rule, same reason: repairing invoice_ids on an ALREADY
+    # PAID PA leaves finance's side stale, because payment ran its invoice/AP
+    # writeback once over the array as it stood then. finance-api replays it on
+    # its own connection, so it can only see the new array after this commit.
+    # Flagged as a warning rather than raising: the link repair is the valuable
+    # half and must survive finance-api being down.
+    if result.pop("_invoice_links_changed", False):
+        try:
+            res = await finance_client.resync_pa_writeback(pa_id=record_id, bearer_token=token)
+            result["finance_writeback"] = res
+        except Exception as e:
+            result["finance_writeback"] = (
+                f"failed: {e} — the link is saved, but this PA's invoice and AP rows "
+                "still show unpaid. Re-save the PA once finance-api is reachable."
+            )
     return result
 
 
@@ -180,6 +208,9 @@ async def delete_record(entity: str, record_id: uuid.UUID, db: SessionDep, user:
     except ValueError as e:
         await db.rollback()
         raise HTTPException(404, str(e))
+    except IntegrityError as e:
+        await db.rollback()
+        raise _constraint_error(e)
 
 
 @router.post("/{entity}/bulk-delete")
@@ -192,3 +223,6 @@ async def bulk_delete(entity: str, db: SessionDep, user: AdminUser, body: BulkDe
     except ValueError as e:
         await db.rollback()
         raise HTTPException(400, str(e))
+    except IntegrityError as e:
+        await db.rollback()
+        raise _constraint_error(e)

@@ -10,6 +10,7 @@
 import { useState } from 'react'
 import { FileDown, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { downloadReport, type ReportKind } from '@/services/api'
+import { localToday } from '@/lib/utils'
 
 interface ReportDef {
   kind: ReportKind
@@ -36,8 +37,8 @@ function defaultRange(): { from: string; to: string } {
   const now = new Date()
   const from = new Date(now.getFullYear(), now.getMonth(), 1)
   return {
-    from: from.toISOString().slice(0, 10),
-    to: now.toISOString().slice(0, 10),
+    from: localToday(from),
+    to: localToday(now),
   }
 }
 

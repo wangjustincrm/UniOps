@@ -17,6 +17,7 @@ from reportlab.platypus import (
 )
 
 from app.models.pr import PurchaseRequest
+from app.schemas.gr import is_service
 from app.services.pdf_template import (
     approvals_element, build_logo, footer_note_element, get_tmpl,
     header_note_element, qty_text, terms_element,
@@ -28,7 +29,12 @@ PR_TYPES = {
     3: "Spare Parts",
     4: "Service",
     5: "Fixed Assets",
-    6: "Software",
+    # "Project-Related", matching the label on the picker users actually click
+    # (epms ProcurementTypeSelector) and the PR Detail page. This map was the
+    # only place in the stack still calling type 6 "Software", so the printed
+    # document disagreed with every screen — and now that the Service Owner row
+    # below appears for type 6, that disagreement is on the same page as the row.
+    6: "Project-Related",
 }
 
 _PRIMARY = colors.HexColor("#0A7C7C")
@@ -49,6 +55,7 @@ def generate_pr_pdf(
     requester_name: str | None = None,
     approvals: list[dict] | None = None,
     budget_account_name: str | None = None,
+    owner_name: str | None = None,
 ) -> bytes:
     """Render a PurchaseRequest to PDF applying Admin Panel → PDF Templates settings."""
     tmpl = get_tmpl(pdf_templates, "pr")
@@ -117,6 +124,26 @@ def generate_pr_pdf(
     if budget_str and budget_account_name:
         budget_str = escape(f"{pr.budget_code} — {budget_account_name}")
 
+    # Service/Project only, and the pair travels together on purpose: the row
+    # answers "when should this be finished, and who says it was". Both values
+    # are what app/tasks/service_gr_due.py acts on months after this PDF is
+    # filed, so the signed document has to state them. owner_name resolves the
+    # NULL-means-requester fallback at the caller (crud.pr_owner), so it reads
+    # as a person even on a PR raised before the column existed.
+    #
+    # Escaped for the same reason budget_str is: Paragraph parses its content as
+    # mini-XML, so an unescaped "&" in a name swallows the text after it.
+    owner_row = []
+    if is_service(pr.type):
+        completion_str = (
+            pr.service_completion_date.strftime("%Y-%m-%d")
+            if pr.service_completion_date else "—"
+        )
+        owner_row = [[
+            *_cell("Service Owner", escape(owner_name) if owner_name else None),
+            *_cell("Expected Completion", completion_str),
+        ]]
+
     meta = Table(
         [
             [*_cell("PR Number", pr.number),        *_cell("Date", created_str)],
@@ -125,6 +152,7 @@ def generate_pr_pdf(
             [*_cell("Department", pr.department_name), *_cell("Required By", required_str)],
             [*_cell("Cost Center", pr.cost_center_name), *_cell("Budget Code", budget_str)],
             [*_cell("Requested By", requester_name), *_cell("Submitted", submitted_str)],
+            *owner_row,
         ],
         # Label columns widened from 0.12 to 0.14 (value narrowed 0.38 -> 0.36 to
         # compensate) so "Requested By" (~50.2pt at 8pt Helvetica) fits without

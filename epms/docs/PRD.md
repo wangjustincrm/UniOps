@@ -149,14 +149,69 @@ Temporary assignments are configured in **Admin Panel → Role Management → Ab
 
 ## 2. Procurement Types
 
-| # | Name | Budget Check | Material ID | Notes |
-|---|------|-------------|-------------|-------|
-| 1 | Raw Materials / Packaging | No | Per line item | No budget code required |
-| 2 | Misc / Consumables | Yes | No | General operating expenses |
-| 3 | Spare Parts | Yes | Per line item (from Parts Catalog) | Items must be selected from Parts Catalog |
-| 4 | Service | Yes | No | Requires expected completion date |
-| 5 | Fixed Asset | Yes | No | Requires fixed asset ID |
-| 6 | Project-Related | Yes | No | Requires project code |
+| # | Name | Selectable | Budget Check | Material ID | Own identifier / date | Receipt |
+|---|------|-----------|-------------|-------------|----------------------|---------|
+| 1 | Raw Materials / Packaging | **No** — tile disabled | No | Per line item (ERP material) | — | Warehouse GR |
+| 2 | Misc / Consumables | Yes | Yes | No | — | Warehouse GR |
+| 3 | Spare Parts | Yes | Yes | Per line item (from Parts Catalog) | — | Warehouse GR |
+| 4 | Service | Yes | Yes | No | Expected completion date | Requester confirms |
+| 5 | Fixed Asset | Yes | Yes | No | Fixed Asset ID | Warehouse GR |
+| 6 | Project-Related | Yes | Yes | No | Expected completion date **and** Project No. | Requester confirms |
+
+Every entry in the last two columns is **enforced at submit**, not merely shown
+on the form — the gates are in `epms-api/app/services/doc_preflight.py`
+(`pr_submit_checks`) and are what the Submit action rejects with a 409. Only
+Submit is gated; a PR already past draft stays approvable and payable whatever
+it is missing, so historical records are not retrospectively blocked.
+
+Type 1 is disabled on the Create PR tile selector: raw material purchasing runs
+outside EPMS and those purchase orders arrive mirrored from NC. The API still
+accepts type 1 (1..6) because the mirror writes it.
+
+> **This table is not the assistant's source.** The AI assistant answers "what
+> types are there and what differs" from `epms-api/app/knowledge/pr_types.yaml`
+> for the prose and by *calling* `pr_submit_checks` for the rules, so its answer
+> cannot drift from what runs. Keep this table in step with that file — see
+> §2.1.
+
+### 2.1 The guide layer — updated with every change
+
+The AI assistant has a **guide layer**: the knowledge it answers "what is this,
+how do I use it, what differs between these, what do I have to fill in" from.
+It lives in `epms-api/app/knowledge/*.yaml` and is read by
+`app/services/doc_type_guide.py`.
+
+**Any requirement change must update the guide layer in the same change.** This
+is a rule, not a nicety, and the reason is visible in this document's own
+history: before 2026-09-15 there were five descriptions of the procurement
+types — this table, §3.2.1, `docs/training/generate_training_ppt.py`, the create
+form, and the backend — and no two agreed. §2 promised a Fixed Asset ID
+requirement that the form collected and threw away. The training deck asserted
+that Type 5 gets "extra scrutiny in approval", which was never true: approval
+routing reads department configuration and cross-department payments, and has
+never read procurement type at all. Each of those was written correct and left
+behind.
+
+The split that keeps it honest:
+
+| | Where it lives | Why |
+|---|---|---|
+| **Derived** | Nowhere — computed by *calling* the enforcing code | A rule change moves the answer in the same commit. Submit gates come from `field_checks_for`; the receipt flow from `schemas/gr.is_service` |
+| **Written** | `app/knowledge/*.yaml` | What a thing is *for* and when to pick it. No code states this and none can — it is the half a training document supplies |
+
+Rules for anyone extending it:
+
+1. **If the running system can adjudicate it, derive it.** Never restate a rule
+   in YAML that some function already enforces.
+2. **Every derivation gets a test asserting reported == enforced.**
+   `epms-api/tests/test_doc_type_guide.py` is the pattern.
+3. **Frontend-only rules get pinned in the frontend.**
+   `epms/src/components/pr/procurementTypes.test.ts` is the pattern — paired
+   include/exclude assertions, because "type 3 uses the picker" also passes when
+   every type does.
+4. **Never point the assistant at a PRD.** This document describes intent and
+   drifts; the assistant must answer from behaviour. The prose in the YAML was
+   *sourced* from here, which is not the same thing.
 
 ---
 
@@ -208,13 +263,18 @@ Wherever the system displays a person who performed an action (uploader, approve
 ### 3.2 Purchase Requisitions (PR)
 
 #### 3.2.1 PR Create
-- Procurement type selection (6 types, prominent tile selector)
-- Conditional fields per type:
+- Procurement type selection (6 types, prominent tile selector; **Type 1 tile is
+  disabled** — see §2)
+- Conditional fields per type. Those marked **(gated)** are enforced server-side
+  at submit, not just rendered with an asterisk:
   - Types 1 & 3: Material ID per line item
   - Type 3: Line items must be selected from Parts Catalog (no free-text)
-  - Type 4: Service expected completion date
-  - Type 5: Fixed Asset ID
-  - Type 6: Project code selector
+  - Types 4 & 6: Service/Project expected completion date **(gated)**
+  - Type 5: Fixed Asset ID **(gated)** — stored on `purchase_requests.fixed_asset_id`
+  - Type 6: Project No. **(gated)** — free-text input, not a picker; there is no
+    project master list behind it
+  - Types 2–6: cost center + budget account **(gated)**
+  - All types: vendor **(gated)**
 - **Line Items table:**
   - **Type 3 (Spare Parts) columns:** #, Description (Parts Catalog picker), Material ID, Supplier Item ID, Qty, Unit, Unit Price, Line Total — **Notes column is hidden** to reduce visual clutter; the Notes field is still stored in state and submitted if previously populated
   - **All other types columns:** #, Description, Material ID (Types 1 only), Supplier Item ID, Qty, Unit, Unit Price, Line Total, Notes

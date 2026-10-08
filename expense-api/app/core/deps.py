@@ -27,9 +27,22 @@ SessionDep = Annotated[AsyncSession, Depends(get_db)]
 
 def _decode_token(token: str) -> dict:
     try:
-        return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    # identity-api signs access AND refresh tokens with the SAME secret and
+    # separates them only by this claim (core/security.py: {"type": "access"}
+    # vs {"type": "refresh"}). Without the check a refresh token — longer-lived,
+    # and held somewhere a session token is not — authenticated every endpoint
+    # in this service. It carries no `role`, so role gates read "", but `sub` is
+    # valid and _user_role_codes still resolves additional roles from user_roles.
+    # epms-api and file-api have always checked this; expense-api had not.
+    if payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+    return payload
 
 
 async def get_current_user(

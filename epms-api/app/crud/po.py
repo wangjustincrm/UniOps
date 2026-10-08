@@ -4,8 +4,10 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import array as sa_array
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ontology import scope_po
 from app.crud._numbering import next_number
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
@@ -13,6 +15,7 @@ from app.models.cost_center import CostCenter
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
+from app.models.pa import PaymentApplication
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -76,8 +79,8 @@ async def get_all(
     page_size: int = 20,
 ) -> tuple[list[PurchaseOrder], int]:
     q = select(PurchaseOrder)
-    if po_ids_subq is not None:
-        q = q.where(PurchaseOrder.id.in_(po_ids_subq))
+    # Row scope lives in ontology.scope_po — see the note in crud/pr.py.
+    q = await scope_po(q, {"po_subq": po_ids_subq}, db)
     if status:
         q = q.where(PurchaseOrder.status == status)
     if vendor_id:
@@ -803,6 +806,19 @@ async def po_has_receipt_evidence(db: AsyncSession, po_id: uuid.UUID) -> bool:
     )).scalar_one_or_none() is not None
 
 
+async def pr_department_id(db: AsyncSession, pr_id: uuid.UUID | None) -> uuid.UUID | None:
+    """The department a PO's approvals route through — its PR's department_id.
+
+    NULL for a PO with no PR (NC-imported), which approval-api treats as
+    "fall back to the submitter's own department" rather than as unknown.
+    """
+    if pr_id is None:
+        return None
+    return (await db.execute(
+        select(PurchaseRequest.department_id).where(PurchaseRequest.id == pr_id)
+    )).scalar_one_or_none()
+
+
 async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -> bool:
     """True 当 PO 有任一张 3-way matched 发票:status=='matched' 且已收货。
 
@@ -859,3 +875,63 @@ async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -
     if allocated is None:
         return False
     return await po_has_receipt_evidence(db, po_id)
+
+
+async def payable_invoice_po_ids(
+    db: AsyncSession, po_ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Which of `po_ids` still have an invoice a NEW payment could settle.
+
+    Two conditions, and both matter:
+
+      * the invoice is not yet `paid`; and
+      * no live payment application already claims it.
+
+    The second used to be missing, and the result was a dead end: a PO whose
+    only invoice was already on someone's PA still advertised itself as having
+    something to pay, so it appeared in the create-PA PO picker and on the PO
+    page's Create PA button — and the payment screen it opened then had nothing
+    to offer, because that invoice is locked to the PA that claimed it.
+
+    "Claims" is the same rule the PA screens lock a row with: any PA that is not
+    cancelled or rejected, its `invoice_ids` array being the only link there is
+    (no FK — the table is shared with OA and finance).
+
+    An invoice belongs to a PO by header link OR by line allocation; a single
+    invoice split across several POs makes every one of them payable.
+    """
+    if not po_ids:
+        return set()
+
+    # (po_id, invoice_id) for every unpaid invoice on these POs, both ways it
+    # can be attached.
+    pairs = list((await db.execute(
+        select(Invoice.po_id, Invoice.id).where(
+            Invoice.po_id.in_(po_ids), Invoice.status != "paid",
+        )
+    )).all()) + list((await db.execute(
+        select(InvoicePoAllocation.po_id, InvoicePoAllocation.invoice_id)
+        .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
+        .where(InvoicePoAllocation.po_id.in_(po_ids), Invoice.status != "paid")
+        .distinct()
+    )).all())
+    if not pairs:
+        return set()
+
+    invoice_ids = {str(inv_id) for _, inv_id in pairs}
+    # `?|` asks "does this JSONB array contain any of these keys" — it narrows
+    # to the PAs that could possibly matter instead of pulling every PA's array
+    # back to compare in Python.
+    claimed: set[str] = set()
+    for (ids,) in (await db.execute(
+        select(PaymentApplication.invoice_ids).where(
+            PaymentApplication.status.notin_(["cancelled", "rejected"]),
+            PaymentApplication.invoice_ids.op("?|")(sa_array(sorted(invoice_ids))),
+        )
+    )).all():
+        claimed.update(str(i) for i in (ids or []))
+
+    return {
+        po_id for po_id, inv_id in pairs
+        if po_id is not None and str(inv_id) not in claimed
+    }

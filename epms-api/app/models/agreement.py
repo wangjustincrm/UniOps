@@ -10,7 +10,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -57,8 +57,10 @@ class PurchaseAgreement(UUIDPrimaryKey, TimestampMixin, Base):
         UUID(as_uuid=True), nullable=True, index=True)
 
     # ── recurring 专用(agreement_type='recurring' 时必填,其余类型必须为空) ──
-    # weekly | monthly | quarterly | yearly
-    recurring_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # weekly | monthly | quarterly | yearly | special_monthly
+    # String(20) 而不是原来的 String(10):'special_monthly' 有 15 个字符,留在
+    # 10 位上会在 INSERT 时被 Postgres 直接拒掉(不是截断,是 22001 报错)。
+    recurring_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # 到票日。weekly=1..7(ISO,周一=1);其余=1..31,遇短月钳到月末。
     expected_invoice_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # 1..12,仅 quarterly / yearly 使用。**不从 valid_from 推导** —— 很多季度账单
@@ -70,6 +72,10 @@ class PurchaseAgreement(UUIDPrimaryKey, TimestampMixin, Base):
     # 期次网格本身仍按 valid_from 推,标签与季度/年度锚点保持合同的口径;这里只
     # 决定从哪一行开始留。NULL = 从 valid_from 起,即本列出现之前的行为。
     schedule_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # special_monthly 专用:出账月份清单(1..12,升序去重)。季节性服务一年只跑
+    # 其中几个月却按月开票 —— 用 monthly 排会给停工的月份也生成期次,那些期永远
+    # 等不到发票,只会被逾期扫描每天催一遍。NULL = 该协议不是 special_monthly。
+    active_months: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     expected_amount_per_period: Mapped[Decimal | None] = mapped_column(
         Numeric(15, 2), nullable=True)
     # 百分数:5.00 = ±5%。**NULL = 不做金额校验**(用户裁定 2026-08-13);

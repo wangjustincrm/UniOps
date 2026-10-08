@@ -129,6 +129,37 @@ export const epmsApi = {
 }
 
 /** Download a file from EPMS API and trigger a browser save dialog. */
+/**
+ * POST a body to EPMS API and save the response as a file.
+ *
+ * Separate from epmsDownload because that one is a GET; an export sends the
+ * query it should run. Shares authHeaders and the 401 sign-out so there is one
+ * definition of "signed in" in this file.
+ */
+export async function epmsPostDownload(
+  path: string, body: unknown, fallbackName: string,
+): Promise<void> {
+  const res = await fetch(`${EPMS_API}/api/v1${path}`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (res.status === 401) { globalSignOut(); return }
+  if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`)
+
+  const blob = await res.blob()
+  const named = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = named?.[1] ?? fallbackName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // Revoking immediately can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
 export async function epmsDownload(path: string, filename: string): Promise<void> {
   const res = await fetch(`${EPMS_API}/api/v1${path}`, { headers: authHeaders() })
   if (res.status === 401) { globalSignOut(); return }
@@ -224,6 +255,28 @@ export async function financeUploadFields<T>(
   const form = new FormData()
   form.append('file', file)
   for (const [k, v] of Object.entries(fields ?? {})) form.append(k, v)
+  const res = await fetch(`${FINANCE_API}/finance/v1${path}`, {
+    method: 'POST',
+    headers: authHeaders(),  // no Content-Type — browser sets multipart boundary
+    body: form,
+  })
+  if (res.status === 401 && getToken()) {
+    globalSignOut()
+    throw new Error('Session expired. Please log in again.')
+  }
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(extractDetail(b.detail, res.status))
+  }
+  return res.json()
+}
+
+/** POST several Files as multipart/form-data to Finance API (repeated `files`).
+ *  A month of payment files is ~20 documents; uploading them one at a time is
+ *  how they end up not being uploaded. */
+export async function financeUploadMany<T>(path: string, files: File[]): Promise<T> {
+  const form = new FormData()
+  for (const f of files) form.append('files', f)
   const res = await fetch(`${FINANCE_API}/finance/v1${path}`, {
     method: 'POST',
     headers: authHeaders(),  // no Content-Type — browser sets multipart boundary

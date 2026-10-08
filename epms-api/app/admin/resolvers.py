@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.cost_center import CostCenter
 from app.models.department import Department
+from app.models.gr import GoodsReceipt
+from app.models.invoice import Invoice
 from app.models.user import User
 from app.models.vendor import Vendor
 
@@ -98,6 +100,50 @@ async def _dept_search(db: AsyncSession, q: str, limit: int) -> list[RefHit]:
     return [RefHit(d.id, _dept_label(d)) for d in (await db.execute(stmt)).scalars().all()]
 
 
+def _invoice_label(i: Invoice) -> str:
+    """Shown in the picker. The vendor's own number is what an operator matches
+    against a paper invoice, so it leads; the internal ref disambiguates."""
+    vendor_no = (i.vendor_invoice_number or "").strip() or "no vendor no."
+    return f"{i.internal_ref} · #{vendor_no} · {i.vendor_name} · {i.total_amount} {i.currency} [{i.status}]"
+
+
+async def _invoice_by_id(db: AsyncSession, rid: uuid.UUID) -> RefHit | None:
+    row = (await db.execute(select(Invoice).where(Invoice.id == rid))).scalar_one_or_none()
+    return None if row is None else RefHit(row.id, _invoice_label(row))
+
+
+async def _invoice_search(db: AsyncSession, q: str, limit: int) -> list[RefHit]:
+    stmt = select(Invoice)
+    if q:
+        term = f"%{q}%"
+        stmt = stmt.where(or_(Invoice.internal_ref.ilike(term),
+                              Invoice.vendor_invoice_number.ilike(term),
+                              Invoice.po_number.ilike(term),
+                              Invoice.vendor_name.ilike(term)))
+    stmt = stmt.order_by(Invoice.created_at.desc()).limit(limit)
+    return [RefHit(i.id, _invoice_label(i)) for i in (await db.execute(stmt)).scalars().all()]
+
+
+def _gr_label(g: GoodsReceipt) -> str:
+    return f"{g.number} · {g.po_number or 'no PO'} · [{g.status}]"
+
+
+async def _gr_by_id(db: AsyncSession, rid: uuid.UUID) -> RefHit | None:
+    row = (await db.execute(select(GoodsReceipt).where(GoodsReceipt.id == rid))).scalar_one_or_none()
+    return None if row is None else RefHit(row.id, _gr_label(row))
+
+
+async def _gr_search(db: AsyncSession, q: str, limit: int) -> list[RefHit]:
+    stmt = select(GoodsReceipt)
+    if q:
+        term = f"%{q}%"
+        stmt = stmt.where(or_(GoodsReceipt.number.ilike(term),
+                              GoodsReceipt.po_number.ilike(term),
+                              GoodsReceipt.title.ilike(term)))
+    stmt = stmt.order_by(GoodsReceipt.created_at.desc()).limit(limit)
+    return [RefHit(g.id, _gr_label(g)) for g in (await db.execute(stmt)).scalars().all()]
+
+
 _RESOLVERS: dict[str, Resolver] = {
     "users": Resolver("users", _user_by_id, _user_search),
     "vendors": Resolver("vendors", _vendor_by_id, _vendor_search),
@@ -107,6 +153,15 @@ _RESOLVERS: dict[str, Resolver] = {
     # submitter's) and the agreement has no denormalized department_name column, so
     # without this the admin can only paste a raw UUID and hope.
     "departments": Resolver("departments", _dept_by_id, _dept_search),
+    # payment_applications.invoice_ids / gr_ids are JSONB arrays of ids with no FK
+    # behind them, and they are the ONLY record of what a PA settles — finance-api's
+    # payment executor, the remittance advice and the create-PA screen's
+    # already-claimed lock all read them. A PA approved with an empty array cannot
+    # be repaired anywhere else (pa.py's update_pa accepts draft/returned only), so
+    # Data Maintenance is the repair path and these two resolvers are what make the
+    # ids pickable instead of pasted.
+    "invoices": Resolver("invoices", _invoice_by_id, _invoice_search),
+    "grs": Resolver("grs", _gr_by_id, _gr_search),
 }
 
 

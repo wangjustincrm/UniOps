@@ -326,7 +326,9 @@ export default function AppLayout() {
 
   return (
     <TabStoreProvider options={{ initialTabs: VMS_INITIAL_TABS, userId: user?.id }}>
-      <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
+      {/* print: — only the page content goes to paper (badges): white background,
+          no tab bar, and no fixed-height clipping so multi-page prints are not cut. */}
+      <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC] print:h-auto print:overflow-visible print:bg-white">
         {mobileOpen && (
           <div
             className="fixed inset-0 z-20 bg-black/50 md:hidden"
@@ -345,7 +347,9 @@ export default function AppLayout() {
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           <Header onMobileMenuToggle={() => setMobileOpen(v => !v)} />
           <TabRouterSync routes={vmsRoutes} />
-          <TabBar />
+          <div className="shrink-0 print:hidden">
+            <TabBar />
+          </div>
           <main className="relative flex-1 overflow-hidden">
             <TabHost routes={vmsRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />
           </main>

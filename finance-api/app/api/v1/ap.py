@@ -20,6 +20,10 @@ class MarkSettledRequest(BaseModel):
     invoice_ids: list[uuid.UUID]
 
 
+class ResyncPaWritebackRequest(BaseModel):
+    pa_id: uuid.UUID
+
+
 class OpenItem(BaseModel):
     invoice_id: uuid.UUID
     internal_ref: str
@@ -125,6 +129,39 @@ async def mark_settled(body: MarkSettledRequest, db: AsyncSession = Depends(get_
             marked += 1
     await db.commit()
     return {"marked": marked}
+
+
+@router.post("/resync-pa-writeback")
+async def resync_pa_writeback(body: ResyncPaWritebackRequest,
+                              db: AsyncSession = Depends(get_db), _: CurrentUser = ...):
+    """Replay a paid PA's invoice + AP writeback against its CURRENT invoice_ids.
+
+    Called by epms-api's Data Maintenance after an operator repairs the
+    invoice link on a PA that was already paid. Payment itself runs this same
+    function once, over whatever invoice_ids held at that moment; a PA paid
+    with an empty array therefore left its invoice at 'matched' and its AP row
+    open at paid_amount 0, and nothing could catch up afterwards (2026-08-31:
+    PA-20260729-0001 had to be repaired by hand in SQL).
+
+    Idempotent, and forward-only — see apply_pa_invoice_writeback. A PA that
+    was never paid is a no-op, not an error: repairing the link on an approved
+    PA is legitimate and normal payment will do the writeback later.
+    """
+    from sqlalchemy import select
+    from app.crud.payment_execute import apply_pa_invoice_writeback
+    from app.models.pa import PaymentApplication
+
+    pa = (await db.execute(
+        select(PaymentApplication).where(PaymentApplication.id == body.pa_id)
+    )).scalar_one_or_none()
+    if pa is None:
+        raise HTTPException(status_code=404, detail="Payment application not found")
+    if pa.status not in ("processed", "paid"):
+        return {"applied": False, "reason": f"PA is '{pa.status}', not paid — nothing to replay",
+                "invoices_closed": 0, "ap_invoices_settled": 0}
+    result = await apply_pa_invoice_writeback(db, pa)
+    await db.commit()
+    return {"applied": True, **result}
 
 
 @router.get("/payables", response_model=APPayableListResponse)

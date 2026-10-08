@@ -50,6 +50,11 @@ interface PaymentRow {
   currency: string
   status: string
   batch_id: string | null
+  /** Funding account label ("Operating CAD · …0128"), built by the list
+   * endpoint from `bank_account_id`; null when the payment recorded no
+   * funding account. This is what the table shows in the Method column's
+   * old slot — see the header comment on that column. */
+  bank_account_name: string | null
   /** Business-partner id for vendor payments; null for expense-claim payments.
    * The payee-identity key for the one-payee guard — stable across a vendor
    * rename, unlike the `payee_name` snapshot. */
@@ -72,17 +77,52 @@ interface Filters {
    * already accepts and `payment_crud.get_all` already honours; this page
    * simply hadn't had a picker to set it. */
   vendor_id: string
+  /** Funding account id — likewise already honoured by
+   * `PaymentFilters.bank_account_id` / `payment_crud._filtered`; the picker
+   * below is what was missing. */
+  bank_account_id: string
 }
 
 const EMPTY_FILTERS: Filters = {
   date_from: '', date_to: '', q: '',
   currency: '', payment_method: '', source: '', remittance: '', vendor_id: '',
+  bank_account_id: '',
 }
 
 const PAGE_SIZE = 50
 const CURRENCIES = ['CAD', 'USD', 'CNY', 'EUR']
 
 interface VendorOption { id: string; name: string; code: string }
+
+/** A row of `GET /finance/v1/bank/accounts` — banks AND credit cards, which
+ * that table has held in one place since migration 0016. */
+interface BankAccountOption {
+  id: string
+  name: string
+  account_masked: string | null
+  currency: string
+  kind: string            // bank | credit_card
+  is_active: boolean
+}
+
+/**
+ * Deliberately mirrors the server's `_bank_label` (finance-api
+ * app/api/v1/payments.py), which builds the label shown in the Bank Account
+ * COLUMN — so a filter option and the rows it selects read identically. Keep
+ * the two in step; if they drift, the operator picks "RBC USD · …6280 · Card"
+ * from the dropdown and the matching rows appear to say something else.
+ *
+ * The inactive suffix has no server-side counterpart on purpose: it describes
+ * the account today, which only matters while choosing one. Inactive accounts
+ * stay in the list — they still fund historical payments, and dropping them
+ * would make exactly those payments unfilterable.
+ */
+function bankLabel(a: BankAccountOption): string {
+  let label = a.account_masked ? `${a.name} · …${a.account_masked}` : a.name
+  if (a.kind === 'credit_card') label += ' · Card'
+  if (!a.is_active) label += ' (inactive)'
+  return label
+}
 
 function toQuery(f: object): string {
   const p = new URLSearchParams()
@@ -320,6 +360,15 @@ export default function PaymentsPage() {
     ? rows.find((r) => selectionScopeIds.includes(r.id))?.payee_name ?? null
     : null
 
+  // Every account, not just the active ones (see bankLabel) — a flat list of
+  // ~a dozen rows, so a plain <select> rather than the vendor typeahead.
+  // `GET /bank/accounts` needs only an authenticated user, so it cannot 403
+  // for anyone already allowed to read this page.
+  const { data: bankAccounts = [] } = useQuery({
+    queryKey: ['bank-accounts'],
+    queryFn: () => financeApi.get<BankAccountOption[]>('/bank/accounts'),
+  })
+
   // Totals over the WHOLE filtered set, not the visible page — wired to the
   // filters only, never to `page`.
   const { data: summary = [] } = useQuery({
@@ -424,6 +473,16 @@ export default function PaymentsPage() {
             </select>
           </label>
           <label className="text-xs text-neutral-600">
+            Bank Account
+            <select value={filters.bank_account_id} className={cn(inputCls, 'block w-56')}
+                    onChange={(e) => setFilter({ bank_account_id: e.target.value })}>
+              <option value="">All</option>
+              {bankAccounts.map((a) => (
+                <option key={a.id} value={a.id}>{bankLabel(a)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-neutral-600">
             Source
             <select value={filters.source} className={cn(inputCls, 'block w-24')}
                     onChange={(e) => setFilter({ source: e.target.value })}>
@@ -498,7 +557,12 @@ export default function PaymentsPage() {
                 <th className="px-3 py-2">Payee</th>
                 <th className="px-3 py-2 text-right" title="Cash that left the bank, net of any vendor credit">Amount</th>
                 <th className="px-3 py-2 text-right" title="Vendor credit netted off this payment. Gross = Amount + Credit.">Credit</th>
-                <th className="px-3 py-2">Method</th>
+                {/* Bank account, NOT payment method: the method is one of four
+                    near-constant values and is still both filterable (above)
+                    and exported, whereas "which account did this money leave
+                    from" was previously unanswerable anywhere in the list. The
+                    method stays visible per payment in the row drawer. */}
+                <th className="px-3 py-2" title="The account the money was paid from">Bank Account</th>
                 <th className="px-3 py-2">Source</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2" title="Send history only — open a row to check whether it can actually be sent">Remittance</th>
@@ -529,7 +593,7 @@ export default function PaymentsPage() {
                   <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">
                     {Number(r.credit_applied ?? 0) > 0 ? fmtMoney(r.credit_applied, r.currency) : '—'}
                   </td>
-                  <td className="px-3 py-2 text-xs uppercase text-neutral-500">{r.payment_method}</td>
+                  <td className="px-3 py-2 text-xs text-neutral-600">{r.bank_account_name ?? '—'}</td>
                   <td className="px-3 py-2 text-xs text-neutral-500">{r.batch_id ? 'Batch' : 'Single'}</td>
                   <td className="px-3 py-2"><PaymentStatusBadge status={r.status} /></td>
                   <td className="px-3 py-2"><RemittanceStatusBadge status={remittanceColumnStatus(r.remittance_status)} /></td>
@@ -606,6 +670,11 @@ function PaymentDetailModal({ row, onClose }: { row: PaymentRow; onClose: () => 
                 {' '}less <span className="font-mono">{fmtMoney(row.credit_applied, row.currency)}</span> vendor credit)
               </span>
             )} · {row.payment_date}
+            {/* The list column now shows the bank account instead of the
+                method, so this drawer is the only place left that states the
+                method per payment — keep both here. */}
+            <span className="uppercase"> · {row.payment_method}</span>
+            {row.bank_account_name && <> · from {row.bank_account_name}</>}
             {row.batch_id && <span className="ml-1 text-neutral-400">· part of a batch</span>}
           </p>
           {/* The table column stays a single netted figure; this is the one

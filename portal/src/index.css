@@ -1,2 +1,8 @@
 @import "tailwindcss";
 @import "@uniops/shell/tokens.css";
+
+/* Tailwind does not scan node_modules, and @uniops/shell resolves there through
+   the workspace link — so the panel's utility classes were compiled away while
+   tsc, Vite and the DOM all looked correct. The symptom was a slide-over that
+   ignored its max-width and filled the window. */
+@source "../../packages/shell/src";

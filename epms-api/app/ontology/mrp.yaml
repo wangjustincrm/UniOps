@@ -1,0 +1,162 @@
+# MRP — the demand plan, the production plan, and what to buy for it.
+#
+# Tables owned by mrp-api, reached by `table:` for the reasons in finance.yaml.
+#
+# ── Who can see this ─────────────────────────────────────────────────────────
+# Everything here gates on `mrp.report.view`: erp_pa_officer, finance_manager,
+# gm, opm, procurement_manager, system_admin. As with finance, there is no row
+# filter for access — a forecast line is not "yours" — so the permission is the
+# whole of that decision.
+#
+# ── The trap these scopes exist for ──────────────────────────────────────────
+# Every planning table here holds one set of rows PER RUN, and they are not
+# increments of each other: two released MPS runs carry 96 and 92 lines for the
+# same materials, four forecast versions carry 1 to 100. A query that does not
+# pick a run sums them all, and for MPS that is a near-exact doubling — a wrong
+# number with nothing odd-looking about it.
+#
+# So run selection is a `scope`, not a hint in a prompt: it is stapled into the
+# WHERE and a planner cannot leave it out. The rows these entities return are
+# the plan in force, the current forecast, and the newest suggestion run. A
+# question about a SUPERSEDED run cannot be answered here, which is the right
+# trade — silently answering about all of them at once is the failure being
+# avoided.
+version: 1
+
+entities:
+
+  mrp_forecast_line:
+    table: mrp_forecast_lines
+    label: "Forecast line — expected demand for one material in one month"
+    perm_key: mrp.report.view
+    scope: forecast_current
+    # This table has no date column at all — the period it describes is `month`,
+    # a "2026-09" string. created_at is the axis only because one is required,
+    # and since the scope already narrows to a single version, every row carries
+    # the same value: a period filter here is meaningless, not merely imprecise.
+    # Ask about a month by filtering on `month`.
+    date_field: created_at
+    fields:
+      version_id: {kind: uuid, internal: true}
+      material_code: {kind: text, label: "Material code"}
+      # "2026-09" — the month the demand falls in, which is what a question
+      # about a period means here. created_at is when the row was written.
+      month: {kind: text, label: "Demand month"}
+      qty: {kind: money, label: "Quantity"}
+      uom: {kind: text, label: "Unit"}
+      # An intent line is a manually entered expectation rather than a derived
+      # forecast — a known upcoming order someone typed in.
+      is_intent: {kind: bool, label: "Manually entered intent"}
+      intent_name: {kind: text, label: "Intent name"}
+      freeze_flag: {kind: bool, label: "Frozen"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Lines"}
+      qty: {fn: sum, field: qty, label: "Quantity"}
+
+  mrp_mps_line:
+    table: mrp_mps_lines
+    label: "MPS line — planned production of one material in one month"
+    perm_key: mrp.report.view
+    scope: mps_in_force
+    # The week the production is planned for — 0 of 188 null, spanning 2026-08
+    # to 2027-12. NOT created_at: every row of that is the day the run executed,
+    # so a question about any other period would return nothing and read as "no
+    # plan" rather than "wrong column".
+    date_field: plan_week_start
+    fields:
+      run_id: {kind: uuid, internal: true}
+      material_code: {kind: text, label: "Material code"}
+      demand_month: {kind: text, label: "Demand month"}
+      qty: {kind: money, label: "Planned quantity"}
+      demand_forecast: {kind: money, label: "Forecast demand"}
+      opening_stock: {kind: money, label: "Opening stock"}
+      carry_in_qty: {kind: money, label: "Carried in from earlier"}
+      surplus_qty: {kind: money, label: "Surplus"}
+      plan_week_start: {kind: date, label: "Plan week start"}
+      # The flags a planner actually looks for. Each marks a line that needs a
+      # decision, which is what makes them worth asking about.
+      is_prebuild: {kind: bool, label: "Built early on purpose"}
+      capacity_gap: {kind: bool, label: "Exceeds capacity"}
+      lead_shortfall: {kind: bool, label: "Not enough lead time"}
+      late_production: {kind: bool, label: "Scheduled late"}
+      shelf_life_ok: {kind: bool, label: "Within shelf life"}
+      surplus_expiry_risk: {kind: bool, label: "Surplus may expire"}
+      below_min_lot: {kind: bool, label: "Below minimum lot size"}
+      covered_by_carry: {kind: bool, label: "Covered by carry-in"}
+      locked_by_planner: {kind: bool, label: "Locked by planner"}
+      manual_adjusted: {kind: bool, label: "Manually adjusted"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Lines"}
+      qty: {fn: sum, field: qty, label: "Planned quantity"}
+      forecast: {fn: sum, field: demand_forecast, label: "Forecast demand"}
+
+  mrp_purchase_suggestion:
+    table: mrp_purchase_lines
+    label: "Purchase suggestion — what MRP says to buy, and by when"
+    perm_key: mrp.report.view
+    scope: purchase_latest_run
+    # order_date is the date that matters: the day the order has to be placed
+    # for the material to arrive in time. need_week is when it is needed.
+    date_field: order_date
+    date_field_nullable_ok: true   # see note below
+    fields:
+      run_id: {kind: uuid, internal: true}
+      material_code: {kind: text, label: "Material code"}
+      partner_code: {kind: text, label: "Supplier code"}
+      need_week: {kind: date, label: "Needed by"}
+      # Null whenever lead time is unknown — which the supplier_missing and
+      # lead_time_missing flags below mark explicitly. Those rows are the ones a
+      # buyer most needs to see, so they must not be the ones a date filter
+      # quietly drops; ask about the flags rather than about a period when the
+      # question is "what is not ready to order".
+      order_date: {kind: date, label: "Order by"}
+      gross_qty: {kind: money, label: "Gross requirement"}
+      available_qty: {kind: money, label: "Available"}
+      net_qty: {kind: money, label: "Net requirement"}
+      suggested_qty: {kind: money, label: "Suggested order quantity"}
+      raised_to_moq: {kind: money, label: "Raised to minimum order quantity"}
+      lead_time_days: {kind: int, label: "Lead time (days)"}
+      # Three reasons a suggestion cannot simply be acted on.
+      supplier_missing: {kind: bool, label: "No supplier on file"}
+      lead_time_missing: {kind: bool, label: "No lead time on file"}
+      order_date_passed: {kind: bool, label: "Order date already passed"}
+      status: {kind: text, label: "Status"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Suggestions"}
+      suggested: {fn: sum, field: suggested_qty, label: "Suggested quantity"}
+      net: {fn: sum, field: net_qty, label: "Net requirement"}
+
+  wms_inventory_lot:
+    table: wms_inventory_lots
+    label: "Inventory lot — one batch of material in the warehouse"
+    perm_key: mrp.report.view
+    scope: permission_only
+    # When the lot came in. Nullable in principle; see the coverage check in
+    # test_ontology_matches_the_database.
+    date_field: inbound_date
+    date_field_nullable_ok: true
+    fields:
+      warehouse_id: {kind: text, label: "Warehouse"}
+      material_code: {kind: text, label: "Material code"}
+      lot_no: {kind: text, label: "Lot number"}
+      qty: {kind: money, label: "Quantity"}
+      qty_allocated: {kind: money, label: "Allocated"}
+      qty_onhold: {kind: money, label: "On hold"}
+      uom: {kind: text, label: "Unit"}
+      # wms_status is the warehouse system's own word for it; mapped_status is
+      # what MRP made of that. Plan questions mean the mapped one.
+      wms_status: {kind: text, label: "Warehouse status"}
+      mapped_status: {kind: text, label: "Status"}
+      production_date: {kind: date, label: "Produced"}
+      expiry_date: {kind: date, label: "Expires"}
+      inbound_date: {kind: date, label: "Received"}
+      supplier_code: {kind: text, label: "Supplier code"}
+      supplier_batch: {kind: text, label: "Supplier batch"}
+      created_at: {kind: datetime, label: "Row created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Lots"}
+      qty: {fn: sum, field: qty, label: "Quantity"}
+      allocated: {fn: sum, field: qty_allocated, label: "Allocated"}

@@ -14,6 +14,7 @@ export type UserRole =
   | 'vendor_manager'
   | 'erp_pa_officer'
   | 'payment_officer'
+  | 'finance_director'
   | 'system_admin'
 
 export type DocumentStatus =

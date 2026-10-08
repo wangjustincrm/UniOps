@@ -39,15 +39,16 @@ async def get_workflow(db: AsyncSession, doc_type: str) -> list[dict]:
     return defaults.get(doc_type, [])
 
 
-_POST_CODES = ("gm", "opm", "vendor_manager", "finance_manager", "procurement_manager")
+_POST_CODES = ("gm", "opm", "vendor_manager", "finance_manager", "procurement_manager",
+               "finance_director")
 
 
 async def _post_holders(db: AsyncSession) -> dict[str, list[str]]:
     """code -> [user_id str].
 
-    The five SINGLETON posts in _POST_CODES (gm/opm/vendor_manager/
-    finance_manager/procurement_manager) are company-unique POSITIONS —
-    identity-api enforces one holder each (migration 0003_post_role_singleton
+    The SINGLETON posts in _POST_CODES (gm/opm/vendor_manager/
+    finance_manager/procurement_manager/finance_director) are company-unique
+    POSITIONS — identity-api enforces one holder each (migration 0003_post_role_singleton
     + the cross-table 409 in PUT /authz/users/{id}/roles). If a user's
     PRIMARY role (users.role) IS the post, they genuinely hold that position,
     so PRIMARY (users.role) UNION ADDITIONAL (user_roles) both count.
@@ -89,7 +90,8 @@ async def _post_holders(db: AsyncSession) -> dict[str, list[str]]:
 
 async def post_holder_ids(db: AsyncSession, role: str) -> set:
     """Active user ids holding the given post role ('gm' | 'opm' |
-    'finance_manager' | 'procurement_manager' | 'vendor_manager' | 'finance_bp').
+    'finance_manager' | 'procurement_manager' | 'vendor_manager' |
+    'finance_director' | 'finance_bp').
 
     Full holder SET (PRIMARY users.role ∪ ADDITIONAL identity user_roles), unlike
     get_role_management()'s `<role>_user_id`, which collapses a post to a SINGLE
@@ -191,6 +193,50 @@ def actor_holds_role(
         "finance_manager":      rm.get("finance_manager_user_id"),
         "procurement_manager":  rm.get("procurement_manager_user_id"),
         "vendor_manager":       rm.get("vendor_manager_user_id"),
+        "finance_director":     rm.get("finance_director_user_id"),
     }
     assigned = role_map.get(role)
     return assigned is not None and assigned == actor_str
+
+
+async def get_approval_setting(db: AsyncSession, key: str, default: str) -> str:
+    """One engine-wide switch from `approval_settings` (app/models/routing.py).
+
+    Falls back to `default` when the row is missing so the engine's behaviour is
+    defined before an admin has ever opened the settings screen — and so a
+    failure to read configuration can never be the reason a payment cannot be
+    approved.
+    """
+    row = (await db.execute(sa.text(
+        "SELECT value FROM approval_settings WHERE key = :k"), {"k": key})).scalar_one_or_none()
+    return row or default
+
+
+async def pa_department_ids(db: AsyncSession, pa_id: uuid.UUID) -> set:
+    """Departments a payment application spends against.
+
+    A PA may settle several purchase orders (epms `pa_po_links`), and those POs
+    need not belong to one department — a vendor's single invoice covers
+    whatever it covers, and the vendor has no idea where the department
+    boundaries are. Each PO's department is its PR's, the same resolution
+    `engine._routing_department_id` uses for the single-PO case.
+
+    Unions the link table with the header `po_id`: the link table is complete
+    for everything epms-api writes, but a PA inserted by anything else has only
+    the header, and reading one source alone would report such a PA as spanning
+    NO departments — which would then silently take the cross-department path.
+
+    NULL (a PO with no PR — NC-imported) is a real element of the set, not a
+    gap: those route to the submitter's own department, so a PA mixing one with
+    a PR-backed PO genuinely spans two different routings.
+    """
+    rows = (await db.execute(sa.text(
+        "SELECT DISTINCT pr.department_id::text AS dept "
+        "FROM purchase_orders po "
+        "LEFT JOIN purchase_requests pr ON pr.id = po.pr_id "
+        "WHERE po.id IN ("
+        "    SELECT po_id FROM pa_po_links WHERE pa_id = :pa "
+        "    UNION "
+        "    SELECT po_id FROM payment_applications WHERE id = :pa AND po_id IS NOT NULL"
+        ")"), {"pa": str(pa_id)})).scalars().all()
+    return set(rows)

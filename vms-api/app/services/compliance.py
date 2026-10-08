@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.task_mirror import Task
 from app.models.user_mirror import User
+from app.services import area_rules
 from app.models.visit import AccessArea, Visit
 from app.models.visitor import Visitor
 
@@ -33,11 +34,7 @@ from app.models.visitor import Visitor
 COMPLIANCE_TTL = timedelta(days=365)
 
 # Access areas that require both gates. Mirrors the email-dispatch set.
-_NEEDS_COMPLIANCE = frozenset({
-    AccessArea.production_gmp,
-    AccessArea.laboratory,
-    AccessArea.all,
-})
+_NEEDS_COMPLIANCE = area_rules.COMPLIANCE_TASK_AREAS
 
 # Task document type codes — must fit `tasks.document_type varchar(10)`.
 DOC_TYPE_TRAINING = "vms_train"

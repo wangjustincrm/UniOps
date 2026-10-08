@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ── Shared building blocks ───────────────────────────────────────────────────
@@ -101,6 +101,10 @@ class PaRow(BaseModel):
     pa_number: str
     vendor_name: str
     po_number: str
+    # Every PO the payment settles, primary first (a PA may cover several).
+    # po_number above stays the primary one; the dashboard row shows it plus a
+    # "+N" so a multi-PO payment does not read as a single-PO one.
+    po_numbers: list[str] = Field(default_factory=list)
     pa_type: str
     payment_amount: Decimal
     currency: str

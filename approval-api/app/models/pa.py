@@ -23,6 +23,12 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="CAD")
     po_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     po_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Agreement-sourced PA: po_id is NULL and this carries the agreement instead
+    # (epms-api crud/pa.py::create — the agreement route passes no po_links). The
+    # engine reads it to route on the AGREEMENT's department; see
+    # engine._routing_department_id. Column already exists physically
+    # (epms alembic ag02_agreement_links) — no migration comes with this mirror.
+    agreement_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     invoice_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Stamped by the engine's hasattr(doc,"approved_at") hook on approval.

@@ -256,6 +256,55 @@ async def test_update_pa(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_update_pa_clears_the_tax_snapshot_when_the_tax_is_zeroed(admin_client):
+    """Zeroing the tax must clear the rate/code that described it.
+
+    PA-20260917-0001 is what happens when it does not: the edit screen sent
+    tax_amount=0 with tax_rate=null and tax_code=null, the backend applied only
+    the amount, and the PA went on advertising a 13% HST_ON rate while paying no
+    tax — which the Data Maintenance recompute then reads back as 13 of tax.
+    """
+    v = await _make_vendor(admin_client, "VND-PA-TAXCLR-01")
+    po = await _make_po(admin_client, v["id"])
+    pa = await _create_pa(admin_client, po["id"], tax_rate="0.13", tax_code="HST_ON",
+                          receipt_override=True, receipt_override_reason="tax clear test setup")
+    assert pa["tax_rate"] is not None and pa["tax_code"] == "HST_ON"   # admission
+
+    r = await admin_client.patch(f"{PA_URL}/{pa['id']}", json={
+        "subtotal": "400.00", "tax_amount": "0", "tax_rate": None, "tax_code": None,
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert float(body["tax_amount"]) == 0.0
+    assert body["tax_rate"] is None
+    assert body["tax_code"] is None
+    assert float(body["payment_amount"]) == 400.00
+
+
+@pytest.mark.asyncio
+async def test_update_pa_leaves_unsent_fields_alone(admin_client):
+    """The other half of the contract: a field the body OMITS is untouched.
+
+    Without this, "a sent null clears it" could be satisfied by a backend that
+    simply wipes every nullable field on any edit.
+    """
+    v = await _make_vendor(admin_client, "VND-PA-TAXKEEP-01")
+    po = await _make_po(admin_client, v["id"])
+    pa = await _create_pa(admin_client, po["id"],
+                          tax_rate="0.13", tax_code="HST_ON", notes="keep me",
+                          receipt_override=True, receipt_override_reason="tax keep test setup")
+
+    r = await admin_client.patch(f"{PA_URL}/{pa['id']}", json={"title": "Retitled"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["title"] == "Retitled"
+    assert body["tax_code"] == "HST_ON"
+    assert float(body["tax_rate"]) == 0.13
+    assert body["notes"] == "keep me"
+    assert float(body["tax_amount"]) == 52.00
+
+
+@pytest.mark.asyncio
 async def test_create_pa_invalid_po(admin_client):
     r = await admin_client.post(PA_URL, json=_pa_payload("00000000-0000-0000-0000-000000000000"))
     assert r.status_code == 404
@@ -741,3 +790,48 @@ async def test_finance_client_puts_credit_ids_on_the_wire_only_when_given(monkey
     await finance_client.execute_payment(
         doc_kind="pa", doc_id=doc_id, bearer_token="tok", credit_ids=[cid])
     assert captured["payload"]["credit_ids"] == [str(cid)]
+
+
+# ── Submit gate: a PO-based PA must name the invoice it settles ────────────────
+# Cover for the 2026-08-31 production case: PA-20260729-0001 reached approval and
+# payment with invoice_ids empty. finance-api's payment executor then closed
+# nothing — the invoice stayed 'matched', its ap_invoices row stayed open at
+# paid_amount 0, and the remittance advice was blocked 'missing_invoice_no' with
+# no screen able to lift it, because update_pa accepts only draft/returned.
+# The gate sits on the submit ACTION (not in PaCreate) so a draft can still be
+# saved half-finished; these tests therefore create the draft, then submit.
+
+@pytest.mark.asyncio
+async def test_submit_refuses_pa_that_links_no_invoice(admin_client, test_engine):
+    # A three-way PO is what makes this the real shape: creation already
+    # demands that the PO carry a matched invoice with a GR behind it, and
+    # passes — because that gate asks whether the PO has an invoice, never
+    # whether THIS PA points at one. That gap is the whole bug.
+    v = await _make_vendor(admin_client, "VND-PA-NOINV-01")
+    po = await _make_three_way_po(admin_client, test_engine, v["id"])
+    pa = await _create_pa(admin_client, po["id"])          # invoice_ids left empty
+    assert pa["status"] == "draft"                          # the draft itself is fine
+
+    r = await admin_client.post(f"{PA_URL}/{pa['id']}/action", json={"action": "submit"})
+
+    assert r.status_code == 409, r.text
+    # Must name the PO, or the operator has nowhere to go to fix it.
+    assert po["number"] in r.json()["detail"]
+    # And it must not have entered approval.
+    still = await admin_client.get(f"{PA_URL}/{pa['id']}")
+    assert still.json()["status"] == "draft"
+
+
+@pytest.mark.asyncio
+async def test_submit_allows_prepayment_pa_without_invoice(admin_client, test_engine):
+    """A prepayment is paid before the vendor has invoiced anything, so it must
+    pass the gate. It still fails further down when approval-api is unavailable
+    in this environment — what matters here is that it is not OUR 409."""
+    v = await _make_vendor(admin_client, "VND-PA-NOINV-02")
+    po = await _make_three_way_po(admin_client, test_engine, v["id"])
+    pa = await _create_pa(admin_client, po["id"], pa_type="prepayment",
+                          prepayment_pct="30", expected_settlement_date="2026-12-31")
+
+    r = await admin_client.post(f"{PA_URL}/{pa['id']}/action", json={"action": "submit"})
+
+    assert "links no invoice" not in r.text

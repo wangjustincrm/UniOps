@@ -26,6 +26,7 @@ from app.models.agreement import PurchaseAgreement
 from app.models.cost_center import CostCenter
 from app.models.pr import PurchaseRequest
 from app.models.po import PurchaseOrder
+from app.crud.pa_links import po_ids_of_pa, po_ids_of_pas
 from app.models.pa import PaymentApplication
 from app.models.task import Task
 from app.models.user import User
@@ -87,8 +88,8 @@ async def _task_chain_pr_ids(
     chain so document-chain navigation never 404s: a PR task → the PR; a PO task
     → its parent PR; a PA task → PA→PO→parent PR. (You can see a PO you must
     approve, so you can open the PR it came from.)"""
-    po_from_pa = select(PaymentApplication.po_id).where(
-        PaymentApplication.id.in_(await _open_task_doc_ids(db, own_user_id, task_user_ids, "pa")))
+    po_from_pa = po_ids_of_pas(
+        await _open_task_doc_ids(db, own_user_id, task_user_ids, "pa"))
     return (await _open_task_doc_ids(db, own_user_id, task_user_ids, "pr")).union(
         select(PurchaseOrder.pr_id).where(
             PurchaseOrder.id.in_(await _open_task_doc_ids(db, own_user_id, task_user_ids, "po")),
@@ -103,8 +104,8 @@ async def _task_chain_po_ids(
 ) -> Select:
     """PO ids reachable from `task_user_ids`'s open tasks: a PO task → the PO; a
     PA task → its parent PO."""
-    po_from_pa = select(PaymentApplication.po_id).where(
-        PaymentApplication.id.in_(await _open_task_doc_ids(db, own_user_id, task_user_ids, "pa")))
+    po_from_pa = po_ids_of_pas(
+        await _open_task_doc_ids(db, own_user_id, task_user_ids, "pa"))
     return (await _open_task_doc_ids(db, own_user_id, task_user_ids, "po")).union(po_from_pa)
 
 
@@ -113,21 +114,21 @@ async def _task_chain_agreement_ids(
 ) -> Select:
     """Agreement ids reachable from `task_user_ids`'s open PA-approval tasks.
 
-    approval-api's `_routing_department_id` (engine.py) has no agreement case:
-    for doc_type in ("pa", "pa_dir") it only resolves a department via
-    `po_id → PurchaseOrder.pr_id → PurchaseRequest.department_id`, which is
-    always None for an agreement PA (no po_id) — so it falls straight through
-    to the routing user's OWN department, and `_routing_user_id` resolves
-    "routing user" to the PA's `created_by` whenever there is no PO/PR chain.
-    In short: an agreement PA's dept_manager/gm_or_opm/director approval step
-    routes on the PA CREATOR's department, not the agreement's own
-    `department_id` that `visible_agreement_subquery` scopes on. Those two can
-    diverge (an AP clerk in one department raising a PA against another
-    department's agreement) — without this task-chain fallback, the assigned
-    approver gets the `approve_pa` task and can open the PA directly (the
-    open-task shortcut in `is_pa_visible`), but it never appears in their PA
-    list. Mirrors `_task_chain_po_ids`, which is exactly why PO-based PAs
-    never had this hole."""
+    approval-api's `_routing_department_id` (engine.py) NOW reads the agreement's
+    own `department_id` for an agreement PA, so routing and this scope agree on
+    the common path. This fallback still earns its place for the cases where
+    they cannot agree:
+
+      * PAs routed BEFORE that fix — their open approve_pa tasks are already
+        pinned to a manager of the CREATOR's department, and nothing re-routes
+        an in-flight document;
+      * an agreement with no `department_id` at all, which still falls through
+        to the routing user's own department.
+
+    Without it the assigned approver gets the `approve_pa` task and can open the
+    PA directly (the open-task shortcut in `is_pa_visible`), but it never appears
+    in their PA list. Mirrors `_task_chain_po_ids`, which is exactly why PO-based
+    PAs never had this hole."""
     return select(PaymentApplication.agreement_id).where(
         PaymentApplication.id.in_(await _open_task_doc_ids(db, own_user_id, task_user_ids, "pa")),
         PaymentApplication.agreement_id.isnot(None),
@@ -270,7 +271,8 @@ async def _effective_role_codes(
     return codes
 
 
-_POST_CODES = ("gm", "opm", "finance_manager", "procurement_manager", "vendor_manager", "finance_bp")
+_POST_CODES = ("gm", "opm", "finance_manager", "procurement_manager", "vendor_manager", "finance_bp",
+               "finance_director")
 
 
 async def role_holder_ids(
@@ -378,6 +380,21 @@ async def visible_pr_subquery(
     # task-chain is always OR-ed in: if you hold an open approval task for a PR
     # (routing may land it outside your dept/cost-center scope), you can see it.
     conds = [PurchaseRequest.id.in_(task_pr)]
+    # Named as the PR's service owner → you can see it, whatever role you hold
+    # and whatever department it is charged to. Same reasoning as the task-chain
+    # condition above and OR-ed in for the same reason: owner_id is a
+    # PER-DOCUMENT assignment, and the owner is asked to confirm the receipt on
+    # this PR (crud.pr_owner). A service PR raised by one department for an
+    # owner in another would otherwise 404 for the very person chased about it —
+    # and not only once the task exists: the owner has to be able to open the PO
+    # and create the GR *before* the completion date passes.
+    #
+    # NOT reflected in scoped_department_ids below, exactly like the task-chain
+    # condition: that helper answers "which DEPARTMENTS is this viewer scoped
+    # to" for the list filters, and a single owned document is not a department.
+    # Also not admissible in `is_pr_in_departments` — that is an authorisation
+    # gate, and this is visibility.
+    conds.append(PurchaseRequest.owner_id == user_id)
     cc_dept_ids: set[uuid.UUID] = set()       # cost-center oversight (dept_manager/gm/opm/director)
     creator_dept_ids: set[uuid.UUID] = set()  # creator's-department membership (dept_manager/director)
 
@@ -795,8 +812,15 @@ async def is_pa_visible(db: AsyncSession, pa, scope: dict) -> bool:
 
     if pa.po_id is None:
         return False
+    # ANY of the PA's POs being in scope makes the PA visible: a PA covering
+    # three orders is one document, and someone who owns the third order is
+    # entitled to see the payment that settles it. Matching only the primary PO
+    # would 404 them out of a payment they are on the hook for.
     row = (await db.execute(
-        select(PurchaseOrder.id).where(PurchaseOrder.id == pa.po_id).where(PurchaseOrder.id.in_(scope["po_subq"]))
+        select(PurchaseOrder.id)
+        .where(PurchaseOrder.id.in_(po_ids_of_pa(pa.id)))
+        .where(PurchaseOrder.id.in_(scope["po_subq"]))
+        .limit(1)
     )).scalar_one_or_none()
     return row is not None
 

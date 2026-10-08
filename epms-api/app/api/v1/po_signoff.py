@@ -70,9 +70,10 @@ async def _state(db, po, workflow: list[dict], actor_id: uuid.UUID) -> dict:
             select(User.full_name).where(User.id == po.signoff_submitted_by)
         )).scalar_one_or_none()
 
-    eligible = signoff_crud.is_signoff_eligible(po)
-    if not eligible:
-        blockers.insert(0, "Sign-off is only available on POs imported from NC.")
+    ineligible = signoff_crud.ineligible_reason(po)
+    eligible = ineligible is None
+    if ineligible:
+        blockers.insert(0, ineligible)
     if not workflow:
         blockers.insert(0, "No sign-off workflow is configured. "
                            "Set one up in Portal → Approval Workflows.")
@@ -128,10 +129,9 @@ async def submit_signoff(
     token: BearerToken,
 ):
     po = await _load(po_id, db, user)
-    if not signoff_crud.is_signoff_eligible(po):
-        raise HTTPException(
-            status_code=409,
-            detail="Sign-off is only available on POs imported from NC.")
+    ineligible = signoff_crud.ineligible_reason(po)
+    if ineligible:
+        raise HTTPException(status_code=409, detail=ineligible)
 
     workflow = await _workflow(po_id, token)
     if not workflow:

@@ -29,7 +29,7 @@ from tests.test_invoice_list_gm_opm_scope import _ids, _make_epms_invoice_chain
 
 def _client_for(role: str, user_id: str) -> AsyncClient:
     token = jwt.encode(
-        {"sub": user_id, "role": role, "exp": datetime.now(timezone.utc) + timedelta(hours=8)},
+        {"sub": user_id, "role": role, "type": "access", "exp": datetime.now(timezone.utc) + timedelta(hours=8)},
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
     )

@@ -424,10 +424,14 @@ async def run_scheduled_jobs(
     escalation) instead of waiting for the next scheduler tick. Returns the
     same count summary the background loop logs. Idempotent — re-running is
     safe (one-shot flags + status transitions guard against double sends)."""
-    from app.services import scheduled_jobs
+    from app.services import scheduler
 
-    summary = await scheduled_jobs.run_all(db)
-    await db.commit()
+    summary = await scheduler.run_locked(db)
+    if summary is None:
+        raise HTTPException(
+            status_code=409,
+            detail="A scheduled run is in progress right now — try again in a minute.",
+        )
 
     meta = await load_request_meta(db, user, request)
     await audit_crud.log_event(
@@ -512,6 +516,9 @@ async def delete_data_record(entity: str, record_id: uuid.UUID, db: SessionDep, 
         summary = await service.delete_record(db, entity, record_id, actor_id=actor_id, actor_email=email)
         await db.commit()
         return {"preview": False, "cascade": summary}
+    except service.DeleteNotAllowed as e:
+        await db.rollback()
+        raise HTTPException(409, str(e))
     except ValueError as e:
         await db.rollback()
         raise HTTPException(404, str(e))
@@ -524,6 +531,9 @@ async def bulk_delete_data_records(entity: str, db: SessionDep, user: AdminDep, 
         summary = await service.bulk_delete(db, entity, body.ids, actor_id=actor_id, actor_email=email)
         await db.commit()
         return {"deleted": len(body.ids), "cascade": summary}
+    except service.DeleteNotAllowed as e:
+        await db.rollback()
+        raise HTTPException(409, str(e))
     except ValueError as e:
         await db.rollback()
         raise HTTPException(400, str(e))

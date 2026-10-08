@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   poService,
   type PoFilters,
@@ -8,6 +8,7 @@ import {
   type PoActionBody,
   type PlaceOrderBody,
   type PoSignoffState,
+  type ApiPo,
 } from '@/services/po'
 import { api } from '@/lib/api'
 import { poAttachmentService } from '@/services/poAttachments'
@@ -23,11 +24,15 @@ export interface PoAttachmentMeta {
 
 // Without explicit page/page_size the caller wants the complete list, so we
 // page through the API (server defaults to 20 rows and silently truncates).
-export function usePos(filters?: PoFilters) {
+// `enabled` defaults to true so every existing caller is unaffected; pass false
+// where the list is only needed on one branch of a page (the PA editor does not
+// need the whole PO list for an agreement-backed payment).
+export function usePos(filters?: PoFilters, enabled = true) {
   const paged = filters?.page !== undefined || filters?.page_size !== undefined
   return useQuery({
     queryKey: ['pos', filters],
     queryFn: () => (paged ? poService.list(filters) : poService.listAll(filters)),
+    enabled,
   })
 }
 
@@ -37,6 +42,23 @@ export function usePo(id: string) {
     queryFn: () => poService.get(id),
     enabled: Boolean(id),
   })
+}
+
+// Several POs at once, keyed identically to usePo(id) so the caches are shared.
+// Used where a document spans more than one purchase order — a payment
+// application settling several of them, whose invoice/line comparisons need
+// every PO's lines, not just the primary one's.
+export function usePosByIds(ids: string[], enabled = true) {
+  const results = useQueries({
+    queries: ids.map((id) => ({
+      queryKey: ['pos', id],
+      queryFn: () => poService.get(id),
+      enabled,
+    })),
+  })
+  const settled = ids.length === 0 || results.every((r) => r.data !== undefined)
+  if (!settled) return { items: undefined as ApiPo[] | undefined, isLoading: true }
+  return { items: results.map((r) => r.data).filter((p): p is ApiPo => p !== undefined), isLoading: false }
 }
 
 export function usePoEvents(id: string) {

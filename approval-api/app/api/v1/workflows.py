@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import CurrentUser
 from app.db.base import get_db
+from app.crud.engine import CONDITIONAL_ROLES
 from app.crud.workflow import get_workflow, get_role_management, get_dept_gm_opm_mapping
 from app.schemas.workflow import AllWorkflowDefs, WorkflowDef, WorkflowNodeDef
 from app.schemas.resolution import RoleManagementResponse
@@ -40,7 +41,19 @@ async def get_workflow_for_doc(doc_type: str, db: AsyncSession = Depends(get_db)
     if doc_type not in _DOC_TYPES:
         raise HTTPException(status_code=400, detail=f"doc_type must be one of {_DOC_TYPES}")
     steps = await get_workflow(db, doc_type)
-    return WorkflowDef(doc_type=doc_type, steps=[WorkflowNodeDef(**s) for s in steps])
+    # Mark the steps that do not always run. The stored definition has no such
+    # flag — _should_skip_step decides at runtime — so anything describing this
+    # process to a person would otherwise present every step as mandatory.
+    annotated = []
+    for st in steps:
+        node = dict(st)
+        condition = CONDITIONAL_ROLES.get(node.get("role"))
+        if condition:
+            node["conditional"] = True
+            node["condition"] = condition
+        annotated.append(node)
+    return WorkflowDef(doc_type=doc_type,
+                       steps=[WorkflowNodeDef(**n) for n in annotated])
 
 
 @router.get("/{doc_type}/steps/{step_idx}", response_model=WorkflowNodeDef)

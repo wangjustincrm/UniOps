@@ -9,7 +9,9 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,6 +36,10 @@ class BankAccount(UUIDPrimaryKey, TimestampMixin, Base):
     # A3 workbench: reusable CSV column mapping for this account's statement export
     # {date, description, reference?, amount? | debit?+credit?, date_format?, default_year?}
     import_mapping: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Which NC bank account (BD_BANKACCSUB.CODE, e.g. '1033760' = RBC CAD) this
+    # row IS. The book side of a reconciliation is GL 100201 filtered by this
+    # code; unset means the account cannot be reconciled against the ledger.
+    nc_bank_account_code: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
@@ -60,6 +66,19 @@ class BankTransaction(UUIDPrimaryKey, TimestampMixin, Base):
     matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     matched_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     import_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # ── v2 (migration 0037) ──────────────────────────────────────────────────
+    # Which imported statement this line came from. SET NULL: a superseded
+    # statement must not take its lines — and the matches on them — with it.
+    statement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bank_statements.id", ondelete="SET NULL"),
+        nullable=True, index=True)
+    # The balance the statement printed on this line, where it printed one. It is
+    # the verifier's per-line anchor and what lets the screen show the statement
+    # the way the bank did.
+    running_balance: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+    # Statement order. Several lines share one date — RBC prints one balance per
+    # date group — so txn_date alone cannot reproduce the page.
+    sort_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useReplaceTab, Button } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle } from 'lucide-react'
-import { formatAmount } from '@/lib/utils'
+import { formatAmount, todayLocal } from '@/lib/utils'
+import { useEditableClaim, useSaveClaim, type EditableFormProps } from '@/lib/editableClaim'
+import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { api } from '@/lib/api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -31,9 +33,7 @@ interface TripItem {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function today() {
-  return new Date().toISOString().slice(0, 10)
-}
+const today = todayLocal
 
 function calcAmount(km: string, rate: string, roundTrip: boolean): string {
   const k = parseFloat(km), r = parseFloat(rate)
@@ -60,8 +60,9 @@ function emptyTrip(n: number, rate: string, accountId: string | null, code: stri
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function MilCreatePage() {
+export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
   const replaceTab = useReplaceTab(oaRoutes)
+  const { claim: editing, isLoading: loadingClaim, error: loadError } = useEditableClaim(editClaimId)
 
   const { data: policy } = useQuery<Policy>({
     queryKey: ['expense-policy'],
@@ -79,6 +80,34 @@ export default function MilCreatePage() {
   const [trips, setTrips] = useState<TripItem[]>([
     emptyTrip(1, rate, defaultAccountId, null, null),
   ])
+
+  // Prefill from the claim being edited. Keyed on the id: react-query returns a
+  // fresh object each refetch, and re-running on every one would discard edits
+  // in progress.
+  useEffect(() => {
+    if (!editing) return
+    setSubmissionDate(editing.submission_date)
+    setNotes(editing.notes ?? '')
+    setVehicleDesc(editing.vehicle_description ?? '')
+    setVehicleOwnedBy(editing.vehicle_owned_by ?? 'self')
+    if (editing.trip_items.length) {
+      setTrips(editing.trip_items.map((t, i) => ({
+        trip_number: i + 1,
+        trip_date: t.trip_date,
+        from_location: t.from_location,
+        to_location: t.to_location,
+        purpose: t.purpose,
+        is_round_trip: t.is_round_trip,
+        distance_km: String(t.distance_km),
+        rate_per_km: String(t.rate_per_km),
+        amount: String(t.amount),
+        budget_account_id: t.budget_account_id,
+        budget_account_code: t.budget_account_code,
+        budget_account_name: t.budget_account_name,
+      })))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id])
 
   // policy 到达后，回填仍是默认费率/无科目的行（费率非用户可编辑字段，统一按组织费率）
   useEffect(() => {
@@ -122,10 +151,7 @@ export default function MilCreatePage() {
   const totalAmount = trips.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0)
   const isOverMaxKm = totalKm > maxKm
 
-  const createMutation = useMutation({
-    mutationFn: (body: object) => api.post('/api/v1/expenses', body),
-    onSuccess: (data: any) => replaceTab(`/expenses/${data.id}`),
-  })
+  const createMutation = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`))
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -159,20 +185,30 @@ export default function MilCreatePage() {
     })
   }
 
+  if (loadingClaim) {
+    return <div className="p-8 text-sm text-neutral-500">Loading claim…</div>
+  }
+  if (loadError) {
+    return <ErrorBanner message={loadError.message} />
+  }
+
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-5xl">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">New Mileage Claim</h1>
+          <h1 className="text-2xl font-bold text-neutral-900">
+            {editing ? `Edit ${editing.claim_number}` : 'New Mileage Claim'}
+          </h1>
           <p className="mt-0.5 text-sm text-neutral-500">Personal vehicle reimbursement at ${currentRate}/km</p>
         </div>
         <div className="flex gap-2">
-          <Button type="button" variant="secondary" size="sm" onClick={() => replaceTab('/expenses')}>
+          <Button type="button" variant="secondary" size="sm"
+                  onClick={() => replaceTab(editing ? `/expenses/${editing.id}` : '/expenses')}>
             Cancel
           </Button>
           <Button type="submit" size="sm" disabled={createMutation.isPending}>
-            {createMutation.isPending ? 'Saving…' : 'Save as Draft'}
+            {createMutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Save as Draft'}
           </Button>
         </div>
       </div>

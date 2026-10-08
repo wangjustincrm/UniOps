@@ -3,6 +3,21 @@ import uuid
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _direct_pa_switched_on(monkeypatch):
+    """Exercise the retired Direct PA path on purpose.
+
+    OA's Direct PA is hidden and creation answers 410 (see DIRECT_PA_RETIRED in
+    api/v1/pa.py). The code behind the flag is kept rather than deleted, and
+    kept means kept WORKING — so these tests flip it on. If the product
+    decision is reversed, this file is what says whether the feature still
+    functions; without it the code would rot silently behind the flag.
+
+    The flag itself is covered by test_direct_pa_retired.py.
+    """
+    monkeypatch.setattr("app.api.v1.pa.DIRECT_PA_RETIRED", False)
+
+
 @pytest.mark.asyncio
 async def test_upsert_ap_invoice_fail_open(monkeypatch):
     from app.services import finance_client

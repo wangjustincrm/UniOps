@@ -35,7 +35,7 @@ const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
-type SortField = 'number' | 'title' | 'amount' | 'status' | 'submitted_at' | 'is_prepaid'
+type SortField = 'number' | 'title' | 'created_by_name' | 'amount' | 'status' | 'submitted_at' | 'is_prepaid'
 type SortDir = 'asc' | 'desc'
 
 export default function PrListPage() {
@@ -127,10 +127,27 @@ export default function PrListPage() {
     let cmp = 0
     if (sortField === 'amount') cmp = a.amount - b.amount
     else if (sortField === 'submitted_at') cmp = (a.submitted_at ?? '').localeCompare(b.submitted_at ?? '')
+    else if (sortField === 'created_by_name') cmp = (a.created_by_name ?? '').localeCompare(b.created_by_name ?? '')
     else if (sortField === 'status') cmp = compareByStatusThenStep(a, b)
     else cmp = String(a[sortField as keyof typeof a]).localeCompare(String(b[sortField as keyof typeof b]))
     return sortDir === 'asc' ? cmp : -cmp
   })
+
+  // Requester is dropped for a pure requester — the list is already only their
+  // own PRs, so the column would repeat their name on every row.
+  const columns = ([
+    ['number', 'PR Number'],
+    ['title', 'Title'],
+    ...(isRequesterOnly ? [] : [['created_by_name', 'Requester']]),
+    ['vendor_name', 'Vendor'],
+    ['amount', 'Amount (CAD)'],
+    ['type', 'Type'],
+    ['is_prepaid', 'Prepaid'],
+    ['status', 'Status'],
+    ['submitted_at', 'Submitted'],
+  ] as [SortField | 'vendor_name' | 'type' | 'is_prepaid', string][])
+  // checkbox + data columns + the View action cell
+  const colCount = columns.length + 2
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return <ChevronUp className="h-3 w-3 text-neutral-300" />
@@ -238,18 +255,7 @@ export default function PrListPage() {
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
                 <th className="w-10 px-4 py-3" />
-                {(
-                  [
-                    ['number', 'PR Number'],
-                    ['title', 'Title'],
-                    ['vendor_name', 'Vendor'],
-                    ['amount', 'Amount (CAD)'],
-                    ['type', 'Type'],
-                    ['is_prepaid', 'Prepaid'],
-                    ['status', 'Status'],
-                    ['submitted_at', 'Submitted'],
-                  ] as [SortField | 'vendor_name' | 'type' | 'is_prepaid', string][]
-                ).map(([field, label]) => (
+                {columns.map(([field, label]) => (
                   <th key={field} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 ${field === 'amount' ? 'text-right' : 'text-left'}`}>
                     {['vendor_name', 'type', 'is_prepaid'].includes(field) ? label : (
                       <button onClick={() => handleSort(field as SortField)} className="flex items-center gap-1 hover:text-neutral-700">
@@ -262,9 +268,9 @@ export default function PrListPage() {
               </tr>
             </thead>
             <tbody>
-              {isLoading && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={10} />)}
+              {isLoading && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={colCount} />)}
               {!isLoading && sorted.length === 0 && (
-                <tr><td colSpan={10} className="py-16 text-center text-sm text-neutral-400">No purchase requisitions found</td></tr>
+                <tr><td colSpan={colCount} className="py-16 text-center text-sm text-neutral-400">No purchase requisitions found</td></tr>
               )}
               {sorted.map((pr) => (
                 <tr key={pr.id} className="border-b border-neutral-100 bg-white hover:bg-primary-50/60 transition-colors">
@@ -283,6 +289,9 @@ export default function PrListPage() {
                   <td className="px-4 py-3 text-neutral-900">
                     <p className="line-clamp-2 max-w-52 break-words" title={pr.title}>{pr.title}</p>
                   </td>
+                  {!isRequesterOnly && (
+                    <td className="px-4 py-3 text-neutral-600 max-w-40 truncate" title={pr.created_by_name ?? undefined}>{pr.created_by_name ?? '—'}</td>
+                  )}
                   <td className="px-4 py-3 text-neutral-600 max-w-40 truncate">{pr.vendor_name}</td>
                   <td className="px-4 py-3 amount text-neutral-900">{formatCAD(pr.amount)}</td>
                   <td className="px-4 py-3 text-neutral-500 whitespace-nowrap">{TYPE_LABELS[pr.type] ?? `Type ${pr.type}`}</td>

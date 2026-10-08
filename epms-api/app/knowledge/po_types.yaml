@@ -1,0 +1,68 @@
+# Purchase Orders — the same six procurement types as a PR, and a different
+# question about them, because almost nobody in this company creates one.
+#
+# Derived, never written here: what the create endpoint requires (PoCreate).
+# PO has no submit gates in doc_preflight — its rules are its create schema and
+# its crud — so `required_before_submit` comes back empty for every type, and
+# `requirements_are` tells the narrator what that emptiness means.
+topic: po_types
+label: Purchase Order types
+doc_type: po
+field: type
+
+what_it_is: >
+  The order actually placed with the vendor. A PO is what the vendor receives
+  and what goods are received against; a PR is the internal request that
+  justifies raising one.
+
+how_types_are_set: >
+  A PO inherits its type from the PR it came from — you do not choose it. The
+  exception is a PO mirrored from NC, where NC's own type comes across.
+
+question_hints:
+  - what types of PO are there
+  - what is the difference between the PO types
+  - how do I create a purchase order
+  - where do purchase orders come from
+
+values:
+  - value: 1
+    label: Raw Materials / Packaging
+    covers: Production raw materials and packaging.
+    when: >
+      These arrive mirrored from NC rather than being raised here. Raw material
+      purchasing runs in NC, and EPMS holds a copy so invoices and payments can
+      be matched against it.
+    notes:
+      - A mirrored PO is recognisable by having no originating PR.
+
+  - value: 2
+    label: Misc / Consumables
+    covers: Office supplies, small equipment, cleaning and other consumables.
+    when: Follows from a type 2 PR being approved.
+
+  - value: 3
+    label: Spare Parts
+    covers: Maintenance and repair parts for plant equipment.
+    when: Follows from a type 3 PR being approved.
+
+  - value: 4
+    label: Service
+    covers: Contracted work — maintenance, consulting, installation, labour.
+    when: Follows from a type 4 PR being approved.
+    notes:
+      - Receipt is a service confirmation by the requester, not a warehouse GR.
+      - Once the PR's expected completion date passes, the requester is
+        reminded to confirm the work was done.
+
+  - value: 5
+    label: Fixed Asset
+    covers: Capitalisable equipment and assets.
+    when: Follows from a type 5 PR being approved.
+
+  - value: 6
+    label: Project-Related
+    covers: Purchases charged to a project.
+    when: Follows from a type 6 PR being approved.
+    notes:
+      - Confirmed by the requester, like a service PO.

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   CheckCircle2, Clock, AlertTriangle, ArrowRight,
-  Inbox, CreditCard, Receipt, RotateCcw, Banknote,
+  Inbox, Receipt, RotateCcw, Banknote,
 } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
@@ -51,24 +51,8 @@ const TASK_META: Record<string, {
     badge: 'bg-primary-100 text-primary-700',
     text: 'text-primary-700',
   },
-  approve_pa: {
-    label: 'Approve Payment',
-    icon: <CreditCard className="h-4 w-4" />,
-    border: 'border-primary-200',
-    bg: 'bg-primary-50',
-    badge: 'bg-primary-100 text-primary-700',
-    text: 'text-primary-700',
-  },
   revise_expense: {
     label: 'Revise Expense',
-    icon: <RotateCcw className="h-4 w-4" />,
-    border: 'border-warning-200',
-    bg: 'bg-warning-50',
-    badge: 'bg-warning-100 text-warning-700',
-    text: 'text-warning-700',
-  },
-  revise_pa: {
-    label: 'Revise Payment',
     icon: <RotateCcw className="h-4 w-4" />,
     border: 'border-warning-200',
     bg: 'bg-warning-50',
@@ -83,23 +67,7 @@ const TASK_META: Record<string, {
     badge: 'bg-info-100 text-info-700',
     text: 'text-info-700',
   },
-  pay_pa: {
-    label: 'Record Payment',
-    icon: <Banknote className="h-4 w-4" />,
-    border: 'border-info-200',
-    bg: 'bg-info-50',
-    badge: 'bg-info-100 text-info-700',
-    text: 'text-info-700',
-  },
   submitted_expense: {
-    label: 'In Review',
-    icon: <Clock className="h-4 w-4" />,
-    border: 'border-neutral-200',
-    bg: 'bg-white',
-    badge: 'bg-neutral-100 text-neutral-600',
-    text: 'text-neutral-600',
-  },
-  submitted_pa: {
     label: 'In Review',
     icon: <Clock className="h-4 w-4" />,
     border: 'border-neutral-200',
@@ -125,8 +93,7 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   mil: 'Mileage',
   trv: 'Travel',
   cfm: 'Custom Form',
-  pa: 'PO Payment',
-  pa_dir: 'Direct Payment',
+  tra: 'Travel Application',
 }
 
 type Tab = 'all' | 'action' | 'mine'
@@ -137,14 +104,14 @@ const TABS: { value: Tab; label: string }[] = [
   { value: 'mine', label: 'My Submissions' },
 ]
 
-const ACTION_TYPES = new Set(['approve_expense', 'approve_pa', 'revise_expense', 'revise_pa', 'pay_expense', 'pay_pa'])
+const ACTION_TYPES = new Set(['approve_expense', 'revise_expense', 'pay_expense'])
 
 // Fixed display order for task-type groups. Types not listed fall to the end.
 const GROUP_ORDER = [
-  'approve_expense', 'approve_pa',
-  'revise_expense', 'revise_pa',
-  'pay_expense', 'pay_pa',
-  'submitted_expense', 'submitted_pa',
+  'approve_expense',
+  'revise_expense',
+  'pay_expense',
+  'submitted_expense',
 ]
 
 // ── Task card ─────────────────────────────────────────────────────────────────
@@ -153,8 +120,13 @@ function TaskCard({ task }: { task: OaTaskItem }) {
   const navigate = useNavigate()
   const meta = TASK_META[task.task_type] ?? TASK_META.submitted_expense
 
-  const href = task.doc_type === 'pa' || task.doc_type === 'pa_dir'
-    ? `/pa/${task.doc_id}`
+  // A Travel Application's detail route is /travel/:id. It used to be typed
+  // `cfm` by the server and sent to /expenses/:id, which renders the same
+  // component but titles the tab "Expense …" and badges it as a Custom Form.
+  // (Payment Applications used to be routed here too — OA's Direct PA is
+  // retired and the server no longer emits any PA task.)
+  const href = task.doc_type === 'tra'
+    ? `/travel/${task.doc_id}`
     : `/expenses/${task.doc_id}`
 
   return (
@@ -262,15 +234,15 @@ export default function TaskListPage() {
 
   // Stat counts
   const actionCount = allItems.filter(t => ACTION_TYPES.has(t.task_type)).length
-  const mineCount   = allItems.filter(t => t.is_own && (t.task_type === 'submitted_expense' || t.task_type === 'submitted_pa')).length
-  const approveCount = allItems.filter(t => t.task_type === 'approve_expense' || t.task_type === 'approve_pa').length
-  const reviseCount  = allItems.filter(t => t.task_type === 'revise_expense' || t.task_type === 'revise_pa').length
-  const payCount     = allItems.filter(t => t.task_type === 'pay_expense' || t.task_type === 'pay_pa').length
+  const mineCount   = allItems.filter(t => t.is_own && t.task_type === 'submitted_expense').length
+  const approveCount = allItems.filter(t => t.task_type === 'approve_expense').length
+  const reviseCount  = allItems.filter(t => t.task_type === 'revise_expense').length
+  const payCount     = allItems.filter(t => t.task_type === 'pay_expense').length
 
   // Tab filter
   const tabFiltered = allItems.filter(t => {
     if (tab === 'action') return ACTION_TYPES.has(t.task_type)
-    if (tab === 'mine')   return t.is_own && (t.task_type === 'submitted_expense' || t.task_type === 'submitted_pa')
+    if (tab === 'mine')   return t.is_own && t.task_type === 'submitted_expense'
     return true
   })
 

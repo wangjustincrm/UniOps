@@ -137,3 +137,76 @@ async def upsert_ap_invoice(*, payload: dict, bearer_token: str) -> dict | None:
         logger.error("finance-api /ap/invoices upsert failed for %s/%s: %s — failing open",
                      payload.get("source"), payload.get("source_invoice_id"), e)
         return None
+
+async def resync_pa_writeback(*, pa_id: uuid.UUID, bearer_token: str) -> dict | None:
+    """Ask finance-api to replay a PAID PA's invoice + AP writeback against the
+    PA's current invoice_ids.
+
+    Called from Data Maintenance AFTER the edit has been committed — finance-api
+    reads the shared DB on its own connection and cannot see an uncommitted
+    change (the same constraint that makes mark_ap_settled's placement matter).
+
+    Fail-open like the rest of this client: a repair that lands in EPMS but
+    cannot reach finance must not roll back the repair. The caller surfaces the
+    failure as a warning so it is visible rather than silent.
+    """
+    url = f"{settings.FINANCE_API_URL}/finance/v1/ap/resync-pa-writeback"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(url, json={"pa_id": str(pa_id)},
+                                  headers={"Authorization": f"Bearer {bearer_token}"})
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        logger.error("finance-api /ap/resync-pa-writeback failed for %s: %s", pa_id, e)
+        raise
+
+
+async def budget_actual_lineage(*, bearer_token: str | None) -> dict | None:
+    """How the NC-posted figures on the Budget Dashboard are arrived at.
+
+    Rules, not rows: the five expense categories, what is excluded, and the
+    order the cost-centre map is consulted in, read off the objects finance-api
+    actually runs. The assistant explains the report with this rather than with
+    a description of it kept over here, which would drift the first time finance
+    changed the map's shape.
+
+    Returns None when finance-api cannot be reached — the caller says that part
+    is unavailable rather than filling the gap in from memory.
+    """
+    url = f"{settings.FINANCE_API_URL}/finance/v1/gl/budget-actual/lineage"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(
+                url, headers={"Authorization": f"Bearer {bearer_token}"} if bearer_token else {})
+            r.raise_for_status()
+            return r.json()
+    except httpx.HTTPError as e:
+        logger.warning("finance-api /gl/budget-actual/lineage unreachable: %s", e)
+        return None
+
+
+async def nc_actuals_by_cost_center(*, bearer_token: str | None, fiscal_year: int,
+                                    through_month: int) -> dict | None:
+    """NC posted actual per cost centre for a year, through a month.
+
+    The actual half of a plan-vs-actual comparison. Asked of finance-api rather
+    than computed here because the rule for what counts as NC-posted spending is
+    finance-api's — five account subtrees, posted-only, gross debit, two keying
+    rules and three excluded families — and a second implementation would be a
+    second answer to the same question.
+
+    Returns None when finance-api cannot be reached; the caller says the actual
+    is unavailable rather than presenting the plan as though it were a variance.
+    """
+    url = f"{settings.FINANCE_API_URL}/finance/v1/gl/nc-actuals-by-cost-center"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(
+                url, params={"fiscal_year": fiscal_year, "through_month": through_month},
+                headers={"Authorization": f"Bearer {bearer_token}"} if bearer_token else {})
+            r.raise_for_status()
+            return r.json()
+    except httpx.HTTPError as e:
+        logger.warning("finance-api /gl/nc-actuals-by-cost-center unreachable: %s", e)
+        return None

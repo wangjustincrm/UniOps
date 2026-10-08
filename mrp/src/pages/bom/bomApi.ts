@@ -22,6 +22,15 @@ export interface ExplodeNode {
   qty_per: string
   qty_accumulated: string
   uom: string | null
+  // NC-native batch-scale reconciliation triplet (mdm-api's bom_explode.py,
+  // "NC batch-scale fields"): `qty_per_batch` is NC's own BD_BOM_B.NITEMNUM
+  // — this component's quantity per ONE BATCH of its parent's BOM —
+  // `parent_batch_output_qty` is the batch size that number is stated
+  // against, and `batch_output_qty` is this node's OWN BOM batch size (null
+  // for a leaf). Reporting only: no planning number is derived from them.
+  qty_per_batch: string | null
+  parent_batch_output_qty: string | null
+  batch_output_qty: string | null
   qty_per_secondary: string | null
   uom_secondary: string | null
   scrap_rate: string

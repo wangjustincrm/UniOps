@@ -726,9 +726,11 @@ async def test_patch_pa_rejects_swapping_in_an_unconfirmed_invoice(admin_client,
         f"/api/v1/agreements/{agr.id}/schedule/{schedule_id_a}/confirm")
     assert r_confirm.status_code == 200, r_confirm.text
 
-    # Invoice B claims period 2 (FIFO moves on) but is deliberately left
+    # Invoice B claims the NEXT period — dated a month later, since a same-
+    # dated invoice would now join A's period — and is deliberately left
     # UNCONFIRMED.
-    inv_b = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    inv_b = await _upload_invoice(admin_client, vendor_id, amount="1000.00",
+                                  invoice_date="2026-08-31")
     r_b = await admin_client.post(f"/api/v1/invoices/{inv_b['id']}/match", json={
         "agreement_id": str(agr.id)})
     assert r_b.status_code == 200, r_b.text

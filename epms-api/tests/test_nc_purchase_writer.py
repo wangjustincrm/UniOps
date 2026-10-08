@@ -276,9 +276,9 @@ def _empty_raw():
 
 
 def _raw_fetch(max_mt="2026-08-01 10:00:00"):
-    """A reader.fetch_nc(cutover, watermark)-shaped fake yielding O1/OL1/A1/AL1
+    """A reader.fetch_nc(cutover, watermark, refetch_pks)-shaped fake yielding O1/OL1/A1/AL1
     for a supplier whose ERP code (0000415) matches seeded_vendor."""
-    def fetch(cutover, watermark):
+    def fetch(cutover, watermark, refetch_pks=None):
         return {
             "orders": [{"pk_order": "O1", "vbillcode": "PO-NC-O1", "pk_supplier": "SUP1",
                         "corigcurrencyid": "C1", "ntotalorigmny": Decimal("100"),
@@ -297,6 +297,20 @@ def _raw_fetch(max_mt="2026-08-01 10:00:00"):
             "uoms": {"U1": "EA"}, "currencies": {"C1": "CAD"},
             "max_modifiedtime": max_mt,
         }
+    return fetch
+
+
+def _raw_fetch_unknown_supplier():
+    """Same shape as _raw_fetch, but the order's ERP supplier has no vendor —
+    the exact condition that silently dropped PO-029-2609-01 in production."""
+    def fetch(cutover, watermark, refetch_pks=None):
+        raw = _raw_fetch()(cutover, watermark)
+        raw["suppliers"] = {"SUP1": "9999999"}
+        raw["supplier_names"] = {"9999999": "Independent Chemical"}
+        # A change time on the order, so the run has something to hold the
+        # watermark at (reader.changed_at reads these columns).
+        raw["orders"][0]["taudittime"] = "2026-08-01 08:00:00"
+        return raw
     return fetch
 
 
@@ -327,6 +341,7 @@ def committed_nc_env(test_engine, test_pg_dsn):
         cur.execute("delete from goods_receipts where source='nc'")
         cur.execute("delete from purchase_orders where source='nc'")
         cur.execute("delete from business_partners where erp_id='0000415'")
+        cur.execute("delete from tasks where document_type='nc_sync'")
         cur.execute("truncate nc_purchase_sync_runs")
 
     _wipe()
@@ -343,6 +358,32 @@ def committed_nc_env(test_engine, test_pg_dsn):
     yield dsn, vid, "NC Vendor 415", uid, con
     _wipe()
     con.close()
+
+
+def test_run_worker_puts_an_unimportable_order_in_the_admin_inbox(committed_nc_env):
+    """End-to-end wiring: a run that skips an order for a missing vendor leaves
+    an Admin task naming it. Nothing else in the product says the order was
+    dropped — the run row only carries a count."""
+    from app.services.nc_purchase_sync import error_tasks, service
+    dsn, vid, vname, uid, con = committed_nc_env
+    service.start_run("incremental", uid, fetch=_raw_fetch_unknown_supplier(),
+                      pg_dsn=dsn, run_worker=True)
+    cur = con.cursor()
+    cur.execute("select count(*) from purchase_orders where nc_source_pk='O1'")
+    assert cur.fetchone()[0] == 0, "precondition: the order was NOT imported"
+    cur.execute("select type, assigned_role, title from tasks "
+                "where document_type=%s and document_number='PO-NC-O1' "
+                "and is_completed is false", (error_tasks.DOC_TYPE,))
+    rows = cur.fetchall()
+    assert len(rows) == 1
+    assert rows[0][0] == error_tasks.VENDOR_TASK and rows[0][1] == "system_admin"
+    assert "9999999" in rows[0][2]
+    # And the run does NOT step over the order it dropped: the watermark stays
+    # at that order's change time instead of advancing to the payload's max, so
+    # the next run reads it again once the vendor exists.
+    cur.execute("select watermark_to from nc_purchase_sync_runs "
+                "where status='success' order by started_at desc limit 1")
+    assert cur.fetchone()[0] == "2026-08-01 08:00:00"
 
 
 def test_run_worker_incremental_end_to_end(committed_nc_env):

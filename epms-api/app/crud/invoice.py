@@ -1,6 +1,7 @@
 """CRUD for Invoice with 3-way match logic."""
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -202,27 +203,11 @@ async def get_all(
     q = select(Invoice)
 
     if po_ids_subq is not None or own_uploads_user_id is not None or task_user_id is not None:
-        scope_conds = []
-        if po_ids_subq is not None:
-            alloc_scope = select(InvoicePoAllocation.invoice_id).where(
-                InvoicePoAllocation.po_id.in_(po_ids_subq)
-            )
-            scope_conds.append(Invoice.po_id.in_(po_ids_subq))
-            scope_conds.append(Invoice.id.in_(alloc_scope))
-        if own_uploads_user_id is not None:
-            scope_conds.append(Invoice.uploaded_by == own_uploads_user_id)
-        if task_user_id is not None:
-            from app.core.access_scope import _open_task_doc_ids
-            from app.core.delegation import active_delegator_ids
-            # Widen with anyone currently delegating their approvals to this
-            # user: a delegate who can approve a PA must be able to open its
-            # invoice — same open-approval-task rationale as access_scope's
-            # _open_task_doc_ids callers.
-            task_user_ids = {task_user_id} | await active_delegator_ids(db, task_user_id)
-            scope_conds.append(Invoice.id.in_(
-                await _open_task_doc_ids(db, task_user_id, task_user_ids, "invoice")))
-            # Matcher retention: invoices this user matched remain visible in the list
-            scope_conds.append(Invoice.matched_by == task_user_id)
+        # Conditions live in core/ontology.invoice_scope_conditions so this list
+        # and the assistant's controlled query admit exactly the same rows.
+        from app.core.ontology import invoice_scope_conditions
+        scope_conds = await invoice_scope_conditions(
+            db, po_ids_subq, own_uploads_user_id, task_user_id)
         q = q.where(or_(*scope_conds))
 
     if status:
@@ -745,6 +730,17 @@ async def _release_agreement_evidence(db: AsyncSession, invoice: Invoice) -> Non
                 AgreementPaymentSchedule.id == invoice.schedule_id)
         )).scalar_one_or_none()
         if claimed_row is not None:
+            # 一期多票(2026-10-03):成员关系以 invoice.schedule_id 为准,
+            # row.invoice_id 只是"第一张"。这一期还剩别的发票时,行保持
+            # received、确认与任务原样不动(剩下的票确认人都看过),只把
+            # row.invoice_id 挪到剩下的某一张上。
+            remaining = (
+                await agreement_schedule_crud.period_invoices(db, claimed_row.id, exclude_id=invoice.id)
+                if claimed_row.schedule_type == "period" else []
+            )
+            if remaining:
+                if claimed_row.invoice_id == invoice.id:
+                    claimed_row.invoice_id = remaining[0].id
             # Deferred minor from Task 6, folded in here: only release a row this
             # SAME invoice actually holds. invoice.schedule_id should always point
             # back at a row whose invoice_id mirrors it (both are only ever set
@@ -752,7 +748,7 @@ async def _release_agreement_evidence(db: AsyncSession, invoice: Invoice) -> Non
             # claim_milestone) — but if that invariant were ever broken by a bug
             # elsewhere, blindly releasing here would silently steal a period a
             # DIFFERENT invoice is legitimately holding.
-            if claimed_row.invoice_id != invoice.id:
+            elif claimed_row.invoice_id not in (invoice.id, None):
                 logger.error(
                     "_release_agreement_evidence: schedule row %s is claimed by "
                     "invoice %s, not %s (invoice.schedule_id pointed at it "
@@ -870,6 +866,45 @@ async def _invoice_referenced_by_active_pa(
                PaymentApplication.status != "cancelled")
         .limit(1)
     )).scalars().first()
+
+
+@dataclass(frozen=True)
+class UnlinkBlocker:
+    """Why an invoice's receipt link must not be torn down right now.
+
+    `code` is stable and machine-readable so callers can phrase their own
+    message: the AP-facing unmatch endpoints answer with a 422 aimed at the
+    person who clicked Unmatch, while Data Maintenance has to explain the same
+    three facts to an admin who was trying to delete the GOODS RECEIPT and may
+    not even know this invoice exists.
+    """
+    code: str                                   # agreement | in_payment | claimed_by_pa
+    invoice_ref: str
+    invoice_status: str
+    pa_number: str | None = None
+    pa_status: str | None = None
+
+
+async def gr_unlink_blocker(db: AsyncSession, invoice: Invoice) -> UnlinkBlocker | None:
+    """The three conditions that make withdrawing an invoice's GR link unsafe,
+    in ONE place so the AP route and the admin route can never drift apart.
+
+    Order matters: an agreement invoice has po_id NULL, so the agreement check
+    has to come before anything that reasons about the PO match.
+    """
+    if invoice.match_route == "agreement" or invoice.agreement_id is not None:
+        return UnlinkBlocker("agreement", invoice.internal_ref, invoice.status)
+    if invoice.status in ("approved", "paid"):
+        return UnlinkBlocker("in_payment", invoice.internal_ref, invoice.status)
+    # The invoice's own status is NOT a substitute: it only flips to
+    # approved/paid once money moves, so for the whole stretch a PA sits in
+    # draft/submitted/in_review/approved holding this invoice, the invoice
+    # looks untouched. See _invoice_referenced_by_active_pa.
+    pa = await _invoice_referenced_by_active_pa(db, invoice.id)
+    if pa is not None:
+        return UnlinkBlocker("claimed_by_pa", invoice.internal_ref, invoice.status,
+                             pa.pa_number, pa.status)
+    return None
 
 
 async def set_receipts(
@@ -1438,14 +1473,48 @@ async def review_match(
     return invoice
 
 
-async def rematch_from_existing(db: AsyncSession, invoice: Invoice, matched_by: uuid.UUID) -> Invoice:
+async def rematch_from_existing(
+    db: AsyncSession, invoice: Invoice, matched_by: uuid.UUID,
+    *, accepted_numbers: tuple[Decimal, Decimal | None] | None = None,
+) -> Invoice:
     """Re-run match using the invoice's CURRENT allocations. If they no longer sum
-    to the (possibly edited) total, clear them and reset to unmatched."""
+    to the (possibly edited) total, clear them and reset to unmatched.
+
+    accepted_numbers — (total_amount, variance) as they stood BEFORE the caller
+    applied its edit, and only when the invoice was a "matched" invoice whose
+    exception had been ACCEPTED. The caller has to capture it, because by the
+    time this runs crud.update() has already written the new figures onto the
+    same row: read from here, "before" and "after" are the same object and the
+    comparison can only ever say "unchanged". None means there is no acceptance
+    to preserve.
+    """
     rows = (await db.execute(
         select(InvoicePoAllocation).where(InvoicePoAllocation.invoice_id == invoice.id)
     )).scalars().all()
     if not rows:
         return invoice
+
+    # An accepted exception is a HUMAN decision about a specific set of numbers
+    # (POST /invoices/{id}/exception, resolution="accepted"). Re-matching derives
+    # the status from scratch, so it can undo that decision — and nothing has
+    # ever cleared exception_resolution / exception_resolved_by, leaving the row
+    # claiming "resolved by <name>" while it sits in exception or unmatched. The
+    # edit that triggers it need not touch a single figure: a typo fix in `notes`
+    # was enough, silently, with no task raised because this route never called
+    # _sync_exception_task either.
+    #
+    # The rule: the acceptance covers THESE numbers. Unchanged, it still stands.
+    # Changed, it no longer describes what the invoice now says — revoke it, and
+    # let the caller raise the exception task so somebody is actually told.
+    accepted_before = accepted_numbers is not None
+    total_before, variance_before = accepted_numbers or (None, None)
+
+    def _revoke_acceptance(inv: Invoice) -> None:
+        inv.exception_resolution = None
+        inv.exception_resolved_at = None
+        inv.exception_resolved_by = None
+        inv.exception_resolved_by_name = None
+
     # Allocations are PRE-TAX (tax stays at the invoice header), so balance them
     # against the pre-tax amount — mirroring match()'s integrity check. Comparing
     # against total_amount here wrongly reset taxed invoices to unmatched on edit.
@@ -1466,6 +1535,11 @@ async def rematch_from_existing(db: AsyncSession, invoice: Invoice, matched_by: 
         if former_po_id is not None:
             from app.crud.task import _complete_orphan_create_pa_tasks
             await _complete_orphan_create_pa_tasks(db, former_po_id)
+        # Fell all the way back to unmatched — there is certainly no standing
+        # acceptance of a variance against a PO this invoice no longer has.
+        if accepted_before:
+            _revoke_acceptance(invoice)
+            await db.flush()
         await db.refresh(invoice, ["allocations"])
         return invoice
     req = InvoiceMatchRequest(allocations=[
@@ -1474,7 +1548,25 @@ async def rematch_from_existing(db: AsyncSession, invoice: Invoice, matched_by: 
             allocated_amount=r.allocated_amount, allocated_tax=r.allocated_tax, note=r.note,
         ) for r in rows
     ], gr_ids=[uuid.UUID(g) for g in invoice.gr_ids] if invoice.gr_ids else None)
-    return await match(db, invoice, req, matched_by)
+
+    result = await match(db, invoice, req, matched_by)
+
+    if accepted_before and result.status != "matched":
+        unchanged = (result.status == "exception"
+                     and result.total_amount == total_before
+                     and result.variance == variance_before)
+        if unchanged:
+            result.status = "matched"
+            result.exception_reason = (
+                f"Variance accepted by {result.exception_resolved_by_name or 'AP'} "
+                f"(variance: {result.variance:+.2f})"
+                if result.variance is not None else None
+            )
+        else:
+            _revoke_acceptance(result)
+        await db.flush()
+        await db.refresh(result)
+    return result
 
 
 # ── Update ─────────────────────────────────────────────────────────────────────
@@ -1629,22 +1721,26 @@ async def assign_billing_period(
     exists to enforce:
       • recurring agreements only — milestone picks its stage at match time and
         house_account has no schedule at all;
-      • only when the invoice currently has NO period, so it can never move a
-        claim from one period to another (that would silently free a period
-        that has already been paid against);
-      • the period must be unclaimed and belong to this agreement
+      • the period must belong to this agreement and not be waived
         (claim_specific_period's own guards, reused rather than re-implemented).
+        It MAY already hold other invoices — one period, several invoices
+        (2026-10-03: a vendor billing two annual fees in the same month).
+
+    Moving an invoice that is ALREADY linked to a period is allowed only while
+    no live PA references it. That used to be refused outright ("would release
+    a period that may already have been paid against"), which was the right
+    worry but the wrong test: before one-period-many-invoices existed, the
+    second invoice of a month was auto-claimed into a FUTURE period and there
+    was no way to pull it back. The real hazard is a payment already raised
+    against the old period, so that is what blocks the move. The old period is
+    released through _release_agreement_evidence — the same path a rejection
+    takes — so it drops back to pending (and its open confirmation task closes)
+    only if no other invoice is left in it.
 
     Raises ValueError; the endpoint maps it to 422.
     """
-    from app.crud import agreement_schedule as agreement_schedule_crud
-
     if invoice.agreement_id is None:
         raise ValueError("This invoice is not matched to an agreement")
-    if invoice.schedule_id is not None:
-        raise ValueError(
-            "This invoice is already linked to a billing period. Reassigning it "
-            "would release a period that may already have been paid against.")
     agr = (await db.execute(
         select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
     )).scalar_one_or_none()
@@ -1652,6 +1748,29 @@ async def assign_billing_period(
         raise ValueError("Agreement not found")
     if agr.agreement_type != "recurring":
         raise ValueError("Only a recurring agreement bills from scheduled periods")
+
+    if invoice.schedule_id is not None:
+        if invoice.schedule_id == schedule_id:
+            raise ValueError("This invoice is already linked to that billing period")
+        pa = await _invoice_referenced_by_active_pa(db, invoice.id)
+        if pa is not None:
+            raise ValueError(
+                f"This invoice is already on payment application {pa.pa_number} "
+                f"({pa.status}), so its billing period can no longer be changed. "
+                "Cancel or remove it from that PA first.")
+        # Validate the target BEFORE releasing the old period, so a bad pick
+        # never leaves the invoice stranded with no period at all.
+        target = (await db.execute(
+            select(AgreementPaymentSchedule).where(AgreementPaymentSchedule.id == schedule_id)
+        )).scalar_one_or_none()
+        if (target is None or target.agreement_id != agr.id
+                or target.schedule_type != "period"):
+            raise ValueError("That billing period does not belong to this agreement")
+        if target.status == "waived":
+            raise ValueError(
+                f"{target.period_label} has been waived and cannot take an invoice")
+        await _release_agreement_evidence(db, invoice)
+        await db.flush()
 
     claimed = await agreement_schedule_crud.claim_specific_period(
         db, agr, invoice, schedule_id)

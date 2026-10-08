@@ -76,18 +76,17 @@ async def _epms_po_subq_for_user(db: AsyncSession, user_id: uuid.UUID):
 
 
 async def _user_role_codes(db: AsyncSession, user_id: uuid.UUID, base_role: str) -> set[str]:
-    """JWT base role + ADDITIONAL roles from identity's user_roles (same physical
-    DB — phase 3 replaced the retired company_config.role_management assignments).
+    """PRIMARY role + ADDITIONAL roles from identity's user_roles.
 
-    Mirrors expense-api/app/api/v1/pa.py:_user_role_codes and epms-api's
-    access_scope._effective_role_codes. Kept local here rather than imported to
-    match this file's existing self-contained style; the query is identical.
+    Delegates to core.authz_matrix so there is ONE definition of "which roles
+    does this user hold" in the service. The three local copies this replaced
+    all read user_roles bare, without joining role_defs — so a role an admin
+    had DEACTIVATED still granted OA approval rights and visibility to everyone
+    holding it, while the matrix helper (used by invoice_attachments) correctly
+    ignored it. Same table, two answers.
     """
-    codes = {base_role} if base_role else set()
-    rows = (await db.execute(sa.text(
-        "SELECT role_code FROM user_roles WHERE user_id = :u"), {"u": str(user_id)})).scalars().all()
-    codes.update(rows)
-    return codes
+    from app.core.authz_matrix import user_role_codes
+    return await user_role_codes(db, user_id, base_role)
 
 
 async def _caller_department_id(db: AsyncSession, user: dict) -> uuid.UUID | None:

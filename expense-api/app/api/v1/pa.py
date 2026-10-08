@@ -16,15 +16,31 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/pa", tags=["payment-applications"])
 
+# OA's Direct PA is retired (product decision 2026-08-07, confirmed 2026-09-11).
+# The feature is hidden from the UI — no nav entry, no routes, no task cards —
+# and creation is refused here so that hiding the buttons is not the only thing
+# standing between a caller and a new PA-DIR.
+#
+# Everything else stays: read, approve, pay and the by-po lookup all still work,
+# so any record that already exists remains serviceable, and the code is intact
+# if the decision is reversed. It is a flag rather than a deletion for the same
+# reason — flipping it back is a one-line change, and keeping the creation path
+# exercised by tests means it will still work when it is flipped.
+DIRECT_PA_RETIRED = True
+
 
 async def _user_role_codes(db: AsyncSession, user_id: uuid.UUID, base_role: str) -> set[str]:
-    """Primary role + additional roles (identity user_roles, same DB). Replaces
-    the retired company_config.role_management assignments (phase 3) for can_pay."""
-    codes = {base_role} if base_role else set()
-    rows = (await db.execute(sa.text(
-        "SELECT role_code FROM user_roles WHERE user_id = :u"), {"u": str(user_id)})).scalars().all()
-    codes.update(rows)
-    return codes
+    """PRIMARY role + ADDITIONAL roles from identity's user_roles.
+
+    Delegates to core.authz_matrix so there is ONE definition of "which roles
+    does this user hold" in the service. The three local copies this replaced
+    all read user_roles bare, without joining role_defs — so a role an admin
+    had DEACTIVATED still granted OA approval rights and visibility to everyone
+    holding it, while the matrix helper (used by invoice_attachments) correctly
+    ignored it. Same table, two answers.
+    """
+    from app.core.authz_matrix import user_role_codes
+    return await user_role_codes(db, user_id, base_role)
 
 
 class ApprovalEventOut(BaseModel):
@@ -56,7 +72,7 @@ async def list_pas(
     went empty the moment they acted. system_admin / ap_clerk see all.
     """
     from sqlalchemy import func, or_, select as sa_select
-    from app.api.v1.expenses import _CAN_PAY, _get_workflow_defs
+    from app.api.v1.expenses import holds_payment_role
     from app.models.approval_event_mirror import ApprovalEventMirror as AEM
     from app.models.pa import PaymentApplication as PA
 
@@ -80,19 +96,25 @@ async def list_pas(
     # workflow_defs["pa_dir"], for all non-draft PAs (not just while it sits at their
     # step), and (c) anyone who personally acted on it (covers role-assignment
     # approvers like Finance BP and any workflow drift) via shared approval_events.
+    # Same rule as the expense list: raised by me, waiting for me to approve, or
+    # already acted on by me. The role-appears-in-workflow_defs test that used
+    # to be here showed every non-draft PA to every holder of every step role.
+    from app.api.v1.expenses import (
+        PA_DOC_TYPES, acted_on_documents, approvable_document_ids,
+    )
+
+    approvable = await approvable_document_ids(
+        db, user_id, role, doc_types=PA_DOC_TYPES)
+
     conditions = [PA.created_by == user_id]
+    if approvable:
+        conditions.append(PA.id.in_(approvable))
+    conditions.append(PA.id.in_(acted_on_documents(user_id)))
 
-    wf = await _get_workflow_defs(db)
-    pa_dir_roles = {s.get("role") for s in (wf.get("pa_dir") or [])}
-    if role in pa_dir_roles:
-        conditions.append(PA.status != "draft")
-
-    # Pay roles also see approved PAs (payment stage) even when not an approver step.
-    if role in _CAN_PAY:
+    # Payment stage — a role pool, not an approval step. Role union: these
+    # roles are usually assignments here (see holds_payment_role).
+    if await holds_payment_role(db, user_id, role):
         conditions.append(PA.status == "approved")
-
-    acted_doc_ids = sa_select(AEM.document_id).where(AEM.actor_id == user_id)
-    conditions.append(PA.id.in_(acted_doc_ids))
 
     q = sa_select(PA).where(PA.pa_type == "PA-DIR").where(or_(*conditions))
     if status_filter:
@@ -139,29 +161,56 @@ async def create_direct_pa(
 ):
     """Create a PA-DIR (direct payment) linked to a reviewed expense invoice.
     Always requires Finance Manager approval (no dept_manager step).
+
+    Retired — see DIRECT_PA_RETIRED above. The body below is kept working and
+    under test so the feature can be switched back on rather than rebuilt.
     """
+    if DIRECT_PA_RETIRED:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Direct Payment Applications have been discontinued. "
+                   "Raise the payment against a purchase order instead.",
+        )
+
     from datetime import datetime, timezone
     from decimal import Decimal
+    from sqlalchemy import select
+    from app.crud._numbering import next_number
     from app.models.invoice import ExpenseInvoice
     from app.models.pa import PaymentApplication
 
-    # Validate invoice
-    inv = await db.get(ExpenseInvoice, body.invoice_id)
+    # Validate invoice. Row-locked for the length of this transaction: the
+    # status check and the "mark used" write below are one decision, and two
+    # concurrent callers reading `reviewed` would each mint a PA against the
+    # same invoice — one vendor bill, paid twice.
+    inv = (await db.execute(
+        select(ExpenseInvoice)
+        .where(ExpenseInvoice.id == body.invoice_id)
+        .with_for_update()
+    )).scalar_one_or_none()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    # Order matters: "used" is a specific, likelier-than-not reason to be here,
+    # and it is also a state that is NOT "reviewed" — checking reviewed first
+    # (as this did) made the used branch unreachable dead code and told anyone
+    # hitting an already-spent invoice to go review it, which they cannot do.
+    if inv.status == "used":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Invoice already linked to {inv.pa_number or 'another PA'}",
+        )
     if inv.status != "reviewed":
         raise HTTPException(status_code=409, detail="Invoice must be reviewed (all OCR fields confirmed) before creating a PA")
-    if inv.status == "used":
-        raise HTTPException(status_code=409, detail="Invoice already linked to a PA")
 
-    # Generate PA number
-    from sqlalchemy import func, select
+    # Number allocation. MUST go through next_number (max tail + 1 under a
+    # prefix-scoped advisory lock), not count(*)+1: `payment_applications` is
+    # shared with epms-api, which mints EPMS PAs from the SAME `PA-YYYYMMDD-`
+    # prefix via that helper. count(*) trails the real max the moment either
+    # side deletes a row or two allocations overlap, and pa_number is UNIQUE —
+    # so the old code handed out an already-taken number and 500'd, which is
+    # exactly the defect _numbering.py's docstring was written about.
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
-    prefix = f"PA-{today}-"
-    count = (await db.execute(
-        select(func.count()).where(PaymentApplication.pa_number.like(f"{prefix}%"))
-    )).scalar_one()
-    pa_number = f"{prefix}{count + 1:04d}"
+    pa_number = await next_number(db, PaymentApplication.pa_number, f"PA-{today}-", width=4)
 
     title = body.title or f"Direct Payment — {inv.vendor_name or 'Vendor'} {inv.invoice_number or ''}"
     user_id = uuid.UUID(user["sub"])
@@ -241,12 +290,8 @@ async def _can_view_pa(db: AsyncSession, pa, user_id: uuid.UUID, role: str) -> b
     (tasks-table check, same as get_pa_permissions/_can_act_on_claim)."""
     if pa.created_by == user_id or role == "system_admin":
         return True
-    from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim, _get_workflow_defs
-    if role in _CAN_PAY:
-        return True
-    wf = await _get_workflow_defs(db)
-    pa_dir_roles = {s.get("role") for s in (wf.get("pa_dir") or [])}
-    if role in pa_dir_roles and pa.status != "draft":
+    from app.api.v1.expenses import _can_act_on_claim, holds_payment_role
+    if await holds_payment_role(db, user_id, role):
         return True
     from sqlalchemy import select as sa_select, func as sa_func
     from app.models.approval_event_mirror import ApprovalEventMirror as AEM
@@ -345,12 +390,23 @@ async def pa_action(
     pa_id: uuid.UUID,
     body: PaActionRequest,
     db: SessionDep,
-    _: CurrentUserDep,
+    user: CurrentUserDep,
     token: BearerTokenDep,
 ):
     pa = await pa_crud.get_by_id(db, pa_id)
     if not pa:
         raise HTTPException(status_code=404, detail="PA not found")
+
+    # Only the creator may submit their own PA — see the matching guard in
+    # expenses.py::expense_action for why this test lives in the calling
+    # service rather than in approval-api's submit branch. Every other action
+    # (approve / return / reject / cancel / recall) is gated by the engine.
+    if body.action.lower() == "submit" and user.get("role") != "system_admin":
+        if uuid.UUID(user["sub"]) != pa.created_by:
+            raise HTTPException(
+                status_code=403,
+                detail="Only the creator can submit this payment application",
+            )
     # PA-DIR uses its own configurable workflow; everything else uses "pa".
     # NOT `po_id is None` — an EPMS Purchase Agreement PA also has no PO, and
     # approving it through workflow_defs["pa_dir"] would run it down the wrong

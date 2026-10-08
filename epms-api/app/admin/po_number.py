@@ -15,6 +15,7 @@ from app.crud._numbering import next_number
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
 from app.models.pa import PaymentApplication
+from app.models.pa_po_link import PaPoLink
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -44,6 +45,11 @@ async def regenerate_and_cascade(db: AsyncSession, po, vendor_code: str) -> dict
         update(PurchaseRequest).where(PurchaseRequest.po_id == po.id)
         .values(po_number=new))).rowcount or 0
     summary["payment_applications"] = await _bump(PaymentApplication, "po_number")
+    # The PA↔PO link table carries its own po_number snapshot (a PA covering
+    # several POs cannot hold them all on the header), so it renames too —
+    # otherwise a multi-PO PA keeps showing the retired number for every PO but
+    # its primary.
+    summary["pa_po_links"] = await _bump(PaPoLink, "po_number")
     summary["goods_receipts"] = await _bump(GoodsReceipt, "po_number")
     summary["invoices"] = await _bump(Invoice, "po_number")
     summary["tasks"] = (await db.execute(

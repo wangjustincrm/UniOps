@@ -1,0 +1,162 @@
+# Master data — materials, and the recipes that turn some of them into others.
+#
+# Owned by mdm-api; reached by `table:` for the reasons in finance.yaml. Gated on
+# mrp.report.view, the same permission mdm-api's own /mdm/v1/boms endpoints
+# require, so the assistant cannot show a recipe to anyone the BOM screens would
+# not.
+#
+# ── Two things about BOM quantities that are wrong by default ────────────────
+#
+#   1. A product has SEVERAL BOMs and only one is the default. CF0063 has six
+#      packaging BOMs, versions 1.0 to 1.5, five of them approved. They are not
+#      variants of one quantity — v1.2 is built in batches of 1000 and v1.4 in
+#      batches of 660 — so their lines cannot be compared, let alone added. The
+#      `bom` and `bom_line` entities are scoped to the default, which is a NC
+#      flag reached through nc_source_pk because the sync never carried it into
+#      `boms`.
+#
+#   2. `qty_per` IS per unit of product, and this file said the opposite until
+#      2026-09-15. The claim was that it is a whole-batch quantity needing
+#      division by `batch_output_qty`; that division has already happened. The
+#      sync does it on the way in — mdm-api nc_bom_sync/transform.py, "PATCH 6":
+#      "NITEMNUM ... are whole-BATCH quantities, not per-unit ones — normalize
+#      against this line's parent header's HNPARENTNUM". Verified three ways:
+#      the arithmetic (nitemnum 550 / hnparentnum 486 = the stored 1.1316872428);
+#      coverage (all 286 BOMs carry a real batch_output_qty, minimum 4.8, so no
+#      row escaped the division); and mass balance (BOMs whose lines are all in
+#      KGM sum to exactly 1.0000 — one kilo of inputs per kilo of output. Under
+#      the old reading they would sum to 0.001, i.e. a kilo of ingredients
+#      yielding a tonne of product).
+#
+#      Dividing by batch_output_qty a second time, which the old note instructed
+#      the planner to do, understates every requirement by the batch size —
+#      three orders of magnitude for a 1000-unit batch, and in the direction
+#      that makes a shortage look like a surplus.
+#
+# There is no metric that sums qty_per, deliberately: a total of quantities
+# measured against different batch sizes, in different units, is not a number
+# anybody wants.
+version: 1
+
+entities:
+
+  material:
+    table: materials
+    label: "Material — a product, ingredient or packaging item"
+    perm_key: mrp.report.view
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Material code"}
+      name: {kind: text, label: "Name"}
+      spec: {kind: text, label: "Specification"}
+      base_uom: {kind: text, label: "Base unit"}
+      # How it is obtained — bought in, or made here. This is what decides
+      # whether a shortage is a purchasing problem or a production one.
+      procurement_type: {kind: text, label: "Procurement type", enumerate: true}
+      shelf_life_months: {kind: int, label: "Shelf life (months)"}
+      erp_class_name: {kind: text, label: "ERP class"}
+      is_active: {kind: bool, label: "Active"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Materials"}
+
+  bom:
+    table: boms
+    label: "BOM header — the default recipe's batch size, version and stage. What
+      goes INTO the product is on bom_line, not here; for \"what does X need\",
+      query bom_line and filter it by bom.product_material_code"
+    perm_key: mrp.report.view
+    # NOT scoped to the default. A scope cannot be opted out of, and that turned
+    # "how many BOM versions does CS0026 have" into "1" when the answer is 7 —
+    # every other version was invisible. The default is applied as a default
+    # instead: assumed when the question is about the recipe, dropped when the
+    # question is about versions.
+    scope: permission_only
+    default_filter:
+      field: is_default
+      value: true
+      stand_down_on: [version, status, batch_output_qty, created_at]
+      note: "Showing the default version of each recipe. Ask about versions to see all of them."
+    date_field: created_at
+    fields:
+      nc_source_pk: {kind: text, internal: true}
+      # Which version is the one in force. The flag lives on the NC mirror and
+      # the sync never carried it into `boms`, so it is computed here — reached
+      # through nc_source_pk, which is populated on all 286 rows. If `boms` ever
+      # gains a real column, this expression is the single place to change.
+      is_default:
+        kind: bool
+        label: "Is the default version (the one actually in force)"
+        expr: "nc_source_pk IN (SELECT nc_source_pk FROM nc_bom WHERE hbdefault = 'Y')"
+      product_material_code: {kind: text, label: "Product material code"}
+      # Which stage of manufacture this recipe covers. A product usually has one
+      # BOM per stage rather than a single recipe end to end, so "the BOM" for a
+      # finished good may legitimately be several rows.
+      bom_type: {kind: text, label: "Manufacturing stage", enumerate: true}
+      version: {kind: text, label: "Version"}
+      status: {kind: text, label: "Status", enumerate: true}
+      # How much one run of this recipe makes. NOT a divisor for qty_per, which
+      # is already per unit — useful for "how big is a batch", nothing else.
+      batch_output_qty: {kind: money, label: "Output per batch"}
+      yield_rate: {kind: money, label: "Yield rate"}
+      factory_code: {kind: text, label: "Factory code"}
+      # No effective_from here: the column exists and is NULL on all 286 rows,
+      # so offering it would let a filter be built that silently matches nothing.
+      # The dates that are real live on the lines.
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "BOMs"}
+    links:
+      components:
+        target: bom_line
+        cardinality: one_to_many
+        local: id
+        remote: bom_id
+        label: "What goes into it"
+
+  bom_line:
+    table: bom_lines
+    label: "BOM line — one component that goes into a product, and how much. This
+      is the entity for \"what is X made of\"; filter by bom.product_material_code
+      and read the batch size from bom.batch_output_qty"
+    perm_key: mrp.report.view
+    # Same reasoning as `bom`: assumed, not enforced. Comparing what changed
+    # between two versions is a real question and a scope would make it
+    # unanswerable.
+    scope: permission_only
+    default_filter:
+      field: bom.is_default
+      value: true
+      stand_down_on: [bom.version, bom.is_default, bom.status, bom.batch_output_qty]
+      note: "Showing components of the default version. Name a version to compare."
+    # The date the component actually applies from — 0 of 2,035 null, spanning
+    # 2020 to 2026. created_at is when the row was synced and is all one year.
+    date_field: effective_from
+    fields:
+      bom_id: {kind: uuid, internal: true}
+      line_no: {kind: int, label: "Line number"}
+      component_material_code: {kind: text, label: "Component material code"}
+      # Per UNIT of product — see the note at the top of this file, and do not
+      # "correct" it back to per-batch without re-running the mass-balance check
+      # described there.
+      qty_per:
+        kind: money
+        label: "Quantity of this component consumed per ONE unit of the product.
+          Already normalised against the batch size by the sync — do NOT divide
+          it by bom.batch_output_qty, that division has happened"
+      uom: {kind: text, label: "Unit"}
+      scrap_rate: {kind: money, label: "Scrap rate"}
+      qty_per_secondary: {kind: money, label: "Quantity per batch (secondary unit)"}
+      uom_secondary: {kind: text, label: "Secondary unit"}
+      effective_from: {kind: date, label: "Effective from"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Components"}
+    links:
+      bom:
+        target: bom
+        cardinality: many_to_one
+        local: bom_id
+        remote: id
+        label: "The recipe this line belongs to"

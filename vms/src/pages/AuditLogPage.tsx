@@ -8,8 +8,8 @@ import { useState } from 'react'
 import {
   Download, FileSearch, Filter, Loader2, AlertCircle, ChevronLeft, ChevronRight,
 } from 'lucide-react'
-import { useAuditLogs, buildAuditCsvPath, type AuditLogFilters } from '@/services/api'
-import { formatDateTime } from '@/lib/utils'
+import { useAuditLogs, useAuditFacets, buildAuditCsvPath, type AuditLogFilters } from '@/services/api'
+import { formatDateTime, localToday } from '@/lib/utils'
 
 const ALLOWED_ROLES = new Set(['auditor', 'system_admin'])
 
@@ -50,6 +50,7 @@ export default function AuditLogPage() {
   const [applied, setApplied] = useState<AuditLogFilters>({ page: 1, page_size: 50 })
 
   const { data, isLoading, error } = useAuditLogs(applied)
+  const { data: facets } = useAuditFacets()
 
   if (role && !ALLOWED_ROLES.has(role)) {
     return (
@@ -98,7 +99,7 @@ export default function AuditLogPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `vms-audit-log-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `vms-audit-log-${localToday()}.csv`
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -131,7 +132,7 @@ export default function AuditLogPage() {
             className={inputCls}
           >
             <option value="">All actions</option>
-            {ACTION_TYPES.map(a => <option key={a} value={a}>{a}</option>)}
+            {(facets?.action_types ?? []).map(a => <option key={a} value={a}>{a}</option>)}
           </select>
         </Field>
         <Field label="Entity type">
@@ -141,7 +142,7 @@ export default function AuditLogPage() {
             className={inputCls}
           >
             <option value="">All entities</option>
-            {ENTITY_TYPES.map(e => <option key={e} value={e}>{e}</option>)}
+            {(facets?.entity_types ?? []).map(e => <option key={e} value={e}>{e}</option>)}
           </select>
         </Field>
         <Field label="User ID (UUID)">
@@ -301,14 +302,3 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-// Keep this list in sync with the action_type strings emitted by crud/audit.py
-// and the various endpoint handlers (visit.create, visit.check_in, etc.).
-const ACTION_TYPES = [
-  'visitor.create', 'visitor.update',
-  'visit.create', 'visit.update', 'visit.cancel',
-  'visit.check_in', 'visit.check_out',
-  'badge.reprint',
-  'badge_template.upsert', 'badge_template.update',
-]
-
-const ENTITY_TYPES = ['visitor', 'visit', 'badge_template']

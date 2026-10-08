@@ -19,6 +19,7 @@ ROLE_LABELS: dict[str, str] = {
     "gm_or_opm": "GM / OPM",
     "finance_bp": "Finance BP",
     "finance_manager": "Finance Manager",
+    "finance_director": "Finance Director",
     "vendor_manager": "Vendor Manager",
     "payment_officer": "Payment Officer",
 }
@@ -33,6 +34,7 @@ ROLE_ORDER: dict[str, int] = {
     "gm_or_opm": 40,
     "finance_bp": 50,
     "finance_manager": 60,
+    "finance_director": 65,
     "vendor_manager": 70,
 }
 

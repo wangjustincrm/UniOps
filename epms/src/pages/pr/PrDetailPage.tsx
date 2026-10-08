@@ -11,6 +11,8 @@ import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
 import { usePr, usePrAction, usePrEvents, usePrWorkflowSteps } from '@/hooks/usePrs'
+import { useApprovalReminder } from '@/hooks/useApprovalReminder'
+import { prService } from '@/services/pr'
 import type { ApiEvent } from '@/services/pr'
 import { useTasks } from '@/hooks/useTasks'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
@@ -207,6 +209,7 @@ export default function PrDetailPage() {
   useDocTabTitle(pr?.number)
   const { data: events } = usePrEvents(id ?? '')
   const prAction = usePrAction(id ?? '')
+  const { reminder, sendReminder } = useApprovalReminder(() => prService.remind(id ?? ''))
   const { data: attachments = [] } = usePrAttachments(id ?? '')
   const uploadAttachment = useUploadAttachment(id ?? '')
   const deleteAttachment = useDeleteAttachment(id ?? '')
@@ -400,20 +403,27 @@ export default function PrDetailPage() {
                     ['Department', pr.department_name || '—'],
                     ['Cost Center', pr.cost_center_name || '—'],
                     ['Budget Code', pr.budget_code ? (budgetAccount ? `${pr.budget_code} — ${budgetAccount.name}` : pr.budget_code) : '—'],
+                    ...(pr.type === 5 ? [['Fixed Asset ID', pr.fixed_asset_id || '—'] as [string, string]] : []),
                     ...(pr.type === 6 ? [['Project No.', pr.project_code || '—'] as [string, string]] : []),
                     ['Currency', pr.currency ?? 'CAD'],
                     [`Total Amount (${pr.currency ?? 'CAD'})`, formatAmount(pr.amount, pr.currency ?? 'CAD')],
                     ['Required By Date', formatDate(pr.required_by ?? '')],
                     ...(pr.type === 4 || pr.type === 6
                       ? [['Service/Project Expected Completion Date',
-                          formatDate(pr.service_completion_date ?? '')] as [string, string]]
+                          formatDate(pr.service_completion_date ?? '')] as [string, string],
+                         // owner_name already resolves the NULL-means-requester
+                         // fallback server-side, so this row never reads blank
+                         // on a PR raised before the field existed.
+                         ['Service/Project Owner',
+                          pr.owner_name || '—'] as [string, string]]
                       : []),
                     ['Delivery Address', pr.delivery_address || '—'],
                     ['Notes', pr.notes || '—'],
                   ] as [string, string][]).map(([label, value]) => (
                     <div key={label} className="flex flex-col gap-0.5">
                       <dt className="text-xs font-medium text-neutral-500">{label}</dt>
-                      <dd className="text-neutral-900">{value}</dd>
+                      {/* pre-wrap: Notes / Delivery Address are typed with line breaks */}
+                      <dd className="whitespace-pre-wrap break-words text-neutral-900">{value}</dd>
                     </div>
                   ))}
                 </dl>
@@ -595,7 +605,13 @@ export default function PrDetailPage() {
             </h2>
             <ApprovalTimeline
               steps={approvalSteps}
-              onSendReminder={(id) => console.log('send reminder', id)}
+              // Only offered while the PR is genuinely sitting on an approver.
+              // The timeline marks step 0 "current" for a draft too, so without
+              // this the link would appear on drafts and always answer 409.
+              onSendReminder={
+                APPROVABLE_STATUSES.includes(pr.status as DocumentStatus) ? sendReminder : undefined
+              }
+              reminder={reminder}
             />
 
             {/* Approver actions moved to fixed bottom bar */}

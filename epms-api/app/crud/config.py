@@ -19,14 +19,15 @@ BUILT_IN_ROLES: frozenset[str] = frozenset({
     "requester", "dept_admin", "dept_manager", "gm", "opm",
     "procurement_officer", "procurement_manager", "warehouse_staff",
     "ap_clerk", "finance_bp", "finance_manager", "vendor_manager",
-    "cfo", "auditor", "erp_pa_officer", "payment_officer", "system_admin",
+    "cfo", "auditor", "erp_pa_officer", "payment_officer", "finance_director",
+    "system_admin",
 })
 
 # Roles granted ONLY through identity's user_roles side table — never written to
 # users.role. identity's role_defs.assignable_as_primary (migration 0009) is the
 # source of truth; this mirror only backs the identity-down fallback below, so
 # the primary-role guard does not come undone when identity is unreachable.
-ADDITIONAL_ONLY_ROLES: frozenset[str] = frozenset({"erp_pa_officer", "payment_officer"})
+ADDITIONAL_ONLY_ROLES: frozenset[str] = frozenset({"erp_pa_officer", "payment_officer", "finance_director"})
 
 # Permissions that cannot be disabled for the given role (enforced server-side).
 # The view_* locks below correspond to roles that would be functionally broken
@@ -41,6 +42,7 @@ LOCKED_PERMISSIONS: dict[str, set[str]] = {
     "finance_manager":      {"view_pa"},
     "erp_pa_officer":       {"view_po", "view_pa"},
     "payment_officer":      {"view_pa"},
+    "finance_director":     {"view_pa"},
     "system_admin":         {"admin_panel"},
 }
 
@@ -221,10 +223,15 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "<b>Vendor:</b> {vendor}\n\n"
         "<a href=\"{link}\">Confirm Service &amp; Create GR</a>\n\n{company_name}",
     ),
+    # ★`{requester_name}` 和 `{owner_name}` 渲染的是**同一个人** —— 收到催办却
+    # 没动的那位,也就是 PR 的 Owner(tasks/service_gr_due.py 两个键都填)。
+    # 老的键留着不能删:cfg.email_templates 是**数据行**,生产库里那份模板早就
+    # 写着 {requester_name},代码这边改名只会让线上渲染出一个空洞。新装库用
+    # {owner_name},措辞才和实际收件逻辑对得上。
     "service_gr_escalation": _DEFAULT_EMAIL_TEMPLATE(
         "Overdue: Service Completion Not Confirmed — {po_number}",
         "Hi {recipient_name},\n\nPO <b>{po_number}</b> was expected to be complete on "
-        "<b>{completion_date}</b> — {days_overdue} day(s) ago — and <b>{requester_name}</b> "
+        "<b>{completion_date}</b> — {days_overdue} day(s) ago — and <b>{owner_name}</b> "
         "has not yet confirmed the service or created a goods receipt.\n\n"
         "Until it is confirmed the vendor cannot be paid.\n\n"
         "<b>Vendor:</b> {vendor}\n\n"
@@ -261,6 +268,16 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "<a href=\"{link}\">View PA</a>\n\n{company_name}",
     ),
     # ── Reminders ─────────────────────────────────────────────────────────────
+    # 手动催办:PR/PO 详情页 Approval Timeline 上「Send reminder」按钮发出的信。
+    # 与 daily_pending_reminder 的区别是这封信有个具体的催办人({sender_name}),
+    # 收件人应当知道是谁在等 —— 所以模板里点名,而不是写成系统自动提醒。
+    "manual_reminder": _DEFAULT_EMAIL_TEMPLATE(
+        "Reminder: {document_type} {document_number} is waiting for your approval",
+        "Hi {recipient_name},\n\n<b>{sender_name}</b> has sent you a reminder: "
+        "{document_type} <b>{document_number}</b> has been waiting {days_waiting} day(s) "
+        "for your approval.\n\n"
+        "<a href=\"{link}\">Review &amp; Approve</a>\n\n{company_name}",
+    ),
     "daily_pending_reminder": _DEFAULT_EMAIL_TEMPLATE(
         "Reminder: {document_number} is still awaiting your action",
         "Hi {recipient_name},\n\n<b>{document_number}</b> is still pending and requires your attention.\n\n"
@@ -361,6 +378,11 @@ _DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
     # batch payment is core to the role even though finance-api's own gate
     # already permits it.
     "payment_officer":      _P(view_po=True, view_invoice=True, view_pa=True, view_finance=True, **_BOOKING),
+    # Must match identity's 0015 migration _GRANTS (epms.agreement.read is a
+    # phase-2 key and lives only there). Read-only: the final payment sign-off
+    # needs to open the PA and everything behind it; approving comes from
+    # holding the post in approval-api, not from a matrix permission.
+    "finance_director":     _P(**_VIEW_ALL, view_finance=True, **_BOOKING),
     "system_admin":         {k: True for k in PERMISSION_KEYS},
 }
 
@@ -661,6 +683,7 @@ _BUILTIN_ROLE_NAMES: dict[str, str] = {
     "auditor": "Auditor",
     "erp_pa_officer": "ERP PA Officer",
     "payment_officer": "Payment Officer",
+    "finance_director": "Finance Director",
     "system_admin": "System Admin",
 }
 

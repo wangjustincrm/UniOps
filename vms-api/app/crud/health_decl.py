@@ -91,6 +91,38 @@ async def recompute_visit_health_status(db: AsyncSession, visit: Visit) -> None:
         visit.health_decl_status = None
 
 
+async def get_declaration(
+    db: AsyncSession, *, visit_id: uuid.UUID, visitor_id: uuid.UUID,
+) -> HealthDeclaration | None:
+    return (
+        await db.execute(
+            select(HealthDeclaration).where(
+                HealthDeclaration.visit_id == visit_id,
+                HealthDeclaration.visitor_id == visitor_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+
+def declaration_record(row: HealthDeclaration, *, include_signature: bool = False) -> dict:
+    """A declaration as it goes into the audit log. The signature (a base64
+    PNG) is kept in full only for the version being replaced; the current one
+    is still on the row, so its hash is enough."""
+    import hashlib
+
+    sig = row.signature or ""
+    rec = {
+        "visitor_id": str(row.visitor_id),
+        "result": row.result.value if row.result else None,
+        "questionnaire": row.questionnaire_data,
+        "signed": bool(sig),
+        "signature_sha256": hashlib.sha256(sig.encode()).hexdigest() if sig else None,
+    }
+    if include_signature and sig:
+        rec["signature"] = sig
+    return rec
+
+
 async def submit_declaration(
     db: AsyncSession,
     *,

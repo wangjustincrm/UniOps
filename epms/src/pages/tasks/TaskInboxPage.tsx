@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, Clock, ArrowRight, Check, Inbox } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { AlertCircle, Clock, ArrowRight, Check, Inbox, RefreshCw } from 'lucide-react'
 import { cn, formatCAD, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useTasks } from '@/hooks/useTasks'
@@ -12,6 +13,10 @@ import { groupTasks } from '@/lib/groupTasks'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 type TabValue = 'all' | 'urgent' | 'normal' | 'completed'
+
+// Task document types whose `description` is the substance of the card rather
+// than engine boilerplate — see the render comment below.
+const REASON_IN_CARD = new Set(['nc_sync', 'jv_validation', 'ap_duplicate_invoice'])
 
 const TABS: { value: TabValue; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -117,6 +122,24 @@ function FullTaskCard({ task }: FullTaskCardProps) {
             {task.amount ? ` · ${formatCAD(task.amount)}` : ''}
           </p>
 
+          {/* Reason — the two ERP-bridge task families only. Their whole point
+              is the explanation (which ERP supplier is missing, how many
+              voucher lines fell out of the budget and why), and it lives
+              nowhere else: the subject is NC data that is not an EPMS document,
+              so there is no document page to open and read. Every other task
+              type has a boilerplate description ("Step 5/6: ...") that would
+              only add noise here. */}
+          {REASON_IN_CARD.has(task.document_type) && task.description && (
+            <p
+              className={cn(
+                'mt-2 whitespace-pre-line text-xs leading-relaxed',
+                isDone ? 'text-neutral-400' : 'text-neutral-500'
+              )}
+            >
+              {task.description}
+            </p>
+          )}
+
           {/* Due date */}
           {!isDone && task.due_date && (
             <div className="mt-1.5 flex items-center gap-1 text-xs text-neutral-400">
@@ -172,6 +195,25 @@ function EmptyState({ tab }: { tab: TabValue }) {
 
 export default function TaskInboxPage() {
   const [activeTab, setActiveTab] = useState<TabValue>('all')
+  const queryClient = useQueryClient()
+  const [refreshing, setRefreshing] = useState(false)
+
+  // This page lives in a keep-alive tab (routes.tsx: keyStrategy 'static'), so
+  // it is mounted once and never remounts — and refetchOnWindowFocus is off
+  // app-wide. In-app actions invalidate ['tasks'] and the Header's 60s poll
+  // refreshes the shared entry, but an action taken in ANOTHER app cannot:
+  // Data Maintenance lives in Portal, a separate SPA with its own query cache,
+  // so a task deleted there still shows here until the next poll. That is the
+  // whole reason this button exists — "I deleted it and it's still there" was
+  // a real support question.
+  const refresh = async () => {
+    setRefreshing(true)
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   // Today's date prefix (YYYY-MM-DD)
   const todayPrefix = new Date().toISOString().slice(0, 10)
@@ -208,9 +250,22 @@ export default function TaskInboxPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       {/* ── Header ── */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-neutral-900">Task Inbox</h1>
-        <p className="mt-1 text-sm text-neutral-500">Your pending actions</p>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-neutral-900">Task Inbox</h1>
+          <p className="mt-1 text-sm text-neutral-500">Your pending actions</p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={refresh}
+          disabled={refreshing}
+          aria-label="Refresh task list"
+          className="shrink-0 gap-1.5 text-neutral-500"
+        >
+          <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+          Refresh
+        </Button>
       </div>
 
       {/* ── Stats bar ── */}

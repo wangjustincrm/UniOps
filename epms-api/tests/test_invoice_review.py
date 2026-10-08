@@ -178,3 +178,64 @@ async def test_ap_direct_match_unaffected(admin_client):
          "po_line_id": po["line_items"][0]["id"],
          "allocated_amount": "900.00", "allocated_tax": "0.00"}]})
     assert r.json()["status"] == "matched"   # 少开放行(部分开票);超开场景见 allocations 测试
+
+
+async def _grant_additional_role(user_id, role_code):
+    """user_roles grant, plus the phase-2 `epms.invoice.match` key for
+    ap_clerk in the shadow authz tables (idempotent — conftest's default
+    matrix seeds only the phase-1 keys; prod gets it from identity's
+    seed_phase2_keys.py)."""
+    import app.db.session as session_module
+    from sqlalchemy import text
+    async with session_module.AsyncSessionLocal() as db:
+        await db.execute(text(
+            "INSERT INTO permission_defs(key,module,label,sort) "
+            "VALUES ('epms.invoice.match','epms','Match Invoices',100) ON CONFLICT (key) DO NOTHING"))
+        await db.execute(text(
+            "INSERT INTO role_permissions(role_code,permission_key) "
+            "VALUES ('ap_clerk','epms.invoice.match') ON CONFLICT DO NOTHING"))
+        await db.execute(text(
+            "INSERT INTO user_roles(user_id, role_code) VALUES (:u, :r) ON CONFLICT DO NOTHING"),
+            {"u": str(user_id), "r": role_code})
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_additional_ap_clerk_counts_as_ap(admin_client):
+    """Primary requester + ap_clerk as an ADDITIONAL role is AP staff: can
+    match an invoice nobody assigned them, the match skips review, and they
+    can confirm another assignee's match_review. A plain requester on the
+    same invoice is still refused (the denial half — admission alone would
+    pass if the gate let everyone through)."""
+    v = await _make_vendor(admin_client, "VND-REV-AR")
+    po = await _make_po(admin_client, v["id"],
+                        [{"description": "A", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+    inv = await _make_invoice(admin_client, v["id"], number="REV-AR1", amount="900.00",
+                              lines=[{"description": "L", "quantity": "1",
+                                      "unit_price": "900.00", "line_total": "900.00"}])
+    body = {"allocations": [
+        {"invoice_line_id": inv["line_items"][0]["id"], "po_id": po["id"],
+         "po_line_id": po["line_items"][0]["id"],
+         "allocated_amount": "900.00", "allocated_tax": "0.00"}]}
+
+    plain = await _make_user()
+    async with await _client_for_user(plain) as c:
+        r = await c.post(f"{INV_URL}/{inv['id']}/match", json=body)
+        assert r.status_code == 403, r.text
+
+    ap = await _make_user()
+    await _grant_additional_role(ap, "ap_clerk")
+    async with await _client_for_user(ap) as c:
+        r = await c.post(f"{INV_URL}/{inv['id']}/match", json=body)
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "matched"   # AP match — no review hop
+
+    reviewed, _ = await _assigned_variance_match(admin_client, code="VND-REV-AR2", number="REV-AR2")
+    assert reviewed["status"] == "match_review"
+    async with await _client_for_user(plain) as c:
+        r = await c.post(f"{INV_URL}/{reviewed['id']}/match-review", json={"action": "approve"})
+        assert r.status_code == 403, r.text
+    async with await _client_for_user(ap) as c:
+        r = await c.post(f"{INV_URL}/{reviewed['id']}/match-review", json={"action": "approve"})
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "matched"

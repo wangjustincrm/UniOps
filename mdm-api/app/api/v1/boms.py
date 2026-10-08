@@ -90,6 +90,11 @@ class BomLineResponse(BaseModel):
     line_no: int
     component_material_code: str
     qty_per: Decimal
+    # NC's raw `NITEMNUM` (migration 0018) — `qty_per`'s un-divided
+    # numerator, whose denominator is the header's `batch_output_qty`. None
+    # for rows synced before 0018; see bom_explode.py's "NC batch-scale
+    # fields" for why the pair is reported rather than just the quotient.
+    qty_per_batch: Decimal | None = None
     uom: str | None
     qty_per_secondary: Decimal | None = None
     uom_secondary: str | None = None

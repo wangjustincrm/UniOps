@@ -161,3 +161,42 @@ async def get_workflow_steps(doc_type: str, doc_id: str, bearer_token: str) -> l
         raise RuntimeError(f"Approval Engine error {resp.status_code}: {resp.text[:200]}")
 
     return resp.json()
+
+
+async def get_preflight(doc_type: str, doc_id: str, action: str,
+                        bearer_token: str) -> dict:
+    """GET /approval/v1/approvals/{doc_type}/{doc_id}/preflight on the engine.
+
+    Returns the engine's own verdict — state machine, budget mode, approver
+    routing — for the caller to merge with the field-level checks epms-api owns.
+    Raises LookupError on 404, RuntimeError on anything else, matching the other
+    helpers here so callers handle one shape.
+    """
+    url = (f"{settings.APPROVAL_ENGINE_URL}/approvals/{doc_type}/{doc_id}"
+           f"/preflight?action={action}")
+    t0 = time.monotonic()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers={"Authorization": f"Bearer {bearer_token}"})
+    except httpx.ConnectError:
+        dur_ms = int((time.monotonic() - t0) * 1000)
+        _log.error(
+            "outbound | service=approval-api | doc_type=%s | doc_id=%s | action=preflight |"
+            " status=CONN_ERROR | dur=%dms — Is approval-api running on %s? Run: ./check-health.sh",
+            doc_type, doc_id, dur_ms, settings.APPROVAL_ENGINE_URL,
+        )
+        raise RuntimeError(
+            f"Approval Engine unreachable at {settings.APPROVAL_ENGINE_URL}. "
+            "Is approval-api running? Run: ./check-health.sh"
+        )
+
+    dur_ms = int((time.monotonic() - t0) * 1000)
+    _log.info(
+        "outbound | service=approval-api | doc_type=%s | doc_id=%s | action=preflight |"
+        " status=%d | dur=%dms", doc_type, doc_id, resp.status_code, dur_ms,
+    )
+    if resp.status_code == 404:
+        raise LookupError(f"{doc_type.upper()} {doc_id} not found in approval engine")
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Approval Engine returned {resp.status_code}: {resp.text[:200]}")
+    return resp.json()

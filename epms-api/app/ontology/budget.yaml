@@ -1,0 +1,161 @@
+# Budget — what each cost centre was allowed to spend, and against what.
+#
+# Owned by budget-api (same database, its own alembic_version_budget), reached
+# by `table:`.
+#
+# ── Who sees what ────────────────────────────────────────────────────────────
+# This is the one place in the ontology where the row filter is not all-or-
+# nothing, and the matrix already drew the line:
+#
+#   finance.budget.view_all   — the whole company. finance, CFO, GM, auditor.
+#   finance.budget.view_dept  — your own department's cost centres only. Nearly
+#                               everyone else, department managers included.
+#
+# The gate is view_dept (the floor); the scope then widens to everything for
+# holders of view_all. A department manager can ask about their own department's
+# budget and not the company's, which is exactly what those two keys are for and
+# what nothing had been reading until now.
+#
+# Someone with no department on their user row sees nothing here — 20 of 112
+# users are in that state. Showing them everything would be the other, worse
+# reading of "no department".
+#
+# ── A version trap that has not sprung yet ───────────────────────────────────
+# budget_plans carries version / parent_plan_id / is_current, so a cost centre
+# CAN have several plans for one year. Today none does — 18 plans, 18 distinct
+# (cost centre, year) pairs, all current — but the day a revision is raised, a
+# query that does not pick one would add the old and new plans together. Handled
+# the same way as BOM versions: a default that steps aside when the question is
+# about versions, rather than a scope that would make revisions unaskable.
+version: 1
+
+entities:
+
+  budget_account:
+    table: budget_accounts
+    label: "Budget account — the category spending is planned under"
+    perm_key: [finance.budget.view_all, finance.budget.view_dept]
+    scope: permission_only     # a category list holds no amounts
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Account code"}
+      name: {kind: text, label: "Account name", enumerate: true}
+      description: {kind: text, label: "Description"}
+      is_active: {kind: bool, label: "Active"}
+      sort_order: {kind: int, label: "Sort order"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Accounts"}
+
+  budget_plan:
+    table: budget_plans
+    label: "Budget plan — one cost centre's budget for one fiscal year"
+    perm_key: [finance.budget.view_all, finance.budget.view_dept]
+    scope: budget_by_cost_centre
+    default_filter:
+      field: is_current
+      value: true
+      stand_down_on: [version, is_current, status]
+      note: "Showing the current version of each plan. Ask about versions to see superseded ones."
+    # approved_at, not created_at. All 18 plans were inserted in the same year,
+    # so created_at is a row-insert stamp and a question about any other year
+    # would come back empty — the drift check caught it, for the fifth time in
+    # this ontology. Set on all 18 today; acknowledged as nullable because a
+    # draft plan legitimately has none, and a draft is not a budget.
+    date_field: approved_at
+    date_field_nullable_ok: true
+    fields:
+      cost_center_id: {kind: uuid, internal: true}
+      fiscal_year: {kind: int, label: "Fiscal year"}
+      status: {kind: text, label: "Status", enumerate: true}
+      version: {kind: int, label: "Version"}
+      is_current: {kind: bool, label: "Is the version in force"}
+      submitted_at: {kind: datetime, label: "Submitted"}
+      approved_at: {kind: datetime, label: "Approved"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Plans"}
+    links:
+      cost_centre:
+        target: cost_center
+        cardinality: many_to_one
+        local: cost_center_id
+        remote: id
+        label: "The cost centre it belongs to"
+      lines:
+        target: budget_plan_line
+        cardinality: one_to_many
+        local: id
+        remote: plan_id
+        label: "Its monthly amounts"
+
+  budget_plan_line:
+    table: budget_plan_lines
+    label: "Budget line — one month's planned amount for one account. This is
+      where the money is; the plan above is just its header"
+    perm_key: [finance.budget.view_all, finance.budget.view_dept]
+    scope: budget_line_by_plan
+    # The row-insert stamp, because a line's own period is `month` (1-12) paired
+    # with its plan's fiscal_year — not a date at all. For a period question,
+    # filter on month and plan.fiscal_year.
+    date_field: created_at
+    fields:
+      plan_id: {kind: uuid, internal: true}
+      account_id: {kind: uuid, internal: true}
+      month: {kind: int, label: "Month (1-12)"}
+      amount: {kind: money, label: "Budgeted amount"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Lines"}
+      amount: {fn: sum, field: amount, label: "Budgeted"}
+    links:
+      plan:
+        target: budget_plan
+        cardinality: many_to_one
+        local: plan_id
+        remote: id
+        label: "The plan this line belongs to"
+      account:
+        target: budget_account
+        cardinality: many_to_one
+        local: account_id
+        remote: id
+        label: "The budget account"
+
+  budget_ledger_entry:
+    table: budget_ledger
+    label: "Budget ledger entry — a movement against a budget"
+    perm_key: [finance.budget.view_all, finance.budget.view_dept]
+    scope: budget_ledger_by_cost_centre
+    date_field: created_at
+    fields:
+      cost_center_id: {kind: uuid, internal: true}
+      account_id: {kind: uuid, internal: true}
+      fiscal_year: {kind: int, label: "Fiscal year"}
+      month: {kind: int, label: "Month (1-12)"}
+      amount: {kind: money, label: "Amount"}
+      # Today every one of the 15,828 rows is `opening` — the budget as loaded,
+      # with no consumption posted against it yet. So this ledger currently says
+      # what was allocated, NOT what has been spent. A question about how much
+      # budget is left cannot be answered from it, and saying so is the honest
+      # answer rather than reporting the opening figure as a balance.
+      operation: {kind: text, label: "Operation", enumerate: true}
+      source_service: {kind: text, label: "Source service", enumerate: true}
+      source_doc_type: {kind: text, label: "Source document type"}
+      created_at: {kind: datetime, label: "Created"}
+    metrics:
+      count: {fn: count, field: "*", label: "Entries"}
+      amount: {fn: sum, field: amount, label: "Amount"}
+    links:
+      cost_centre:
+        target: cost_center
+        cardinality: many_to_one
+        local: cost_center_id
+        remote: id
+        label: "The cost centre"
+      account:
+        target: budget_account
+        cardinality: many_to_one
+        local: account_id
+        remote: id
+        label: "The budget account"

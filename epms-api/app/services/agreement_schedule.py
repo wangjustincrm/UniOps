@@ -11,11 +11,18 @@ from typing import NamedTuple
 
 MAX_PERIOD_ROWS = 500
 
-RECURRING_TYPES = ("weekly", "monthly", "quarterly", "yearly")
+RECURRING_TYPES = ("weekly", "monthly", "quarterly", "yearly", "special_monthly")
 
 # quarterly/yearly 的 anchor_month 承载的是真实账期锚点(比如季度账单常年跑
 # 2/5/8/11 而不是日历季度),不能也不该从 valid_from 反推 —— 那是 monthly 的规则。
 _TYPES_REQUIRING_ANCHOR = ("quarterly", "yearly")
+
+# special_monthly = "只在选中的那几个月出账的月结"。季节性服务(除雪、草坪、
+# 空调保养)一年只跑其中几个月,却按月开票 —— 用 monthly 排会给停工的月份也
+# 生成期次,那些期永远等不到发票,逾期扫描每天催一遍;用 yearly 又丢掉了月度
+# 的颗粒度。这里保留 monthly 的全部规则(网格按月推、标签 YYYY-MM、到票日钳
+# 月末),只额外按 active_months 过滤月份。
+_TYPES_REQUIRING_ACTIVE_MONTHS = ("special_monthly",)
 
 
 class TooManyPeriods(ValueError):
@@ -94,6 +101,7 @@ def build_period_rows(
     expected_invoice_day: int,
     anchor_month: int | None,
     schedule_start_date: date | None = None,
+    active_months: list[int] | None = None,
 ) -> list[PeriodRow]:
     """按协议的周期参数产出整个有效期的排期行。
 
@@ -111,9 +119,23 @@ def build_period_rows(
       - quarterly/yearly 必须显式提供 anchor_month —— 不能从 valid_from 推导,
         因为真实账期锚点(如季度账单常年跑 2/5/8/11)与合同生效月无关;
         缺失时静默套用 valid_from 会产出一份看似合理、实则错误的排期表。
+      - special_monthly 必须显式提供非空 active_months(1..12)。网格与 monthly
+        完全一致,只保留月份落在 active_months 里的期 —— 三年期只勾 5..11 月
+        就是每年 7 期、共 21 期。空集合不是"全选",而是一份一行都没有的排期,
+        所以在这里就当错误挡下,而不是静默产出空表。
+        注意行数上限 MAX_PERIOD_ROWS 卡的是**过滤前**的月度网格(它同时是循环
+        的硬边界):41 年以上的有效期即使只勾一个月也会被拦下。现实里的协议
+        没有这么长,而放开这个边界换来的是一个可以被有效期撑爆的循环。
     """
     if recurring_type not in RECURRING_TYPES:
         raise ValueError(f"Unknown recurring_type {recurring_type!r}")
+
+    if recurring_type in _TYPES_REQUIRING_ACTIVE_MONTHS and not active_months:
+        raise ValueError(
+            f"active_months is required for recurring_type={recurring_type!r}: "
+            "a special monthly cycle bills only in the months that were ticked, "
+            "and an empty selection would generate no billing periods at all."
+        )
 
     if recurring_type in _TYPES_REQUIRING_ANCHOR and anchor_month is None:
         raise ValueError(
@@ -125,11 +147,16 @@ def build_period_rows(
     if recurring_type == "weekly":
         rows = _weekly_rows(valid_from, valid_to, expected_invoice_day)
     else:
-        step = {"monthly": 1, "quarterly": 3, "yearly": 12}[recurring_type]
-        anchor = None if recurring_type == "monthly" else anchor_month
+        step = {"monthly": 1, "quarterly": 3, "yearly": 12,
+                "special_monthly": 1}[recurring_type]
+        anchor = None if recurring_type in ("monthly", "special_monthly") else anchor_month
+        months = _month_starts(valid_from, valid_to, step, anchor)
+        if recurring_type == "special_monthly":
+            wanted = set(active_months or ())
+            months = [(y, m) for y, m in months if m in wanted]
         rows = [
             PeriodRow(0, f"{y:04d}-{m:02d}", _clamp_day(y, m, expected_invoice_day))
-            for y, m in _month_starts(valid_from, valid_to, step, anchor)
+            for y, m in months
         ]
 
     # 首期跳过:只丢开头连续的、到票日早于起始日的期。

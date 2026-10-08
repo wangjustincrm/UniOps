@@ -1,0 +1,52 @@
+# Goods Receipts — two kinds, and which one you get is decided for you.
+#
+# gr_type is set in crud/gr.py from the PO's procurement type, never chosen:
+#   physical  types 1, 2, 3, 5   the warehouse receives goods
+#   service   types 4, 6         the requester confirms the work is done
+# That mapping is schemas/gr.PHYSICAL_TYPES / SERVICE_TYPES, which every branch
+# in the codebase asking "is this a service?" already reads.
+topic: gr_types
+label: Goods Receipt types
+doc_type: gr
+field: gr_type
+
+what_it_is: >
+  The record that what was ordered actually arrived, or that the work was
+  actually done. Nothing gets paid without one: a payment application needs
+  receipt evidence before it can be raised.
+
+how_types_are_set: >
+  You do not choose. The kind follows from the purchase order's procurement
+  type — physical for types 1, 2, 3 and 5, service for types 4 and 6.
+
+question_hints:
+  - what types of GR are there
+  - what is the difference between a physical and a service receipt
+  - how do I confirm a service was delivered
+  - who creates the goods receipt
+
+values:
+  - value: physical
+    label: Physical receipt (procurement types 1, 2, 3, 5)
+    covers: Goods that physically arrive and are checked in.
+    when: >
+      Raised by the warehouse when a delivery lands. Quantities are recorded
+      per line against what was ordered, so a partial delivery is a partial
+      receipt and the balance stays outstanding.
+    notes:
+      - A short delivery is recorded as a discrepancy rather than being forced
+        to match the order.
+      - Cancelled and rejected receipts do not count as goods received — they
+        do not discharge the obligation, and the reminder keeps coming.
+
+  - value: service
+    label: Service confirmation (procurement types 4, 6)
+    covers: Work completed, where there is nothing for the warehouse to receive.
+    when: >
+      Raised by the requester — you are the one who knows the work is done.
+      There is no delivery for the warehouse to check in.
+    notes:
+      - The PR's expected completion date is what triggers the reminder; once
+        it passes you are nudged to confirm.
+      - A purchase order whose PR never carried a completion date is outside
+        that sweep entirely and will never be chased.

@@ -40,83 +40,39 @@ async def test_vms_admin_endpoints(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_visitor_cascade_deletes_visits_first(test_engine):
+async def test_vms_records_cannot_be_deleted(test_engine):
+    """Visits, visitors and health declarations are compliance records (CFIA /
+    PIPEDA retention). Data Maintenance may edit them but never delete them —
+    single, bulk and preview all refuse with 409, and nothing is removed."""
     from app.models.visit import Visit, VisitPurpose, AccessArea, VisitStatus
     from app.models.visitor import Visitor, VisitorType
-    from app.models.task_mirror import Task
-    from app.models.admin_audit_log import AdminAuditLog
-    from app.admin import service
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-
-    # Prerequisite: a User row to satisfy host_id / created_by FKs (RESTRICT).
     host = await make_user(test_engine, role="requester")
-
-    visitor_id = uuid.uuid4()
-    visit_id = uuid.uuid4()
-    actor_id = uuid.uuid4()
-
+    admin = await make_user(test_engine, role="system_admin")
+    visitor_id, visit_id = uuid.uuid4(), uuid.uuid4()
     async with factory() as db:
-        db.add(Visitor(
-            id=visitor_id,
-            first_name="Jane",
-            last_name="Doe",
-            company_name="Acme Corp",
-            visitor_type=VisitorType.supplier,
-        ))
+        db.add(Visitor(id=visitor_id, first_name="Jane", last_name="Doe",
+                       company_name="Acme Corp", visitor_type=VisitorType.supplier))
+        await db.commit()
+    async with factory() as db:
+        db.add(Visit(id=visit_id, visitor_id=visitor_id, additional_visitor_ids=[],
+                     host_id=host.id, created_by=host.id, visit_date=date.today(),
+                     planned_arrival=datetime.now(timezone.utc), visit_purpose=VisitPurpose.meeting,
+                     access_area=AccessArea.office, status=VisitStatus.confirmed,
+                     visit_title="Visit with Jane Doe (Acme Corp)"))
         await db.commit()
 
-    async with factory() as db:
-        db.add(Visit(
-            id=visit_id,
-            visitor_id=visitor_id,
-            additional_visitor_ids=[],
-            host_id=host.id,
-            created_by=host.id,
-            visit_date=date.today(),
-            planned_arrival=datetime.now(timezone.utc),
-            visit_purpose=VisitPurpose.meeting,
-            access_area=AccessArea.office,
-            status=VisitStatus.confirmed,
-            visit_title="Visit with Jane Doe (Acme Corp)",
-        ))
-        db.add(Task(
-            document_type="visit",
-            document_id=visit_id,
-            document_number="VMS-VISIT",
-            type="visit_review",
-            assigned_role="system_admin",
-            title="Review visit",
-        ))
-        await db.commit()
+    async with authed_client(make_token(admin.id, "system_admin")) as client:
+        entities = {e["key"]: e for e in (await client.get("/api/v1/admin/entities")).json()}
+        assert all(entities[k]["allow_delete"] is False for k in ("visit", "visitor", "health_declaration"))
+
+        assert (await client.delete(f"/api/v1/admin/visitor/{visitor_id}")).status_code == 409
+        assert (await client.delete(f"/api/v1/admin/visit/{visit_id}?preview=1")).status_code == 409
+        r = await client.post("/api/v1/admin/visit/bulk-delete", json={"ids": [str(visit_id)]})
+        assert r.status_code == 409
+        assert "Cancel the visit" in r.json()["detail"]
 
     async with factory() as db:
-        summary = await service.delete_record(
-            db, "visitor", visitor_id, actor_id=actor_id, actor_email="",
-        )
-        await db.commit()
-
-    assert summary["vms_visitors"] == 1
-    assert summary["vms_visits"] >= 1
-
-    async with factory() as db:
-        visitor_row = (await db.execute(
-            select(Visitor).where(Visitor.id == visitor_id)
-        )).scalar_one_or_none()
-        visit_row = (await db.execute(
-            select(Visit).where(Visit.id == visit_id)
-        )).scalar_one_or_none()
-        assert visitor_row is None
-        assert visit_row is None
-
-        audit = (await db.execute(
-            select(AdminAuditLog).where(
-                AdminAuditLog.action == "delete",
-                AdminAuditLog.system == "vms",
-                AdminAuditLog.entity == "visitor",
-                AdminAuditLog.record_id == visitor_id,
-            )
-        )).scalar_one_or_none()
-        assert audit is not None
-        assert audit.cascade_summary["vms_visitors"] == 1
-        assert audit.cascade_summary["vms_visits"] >= 1
+        assert (await db.execute(select(Visitor).where(Visitor.id == visitor_id))).scalar_one_or_none()
+        assert (await db.execute(select(Visit).where(Visit.id == visit_id))).scalar_one_or_none()

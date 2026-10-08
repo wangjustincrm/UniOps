@@ -34,29 +34,43 @@ log = logging.getLogger(__name__)
 _ADVISORY_LOCK_KEY = 0x564D_5343_4845_4400  # "VMSCHED\0"
 
 
+async def run_locked(db) -> dict | None:
+    """Run the jobs once under the advisory lock and commit. Returns the
+    summary, or None when another run (a tick on any replica, or a manual
+    run) holds the lock. Both the background tick and the admin's
+    "run now" go through here, so they can never overlap and double-send."""
+    got = (await db.execute(
+        text("SELECT pg_try_advisory_lock(:k)"), {"k": _ADVISORY_LOCK_KEY}
+    )).scalar_one()
+    if not got:
+        return None
+    try:
+        summary = await scheduled_jobs.run_all(db)
+        await db.commit()
+        return summary
+    except Exception:
+        await db.rollback()
+        raise
+    finally:
+        await db.execute(
+            text("SELECT pg_advisory_unlock(:k)"), {"k": _ADVISORY_LOCK_KEY}
+        )
+        await db.commit()
+
+
 async def _run_tick() -> None:
     """One scheduler iteration. Guarded by an advisory lock so only one
     replica does the work."""
     async with AsyncSessionLocal() as db:
-        got = (await db.execute(
-            text("SELECT pg_try_advisory_lock(:k)"), {"k": _ADVISORY_LOCK_KEY}
-        )).scalar_one()
-        if not got:
-            log.debug("Scheduler tick skipped — advisory lock held elsewhere")
-            return
         try:
-            summary = await scheduled_jobs.run_all(db)
-            await db.commit()
-            if any(summary.values()):
-                log.info("Scheduler tick: %s", summary)
+            summary = await run_locked(db)
         except Exception:
-            await db.rollback()
             log.exception("Scheduler tick failed")
-        finally:
-            await db.execute(
-                text("SELECT pg_advisory_unlock(:k)"), {"k": _ADVISORY_LOCK_KEY}
-            )
-            await db.commit()
+            return
+        if summary is None:
+            log.debug("Scheduler tick skipped — advisory lock held elsewhere")
+        elif any(summary.values()):
+            log.info("Scheduler tick: %s", summary)
 
 
 async def _loop() -> None:

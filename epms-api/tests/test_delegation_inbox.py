@@ -73,7 +73,7 @@ async def _make_user(test_engine, role: str, department_id: str | None = None) -
 
 async def _make_dept(test_engine) -> str:
     factory = _factory(test_engine)
-    code = f"D{uuid.uuid4().hex[:4].upper()}"
+    code = f"D{uuid.uuid4().hex[:8].upper()}"
     async with factory() as db:
         dept = Department(code=code, name=f"Dept {code}", is_active=True)
         db.add(dept)
@@ -87,7 +87,7 @@ async def _make_cc(test_engine, dept_id: str) -> str:
     from app.models.cost_center import CostCenter
 
     factory = _factory(test_engine)
-    code = f"CC{uuid.uuid4().hex[:4].upper()}"
+    code = f"CC{uuid.uuid4().hex[:8].upper()}"
     async with factory() as db:
         cc = CostCenter(code=code, name=f"CostCenter {code}", is_active=True,
                          department_id=uuid.UUID(dept_id))

@@ -5,6 +5,10 @@ from app.api.v1.agreement_receipt_attachments import router as agreement_receipt
 from app.api.v1.agreement_receipts import all_router as agreement_receipts_all_router
 from app.api.v1.agreement_receipts import router as agreement_receipts_router
 from app.api.v1.agreements import router as agreements_router
+from app.api.v1.assistant_chat import router as assistant_chat_router
+from app.api.v1.assistant_preflight import router as assistant_preflight_router
+from app.api.v1.assistant_query import router as assistant_query_router
+from app.api.v1.assistant_saved import router as assistant_saved_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.config import router as config_router
 from app.api.v1.dashboard import router as dashboard_router
@@ -36,6 +40,10 @@ from app.api.v1.vendors import router as vendors_router
 api_router = APIRouter()
 api_router.include_router(health_router)
 api_router.include_router(auth_router)
+api_router.include_router(assistant_query_router)
+api_router.include_router(assistant_preflight_router)
+api_router.include_router(assistant_chat_router)
+api_router.include_router(assistant_saved_router)
 api_router.include_router(departments_router)
 api_router.include_router(cost_centers_router)
 api_router.include_router(users_router)

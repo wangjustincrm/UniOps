@@ -53,6 +53,12 @@ class PaymentResponse(BaseModel):
     status: str
     batch_id: uuid.UUID | None = None
     bank_account_id: uuid.UUID | None = None
+    # Display label for bank_account_id ("Operating CAD · …0128"), filled by
+    # the API layer the same way payee_name / remittance_status are - the id
+    # alone is unreadable in a list, and the payments page has no other reason
+    # to load the bank_accounts table. None when the payment recorded no
+    # funding account, or the account row has since been deleted.
+    bank_account_name: str | None = None
     entity_id: uuid.UUID | None = None
     recorded_by: uuid.UUID
     notes: str | None = None

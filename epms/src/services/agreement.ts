@@ -16,7 +16,18 @@ export type AgreementType = 'house_account' | 'recurring' | 'milestone'
 
 export type AgreementAction = 'submit' | 'approve' | 'return' | 'cancel'
 
-export type RecurringType = 'weekly' | 'monthly' | 'quarterly' | 'yearly'
+export type RecurringType =
+  | 'weekly'
+  | 'monthly'
+  | 'quarterly'
+  | 'yearly'
+  /**
+   * ag09 — monthly, but only in the months ticked in `active_months`. A
+   * seasonal service (snow removal, lawn care) bills per month yet runs only
+   * part of the year; `monthly` would create periods for the off-season that
+   * no invoice ever arrives for.
+   */
+  | 'special_monthly'
 
 // Decimal fields (expected_amount, tolerance_pct, amount_pct) arrive from the
 // API as JSON strings — same Pydantic-Decimal serialisation as ApiAgreement.
@@ -38,6 +49,20 @@ export interface ApiScheduleRow {
   amount_pct: string | null
   accepted_by: string | null
   accepted_at: string | null
+  // One period, several invoices (2026-10-03): every invoice linked to this
+  // row via invoice.schedule_id — that link is the source of truth;
+  // `invoice_id` is only the first of them. Filled by GET .../schedule only;
+  // endpoints returning a single row send [].
+  invoices: ApiScheduleRowInvoice[]
+}
+
+export interface ApiScheduleRowInvoice {
+  id: string
+  internal_ref: string | null
+  invoice_date: string | null
+  amount: string        // pre-tax
+  total_amount: string
+  status: string
 }
 
 export interface MilestoneRowIn {
@@ -75,6 +100,8 @@ export interface ApiAgreement {
   recurring_type?: RecurringType | null
   expected_invoice_day?: number | null
   anchor_month?: number | null
+  /** ag09 — months 1..12 this special_monthly agreement bills in. */
+  active_months?: number[] | null
   /** ag08 — generate the schedule from here instead of valid_from. */
   schedule_start_date?: string | null
   expected_amount_per_period?: string | null
@@ -110,6 +137,7 @@ export interface CreateAgreementBody {
   recurring_type?: RecurringType
   expected_invoice_day?: number
   anchor_month?: number
+  active_months?: number[]
   schedule_start_date?: string
   expected_amount_per_period?: number
   tolerance_pct?: number
@@ -142,6 +170,8 @@ export interface UpdateAgreementBody {
   recurring_type?: RecurringType | null
   expected_invoice_day?: number | null
   anchor_month?: number | null
+  /** ag09 — months 1..12 this special_monthly agreement bills in. */
+  active_months?: number[] | null
   /** ag08 — generate the schedule from here instead of valid_from. */
   schedule_start_date?: string | null
   expected_amount_per_period?: number | null

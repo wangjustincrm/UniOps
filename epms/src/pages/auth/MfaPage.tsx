@@ -29,13 +29,16 @@ export default function MfaPage() {
 
   useEffect(() => { fetchBranding().then(setBranding) }, [])
 
+  // Without a challenge token this page cannot do anything — /auth/mfa/challenge
+  // has nothing to verify against. It used to stay put whenever the user merely
+  // looked authenticated, which left anyone arriving here with a live session
+  // but no pending challenge staring at a code box that could never succeed.
   useEffect(() => {
-    if (!mfaPendingToken && !isAuthenticated) {
-      navigate('/login', { replace: true })
-    }
+    if (mfaPendingToken) return
+    navigate(isAuthenticated ? '/dashboard' : '/login', { replace: true })
   }, [mfaPendingToken, isAuthenticated, navigate])
 
-  if (!mfaPendingToken && !isAuthenticated) return null
+  if (!mfaPendingToken) return null
 
   const handleChange = (index: number, value: string) => {
     if (!/^\d?$/.test(value)) return

@@ -1,9 +1,13 @@
 /**
  * Budget Dashboard — Plan vs Actual overview.
  *
- * Uses budget-api /actuals/summary to get per-account plan/committed/actual_spent
- * for a selected (cost_center, fiscal_year) scope. Replaces the old
- * /budget/summary aggregation that lived in epms-api.
+ * Uses budget-api /actuals/summary for per-account plan and committed in a
+ * selected (cost_center, fiscal_year) scope. Replaces the old /budget/summary
+ * aggregation that lived in epms-api.
+ *
+ * Actual is NC posted throughout — the cards, the cells and the over-budget
+ * marks. budget-api's doc-side `actual_spent` is deliberately not shown: see
+ * PlanActualCell.
  */
 import { useState, useMemo, Fragment } from 'react'
 import { Link } from 'react-router-dom'
@@ -21,9 +25,13 @@ const currentYear = new Date().getUTCFullYear()
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-// Payroll (CRM007) / Depreciation (CRM004) are category-level only — fully
-// excluded from the dashboard's per-account rows, totals, and over-budget alerts.
-const isPayrollOrDeprec = (code: string) => code.startsWith('CRM004') || code.startsWith('CRM007')
+// Items the per-cost-center dashboard deliberately omits: Payroll (CRM007) and
+// Depreciation (CRM004) are tracked at category level only, and shut-down loss
+// (CRM09912 — the stop-production reclass of MOH into G&A) is not budgeted per
+// cost center at all. Keep in lockstep with finance-api's EXCLUDED_IO_PREFIXES
+// (crud/account_balance.py), which enforces the same list on the actual side.
+const EXCLUDED_PREFIXES = ['CRM004', 'CRM007', 'CRM09912']
+const isExcludedFromDashboard = (code: string) => EXCLUDED_PREFIXES.some((p) => code.startsWith(p))
 
 export default function BudgetDashboard() {
   const { data: config } = useConfig()
@@ -72,13 +80,13 @@ export default function BudgetDashboard() {
   }), [fiscalYear, ccId])
 
   const { data, isLoading } = useActualsSummary(summaryParams)
-  const accounts: ApiAccountSummary[] = (data?.accounts ?? []).filter((a) => !isPayrollOrDeprec(a.account_code))
+  const accounts: ApiAccountSummary[] = (data?.accounts ?? []).filter((a) => !isExcludedFromDashboard(a.account_code))
 
   const { data: monthlyData, isLoading: monthlyLoading } = useMonthlyActualsSummary(summaryParams)
   const monthlyAccounts: ApiMonthlyAccountSummary[] = useMemo(
-    () => (monthlyData?.accounts ?? []).filter((a) => !isPayrollOrDeprec(a.account_code)), [monthlyData])
+    () => (monthlyData?.accounts ?? []).filter((a) => !isExcludedFromDashboard(a.account_code)), [monthlyData])
 
-  // NC posted actual (finance-api) per account × month — the third cell line.
+  // NC posted actual (finance-api) per account × month — the second cell line.
   const { data: ncData } = useNcActualsMonthly(summaryParams)
   const ncByAccount = useMemo(() => ncData?.accounts ?? {}, [ncData])
 
@@ -126,21 +134,18 @@ export default function BudgetDashboard() {
 
   const monthlyGrandTotals = useMemo(() => {
     const plan: Record<number, number> = {}
-    const actual: Record<number, number> = {}
     const nc: Record<number, number> = {}
-    for (let m = 1; m <= 12; m++) { plan[m] = 0; actual[m] = 0; nc[m] = 0 }
-    let planYear = 0, actualYear = 0, ncYear = 0
+    for (let m = 1; m <= 12; m++) { plan[m] = 0; nc[m] = 0 }
+    let planYear = 0, ncYear = 0
     for (const a of monthlyAccounts) {
       for (let m = 1; m <= 12; m++) {
         plan[m] += Number(a.plan_by_month?.[m] ?? 0)
-        actual[m] += Number(a.actual_by_month?.[m] ?? 0)
         const n = Number(ncByAccount[a.account_id]?.[m] ?? 0)
         nc[m] += n; ncYear += n
       }
       planYear += Number(a.plan_year)
-      actualYear += Number(a.actual_year)
     }
-    return { plan, actual, nc, planYear, actualYear, ncYear }
+    return { plan, nc, planYear, ncYear }
   }, [monthlyAccounts, ncByAccount])
 
   const totalBudget    = accounts.reduce((s, a) => s + Number(a.annual_budget), 0)
@@ -311,8 +316,7 @@ export default function BudgetDashboard() {
           </div>
           <p className="text-xs text-neutral-500 mt-0.5">
             Each cell: <span className="text-neutral-600 font-medium">plan</span> /{' '}
-            <span className="text-primary-700 font-medium">actual (docs)</span> /{' '}
-            <span className="text-emerald-700 font-medium">NC posted</span> · NC over budget in red
+            <span className="text-emerald-700 font-medium">NC posted actual</span> · over budget in red
             {ccId === 'all' && <span className="ml-2 text-neutral-400">· Aggregated across cost centers</span>}
           </p>
         </CardHeader>
@@ -361,11 +365,11 @@ export default function BudgetDashboard() {
                 </td>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                   <td key={m} className="sticky bottom-0 z-20 border-t-2 border-neutral-400 bg-neutral-200 py-3 px-1.5">
-                    <PlanActualCell plan={monthlyGrandTotals.plan[m]} actual={monthlyGrandTotals.actual[m]} nc={monthlyGrandTotals.nc[m]} strong />
+                    <PlanActualCell plan={monthlyGrandTotals.plan[m]} nc={monthlyGrandTotals.nc[m]} strong />
                   </td>
                 ))}
                 <td className="sticky bottom-0 z-20 border-t-2 border-neutral-400 bg-neutral-300 py-3 px-2">
-                  <PlanActualCell plan={monthlyGrandTotals.planYear} actual={monthlyGrandTotals.actualYear} nc={monthlyGrandTotals.ncYear} strong />
+                  <PlanActualCell plan={monthlyGrandTotals.planYear} nc={monthlyGrandTotals.ncYear} strong />
                 </td>
               </tr>
             </tfoot>
@@ -379,16 +383,21 @@ export default function BudgetDashboard() {
 
 // ── Monthly plan/actual cell ──────────────────────────────────────────────────
 
-function PlanActualCell({ plan, actual, nc, strong }: { plan: number; actual: number; nc?: number; strong?: boolean }) {
-  // over-budget is judged on NC posted (the final actual), not the doc actual
+// Two lines, not three. The middle one used to show budget-api's doc-side
+// `actual_spent`, which sounds like "what this cost centre has spent in UniOps"
+// and is not: budget_ledger has never been written by anything but the one-off
+// opening-balance import (15,828 `opening` rows, 2026-07-07 — the commit /
+// release / actualize entry points have no callers anywhere in the repo). So
+// the line showed an opening figure in every month's cell, under a label that
+// promised current spend. A number that is always wrong is worse than a number
+// that is absent; removed until something actually books to that ledger.
+function PlanActualCell({ plan, nc, strong }: { plan: number; nc?: number; strong?: boolean }) {
+  // over-budget is judged on NC posted (the final actual)
   const over = nc !== undefined && nc > plan && (plan > 0 || nc > 0)
   return (
     <div className="flex flex-col items-end leading-tight font-mono">
       <span className={cn('text-[11px] whitespace-nowrap text-neutral-500', strong && 'font-semibold text-neutral-600')}>
         {plan ? formatCADCompact(plan) : '–'}
-      </span>
-      <span className={cn('text-[11px] whitespace-nowrap text-primary-700', strong && 'font-semibold')}>
-        {actual ? formatCADCompact(actual) : '–'}
       </span>
       {nc !== undefined && (
         <span className={cn(
@@ -415,21 +424,18 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
 
   const totals = useMemo(() => {
     const plan: Record<number, number> = {}
-    const actual: Record<number, number> = {}
     const nc: Record<number, number> = {}
-    for (let m = 1; m <= 12; m++) { plan[m] = 0; actual[m] = 0; nc[m] = 0 }
-    let planYear = 0, actualYear = 0, ncYear = 0
+    for (let m = 1; m <= 12; m++) { plan[m] = 0; nc[m] = 0 }
+    let planYear = 0, ncYear = 0
     for (const a of accounts) {
       for (let m = 1; m <= 12; m++) {
         plan[m] += Number(a.plan_by_month?.[m] ?? 0)
-        actual[m] += Number(a.actual_by_month?.[m] ?? 0)
         const n = Number(ncByAccount[a.account_id]?.[m] ?? 0)
         nc[m] += n; ncYear += n
       }
       planYear += Number(a.plan_year)
-      actualYear += Number(a.actual_year)
     }
-    return { plan, actual, nc, planYear, actualYear, ncYear }
+    return { plan, nc, planYear, ncYear }
   }, [accounts, ncByAccount])
 
   const ncYearFor = (accountId: string) =>
@@ -444,11 +450,11 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
         </td>
         {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
           <td key={m} className="py-2.5 px-1.5">
-            <PlanActualCell plan={totals.plan[m]} actual={totals.actual[m]} nc={totals.nc[m]} strong />
+            <PlanActualCell plan={totals.plan[m]} nc={totals.nc[m]} strong />
           </td>
         ))}
         <td className="py-2.5 px-2 bg-neutral-200">
-          <PlanActualCell plan={totals.planYear} actual={totals.actualYear} nc={totals.ncYear} strong />
+          <PlanActualCell plan={totals.planYear} nc={totals.ncYear} strong />
         </td>
       </tr>
       {expanded && accounts.map((a) => {
@@ -472,12 +478,12 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
               </td>
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                 <td key={m} className="py-2 px-1.5">
-                  <PlanActualCell plan={Number(a.plan_by_month?.[m] ?? 0)} actual={Number(a.actual_by_month?.[m] ?? 0)}
+                  <PlanActualCell plan={Number(a.plan_by_month?.[m] ?? 0)}
                     nc={Number(ncByAccount[a.account_id]?.[m] ?? 0)} />
                 </td>
               ))}
               <td className="py-2 px-2 bg-neutral-50">
-                <PlanActualCell plan={Number(a.plan_year)} actual={Number(a.actual_year)} nc={ncYearFor(a.account_id)} strong />
+                <PlanActualCell plan={Number(a.plan_year)} nc={ncYearFor(a.account_id)} strong />
               </td>
             </tr>
             {isOpen && <PartnerRows account={a} fiscalYear={fiscalYear} costCenterId={costCenterId} />}
@@ -489,6 +495,17 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
 }
 
 // ── Partner (客商/供应商/客户) inline breakdown ────────────────────────────────
+
+// What an unattributed row is called, by why it is unattributed. "(no vendor)"
+// for all of them hid the difference between "the voucher names several parties
+// and we refuse to guess" and "this is an internal accrual with no party at all".
+const NO_VENDOR_LABEL: Record<string, string> = {
+  multi: '(several parties on the voucher)',
+  none: '(no vendor — internal entry)',
+  line: '(no vendor)',
+  voucher: '(no vendor)',
+  mixed: '(no vendor)',
+}
 
 function PartnerRows({ account, fiscalYear, costCenterId }: {
   account: ApiMonthlyAccountSummary
@@ -510,12 +527,24 @@ function PartnerRows({ account, fiscalYear, costCenterId }: {
   return (
     <>
       {partners.map((p, i) => {
-        const pid = p.partner_id ?? 'none'
+        const pid = p.key
         return (
           <Fragment key={`${pid}-${i}`}>
             <tr className="border-b border-neutral-100 bg-emerald-50">
               <td className="py-1.5 pl-10 pr-3 text-xs text-neutral-600 break-words">
-                {p.partner_name || <span className="text-neutral-400">(no vendor)</span>}
+                {p.partner_name || <span className="text-neutral-400">{NO_VENDOR_LABEL[p.source]}</span>}
+                {/* NC hangs the vendor on the payable line, not the expense
+                    line, so most of these are read off the voucher rather than
+                    off the line the money is on. Say so — a vendor that is not
+                    on the line in NC must not look like one that is. */}
+                {(p.source === 'voucher' || p.source === 'mixed') && p.partner_name && (
+                  <span className="ml-1.5 rounded bg-emerald-100 px-1 py-0.5 text-[10px] text-emerald-800"
+                        title={p.source === 'voucher'
+                          ? 'Vendor taken from the voucher (the expense line itself names none)'
+                          : `Partly from the voucher: ${p.inferred_total} of ${p.year_total}`}>
+                    {p.source === 'voucher' ? 'from voucher' : 'partly from voucher'}
+                  </span>
+                )}
               </td>
               {Array.from({ length: 12 }, (_, k) => k + 1).map((m) => {
                 const v = Number(p.by_month[m] ?? 0)
@@ -536,7 +565,8 @@ function PartnerRows({ account, fiscalYear, costCenterId }: {
             </tr>
             {voucherKey && voucherKey.startsWith(`${pid}:`) && (
               <VoucherRow account={account} fiscalYear={fiscalYear} costCenterId={costCenterId}
-                partnerId={p.partner_id} partnerName={p.partner_name} month={Number(voucherKey.split(':')[1])} />
+                partnerKey={p.key} partnerName={p.partner_name || NO_VENDOR_LABEL[p.source]}
+                month={Number(voucherKey.split(':')[1])} />
             )}
           </Fragment>
         )
@@ -545,17 +575,17 @@ function PartnerRows({ account, fiscalYear, costCenterId }: {
   )
 }
 
-function VoucherRow({ account, fiscalYear, costCenterId, partnerId, partnerName, month }: {
+function VoucherRow({ account, fiscalYear, costCenterId, partnerKey, partnerName, month }: {
   account: ApiMonthlyAccountSummary
   fiscalYear: number
   costCenterId?: string
-  partnerId: string | null
+  partnerKey: string
   partnerName: string | null
   month: number
 }) {
   const { data, isLoading } = useNcPartnerVouchers({
     income_expense_item_id: account.account_id, fiscal_year: fiscalYear, month,
-    cost_center_id: costCenterId, partner_id: partnerId ?? 'none',
+    cost_center_id: costCenterId, partner_id: partnerKey,
   })
   const rows = data?.rows ?? []
   return (

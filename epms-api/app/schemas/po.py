@@ -231,16 +231,35 @@ class PoResponse(BaseModel):
     place_order_email_to: str | None = None
     place_order_reference: str | None = None
     placed_at: datetime | None = None
-    # Computed: True if at least one invoice for this PO is NOT yet paid
+    # Computed: this PO has an invoice a NEW payment could settle — unpaid AND
+    # not already claimed by a live payment application. Both halves matter: an
+    # invoice that is merely unpaid may already be locked to someone else's PA,
+    # and offering the PO then leads to a payment screen with nothing to tick.
+    # Filled in by BOTH the list and the detail endpoint (api/v1/po.py), off one
+    # definition in crud.po::payable_invoice_po_ids.
     has_unpaid_invoice: bool = False
-    # Computed (detail view): created_by of the linked PR — the requester who may
-    # confirm delivery (create GR) on a service/project PO. None for direct POs.
+    # Computed (detail view): created_by of the linked PR — who RAISED it.
+    # None for direct POs.
     pr_requester_id: uuid.UUID | None = None
+    # Computed (detail view): the linked PR's service owner (owner_id, else
+    # created_by) — the person api/v1/gr.py admits to confirm delivery / create
+    # the GR on a service/project PO, and the person its confirm_receipt task is
+    # routed to. Equal to pr_requester_id unless a service PR named someone
+    # else. None for direct POs.
+    pr_owner_id: uuid.UUID | None = None
+    # The department the PO's approvals route through (PO → PR.department_id).
+    # Not a column on the PO — resolved per response in api/v1/po.py. NULL for a
+    # PO with no PR (an NC-imported one), which is a distinct value, not
+    # "unknown": approval routing falls back to the submitter's own department
+    # there. The PA create/edit screens read it to keep a payment inside one
+    # department, since a payment routes through its PRIMARY PO's department
+    # only (approval-api engine.py::_routing_department_id).
+    pr_department_id: uuid.UUID | None = None
     # Computed (detail view): ANY invoice points at this PO — not just an unpaid
-    # one. Distinct from has_unpaid_invoice above, which the LIST endpoint alone
-    # fills in and which is therefore always False here. Drives the imported-PO
-    # editor's tax control: once accounts payable is measuring against this
-    # header, its money must stop moving.
+    # one, and regardless of whether a PA already claims it. Distinct from
+    # has_unpaid_invoice above. Drives the imported-PO editor's tax control:
+    # once accounts payable is measuring against this header, its money must
+    # stop moving.
     has_invoice: bool = False
     # 该 PO 被【其他发票】累计分摊的总额(所有 po_line_id 之和,仅 match-candidates 端点填充)
     already_allocated_total: Decimal | None = None

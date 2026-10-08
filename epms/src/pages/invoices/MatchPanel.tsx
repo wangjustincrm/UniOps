@@ -81,8 +81,13 @@ function withinPeriodTolerance(
 // recurring — preview of the period the server will claim on submit: the one
 // whose expected date is nearest this invoice's date (see claim_next_period).
 function RecurringPeriodPreview({
-  loading, error, row, invoicePreTax, currency,
-}: { loading: boolean; error: boolean; row: ApiScheduleRow | undefined; invoicePreTax: number; currency: string }) {
+  loading, error, row, invoicePreTax, alreadyInPeriod, currency,
+}: {
+  loading: boolean; error: boolean; row: ApiScheduleRow | undefined
+  // Pre-tax sum of the invoices already in `row` — with several invoices per
+  // period the tolerance is checked against the period's running total.
+  invoicePreTax: number; alreadyInPeriod: number; currency: string
+}) {
   if (loading) {
     return (
       <p className="rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-xs text-neutral-400">
@@ -111,14 +116,16 @@ function RecurringPeriodPreview({
     return (
       <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-        <p>No open period is available to claim on this agreement — this invoice will go to review for manual assignment, unless you assign one below.</p>
+        <p>No period is available to claim on this agreement — this invoice will go to review for manual assignment, unless you assign one below.</p>
       </div>
     )
   }
   const label = row.period_label ?? `Period #${row.sequence}`
   const expected = row.expected_amount != null ? Number(row.expected_amount) : null
   const tolerancePct = row.tolerance_pct != null ? Number(row.tolerance_pct) : null
-  const outOfTolerance = expected !== null && !withinPeriodTolerance(invoicePreTax, expected, tolerancePct)
+  const joining = (row.invoices ?? []).length
+  const outOfTolerance = expected !== null &&
+    !withinPeriodTolerance(alreadyInPeriod + invoicePreTax, expected, tolerancePct)
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -126,11 +133,22 @@ function RecurringPeriodPreview({
         This invoice will be claimed against <span className="font-medium text-neutral-900">{label}</span>
         {expected !== null && <> (expected {formatAmount(expected, currency)})</>}
         {row.status === 'overdue' && <span className="ml-1.5 font-medium text-warning-700">· overdue</span>}
+        {joining > 0 && (
+          <span className="block mt-0.5 text-neutral-500">
+            It joins {joining} invoice{joining === 1 ? '' : 's'} already in this period
+            {expected !== null && <> ({formatAmount(alreadyInPeriod, currency)} pre-tax so far)</>}.
+          </span>
+        )}
       </div>
       {outOfTolerance && (
         <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <p>The invoice's pre-tax amount is outside the tolerance for {label} — this invoice will go to review for manual assignment, unless you assign a period below.</p>
+          <p>
+            {joining > 0
+              ? <>Together with the invoices already in {label}, the pre-tax total is outside its tolerance</>
+              : <>The invoice's pre-tax amount is outside the tolerance for {label}</>}
+            {' '}— this invoice will go to review for manual assignment, unless you assign a period below.
+          </p>
         </div>
       )}
     </div>
@@ -171,6 +189,8 @@ function PeriodOverrideRow({
         <p className="text-xs text-neutral-500">
           {row.expected_date ? `Expected ${formatDate(row.expected_date)}` : 'No expected date'}
           {expected !== null && ` · expected ${formatAmount(expected, currency)}`}
+          {(row.invoices ?? []).length > 0 &&
+            ` · already has ${row.invoices.map((i) => i.internal_ref ?? 'an invoice').join(', ')}`}
         </p>
       </div>
     </label>
@@ -263,9 +283,13 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   // RecurringPeriodPreview's `error` branch and the milestone section below.
   const scheduleErrored = scheduleQuery.isError
 
-  const unclaimedPeriodRows = isRecurring
+  // Every period except a waived one is a candidate — including periods that
+  // already hold an invoice: one period can carry several invoices (a vendor
+  // billing two annual fees in the same month). Restricting this to empty
+  // periods is what used to push the second invoice into a FUTURE period.
+  const claimablePeriodRows = isRecurring
     ? [...scheduleRows]
-        .filter((r) => r.schedule_type === 'period' && (r.status === 'pending' || r.status === 'overdue'))
+        .filter((r) => r.schedule_type === 'period' && r.status !== 'waived')
         .sort((a, b) => a.sequence - b.sequence)
     : []
   // Which period the server will claim: the one whose EXPECTED DATE sits
@@ -273,7 +297,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   // claim_next_period exactly, because a preview that disagrees with the
   // server is worse than no preview.
   //
-  // This used to be `unclaimedPeriodRows[0]` (FIFO by sequence), and the
+  // This used to be the first open row (FIFO by sequence), and the
   // mismatch it produced was not theoretical: an agreement onboarded a year
   // into its life has its schedule generated from the CONTRACT's first
   // period, so FIFO always proposed a historical period no invoice will ever
@@ -285,7 +309,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   // invoice_date may carry a time — normalising both to the date part keeps
   // the comparison in whole days and free of timezone drift.
   const invoiceDayMs = Date.parse(`${String(inv.invoice_date).slice(0, 10)}T00:00:00Z`)
-  const nextPeriodRow = unclaimedPeriodRows.length === 0 ? undefined : unclaimedPeriodRows.reduce((best, r) => {
+  const nextPeriodRow = claimablePeriodRows.length === 0 ? undefined : claimablePeriodRows.reduce((best, r) => {
     const distance = (row: ApiScheduleRow) => {
       if (!row.expected_date) return Number.POSITIVE_INFINITY
       return Math.abs(Date.parse(`${String(row.expected_date).slice(0, 10)}T00:00:00Z`) - invoiceDayMs)
@@ -298,8 +322,12 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   const nextPeriodTolerancePct = nextPeriodRow?.tolerance_pct != null ? Number(nextPeriodRow.tolerance_pct) : null
   // Pre-tax, matching the server: expected_amount_per_period is a contract
   // price, and inv.amount is this invoice's pre-tax figure.
+  // The check runs on the period's running total, as on the server.
+  const nextPeriodAlready = (nextPeriodRow?.invoices ?? [])
+    .filter((i) => i.id !== inv.id)
+    .reduce((sum, i) => sum + Number(i.amount), 0)
   const nextPeriodOutOfTolerance = !!nextPeriodRow && nextPeriodExpected !== null &&
-    !withinPeriodTolerance(Number(inv.amount), nextPeriodExpected, nextPeriodTolerancePct)
+    !withinPeriodTolerance(nextPeriodAlready + Number(inv.amount), nextPeriodExpected, nextPeriodTolerancePct)
   // Whole-branch review Blocker 2: offer the manual-assignment picker whenever
   // the automatic claim can't be trusted — nothing claimable, the
   // candidate is out of tolerance, or the schedule couldn't even be read. This
@@ -501,6 +529,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                 error={scheduleErrored}
                 row={nextPeriodRow}
                 invoicePreTax={Number(inv.amount)}
+                alreadyInPeriod={nextPeriodAlready}
                 currency={selectedAgreement?.currency ?? inv.currency}
               />
               {/* Manual-assignment override (whole-branch review Blocker 2) —
@@ -523,15 +552,15 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                       </button>
                     )}
                   </div>
-                  {unclaimedPeriodRows.length === 0 ? (
+                  {claimablePeriodRows.length === 0 ? (
                     !scheduleErrored && (
                       <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
-                        No open periods on this agreement.
+                        No periods on this agreement can take an invoice.
                       </p>
                     )
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {unclaimedPeriodRows.map((row) => (
+                      {claimablePeriodRows.map((row) => (
                         <PeriodOverrideRow
                           key={row.id}
                           row={row}

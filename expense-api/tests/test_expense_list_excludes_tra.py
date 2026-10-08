@@ -31,7 +31,7 @@ from app.models.expense import ExpenseClaim
 
 def _client_for(role: str, user_id: str) -> AsyncClient:
     token = jwt.encode(
-        {"sub": user_id, "role": role, "exp": datetime.utcnow() + timedelta(hours=8)},
+        {"sub": user_id, "role": role, "type": "access", "exp": datetime.utcnow() + timedelta(hours=8)},
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
     )

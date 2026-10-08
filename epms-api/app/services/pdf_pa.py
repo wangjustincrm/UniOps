@@ -91,12 +91,21 @@ def generate_pa_pdf(
     submitted_str = pa.submitted_at.strftime("%Y-%m-%d") if pa.submitted_at else "—"
     approved_str = pa.approved_at.strftime("%Y-%m-%d") if pa.approved_at else "—"
 
+    # A PA may settle several POs. `po_numbers` is the transient list attached by
+    # crud.pa.attach_po_links; the header snapshot is the fallback for a PA
+    # loaded without it (and for the agreement route, where both are empty).
+    po_numbers = list(getattr(pa, "po_numbers", None) or [])
+    if not po_numbers and pa.po_number:
+        po_numbers = [pa.po_number]
+    po_label = "PO Numbers" if len(po_numbers) > 1 else "PO Number"
+    po_value = ", ".join(po_numbers)
+
     meta = Table(
         [
             [*_cell("PA Number", pa.pa_number),    *_cell("Date Submitted", submitted_str)],
             [*_cell("Title", pa.title),             *_cell("Type", pa_type_label)],
             [*_cell("Vendor", pa.vendor_name),      *_cell("Currency", pa.currency)],
-            [*_cell("PO Number", pa.po_number),     *_cell("Status", pa.status.replace("_", " ").title())],
+            [*_cell(po_label, po_value),            *_cell("Status", pa.status.replace("_", " ").title())],
             [*_cell("Applied By", requester_name),  *_cell("Date Approved", approved_str)],
         ],
         # Label columns widened from 0.12 to 0.14 (value narrowed 0.38 -> 0.36 to

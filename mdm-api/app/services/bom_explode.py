@@ -80,6 +80,31 @@ correct, already-normalized answer is `1.0` per kg (1 kg of dry-mix powder
 per kg of finished product). `bom.yield_rate` is still stored (and still
 worth keeping, since it's the header's real primary/secondary UOM
 conversion ratio), it is simply not an input to THIS formula.
+
+NC batch-scale fields (2026-09-03, reported as a "BOM Explorer 精度问题"):
+every non-root node also reports `qty_per_batch` / `parent_batch_output_qty`
+(NC's own `NITEMNUM` and the parent header's `HNPARENTNUM`) and, when it has
+a BOM of its own, `batch_output_qty`. These are REPORTING fields only — no
+accumulation reads them, and adding them must not move a single planning
+number.
+
+They exist because `qty_per` alone cannot be reconciled against the NC BOM
+screen: NC shows a whole-BATCH quantity (S0147's CS0147 line: 610 per a
+3000 kg batch), the explorer shows the normalized quotient (0.2033333333),
+and the planner is left multiplying a rounded number in their head. Worse,
+the on-screen quotient is rounded again for display, so the hand-check
+lands ~0.1 off and reads like a precision bug. Reporting NC's own pair
+removes the arithmetic entirely.
+
+`qty_per_batch` prefers `BomLine.qty_per_batch` — NC's `NITEMNUM` stored
+verbatim by migration 0018/transform.py PATCH 7 — and falls back to
+`qty_per * batch_output_qty` for rows synced before 0018. The fallback is
+deliberately lossy-but-present rather than None: it is right to within the
+10dp quotient's resolution (measured live: max absolute error 1e-7, max
+relative 5.3e-6), which beats a blank column, but it is NOT good enough to
+be the primary source — CS0081's CR0214 line is 0.00375508 in NC and
+reconstructs as 0.0037551. Re-run `POST /boms/sync` after deploying 0018
+and every row uses the exact value.
 """
 from __future__ import annotations
 
@@ -104,7 +129,21 @@ class ExplodeNode(BaseModel):
     being exploded (the number planners actually need — design spec §6.6:
     "做 1 吨成品要多少脱脂奶粉"), computed as
     `parent.qty_accumulated * qty_per * (1 + scrap_rate)` walking down from
-    the root, where the root's own qty_accumulated is defined as 1."""
+    the root, where the root's own qty_accumulated is defined as 1.
+
+    The three NC batch-scale fields exist purely so a planner can reconcile
+    a row against the NC BOM screen without re-deriving anything (see the
+    module docstring); no planning math reads them:
+      - `qty_per_batch`: this component's quantity per ONE BATCH of its
+        immediate parent's BOM — i.e. NC's own `BD_BOM_B.NITEMNUM`, the
+        un-divided numerator `qty_per` was derived from. None on the root
+        (it has no parent line).
+      - `parent_batch_output_qty`: the denominator that number is stated
+        against — the PARENT BOM header's `HNPARENTNUM`. None on the root.
+      - `batch_output_qty`: this node's OWN selected BOM header batch size,
+        i.e. the denominator its own children's `qty_per_batch` values are
+        stated against. None for a leaf/missing-BOM node, which has no
+        selected BOM of its own."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -115,6 +154,11 @@ class ExplodeNode(BaseModel):
     qty_per: Decimal
     qty_accumulated: Decimal
     uom: str | None = None
+    # NC-native batch-scale reconciliation triplet (2026-09-03) — see the
+    # "NC batch-scale fields" section of this module's docstring.
+    qty_per_batch: Decimal | None = None
+    parent_batch_output_qty: Decimal | None = None
+    batch_output_qty: Decimal | None = None
     qty_per_secondary: Decimal | None = None
     uom_secondary: str | None = None
     scrap_rate: Decimal = Decimal("0")
@@ -127,6 +171,27 @@ class ExplodeNode(BaseModel):
 
 
 ExplodeNode.model_rebuild()
+
+
+def _nc_batch_qty(line: BomLine, batch_output_qty: Decimal | None) -> Decimal | None:
+    """NC's own `BD_BOM_B.NITEMNUM` for `line` — the whole-batch quantity a
+    planner sees on the NC BOM screen (reporting only; nothing in the
+    explosion reads it).
+
+    Prefers the value stored verbatim by migration 0018 / transform.py
+    PATCH 7. Rows synced before 0018 have it NULL, and fall back to
+    reconstructing it as `qty_per * batch_output_qty` — correct only to the
+    10dp quotient's own resolution (max relative error 5.3e-6 measured
+    live), which is why it is a fallback and not the source. Returns None
+    only when BOTH are unavailable (no stored value AND no batch size to
+    reconstruct against), never a silently wrong 0.
+    """
+    stored = line.qty_per_batch
+    if stored is not None:
+        return stored
+    if batch_output_qty is None:
+        return None
+    return line.qty_per * batch_output_qty
 
 
 async def explode_bom(
@@ -222,11 +287,21 @@ async def explode_bom(
 
             node.bom_type = selected.bom_type
             node.version = selected.version
+            # This node's own batch size — the denominator every child's
+            # `qty_per_batch` below is stated against (reporting only).
+            node.batch_output_qty = selected.batch_output_qty
 
             children: list[ExplodeNode] = []
             for ln in selected_lines:
                 child_code = ln.component_material_code
                 child_scrap = ln.scrap_rate if ln.scrap_rate is not None else Decimal(0)
+                # NC-native pair for this line, reporting only — see the
+                # module docstring's "NC batch-scale fields" for why the
+                # stored raw value is preferred over the reconstruction.
+                nc_batch = {
+                    "qty_per_batch": _nc_batch_qty(ln, selected.batch_output_qty),
+                    "parent_batch_output_qty": selected.batch_output_qty,
+                }
                 # No `÷ bom.yield_rate` here — see this module's docstring
                 # ("Accumulation formula") for why that would double-count
                 # the batch-scale normalization transform.py's PATCH 6
@@ -247,6 +322,7 @@ async def explode_bom(
                         uom_secondary=ln.uom_secondary,
                         scrap_rate=child_scrap,
                         node_limit_reached=True,
+                        **nc_batch,
                     ))
                     continue
                 total_nodes += 1
@@ -261,6 +337,7 @@ async def explode_bom(
                     uom_secondary=ln.uom_secondary,
                     scrap_rate=child_scrap,
                     cycle_detected=is_cycle,
+                    **nc_batch,
                 )
                 children.append(child)
                 if not is_cycle:

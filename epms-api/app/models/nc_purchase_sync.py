@@ -38,3 +38,42 @@ class NcPurchaseSyncRun(UUIDPrimaryKey, TimestampMixin, Base):
     skipped_number_collision: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class NcPurchaseRefetchRequest(UUIDPrimaryKey, TimestampMixin, Base):
+    """A standing request for the incremental sync to re-read one NC order.
+
+    The incremental filter is ``changed_at >= watermark``. Deleting a mirrored PO
+    in Data Maintenance changes nothing in NC, so the order's change time stays
+    where it was — behind a watermark the sync has long since passed — and the
+    order is never read again. It does not come back on the next run, or any run:
+    it is simply gone from UniOps while NC still lists it as live. PO-058-2607-02
+    disappeared exactly that way.
+
+    A row here is the missing signal. The reader unions these pks into the
+    incremental fetch regardless of the watermark, so a delete heals itself on
+    the next scheduled run instead of needing somebody to know that
+    ``rewind_nc_purchase_watermark`` exists.
+
+    Deliberately not a watermark rewind: winding the global watermark back to
+    reach ONE order re-reads every order that changed since, which is a much
+    larger blast radius for the same result.
+    """
+    __tablename__ = "nc_purchase_refetch_requests"
+
+    #: PO_ORDER.pk_order — the natural key the whole mirror is resolved by.
+    nc_source_pk: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    #: The document number at the time of the request, for the audit trail. The
+    #: mirror row it named is gone, so this is the only thing left tying the
+    #: request to something a human recognises.
+    po_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    #: Set once a run has settled the request. NULL = still pending, and the next
+    #: incremental run picks it up.
+    fulfilled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    #: How it was settled: 'mirrored' (the order came back) or 'gone_from_nc'
+    #: (NC no longer lists it, so there is nothing to re-read and the request
+    #: must not retry forever).
+    outcome: Mapped[str | None] = mapped_column(String(20), nullable=True)

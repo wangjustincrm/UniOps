@@ -18,11 +18,16 @@ export interface ReceiptFields {
  * endpoint (POST /api/v1/ocr/receipt) and hands the extracted fields back to the
  * caller for pre-fill. Degrades gracefully — failures surface as a tooltip and
  * the user can still enter the line manually (OCR-006).
+ *
+ * `onFile` receives the picked file itself, before the scan runs and whether or
+ * not it succeeds, so the caller can keep it as the line's receipt attachment:
+ * a receipt that could not be read is still the receipt.
  */
 export function ReceiptScanButton({
-  onScanned, className,
+  onScanned, onFile, className,
 }: {
   onScanned: (fields: ReceiptFields) => void
+  onFile?: (file: File) => void
   className?: string
 }) {
   const ref = useRef<HTMLInputElement>(null)
@@ -33,6 +38,7 @@ export function ReceiptScanButton({
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
+    onFile?.(file)
     setLoading(true); setErr('')
     try {
       const form = new FormData()

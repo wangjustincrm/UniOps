@@ -5,7 +5,9 @@ import { AlertCircle, Loader2 } from 'lucide-react'
 import { VisitorSearch } from '@/components/VisitorSearch'
 import { HostSearch } from '@/components/HostSearch'
 import { PpeRequestForm } from '@/components/PpeRequestForm'
+import { ACCESS_AREAS, PURPOSES, areaRequirementText } from '@/lib/visitOptions'
 import {
+  useAreaRules,
   useCreateVisit,
   useCreateVisitor,
   type AccessArea,
@@ -15,6 +17,7 @@ import {
   type VisitorType,
   type VisitPurpose,
 } from '@/services/api'
+import { localToday } from '@/lib/utils'
 
 /** Build a UserBrief for the currently logged-in user from the persisted
  * auth store (vms-auth) or the SSO handoff blob (portal-auth). Returns
@@ -40,24 +43,6 @@ function currentUserAsHost(): UserBrief | null {
   } catch { return null }
 }
 
-const ACCESS_AREAS: { value: AccessArea; label: string }[] = [
-  { value: 'office',             label: 'Office / Lobby' },
-  { value: 'warehouse',          label: 'Warehouse' },
-  { value: 'production_non_gmp', label: 'Production (Non-GMP)' },
-  { value: 'production_gmp',     label: 'Production (GMP Clean Zone)' },
-  { value: 'laboratory',         label: 'Laboratory' },
-  { value: 'all',                label: 'Entire Plant' },
-]
-
-const PURPOSES: { value: VisitPurpose; label: string }[] = [
-  { value: 'meeting',     label: 'Business Meeting' },
-  { value: 'maintenance', label: 'Equipment Maintenance' },
-  { value: 'tour',        label: 'Factory Tour' },
-  { value: 'audit',       label: 'Audit / Inspection' },
-  { value: 'interview',   label: 'Interview' },
-  { value: 'delivery',    label: 'Delivery' },
-  { value: 'other',       label: 'Other' },
-]
 
 const VISITOR_TYPES: { value: VisitorType; label: string }[] = [
   { value: 'supplier',    label: 'Supplier' },
@@ -167,7 +152,7 @@ export default function VisitCreatePage() {
   // visitor." User can click "Change" to pick someone else.
   const [host, setHost] = useState<UserBrief | null>(() => currentUserAsHost())
 
-  const [visitDate, setVisitDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [visitDate, setVisitDate] = useState(() => localToday())
   const [arrivalTime, setArrivalTime] = useState('09:00')
   const [departureTime, setDepartureTime] = useState('17:00')
   const [purpose, setPurpose] = useState<VisitPurpose>('meeting')
@@ -176,6 +161,8 @@ export default function VisitCreatePage() {
   const [ppeRequest, setPpeRequest] = useState<PpeRequest | null>(null)
 
   const { mutate, isPending, error } = useCreateVisit()
+  const { data: areaRules } = useAreaRules()
+  const areaHint = areaRequirementText(areaRules?.[area])
 
   const isReady = !!visitor && !!host && !!visitDate && !!arrivalTime
 
@@ -265,11 +252,10 @@ export default function VisitCreatePage() {
               </select>
             </Field>
           </div>
-          {(area === 'production_gmp' || area === 'laboratory') && (
+          {areaHint && (
             <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-700">
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              GMP / Lab access requires a health declaration and Quality Manager approval before
-              the badge can print.
+              {areaHint}
             </p>
           )}
         </Section>

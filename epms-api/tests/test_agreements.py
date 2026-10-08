@@ -195,8 +195,11 @@ async def test_patch_agreement_only_in_draft(admin_client, test_engine):
 
 
 async def test_agreement_action_endpoint_delegates(admin_client, test_engine, monkeypatch):
-    vendor_id, _, _ = await seed_vendor_and_user(test_engine)
-    created = (await admin_client.post(AGR_URL, json=_agr_payload(vendor_id))).json()
+    vendor_id, _, user_id = await seed_vendor_and_user(test_engine)
+    # owner_id is load-bearing here, not decoration: submit is refused without
+    # one (see test_submit_without_an_owner_is_refused below).
+    created = (await admin_client.post(
+        AGR_URL, json=_agr_payload(vendor_id, owner_id=str(user_id)))).json()
 
     calls = []
 
@@ -227,9 +230,11 @@ async def test_agreement_action_unknown_id_404(admin_client):
 
 async def test_milestone_agreement_submit_with_zero_stages_is_refused(
         admin_client, test_engine, monkeypatch):
-    vendor_id, _, _ = await seed_vendor_and_user(test_engine)
+    vendor_id, _, user_id = await seed_vendor_and_user(test_engine)
+    # An owner is set so this exercises the stage gate specifically — submit is
+    # refused ahead of it when there is none (test_submit_without_an_owner_...).
     created = (await admin_client.post(AGR_URL, json=_agr_payload(
-        vendor_id, agreement_type="milestone"))).json()
+        vendor_id, agreement_type="milestone", owner_id=str(user_id)))).json()
     assert created["agreement_type"] == "milestone"
 
     calls = []
@@ -251,9 +256,9 @@ async def test_milestone_agreement_submit_with_zero_stages_is_refused(
 
 async def test_milestone_agreement_submit_with_a_stage_delegates_normally(
         admin_client, test_engine, monkeypatch):
-    vendor_id, _, _ = await seed_vendor_and_user(test_engine)
+    vendor_id, _, user_id = await seed_vendor_and_user(test_engine)
     created = (await admin_client.post(AGR_URL, json=_agr_payload(
-        vendor_id, agreement_type="milestone", milestones=[
+        vendor_id, agreement_type="milestone", owner_id=str(user_id), milestones=[
             {"milestone_name": "Deposit on signing", "expected_amount": "1000.00"},
         ]))).json()
 
@@ -282,6 +287,75 @@ async def test_non_submit_action_on_a_zero_stage_milestone_agreement_is_unaffect
 
     async def _fake_delegate(doc_type, doc_id, action, comment, token):
         return {"status": "draft", "step_idx": 0}
+
+    monkeypatch.setattr("app.api.v1.agreements.delegate_action", _fake_delegate)
+
+    r = await admin_client.post(f"{AGR_URL}/{created['id']}/action",
+                                json={"action": "cancel", "comment": None})
+    assert r.status_code == 200, r.text
+
+
+# ── Owner is required to leave draft ──────────────────────────────────────
+# _confirm_assignee (crud/agreement_schedule.py) asks for the owner first when
+# it has to decide who confirms a period; with no owner it falls back to the
+# department's manager, and with neither the task lands on a system_admin-only
+# fallback — a live agreement whose periods only an admin can confirm. owner_id
+# is frozen once the agreement leaves EDITABLE_STATUSES, so submit is the last
+# moment the gap can still be closed.
+
+async def test_submit_without_an_owner_is_refused(admin_client, test_engine, monkeypatch):
+    vendor_id, _, _ = await seed_vendor_and_user(test_engine)
+    created = (await admin_client.post(AGR_URL, json=_agr_payload(vendor_id))).json()
+    assert created["owner_id"] is None
+
+    calls = []
+
+    async def _fake_delegate(doc_type, doc_id, action, comment, token):
+        calls.append((doc_type, doc_id, action))
+        return {"status": "in_review", "step_idx": 1}
+
+    monkeypatch.setattr("app.api.v1.agreements.delegate_action", _fake_delegate)
+
+    r = await admin_client.post(f"{AGR_URL}/{created['id']}/action",
+                                json={"action": "submit", "comment": None})
+    assert r.status_code == 422, r.text
+    assert "Owner" in r.text
+    # Same contract as the milestone gate: refuse before the approval engine is
+    # touched at all, rather than rolling a state change back afterwards.
+    assert calls == []
+
+
+async def test_draft_can_still_be_created_and_saved_without_an_owner(
+        admin_client, test_engine):
+    """The gate is on submit, NOT on AgreementCreate/AgreementUpdate — the
+    create schema is shared with 'Save as draft', and a draft is allowed to be
+    incomplete. Only leaving draft requires an owner."""
+    vendor_id, _, user_id = await seed_vendor_and_user(test_engine)
+    r = await admin_client.post(AGR_URL, json=_agr_payload(vendor_id))
+    assert r.status_code == 201, r.text
+    created = r.json()
+    assert created["owner_id"] is None
+
+    r = await admin_client.patch(f"{AGR_URL}/{created['id']}",
+                                 json={"title": "Renamed while still ownerless"})
+    assert r.status_code == 200, r.text
+
+    # ...and setting one later is what unblocks the submit.
+    r = await admin_client.patch(f"{AGR_URL}/{created['id']}",
+                                 json={"owner_id": str(user_id)})
+    assert r.status_code == 200, r.text
+    assert r.json()["owner_id"] == str(user_id)
+
+
+async def test_non_submit_action_without_an_owner_is_unaffected(
+        admin_client, test_engine, monkeypatch):
+    """Cancelling (or returning) an ownerless draft must stay possible — the
+    gate is specific to action=='submit'."""
+    vendor_id, _, _ = await seed_vendor_and_user(test_engine)
+    created = (await admin_client.post(AGR_URL, json=_agr_payload(vendor_id))).json()
+
+    async def _fake_delegate(doc_type, doc_id, action, comment, token):
+        return {"status": "cancelled", "step_idx": 0}
 
     monkeypatch.setattr("app.api.v1.agreements.delegate_action", _fake_delegate)
 

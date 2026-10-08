@@ -143,7 +143,10 @@ const VMS_DOC_TYPES = new Set(['vms_visit', 'vms_train', 'vms_ppe'])
 function oaPathFor(docType: string): string | null {
   const dt = docType.toLowerCase()
   if (['exp', 'mil', 'trv', 'cfm'].includes(dt) || dt.startsWith('cfm')) return '/expenses'
-  if (dt === 'pa_dir') return '/pa'
+  if (dt === 'tra') return '/travel'
+  // 'pa_dir' deliberately absent: OA's Direct PA is retired and its /pa routes
+  // are gone, so a link there would land on the shell's "No route matched".
+  // Returning null leaves the row unlinked rather than sending someone nowhere.
   return null
 }
 
@@ -275,6 +278,22 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
   gr_damage_report: 'Report Goods Damage',
   approve_budget_plan: 'Approve Budget Plan',
   revise_budget_plan: 'Revise Budget Plan',
+  // Raised by the NC purchase sync for what it could not import (epms-api
+  // services/nc_purchase_sync/error_tasks.py); system_admin only.
+  import_erp_vendor: 'Import ERP Vendor',
+  resolve_nc_sync_error: 'Resolve NC Sync Error',
+  // Standing finance-api tasks whose subject is a set of NC rows, not a
+  // document: services/jv_validation_tasks.py and ap_duplicate_invoice_tasks.py.
+  resolve_jv_validation: 'Resolve JV Validation Findings',
+  resolve_ap_duplicate_invoice: 'Resolve Duplicate NC Invoices',
+}
+
+// finance-api's standing tasks. document_id is the sync RUN that raised them,
+// not a page, so each one opens the Finance page that lists its findings.
+// Without this the DOC_PATH fallback yields EPMS /dashboard/<run-uuid>.
+const FINANCE_TASK_PATH: Record<string, string> = {
+  jv_validation: '/finance/jv-validation',
+  ap_duplicate_invoice: '/finance/ap-duplicate-invoices',
 }
 
 const VMS_DOC_LABELS: Record<string, string> = {
@@ -545,7 +564,21 @@ export default function PortalHome() {
       let module: UnifiedTask['module'] = 'EPMS'
       let base = EPMS_URL
       let path: string
-      if (isVms) {
+      // Set when the destination is a Portal page rather than a module's.
+      let selfHref: string | null = null
+      if (t.document_type === 'nc_sync') {
+        // NC purchase-sync errors. The subject is an NC order that is NOT in
+        // EPMS, so there is nothing to open — link to where the error is fixed:
+        // the vendor registry for a missing ERP supplier, Portal's own NC
+        // Purchase Sync admin panel for everything else. Without this branch
+        // DOC_PATH's fallback yields EPMS /dashboard/<run-uuid>, a dead card.
+        if (t.type === 'import_erp_vendor') {
+          path = '/vendors'
+        } else {
+          path = ''
+          selfHref = '/admin?section=nc_sync'
+        }
+      } else if (isVms) {
         module = 'VMS'; base = VMS_URL
         path = vmsDeeplinkPath(t.document_type, t.document_id)
       } else if (EHS_DOC_TYPES.has(t.document_type.toLowerCase())) {
@@ -556,6 +589,9 @@ export default function PortalHome() {
         // OA-owned doc surfaced via approval-api → deep-link into OA, not EPMS.
         module = 'EXPENSE'; base = OA_URL
         path = `${oaPath}/${t.document_id}`
+      } else if (FINANCE_TASK_PATH[t.document_type]) {
+        base = FINANCE_URL
+        path = FINANCE_TASK_PATH[t.document_type]
       } else if (t.document_type.toLowerCase() === 'budget_plan') {
         // Budget is owned by the Finance module — deep-link into Finance (which
         // wraps the EPMS plan editor in Portal chrome), not bare EPMS.
@@ -568,7 +604,13 @@ export default function PortalHome() {
       // key on the plan id (document_id) — otherwise every cost center's plan
       // collapses into a single row. Other doc types keep numbering by docNumber
       // so an OA claim and its EPMS echo still merge.
-      const dedupKey = t.document_type.toLowerCase() === 'budget_plan'
+      // VMS tasks never echo from the OA feed, and their numbers are not unique
+      // (a visitor's training and PPE tasks share one; two visits by the same
+      // visitor share one) — keying on the number hid real tasks. Key on the
+      // task itself.
+      const dedupKey = isVms
+        ? `vms:${t.id}`
+        : t.document_type.toLowerCase() === 'budget_plan'
         ? `budget_plan:${t.document_id}`
         : t.document_number
       let groupKey: string
@@ -590,7 +632,7 @@ export default function PortalHome() {
         amount: t.amount,
         currency: 'CAD',
         urgent: t.priority === 'urgent',
-        href: withSession(`${base}${path}`),
+        href: selfHref ?? withSession(`${base}${path}`),
         createdAt: t.created_at,
         groupKey,
         groupLabel,

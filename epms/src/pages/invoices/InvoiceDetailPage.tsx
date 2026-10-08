@@ -27,8 +27,6 @@ import { getTaxLines } from '@/services/invoiceTax'
 import { AssignMatchDialog } from './AssignMatchDialog'
 import { MatchPanel } from './MatchPanel'
 
-const MATCH_ROLES = new Set(['system_admin', 'ap_clerk', 'finance_manager', 'finance_bp'])
-
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
@@ -265,7 +263,9 @@ export default function InvoiceDetailPage() {
   const hasInvoiceUpload =
     user?.role === 'system_admin' || !!perms?.invoice_upload
 
-  const isAp = !!user?.role && MATCH_ROLES.has(user.role)
+  // Effective permission (primary ∪ additional roles), same key the backend's
+  // ApDep gates on — a user holding ap_clerk only as an additional role is AP too.
+  const isAp = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
 
   const canDelete =
     hasInvoiceUpload && !!inv && (inv.status === 'unmatched' || inv.status === 'exception')
@@ -1137,11 +1137,21 @@ export default function InvoiceDetailPage() {
                       surrounding isAgreementRoute branch also covers
                       recurring/milestone, which have no receipts at all. */}
                   <InvoiceReceiptsPanel invoice={inv} />
-                  {/* Renders only in the dead end it exists for: matched to a
-                      recurring agreement with no billing period claimed, which
-                      until now could never be paid and could never be fixed
-                      (see the component). */}
-                  <InvoiceBillingPeriodPanel invoice={inv} />
+                  {/* Recurring agreements only (component-internal gate):
+                      assigns a period when the automatic claim could not, and
+                      moves a linked invoice to another period until a PA is
+                      raised on it — same PA rule as Unmatch above. */}
+                  <InvoiceBillingPeriodPanel
+                    invoice={inv}
+                    canChange={canUnmatch}
+                    changeBlockedReason={
+                      inv.status === 'approved' || inv.status === 'paid'
+                        ? `This invoice has already entered payment (status "${inv.status}"), so its billing period is fixed.`
+                        : blockedPa
+                          ? `Payment Application ${blockedPa} already covers this invoice, so its billing period is fixed.`
+                          : null
+                    }
+                  />
                 </div>
               ) : (
                 <>

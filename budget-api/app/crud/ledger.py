@@ -12,7 +12,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.ledger import BudgetLedger
+from app.models.ledger import ACTUAL_OPS, COMMIT_ADDS, COMMIT_RELEASES, BudgetLedger
 from app.schemas.ledger import BookExpenseRequest, CommitRequest, LedgerWriteResponse
 
 
@@ -150,9 +150,9 @@ async def get_committed(
     rows = (await db.execute(q)).scalars().all()
     total = Decimal("0")
     for r in rows:
-        if r.operation == "commit":
+        if r.operation in COMMIT_ADDS:
             total += r.amount
-        elif r.operation in ("release", "actualize"):
+        elif r.operation in COMMIT_RELEASES:
             total -= r.amount
     if total < 0:
         total = Decimal("0")
@@ -171,7 +171,7 @@ async def get_actual_spent(
         BudgetLedger.cost_center_id == cost_center_id,
         BudgetLedger.account_id == account_id,
         BudgetLedger.fiscal_year == fiscal_year,
-        BudgetLedger.operation.in_(["actualize", "book_expense", "opening"]),
+        BudgetLedger.operation.in_(ACTUAL_OPS),
     )
     if month is not None:
         q = q.where(BudgetLedger.month == month)

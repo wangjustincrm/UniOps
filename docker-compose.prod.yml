@@ -42,6 +42,12 @@ services:
     image: ${REGISTRY}/uniops-epms-api:${TAG:-latest}
     build: { context: ., dockerfile: epms-api/Dockerfile }
     environment:
+      # The AI assistant (ask in words, answered from the ontology). Falls back
+      # to the shared key, but should have its own in production: they draw on
+      # the same account quota, and an assistant busy enough to exhaust it would
+      # take expense-api's receipt OCR down with it — which fails as "AI parsing
+      # failed" against the document, blaming the file rather than the quota.
+      ANTHROPIC_API_KEY: ${ASSISTANT_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}
       <<: *db-env
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: "6379"
@@ -198,6 +204,12 @@ services:
       NC_PASSWORD: ${NC65_PASSWORD:-}
       # Where the client reads QBO creds inside the container (see the volume below).
       QBO_CONN_ENV: /run/qbo_conn.env
+      # Bank Reconciliation v2: statement/advice PDFs live in file-api, and the
+      # statement read goes through Claude Haiku. Unset key = PDF import is
+      # unavailable and says so; CSV import is unaffected.
+      FILE_SERVER_URL: ${FILE_SERVER_INTERNAL_URL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      BANK_ANTHROPIC_API_KEY: ${BANK_ANTHROPIC_API_KEY:-}
     ports: ["8004:8004"]
     # QBO credentials for the QuickBooks Sync button. Place qbo_conn.env on the app
     # server and set QBO_CONN_ENV_HOST in the (gitignored) .env to its path;
@@ -259,6 +271,7 @@ services:
       API_V1_PREFIX: /api/v1
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
+      FINANCE_API_URL: http://finance-api:8004
     ports: ["8007:8007"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8007
     healthcheck:
@@ -582,7 +595,8 @@ services:
       start_period: 10s
 
   # ── Edge reverse proxy — DOMAIN mode only (opt-in via `--profile edge`) ───────
-  # Terminates TLS with ./certs/{fullchain,privkey}.pem and routes
+  # Terminates TLS with per-host Let's Encrypt certs that Caddy obtains + renews
+  # itself (TLS-ALPN-01 on 443; stored in the caddy_data volume) and routes
   # <module>.canadaroyalmilk.com / <api>-api.canadaroyalmilk.com to the containers
   # (see Caddyfile). Used with the DOMAIN image set (TAG=<sha>, https URLs baked).
   # For the LAN image set (TAG=<sha>-lan, http://10.10.50.65:<port> baked), DON'T

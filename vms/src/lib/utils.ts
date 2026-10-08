@@ -41,6 +41,15 @@ export function formatDateTime(date: string | Date | null | undefined): string {
   })
 }
 
+/** Today's date as YYYY-MM-DD in the browser's (the plant's) time zone.
+ *  `new Date().toISOString().slice(0, 10)` is the UTC date, which rolls over
+ *  at 20:00 EDT / 19:00 EST — "Today's Visits" then showed tomorrow and New
+ *  Visit defaulted to tomorrow's date. */
+export function localToday(d: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
 /** Format an ISO timestamp as relative time. */
 export function timeAgo(iso: string | null | undefined): string {
   if (!iso) return '—'

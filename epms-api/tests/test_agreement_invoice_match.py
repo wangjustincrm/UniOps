@@ -80,14 +80,14 @@ async def _make_active_agreement(test_engine, vendor_id, created_by, **over):
         return agr
 
 
-async def _upload_invoice(client, vendor_id, amount="1000.00"):
+async def _upload_invoice(client, vendor_id, amount="1000.00", invoice_date="2026-07-31"):
     r = await client.post(INV_URL, json={
         "vendor_id": str(vendor_id),
         "vendor_invoice_number": f"STMT-{uuid.uuid4().hex[:6]}",
         "amount": amount,
         "tax_amount": "0.00",
         "currency": "CAD",
-        "invoice_date": "2026-07-31",
+        "invoice_date": invoice_date,
         "due_date": "2026-08-30",
         "line_items": [{"description": "Monthly statement", "quantity": "1",
                         "unit_price": amount, "line_total": amount}],

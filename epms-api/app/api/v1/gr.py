@@ -15,6 +15,7 @@ from app.core.access_scope import build_scope
 from app.crud import gr as gr_crud
 from app.crud import gr_report as gr_report_crud
 from app.crud import po as po_crud
+from app.crud.pr_owner import get_pr_owner_id
 from app.models.task import Task
 from app.schemas.gr import GrActionRequest, GrCreate, GrListResponse, GrResponse, is_service
 from app.schemas.gr_report import (
@@ -70,17 +71,31 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
     can_receive = await has_permission(
         db, uuid.UUID(user["sub"]), user.get("role", ""), "epms.gr.receive")
 
-    # Service/Project POs (type 4, 6): requester can confirm delivery; PO must be approved+
+    # Service/Project POs (type 4, 6): the linked PR's OWNER *or* its requester
+    # can confirm delivery; PO must be approved+.
     # Physical POs: warehouse permission only; PO must be issued/partially_received
     #
-    # "Requester" here means the creator of the PR linked to this PO — NOT a generic
-    # 'requester' JWT role, and NOT the PO creator (POs are raised by procurement
-    # staff). A service/project PO with no linked PR has no requester, so only
-    # the warehouse permission admits its GR.
+    # Neither identity is a generic 'requester' JWT role, and neither is the PO
+    # creator (POs are raised by procurement staff). The OWNER arm is what makes
+    # the completion-date nudge actionable: that task is routed to the owner
+    # (crud.pr_owner — the one definition both sides read) and its deep link
+    # goes straight to /gr/new?poId=, so an owner this gate refused would be
+    # emailed into a 403.
+    #
+    # The requester arm is kept as a UNION, not replaced: naming an owner adds a
+    # second person who can confirm, it does not strip the ability from whoever
+    # raised the requisition — an admin who raised a service PR for an absent
+    # engineer still has to be able to receive it. The two ids are identical
+    # whenever no owner was named.
+    #
+    # A service/project PO with no linked PR has neither, so only the warehouse
+    # permission admits its GR.
     if is_service_po:
         pr_requester_id = await gr_crud.get_pr_requester_id(db, po.pr_id)
-        is_pr_requester = pr_requester_id is not None and pr_requester_id == uuid.UUID(user["sub"])
-        if not can_receive and not is_pr_requester:
+        pr_owner_id = await get_pr_owner_id(db, po.pr_id)
+        actor_id = uuid.UUID(user["sub"])
+        may_confirm = actor_id in {i for i in (pr_requester_id, pr_owner_id) if i}
+        if not can_receive and not may_confirm:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         if po.status not in ("approved", "issued", "partially_received"):
             raise HTTPException(

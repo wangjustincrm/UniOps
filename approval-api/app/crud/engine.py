@@ -4,6 +4,7 @@ Supports action keys: pr, po, agr, pa, pa_dir, exp, mil, trv, tra, cfm, cfm_<cod
 Each action key binds to a configurable workflow stored in CompanyConfig.workflow_defs.
 """
 import uuid
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -11,9 +12,10 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.delegation import active_delegator_ids
-from app.crud.workflow import (get_dept_director_mapping, get_dept_gm_opm_mapping,
-                                get_dept_supervisor_enabled, get_role_management,
-                                post_holder_ids)
+from app.crud.workflow import (get_approval_setting, get_dept_director_mapping,
+                                get_dept_gm_opm_mapping, get_dept_supervisor_enabled,
+                                get_role_management, pa_department_ids, post_holder_ids)
+from app.models.routing import CROSS_DEPT_GM_OR_OPM
 from app.models.agreement import PurchaseAgreement
 from app.models.budget_plan import BudgetPlan
 from app.models.config import CompanyConfig
@@ -50,7 +52,11 @@ def _set_status(meta: dict, doc: Any, value: str) -> None:
 # belongs to the PO's own approval chain and must not be touched). Default is
 # "approval_step_idx", so every existing doc_type is unchanged.
 def _step_of(meta: dict, doc: Any) -> int:
-    return getattr(doc, meta.get("step_attr", "approval_step_idx"))
+    # NULL = never submitted = step 0. vms_visits.approval_step_idx is nullable
+    # with no default, and since execute_action started reading the step before
+    # branching on the action (e9f39159), a NULL here raised TypeError on every
+    # VMS submit — which vms-api then turned into "confirmed without approval".
+    return getattr(doc, meta.get("step_attr", "approval_step_idx")) or 0
 
 
 def _set_step(meta: dict, doc: Any, value: int) -> None:
@@ -200,10 +206,17 @@ _DOC_META: dict[str, dict] = {
         "task_approve": "approve_vms_visit",
         "task_revise":  "revise_vms_visit",
         "status_attr":  "approval_status",
-        "valid_submit":  ("draft",),
+        # `returned` belongs in both, as for every other doc_type: a visit sent
+        # back for edit is resubmitted (vms-api POST /visits/{id}/submit) or
+        # cancelled by its creator. Without it a returned visit could do
+        # neither — it sat in Pending Approval and its revise task never closed.
+        "valid_submit":  ("draft", "returned"),
         "valid_approve": ("submitted", "in_review"),
         "valid_return":  ("submitted", "in_review"),
-        "valid_cancel":  ("draft", "submitted", "in_review"),
+        "valid_cancel":  ("draft", "returned", "submitted", "in_review"),
+        # Task titles read "Approve visitor visit: <visit_title> — <area, date>".
+        # Without labels the doc label fell back to "VMS_VISIT".
+        "labels": {"doc": "visitor visit", "revise": "visitor visit"},
     },
     # ── budget-api plans ──────────────────────────────────────────────────────
     "budget_plan": {
@@ -372,6 +385,7 @@ def _build_role_map(rm: dict, dept_gm_opm: dict, department_id: uuid.UUID | None
         "finance_manager": _uid("finance_manager_user_id"),
         "procurement_manager": _uid("procurement_manager_user_id"),
         "vendor_manager": _uid("vendor_manager_user_id"),
+        "finance_director": _uid("finance_director_user_id"),
     }
 
     # gm_or_opm resolves via dept mapping
@@ -397,6 +411,7 @@ async def _actor_is_step_holder(
     doc: Any | None = None,
     director_uid: uuid.UUID | None = None,
     supervisor_uid: uuid.UUID | None = None,
+    cross_dept_pa: bool = False,
 ) -> bool:
     """Is this actor, in their OWN right, a holder of `step_role` for this document?
 
@@ -433,7 +448,8 @@ async def _actor_is_step_holder(
         # A post can legitimately have >1 holder (e.g. a Department Manager who
         # ALSO holds GM via an additional user_roles role); the broadcast approve
         # task is visible to all of them, so all of them must be able to act.
-        resolved_role, resolved_user_id = await _resolve_gm_or_opm(db, routing_dept_id, rm, dept_gm_opm)
+        resolved_role, resolved_user_id = await _resolve_gm_or_opm(
+            db, routing_dept_id, rm, dept_gm_opm, cross_dept_pa)
         if resolved_user_id is not None and actor_id == resolved_user_id:
             return True
         return actor_id in await post_holder_ids(db, resolved_role)
@@ -444,9 +460,9 @@ async def _actor_is_step_holder(
         return director_uid is not None and actor_id == director_uid
     if step_role == "supervisor":
         return supervisor_uid is not None and actor_id == supervisor_uid
-    # Named post role (gm/opm/finance_manager/procurement_manager/vendor_manager
-    # as a direct step): membership in the holder set, not equality to the
-    # single collapsed rm['<role>_user_id'].
+    # Named post role (gm/opm/finance_manager/procurement_manager/vendor_manager/
+    # finance_director as a direct step): membership in the holder set, not
+    # equality to the single collapsed rm['<role>_user_id'].
     return actor_id in await post_holder_ids(db, step_role)
 
 
@@ -463,6 +479,7 @@ async def _actor_can_approve(
     director_uid: uuid.UUID | None = None,
     supervisor_uid: uuid.UUID | None = None,
     today: date | None = None,
+    cross_dept_pa: bool = False,
 ) -> bool:
     """Return True if the actor is authorized to approve the current workflow step.
 
@@ -483,7 +500,7 @@ async def _actor_can_approve(
         return True
     if await _actor_is_step_holder(
         db, step_role, actor_id, routing_dept_id, rm, dept_gm_opm,
-        finance_bp_ids, doc, director_uid, supervisor_uid,
+        finance_bp_ids, doc, director_uid, supervisor_uid, cross_dept_pa,
     ):
         return True
     # Delegation: act for anyone who has named this actor their stand-in today.
@@ -493,7 +510,7 @@ async def _actor_can_approve(
     for delegator_id in await active_delegator_ids(db, actor_id, today=today):
         if await _actor_is_step_holder(
             db, step_role, delegator_id, routing_dept_id, rm, dept_gm_opm,
-            finance_bp_ids, doc, director_uid, supervisor_uid,
+            finance_bp_ids, doc, director_uid, supervisor_uid, cross_dept_pa,
         ):
             return True
     # Fallback: actor's own JWT role must match the step role. Only reachable
@@ -517,6 +534,7 @@ async def _acting_on_behalf_of(
     director_uid: uuid.UUID | None = None,
     supervisor_uid: uuid.UUID | None = None,
     today: date | None = None,
+    cross_dept_pa: bool = False,
 ) -> uuid.UUID | None:
     """The delegator whose identity the actor borrowed, or None when the actor
     holds this step in their own right.
@@ -527,13 +545,13 @@ async def _acting_on_behalf_of(
     """
     if await _actor_is_step_holder(
         db, step_role, actor_id, routing_dept_id, rm, dept_gm_opm,
-        finance_bp_ids, doc, director_uid, supervisor_uid,
+        finance_bp_ids, doc, director_uid, supervisor_uid, cross_dept_pa,
     ):
         return None
     for delegator_id in sorted(await active_delegator_ids(db, actor_id, today=today)):
         if await _actor_is_step_holder(
             db, step_role, delegator_id, routing_dept_id, rm, dept_gm_opm,
-            finance_bp_ids, doc, director_uid, supervisor_uid,
+            finance_bp_ids, doc, director_uid, supervisor_uid, cross_dept_pa,
         ):
             return delegator_id
     return None
@@ -555,14 +573,44 @@ async def _complete_tasks(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) ->
         task.completed_at = now
 
 
+async def _is_cross_department_pa(db: AsyncSession, doc_type: str, doc: Any) -> bool:
+    """Does this payment application spend against more than one department?
+
+    Only PAs can: every other document type descends from a single PR. A PA may
+    settle several purchase orders, and a vendor's one invoice covers whatever
+    it covers — it has no idea where the department boundaries are, which is
+    precisely why the payment cannot be split along them.
+
+    When true, the department-scoped steps step aside and the GM/OPM step is
+    resolved from an engine-wide setting instead (see _should_skip_step and
+    _resolve_gm_or_opm).
+    """
+    if doc_type != "pa":
+        return False
+    return len(await pa_department_ids(db, doc.id)) > 1
+
+
 async def _resolve_gm_or_opm(
     db: AsyncSession,
     dept_id: uuid.UUID | None,
     rm: dict,
     dept_gm_opm: dict,
+    cross_dept_pa: bool = False,
 ) -> tuple[str, uuid.UUID | None]:
-    """Return (resolved_role, user_id) for a gm_or_opm step based on dept mapping."""
-    resolved_role = dept_gm_opm.get(str(dept_id), "gm") if dept_id else "gm"
+    """Return (resolved_role, user_id) for a gm_or_opm step.
+
+    Normally the department decides (`approval_dept_routing.gm_or_opm`). A
+    payment spanning several departments has no such answer — one of its
+    departments may route to GM and another to OPM, and there is no principled
+    way to choose between them — so an engine-wide setting names the post that
+    approves those. Configured in Approval Routing; defaults to GM.
+    """
+    if cross_dept_pa:
+        resolved_role = await get_approval_setting(db, CROSS_DEPT_GM_OR_OPM, "gm")
+        if resolved_role not in ("gm", "opm"):
+            resolved_role = "gm"
+    else:
+        resolved_role = dept_gm_opm.get(str(dept_id), "gm") if dept_id else "gm"
     uid_str = rm.get(f"{resolved_role}_user_id")
     return resolved_role, (uuid.UUID(uid_str) if uid_str else None)
 
@@ -646,8 +694,10 @@ async def _routing_department_id(
     db: AsyncSession, doc_type: str, doc: Any, routing_uid: uuid.UUID,
 ) -> uuid.UUID | None:
     """Department that drives dept-based approval routing (dept_manager /
-    gm_or_opm / director). Prefer the department explicitly selected on the
-    originating PR; fall back to the routing user's own department (legacy)."""
+    gm_or_opm / director). Prefer the department the DOCUMENT names — the one
+    filled in on the agreement (for an agreement and for a PA raised against
+    one), else the one selected on the originating PR; fall back to the routing
+    user's own department (legacy)."""
     # 协议自带 department_id(建档时选定),没有 PR 可追溯 —— 直接用它。
     # 必须与可见性口径一致:epms-api 的 PA 列表按 PurchaseAgreement.department_id
     # 收窄(crud/pa.py)。若这里改用提交人部门,受限审批人会收到任务却在列表里
@@ -657,6 +707,21 @@ async def _routing_department_id(
         dept = getattr(doc, "department_id", None)
         if dept:
             return dept
+
+    # 协议关联的 PA 同理:它没有 PO、也没有 PR(epms-api crud/pa.py 的协议路径
+    # po_links 为空 → po_id 为 NULL),原本只能退回"建单人的部门",于是部门经理
+    # 那步落到了协议 Owner / AP 代建人所在部门的经理身上,而不是协议上填的部门。
+    # 口径与协议本身(上面的 "agr" 分支)以及可见性(epms-api crud/pa.py::get_all
+    # 按 PurchaseAgreement.department_id 收窄 PA 列表)保持一致。
+    if doc_type in ("pa", "pa_dir"):
+        agr_id = getattr(doc, "agreement_id", None)
+        if agr_id:
+            dept = (await db.execute(
+                select(PurchaseAgreement.department_id)
+                .where(PurchaseAgreement.id == agr_id)
+            )).scalar_one_or_none()
+            if dept:
+                return dept
 
     pr_id = None
     if doc_type == "pr":
@@ -701,19 +766,71 @@ async def _cc_label_for_plan(db: AsyncSession, doc: Any, fallback: str | None) -
     return f"{code} — {name}" if name else (code or fallback)
 
 
-async def _create_approve_task(
+MSG_BUDGET_HARD_BLOCK = (
+    "This PR exceeds the available budget for its account. "
+    "Submission is blocked by Budget Config (hard_block mode). "
+    "Reduce the budget code's commitment or split the PR into smaller items."
+)
+
+
+def msg_cannot_submit(doc_type: str, status: str) -> str:
+    return f"Cannot submit {doc_type.upper()} in status '{status}'"
+
+
+def first_actionable_step(
+    doc_type: str,
+    doc: Any,
+    workflow: list[dict],
+    director_uid: uuid.UUID | None,
+    supervisor_uid: uuid.UUID | None,
+    dept_has_director: bool,
+    dept_has_supervisor: bool,
+    cross_dept_pa: bool,
+) -> tuple[int, list[tuple[int, str, str]]]:
+    """Walk the auto-skipped prefix and return where the document actually lands.
+
+    Returns (start, skipped) where skipped is [(step_idx, role, reason)] — the
+    caller decides what to do with those (execution records an ApprovalEvent per
+    skip; a dry run just reports them). Pure: no writes, so both can share it.
+    """
+    skipped: list[tuple[int, str, str]] = []
+    start = 0
+    while start < len(workflow):
+        role = workflow[start]["role"]
+        skip, reason = _should_skip_step(role, doc_type, doc, director_uid,
+                                         supervisor_uid, dept_has_director,
+                                         dept_has_supervisor, cross_dept_pa)
+        if not skip:
+            break
+        skipped.append((start, role, reason))
+        start += 1
+    return start, skipped
+
+
+async def resolve_step_assignment(
     db: AsyncSession,
     doc_type: str,
     doc: Any,
     step: int,
     workflow: list[dict],
-    meta: dict,
     rm: dict,
     dept_gm_opm: dict,
     routing_dept_id: uuid.UUID | None = None,
     director_uid: uuid.UUID | None = None,
     supervisor_uid: uuid.UUID | None = None,
-) -> None:
+    cross_dept_pa: bool = False,
+) -> tuple[uuid.UUID | None, str]:
+    """Who this step goes to: (assigned_user_id, assigned_role).
+
+    A None user id means the task is BROADCAST to holders of assigned_role —
+    that is deliberate for singleton posts, not a missing value. Raises
+    ValueError when the step cannot be routed at all.
+
+    Split out of _create_approve_task so a dry run can ask "would this route?"
+    without creating anything. Both callers share this one implementation on
+    purpose: a preflight that answered from its own copy of these rules would
+    start disagreeing with what submission actually does.
+    """
     wf = workflow[step]
     role = wf["role"]
     assigned_user_id: uuid.UUID | None = None
@@ -730,11 +847,16 @@ async def _create_approve_task(
         # _actor_can_approve would let none of them act (PR-20260620-0001). Fail
         # loudly so the document stays put until the department is configured.
         if assigned_user_id is None:
+            # Which department the router landed on depends on the document —
+            # the agreement's own (agreement, agreement-sourced PA), the one
+            # selected on the PR, else the submitter's. Naming it "the
+            # requester's" sent people to the wrong department's page.
             raise ValueError(
                 "Cannot route approval: no active Department Manager is configured "
-                "for the requester's department. Assign a Department Manager to that "
-                "department (Admin → Departments / Users) before this document can "
-                "be submitted."
+                "for this document's department (the department named on the "
+                "agreement or the PR, falling back to the submitter's own). Assign "
+                "a Department Manager to that department (Admin → Departments / "
+                "Users) before this document can be submitted."
             )
     elif role == "gm_or_opm":
         # GM vs OPM is decided by the routing department (PR's selected
@@ -745,7 +867,8 @@ async def _create_approve_task(
         # holder-at-creation-time would orphan it when the post is reassigned
         # (prod incident: PO stuck on the previous OPM). Same treatment as the
         # other singleton posts (finance_manager / procurement_manager / …).
-        assigned_role, _ = await _resolve_gm_or_opm(db, routing_dept_id, rm, dept_gm_opm)
+        assigned_role, _ = await _resolve_gm_or_opm(
+            db, routing_dept_id, rm, dept_gm_opm, cross_dept_pa)
     elif role == "director":
         assigned_user_id = director_uid
     elif role == "supervisor":
@@ -754,6 +877,29 @@ async def _create_approve_task(
         # VMS-local: vms-api pre-selected the QM and stored on the visit.
         # See S2_ARCHITECTURE_REVIEW.md F2.
         assigned_user_id = getattr(doc, "quality_approver_id", None)
+
+    return assigned_user_id, assigned_role
+
+
+async def _create_approve_task(
+    db: AsyncSession,
+    doc_type: str,
+    doc: Any,
+    step: int,
+    workflow: list[dict],
+    meta: dict,
+    rm: dict,
+    dept_gm_opm: dict,
+    routing_dept_id: uuid.UUID | None = None,
+    director_uid: uuid.UUID | None = None,
+    supervisor_uid: uuid.UUID | None = None,
+    cross_dept_pa: bool = False,
+) -> None:
+    wf = workflow[step]
+    assigned_user_id, assigned_role = await resolve_step_assignment(
+        db, doc_type, doc, step, workflow, rm, dept_gm_opm,
+        routing_dept_id=routing_dept_id, director_uid=director_uid,
+        supervisor_uid=supervisor_uid, cross_dept_pa=cross_dept_pa)
 
     doc_number = getattr(doc, meta["number_attr"])
     amount = getattr(doc, meta["amount_attr"], None) if meta.get("amount_attr") else None
@@ -826,6 +972,29 @@ async def _create_revise_task(db: AsyncSession, doc_type: str, doc: Any, meta: d
 
 # ── Post-approve side effects ─────────────────────────────────────────────────
 
+async def _po_requester_id(db: AsyncSession, po: PurchaseOrder) -> uuid.UUID:
+    """Resolve the ONE person who owns a PO's requester-side task.
+
+    Never returns None. 'requester' is not a role pool: epms-api's notifier
+    treats assigned_user_id=None + assigned_role="requester" as nobody to
+    notify, suppresses the email fan-out and alerts the admins instead — while
+    the Task Inbox still shows the task to every Requester in the company. So a
+    NULL here costs an admin alert AND a company-wide broadcast, not just a
+    missing email.
+    PR creator → PO sign-off submitter → PO creator.
+    """
+    if po.pr_id:
+        requester_id = (await db.execute(
+            select(PurchaseRequest.created_by).where(PurchaseRequest.id == po.pr_id)
+        )).scalar_one_or_none()
+        if requester_id:
+            return requester_id
+    # An NC-imported PO's created_by is the nc-sync service account, whose inbox
+    # nobody opens — prefer whoever actually submitted it for sign-off (the same
+    # reasoning _create_revise_task's revise_assignee_attr already applies).
+    return po.signoff_submitted_by or po.created_by
+
+
 async def _post_approve_pr(db: AsyncSession, pr: PurchaseRequest) -> None:
     db.add(Task(
         type="create_po",
@@ -856,7 +1025,6 @@ async def _post_approve_po(db: AsyncSession, po: PurchaseOrder) -> None:
     ))
 
     if po.is_prepaid:
-        # Broadcast to all requesters — any requester can create the Prepayment PA.
         db.add(Task(
             type="create_prepayment_pa",
             priority="normal",
@@ -864,7 +1032,7 @@ async def _post_approve_po(db: AsyncSession, po: PurchaseOrder) -> None:
             document_id=po.id,
             document_number=po.number,
             assigned_role="requester",
-            assigned_user_id=None,
+            assigned_user_id=await _po_requester_id(db, po),
             title=f"Create Prepayment PA: {po.number} — {po.title}",
             description=(
                 f"PO {po.number} has been approved and requires an advance payment. "
@@ -1005,8 +1173,41 @@ _POST_APPROVE: dict[str, Any] = {
 
 # ── Conditional per-document step skipping ────────────────────────────────────
 
+# Which steps are conditional, and what the condition is, in words.
+#
+# The workflow definition does not carry this — a step is skipped or not by the
+# rules in _should_skip_step below, at runtime, per document. Anything
+# describing the process to a person has to say so, or it will state that every
+# step always happens: the assistant told a requester that a PR needs both a
+# department manager AND a director, when most departments have no director and
+# that step never runs for them.
+#
+# Kept next to the rules it describes, and test_workflow_conditional_roles
+# asserts the two do not drift apart.
+CONDITIONAL_ROLES: dict[str, str] = {
+    "director": "Only runs when the department has a Director configured.",
+    "supervisor": "Only runs when a Supervisor is assigned.",
+    "quality_manager": ("Only runs when the visitor's access area requires "
+                        "Quality Manager review."),
+}
+
+
 def _should_skip_step(role, doc_type, doc, director_uid, supervisor_uid,
-                      dept_has_director, dept_has_supervisor):
+                      dept_has_director, dept_has_supervisor,
+                      cross_dept_pa=False):
+    # A payment covering purchase orders from several departments has no single
+    # department manager or director to route to — and picking the primary PO's
+    # would put one department's approver in charge of another department's
+    # spend without the other ever seeing it. Both levels step aside and the
+    # GM/OPM step (resolved from the engine-wide setting rather than from a
+    # department, see _resolve_gm_or_opm) approves for all of them.
+    #
+    # Skipped, not removed: the step stays in the workflow and the timeline
+    # renders it struck through with this reason, so the approval history shows
+    # that the level was consciously bypassed rather than never existing.
+    if cross_dept_pa and role in ("dept_manager", "director"):
+        return True, ("Auto-skipped (payment covers purchase orders from several "
+                      "departments — approved at GM/OPM level instead)")
     if role == "quality_manager" and doc_type == "vms_visit":
         if getattr(doc, "quality_approver_id", None) is None:
             return True, "Auto-skipped (access area does not require Quality Manager review)"
@@ -1023,16 +1224,35 @@ def _should_skip_step(role, doc_type, doc, director_uid, supervisor_uid,
 
 # ── Main execution entry point ────────────────────────────────────────────────
 
-async def execute_action(
-    db: AsyncSession,
-    doc_type: str,
-    doc_id: uuid.UUID,
-    action: str,
-    actor_id: uuid.UUID,
-    actor_role: str,
-    comment: str | None = None,
-    today: date | None = None,
-) -> ActionResult:
+@dataclass
+class ActionContext:
+    """Everything an action needs to know about a document before deciding.
+
+    Assembled by read-only queries, so a dry run can build the same context an
+    execution would and reach the same conclusions without writing anything.
+    That is the whole point: `preflight` and `execute_action` must not answer
+    "can this be submitted" from two different pictures of the world.
+    """
+    meta: dict
+    doc: Any
+    step: int
+    cfg: Any
+    rm: dict
+    dept_gm_opm: dict
+    routing_uid: uuid.UUID | None
+    routing_dept_id: uuid.UUID | None
+    cross_dept_pa: bool
+    director_uid: uuid.UUID | None
+    supervisor_uid: uuid.UUID | None
+    dept_has_director: bool
+    dept_has_supervisor: bool
+    workflow: list[dict]
+    over_budget_mode: str
+
+
+async def load_action_context(db: AsyncSession, doc_type: str,
+                              doc_id: uuid.UUID) -> ActionContext:
+    """Read-only. Raises LookupError when the document does not exist."""
     meta = _resolve_meta(doc_type)
     Model = meta["model"]
 
@@ -1041,9 +1261,6 @@ async def execute_action(
     if doc is None:
         raise LookupError(f"{doc_type.upper()} {doc_id} not found")
 
-    act = action.lower()
-    now = datetime.now(timezone.utc)
-    step = _step_of(meta, doc)
     cfg = await _get_config(db)
     rm = await get_role_management(db)
     dept_gm_opm = await get_dept_gm_opm_mapping(db)
@@ -1056,6 +1273,7 @@ async def execute_action(
     # department — see _resolve_supervisor.
     routing_uid = await _routing_user_id(db, doc_type, doc)
     routing_dept_id = await _routing_department_id(db, doc_type, doc, routing_uid)
+    cross_dept_pa = await _is_cross_department_pa(db, doc_type, doc)
 
     dept_director = await get_dept_director_mapping(db)
     dept_supervisor = await get_dept_supervisor_enabled(db)
@@ -1074,6 +1292,123 @@ async def execute_action(
         over_budget_mode = ((cfg.budget_admin_config if cfg else None) or {}).get(
             "over_budget_mode", "fm_gm_opm")
 
+    return ActionContext(
+        meta=meta, doc=doc, step=_step_of(meta, doc), cfg=cfg, rm=rm,
+        dept_gm_opm=dept_gm_opm, routing_uid=routing_uid,
+        routing_dept_id=routing_dept_id, cross_dept_pa=cross_dept_pa,
+        director_uid=director_uid, supervisor_uid=supervisor_uid,
+        dept_has_director=dept_has_director, dept_has_supervisor=dept_has_supervisor,
+        workflow=workflow, over_budget_mode=over_budget_mode,
+    )
+
+
+@dataclass
+class Check:
+    """One gate, and what the person on the other end can do about it.
+
+    `fixable_by_user` is the field the assistant actually speaks from: it decides
+    between "go add a vendor" and "this isn't yours to fix — ask an admin".
+    `owner` names who it belongs to when it isn't the user.
+    """
+    id: str
+    layer: str            # rule | config   (field-level gates live in epms-api)
+    passed: bool
+    message: str | None = None
+    fixable_by_user: bool = True
+    owner: str | None = None
+
+
+async def preflight_submit(db: AsyncSession, doc_type: str,
+                           doc_id: uuid.UUID) -> list[Check]:
+    """Every gate `submit` would hit, evaluated without writing anything.
+
+    Execution stops at the first failure — that is right for execution, wrong
+    here. Someone who adds the missing vendor only to hit an unconfigured
+    approver, then a budget block, has been sent around three times for what
+    could have been one message. So this runs them all.
+
+    Each gate calls the same helper execution calls, and reports the same
+    string, so the two cannot drift apart.
+    """
+    ctx = await load_action_context(db, doc_type, doc_id)
+    checks: list[Check] = []
+
+    status = _status_of(ctx.meta, ctx.doc)
+    status_ok = status in ctx.meta["valid_submit"]
+    checks.append(Check(
+        id="status_allows_submit", layer="rule", passed=status_ok,
+        message=None if status_ok else msg_cannot_submit(doc_type, status),
+        # Already-submitted is the common case here; there is nothing to "fix",
+        # the document has simply moved on.
+        fixable_by_user=False,
+    ))
+
+    if doc_type == "pr":
+        blocked = ctx.over_budget_mode == "hard_block"
+        checks.append(Check(
+            id="budget_hard_block", layer="rule", passed=not blocked,
+            message=MSG_BUDGET_HARD_BLOCK if blocked else None,
+            fixable_by_user=True,
+        ))
+
+    # Routing is evaluated even when an earlier gate already failed — an
+    # unconfigured department manager is exactly the kind of thing worth knowing
+    # about before you go fix something else and come back.
+    start, _skipped = first_actionable_step(
+        doc_type, ctx.doc, ctx.workflow, ctx.director_uid, ctx.supervisor_uid,
+        ctx.dept_has_director, ctx.dept_has_supervisor, ctx.cross_dept_pa)
+    if start >= len(ctx.workflow):
+        # Whole workflow auto-skips: submission goes straight to approved.
+        checks.append(Check(id="approver_routing", layer="config", passed=True))
+    else:
+        try:
+            await resolve_step_assignment(
+                db, doc_type, ctx.doc, start, ctx.workflow, ctx.rm, ctx.dept_gm_opm,
+                routing_dept_id=ctx.routing_dept_id, director_uid=ctx.director_uid,
+                supervisor_uid=ctx.supervisor_uid, cross_dept_pa=ctx.cross_dept_pa)
+            checks.append(Check(id="approver_routing", layer="config", passed=True))
+        except ValueError as exc:
+            checks.append(Check(
+                id="approver_routing", layer="config", passed=False,
+                message=str(exc),
+                # Nobody can self-serve their way out of a department with no
+                # manager assigned.
+                fixable_by_user=False, owner="admin",
+            ))
+
+    return checks
+
+
+async def execute_action(
+    db: AsyncSession,
+    doc_type: str,
+    doc_id: uuid.UUID,
+    action: str,
+    actor_id: uuid.UUID,
+    actor_role: str,
+    comment: str | None = None,
+    today: date | None = None,
+) -> ActionResult:
+    ctx = await load_action_context(db, doc_type, doc_id)
+    meta = ctx.meta
+    doc = ctx.doc
+    step = ctx.step
+    cfg = ctx.cfg
+    rm = ctx.rm
+    dept_gm_opm = ctx.dept_gm_opm
+    routing_uid = ctx.routing_uid
+    routing_dept_id = ctx.routing_dept_id
+    cross_dept_pa = ctx.cross_dept_pa
+    director_uid = ctx.director_uid
+    supervisor_uid = ctx.supervisor_uid
+    dept_has_director = ctx.dept_has_director
+    dept_has_supervisor = ctx.dept_has_supervisor
+    workflow = ctx.workflow
+    over_budget_mode = ctx.over_budget_mode
+
+    act = action.lower()
+    now = datetime.now(timezone.utc)
+
     doc_number = getattr(doc, meta["number_attr"])
     recorded_role = actor_role
     auto_skipped: list[int] = []
@@ -1086,37 +1421,29 @@ async def execute_action(
 
     if act == "submit":
         if _status_of(meta, doc) not in meta["valid_submit"]:
-            raise ValueError(f"Cannot submit {doc_type.upper()} in status '{_status_of(meta, doc)}'")
+            raise ValueError(msg_cannot_submit(doc_type, _status_of(meta, doc)))
         # hard_block: refuse over-budget PR submission outright (PRD OBG / Budget Config)
         if doc_type == "pr" and over_budget_mode == "hard_block":
-            raise ValueError(
-                "This PR exceeds the available budget for its account. "
-                "Submission is blocked by Budget Config (hard_block mode). "
-                "Reduce the budget code's commitment or split the PR into smaller items."
-            )
+            raise ValueError(MSG_BUDGET_HARD_BLOCK)
         _set_status(meta, doc, "submitted")
         if hasattr(doc, "submitted_at"):
             doc.submitted_at = now
-        start = 0
-        while start < len(workflow):
-            role = workflow[start]["role"]
-            skip, reason = _should_skip_step(role, doc_type, doc, director_uid,
-                                             supervisor_uid, dept_has_director, dept_has_supervisor)
-            if not skip:
-                break
+        start, skipped_prefix = first_actionable_step(
+            doc_type, doc, workflow, director_uid, supervisor_uid,
+            dept_has_director, dept_has_supervisor, cross_dept_pa)
+        for idx, skipped_role, reason in skipped_prefix:
             db.add(ApprovalEvent(
                 document_type=doc_type, document_id=doc.id, document_number=doc_number,
-                step_idx=start, action="approve", actor_id=actor_id,
-                actor_role=role, comment=reason,
+                step_idx=idx, action="approve", actor_id=actor_id,
+                actor_role=skipped_role, comment=reason,
             ))
-            auto_skipped.append(start)
-            start += 1
+            auto_skipped.append(idx)
         _set_step(meta, doc, start)
         if start < len(workflow):
             await _create_approve_task(db, doc_type, doc, step=start, workflow=workflow,
                                        meta=meta, rm=rm, dept_gm_opm=dept_gm_opm,
                                        routing_dept_id=routing_dept_id, director_uid=director_uid,
-                                       supervisor_uid=supervisor_uid)
+                                       supervisor_uid=supervisor_uid, cross_dept_pa=cross_dept_pa)
         else:
             # Workflow fully auto-skipped at submit → straight to approved.
             _set_status(meta, doc, "approved")
@@ -1132,7 +1459,7 @@ async def execute_action(
             db, current_step_role, actor_id, actor_role,
             routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
             doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
-            today=today,
+            today=today, cross_dept_pa=cross_dept_pa,
         )
         if not authorized:
             raise ValueError(
@@ -1155,7 +1482,7 @@ async def execute_action(
             # check so non-GMP visits don't even check who holds the QM role.
             cond_skip, reason = _should_skip_step(
                 next_role, doc_type, doc, director_uid, supervisor_uid,
-                dept_has_director, dept_has_supervisor)
+                dept_has_director, dept_has_supervisor, cross_dept_pa)
             if cond_skip:
                 db.add(ApprovalEvent(
                     document_type=doc_type, document_id=doc.id, document_number=doc_number,
@@ -1187,7 +1514,7 @@ async def execute_action(
         if next_step < len(workflow):
             _set_step(meta, doc, next_step)
             _set_status(meta, doc, "in_review")
-            await _create_approve_task(db, doc_type, doc, step=next_step, workflow=workflow, meta=meta, rm=rm, dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id, director_uid=director_uid, supervisor_uid=supervisor_uid)
+            await _create_approve_task(db, doc_type, doc, step=next_step, workflow=workflow, meta=meta, rm=rm, dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id, director_uid=director_uid, supervisor_uid=supervisor_uid, cross_dept_pa=cross_dept_pa)
         else:
             _set_status(meta, doc, "approved")
             if hasattr(doc, "approved_at"):
@@ -1201,6 +1528,25 @@ async def execute_action(
     elif act == "return":
         if _status_of(meta, doc) not in meta["valid_return"]:
             raise ValueError(f"Cannot return {doc_type.upper()} in status '{_status_of(meta, doc)}'")
+
+        # Authorization: sending a document back is an approval-step decision, so
+        # it requires the SAME authority as approve/reject. This gate used to be
+        # missing while reject's was present — any user who could merely SEE a
+        # broadcast approve task (or simply knew the document id) could bounce
+        # anyone's in-flight document back to its submitter. The calling services
+        # do not cover for it either: epms-api's pr/po/pa action endpoints and
+        # expense-api's expense_action/pa_action forward to this engine with no
+        # authorization of their own.
+        authorized = await _actor_can_approve(
+            db, current_step_role, actor_id, actor_role,
+            routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
+            doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
+            today=today, cross_dept_pa=cross_dept_pa,
+        )
+        if not authorized:
+            raise ValueError(
+                f"Not authorized to return this step (requires role: {current_step_role})"
+            )
         await _complete_tasks(db, doc_type, doc.id)
         _set_status(meta, doc, "returned")
         _set_step(meta, doc, 0)
@@ -1219,7 +1565,7 @@ async def execute_action(
             db, current_step_role, actor_id, actor_role,
             routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
             doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
-            today=today,
+            today=today, cross_dept_pa=cross_dept_pa,
         )
         if not authorized:
             raise ValueError(
@@ -1241,6 +1587,37 @@ async def execute_action(
     elif act == "cancel":
         if _status_of(meta, doc) not in meta["valid_cancel"]:
             raise ValueError(f"Cannot cancel {doc_type.upper()} in status '{_status_of(meta, doc)}'")
+
+        # Authorization: cancel is terminal — the document is dead afterwards and
+        # its number is spent. It used to have no gate at all, so any logged-in
+        # user could kill anyone's draft (and, for PR/PO/AGR/posign, anything
+        # merely `submitted`). Three parties may legitimately do it: the person
+        # whose document it is, an admin, and the approver currently holding it
+        # (for whom cancel is the same call reject already lets them make).
+        #
+        # KNOWN NARROWING — VMS: vms-api lets a dept_manager cancel a visit in
+        # their own department (api/v1/visits.py::cancel), which is broader than
+        # the three parties above. It runs that check itself BEFORE forwarding
+        # here and wraps this call in `except Exception: pass`, so a manager who
+        # is not the current step's approver still cancels the visit locally —
+        # the engine-side task is what goes stale. That is a degradation, not a
+        # break, and it is preferable to leaving the gate open for every service.
+        # If VMS needs the wider rule honoured end to end, the fix belongs there
+        # (complete the task directly) or in an explicit per-doc_type cancel
+        # policy here — not in reopening this.
+        if actor_role != "system_admin" and actor_id != doc.created_by:
+            authorized = await _actor_can_approve(
+                db, current_step_role, actor_id, actor_role,
+                routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
+                doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
+                today=today, cross_dept_pa=cross_dept_pa,
+            )
+            if not authorized:
+                raise ValueError(
+                    f"Not authorized to cancel this {doc_type.upper()} — "
+                    "only its owner, an approver currently holding it, or an "
+                    "administrator can."
+                )
         await _complete_tasks(db, doc_type, doc.id)
         _set_status(meta, doc, "cancelled")
 
@@ -1267,7 +1644,8 @@ async def execute_action(
         # step role on the approve path.
         on_behalf_of = await _acting_on_behalf_of(
             db, current_step_role, actor_id, routing_dept_id, rm, dept_gm_opm,
-            finance_bp_ids, doc, director_uid, supervisor_uid, today=today)
+            finance_bp_ids, doc, director_uid, supervisor_uid, today=today,
+            cross_dept_pa=cross_dept_pa)
         if on_behalf_of is not None:
             delegator_name = (await db.execute(
                 select(User.full_name).where(User.id == on_behalf_of))
@@ -1336,6 +1714,7 @@ def _step_index_for_task_role(workflow: list[dict], task_role: str) -> int | Non
 
 async def _resolved_assignee_for_step(
     db, doc_type, doc, step, workflow, rm, dept_gm_opm, routing_dept_id, director_uid, supervisor_uid,
+    cross_dept_pa=False,
 ) -> tuple[str, uuid.UUID | None]:
     """(assigned_role, user_id) the engine WOULD assign this step now — mirrors
     _create_approve_task. user_id is None for broadcast (named) roles."""
@@ -1343,7 +1722,7 @@ async def _resolved_assignee_for_step(
     if role == "dept_manager":
         return role, await _get_dept_manager_id(db, routing_dept_id)
     if role == "gm_or_opm":
-        return await _resolve_gm_or_opm(db, routing_dept_id, rm, dept_gm_opm)
+        return await _resolve_gm_or_opm(db, routing_dept_id, rm, dept_gm_opm, cross_dept_pa)
     if role == "director":
         return role, director_uid
     if role == "supervisor":
@@ -1390,6 +1769,7 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
     dept_gm_opm = await get_dept_gm_opm_mapping(db)
     routing_uid = await _routing_user_id(db, doc_type, doc)
     routing_dept_id = await _routing_department_id(db, doc_type, doc, routing_uid)
+    cross_dept_pa = await _is_cross_department_pa(db, doc_type, doc)
     dept_director = await get_dept_director_mapping(db)
     dept_supervisor = await get_dept_supervisor_enabled(db)
     director_uid = await _resolve_director(db, routing_dept_id, dept_director)
@@ -1415,14 +1795,15 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
     # Case A — true step is now a skippable optional (Director/Supervisor gone): advance.
     skip_now, _r = _should_skip_step(
         workflow[true_step]["role"], doc_type, doc, director_uid, supervisor_uid,
-        dept_has_director, dept_has_supervisor)
+        dept_has_director, dept_has_supervisor, cross_dept_pa)
     if skip_now:
         start = true_step
         skipped: list[str] = []
         while start < len(workflow):
             r = workflow[start]["role"]
             sk, reason = _should_skip_step(
-                r, doc_type, doc, director_uid, supervisor_uid, dept_has_director, dept_has_supervisor)
+                r, doc_type, doc, director_uid, supervisor_uid, dept_has_director,
+                dept_has_supervisor, cross_dept_pa)
             if not sk:
                 break
             db.add(ApprovalEvent(
@@ -1438,7 +1819,8 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
             await _create_approve_task(
                 db, doc_type, doc, step=start, workflow=workflow, meta=meta, rm=rm,
                 dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id,
-                director_uid=director_uid, supervisor_uid=supervisor_uid)
+                director_uid=director_uid, supervisor_uid=supervisor_uid,
+                cross_dept_pa=cross_dept_pa)
         else:
             _set_status(meta, doc, "approved")
             if hasattr(doc, "approved_at"):
@@ -1457,7 +1839,8 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
 
     # Case C — fix a drifted / stray-step assignee at the real step.
     des_role, des_uid = await _resolved_assignee_for_step(
-        db, doc_type, doc, true_step, workflow, rm, dept_gm_opm, routing_dept_id, director_uid, supervisor_uid)
+        db, doc_type, doc, true_step, workflow, rm, dept_gm_opm, routing_dept_id, director_uid,
+        supervisor_uid, cross_dept_pa)
     role = workflow[true_step]["role"]
     stray = any(_step_index_for_task_role(workflow, t.assigned_role) != true_step for t in open_tasks)
     if role in _USER_SPECIFIC_ROLES:
@@ -1468,7 +1851,8 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
             await _create_approve_task(
                 db, doc_type, doc, step=true_step, workflow=workflow, meta=meta, rm=rm,
                 dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id,
-                director_uid=director_uid, supervisor_uid=supervisor_uid)
+                director_uid=director_uid, supervisor_uid=supervisor_uid,
+                cross_dept_pa=cross_dept_pa)
             actions.append(f"reissue step{true_step} -> {des_role}/{des_uid}")
     else:  # broadcast (named) role — the engine assigns these to NO specific user
         # (role-based: whoever currently holds the role sees & approves it). PMS
@@ -1482,7 +1866,8 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
             await _create_approve_task(
                 db, doc_type, doc, step=true_step, workflow=workflow, meta=meta, rm=rm,
                 dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id,
-                director_uid=director_uid, supervisor_uid=supervisor_uid)
+                director_uid=director_uid, supervisor_uid=supervisor_uid,
+                cross_dept_pa=cross_dept_pa)
             actions.append(f"reissue step{true_step} -> {des_role}/broadcast"
                            + (" (was pinned)" if pinned else ""))
 

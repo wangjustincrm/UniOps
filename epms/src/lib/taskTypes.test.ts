@@ -87,3 +87,77 @@ describe('TASK_TYPE_LABELS — PO sign-off', () => {
     expect(TASK_TYPE_LABELS.revise_po_signoff).toBe('Revise PO Sign-off')
   })
 })
+
+describe('taskHref — NC purchase-sync error tasks', () => {
+  // These carry document_type 'nc_sync' and a RUN id, not a document id: their
+  // subject is an NC order that never made it into EPMS. Without a branch of
+  // their own they fall through to the bare "/<uuid>" dead link.
+  const RUN_ID = '7c2f4f0e-1f1b-4a0b-9d0a-0f6a1f2b3c4d'
+
+  it('sends a missing-vendor task to the vendor registry, where the fix is', () => {
+    expect(taskHref({ type: 'import_erp_vendor', document_type: 'nc_sync', document_id: RUN_ID }))
+      .toBe('/vendors')
+  })
+
+  it('sends every other sync error to the Portal NC sync panel', () => {
+    const href = taskHref({
+      type: 'resolve_nc_sync_error', document_type: 'nc_sync', document_id: RUN_ID,
+    })
+    expect(href).toMatch(/^https?:\/\//)          // absolute → full-page handoff
+    expect(href).toContain('/admin?section=nc_sync')
+  })
+
+  it('never produces the bare-uuid dead link', () => {
+    for (const type of ['import_erp_vendor', 'resolve_nc_sync_error']) {
+      expect(taskHref({ type, document_type: 'nc_sync', document_id: RUN_ID }))
+        .not.toBe(`/${RUN_ID}`)
+    }
+  })
+})
+
+describe('TASK_TYPE_LABELS — NC purchase-sync error tasks', () => {
+  it('labels both error task types', () => {
+    expect(TASK_TYPE_LABELS.import_erp_vendor).toBe('Import ERP Vendor')
+    expect(TASK_TYPE_LABELS.resolve_nc_sync_error).toBe('Resolve NC Sync Error')
+  })
+})
+
+describe('taskHref — JV validation findings', () => {
+  // Same shape as the NC sync errors: document_type is not a document, and
+  // document_id is the sync RUN that reported the findings. The destination is
+  // the Finance page that lists them, reached by full-page handoff.
+  const RUN_ID = '3a1c9f2e-6b7d-4c8a-9e0f-1b2c3d4e5f60'
+  const task = { type: 'resolve_jv_validation', document_type: 'jv_validation', document_id: RUN_ID }
+
+  it('sends the task to the Finance JV Validation page', () => {
+    const href = taskHref(task)
+    expect(href).toMatch(/^https?:\/\//)              // absolute → full-page handoff
+    expect(href).toContain('/finance/jv-validation')
+  })
+
+  it('never produces the bare-uuid dead link', () => {
+    expect(taskHref(task)).not.toBe(`/${RUN_ID}`)
+    expect(taskHref(task)).not.toContain(RUN_ID)      // the run id is not a page
+  })
+
+  it('labels the type', () => {
+    expect(TASK_TYPE_LABELS.resolve_jv_validation).toBe('Resolve JV Validation Findings')
+  })
+})
+
+describe('taskHref — duplicate NC invoices', () => {
+  // finance-api ap_duplicate_invoice_tasks.py: document_id is the AP sync run.
+  const RUN_ID = '7d2e4f60-1a3b-4c5d-8e9f-0a1b2c3d4e5f'
+  const task = { type: 'resolve_ap_duplicate_invoice', document_type: 'ap_duplicate_invoice', document_id: RUN_ID }
+
+  it('sends the task to the Finance AP Duplicate Invoices page', () => {
+    const href = taskHref(task)
+    expect(href).toMatch(/^https?:\/\//)
+    expect(href).toContain('/finance/ap-duplicate-invoices')
+    expect(href).not.toContain(RUN_ID)
+  })
+
+  it('labels the type', () => {
+    expect(TASK_TYPE_LABELS.resolve_ap_duplicate_invoice).toBe('Resolve Duplicate NC Invoices')
+  })
+})

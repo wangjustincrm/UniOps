@@ -2,10 +2,10 @@ import { Link } from 'react-router-dom'
 import { Plus, AlertCircle } from 'lucide-react'
 import { useVisits, type Visit } from '@/services/api'
 import { StatusBadge, AccessAreaBadge, OverdueBadge, isVisitOverdue } from '@/components/StatusBadge'
-import { formatDateTime } from '@/lib/utils'
+import { formatDateTime, localToday } from '@/lib/utils'
 
 export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const filters = scope === 'today'
     ? { date_from: today, date_to: today, page_size: 100 }
     : { page_size: 50 }

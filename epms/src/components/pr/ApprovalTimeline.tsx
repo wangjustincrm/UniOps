@@ -8,12 +8,27 @@ const CHANNEL_BADGES: Record<string, string> = {
   Teams: 'bg-violet-50 text-violet-600',
 }
 
+/**
+ * Outcome of the last "Send reminder" click, owned by the parent page.
+ *
+ * The button is only honest if it reports back: until it was wired up it called
+ * `console.log` and rendered nothing, so a click was indistinguishable from a
+ * working reminder. `idle` renders the plain link; everything else renders the
+ * result underneath it.
+ */
+export interface ReminderState {
+  status: 'idle' | 'pending' | 'success' | 'error'
+  message?: string
+}
+
 interface ApprovalTimelineProps {
   steps: ApprovalStep[]
   onSendReminder?: (stepId: string) => void
+  reminder?: ReminderState
 }
 
-export function ApprovalTimeline({ steps, onSendReminder }: ApprovalTimelineProps) {
+export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTimelineProps) {
+  const reminderStatus = reminder?.status ?? 'idle'
   return (
     <div className="flex flex-col gap-0">
       {steps.map((step, i) => {
@@ -109,12 +124,25 @@ export function ApprovalTimeline({ steps, onSendReminder }: ApprovalTimelineProp
               )}
 
               {step.status === 'current' && onSendReminder && (
-                <button
-                  onClick={() => onSendReminder(step.id)}
-                  className="mt-1.5 text-xs text-primary-600 hover:underline"
-                >
-                  Send reminder
-                </button>
+                <div className="mt-1.5">
+                  <button
+                    onClick={() => onSendReminder(step.id)}
+                    disabled={reminderStatus === 'pending'}
+                    className="text-xs text-primary-600 hover:underline disabled:cursor-not-allowed disabled:text-neutral-400 disabled:no-underline"
+                  >
+                    {reminderStatus === 'pending' ? 'Sending reminder…' : 'Send reminder'}
+                  </button>
+                  {reminder?.message && reminderStatus !== 'pending' && (
+                    <p
+                      className={cn(
+                        'mt-1 text-xs',
+                        reminderStatus === 'success' ? 'text-success-700' : 'text-warning-700'
+                      )}
+                    >
+                      {reminder.message}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </div>

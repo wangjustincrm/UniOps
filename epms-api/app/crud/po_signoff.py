@@ -30,13 +30,44 @@ SIGNOFF_SOURCES = ("nc",)
 
 # Statuses in which a sign-off may be raised. The engine enforces the sign-off's
 # own state machine; this is about the PO itself.
-_SUBMITTABLE_PO_STATUSES = ("nc_pending", "issued")
+#
+# One entry per shape an NC order takes, not per kind of goods:
+#   nc_pending  the ERP has not issued it yet — sign-off before NC approval,
+#               which is what the flow was built for.
+#   issued      NC approved a raw-material/packaging order (trade type
+#               21-Cxx-CRM01) and the mirror moved it into the payable flow.
+#   nc_milk     NC approved an order of any OTHER trade type. Read-only in the
+#               money flow (no invoice, no receiving) because those receipts are
+#               booked in NC, but it is an ordinary purchase order to the people
+#               who sign it — the same two signatures authorise it. Leaving it
+#               out made the sign-off unavailable on the 157 such orders in
+#               production while the 143 ``issued`` ones could be signed.
+#
+# Sign-off writes only signoff_* columns, so admitting a status here cannot move
+# a PO's own status or make an unpayable one payable.
+_SUBMITTABLE_PO_STATUSES = ("nc_pending", "issued", "nc_milk")
 
 _OPEN_STATUSES = ("submitted", "in_review")
 
 
 def is_signoff_eligible(po: PurchaseOrder) -> bool:
     return po.source in SIGNOFF_SOURCES and po.status in _SUBMITTABLE_PO_STATUSES
+
+
+def ineligible_reason(po: PurchaseOrder) -> str | None:
+    """Why a sign-off cannot be raised on this PO, or None if it can.
+
+    Two callers word the same refusal — the state endpoint as a blocker line and
+    submit as a 409 — so the sentence lives here. It names the status rather
+    than always blaming the source: a closed or cancelled NC order is refused
+    for a reason the old single sentence ("only available on POs imported from
+    NC") flatly contradicted on screen.
+    """
+    if po.source not in SIGNOFF_SOURCES:
+        return "Sign-off is only available on POs imported from NC."
+    if po.status not in _SUBMITTABLE_PO_STATUSES:
+        return f"Sign-off is not available on a PO in status '{po.status}'."
+    return None
 
 
 async def _holder_details(

@@ -153,11 +153,52 @@ export function fetchPreview(scope: RemittanceScope): Promise<RemittancePreview>
 export function sendRemittance(
   scope: RemittanceScope,
   recipients: { recipient_kind: string; party_id: string; resend?: boolean }[] | null,
+  /**
+   * `YYYY-MM-DD` — the date the advice tells the payee the funds left, for
+   * every line in it. AP often sends the advice a day or two after the money
+   * actually moved, so the date recorded against the payment is not always
+   * the date the payee's bank will show. Omitted (or undefined), each line
+   * keeps its own recorded payment date, exactly as before this existed.
+   *
+   * Display only: it changes what the email says, never the payment record
+   * behind the GL. The server rejects a future date with a 400.
+   */
+  paymentDate?: string,
 ): Promise<SendResult> {
+  const payment_date = paymentDate || undefined
   if (scope.kind === 'selection') {
     return financeApi.post<SendResult>(
       '/payments/remittance/selection/send',
-      { payment_ids: scope.paymentIds, recipients })
+      { payment_ids: scope.paymentIds, recipients, payment_date })
   }
-  return financeApi.post<SendResult>(`${base(scope)}/send`, { recipients })
+  return financeApi.post<SendResult>(`${base(scope)}/send`, { recipients, payment_date })
+}
+
+/** One payee's email exactly as `sendRemittance` would deliver it, from the
+ * render endpoint. `ready` carries the envelope and body; `skipped` (blocked,
+ * or already sent without resend) and `failed` (template error) carry only
+ * `error` — the send would not email them either. */
+export type RenderedEmail = SendResultItem & (
+  | { status: 'ready'; from: string; to: string; cc: string | null; subject: string; html: string }
+  | { status: 'skipped' | 'failed' }
+)
+
+/**
+ * The emails `sendRemittance` would send for the same arguments — nothing is
+ * sent and nothing is logged. Backs the panel's confirmation step: sending is
+ * irreversible, so the operator reviews what the payee will receive before
+ * the real send. Same body, same server-side gates (role, future date).
+ */
+export function renderRemittance(
+  scope: RemittanceScope,
+  recipients: { recipient_kind: string; party_id: string; resend?: boolean }[] | null,
+  paymentDate?: string,
+): Promise<{ emails: RenderedEmail[] }> {
+  const payment_date = paymentDate || undefined
+  if (scope.kind === 'selection') {
+    return financeApi.post<{ emails: RenderedEmail[] }>(
+      '/payments/remittance/selection/render',
+      { payment_ids: scope.paymentIds, recipients, payment_date })
+  }
+  return financeApi.post<{ emails: RenderedEmail[] }>(`${base(scope)}/render`, { recipients, payment_date })
 }

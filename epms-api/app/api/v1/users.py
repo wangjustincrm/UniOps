@@ -45,12 +45,13 @@ AdminDep = Annotated[dict, Depends(require_roles("system_admin"))]
 _CSV_HEADERS = ["email", "full_name", "role", "department_code", "is_active", "teams_account"]
 _CSV_IMPORT_HEADERS = _CSV_HEADERS + ["password"]  # password optional on import
 
-# gm/opm/vendor_manager/finance_manager/procurement_manager are company-unique
+# gm/opm/vendor_manager/finance_manager/procurement_manager/finance_director are company-unique
 # singleton POSTS (identity enforces one holder each — migration
 # 0003_post_role_singleton + the cross-table 409 in PUT /authz/users/{id}/roles).
 # finance_bp is deliberately excluded: it's a job FUNCTION many people hold,
 # so multiple holders are expected and fine.
-_POST_ROLES = frozenset({"gm", "opm", "vendor_manager", "finance_manager", "procurement_manager"})
+_POST_ROLES = frozenset({"gm", "opm", "vendor_manager", "finance_manager", "procurement_manager",
+                         "finance_director"})
 
 
 async def _post_conflict(db, role: str, exclude_user_id: uuid.UUID | None = None) -> str | None:

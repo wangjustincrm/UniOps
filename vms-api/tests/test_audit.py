@@ -178,3 +178,16 @@ async def test_dashboard_overview_includes_week_count(requester):
     body = resp.json()
     assert isinstance(body["week_count"], int)
     assert body["week_count"] >= 0
+
+
+async def test_facets_list_the_types_actually_logged(test_engine, requester):
+    _u, client = requester
+    await client.post("/api/v1/visitors", json={
+        "first_name": "Facet", "last_name": "Check", "company_name": "F", "visitor_type": "supplier",
+    })
+    auditor = await make_user(test_engine, role="auditor")
+    async with authed_client(make_token(auditor.id, "auditor")) as c:
+        body = (await c.get("/api/v1/audit-logs/facets")).json()
+    assert "visitor.create" in body["action_types"]
+    assert "visitor" in body["entity_types"]
+    assert (await client.get("/api/v1/audit-logs/facets")).status_code == 403

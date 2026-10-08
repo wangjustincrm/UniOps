@@ -9,16 +9,30 @@ import {
   type Visit,
 } from '@/services/api'
 import { StatusBadge, AccessAreaBadge } from '@/components/StatusBadge'
-import { formatDateTime } from '@/lib/utils'
+import { formatDateTime, localToday } from '@/lib/utils'
 
 export default function DashboardPage() {
   const overview = useDashboardOverview()
   const compliance = useComplianceMetrics()
   const myTasks = useMyVmsTasks()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const todayVisits = useVisits({
     date_from: today, date_to: today, page_size: 50,
   })
+
+  // The banner counts every open VMS task, so only call them approvals when
+  // they all are — HR / Janitor / Host tasks are confirmations and check-outs.
+  const tasks = myTasks.data ?? []
+  const approvals = tasks.filter((t) => t.type === 'approve_vms_visit').length
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+  const nudge = approvals === tasks.length
+    ? { title: `${plural(approvals, 'visit')} waiting on your approval`, detail: 'Review and approve, return, or reject.' }
+    : {
+        title: `${plural(tasks.length, 'VMS task')} waiting on you`,
+        detail: approvals > 0
+          ? `${plural(approvals, 'approval')}, plus confirmations / check-outs — open your Task Inbox.`
+          : 'Training / PPE confirmations and check-outs — open your Task Inbox.',
+      }
 
   return (
     <div>
@@ -50,10 +64,8 @@ export default function DashboardPage() {
               <Inbox className="h-5 w-5" />
             </span>
             <div>
-              <p className="text-sm font-semibold text-primary-700">
-                {myTasks.data?.length} visit{myTasks.data?.length === 1 ? '' : 's'} waiting on your approval
-              </p>
-              <p className="text-xs text-primary-700/80">Review and approve, return, or reject.</p>
+              <p className="text-sm font-semibold text-primary-700">{nudge.title}</p>
+              <p className="text-xs text-primary-700/80">{nudge.detail}</p>
             </div>
           </div>
           <ArrowRight className="h-4 w-4 text-primary-700/60" />

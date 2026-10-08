@@ -1,6 +1,7 @@
 """Generic CRUD + audit over registered entities."""
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import date, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
@@ -9,12 +10,17 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.po_number import regenerate_and_cascade
-from app.admin.recompute import recompute_header
+from app.admin.recompute import PA_CHARGE_FIELDS, recompute_header, recompute_pa_header_only
 from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
+from app.crud.agreement_schedule import reassign_open_confirm_tasks
 from app.crud.gr import resync_po_received_qty, sync_po_receipt_status
+from app.crud.invoice import _apply_gr_selection
+from app.crud.pr import reassign_open_receipt_tasks
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.approval import ApprovalEvent
+from app.models.invoice import Invoice
+from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -118,7 +124,38 @@ async def get_record(db: AsyncSession, entity: str, record_id: uuid.UUID) -> dic
             select(child.model).where(getattr(child.model, child.fk_field) == row.id)
             .order_by(child.model.sort_order.asc()))).scalars().all()
         rec["line_items"] = [_serialize_child(child, li) for li in lis]
+    rec["_ref_list_labels"] = await _ref_list_labels(db, spec, rec)
     return rec
+
+
+async def _ref_list_labels(db: AsyncSession, spec: EntitySpec, rec: dict) -> dict:
+    """{field: [{id, label}]} for every reference_list field, so the editor can
+    show what is linked instead of a row of raw uuids.
+
+    An id that resolves to nothing is labelled rather than dropped or raised on.
+    That case is real and not always an error: an OA Direct PA's invoice_ids
+    hold expense_invoices ids, which the `invoices` resolver cannot find by
+    design (different table, different id space — see
+    finance-api crud/payment_batch.py::vendor_inv_no_map). Showing it as
+    unresolved tells the operator what they are looking at; hiding it would let
+    a Save silently drop a link that other services still read.
+    """
+    out: dict[str, list[dict]] = {}
+    for f in spec.schema.fields:
+        if f.type != "reference_list" or not f.ref_source:
+            continue
+        resolver = get_resolver(f.ref_source)
+        labels: list[dict] = []
+        for raw in (rec.get(f.name) or []):
+            hit = None
+            try:
+                hit = await resolver.fetch_by_id(db, uuid.UUID(str(raw)))
+            except (ValueError, TypeError):
+                pass
+            labels.append({"id": str(raw),
+                           "label": hit.label if hit else f"{raw} — not found in {f.ref_source}"})
+        out[f.name] = labels
+    return out
 
 
 async def _load(db: AsyncSession, spec: EntitySpec, record_id: uuid.UUID):
@@ -143,6 +180,82 @@ async def _apply_reference(db, spec, row, field, value):
     return hit.label
 
 
+async def _apply_reference_list(db, field, row, value) -> list[str]:
+    """Set a JSONB array-of-ids field from a list of ids, verifying every one of
+    them resolves. Stored as a list of STRING uuids because that is what the rest
+    of the codebase reads back (`for i in pa.invoice_ids: uuid.UUID(str(i))`) —
+    writing raw UUID objects here would serialize differently and silently break
+    those consumers. Order is preserved and duplicates collapse."""
+    if value in (None, ""):
+        value = []
+    if isinstance(value, str):
+        # A client that stringified the array (the generic text input path) still
+        # has to work — the picker sends a real list.
+        value = json.loads(value) if value.strip() else []
+    if not isinstance(value, list):
+        raise ValueError(f"Field '{field.name}' must be a list of ids")
+    resolver = get_resolver(field.ref_source)
+    out: list[str] = []
+    for v in value:
+        try:
+            rid = uuid.UUID(str(v))
+        except (ValueError, TypeError):
+            raise ValueError(f"'{v}' is not a valid {field.ref_source} id")
+        if await resolver.fetch_by_id(db, rid) is None:
+            raise ValueError(f"{field.ref_source} reference '{rid}' not found")
+        if str(rid) not in out:
+            out.append(str(rid))
+    setattr(row, field.name, out)
+    return out
+
+
+async def _validate_pa_invoice_links(db, pa, invoice_ids: list[str]) -> None:
+    """Guard the two ways a hand-typed invoice link goes wrong.
+
+    Both are refusals rather than warnings: this screen exists to REPAIR the
+    link, and a repair that attaches the wrong invoice is worse than the empty
+    array it replaced — paying the PA would then close an invoice nobody paid.
+
+    Direct (OA) PAs are exempt from the PO check: their invoice_ids hold
+    expense_invoices ids, a different table in a different id space (see
+    crud/payment_batch.py::vendor_inv_no_map), so `Invoice` will not find them
+    and a po_id comparison is meaningless.
+    """
+    if not invoice_ids:
+        return
+    rows = (await db.execute(
+        select(Invoice).where(Invoice.id.in_([uuid.UUID(i) for i in invoice_ids]))
+    )).scalars().all()
+    by_id = {str(r.id): r for r in rows}
+
+    if pa.po_id is not None:
+        wrong = [f"{r.internal_ref} (on {r.po_number or 'no PO'})"
+                 for r in rows if r.po_id is not None and r.po_id != pa.po_id]
+        if wrong:
+            raise ValueError(
+                f"These invoices belong to a different PO than {pa.po_number}: "
+                + ", ".join(wrong)
+                + ". Correct the invoice's PO first — attaching it here would let this "
+                  "PA close an invoice it does not pay."
+            )
+
+    for iid in invoice_ids:
+        claimed = (await db.execute(
+            select(PaymentApplication.pa_number).where(
+                PaymentApplication.id != pa.id,
+                PaymentApplication.status.not_in(("cancelled", "rejected")),
+                PaymentApplication.invoice_ids.contains([iid]),
+            )
+        )).scalars().all()
+        if claimed:
+            ref = by_id[iid].internal_ref if iid in by_id else iid
+            raise ValueError(
+                f"Invoice {ref} is already linked to {', '.join(claimed)}. "
+                "Two live PAs pointing at one invoice is how it gets paid twice — "
+                "detach it there first if this PA is the right owner."
+            )
+
+
 def _line_total(qty, unit_price) -> Decimal:
     return (Decimal(str(qty)) * Decimal(str(unit_price))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -159,13 +272,29 @@ async def _apply_line_items(db, spec, row, items: list[dict]):
     existing = {li.id: li for li in (await db.execute(
         select(Model).where(getattr(Model, child.fk_field) == row.id))).scalars().all()}
 
+    columns = Model.__table__.c
     seen: set = set()
     for idx, item in enumerate(items):
         raw_id = item.get("id")
-        qty = item.get("qty"); price = item.get("unit_price")
+        if not raw_id and not child.allow_add:
+            raise ValueError("New line items cannot be added here — only existing lines can be edited or removed")
+        qty = item.get(child.qty_field); price = item.get(child.price_field)
         if qty in (None, "") or price in (None, ""):
             raise ValueError("Each line item needs a quantity and unit price")
-        payload = {k: v for k, v in item.items() if k in editable and k != "line_total" and v != ""}
+        payload = {}
+        for k, v in item.items():
+            if k not in editable or k == "line_total":
+                continue
+            if v == "":
+                # A cleared input arrives as "". On an existing line that is the
+                # operator emptying the field — store NULL where the column allows
+                # it (GR actual_qty: NULL is what hands the PO count back to
+                # qty_received). Dropping it instead kept the old value, so a
+                # nullable field could be set here but never cleared.
+                if raw_id and columns[k].nullable:
+                    payload[k] = None
+                continue
+            payload[k] = v
         payload.setdefault("sort_order", idx)
         lt = _line_total(qty, price)
         if raw_id:
@@ -193,6 +322,43 @@ async def _apply_line_items(db, spec, row, items: list[dict]):
         setattr(row, hk, hv)
 
 
+async def _recompute_pa_from_stored_lines(db, spec, row, *, rate_changed: bool):
+    """Header recompute for a PA edit that did not touch the lines.
+
+    With lines: the same full recompute a line edit gets — tax is lines × rate,
+    shipping and other charges untaxed. Without: the stored subtotal stands in
+    (an empty array would zero 91 production PAs); see recompute_pa_header_only."""
+    Model = spec.schema.child.model
+    lines = (await db.execute(
+        select(Model).where(getattr(Model, spec.schema.child.fk_field) == row.id))).scalars().all()
+    if lines:
+        totals = recompute_header("pa", row, [{"line_total": l.line_total} for l in lines])
+    else:
+        totals = recompute_pa_header_only(row, rate_changed=rate_changed)
+    for hk, hv in totals.items():
+        setattr(row, hk, hv)
+
+
+async def _refresh_invoice_gr_value(db, gr) -> int:
+    """Re-derive gr_value on every invoice matched to this GR. Returns how many
+    actually changed."""
+    # The GR's line_items relationship was loaded before the edit; reload it so
+    # _apply_gr_selection sums the lines as they are now.
+    await db.refresh(gr, ["line_items"])
+    invoices = (await db.execute(select(Invoice).where(or_(
+        Invoice.gr_id == gr.id,
+        Invoice.gr_ids.contains([str(gr.id)]),
+    )))).scalars().all()
+    changed = 0
+    for inv in invoices:
+        ids = [uuid.UUID(str(x)) for x in (inv.gr_ids or [])] or [inv.gr_id]
+        old = inv.gr_value
+        await _apply_gr_selection(db, inv, ids)
+        if inv.gr_value != old:
+            changed += 1
+    return changed
+
+
 async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch: dict,
                       *, actor_id: uuid.UUID, actor_email: str,
                       regenerate_po_number: bool = False,
@@ -207,6 +373,7 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
     editable = spec.schema.editable_field_names()
     before = _serialize(spec, row)
     routing_requester_changed = False
+    invoice_links_changed = False
     if entity == "pa":
         src_req = patch.pop("source_requester_id", None)
         if src_req not in (None, ""):
@@ -219,6 +386,7 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
                 raise ValueError(f"users reference '{src_req}' not found")
             src_pr.created_by = hit.id
             routing_requester_changed = True
+    charges_before = {f: getattr(row, f, None) for f in PA_CHARGE_FIELDS} if entity == "pa" else {}
     for key, value in patch.items():
         if key not in editable:
             raise ValueError(f"Field '{key}' is not editable")
@@ -227,8 +395,24 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
             await _apply_reference(db, spec, row, fspec, value)
             if entity == "pr" and fspec.name == "created_by":
                 routing_requester_changed = True
+        elif fspec is not None and fspec.type == "reference_list":
+            ids = await _apply_reference_list(db, fspec, row, value)
+            if entity == "pa" and fspec.name == "invoice_ids":
+                await _validate_pa_invoice_links(db, row, ids)
+                # Only a PA that has already been PAID needs the writeback
+                # replayed: payment ran the loops once over an array that was
+                # then wrong. An unpaid PA needs nothing — its own payment will
+                # do the writeback later, over the corrected array.
+                invoice_links_changed = row.status in ("processed", "paid")
         else:
             setattr(row, key, _coerce(spec.schema.field_type(key), value))
+    if entity == "pa" and line_items is None:
+        changed = {f for f, v in charges_before.items() if getattr(row, f, None) != v}
+        if changed:
+            # A line edit recomputes the whole header below; a charge or rate
+            # edit alone used to recompute nothing, so a shipping fee added here
+            # was stored but never reached payment_amount.
+            await _recompute_pa_from_stored_lines(db, spec, row, rate_changed="tax_rate" in changed)
     received_qty_resynced = 0
     if line_items is not None:
         await _apply_line_items(db, spec, row, line_items)
@@ -237,14 +421,48 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
             # derived from it, so a corrected quantity has to drag the status with
             # it or the PO advertises a receipt state its own lines contradict.
             await sync_po_receipt_status(db, row.id)
-    if entity == "gr" and before.get("status") != getattr(row, "status", None):
+    invoices_gr_value_refreshed = 0
+    if entity == "gr" and (line_items is not None
+                           or before.get("status") != getattr(row, "status", None)):
         # Editing a GR here can move it into or out of crud.gr.COUNTED_GR_STATUSES,
         # but the accumulator that originally added its quantities to the PO only
         # runs on the GR workflow actions and never again. Without this, cancelling
         # a confirmed GR leaves the PO crediting itself for goods the GR no longer
-        # claims — the same hole as deleting one.
+        # claims — the same hole as deleting one. A line edit (qty_received /
+        # actual_qty / a deleted line) moves the same sum, so it resyncs too.
         await db.flush()
         received_qty_resynced = await resync_po_received_qty(db, row.po_id)
+    if entity == "gr" and line_items is not None:
+        # invoices.gr_value is a snapshot of the matched GRs' line totals, taken
+        # when the GR was selected (crud.invoice._apply_gr_selection) and never
+        # revisited. Re-take it from the edited lines, or 3-Way Match keeps
+        # comparing the invoice against the receipt as it was before the fix.
+        invoices_gr_value_refreshed = await _refresh_invoice_gr_value(db, row)
+
+    receipt_tasks_reassigned = 0
+    if entity == "pr" and before.get("owner_id") != (
+            str(row.owner_id) if row.owner_id is not None else None):
+        # Mirrors the agreement block below, for the same reason and with the
+        # same blind spot: the three creators of a receipt task resolve the PR
+        # owner once, when the task is raised, and never revisit it. A service
+        # PO's completion date is usually months after the PR was approved, so
+        # this edit — the only write path that reaches a non-draft PR's owner —
+        # is where "the owner left, give it to someone else" actually happens.
+        await db.flush()
+        receipt_tasks_reassigned = await reassign_open_receipt_tasks(db, row)
+
+    confirm_tasks_reassigned = 0
+    if entity == "agreement" and before.get("owner_id") != (
+            str(row.owner_id) if row.owner_id is not None else None):
+        # This is the ONLY write path that reaches a live agreement's owner
+        # (the EPMS PATCH endpoint is fenced to draft/returned), and it is the
+        # one an admin uses to fix an agreement whose periods landed on the
+        # wrong person. Changing owner_id alone would not move the tasks:
+        # create_confirm_task resolves the assignee once, when the period is
+        # claimed, and never revisits it — so the new owner would still see no
+        # Confirm button and the old assignee would keep the to-do.
+        await db.flush()
+        confirm_tasks_reassigned = await reassign_open_confirm_tasks(db, row)
 
     cascade = None
     if entity == "po" and regenerate_po_number:
@@ -262,7 +480,14 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
         after["_line_items_count"] = len(line_items)
     if received_qty_resynced:
         after["po_lines_received_qty_resynced"] = received_qty_resynced
+    if invoices_gr_value_refreshed:
+        after["invoices_gr_value_refreshed"] = invoices_gr_value_refreshed
+    if confirm_tasks_reassigned:
+        after["confirm_tasks_reassigned"] = confirm_tasks_reassigned
+    if receipt_tasks_reassigned:
+        after["receipt_tasks_reassigned"] = receipt_tasks_reassigned
     after["_routing_requester_changed"] = routing_requester_changed
+    after["_invoice_links_changed"] = invoice_links_changed
     db.add(AdminAuditLog(
         actor_id=actor_id, actor_email=actor_email, action="edit", system=spec.system,
         entity=entity, record_id=record_id,

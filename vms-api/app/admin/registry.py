@@ -101,7 +101,7 @@ async def _health_declaration_delete(db: AsyncSession, hd) -> dict[str, int]:
 # read-only; status, names, notes, dates are editable.
 
 _VISIT_SCHEMA = EntitySchema(
-    key="visit", label="Visit", number_field="visit_title",
+    key="visit", label="Visit", allow_delete=False, number_field="visit_title",
     list_columns=["visit_title", "visit_purpose", "status", "visit_date", "created_at"],
     search_fields=["visit_title", "notes"], order_by="created_at desc",
     fields=[
@@ -116,7 +116,7 @@ _VISIT_SCHEMA = EntitySchema(
 )
 
 _VISITOR_SCHEMA = EntitySchema(
-    key="visitor", label="Visitor", number_field="last_name",
+    key="visitor", label="Visitor", allow_delete=False, number_field="last_name",
     list_columns=["first_name", "last_name", "company_name", "visitor_type", "email", "created_at"],
     search_fields=["first_name", "last_name", "company_name", "email"], order_by="created_at desc",
     fields=[
@@ -133,7 +133,7 @@ _VISITOR_SCHEMA = EntitySchema(
 )
 
 _HEALTH_DECLARATION_SCHEMA = EntitySchema(
-    key="health_declaration", label="Health Declaration", number_field="result",
+    key="health_declaration", label="Health Declaration", allow_delete=False, number_field="result",
     list_columns=["result", "created_at"],
     search_fields=[], order_by="created_at desc",
     fields=[

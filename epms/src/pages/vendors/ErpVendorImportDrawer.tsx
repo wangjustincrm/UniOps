@@ -50,7 +50,7 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
   if (search) params.search = search
   if (excludeImported && importedCodes.length) params.exclude_codes = importedCodes.join(',')
 
-  const { data, isLoading } = useQuery<{ items: ErpSupplierRow[]; total: number }>({
+  const { data, isLoading, error: loadError } = useQuery<{ items: ErpSupplierRow[]; total: number }>({
     queryKey: ['erp-import-suppliers', search, excludeImported, importedCodes.join(','), page],
     queryFn: () => mdmApi.get('/erp/suppliers', params),
   })
@@ -141,6 +141,11 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
 
             <div className="flex-1 overflow-auto p-4">
               {isLoading ? <div className="text-sm text-neutral-400">Loading…</div>
+                : loadError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      Could not load ERP suppliers: {loadError instanceof Error ? loadError.message : String(loadError)}
+                    </div>
+                  )
                 : !data?.items.length ? <div className="text-sm text-neutral-400">No suppliers.</div>
                 : <table className="w-full text-sm">
                     <thead className="border-b border-neutral-200">

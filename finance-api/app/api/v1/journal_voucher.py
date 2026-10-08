@@ -1,6 +1,7 @@
 """Journal voucher API — list/detail + lifecycle actions (Plan 2)."""
 import uuid
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -11,7 +12,8 @@ from uniops_authz import has_permission
 from app.core.deps import CurrentUser
 from app.crud import journal_voucher as crud
 from app.db.base import get_db
-from app.models.journal_voucher import JournalVoucher, JournalVoucherLine
+from app.models.journal_voucher import (JournalVoucher, JournalVoucherLine,
+                                        JvLineDimension)
 
 router = APIRouter(prefix="/journal-vouchers", tags=["journal-vouchers"])
 
@@ -37,10 +39,30 @@ _SUBSYSTEM_LABELS = {
 }
 
 
+# NC VOUCHERKIND, measured against the live book 2026-09-22 (period spread and
+# explanations both checked): 1 appears only in each year's period 12 with
+# "Manually year end adjustment"-style summaries, 2 only in period 00 at zero
+# amount, 3 carries 转材料成本/结转完工产品入库成本, 4 is "Carry forward of R&D".
+# A code we have not characterised keeps its raw number rather than a guess.
+_KIND_LABELS = {
+    0: "Ordinary", 1: "Year-end adjustment", 2: "Opening",
+    3: "Cost carry-forward", 4: "R&D carry-forward",
+}
+
+# 正常 / 错误 / 作废 / 暂存. Only `normal` ever reaches status=posted.
+VOUCHER_STATES = ("normal", "error", "discarded", "tempsave")
+
+
 def _subsystem_label(code: str | None) -> str | None:
     if code is None:
         return None
     return _SUBSYSTEM_LABELS.get(code, code)
+
+
+def _has_line(*conds):
+    """A voucher-level predicate that holds when ANY of its lines matches."""
+    return select(JournalVoucherLine.id).where(
+        JournalVoucherLine.jv_id == JournalVoucher.id, *conds).exists()
 
 
 class IdsIn(BaseModel):
@@ -58,6 +80,17 @@ def _hdr(jv: JournalVoucher) -> dict:
         "nc_source_pk": jv.nc_source_pk,
         "source_subsystem": jv.source_subsystem,
         "source_subsystem_label": _subsystem_label(jv.source_subsystem),
+        # NC header facts. These are what NC's own voucher list shows in its
+        # 制单 / 审核 / 记账 columns; before the 0038 sync they were all NULL.
+        "nc_num": jv.nc_num,
+        "nc_prepared_name": jv.nc_prepared_name,
+        "nc_checked_name": jv.nc_checked_name,
+        "nc_manager_name": jv.nc_manager_name,
+        "nc_voucher_type_name": jv.nc_voucher_type_name,
+        "nc_attachment_count": jv.nc_attachment_count,
+        "nc_voucher_state": jv.nc_voucher_state,
+        "nc_voucher_kind": jv.nc_voucher_kind,
+        "nc_voucher_kind_label": _KIND_LABELS.get(jv.nc_voucher_kind),
         "source_doc_type": jv.source_doc_type,
         "source_doc_id": str(jv.source_doc_id) if jv.source_doc_id else None,
         "source_doc_number": jv.source_doc_number,
@@ -72,7 +105,25 @@ def _hdr(jv: JournalVoucher) -> dict:
 @router.get("")
 async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         period: str | None = Query(default=None),
+                        period_from: str | None = Query(default=None),
+                        period_to: str | None = Query(default=None),
+                        date_from: date | None = Query(default=None),
+                        date_to: date | None = Query(default=None),
+                        num_from: int | None = Query(default=None),
+                        num_to: int | None = Query(default=None),
                         status: str | None = Query(default=None),
+                        voucher_state: str | None = Query(default=None),
+                        voucher_kind: int | None = Query(default=None),
+                        prepared_by: str | None = Query(default=None),
+                        checked_by: str | None = Query(default=None),
+                        manager: str | None = Query(default=None),
+                        account_code: str | None = Query(default=None),
+                        opposite_subject: str | None = Query(default=None),
+                        currency: str | None = Query(default=None),
+                        amount_min: Decimal | None = Query(default=None),
+                        amount_max: Decimal | None = Query(default=None),
+                        aux_code: str | None = Query(default=None),
+                        aux_value: str | None = Query(default=None),
                         source_doc_type: str | None = Query(default=None),
                         source_subsystem: str | None = Query(default=None),
                         q: str | None = Query(default=None),
@@ -80,15 +131,64 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         offset: int = Query(default=0, ge=0),
                         sort: str = Query(default="voucher_date"),
                         dir: str = Query(default="desc")):
+    """NC's 凭证查询 has period/date/number RANGES and an auxiliary picker; this
+    used to offer a single exact fiscal_period, so listing a quarter meant three
+    separate queries and listing "all of 2026" was impossible.
+
+    `period` (exact) is kept because existing callers and saved links use it.
+    fiscal_period is a zero-padded 'YYYY-MM' string, so a plain string BETWEEN
+    orders correctly — no date casting needed."""
     base = select(JournalVoucher)
     if period:
         base = base.where(JournalVoucher.fiscal_period == period)
+    if period_from:
+        base = base.where(JournalVoucher.fiscal_period >= period_from)
+    if period_to:
+        base = base.where(JournalVoucher.fiscal_period <= period_to)
+    if date_from:
+        base = base.where(JournalVoucher.voucher_date >= date_from)
+    if date_to:
+        base = base.where(JournalVoucher.voucher_date <= date_to)
+    if num_from is not None:
+        base = base.where(JournalVoucher.nc_num >= num_from)
+    if num_to is not None:
+        base = base.where(JournalVoucher.nc_num <= num_to)
     if status:
         base = base.where(JournalVoucher.status == status)
+    if voucher_state:
+        base = base.where(JournalVoucher.nc_voucher_state == voucher_state)
+    if voucher_kind is not None:
+        base = base.where(JournalVoucher.nc_voucher_kind == voucher_kind)
+    if prepared_by:
+        base = base.where(JournalVoucher.nc_prepared_name == prepared_by)
+    if checked_by:
+        base = base.where(JournalVoucher.nc_checked_name == checked_by)
+    if manager:
+        base = base.where(JournalVoucher.nc_manager_name == manager)
     if source_doc_type:
         base = base.where(JournalVoucher.source_doc_type == source_doc_type)
     if source_subsystem:
         base = base.where(JournalVoucher.source_subsystem == source_subsystem)
+    if amount_min is not None:
+        base = base.where(JournalVoucher.total_local_debit >= amount_min)
+    if amount_max is not None:
+        base = base.where(JournalVoucher.total_local_debit <= amount_max)
+    # Line-level predicates are EXISTS subqueries, not joins: a voucher with two
+    # matching lines must appear once, and a join would also break the count.
+    if account_code:
+        base = base.where(_has_line(JournalVoucherLine.account_code.startswith(account_code)))
+    if opposite_subject:
+        base = base.where(_has_line(
+            JournalVoucherLine.opposite_subject.ilike(f"%{opposite_subject}%")))
+    if currency:
+        base = base.where(_has_line(JournalVoucherLine.currency == currency))
+    if aux_code:
+        dim = select(JvLineDimension.id).where(
+            JvLineDimension.jv_line_id == JournalVoucherLine.id,
+            JvLineDimension.dim_code == aux_code)
+        if aux_value:
+            dim = dim.where(JvLineDimension.value_text == aux_value)
+        base = base.where(_has_line(dim.exists()))
     if q:
         like = f"%{q}%"
         base = base.where(or_(JournalVoucher.jv_number.ilike(like),
@@ -114,6 +214,46 @@ async def jv_permissions(user: CurrentUser, db: AsyncSession = Depends(get_db)):
     uid = uuid.UUID(str(user.get("sub", "")))
     can_act = await has_permission(db, uid, user.get("role", ""), "finance.jv.post")
     return {"can_act": can_act}
+
+
+@router.get("/filter-options")
+async def filter_options(_: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Values the voucher-query form offers. Read from the data rather than
+    hard-coded: the preparer list is whoever NC actually recorded (24 users on
+    the live book), and the auxiliary list is whichever dimensions this book
+    really uses — NC's catalog carries far more than any one book touches."""
+    async def _distinct(col):
+        rows = (await db.execute(
+            select(col).where(col.is_not(None)).distinct().order_by(col))).scalars().all()
+        return [r for r in rows if r]
+
+    aux_codes = (await db.execute(
+        select(JvLineDimension.dim_code).distinct()
+        .order_by(JvLineDimension.dim_code))).scalars().all()
+    return {
+        "prepared_by": await _distinct(JournalVoucher.nc_prepared_name),
+        "checked_by": await _distinct(JournalVoucher.nc_checked_name),
+        "manager": await _distinct(JournalVoucher.nc_manager_name),
+        "voucher_states": list(VOUCHER_STATES),
+        "voucher_kinds": [{"value": k, "label": v} for k, v in sorted(_KIND_LABELS.items())],
+        "aux_codes": list(aux_codes),
+    }
+
+
+@router.get("/aux-values")
+async def aux_values(_: CurrentUser, dim_code: str = Query(...),
+                     q: str | None = Query(default=None),
+                     limit: int = Query(default=50, le=200),
+                     db: AsyncSession = Depends(get_db)):
+    """Values in use for one auxiliary, for the query form's value picker.
+    Typeahead rather than a full list: 物料基本信息 alone has ~2,000 values."""
+    stmt = select(JvLineDimension.value_text).where(
+        JvLineDimension.dim_code == dim_code, JvLineDimension.value_text.is_not(None))
+    if q:
+        stmt = stmt.where(JvLineDimension.value_text.ilike(f"%{q}%"))
+    rows = (await db.execute(
+        stmt.distinct().order_by(JvLineDimension.value_text).limit(limit))).scalars().all()
+    return {"items": list(rows)}
 
 
 @router.get("/{jv_id}")

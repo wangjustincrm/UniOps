@@ -1,14 +1,14 @@
-# TLS certificates (app server only — do NOT commit the key)
+# TLS certificates — no longer used in normal operation
 
-Place the company wildcard cert covering `*.canadaroyalmilk.com` here, named:
+The `edge` (Caddy) service now obtains and renews a Let's Encrypt cert per
+hostname **automatically** (see the header of `/Caddyfile`). Nothing needs to be
+placed here.
 
-- `fullchain.pem` — server certificate **+ intermediate chain** (leaf first)
-- `privkey.pem`   — the private key (keep secret; gitignored)
+This dir is still mounted read-only at `/etc/caddy/certs` purely as an
+**emergency fallback**: if automatic issuance ever breaks, put a wildcard
+`fullchain.pem` + `privkey.pem` here (e.g. via `renew-cert.sh`, manual DNS-01)
+and point the `site_tls` snippet in the Caddyfile back at them:
 
-The `edge` (Caddy) service mounts this dir read-only at `/etc/caddy/certs`.
-If your cert/key are in another format:
+    tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
 
-- `.pfx`/`.p12` → split out:
-  `openssl pkcs12 -in cert.pfx -clcerts -nokeys -out fullchain.pem`
-  `openssl pkcs12 -in cert.pfx -nocerts -nodes -out privkey.pem`
-- separate `cert.crt` + `chain.crt` → concatenate (leaf then chain) into fullchain.pem.
+`privkey.pem` is gitignored — keep it `chmod 600`.

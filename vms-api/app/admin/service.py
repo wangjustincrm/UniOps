@@ -107,8 +107,21 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
     return after
 
 
+class DeleteNotAllowed(Exception):
+    """The entity is edit-only in Data Maintenance (EntitySchema.allow_delete)."""
+
+
+def _check_deletable(spec) -> None:
+    if not spec.schema.allow_delete:
+        raise DeleteNotAllowed(
+            f"{spec.schema.label} records cannot be deleted — they are kept for "
+            "compliance. Cancel the visit in VMS instead."
+        )
+
+
 async def delete_preview(db: AsyncSession, entity: str, record_id: uuid.UUID) -> dict[str, int]:
     spec = _spec(entity)
+    _check_deletable(spec)
     row = await _load(db, spec, record_id)
     return await spec.cascade_preview(db, row)
 
@@ -116,6 +129,7 @@ async def delete_preview(db: AsyncSession, entity: str, record_id: uuid.UUID) ->
 async def delete_record(db: AsyncSession, entity: str, record_id: uuid.UUID,
                         *, actor_id: uuid.UUID, actor_email: str) -> dict[str, int]:
     spec = _spec(entity)
+    _check_deletable(spec)
     row = await _load(db, spec, record_id)
     snapshot = _serialize(spec, row)
     number = str(getattr(row, spec.schema.number_field, None))
@@ -131,6 +145,7 @@ async def delete_record(db: AsyncSession, entity: str, record_id: uuid.UUID,
 
 async def bulk_delete(db: AsyncSession, entity: str, record_ids: list[uuid.UUID],
                       *, actor_id: uuid.UUID, actor_email: str) -> dict[str, int]:
+    _check_deletable(_spec(entity))
     total: dict[str, int] = {}
     for rid in record_ids:
         summary = await delete_record(db, entity, rid, actor_id=actor_id, actor_email=actor_email)

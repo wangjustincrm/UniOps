@@ -337,6 +337,78 @@ async def test_direct_pa_without_invoice_no_blocks_group(db_session):
     assert rem.BLOCK_MISSING_INVOICE_NO in g.block_reasons
 
 
+async def test_prepayment_pa_without_invoice_is_not_blocked(db_session):
+    """A prepayment is paid before the vendor invoices, so it routinely has
+    no invoice number. It must be referenced by its PO instead of blocking
+    the payee — the regular Direct PA above is still blocked."""
+    from app.services import remittance_template as tpl
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    pa = _pa(bp.id, "480.00", invoice_ids=[], po_id=uuid.uuid4())
+    pa.pa_type, pa.po_number = "prepayment", "PO-141-2609-01"
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.block_reasons == []
+    assert g.lines[0].vendor_inv_no == ""
+    assert g.lines[0].vendor_ref == "Prepayment - PO PO-141-2609-01"
+    _, html = tpl.render(g, company_name="CRM", reference="BP-1",
+                         payment_method="bank_transfer")
+    assert "Prepayment - PO PO-141-2609-01" in html
+    assert "Invoice No / Reference" in html
+    assert pa.pa_number not in html
+
+
+async def test_prepayment_without_po_uses_bare_label(db_session):
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    pa = _pa(bp.id, "10.00", invoice_ids=[])          # agreement-style: no PO
+    pa.pa_type = "prepayment"
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.block_reasons == []
+    assert g.lines[0].vendor_ref == "Prepayment"
+
+
+async def test_prepayment_with_invoice_keeps_invoice_number(db_session):
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "PI-77")
+    pa = _pa(bp.id, "10.00", [str(inv.id)], po_id=uuid.uuid4())
+    pa.pa_type = "prepayment"
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.lines[0].vendor_ref == "PI-77"
+
+
+async def test_regular_line_without_invoice_still_blocks_mixed_group(db_session):
+    """A prepayment in the same payee group must not unblock a regular PA
+    that is genuinely missing its invoice number."""
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    pre = _pa(bp.id, "10.00", invoice_ids=[], po_id=uuid.uuid4())
+    pre.pa_type = "prepayment"
+    reg = _pa(bp.id, "20.00", invoice_ids=[], po_id=uuid.uuid4())
+    db_session.add_all([pre, reg])
+    await db_session.flush()
+    recs = [_record(pre), _record(reg)]
+    db_session.add_all(recs)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, recs))[0]
+    assert g.block_reasons == [rem.BLOCK_MISSING_INVOICE_NO]
+
+
 async def _expense_invoice(db, pa_id, number="EXP-INV-1"):
     from app.models.mirrors import ExpenseInvoice
     ei = ExpenseInvoice(pa_id=pa_id, invoice_number=number)
@@ -1850,3 +1922,296 @@ async def test_system_admin_as_an_additional_role_may_not_send_remittance(client
                           json={"payment_ids": []},
                           headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 403
+
+
+# ── Advice payment date: what the payee is told the funds left ──────────────
+#
+# AP often sends the advice a day or two after the money actually moved (bank
+# cut-off, a cheque run signed the day before), so the date recorded against
+# the payment is not always the date the payee's bank will show. The send
+# carries an optional `payment_date` that overrides what the advice DISPLAYS —
+# and nothing else: the payment record behind the GL is never rewritten.
+
+
+def _two_line_group():
+    g = _group()
+    g.lines.append(rem.GroupLine(vendor_inv_no="VINV-2", doc_number="PA-0002",
+                                 payment_date=date(2026, 7, 23), amount=Decimal("50.00")))
+    g.total = Decimal("150.00")
+    return g
+
+
+def test_render_override_replaces_the_date_on_every_line():
+    g = _two_line_group()          # recorded 2026-07-22 and 2026-07-23
+    _, html = tpl.render(g, company_name="C", reference="R", payment_method="eft",
+                         payment_date=date(2026, 7, 20))
+    assert html.count("2026-07-20") == 2      # both lines, not just the first
+    assert "2026-07-22" not in html
+    assert "2026-07-23" not in html
+
+
+def test_render_without_override_keeps_each_line_its_recorded_date():
+    """The admission half of the test above: absent an override the email is
+    byte-for-byte the one AP has always sent, per-line dates and all."""
+    g = _two_line_group()
+    _, html = tpl.render(g, company_name="C", reference="R", payment_method="eft")
+    assert "2026-07-22" in html and "2026-07-23" in html
+
+
+def test_render_override_does_not_mutate_the_group_lines():
+    """Display-only means display-only — the caller's GroupLine objects (and
+    through them nothing else) come back untouched, so a second render, or a
+    log write, still sees the recorded dates."""
+    g = _two_line_group()
+    tpl.render(g, company_name="C", reference="R", payment_method="eft",
+               payment_date=date(2026, 7, 20))
+    assert [l.payment_date for l in g.lines] == [date(2026, 7, 22), date(2026, 7, 23)]
+
+
+async def test_send_groups_puts_the_override_in_the_email_body(db_session):
+    g = _group()
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        await rsend.send_groups(
+            db_session, scope_kind=SCOPE_BATCH, scope_id=uuid.uuid4(), groups=[g],
+            reference="R", payment_method="bank_transfer", company_name="C",
+            sender=_sender(), actor_id=uuid.uuid4(), payment_date=date(2026, 7, 20))
+    html = m.await_args.args[2]
+    assert "2026-07-20" in html and "2026-07-22" not in html
+
+
+async def test_send_endpoint_applies_the_operator_payment_date(client, db_session):
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-PD1")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)                      # payment_date recorded as 2026-07-22
+    db_session.add(rec)
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        r = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                              json={"recipients": None, "payment_date": "2026-07-20"},
+                              headers=_h())
+    assert r.status_code == 200 and r.json()["sent"] == 1
+    assert "2026-07-20" in m.await_args.args[2]
+
+    # The GL's own record of when the payment happened is untouched — this
+    # field changes what the payee is told, never what finance has booked.
+    await db_session.refresh(rec)
+    assert rec.payment_date == date(2026, 7, 22)
+
+
+async def test_send_endpoint_without_a_payment_date_uses_the_recorded_one(client, db_session):
+    """Admission counterpart: omitting the field must leave the pre-existing
+    behaviour exactly as it was, not blank the date or fall back to today."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-PD2")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        r = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                              json={"recipients": None}, headers=_h())
+    assert r.status_code == 200 and r.json()["sent"] == 1
+    assert "2026-07-22" in m.await_args.args[2]
+
+
+async def test_send_endpoint_refuses_a_future_payment_date_and_sends_nothing(client, db_session):
+    """A remittance advice is only ever sent for a payment that has already
+    completed, so a future date is a typo — and one the payee would read as a
+    promise. Relative to today, never a hardcoded date that would decide this
+    test's meaning by the calendar."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-PD3")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        r = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                              json={"recipients": None, "payment_date": tomorrow},
+                              headers=_h())
+    assert r.status_code == 400
+    assert m.await_count == 0          # refused before anything left the building
+
+    # ...and today itself is accepted — the guard rejects the future, not the
+    # default the panel opens on.
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        ok = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                               json={"recipients": None,
+                                     "payment_date": date.today().isoformat()},
+                               headers=_h())
+    assert ok.status_code == 200 and ok.json()["sent"] == 1
+
+
+async def test_selection_send_applies_the_operator_payment_date(client, db_session):
+    """The selection scope carries the same field — it is a third send path,
+    and a date that only worked on two of the three would be a trap."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-PD4")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        r = await client.post("/finance/v1/payments/remittance/selection/send",
+                              json={"payment_ids": [str(rec.id)], "recipients": None,
+                                    "payment_date": "2026-07-20"},
+                              headers=_h())
+    assert r.status_code == 200 and r.json()["sent"] == 1
+    assert "2026-07-20" in m.await_args.args[2]
+
+
+# ── Confirmation preview: render exactly what send would send, send nothing ─
+#
+# Sending an advice is irreversible, so the panel no longer sends on one
+# click: it first asks `.../remittance/render` for the emails and shows them,
+# and only an explicit confirm calls `.../send`. render must therefore be
+# (a) side-effect free and (b) byte-identical to what send delivers.
+
+
+async def _one_payment(db, number):
+    await _configured(db)
+    bp = await _vendor(db, remit="remit@acme.test")
+    inv = await _invoice(db, number)
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db.add(pa)
+    await db.flush()
+    rec = _record(pa)
+    db.add(rec)
+    await db.flush()
+    return bp, rec
+
+
+async def test_render_endpoint_returns_the_email_and_sends_nothing(client, db_session):
+    _, rec = await _one_payment(db_session, "VINV-RD1")
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        r = await client.post(f"/finance/v1/payments/{rec.id}/remittance/render",
+                              json={"recipients": None, "payment_date": "2026-07-20"},
+                              headers=_h())
+    assert r.status_code == 200
+    [email] = r.json()["emails"]
+    assert email["status"] == "ready"
+    assert email["to"] == "remit@acme.test"
+    assert email["cc"] == "apbox@crm.test"
+    assert email["from"] == "ap@crm.test"
+    assert "VINV-RD1" in email["subject"]
+    assert "VINV-RD1" in email["html"] and "2026-07-20" in email["html"]
+
+    assert m.await_count == 0          # nothing left the building
+    rows = (await db_session.execute(select(RemittanceNotification))).scalars().all()
+    assert rows == []                  # and nothing claims it did
+
+
+async def test_render_matches_what_send_then_delivers(client, db_session):
+    """The whole point of the confirmation step: what AP approved is what the
+    vendor receives — same To, Cc, subject and body."""
+    _, rec = await _one_payment(db_session, "VINV-RD2")
+    body = {"recipients": None, "payment_date": "2026-07-21"}
+    [shown] = (await client.post(f"/finance/v1/payments/{rec.id}/remittance/render",
+                                 json=body, headers=_h())).json()["emails"]
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        r = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                              json=body, headers=_h())
+    assert r.json()["sent"] == 1
+    to, subject, html = m.await_args.args[:3]
+    assert (to, subject, html) == (shown["to"], shown["subject"], shown["html"])
+    assert m.await_args.kwargs["cc"] == shown["cc"]
+    assert m.await_args.kwargs["smtp_from"] == shown["from"]
+
+
+async def test_render_shows_already_sent_payee_as_skipped_unless_resend(client, db_session):
+    """Same skip rule as send — otherwise the confirmation screen would show
+    an email that send then silently refuses (or the reverse)."""
+    bp, rec = await _one_payment(db_session, "VINV-RD3")
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()):
+        await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                          json={"recipients": None}, headers=_h())
+
+    [again] = (await client.post(f"/finance/v1/payments/{rec.id}/remittance/render",
+                                 json={"recipients": None}, headers=_h())).json()["emails"]
+    assert again["status"] == "skipped"
+    assert again["error"] == "Already sent — resend not requested"
+    assert "html" not in again
+
+    resend = {"recipients": [{"recipient_kind": "vendor", "party_id": str(bp.id),
+                              "resend": True}]}
+    [forced] = (await client.post(f"/finance/v1/payments/{rec.id}/remittance/render",
+                                  json=resend, headers=_h())).json()["emails"]
+    assert forced["status"] == "ready" and forced["html"]
+
+
+async def test_render_shows_blocked_payee_as_skipped(client, db_session):
+    await _configured(db_session)
+    bp = await _vendor(db_session, email="", remit=None)
+    inv = await _invoice(db_session, "VINV-RD4")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+    [e] = (await client.post(f"/finance/v1/payments/{rec.id}/remittance/render",
+                             json={"recipients": None}, headers=_h())).json()["emails"]
+    assert e["status"] == "skipped" and e["error"] == "missing_email"
+
+
+async def test_render_applies_the_same_gates_as_send(client, db_session):
+    _, rec = await _one_payment(db_session, "VINV-RD5")
+    url = f"/finance/v1/payments/{rec.id}/remittance/render"
+    denied = await client.post(url, json={"recipients": None}, headers=_h("requester"))
+    assert denied.status_code == 403
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    future = await client.post(url, json={"recipients": None, "payment_date": tomorrow},
+                               headers=_h())
+    assert future.status_code == 400
+    # admission half: AP clerk (may send advice) may also preview it
+    ok = await client.post(url, json={"recipients": None}, headers=_h("ap_clerk"))
+    assert ok.status_code == 200 and ok.json()["emails"][0]["status"] == "ready"
+
+
+async def test_render_batch_and_selection_scopes(client, db_session):
+    """All three send paths have a confirmation preview — Payments (payment +
+    selection) and Batch Payments (batch)."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-RD6")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    batch = PaymentBatch(batch_number="BP-RD6", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("42.00"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+    rec = _record(pa, batch_id=batch.id)
+    db_session.add(rec)
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        b = await client.post(f"/finance/v1/payments/batches/{batch.id}/remittance/render",
+                              json={"recipients": None}, headers=_h())
+        s = await client.post("/finance/v1/payments/remittance/selection/render",
+                              json={"payment_ids": [str(rec.id)], "recipients": None},
+                              headers=_h())
+    assert m.await_count == 0
+    [be] = b.json()["emails"]
+    assert be["status"] == "ready" and "BP-RD6" in be["subject"]
+    [se] = s.json()["emails"]
+    assert se["status"] == "ready" and se["to"] == "remit@acme.test"

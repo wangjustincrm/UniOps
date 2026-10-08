@@ -86,13 +86,20 @@ async def _dept_manager(db: AsyncSession, host: User | None) -> User | None:
 # ── VMS-PR-019: auto no-show ────────────────────────────────────────────────-
 
 async def mark_no_shows(db: AsyncSession, *, now: datetime | None = None) -> list[uuid.UUID]:
-    """Flip confirmed visits that never checked in (planned_arrival + 2h < now)
-    to `no_show`. Each transition is audit-logged under the system actor."""
+    """Flip visits that never checked in (planned_arrival + 2h < now) to
+    `no_show`. Each transition is audit-logged under the system actor.
+
+    Covers visits still Pending Approval too: the visitor has not come, so the
+    approval is moot. Its engine state is closed as cancelled and its approve /
+    revise tasks completed — otherwise they sat in approvers' inboxes forever.
+    """
+    from app.services.approval import IN_FLIGHT_STATES
+
     now = _now(now)
     cutoff = now - NO_SHOW_GRACE
     rows = (await db.execute(
         select(Visit).where(
-            Visit.status == VisitStatus.confirmed,
+            Visit.status.in_((VisitStatus.confirmed, VisitStatus.pending_approval)),
             Visit.actual_arrival.is_(None),
             Visit.planned_arrival < cutoff,
         )
@@ -101,6 +108,11 @@ async def mark_no_shows(db: AsyncSession, *, now: datetime | None = None) -> lis
     marked: list[uuid.UUID] = []
     for visit in rows:
         before = audit_crud.snapshot(visit)
+        if visit.status == VisitStatus.pending_approval:
+            if visit.approval_status in IN_FLIGHT_STATES:
+                visit.approval_status = "cancelled"
+            visit.host_notified_at = visit.host_notified_at or now  # no "rejected" email
+            await visit_tasks.close_open_visit_tasks(db, visit.id)
         visit.status = VisitStatus.no_show
         await db.flush()
         await audit_crud.log_event(

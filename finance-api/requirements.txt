@@ -12,4 +12,11 @@ python-multipart==0.0.20
 oracledb==2.5.1
 psycopg2-binary==2.9.10
 openpyxl==3.1.5
+# Bank Reconciliation v2 — statement/payment-file PDFs. `cryptography` is not
+# optional: RBC ships statements AES-encrypted with an empty user password, and
+# without it pypdf raises DependencyError instead of opening the file.
+pypdf==5.1.0
+cryptography==43.0.3
+reportlab==4.2.5
+anthropic==0.43.0
 aiosmtplib==3.0.2

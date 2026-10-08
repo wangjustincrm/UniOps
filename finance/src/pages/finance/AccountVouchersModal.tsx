@@ -2,6 +2,11 @@
  * Voucher drill-down modal (能力③) — the posted JV lines composing one account
  * (+optional cost center) in a period. Each row links into JvDetailModal via
  * onOpenJv. Used by AccountBalancePage and BudgetActualPage.
+ *
+ * `includeUnposted` mirrors the report's own basis: opened from a report that
+ * folds in not-yet-posted vouchers, the drill must show them too, or the lines
+ * will not add up to the row that was clicked. Unposted rows are marked, since
+ * an unmarked one reads as a voucher that is already in the ledger.
  */
 import { useQuery } from '@tanstack/react-query'
 import { BookOpen, Loader2, X } from 'lucide-react'
@@ -16,20 +21,22 @@ function money(v: string | null | undefined) {
 interface VoucherRow {
   jv_id: string; jv_number: string; voucher_date: string; summary: string | null
   account_code: string; account_name: string | null
-  local_debit: string; local_credit: string; cost_center_id: string | null
+  local_debit: string; local_credit: string; posted?: boolean; cost_center_id: string | null
   source_doc_type: string | null; source_doc_id: string | null; source_doc_number: string | null
 }
 interface VouchersResp { account_code: string; period: string; rows: VoucherRow[] }
 
-export function AccountVouchersModal({ accountCode, period, dimsValues, title, onClose, onOpenJv }: {
+export function AccountVouchersModal({ accountCode, period, dimsValues, title,
+                                       includeUnposted = false, onClose, onOpenJv }: {
   accountCode: string; period: string; dimsValues?: string | null
-  title: string; onClose: () => void; onOpenJv: (jvId: string) => void
+  title: string; includeUnposted?: boolean
+  onClose: () => void; onOpenJv: (jvId: string) => void
 }) {
-  const qs = dimsValues
+  const qs = (dimsValues
     ? `?period=${period}&dims_values=${encodeURIComponent(dimsValues)}`
-    : `?period=${period}`
+    : `?period=${period}`) + `&include_unposted=${includeUnposted}`
   const { data, isLoading } = useQuery({
-    queryKey: ['ab-vouchers', accountCode, period, dimsValues ?? ''],
+    queryKey: ['ab-vouchers', accountCode, period, dimsValues ?? '', includeUnposted],
     queryFn: () => financeApi.get<VouchersResp>(`/gl/account-balance/${accountCode}/vouchers${qs}`),
   })
 
@@ -72,6 +79,11 @@ export function AccountVouchersModal({ accountCode, period, dimsValues, title, o
                               className="font-mono text-xs text-[#085E5E] hover:underline">
                         {r.jv_number}
                       </button>
+                      {r.posted === false && (
+                        <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                          Unposted
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 font-mono text-xs text-neutral-600">
                       {r.account_code}{r.account_name ? ` · ${r.account_name}` : ''}

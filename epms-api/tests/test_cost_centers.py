@@ -7,14 +7,14 @@ DEPT_URL = "/api/v1/departments"
 
 
 async def _make_dept(client, code: str | None = None) -> dict:
-    code = code or f"D{uuid.uuid4().hex[:4].upper()}"
+    code = code or f"D{uuid.uuid4().hex[:8].upper()}"
     resp = await client.post(DEPT_URL, json={"code": code, "name": f"Dept {code}", "is_active": True})
     assert resp.status_code == 201, resp.text
     return resp.json()
 
 
 async def _make_cc(client, dept_id: str, code: str | None = None) -> dict:
-    code = code or f"CC{uuid.uuid4().hex[:4].upper()}"
+    code = code or f"CC{uuid.uuid4().hex[:8].upper()}"
     resp = await client.post(URL, json={"code": code, "name": f"CostCenter {code}", "department_id": dept_id})
     assert resp.status_code == 201, resp.text
     return resp.json()
