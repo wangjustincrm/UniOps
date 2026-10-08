@@ -88,6 +88,12 @@ modules:
         need uploading again. General and travel expense claims need at least
         one attachment before they can be submitted. The comment typed when
         submitting appears in the claim's Approval Timeline.
+      - >-
+        A submitted claim that is stuck with an approver can be chased from the
+        claim itself: Approval Status → Send reminder under the pending step
+        emails whoever holds that step (their delegate if they are away) and
+        says who it reached. It is refused, with the reason shown, when nobody
+        can be reached or a reminder for that step went out recently.
 
   - key: vms
     label: VMS — Visitor Management

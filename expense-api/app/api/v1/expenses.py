@@ -772,6 +772,45 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
     return out
 
 
+class ReminderOut(BaseModel):
+    sent: bool
+    document_number: str
+    recipients: list[str]
+    next_allowed_at: str
+
+
+@router.post("/{claim_id}/remind", response_model=ReminderOut)
+async def remind_claim_approver(
+    claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep, token: BearerTokenDep,
+):
+    """Nudge whoever holds this claim's open approval step ("Send reminder" on
+    the Approval Status card).
+
+    The read gate is the only gate — anyone who may open the claim may chase it,
+    same as PR/PO in EPMS. The send itself, the recipient resolution and the 24h
+    cooldown happen in epms-api, whose 409/429 refusals are passed through
+    verbatim: they are sentences written for the clicker.
+    """
+    from app.services.epms_reminder_client import ReminderRefused, send_expense_reminder
+
+    claim = await expense_crud.get_by_id(db, claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="Expense claim not found")
+    if not await _can_view_claim(db, claim, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to view this expense claim")
+    if claim.status not in ("submitted", "in_review"):
+        raise HTTPException(
+            status_code=409,
+            detail="This claim is not waiting on an approver right now, so there is nobody to remind.",
+        )
+    try:
+        return await send_expense_reminder(claim.id, claim.claim_type, token)
+    except ReminderRefused as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 @router.patch("/{claim_id}", response_model=ExpenseClaimResponse)
 async def update_expense(
     claim_id: uuid.UUID,
