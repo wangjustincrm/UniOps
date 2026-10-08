@@ -30,6 +30,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import hours as hours_service
+from app.services import incident_type
 
 # OSHA's constant: 100 employees × 50 weeks × 40 hours. HSE confirmed TRIR and
 # RIR are the same metric under two names, so there is one figure, not two.
@@ -55,15 +56,34 @@ class Entity:
     # `t.a = 1 AND b = 2` and the second half would be unqualified. A compound
     # condition needs the prefixing changed, not just a longer string.
     where: str | None = None
+    # How one record is listed when somebody opens a bar: a reference, a line
+    # saying what it is, and where it opens. SQL over the alias `t`, written
+    # here like everything else. No `ref` means the entity is counted only.
+    ref: str | None = None
+    title: str | None = None
+    path: str | None = None
+    # What reading the records themselves needs, beyond the counts. The counts
+    # are behind ehs.incident.read like the rest of the tab; a list of who did
+    # which training is a training record and is held to that key.
+    records_permission: str = "ehs.incident.read"
 
 
 # Every entity here is one HSE listed. Adding a ninth is a row, not a rewrite.
 ENTITIES: tuple[Entity, ...] = (
+    # ★ Round 5 feedback (Ken Boucher, 1 Oct): "searching by type of incident,
+    # toolbox talks etc." The type and the form it came in on are dimensions,
+    # so they can be grouped on and narrowed to like anything else.
     Entity("incident", "Incidents", "ehs_incidents", "occurred_at",
-           ("location", "department", "shift", "category", "injury_class",
-            "status", "month")),
+           # Order matters: opening a bar regroups by the next one not yet
+           # narrowed, so "where" follows "what kind" rather than the form,
+           # which a type already decides.
+           ("incident_type", "location", "department", "shift", "injury_class",
+            "status", "category", "form_kind", "month"),
+           ref="t.incident_no", title="t.title", path="/incidents/{id}"),
     Entity("action", "Corrective actions", "ehs_actions", "created_at",
-           ("status", "priority", "owner", "month")),
+           ("status", "priority", "owner", "month"),
+           ref="t.action_no", title="t.title", path="/actions/{id}",
+           records_permission="ehs.action.read"),
     # ★ Round 5: the register was rewritten into incidents and its screen
     # removed, so "first aid" is a slice of the incident register now. Pointed at
     # the table that holds the records rather than left on the one they were
@@ -71,19 +91,33 @@ ENTITIES: tuple[Entity, ...] = (
     # that is gone.
     Entity("first_aid", "First aid", "ehs_incidents", "occurred_at",
            ("location", "department", "shift", "status", "month"),
-           where="injury_class = 'first_aid'"),
+           where="injury_class = 'first_aid'",
+           ref="t.incident_no", title="t.title", path="/incidents/{id}"),
     Entity("inspection", "Inspections", "ehs_form_submissions", "occurred_at",
-           ("location", "department", "status", "month")),
+           ("form", "location", "department", "status", "month"),
+           ref="t.submission_no",
+           title="(select name from ehs_form_templates f where f.id = t.template_id)",
+           path="/forms/submissions/{id}"),
     Entity("risk", "Risk assessments", "ehs_risk_assessments", "assessed_at",
            ("rating", "month")),
     # Training has no status: a record exists because someone completed a
     # course. What varies is which course, and how it was delivered.
     Entity("training", "Training records", "ehs_training_records", "completed_on",
-           ("course", "delivery", "month")),
+           ("course", "delivery", "month"),
+           ref="t.course_label", title="t.user_name", path=None,
+           records_permission="ehs.training.read"),
     Entity("toolbox_talk", "Toolbox talks", "ehs_tbt_deliveries", "created_at",
-           ("status", "department", "month")),
+           ("talk", "supervisor", "status", "department", "month"),
+           ref="(select talk_no from ehs_toolbox_talks k where k.id = t.talk_id)",
+           title="(select title from ehs_toolbox_talks k where k.id = t.talk_id)"
+                 " || coalesce(' — ' || t.supervisor_name, '')",
+           path="/toolbox-talks?delivery={id}"),
+    # ★ No status column on this table — it carries is_active — so grouping it
+    # by "status" was a 500 every time anybody picked it. Found by the test that
+    # runs every entity against every grouping it offers.
     Entity("equipment", "Equipment", "ehs_equipment", "created_at",
-           ("location", "department", "status")),
+           ("location", "department", "in_service"),
+           ref="t.asset_no", title="t.name", path="/equipment"),
 )
 
 BY_KEY = {e.key: e for e in ENTITIES}
@@ -96,6 +130,13 @@ class Dimension:
     # SQL fragment producing the group value, and the one producing its label.
     expression: str
     label_expression: str | None = None
+    # Labels for codes, where the names live in code rather than in a table.
+    labels: dict | None = None
+
+
+def _short(label: str) -> str:
+    """"First Aid Injury — managed using…" reads as "First Aid Injury" in a list."""
+    return label.split(" — ")[0]
 
 
 DIMENSIONS: dict[str, Dimension] = {
@@ -107,7 +148,24 @@ DIMENSIONS: dict[str, Dimension] = {
     "shift": Dimension("shift", "Shift", "shift_code"),
     "category": Dimension("category", "Category", "category_label"),
     "injury_class": Dimension("injury_class", "Injury classification", "injury_class"),
+    # The twelve types on HSE's form. Held in `extra`, which is where the form
+    # writes it (crud/incident.py), so this reads it from there.
+    "incident_type": Dimension(
+        "incident_type", "Incident type", "(extra->>'incident_type')",
+        labels={t.code: _short(t.label) for t in incident_type.TYPES}),
+    "form_kind": Dimension(
+        "form_kind", "Form", "form_kind",
+        labels={"medical": "Injury or illness", "equipment": "Equipment",
+                "near_miss": "Near miss or good catch"}),
+    "form": Dimension("form", "Form", "template_id::text",
+                      "(select name from ehs_form_templates f where f.id = t.template_id)"),
+    "talk": Dimension("talk", "Talk", "talk_id::text",
+                      "(select title from ehs_toolbox_talks k where k.id = t.talk_id)"),
+    "supervisor": Dimension("supervisor", "Supervisor", "supervisor_name"),
     "status": Dimension("status", "Status", "status"),
+    "in_service": Dimension(
+        "in_service", "In service", "is_active::text",
+        labels={"true": "In service", "false": "Retired"}),
     "priority": Dimension("priority", "Priority", "priority"),
     "rating": Dimension("rating", "Risk rating", "rating"),
     "owner": Dimension("owner", "Owner", "owner_name"),
@@ -124,28 +182,23 @@ class ReportError(ValueError):
     """A report that cannot be built."""
 
 
-async def group_by(
-    db: AsyncSession, *, entity: str, dimension: str,
-    date_from: date | None = None, date_to: date | None = None,
-) -> list[dict]:
-    """Count records of one entity, grouped by one dimension.
-
-    Everything interpolated into the SQL comes from the tables above, never from
-    the caller: `entity` and `dimension` are looked up and rejected if unknown,
-    and the dates are bound parameters.
-    """
+def _entity(entity: str) -> Entity:
     ent = BY_KEY.get(entity)
     if ent is None:
         raise ReportError(f"Unknown entity '{entity}'. One of: {', '.join(BY_KEY)}")
-    if dimension not in ent.dimensions:
-        raise ReportError(
-            f"{ent.label} cannot be grouped by '{dimension}'. "
-            f"One of: {', '.join(ent.dimensions)}")
+    return ent
 
-    dim = DIMENSIONS[dimension]
-    expr = dim.expression.format(date_col=ent.date_column)
-    label_expr = (dim.label_expression or expr)
 
+def _where(
+    ent: Entity, *, date_from: date | None, date_to: date | None,
+    filters: dict[str, str | None] | None,
+) -> tuple[str, dict[str, object]]:
+    """The WHERE clause for one entity, period and set of filters.
+
+    ★ The filter *values* are bound parameters; only the dimension names choose
+    SQL, and those are looked up in the tables above and refused if unknown. A
+    value of None means "not recorded" — the bar the engine labels that way.
+    """
     where = ["1=1"]
     params: dict[str, object] = {}
     # The entity's own narrowing, where it is a slice of a table rather than
@@ -159,20 +212,96 @@ async def group_by(
     if date_to:
         where.append(f"t.{ent.date_column} < :date_to")
         params["date_to"] = date_to
+    for i, (key, value) in enumerate((filters or {}).items()):
+        if key not in ent.dimensions:
+            raise ReportError(
+                f"{ent.label} cannot be narrowed by '{key}'. "
+                f"One of: {', '.join(ent.dimensions)}")
+        expr = DIMENSIONS[key].expression.format(date_col=f"t.{ent.date_column}")
+        if value is None:
+            where.append(f"{expr} is null")
+        else:
+            where.append(f"{expr} = :f{i}")
+            params[f"f{i}"] = value
+    return " and ".join(where), params
+
+
+async def group_by(
+    db: AsyncSession, *, entity: str, dimension: str,
+    date_from: date | None = None, date_to: date | None = None,
+    filters: dict[str, str | None] | None = None,
+) -> list[dict]:
+    """Count records of one entity, grouped by one dimension.
+
+    Everything interpolated into the SQL comes from the tables above, never from
+    the caller: `entity` and `dimension` are looked up and rejected if unknown,
+    and the dates and filter values are bound parameters.
+    """
+    ent = _entity(entity)
+    if dimension not in ent.dimensions:
+        raise ReportError(
+            f"{ent.label} cannot be grouped by '{dimension}'. "
+            f"One of: {', '.join(ent.dimensions)}")
+
+    dim = DIMENSIONS[dimension]
+    expr = dim.expression.format(date_col=ent.date_column)
+    label_expr = (dim.label_expression or expr)
+    clause, params = _where(ent, date_from=date_from, date_to=date_to, filters=filters)
 
     sql = f"""
         select {expr} as value, {label_expr} as label, count(*) as count
           from {ent.table} t
-         where {' and '.join(where)}
+         where {clause}
       group by {expr}, {label_expr}
       order by count(*) desc, 1
          limit 100
     """
     rows = (await db.execute(text(sql), params)).all()
+    labels = dim.labels or {}
     return [
-        {"value": v, "label": lbl or (v if v is not None else "Not recorded"), "count": n}
+        {"value": v,
+         "label": labels.get(v) or lbl or (v if v is not None else "Not recorded"),
+         "count": n}
         for v, lbl, n in rows
     ]
+
+
+RECORDS_LIMIT = 200
+
+
+async def records(
+    db: AsyncSession, *, entity: str,
+    date_from: date | None = None, date_to: date | None = None,
+    filters: dict[str, str | None] | None = None,
+) -> dict:
+    """The records behind a bar: what "searching" means on this tab.
+
+    Round 5 feedback: a count says how many; the person asking wants to know
+    which. Newest first, capped, and says so when it is capped rather than
+    letting a list of two hundred read as all of them.
+    """
+    ent = _entity(entity)
+    if ent.ref is None:
+        raise ReportError(f"{ent.label} are counted here, not listed.")
+    clause, params = _where(ent, date_from=date_from, date_to=date_to, filters=filters)
+    total = (await db.execute(text(
+        f"select count(*) from {ent.table} t where {clause}"), params)).scalar() or 0
+    rows = (await db.execute(text(f"""
+        select t.id, {ent.ref} as ref, {ent.title} as title, t.{ent.date_column} as at
+          from {ent.table} t
+         where {clause}
+      order by t.{ent.date_column} desc nulls last
+         limit {RECORDS_LIMIT}
+    """), params)).all()
+    return {
+        "total": total,
+        "rows": [
+            {"id": str(i), "ref": ref, "title": title,
+             "at": at.isoformat() if at is not None else None,
+             "path": ent.path.format(id=i) if ent.path else None}
+            for i, ref, title, at in rows
+        ],
+    }
 
 
 async def injury_rates(
@@ -254,6 +383,7 @@ async def injury_rates(
 async def compare_periods(
     db: AsyncSession, *, entity: str, dimension: str,
     period_a: tuple[date, date], period_b: tuple[date, date],
+    filters: dict[str, str | None] | None = None,
 ) -> list[dict]:
     """The same grouping over two periods, with the movement between them.
 
@@ -262,9 +392,11 @@ async def compare_periods(
     the caller's business.
     """
     a = {r["value"]: r for r in await group_by(
-        db, entity=entity, dimension=dimension, date_from=period_a[0], date_to=period_a[1])}
+        db, entity=entity, dimension=dimension, date_from=period_a[0], date_to=period_a[1],
+        filters=filters)}
     b = {r["value"]: r for r in await group_by(
-        db, entity=entity, dimension=dimension, date_from=period_b[0], date_to=period_b[1])}
+        db, entity=entity, dimension=dimension, date_from=period_b[0], date_to=period_b[1],
+        filters=filters)}
 
     out = []
     for value in set(a) | set(b):
