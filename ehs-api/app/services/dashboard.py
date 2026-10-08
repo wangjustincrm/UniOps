@@ -73,6 +73,7 @@ async def headline(db: AsyncSession, *, year: int, hours_worked: float | None) -
           coalesce(sum(lost_time_hours), 0)                         as lost_hours
         from ehs_incidents
        where occurred_at >= :start and occurred_at < :end
+         and status <> 'draft'
     """), {"start": start, "end": end})).one()
 
     injuries, first_aid, medical, lost_time, recordable, cost_total, cost_known, lost_hours = row
@@ -84,7 +85,8 @@ async def headline(db: AsyncSession, *, year: int, hours_worked: float | None) -
     # behaviour the near-miss reporting is there to encourage. HSE asked for it
     # to mean medical incidents, and to be labelled that way.
     last = (await db.execute(text(
-        "select max(occurred_at) from ehs_incidents where injury_class is not null"))).scalar()
+        "select max(occurred_at) from ehs_incidents"
+        " where injury_class is not null and status <> 'draft'"))).scalar()
     days_since = None
     if last is not None:
         days_since = (datetime.now(timezone.utc).astimezone(ONTARIO).date()
@@ -130,6 +132,7 @@ async def medical_events_by_month(db: AsyncSession, *, year: int) -> list[dict]:
           from ehs_incidents
          where occurred_at >= :start and occurred_at < :end
            and injury_class is not null
+           and status <> 'draft'
       group by 1, 2
     """), {"start": start, "end": end})).all()
 
@@ -160,6 +163,7 @@ async def near_misses_by_month(db: AsyncSession, *, year: int) -> list[dict]:
           from ehs_incidents
          where form_kind = 'near_miss'
            and occurred_at >= :start and occurred_at < :end
+           and status <> 'draft'
       group by 1, 2
     """), {"start": start, "end": end})).all()
 
@@ -186,6 +190,7 @@ async def body_parts(db: AsyncSession, *, year: int) -> list[dict]:
           join ehs_incidents i on i.id = p.incident_id
          where i.occurred_at >= :start and i.occurred_at < :end
            and p.body_part_label is not null
+           and i.status <> 'draft'
       group by 1
       order by count(distinct i.id) desc, 1
     """), {"start": start, "end": end})).all()
@@ -216,6 +221,7 @@ async def injured_by_location(db: AsyncSession, *, year: int) -> list[dict]:
           left join locations l on l.id = i.location_id
          where i.occurred_at >= :start and i.occurred_at < :end
            and i.injury_class is not null
+           and i.status <> 'draft'
       group by 1, 2
       order by count(*) desc, 2
     """), {"start": start, "end": end})).all()
@@ -237,6 +243,7 @@ async def injured_by_department(db: AsyncSession, *, year: int) -> list[dict]:
           left join departments d on d.id = i.department_id
          where i.occurred_at >= :start and i.occurred_at < :end
            and i.injury_class is not null
+           and i.status <> 'draft'
       group by 1, 2
       order by count(*) desc, 2
     """), {"start": start, "end": end})).all()
@@ -271,6 +278,7 @@ async def participation(db: AsyncSession, *, year: int) -> list[dict]:
           from ehs_incidents
          where form_kind = 'near_miss'
            and occurred_at >= :start and occurred_at < :end
+           and status <> 'draft'
       group by 1
     """), {"start": start, "end": end})).all():
         bucket(name)["good_catch"] = n

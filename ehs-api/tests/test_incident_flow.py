@@ -511,6 +511,9 @@ async def test_body_part_and_nature_reach_the_injury_figures(hse_manager, worker
         }],
     })
     assert created.status_code in (200, 201), created.text
+    # Sent, as the form does: a saved draft is not on the dashboard.
+    sent = await client.post(f"/api/v1/incidents/{created.json()['id']}/submit")
+    assert sent.status_code == 200, sent.text
 
     detail = (await client.get(f"/api/v1/incidents/{created.json()['id']}")).json()
     person = next(p for p in detail["persons"] if p["role"] == "injured")

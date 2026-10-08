@@ -261,13 +261,16 @@ async def test_days_since_counts_injuries_not_every_record(hse_manager, worker, 
     injured, _ = worker
     long_ago = datetime.now(timezone.utc) - timedelta(days=40)
 
-    await client.post("/api/v1/incidents", json={
+    cut = await client.post("/api/v1/incidents", json={
         "form_kind": "medical", "title": "Cut finger",
         "incident_type": "first_aid",
         "occurred_at": long_ago.isoformat(),
         "description": "Caught on a burr.",
         "injured_user_id": str(injured.id),
     })
+    # Sent, as the form does: a saved draft is not counted.
+    sent = await client.post(f"/api/v1/incidents/{cut.json()['id']}/submit")
+    assert sent.status_code == 200, sent.text
     before = (await client.get("/api/v1/dashboard")).json()["headline"]
     assert before["days_since_last_incident"] >= 39
 

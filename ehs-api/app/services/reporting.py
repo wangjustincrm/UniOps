@@ -46,16 +46,16 @@ class Entity:
     date_column: str
     # Dimensions this entity actually has. Not every table carries every one.
     dimensions: tuple[str, ...]
-    # A fixed narrowing, where the entity is a slice of a table rather than the
-    # whole of it. A constant written here, never anything a caller sends — the
+    # Fixed narrowings, where the entity is a slice of a table rather than the
+    # whole of it. Constants written here, never anything a caller sends — the
     # rule for this engine is that nothing from a request reaches the SQL as
     # text.
     #
-    # ★ One column, one condition: it is prefixed with the table alias as a
-    # whole (`t.{where}`), so `a = 1 AND b = 2` would come out as
-    # `t.a = 1 AND b = 2` and the second half would be unqualified. A compound
-    # condition needs the prefixing changed, not just a longer string.
-    where: str | None = None
+    # ★ One column per condition: each is prefixed with the table alias
+    # (`t.{cond}`), so a single string `a = 1 AND b = 2` would come out as
+    # `t.a = 1 AND b = 2` with the second half unqualified. Two conditions are
+    # two entries.
+    where: tuple[str, ...] = ()
     # How one record is listed when somebody opens a bar: a reference, a line
     # saying what it is, and where it opens. SQL over the alias `t`, written
     # here like everything else. No `ref` means the entity is counted only.
@@ -79,6 +79,11 @@ ENTITIES: tuple[Entity, ...] = (
            # which a type already decides.
            ("incident_type", "location", "department", "shift", "injury_class",
             "status", "category", "form_kind", "month"),
+           # ★ A draft is not an incident yet. Every form saves one (HSE's P0,
+           # for the WiFi dead spots), so counting them inflates every bar, and
+           # listing them shows the title of somebody's unsent report to anyone
+           # who reads the register. Raised in review by uniops-41.
+           where=("status <> 'draft'",),
            ref="t.incident_no", title="t.title", path="/incidents/{id}"),
     Entity("action", "Corrective actions", "ehs_actions", "created_at",
            ("status", "priority", "owner", "month"),
@@ -91,10 +96,12 @@ ENTITIES: tuple[Entity, ...] = (
     # that is gone.
     Entity("first_aid", "First aid", "ehs_incidents", "occurred_at",
            ("location", "department", "shift", "status", "month"),
-           where="injury_class = 'first_aid'",
+           where=("injury_class = 'first_aid'", "status <> 'draft'"),
            ref="t.incident_no", title="t.title", path="/incidents/{id}"),
+    # Drafts out for the same reason: 41 of 103 on dev were unsent forms.
     Entity("inspection", "Inspections", "ehs_form_submissions", "occurred_at",
            ("form", "location", "department", "status", "month"),
+           where=("status <> 'draft'",),
            ref="t.submission_no",
            title="(select name from ehs_form_templates f where f.id = t.template_id)",
            path="/forms/submissions/{id}"),
@@ -204,8 +211,7 @@ def _where(
     # The entity's own narrowing, where it is a slice of a table rather than
     # the whole of it. A constant from the table above, never anything a
     # caller sent — nothing from a request reaches this SQL as text.
-    if ent.where:
-        where.append(f"t.{ent.where}")
+    where.extend(f"t.{cond}" for cond in ent.where)
     if date_from:
         where.append(f"t.{ent.date_column} >= :date_from")
         params["date_from"] = date_from
@@ -319,7 +325,8 @@ async def injury_rates(
     with a note naming them. A short divisor makes an injury rate read *higher*
     than it is, and there is nothing in the number itself to reveal that.
     """
-    where = ["1=1"]
+    # ★ Drafts are not incidents yet; a saved, unsent report must not move TRIR.
+    where = ["status <> 'draft'"]
     params: dict[str, object] = {}
     if date_from:
         where.append("occurred_at >= :date_from")

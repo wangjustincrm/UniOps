@@ -238,3 +238,96 @@ async def test_every_entity_lists_and_groups_on_the_real_tables(hse_manager):
                 "entity": ent.key, "dimension": ent.dimensions[0],
                 "filter": f"{dim}:2026-09"})
             assert got.status_code == 200, (ent.key, dim, got.text)
+
+
+class TestADraftIsNotAnIncidentYet:
+    """★ Every form saves a draft (HSE's P0, for the WiFi dead spots). Counted,
+    one unsent report moves every bar and TRIR; listed, it shows the title of
+    somebody's unsent report to anyone who reads the register. Raised in review
+    by uniops-41 — dev had no draft incidents, so nothing else would have shown it.
+    """
+
+    async def test_not_counted_and_not_listed(self, hse_manager, db_session):
+        _, client = hse_manager
+        area = _area()
+        await _incident(db_session, area=area, kind="first_aid", status="draft")
+        sent = await _incident(db_session, area=area, kind="first_aid", status="submitted")
+
+        got = await client.get("/api/v1/reports/group", params={
+            "entity": "incident", "dimension": "incident_type", "filter": f"location:{area}"})
+        assert _counts(got.json()) == {"First Aid Injury": 1}
+        listed = (await client.get("/api/v1/reports/records", params={
+            "entity": "incident", "filter": f"location:{area}"})).json()
+        assert [r["ref"] for r in listed["rows"]] == [sent.incident_no]
+
+    async def test_not_in_the_first_aid_slice_either(self, db_session):
+        """The slice already had a condition of its own; both must hold."""
+        area = _area()
+        i = await _incident(db_session, area=area, kind="first_aid", status="draft")
+        i.injury_class = "first_aid"
+        await db_session.flush()
+        rows = await reporting.group_by(db_session, entity="first_aid", dimension="status",
+                                        filters={"location": area})
+        assert rows == []
+
+    async def test_not_in_the_injury_rates(self, db_session):
+        far = (date(2031, 1, 1), date(2032, 1, 1))
+        before = await reporting.injury_rates(db_session, hours_worked=200_000,
+                                              date_from=far[0], date_to=far[1])
+        i = await _incident(db_session, area=_area(), kind="lost_time", status="draft",
+                            at=datetime(2031, 3, 1, 12, tzinfo=timezone.utc))
+        i.injury_class = "lost_time"
+        await db_session.flush()
+        after = await reporting.injury_rates(db_session, hours_worked=200_000,
+                                             date_from=far[0], date_to=far[1])
+        assert after["lost_time"] == before["lost_time"]
+        assert after["recordable"] == before["recordable"]
+
+        i.status = "submitted"
+        await db_session.flush()
+        sent = await reporting.injury_rates(db_session, hours_worked=200_000,
+                                            date_from=far[0], date_to=far[1])
+        assert sent["lost_time"] == before["lost_time"] + 1
+
+    async def test_not_on_the_dashboard(self, db_session):
+        from app.services import dashboard
+        year = 2031
+        before = await dashboard.headline(db_session, year=year, hours_worked=None)
+        months_before = await dashboard.medical_events_by_month(db_session, year=year)
+        i = await _incident(db_session, area=_area(), kind="first_aid", status="draft",
+                            at=datetime(year, 5, 2, 12, tzinfo=timezone.utc))
+        i.injury_class = "first_aid"
+        await db_session.flush()
+
+        assert (await dashboard.headline(db_session, year=year, hours_worked=None))[
+            "first_aid"] == before["first_aid"]
+        assert await dashboard.medical_events_by_month(db_session, year=year) == months_before
+        assert all(r["label"] != i.location_path for r in
+                   await dashboard.injured_by_location(db_session, year=year))
+
+        i.status = "submitted"
+        await db_session.flush()
+        assert (await dashboard.headline(db_session, year=year, hours_worked=None))[
+            "first_aid"] == before["first_aid"] + 1
+
+    async def test_an_unsent_inspection_is_not_counted(self, hse_manager, db_session):
+        from sqlalchemy import text as sql
+        _, client = hse_manager
+        made = await client.post("/api/v1/forms/templates", json={
+            "code": f"r-{uuid.uuid4().hex[:5]}", "name": "Scratch", "category": "inspection"})
+        t = made.json()
+        await client.put(f"/api/v1/forms/templates/{t['id']}/schema", json={
+            "schema": [{"key": "ok", "type": "yes_no_na", "label": "Sound?"}]})
+        await client.post(f"/api/v1/forms/templates/{t['id']}/publish", json={"change_note": "v1"})
+        sub = (await client.post(f"/api/v1/forms/templates/{t['id']}/submissions",
+                                 json={})).json()
+        assert sub["status"] == "draft"
+
+        params = {"entity": "inspection", "dimension": "status", "filter": f"form:{t['id']}"}
+        assert (await client.get("/api/v1/reports/group", params=params)).json() == []
+
+        await db_session.execute(sql(
+            "update ehs_form_submissions set status = 'submitted' where id = :i"),
+            {"i": sub["id"]})
+        assert _counts((await client.get("/api/v1/reports/group", params=params)).json()) == {
+            "submitted": 1}

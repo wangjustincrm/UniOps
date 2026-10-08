@@ -95,7 +95,7 @@ class TestFirstAidIsRecordedOnTheInjuryForm:
 
         entity = reporting.BY_KEY["first_aid"]
         assert entity.table == "ehs_incidents"
-        assert entity.where == "injury_class = 'first_aid'"
+        assert "injury_class = 'first_aid'" in entity.where
 
         _, client = hse_manager
         got = await client.get(
