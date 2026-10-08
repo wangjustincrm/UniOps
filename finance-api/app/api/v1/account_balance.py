@@ -1,6 +1,8 @@
 """Account balance report API (科目余额表) — reads posted JV lines, or
 posted + not-yet-tallied ones when `include_unposted` is set (NC's
-包含未记账凭证 toggle)."""
+包含未记账凭证 toggle). The Budget Actual page and the EPMS Budget Dashboard
+reads take the same flag with the same meaning (fiscal.status_filter); the
+PR over-budget criterion does not."""
 import uuid
 from decimal import Decimal
 
@@ -93,7 +95,8 @@ async def budget_actual(_: CurrentUser, db: AsyncSession = Depends(get_db),
 @router.get("/budget-actual-grid")
 async def budget_actual_grid(request: Request, _: CurrentUser,
                              db: AsyncSession = Depends(get_db),
-                             period: str = Query(...)):
+                             period: str = Query(...),
+                             include_unposted: bool = Query(default=False)):
     """④b Budget-vs-Actual grid: per (cost center × income-expense item)
     budget/actual/variance for the 5 categories + Payroll/Depreciation tie-out
     rows + unmapped exceptions. Budget comes from budget-api; if it is
@@ -110,7 +113,8 @@ async def budget_actual_grid(request: Request, _: CurrentUser,
         logging.getLogger(__name__).exception(
             "budget-api plan-lines fetch failed; rendering actuals only")
         budget = {}
-    return await crud.budget_actual_grid(db, period, budget)
+    return await crud.budget_actual_grid(db, period, budget,
+                                         include_unposted=include_unposted)
 
 
 @router.get("/budget-actual/lineage")
@@ -130,7 +134,8 @@ async def budget_actual_lineage(_: CurrentUser):
 async def budget_actual_rollup(_: CurrentUser, db: AsyncSession = Depends(get_db),
                                fiscal_year: int = Query(...),
                                month_from: int = Query(default=1, ge=1, le=12),
-                               month_to: int | None = Query(default=None, ge=1, le=12)):
+                               month_to: int | None = Query(default=None, ge=1, le=12),
+                               include_unposted: bool = Query(default=False)):
     """Company / expense centre / department / cost centre roll-up for the
     finance Budget-vs-Actual report.
 
@@ -148,7 +153,8 @@ async def budget_actual_rollup(_: CurrentUser, db: AsyncSession = Depends(get_db
     if month_from > month_to:
         raise HTTPException(status_code=422, detail="month_from is after month_to")
     return await budget_rollup.rollup(db, fiscal_year=fiscal_year,
-                                      month_from=month_from, month_to=month_to)
+                                      month_from=month_from, month_to=month_to,
+                                      include_unposted=include_unposted)
 
 
 @router.get("/budget-actual/rollup/export")
@@ -158,7 +164,8 @@ async def budget_actual_rollup_export(
         month_from: int = Query(default=1, ge=1, le=12),
         month_to: int | None = Query(default=None, ge=1, le=12),
         group_by: str = Query(default="centre"),
-        by_month: bool = Query(default=False)):
+        by_month: bool = Query(default=False),
+        include_unposted: bool = Query(default=False)):
     """The roll-up as an .xlsx, grouped the way the page is grouped.
 
     The tree is written out fully expanded — a collapsed row on screen is a
@@ -179,7 +186,8 @@ async def budget_actual_rollup_export(
         raise HTTPException(status_code=422, detail="month_from is after month_to")
 
     data = await budget_rollup.rollup(db, fiscal_year=fiscal_year,
-                                      month_from=month_from, month_to=month_to)
+                                      month_from=month_from, month_to=month_to,
+                                      include_unposted=include_unposted)
     months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     label = (months[month_from - 1] if month_from == month_to
@@ -189,7 +197,8 @@ async def budget_actual_rollup_export(
     xlsx = build_rollup_xlsx(rollup=data, group_by=group_by, window_label=label,
                              by_month=by_month)
     name = (f"budget-actual-{group_by}-FY{fiscal_year}-{label}"
-            f"{'-monthly' if by_month else ''}.xlsx")
+            f"{'-monthly' if by_month else ''}"
+            f"{'-incl-unposted' if include_unposted else ''}.xlsx")
     return Response(
         content=xlsx,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -202,7 +211,8 @@ async def budget_actual_breakdown(_: CurrentUser, db: AsyncSession = Depends(get
                                   month_from: int = Query(default=1, ge=1, le=12),
                                   month_to: int | None = Query(default=None, ge=1, le=12),
                                   scope_kind: str = Query(default="company"),
-                                  scope_key: str = Query(default="")):
+                                  scope_key: str = Query(default=""),
+                                  include_unposted: bool = Query(default=False)):
     """What a roll-up figure is made of: budget account × cost centre, over the
     same window and the same rules as the roll-up above it.
 
@@ -223,7 +233,7 @@ async def budget_actual_breakdown(_: CurrentUser, db: AsyncSession = Depends(get
         raise HTTPException(status_code=422, detail="month_from is after month_to")
     return await budget_rollup.breakdown(
         db, fiscal_year=fiscal_year, month_from=month_from, month_to=month_to,
-        scope_kind=scope_kind, scope_key=scope_key)
+        scope_kind=scope_kind, scope_key=scope_key, include_unposted=include_unposted)
 
 
 @router.get("/budget-actual/unallocated-lines")
@@ -234,7 +244,8 @@ async def budget_actual_unallocated_lines(
         month_to: int | None = Query(default=None, ge=1, le=12),
         bucket: str = Query(...),
         limit: int = Query(default=200, ge=1, le=1000),
-        offset: int = Query(default=0, ge=0)):
+        offset: int = Query(default=0, ge=0),
+        include_unposted: bool = Query(default=False)):
     """The voucher lines behind one bucket of the roll-up's unallocated row.
 
     `bucket` is an excluded income-expense prefix (CRM004 / CRM007 / CRM09912)
@@ -254,19 +265,21 @@ async def budget_actual_unallocated_lines(
         raise HTTPException(status_code=422, detail="month_from is after month_to")
     return await budget_rollup.unallocated_lines(
         db, fiscal_year=fiscal_year, month_from=month_from, month_to=month_to,
-        bucket=bucket, limit=limit, offset=offset)
+        bucket=bucket, limit=limit, offset=offset, include_unposted=include_unposted)
 
 
 @router.get("/nc-actuals-monthly")
 async def nc_actuals_monthly(user: CurrentUser, db: AsyncSession = Depends(get_db),
                              fiscal_year: int = Query(...),
-                             cost_center_id: uuid.UUID | None = Query(default=None)):
+                             cost_center_id: uuid.UUID | None = Query(default=None),
+                             include_unposted: bool = Query(default=False)):
     """NC posted actual per (income-expense item × month) for a fiscal year,
     optionally scoped to a cost center — the EPMS Budget Dashboard's NC-actual
     line. Non-full-access callers are further clamped to their department's
     cost centers (see `_cc_scope`; never 403, fail-closed to empty)."""
     kw = await _cc_scope(db, user, cost_center_id)
-    return await crud.nc_actuals_monthly(db, fiscal_year, **kw)
+    return await crud.nc_actuals_monthly(db, fiscal_year, **kw,
+                                         include_unposted=include_unposted)
 
 
 @router.get("/nc-actuals-by-cost-center")
@@ -292,12 +305,14 @@ async def nc_actuals_by_cost_center(user: CurrentUser, db: AsyncSession = Depend
 async def nc_partner_monthly(user: CurrentUser, db: AsyncSession = Depends(get_db),
                              income_expense_item_id: uuid.UUID = Query(...),
                              fiscal_year: int = Query(...),
-                             cost_center_id: uuid.UUID | None = Query(default=None)):
+                             cost_center_id: uuid.UUID | None = Query(default=None),
+                             include_unposted: bool = Query(default=False)):
     """Budget Dashboard drill: partner (客商/供应商/客户) × month NC actual for one
     budget account, cost center already locked by the caller (clamped to the
     caller's department scope if not full-access)."""
     kw = await _cc_scope(db, user, cost_center_id)
-    result = await crud.nc_partner_monthly(db, income_expense_item_id, fiscal_year, **kw)
+    result = await crud.nc_partner_monthly(db, income_expense_item_id, fiscal_year, **kw,
+                                           include_unposted=include_unposted)
     if cost_center_id is not None:
         # `_cc_scope` may null out cost_center_id for the filter (scoped callers
         # filter by cc_ids instead) — the response still echoes back what the
@@ -311,7 +326,8 @@ async def nc_partner_vouchers(user: CurrentUser, db: AsyncSession = Depends(get_
                               income_expense_item_id: uuid.UUID = Query(...),
                               fiscal_year: int = Query(...), month: int = Query(...),
                               cost_center_id: uuid.UUID | None = Query(default=None),
-                              partner_id: str | None = Query(default=None)):
+                              partner_id: str | None = Query(default=None),
+                              include_unposted: bool = Query(default=False)):
     """Vouchers behind one (budget account × cost center × party × month).
 
     `partner_id` is the `key` a partner row reports, and is passed through as an
@@ -322,7 +338,8 @@ async def nc_partner_vouchers(user: CurrentUser, db: AsyncSession = Depends(get_
     kw = await _cc_scope(db, user, cost_center_id)
     pid: object = partner_id
     return await crud.nc_partner_vouchers(db, income_expense_item_id, fiscal_year,
-                                          month, partner_id=pid, **kw)
+                                          month, partner_id=pid, **kw,
+                                          include_unposted=include_unposted)
 
 
 @router.get("/budget-actual/partner-export")
@@ -332,6 +349,7 @@ async def budget_actual_partner_export(
     db: AsyncSession = Depends(get_db),
     fiscal_year: int = Query(...),
     cost_center_id: uuid.UUID | None = Query(default=None),
+    include_unposted: bool = Query(default=False),
 ):
     """Budget Dashboard export: one .xlsx with a row per predreal budget account
     and two columns per month — Plan (budget-api) and NC-posted actual — plus a
@@ -369,7 +387,8 @@ async def budget_actual_partner_export(
                 if not (str(a.get("account_code", "")).startswith("CRM004")
                         or str(a.get("account_code", "")).startswith("CRM007"))]
 
-    nc = (await crud.nc_actuals_monthly(db, fiscal_year, **kw))["accounts"]
+    nc = (await crud.nc_actuals_monthly(db, fiscal_year, **kw,
+                                        include_unposted=include_unposted))["accounts"]
 
     if cost_center_id is not None:
         cc_name = (await db.execute(
@@ -380,8 +399,10 @@ async def budget_actual_partner_export(
 
     data = build_budget_actual_xlsx(
         accounts=accounts, nc_monthly=nc,
-        fiscal_year=fiscal_year, cost_center_label=cc_label)
-    fname = f"budget-actual-FY{fiscal_year}.xlsx"
+        fiscal_year=fiscal_year, cost_center_label=cc_label,
+        include_unposted=include_unposted)
+    fname = (f"budget-actual-FY{fiscal_year}"
+             f"{'-incl-unposted' if include_unposted else ''}.xlsx")
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -449,6 +470,8 @@ async def nc_actual_for_budget_check(
     """
     # Same CRUD the dashboard's NC line runs, so the two can never drift: one
     # definition of "NC posted actual", asked here for a single account.
+    # ★ No include_unposted, on purpose — the dashboard's checkbox is a view;
+    # a PR is judged on what NC has tallied (pinned in test_untallied_basis).
     data = await crud.nc_actuals_monthly(
         db, fiscal_year, cost_center_id=cost_center_id, account_id=account_id)
     months = (data.get("accounts") or {}).get(str(account_id)) or {}

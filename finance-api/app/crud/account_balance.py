@@ -413,7 +413,8 @@ async def budget_actual(db: AsyncSession, period: str) -> dict:
 
 # ── ④b Budget-vs-Actual grid (predreal) ──────────────────────────────────────
 
-async def _ba_lines(db: AsyncSession, account_code: str, period: str):
+async def _ba_lines(db: AsyncSession, account_code: str, period: str,
+                    include_unposted: bool = False):
     """Posted lines for a category account's subtree in `period`, grouped by
     (cost_center, budget account) with the codes/names joined in. Value = period
     gross DEBIT.
@@ -445,7 +446,7 @@ async def _ba_lines(db: AsyncSession, account_code: str, period: str):
          .outerjoin(dim, and_(dim.jv_line_id == JournalVoucherLine.id,
                               dim.dim_code == "income_expense_item")))
     q = _budget_account_join(q, fn_codes, by_code)
-    q = (q.where(JournalVoucher.status == POSTED,
+    q = (q.where(status_filter(include_unposted),
                  JournalVoucher.fiscal_period == period,
                  JournalVoucherLine.account_code.in_(subtree))
           .group_by(JournalVoucherLine.cost_center_id, acct_id,
@@ -453,7 +454,8 @@ async def _ba_lines(db: AsyncSession, account_code: str, period: str):
     return (await db.execute(q)).all()
 
 
-async def _ba_unmapped(db: AsyncSession, period: str) -> list:
+async def _ba_unmapped(db: AsyncSession, period: str,
+                       include_unposted: bool = False) -> list:
     """Exceptions panel: posted lines in the 5 predreal categories that resolved
     to NO cost center (account-aware map miss) yet carry an NC cost-center code —
     the lines a human must fix in NC or add to budget_actual_cc_map."""
@@ -467,7 +469,7 @@ async def _ba_unmapped(db: AsyncSession, period: str) -> list:
                 func.count())
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
          .outerjoin(BudgetAccount, JournalVoucherLine.income_expense_item_id == BudgetAccount.id)
-         .where(JournalVoucher.status == POSTED,
+         .where(status_filter(include_unposted),
                 JournalVoucher.fiscal_period == period,
                 JournalVoucherLine.account_code.in_(accts),
                 JournalVoucherLine.cost_center_id.is_(None),
@@ -479,7 +481,8 @@ async def _ba_unmapped(db: AsyncSession, period: str) -> list:
             for ac, nc, iec, ien, dr, n in (await db.execute(q)).all()]
 
 
-async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict) -> dict:
+async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict,
+                             include_unposted: bool = False) -> dict:
     """Budget-vs-Actual grid. Per category (the 5 expense accounts): detail rows
     per (cost center × budget account) with budget/actual/variance, EXCLUDING the
     items that are tracked at category level only — payroll, depreciation and
@@ -496,7 +499,7 @@ async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict)
         detail, total = [], _ZERO
         by_policy: dict[str, Decimal] = {p: _ZERO for p in EXCLUDED_IO_PREFIXES}
         for (cc_id, ie_id, cc_code, cc_name, ie_code, ie_name, dr,
-             nc_io_code) in await _ba_lines(db, acct, period):
+             nc_io_code) in await _ba_lines(db, acct, period, include_unposted):
             dr = Decimal(dr)
             total += dr
             # EITHER source matching is enough. What NC wrote is the only
@@ -539,8 +542,9 @@ async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict)
             "category_actual_total": _s(total),
             "tie_ok": (detail_total + policy_total) == total,
         })
-    return {"period": period, "categories": categories,
-            "unmapped": await _ba_unmapped(db, period)}
+    return {"period": period, "include_unposted": include_unposted,
+            "categories": categories,
+            "unmapped": await _ba_unmapped(db, period, include_unposted)}
 
 
 # ── which budget account a line belongs to ───────────────────────────────────
@@ -597,7 +601,7 @@ def _effective_budget_account(fn_codes, by_item, by_code):
 
 async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
                              cost_center_id=None, cc_ids=None,
-                             account_id=None) -> dict:
+                             account_id=None, include_unposted: bool = False) -> dict:
     """NC posted actual per (income_expense_item_id, month) across the 5 predreal
     category subtrees for `fiscal_year`, optionally scoped to one cost center
     (`cost_center_id`) or a set of cost centers (`cc_ids`). Feeds the EPMS Budget
@@ -613,6 +617,10 @@ async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
     against have to be one definition, or they will drift apart the first time
     either is touched. It is a filter on the result, not on the rule — every
     exclusion and every account-resolution branch above still applies.
+
+    `include_unposted` adds vouchers NC holds but has not tallied (the Budget
+    Dashboard's checkbox). The over-budget criterion never passes it: a PR is
+    judged on the ledger, not on what may still be changed before month-end.
     """
     if cc_ids is not None and len(cc_ids) == 0:
         return {"fiscal_year": fiscal_year, "accounts": {}}
@@ -632,7 +640,7 @@ async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
          .outerjoin(BudgetAccount,
                     JournalVoucherLine.income_expense_item_id == BudgetAccount.id))
     q = _budget_account_join(q, fn_codes, by_code)
-    q = (q.where(JournalVoucher.status == POSTED,
+    q = (q.where(status_filter(include_unposted),
                  JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
                  JournalVoucherLine.account_code.in_(accts),
                  # A line with no budget account on either rule is not actual
@@ -652,7 +660,8 @@ async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
     out: dict = {}
     for aid, mm, dr in (await db.execute(q)).all():
         out.setdefault(str(aid), {})[int(mm)] = _s(Decimal(dr))
-    return {"fiscal_year": fiscal_year, "accounts": out}
+    return {"fiscal_year": fiscal_year, "include_unposted": include_unposted,
+            "accounts": out}
 
 
 # ── vendor attribution ───────────────────────────────────────────────────────
@@ -834,7 +843,8 @@ async def _predreal_subtree(db: AsyncSession) -> set:
 
 
 async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_year: int,
-                             cost_center_id=None, cc_ids=None) -> dict:
+                             cost_center_id=None, cc_ids=None,
+                             include_unposted: bool = False) -> dict:
     """Budget Dashboard drill: for ONE budget account (收支项目) — with cost center
     already locked by the caller — NC posted actual per partner (客商/供应商/客户)
     per month across the fiscal year. Rows = partners that appeared that year,
@@ -861,7 +871,7 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
                 func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
          .outerjoin(vp, vp.c.jv_id == JournalVoucherLine.jv_id)
-         .where(JournalVoucher.status == POSTED,
+         .where(status_filter(include_unposted),
                 JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
                 JournalVoucherLine.account_code.in_(accts),
                 acct_id,
@@ -975,7 +985,7 @@ async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
 
 async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_year: int,
                               month: int, cost_center_id=None, partner_id=None,
-                              cc_ids=None) -> dict:
+                              cc_ids=None, include_unposted: bool = False) -> dict:
     """Drill for one (budget account × cost center × party × month): the posted
     JV lines behind it.
 
@@ -998,7 +1008,7 @@ async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_y
     q = (select(JournalVoucherLine, JournalVoucher, pid_e, pname_e, source_e)
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
          .outerjoin(vp, vp.c.jv_id == JournalVoucherLine.jv_id)
-         .where(JournalVoucher.status == POSTED,
+         .where(status_filter(include_unposted),
                 JournalVoucher.fiscal_period == period,
                 JournalVoucherLine.account_code.in_(accts),
                 acct_id,
@@ -1026,6 +1036,9 @@ async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_y
             "partner_source": source,
             "line_partner_name": ln.partner_name,
             "local_debit": str(ln.local_debit), "local_credit": str(ln.local_credit),
+            # Same flag account_vouchers carries: with include_unposted on, the
+            # reader has to be able to tell which of these NC may still change.
+            "posted": jv.status == POSTED,
         })
     return {"period": period, "rows": rows}
 

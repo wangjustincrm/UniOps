@@ -25,6 +25,7 @@ interface Line {
   summary: string | null; debit: string
   department_code: string | null; nc_income_expense: string | null
   missing_cost_centre: boolean; missing_budget_account: boolean
+  posted?: boolean
 }
 
 const LIMIT = 300
@@ -44,8 +45,10 @@ function whyLabel(r: Line): string {
 }
 
 export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
-                                        bucket, label, onClose, onOpenJv }: {
+                                        bucket, label, includeUnposted = false,
+                                        onClose, onOpenJv }: {
   fiscalYear: number
+  includeUnposted?: boolean
   window: [number, number]
   windowLabel: string
   bucket: string
@@ -61,10 +64,11 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
   }, [onClose])
 
   const { data } = useQuery({
-    queryKey: ['unallocated-lines', fiscalYear, from, to, bucket],
+    queryKey: ['unallocated-lines', fiscalYear, from, to, bucket, includeUnposted],
     queryFn: () => financeApi.get<{ rows: Line[] }>(
       `/gl/budget-actual/unallocated-lines?fiscal_year=${fiscalYear}` +
-      `&month_from=${from}&month_to=${to}&bucket=${encodeURIComponent(bucket)}&limit=${LIMIT}`),
+      `&month_from=${from}&month_to=${to}&bucket=${encodeURIComponent(bucket)}&limit=${LIMIT}` +
+      `&include_unposted=${includeUnposted}`),
   })
   const rows = data?.rows ?? []
   const total = rows.reduce((s, r) => s + Number(r.debit), 0)
@@ -119,6 +123,11 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
                       {r.jv_number}
                     </button>
                     <span className="ml-1 text-xs text-neutral-400">#{r.line_no}</span>
+                    {r.posted === false && (
+                      <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        Unposted
+                      </span>
+                    )}
                     <div className="text-xs text-neutral-400">{r.fiscal_period}</div>
                   </td>
                   <td className="px-3 py-1.5 font-mono text-xs">{r.account_code}</td>

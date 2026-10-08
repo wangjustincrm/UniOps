@@ -23,7 +23,7 @@ the posted/unposted basis — because the two travel together: a report folding 
 unposted vouchers must fold them into its opening as well, or its opening and
 its movement are measured on different books.
 """
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.journal_voucher import POSTED, JournalVoucher
@@ -36,13 +36,36 @@ from app.models.journal_voucher import POSTED, JournalVoucher
 # unposted" is every status a voucher holds before it is cancelled. UniOps' own
 # not-yet-posted JVs ride along under the same reading: entered, not in the
 # ledger. `reversed` is cancelled and never counts either way.
+#
+# An NC voucher counts as unposted only while NC still holds it as a normal
+# voucher. The mirror also keeps drafts NC has discarded, temp-saved, flagged in
+# error, or deleted since import (nc_voucher_state) — none of them will ever be
+# tallied, and the Budget pages' "include unposted" box would otherwise count
+# them as spend. UniOps' own JVs carry no NC state (NULL) and are unaffected.
 UNPOSTED = ("draft", "reviewed")
+LIVE_NC_STATE = "normal"
 
 
 def status_filter(include_unposted: bool = False):
     """Which vouchers a GL read counts."""
-    return (JournalVoucher.status.in_((POSTED, *UNPOSTED)) if include_unposted
-            else JournalVoucher.status == POSTED)
+    if not include_unposted:
+        return JournalVoucher.status == POSTED
+    return or_(JournalVoucher.status == POSTED,
+               and_(JournalVoucher.status.in_(UNPOSTED),
+                    or_(JournalVoucher.nc_voucher_state.is_(None),
+                        JournalVoucher.nc_voucher_state == LIVE_NC_STATE)))
+
+
+def status_sql(alias: str = "v", include_unposted: bool = False) -> str:
+    """status_filter() as SQL text over `alias`.journal_vouchers, for the reports
+    written as raw SQL (budget_rollup). Constant-only — nothing user-supplied is
+    interpolated. tests/test_untallied_basis.py holds the two to the same rows."""
+    posted = f"{alias}.status = '{POSTED}'"
+    if not include_unposted:
+        return posted
+    unposted = ", ".join(f"'{s}'" for s in UNPOSTED)
+    return (f"({posted} or ({alias}.status in ({unposted}) and "
+            f"coalesce({alias}.nc_voucher_state, '{LIVE_NC_STATE}') = '{LIVE_NC_STATE}'))")
 
 
 async def opening_period(db: AsyncSession, period: str,

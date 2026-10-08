@@ -70,6 +70,9 @@ export default function BudgetActualPage() {
   const [scope, setScope] = useState<Scope | null>(null)
   const [drill, setDrill] = useState<Drill | null>(null)
   const [jvId, setJvId] = useState<string | null>(null)
+  // One basis for every panel on the page: a summary on one basis over a
+  // composition on another would not add up to the row that was clicked.
+  const [includeUnposted, setIncludeUnposted] = useState(false)
 
   const { data: perms } = useQuery({
     queryKey: ['jv-permissions'],
@@ -77,8 +80,9 @@ export default function BudgetActualPage() {
   })
 
   const { data, isFetching } = useQuery({
-    queryKey: ['budget-actual-grid', period],
-    queryFn: () => financeApi.get<GridResp>(`/gl/budget-actual-grid?period=${period}`),
+    queryKey: ['budget-actual-grid', period, includeUnposted],
+    queryFn: () => financeApi.get<GridResp>(
+      `/gl/budget-actual-grid?period=${period}&include_unposted=${includeUnposted}`),
   })
 
   const unmapped = useMemo(() => data?.unmapped ?? [], [data])
@@ -105,7 +109,9 @@ export default function BudgetActualPage() {
     <PortalChromeLayout
       activeKey="portal:/finance/budget-actual"
       title="Budget vs Actual"
-      subtitle="Budget (approved plan) vs NC posted actual, per cost center × income-expense item (CAD)"
+      subtitle={includeUnposted
+        ? 'Budget (approved plan) vs NC actual incl. unposted vouchers, per cost center × income-expense item (CAD)'
+        : 'Budget (approved plan) vs NC posted actual, per cost center × income-expense item (CAD)'}
     >
       {/* Room to scroll the last rows clear of the panel. The panel is sized
           against <main>; this is against the viewport, so it is a close-enough
@@ -119,11 +125,14 @@ export default function BudgetActualPage() {
                             onFiscalYearChange={(y) => setPeriod(`${y}${period.slice(4)}`)}
                             window={win}
                             onWindowChange={(w, label) => { setWin(w); setWinLabel(label) }}
-                            scope={scope} onScopeChange={setScope} />
+                            scope={scope} onScopeChange={setScope}
+                            includeUnposted={includeUnposted}
+                            onIncludeUnpostedChange={setIncludeUnposted} />
 
         {scope && (
           <BudgetActualBreakdown fiscalYear={Number(period.slice(0, 4))}
                                  window={win} windowLabel={winLabel} scope={scope}
+                                 includeUnposted={includeUnposted}
                                  onClose={() => setScope(null)} />
         )}
 
@@ -234,7 +243,7 @@ export default function BudgetActualPage() {
             {unmapped.length > 0 && (
               <div className="overflow-hidden rounded-lg border border-amber-200">
                 <div className="bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
-                  Exceptions — posted lines with no cost center ({unmapped.length}). Fix in NC or add to the mapping.
+                  Exceptions — {includeUnposted ? 'lines' : 'posted lines'} with no cost center ({unmapped.length}). Fix in NC or add to the mapping.
                 </div>
                 <table className="w-full text-sm">
                   <thead>
@@ -282,6 +291,7 @@ export default function BudgetActualPage() {
       {drill && (
         <AccountVouchersModal accountCode={drill.accountCode} period={period}
                               dimsValues={drill.dimsValues} title={drill.title}
+                              includeUnposted={includeUnposted}
                               onClose={() => setDrill(null)} onOpenJv={(id) => setJvId(id)} />
       )}
       {jvId && (

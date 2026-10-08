@@ -152,10 +152,10 @@ modules:
         form is this module, and an over-budget request is stopped or needs
         justification because of it.
       - >-
-        The Plan vs Actual grid stacks three figures in every cell — plan,
-        actual (docs) and NC posted. Ask about any of them and the rule behind
-        it can be read out, including which cost centre a posting is charged to
-        and why.
+        The Plan vs Actual grid stacks two figures in every cell — plan and NC
+        posted (optionally including vouchers NC has not tallied yet). Ask about
+        either and the rule behind it can be read out, including which cost
+        centre a posting is charged to and why.
 
   - key: mrp
     label: MRP — Material Requirements Planning

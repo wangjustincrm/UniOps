@@ -391,12 +391,19 @@ export function useActualsScope() {
 // "NC" line in the dashboard's plan/actual cells. account_id -> month -> amount.
 export interface NcActualsMonthly {
   fiscal_year: number
+  include_unposted?: boolean
   accounts: Record<string, Record<number, string>>
 }
 
-export function useNcActualsMonthly(params: { fiscal_year: number; cost_center_id?: string }) {
+// `include_unposted` adds vouchers entered in NC but not yet tallied (记账) —
+// the dashboard's "Include unposted vouchers" box. Same rule on every NC read
+// below, so a cell and its vendor/voucher drill always add up.
+export function useNcActualsMonthly(params: {
+  fiscal_year: number; cost_center_id?: string; include_unposted?: boolean
+}) {
   const qs = new URLSearchParams({ fiscal_year: String(params.fiscal_year) })
   if (params.cost_center_id) qs.set('cost_center_id', params.cost_center_id)
+  if (params.include_unposted) qs.set('include_unposted', 'true')
   return useQuery({
     queryKey: ['finance', 'nc-actuals-monthly', params],
     queryFn: () => financeApi.get<NcActualsMonthly>(`/gl/nc-actuals-monthly?${qs.toString()}`),
@@ -427,13 +434,15 @@ export interface PartnerMonthly {
 }
 
 export function useNcPartnerMonthly(params: {
-  income_expense_item_id: string; fiscal_year: number; cost_center_id?: string; enabled?: boolean
+  income_expense_item_id: string; fiscal_year: number; cost_center_id?: string
+  include_unposted?: boolean; enabled?: boolean
 }) {
   const qs = new URLSearchParams({
     income_expense_item_id: params.income_expense_item_id,
     fiscal_year: String(params.fiscal_year),
   })
   if (params.cost_center_id) qs.set('cost_center_id', params.cost_center_id)
+  if (params.include_unposted) qs.set('include_unposted', 'true')
   return useQuery({
     queryKey: ['finance', 'nc-partner-monthly', params],
     queryFn: () => financeApi.get<PartnerMonthly>(`/gl/nc-partner-monthly?${qs.toString()}`),
@@ -451,12 +460,13 @@ export interface PartnerVouchers {
     partner_source: 'line' | 'voucher' | 'multi' | 'none'
     line_partner_name: string | null
     local_debit: string; local_credit: string
+    posted?: boolean
   }[]
 }
 
 export function useNcPartnerVouchers(params: {
   income_expense_item_id: string; fiscal_year: number; month: number
-  cost_center_id?: string; partner_id?: string; enabled?: boolean
+  cost_center_id?: string; partner_id?: string; include_unposted?: boolean; enabled?: boolean
 }) {
   const qs = new URLSearchParams({
     income_expense_item_id: params.income_expense_item_id,
@@ -465,6 +475,7 @@ export function useNcPartnerVouchers(params: {
   })
   if (params.cost_center_id) qs.set('cost_center_id', params.cost_center_id)
   if (params.partner_id) qs.set('partner_id', params.partner_id)
+  if (params.include_unposted) qs.set('include_unposted', 'true')
   return useQuery({
     queryKey: ['finance', 'nc-partner-vouchers', params],
     queryFn: () => financeApi.get<PartnerVouchers>(`/gl/nc-partner-vouchers?${qs.toString()}`),

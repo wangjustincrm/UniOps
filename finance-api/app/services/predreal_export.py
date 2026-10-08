@@ -54,7 +54,8 @@ def _interleave(plan: list[float], nc: list[float]) -> list[float]:
 
 def build_budget_actual_xlsx(*, accounts: list[dict[str, Any]],
                              nc_monthly: dict[str, dict],
-                             fiscal_year: int, cost_center_label: str) -> bytes:
+                             fiscal_year: int, cost_center_label: str,
+                             include_unposted: bool = False) -> bytes:
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Budget vs Actual"
@@ -63,7 +64,8 @@ def build_budget_actual_xlsx(*, accounts: list[dict[str, Any]],
 
     ws.append(["Budget vs Actual"])
     ws["A1"].font = bold
-    ws.append([f"FY {fiscal_year} · Cost Center: {cost_center_label}"])
+    ws.append([f"FY {fiscal_year} · Cost Center: {cost_center_label} · NC = "
+               + ("posted + unposted (not yet tallied)" if include_unposted else "posted")])
     ws.append([])
 
     # Two header rows: month name spanning its Plan/NC pair, then the pair labels.

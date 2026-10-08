@@ -42,6 +42,14 @@ the failure this whole line of work started from:
 
 `reconciliation` proves the arithmetic closes: company actual + unallocated ==
 every posted predreal line in the period.
+
+Basis
+-----
+Actual is NC-tallied (记账) vouchers by default. `include_unposted` adds the ones
+NC holds but has not tallied yet — the month being closed shows almost nothing
+otherwise (2026-09 on 10-08: 0 of 446 AP vouchers tallied). Same rule as the
+Account Balance toggle, fiscal.status_filter; every query below takes it, so the
+parts still add up to the whole on either basis.
 """
 from __future__ import annotations
 
@@ -55,6 +63,7 @@ from app.crud.account_balance import (
     EXCLUDED_IO_LABELS,
     EXCLUDED_IO_PREFIXES,
 )
+from app.crud.fiscal import status_sql
 
 _ZERO = Decimal("0")
 
@@ -110,7 +119,7 @@ lines as (
       -- already trusts that same text. Resolving it here is what makes those
       -- three agree.
       left join budget_accounts ba_dim on ba_dim.code = dim.value_text
-     where v.status = 'posted'
+     where {status}
        and v.fiscal_period like :year_like
 ),
 classified as (
@@ -204,7 +213,7 @@ lines as (
       -- already trusts that same text. Resolving it here is what makes those
       -- three agree.
       left join budget_accounts ba_dim on ba_dim.code = dim.value_text
-     where v.status = 'posted' and v.fiscal_period like :year_like
+     where {status} and v.fiscal_period like :year_like
 ),
 classified as (
     select *, (select p from unnest(cast(:excluded as text[])) p
@@ -246,7 +255,8 @@ lines as (
            coalesce(dim.value_text, ba.code, '') as nc_code,
            dim.value_text as nc_io_text,
            coalesce(ba_acct.id, ba.id, ba_dim.id) as budget_account_id,
-           cast(substr(v.fiscal_period, 6, 2) as int) as m
+           cast(substr(v.fiscal_period, 6, 2) as int) as m,
+           (v.status = 'posted') as posted
       from journal_vouchers v
       join journal_voucher_lines l on l.jv_id = v.id
       join cat on cat.code = l.account_code
@@ -265,7 +275,7 @@ lines as (
       -- already trusts that same text. Resolving it here is what makes those
       -- three agree.
       left join budget_accounts ba_dim on ba_dim.code = dim.value_text
-     where v.status = 'posted' and v.fiscal_period like :year_like
+     where {status} and v.fiscal_period like :year_like
 ),
 classified as (
     select *, (select p from unnest(cast(:excluded as text[])) p
@@ -279,7 +289,8 @@ select jv_id, jv_number, voucher_date, fiscal_period, line_no, account_code,
        -- reader sees "not placed in any cost centre" against a line that has
        -- a cost centre and concludes the report is broken.
        (cost_center_id is null) as missing_cost_centre,
-       (budget_account_id is null) as missing_budget_account
+       (budget_account_id is null) as missing_budget_account,
+       posted
   from classified
  where m between :month_from and :month_to
    and case when :bucket = '__unplaced__'
@@ -292,8 +303,8 @@ select jv_id, jv_number, voucher_date, fiscal_period, line_no, account_code,
 
 
 async def unallocated_lines(db, *, fiscal_year: int, month_from: int, month_to: int,
-                            bucket: str, limit: int = 200,
-                            offset: int = 0) -> dict[str, Any]:
+                            bucket: str, limit: int = 200, offset: int = 0,
+                            include_unposted: bool = False) -> dict[str, Any]:
     """Voucher lines behind one bucket of the unallocated row."""
     params = {
         "year_like": f"{fiscal_year}-%", "month_from": month_from, "month_to": month_to,
@@ -301,9 +312,11 @@ async def unallocated_lines(db, *, fiscal_year: int, month_from: int, month_to: 
         "excluded": list(EXCLUDED_IO_PREFIXES),
     }
     rows = (await db.execute(
-        text(_UNALLOCATED_LINES_SQL.format(categories=_CATEGORIES)), params)).all()
+        text(_UNALLOCATED_LINES_SQL.format(
+            categories=_CATEGORIES, status=status_sql("v", include_unposted))), params)).all()
     return {
         "bucket": bucket, "limit": limit, "offset": offset,
+        "include_unposted": include_unposted,
         "rows": [{
             "jv_id": str(r[0]), "jv_number": r[1],
             "voucher_date": r[2].isoformat() if r[2] else None,
@@ -312,6 +325,7 @@ async def unallocated_lines(db, *, fiscal_year: int, month_from: int, month_to: 
             "department_code": r[8], "nc_income_expense": r[9],
             "missing_cost_centre": bool(r[10]),
             "missing_budget_account": bool(r[11]),
+            "posted": bool(r[12]),
         } for r in rows],
     }
 
@@ -437,7 +451,7 @@ lines as (
       -- already trusts that same text. Resolving it here is what makes those
       -- three agree.
       left join budget_accounts ba_dim on ba_dim.code = dim.value_text
-     where v.status = 'posted' and v.fiscal_period like :year_like
+     where {status} and v.fiscal_period like :year_like
 ),
 actual as (
     select budget_account_id, cost_center_id,
@@ -482,7 +496,8 @@ select ba.id, ba.code, ba.name, cc.id, cc.code, cc.name,
 
 
 async def breakdown(db, *, fiscal_year: int, month_from: int, month_to: int,
-                    scope_kind: str = "company", scope_key: str = "") -> dict[str, Any]:
+                    scope_kind: str = "company", scope_key: str = "",
+                    include_unposted: bool = False) -> dict[str, Any]:
     """What the selected roll-up figure is made of: budget account × cost centre.
 
     `scope_kind` is company / centre / department / cost_centre, matching what
@@ -496,7 +511,8 @@ async def breakdown(db, *, fiscal_year: int, month_from: int, month_to: int,
         "excluded_like": [f"{p}%" for p in EXCLUDED_IO_PREFIXES],
     }
     rows = (await db.execute(
-        text(_BREAKDOWN_SQL.format(categories=_CATEGORIES)), params)).all()
+        text(_BREAKDOWN_SQL.format(
+            categories=_CATEGORIES, status=status_sql("v", include_unposted))), params)).all()
 
     accounts: dict[str, dict] = {}
     for (ba_id, ba_code, ba_name, cc_id, cc_code, cc_name,
@@ -540,13 +556,15 @@ async def breakdown(db, *, fiscal_year: int, month_from: int, month_to: int,
     return {
         "fiscal_year": fiscal_year, "month_from": month_from, "month_to": month_to,
         "scope_kind": scope_kind, "scope_key": scope_key,
+        "include_unposted": include_unposted,
         "accounts": out,
         "totals": _metrics(totals.get("fy", _ZERO), totals.get("pp", _ZERO),
                            totals.get("ap", _ZERO), totals.get("ay", _ZERO)),
     }
 
 
-async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dict[str, Any]:
+async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int,
+                 include_unposted: bool = False) -> dict[str, Any]:
     """Company / expense centre / department / cost centre, plus what reaches
     none of them."""
     params = {
@@ -557,9 +575,10 @@ async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dic
         "excluded": list(EXCLUDED_IO_PREFIXES),
         "excluded_like": [f"{p}%" for p in EXCLUDED_IO_PREFIXES],
     }
+    status = status_sql("v", include_unposted)
     rows = (await db.execute(
         text(_SQL.format(categories=_CATEGORIES, actual_months=_ACTUAL_MONTHS,
-                         plan_months=_PLAN_MONTHS)), params)).all()
+                         plan_months=_PLAN_MONTHS, status=status)), params)).all()
 
     def monthly(agg: dict) -> list[dict[str, Any]]:
         return _monthly(agg.get("pm", [_ZERO] * 12), agg.get("am", [_ZERO] * 12),
@@ -598,7 +617,8 @@ async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dic
         _accumulate_months(dept, plan_m, act_m)
 
     policy_rows = (await db.execute(
-        text(_POLICY_SQL.format(categories=_CATEGORIES, actual_months=_ACTUAL_MONTHS)),
+        text(_POLICY_SQL.format(categories=_CATEGORIES, actual_months=_ACTUAL_MONTHS,
+                                status=status)),
         params)).all()
     unallocated_period = unallocated_ytd = _ZERO
     unallocated_m = [_ZERO] * 12
@@ -649,6 +669,7 @@ async def rollup(db, *, fiscal_year: int, month_from: int, month_to: int) -> dic
     return {
         "fiscal_year": fiscal_year,
         "month_from": month_from, "month_to": month_to,
+        "include_unposted": include_unposted,
         "company": company_metrics,
         "by_expense_centre": centre_nodes,
         "by_department": dept_nodes,
