@@ -365,6 +365,43 @@ async def test_sync_statuses_flips_posted_to_draft_when_tally_disappears(db_sess
                "where nc_source_pk = 'NCPK1'")[0][0] == "draft"
 
 
+async def test_voucher_state_backfill_tracks_nc_after_import(db_session):
+    """An imported draft that NC later discards, or deletes outright, must stop
+    reading `normal` — otherwise every "include unposted" report counts it.
+    Incremental never revisits the pk, so the backfill is the only path."""
+    from dataclasses import replace
+    from app.services import nc_sync
+
+    def state():
+        return _pg("select nc_voucher_state, status from journal_vouchers "
+                   "where nc_source_pk = 'NCPK1'")[0]
+
+    base = _mini_extract(tallydate=None)
+    nc_sync.start_run("incremental", uuid.uuid4(), fetch=lambda wm: base, pg_dsn=_TEST_DSN)
+    assert state() == ("normal", "draft")
+
+    # NC side not read (old fixture / None) or read empty: change nothing —
+    # an empty read must not mark the whole mirror deleted.
+    for unread in (None, {}):
+        nc_sync.start_run("incremental", uuid.uuid4(),
+                          fetch=lambda wm, s=unread: replace(base, states=s), pg_dsn=_TEST_DSN)
+        assert state() == ("normal", "draft")
+
+    nc_sync.start_run("incremental", uuid.uuid4(), pg_dsn=_TEST_DSN,
+                      fetch=lambda wm: replace(base, states={"NCPK1": "discarded"}))
+    assert state() == ("discarded", "draft")
+
+    # Gone from NC entirely while other vouchers are still there.
+    nc_sync.start_run("incremental", uuid.uuid4(), pg_dsn=_TEST_DSN,
+                      fetch=lambda wm: replace(base, states={"OTHERPK": "normal"}))
+    assert state() == ("deleted", "draft")
+
+    # And back to normal when NC says so (positive control for the diff).
+    nc_sync.start_run("incremental", uuid.uuid4(), pg_dsn=_TEST_DSN,
+                      fetch=lambda wm: replace(base, states={"NCPK1": "normal"}))
+    assert state() == ("normal", "draft")
+
+
 async def test_full_clears_and_reloads(db_session):
     from app.services import nc_sync
     nc_sync.start_run("incremental", uuid.uuid4(),

@@ -50,7 +50,9 @@ _KIND_LABELS = {
 }
 
 # 正常 / 错误 / 作废 / 暂存. Only `normal` ever reaches status=posted.
-VOUCHER_STATES = ("normal", "error", "discarded", "tempsave")
+# `deleted` is ours, not NC's: the voucher was mirrored, then NC removed it
+# (nc_sync._sync_voucher_states). It stays listed until the next full sync.
+VOUCHER_STATES = ("normal", "error", "discarded", "tempsave", "deleted")
 
 
 def _subsystem_label(code: str | None) -> str | None:

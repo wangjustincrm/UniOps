@@ -27,6 +27,7 @@ const STATUSES = ['', 'draft', 'reviewed', 'posted', 'reversed'] as const
 const VOUCHER_STATES = [
   ['', 'All voucher states'], ['normal', 'Normal'], ['error', 'Error'],
   ['discarded', 'Discarded'], ['tempsave', 'Temp-saved'],
+  ['deleted', 'Deleted in NC'],
 ] as const
 const SUBSYSTEMS = [
   ['GL', 'General Ledger'], ['AP', 'Accounts Payable'], ['AR', 'Accounts Receivable'],
@@ -469,7 +470,8 @@ export default function JournalVouchersPage() {
                         {v.nc_voucher_state && v.nc_voucher_state !== 'normal' && (
                           <span className="mt-1 block w-fit rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
                             {v.nc_voucher_state === 'discarded' ? 'Discarded'
-                              : v.nc_voucher_state === 'tempsave' ? 'Temp-saved' : 'Error'}
+                              : v.nc_voucher_state === 'tempsave' ? 'Temp-saved'
+                              : v.nc_voucher_state === 'deleted' ? 'Deleted in NC' : 'Error'}
                           </span>
                         )}
                       </td>
