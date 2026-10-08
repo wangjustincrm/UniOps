@@ -13,7 +13,7 @@ import uuid
 from datetime import date, datetime, time
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
@@ -50,6 +50,15 @@ class DeliveryPatch(BaseModel):
     material_file_id: uuid.UUID | None = None
     material_filename: str | None = Field(default=None, max_length=255)
     notes: str | None = None
+
+    @field_validator("session_date")
+    @classmethod
+    def _a_session_has_a_date(cls, v):
+        """Absent is "leave it"; an explicit null would clear a NOT NULL column
+        and answer 500. Raised in review by uniops-41."""
+        if v is None:
+            raise ValueError("A session needs a date")
+        return v
 
 
 class DeliveryOut(BaseModel):

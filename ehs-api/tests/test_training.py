@@ -580,6 +580,16 @@ class TestWhoeverIsRunningItCanRunIt:
         assert moved.status_code == 200, moved.text
         assert moved.json()["location_text"] == "Training Room 107"
 
+        # Emptying a box clears it — except the date, which a session cannot be
+        # without. Refused by name rather than a 500 from the NOT NULL column.
+        cleared = await wc.patch(f"/api/v1/course-sessions/{sid}",
+                                 json={"notes": None, "location_text": None})
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["notes"] is None and cleared.json()["location_text"] is None
+        undated = await wc.patch(f"/api/v1/course-sessions/{sid}",
+                                 json={"session_date": None})
+        assert undated.status_code == 422 and "needs a date" in undated.text
+
     async def test_the_coordinator_cannot_hand_the_session_to_somebody_else(
             self, worker, hse_manager, session_run_by_a_worker, test_engine):
         """★ The one field that is not theirs.
