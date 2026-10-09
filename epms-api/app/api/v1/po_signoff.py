@@ -23,13 +23,12 @@ from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud import po as po_crud
 from app.crud import po_signoff as signoff_crud
-from app.models.task import Task
 from app.models.user import User
 from app.schemas.po_signoff import (
     SignoffCommentRequest, SignoffSignRequest, SignoffState, SignoffSubmitRequest,
 )
 from app.services import approval_client
-from app.services.notification import fire_and_forget_notify, fire_and_forget_signoff_complete
+from app.services.notification import fire_and_forget_signoff_complete
 
 router = APIRouter(prefix="/po", tags=["po-signoff"])
 
@@ -101,16 +100,6 @@ async def _state(db, po, workflow: list[dict], actor_id: uuid.UUID) -> dict:
     }
 
 
-async def _notify_open_tasks(db, po_id: uuid.UUID) -> None:
-    tasks = (await db.execute(select(Task).where(
-        Task.document_type == signoff_crud.SIGNOFF_DOC_TYPE,
-        Task.document_id == po_id,
-        Task.is_completed.is_(False),
-    ))).scalars().all()
-    for task in tasks:
-        fire_and_forget_notify(task, db)
-
-
 @router.get("/{po_id}/signoff", response_model=SignoffState)
 async def get_signoff(
     po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload, token: BearerToken,
@@ -168,7 +157,6 @@ async def submit_signoff(
     await db.commit()
     await db.refresh(po)
 
-    await _notify_open_tasks(db, po_id)
     return await _state(db, po, workflow, uuid.UUID(user["sub"]))
 
 
@@ -228,7 +216,6 @@ async def sign_signoff(
         spawn(_generate_po_pdf_background(po_id, po.number, token, replace=True),
               name=f"po_pdf_signed:{po.number}")
         fire_and_forget_signoff_complete(po_id)
-    await _notify_open_tasks(db, po_id)
     return await _state(db, po, workflow, actor_id)
 
 
@@ -258,7 +245,6 @@ async def return_signoff(
         raise HTTPException(status_code=502, detail=str(exc))
 
     await db.refresh(po)
-    await _notify_open_tasks(db, po_id)
     return await _state(db, po, workflow, uuid.UUID(user["sub"]))
 
 

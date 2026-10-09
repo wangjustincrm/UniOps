@@ -478,6 +478,12 @@ async def get_or_create(db: AsyncSession) -> CompanyConfig:
     return cfg
 
 
+# notification_settings keys written only by their own endpoint (see update()).
+# "task_notifications": PUT /config/task-notifications.
+# "task_notifier_started_at": stamped once by app/tasks/task_notifier.py.
+SERVER_MANAGED_NOTIFICATION_KEYS = frozenset({"task_notifications", "task_notifier_started_at"})
+
+
 _JSONB_FIELDS = frozenset({
     "enabled_currencies", "custom_currencies", "pdf_templates", "workflow_config",
     "dept_gm_opm_mapping", "dept_supervisor_enabled", "dept_director_mapping", "service_gr_sla",
@@ -499,6 +505,11 @@ async def update(
             # role_shared_mailboxes / system_url 静默抹掉。
             # 故意只做一层浅合并 —— 客户端提交完整的 role_shared_mailboxes 子字典
             # 时仍然整体替换该子字典,这样 EPMS UI 里删除某个角色的映射依旧生效。
+            # Keys owned by a dedicated endpoint are never taken from this
+            # generic save: the Portal form posts back the whole object it
+            # loaded, so a page opened before an admin changed the per-task-type
+            # policy would otherwise put the old policy back on its next save.
+            value = {k: v for k, v in value.items() if k not in SERVER_MANAGED_NOTIFICATION_KEYS}
             value = {**(cfg.notification_settings or {}), **value}
         setattr(cfg, field, value)
         if field in _JSONB_FIELDS:

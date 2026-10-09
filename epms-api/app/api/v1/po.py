@@ -20,12 +20,10 @@ from app.crud.pr_owner import get_pr_owner_id
 from app.models.admin_audit_log import AdminAuditLog
 
 from app.models.pr import PurchaseRequest
-from app.models.task import Task
 from app.schemas.po import PlaceOrderRequest, PoActionRequest, PoCreate, PoImportedDetailsUpdate, PoListResponse, PoResponse, PoUpdate
 from app.schemas.pr import ApprovalEventResponse
 from app.schemas.reminder import ReminderResponse
 from app.services.manual_reminder import remind_document
-from app.services.notification import fire_and_forget_notify
 
 router = APIRouter(prefix="/po", tags=["purchase-orders"])
 
@@ -349,15 +347,8 @@ async def po_action(
         from app.core.background import spawn
         spawn(_generate_po_pdf_background(po_id, po.number, token), name=f"po_pdf:{po.number}")
 
-    new_tasks_result = await db.execute(
-        select(Task).where(
-            Task.document_type == "po",
-            Task.document_id == po_id,
-            Task.is_completed.is_(False),
-        )
-    )
-    for task in new_tasks_result.scalars().all():
-        fire_and_forget_notify(task, db)
+    # New tasks need no notify call: app/tasks/task_notifier.py picks up every
+    # un-notified task and applies the admin's per-type policy.
     return po
 
 

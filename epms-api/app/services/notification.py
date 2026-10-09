@@ -623,15 +623,29 @@ def fire_and_forget_admin_alert(subject: str, body_html: str) -> None:
     spawn(send_admin_alert(subject, body_html), name=f"admin_alert:{subject[:40]}")
 
 
-# ── Convenience fire-and-forget helper ───────────────────────────────────────
+# ── Queueing / immediate send ────────────────────────────────────────────────
 
-def fire_and_forget_notify(task: Task, db: AsyncSession, **kwargs) -> None:
+def queue_task_notification(task: Task, *, extra_vars: dict[str, Any] | None = None) -> None:
+    """Ask the notifier (app/tasks/task_notifier.py) to notify this task's
+    holder once more, under the admin's policy for its type.
+
+    A NEW task needs no call at all — every task is born un-notified and the
+    notifier picks it up. Call this for an EXISTING task whose holder should
+    hear about it again (reassigned, another invoice arrived), or to hand the
+    notifier template variables only the call site knows. Changes ride on the
+    caller's session, so they land with its commit.
     """
-    Schedule notification dispatch as a background asyncio task.
+    task.notify_vars = dict(extra_vars) if extra_vars else None
+    task.notified_at = None
 
-    Call this AFTER db.commit() so the task record is persisted.
-    The background coroutine creates its own DB session to avoid
-    sharing the request session after it closes.
+
+def send_task_notification_now(task: Task, **kwargs) -> None:
+    """Send right away, outside the per-type policy — for an explicit human
+    action such as "Send reminder", which must not wait for the notifier or be
+    swallowed by a type the admin set to digest/off.
+
+    Call AFTER the commit that persists whatever the send depends on: the
+    background coroutine re-reads the task in its own session.
     """
     from app.core.background import spawn
     spawn(_notify_in_background(task.id, **kwargs), name=f"notify:{task.id}")

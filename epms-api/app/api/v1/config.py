@@ -158,6 +158,53 @@ async def update_config(body: ConfigUpdate, db: SessionDep, user: AdminDep):
     return await _full_response(db, user)
 
 
+# ── Per-task-type notification policy (Portal → Admin → Notifications) ───────
+
+class TaskNotificationRow(BaseModel):
+    task_type: str
+    email: bool
+    mode: str = "immediate"
+
+
+class TaskNotificationUpdate(BaseModel):
+    policies: list[TaskNotificationRow]
+
+
+@router.get("/task-notifications")
+async def get_task_notifications(db: SessionDep, user: AdminDep):
+    """Every task type the system can create, with whether it emails and when.
+    The list is derived (see services/task_notify_policy.py), so a new task
+    type appears here without anyone adding it."""
+    from app.services.task_notify_policy import list_policies
+
+    cfg = await config_crud.get_or_create(db)
+    rows = await list_policies(db, cfg.notification_settings)
+    return {"policies": [r.as_dict() for r in rows]}
+
+
+@router.put("/task-notifications")
+async def put_task_notifications(body: TaskNotificationUpdate, db: SessionDep, user: AdminDep):
+    """Replace the stored policy with the submitted rows. The only writer of
+    notification_settings.task_notifications — the generic PATCH /config
+    ignores that key (crud.config.SERVER_MANAGED_NOTIFICATION_KEYS)."""
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.services.task_notify_policy import SETTINGS_KEY, list_policies, validate_update
+
+    try:
+        stored = validate_update([r.model_dump() for r in body.policies])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    cfg = await config_crud.get_or_create(db)
+    ns = dict(cfg.notification_settings or {})
+    ns[SETTINGS_KEY] = stored
+    cfg.notification_settings = ns
+    flag_modified(cfg, "notification_settings")
+    cfg.updated_by = uuid.UUID(user["sub"])
+    await db.commit()
+    rows = await list_policies(db, cfg.notification_settings)
+    return {"policies": [r.as_dict() for r in rows]}
+
+
 # ── Role Permissions endpoints ───────────────────────────────────────────────
 
 @router.get("/locked-permissions")

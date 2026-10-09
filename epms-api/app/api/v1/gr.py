@@ -5,7 +5,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from sqlalchemy import select
 
 from uniops_authz import has_permission
 
@@ -16,14 +15,12 @@ from app.crud import gr as gr_crud
 from app.crud import gr_report as gr_report_crud
 from app.crud import po as po_crud
 from app.crud.pr_owner import get_pr_owner_id
-from app.models.task import Task
 from app.schemas.gr import GrActionRequest, GrCreate, GrListResponse, GrResponse, is_service
 from app.schemas.gr_report import (
     ReceivingReportResponse,
     ReceivingReportRow,
     ReceivingReportSummary,
 )
-from app.services.notification import fire_and_forget_notify
 from app.services.receiving_report_xlsx import build_receiving_workbook
 
 router = APIRouter(prefix="/gr", tags=["goods-receipts"])
@@ -112,16 +109,8 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
             )
 
     gr = await gr_crud.create(db, body, po=po, created_by=uuid.UUID(user["sub"]), token=token)
-    # Notify requester to acknowledge (acknowledge_gr task)
-    new_tasks_result = await db.execute(
-        select(Task).where(
-            Task.document_type == "gr",
-            Task.document_id == gr.id,
-            Task.is_completed.is_(False),
-        )
-    )
-    for task in new_tasks_result.scalars().all():
-        fire_and_forget_notify(task, db)
+    # New tasks need no notify call: app/tasks/task_notifier.py picks up every
+    # un-notified task and applies the admin's per-type policy.
     return gr
 
 
@@ -232,16 +221,6 @@ async def gr_action(
         raise HTTPException(status_code=404, detail="GR not found")
     try:
         result = await gr_crud.action(db, gr, body, actor_id=uuid.UUID(user["sub"]), token=token)
-        # Notify recipients for any newly created open tasks on this GR
-        new_tasks_result = await db.execute(
-            select(Task).where(
-                Task.document_type == "gr",
-                Task.document_id == gr_id,
-                Task.is_completed.is_(False),
-            )
-        )
-        for task in new_tasks_result.scalars().all():
-            fire_and_forget_notify(task, db)
         return result
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))

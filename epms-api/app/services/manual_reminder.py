@@ -34,8 +34,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.notification_log import NotificationLog
 from app.models.task import Task
 from app.services.notification import (
-    fire_and_forget_notify,
     resolve_task_recipients,
+    send_task_notification_now,
 )
 
 # Template key (seeded in app/crud/config.py, editable in EPMS Admin → Email
@@ -219,8 +219,8 @@ async def send_manual_reminder(
 def dispatch_manual_reminder(db: AsyncSession, tasks: list[Task], sender_name: str) -> None:
     """Spawn the actual sends. Call AFTER the commit that persists the markers."""
     for task in tasks:
-        fire_and_forget_notify(
-            task, db,
+        send_task_notification_now(
+            task,
             template_key=MANUAL_REMINDER_TEMPLATE,
             extra_vars={
                 "sender_name": sender_name,

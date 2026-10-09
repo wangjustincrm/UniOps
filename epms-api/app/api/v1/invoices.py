@@ -40,7 +40,7 @@ from app.schemas.invoice import (
     SettleWithoutReceiptRequest,
 )
 from app.schemas.po import PoListResponse, PoResponse
-from app.services.notification import dispatch_task_notification, fire_and_forget_notify
+from app.services.notification import queue_task_notification
 from app.services import finance_client
 from app.services.invoice_chain import build_chain
 from app.services import finance_sync
@@ -169,10 +169,10 @@ async def _sync_exception_task(db, inv, result, actor_id: uuid.UUID) -> None:
             db.add(exc_task)
             await db.flush()
             await db.refresh(exc_task)
-            # fire_and_forget_notify 的后台协程用**新 session** 按 id 读这条任务,
-            # 所以必须先提交,否则它读不到、静默 return(与 assign_match 同因同修)。
+            # Queued in the same commit as the task, so the notifier never sees the
+            # row without its variables (or with the previous assignee).
+            queue_task_notification(exc_task, extra_vars={"invoice_number": inv.internal_ref})
             await db.commit()
-            fire_and_forget_notify(exc_task, db, extra_vars={"invoice_number": inv.internal_ref})
     elif existing_exc_task is not None:
         existing_exc_task.is_completed = True
         existing_exc_task.completed_at = now_ts
@@ -289,7 +289,7 @@ async def _create_or_renotify_create_pa(db, po, pr, invoice) -> None:
         Task.document_id == po.id, Task.is_completed.is_(False),
     ))).scalar_one_or_none()
     if existing is not None:
-        fire_and_forget_notify(existing, db, extra_vars={"invoice_number": invoice.internal_ref})
+        queue_task_notification(existing, extra_vars={"invoice_number": invoice.internal_ref})
         return
     if is_nc_orphan:
         assigned_role, assigned_user_id = "erp_pa_officer", None
@@ -307,7 +307,7 @@ async def _create_or_renotify_create_pa(db, po, pr, invoice) -> None:
     db.add(task)
     await db.flush()
     await db.refresh(task)
-    fire_and_forget_notify(task, db, extra_vars={"invoice_number": invoice.internal_ref})
+    queue_task_notification(task, extra_vars={"invoice_number": invoice.internal_ref})
 
 
 async def _create_or_renotify_confirm_receipt(db, po, pr, invoice, physical: bool) -> None:
@@ -334,7 +334,7 @@ async def _create_or_renotify_confirm_receipt(db, po, pr, invoice, physical: boo
         Task.is_completed.is_(False),
     ))).scalar_one_or_none()
     if existing is not None:
-        fire_and_forget_notify(existing, db, extra_vars={"invoice_number": invoice.internal_ref})
+        queue_task_notification(existing, extra_vars={"invoice_number": invoice.internal_ref})
         return
     if physical:
         assigned_role, assigned_user_id = "warehouse_staff", None
@@ -358,7 +358,7 @@ async def _create_or_renotify_confirm_receipt(db, po, pr, invoice, physical: boo
     db.add(task)
     await db.flush()
     await db.refresh(task)
-    fire_and_forget_notify(task, db, extra_vars={"invoice_number": invoice.internal_ref})
+    queue_task_notification(task, extra_vars={"invoice_number": invoice.internal_ref})
 
 
 @router.get("", response_model=InvoiceListResponse)
@@ -924,10 +924,10 @@ async def match_invoice(
             db.add(review)
             await db.flush()
             await db.refresh(review)
-            # fire_and_forget_notify 的后台协程用**新 session** 按 id 读这条任务,
-            # 所以必须先提交,否则它读不到、静默 return(与 assign_match 同因同修)。
+            # Queued in the same commit as the task, so the notifier never sees the
+            # row without its variables (or with the previous assignee).
+            queue_task_notification(review, extra_vars={"invoice_number": inv.internal_ref})
             await db.commit()
-            fire_and_forget_notify(review, db, extra_vars={"invoice_number": inv.internal_ref})
 
         # 超容差(exception)任务:开一条 AP 角色池任务;若发票重新匹配后
         # 不再落在 exception(改判 matched/match_review),关掉遗留的开放任务
@@ -1194,13 +1194,10 @@ async def decline_match(
     )
     await db.flush()
     await db.refresh(task)
-    # Commit the (re)assignment BEFORE notifying: fire_and_forget_notify re-reads
-    # the task in a fresh session and resolves the recipient from the committed
-    # assigned_user_id. Without this commit the background reader races the
-    # request's own commit and, on reassignment, sees the PREVIOUS assignee —
-    # emailing the wrong person while the UI badge shows the new one.
+    # Queued in the same commit as the task, so the notifier never sees the
+    # row without its variables (or with the previous assignee).
+    queue_task_notification(task, extra_vars={"invoice_number": inv.internal_ref})
     await db.commit()
-    fire_and_forget_notify(task, db, extra_vars={"invoice_number": inv.internal_ref})
     await _attach_match_assignees(db, [inv])
     await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
@@ -1292,13 +1289,10 @@ async def assign_match(
         db.add(task)
     await db.flush()
     await db.refresh(task)
-    # Commit the (re)assignment BEFORE notifying: fire_and_forget_notify re-reads
-    # the task in a fresh session and resolves the recipient from the committed
-    # assigned_user_id. Without this commit the background reader races the
-    # request's own commit and, on reassignment, sees the PREVIOUS assignee —
-    # emailing the wrong person while the UI badge shows the new one.
+    # Queued in the same commit as the task, so the notifier never sees the
+    # row without its variables (or with the previous assignee).
+    queue_task_notification(task, extra_vars={"invoice_number": inv.internal_ref})
     await db.commit()
-    fire_and_forget_notify(task, db, extra_vars={"invoice_number": inv.internal_ref})
     await _attach_match_assignees(db, [inv])
     await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
@@ -1363,7 +1357,7 @@ async def match_review(
         db.add(redo)
         await db.flush()
         await db.refresh(redo)
-        fire_and_forget_notify(redo, db, extra_vars={"invoice_number": inv.internal_ref})
+        queue_task_notification(redo, extra_vars={"invoice_number": inv.internal_ref})
 
     if result.status == "matched":
         await _on_invoice_matched(db, result)

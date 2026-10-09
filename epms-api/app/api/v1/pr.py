@@ -10,7 +10,6 @@ from app.core.access_scope import build_scope
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
 from app.crud import pr as pr_crud
 from app.crud.current_step import enrich_current_step
-from app.models.task import Task
 from app.schemas.pr import (
     ApprovalEventResponse,
     BudgetCheckRequest,
@@ -27,7 +26,6 @@ from app.services.approval_client import delegate_action
 from app.services.budget_client import ensure_known_budget_code
 from app.services.doc_preflight import field_checks_for
 from app.services.manual_reminder import remind_document
-from app.services.notification import fire_and_forget_notify
 
 router = APIRouter(prefix="/pr", tags=["purchase-requests"])
 
@@ -307,16 +305,8 @@ async def pr_action(
         from app.core.background import spawn
         spawn(_generate_pr_pdf_background(pr_id, pr.number, token), name=f"pr_pdf:{pr.number}")
 
-    # Fire notifications for newly opened tasks
-    new_tasks_result = await db.execute(
-        select(Task).where(
-            Task.document_type == "pr",
-            Task.document_id == pr_id,
-            Task.is_completed.is_(False),
-        )
-    )
-    for task in new_tasks_result.scalars().all():
-        fire_and_forget_notify(task, db)
+    # New tasks need no notify call: app/tasks/task_notifier.py picks up every
+    # un-notified task and applies the admin's per-type policy.
     return pr
 
 
