@@ -47,7 +47,7 @@ export interface NavItemDef {
 }
 
 /** Permissions that grant access to the Finance module (finance + budget pages). */
-export const FINANCE_ACCESS_PERMS = ['view_finance', 'view_budget_dashboard', 'view_budget_plans']
+export const FINANCE_ACCESS_PERMS = ['view_finance', 'view_budget_dashboard', 'view_budget_plans', 'finance.analysis.view']
 
 /** Permissions that grant access to the Booking module. */
 export const BOOKING_ACCESS_PERMS = ['view_booking', 'manage_meeting_rooms']
