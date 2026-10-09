@@ -217,6 +217,9 @@ def _migrate():
             # an ADDITIONAL role in production (primary is e.g. requester) —
             # the bank-permission tests assign it that way.
             "payment_officer",
+            # an ADDITIONAL-only post (identity 0015) — granted AI Financial
+            # Analysis by 0020_fin_analysis_perm.
+            "finance_director",
         )):
             conn.execute(sa.text(
                 "INSERT INTO role_defs (code, label, sort, is_active) VALUES (:c, :c, :s, true)"),
@@ -233,6 +236,8 @@ def _migrate():
             # identity migration 0014_bank_perms
             ("finance.bank.reconcile", "finance"),
             ("finance.bank.settings", "finance"),
+            # identity migration 0020_fin_analysis_perm
+            ("finance.analysis.view", "finance"),
         )):
             conn.execute(sa.text(
                 "INSERT INTO permission_defs (key, module, label, sort) VALUES (:k, :m, :k, :s)"),
@@ -247,6 +252,7 @@ def _migrate():
             "finance.budget.view_dept": ("requester", "dept_manager", "director", "opm"),
             "finance.bank.reconcile": ("system_admin", "finance_manager", "payment_officer"),
             "finance.bank.settings": ("system_admin", "finance_manager", "payment_officer"),
+            "finance.analysis.view": ("system_admin", "finance_manager", "finance_director"),
         }
         for key, roles in _phase2_defaults.items():
             for role in roles:
