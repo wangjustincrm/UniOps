@@ -11,7 +11,7 @@
  * only moves stock to the line and shows here as a transfer.
  */
 import { Fragment, useEffect, useState } from 'react'
-import { Navigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
@@ -93,7 +93,11 @@ const neg = (v: number | null | undefined) => (v ?? 0) < -0.005 ? 'text-red-700'
 export default function MaterialTracePage() {
   const user = useAuthStore((s) => s.user)
   const [params, setParams] = useSearchParams()
-  const material = (params.get('material') ?? '').trim().toUpperCase()
+  const navigate = useNavigate()
+  // One tab per material: the code is in the path (/finance/analysis/trace/CR0059);
+  // ?material= is still read so an old link keeps working.
+  const { material: pathMaterial } = useParams()
+  const material = (pathMaterial ?? params.get('material') ?? '').trim().toUpperCase()
   const from = params.get('from') ?? `${thisMonth().slice(0, 4)}-01`
   const to = params.get('to') ?? thisMonth()
 
@@ -123,7 +127,13 @@ export default function MaterialTracePage() {
   const apply = () => {
     const code = draft.trim().toUpperCase()
     if (!code || dFrom > dTo) return
-    setParams({ material: code, from: dFrom, to: dTo })
+    if (code === material && pathMaterial) {
+      // Same material, new range: stay in this tab.
+      setParams({ from: dFrom, to: dTo })
+    } else {
+      // Another material opens (or focuses) its own tab.
+      navigate(`/finance/analysis/trace/${encodeURIComponent(code)}?from=${dFrom}&to=${dTo}`)
+    }
   }
 
   // Other receipts minus other issues (stock counts, scrap, samples, …).

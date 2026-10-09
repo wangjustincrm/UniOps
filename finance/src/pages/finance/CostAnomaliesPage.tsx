@@ -11,6 +11,8 @@
 import { Fragment, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { deriveTabMeta, useOptionalTabStoreApi } from '@uniops/shell'
+import { financeRoutes } from '@/app/routes'
 import { ChevronDown, ChevronRight, Loader2, Search } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
@@ -42,8 +44,8 @@ function summary(a: Anomaly): string {
 
 function traceHref(a: Anomaly, from: string, to: string): string | null {
   if (!a.material_code) return null
-  const p = new URLSearchParams({ material: a.material_code, from: a.period && a.period < from ? a.period : from, to })
-  return `/finance/analysis/trace?${p.toString()}`
+  const p = new URLSearchParams({ from: a.period && a.period < from ? a.period : from, to })
+  return `/finance/analysis/trace/${encodeURIComponent(a.material_code)}?${p.toString()}`
 }
 
 function Detail({ a }: { a: Anomaly }) {
@@ -116,6 +118,20 @@ export default function CostAnomaliesPage() {
   const [rule, setRule] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  // Optional: outside the tab shell (iframe embed) there is no store, and the
+  // plain navigation is all that is needed.
+  const tabs = useOptionalTabStoreApi()
+
+  /** A material's trace tab may already be open on an older range; the shell
+   *  only focuses an existing tab, so point it at this link first. */
+  const retarget = (href: string) => {
+    if (!tabs) return
+    const q = href.indexOf('?')
+    const meta = deriveTabMeta(financeRoutes, href.slice(0, q), href.slice(q))
+    if (meta && tabs.getState().tabs.some((t) => t.key === meta.key)) {
+      tabs.getState().setTabPath(meta.key, meta.path!)
+    }
+  }
 
   const { data, error, isFetching } = useQuery({
     queryKey: ['cost-anomalies', from, to],
@@ -228,7 +244,8 @@ export default function CostAnomaliesPage() {
                             <td className="px-2.5 py-2 text-xs">{summary(a)}</td>
                             <td className="px-2.5 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                               {href && (
-                                <Link to={href} className="whitespace-nowrap text-xs text-[#085E5E] underline">
+                                <Link to={href} onClick={() => retarget(href)}
+                                      className="whitespace-nowrap text-xs text-[#085E5E] underline">
                                   Trace
                                 </Link>
                               )}

@@ -64,5 +64,9 @@ export const financeRoutes: RouteDef[] = [
 
   // AI Financial Analysis (finance.analysis.view — not view_finance).
   { path: '/finance/analysis/anomalies', element: <CostAnomaliesPage />, tab: { title: 'Cost Anomalies', icon: 'Activity', keyStrategy: 'static' } },
+  // The picker (sidebar entry) and one tab PER MATERIAL. A single static tab
+  // was re-focused with its old query when a second Trace link was clicked —
+  // the shell's openTab focuses an existing key without touching its path.
   { path: '/finance/analysis/trace', element: <MaterialTracePage />, tab: { title: 'Material Cost Trace', icon: 'GitBranch', keyStrategy: 'static' } },
+  { path: '/finance/analysis/trace/:material', element: <MaterialTracePage />, tab: { title: (p) => `Trace ${p.material ?? ''}`, icon: 'GitBranch', keyStrategy: 'param', paramName: 'material' } },
 ]
