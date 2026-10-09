@@ -198,7 +198,15 @@ modules:
       - Change how a document type is routed for approval
       - Set up approval cover for someone on leave
       - Correct data through Data Maintenance
+      - Choose which tasks send an email, and whether immediately or in a daily digest
     notes:
       - Permissions are configured here rather than written into the code, so
         what you can see and do is a setting, not a fixed property of your job
         title.
+      - >-
+        Whether a new task emails the person it is assigned to is also a
+        setting, per kind of task (Admin → Notification Settings → Task
+        Notifications): off, sent the moment the task is created, or listed in
+        a once-a-day digest of that person's open tasks. It covers tasks from
+        every module, applies to tasks created after it is changed, and someone
+        who turned notifications off in their own profile is not emailed.
