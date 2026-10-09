@@ -22,6 +22,7 @@ from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.nc_cost import RUNNING, FaConfig, NcCostSyncRun
 from app.services import cost_analysis as ca
+from app.services import cost_diagnosis as dx
 from app.services import nc_cost_sync as svc
 from app.tasks import nc_cost_sync_scheduler as sched
 
@@ -168,7 +169,21 @@ async def trace(material: str, period_from: str = Query(..., alias="from"),
     material = material.strip()
     if not material:
         raise HTTPException(status_code=422, detail="material is required")
-    return await ca.material_trace(db, material, a, b)
+    out = await ca.material_trace(db, material, a, b)
+    # The conclusion first, the data as its evidence (user, 2026-10-09).
+    out["diagnosis"] = await dx.diagnose(db, material, a, b, trace=out)
+    return out
+
+
+@router.get("/diagnosis")
+async def diagnosis(material: str, period_from: str = Query(..., alias="from"),
+                    period_to: str = Query(..., alias="to"),
+                    user: dict = Depends(_can_view), db: AsyncSession = Depends(get_db)):
+    a, b = _range(period_from, period_to)
+    material = material.strip().upper()
+    if not material:
+        raise HTTPException(status_code=422, detail="material is required")
+    return await dx.diagnose(db, material, a, b)
 
 
 @router.get("/anomalies")

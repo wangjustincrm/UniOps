@@ -155,29 +155,48 @@ def _stuff_rows():
                 f"PK{mat}", mat, mat, None if qty is None else D(qty), None, D(amount),
                 0, "2026-10-01 00:00:00")
     return [
+        S("2026-07", "CR0059", "Pasteurized Skim Milk", 18, "CR0069", "24255.3356", "122683.49"),
+        S("2026-07", "CR0059", "Pasteurized Skim Milk", 18, "CR0070", "45397.8775", "229622.46"),
+        S("2026-07", "CR0059", "Pasteurized Skim Milk", 18, "CR0016", "9848.6551", "124057.32"),
+        S("2026-09", "CS0080", "210-Niuriss Smart2 半成品", 18, "CP0105", "8000", "45535.43"),
         S("2026-08", "CR0059", "Pasteurized Skim Milk", 18, "CR0069", "1195.9", "5022.78"),
         S("2026-08", "CR0059", "Pasteurized Skim Milk", 18, "CR0070", "2178.09", "9147.98"),
         S("2026-08", "CR0059", "Pasteurized Skim Milk", 31, "CR0016", None, "27.26"),
         S("2026-08", "CR0059", "Pasteurized Skim Milk", 31, "CR0069", None, "-21572.27"),
         S("2026-08", "CR0059", "Pasteurized Skim Milk", 31, "CR0070", None, "-40361.54"),
         S("2026-09", "CS0080", "210-Niuriss Smart2 半成品", 18, "CR0059", "10262", "-12429.34"),
-        S("2026-09", "CS0080", "210-Niuriss Smart2 半成品", 31, "CR0059", None, "-46588.84"),
+        # NC files the tail dump as source 60, not 31 (measured on dev1 2026-10-09)
+        S("2026-09", "CS0080", "210-Niuriss Smart2 半成品", 60, "CR0059", None, "-46588.84"),
         S("2026-09", "CS0026", "251基粉半成品", 18, "CR0059", "48787", "18885.45"),
     ]
 
 
 def _prod_rows():
-    head = ("PC0000000000000000001", "2026-08", "OBJCR0059", "PKCR0059", "CR0059",
-            "Pasteurized Skim Milk", "CC1", 1, D("39411"), D("-47735.79"), 0,
-            "2026-10-01 00:00:00")
+    def H(pk, period, obj, mat, name, qty, amount):
+        return (pk, period, f"OBJ{obj}", f"PK{mat}", mat, name, "CC1", 1, D(qty), D(amount), 0,
+                "2026-10-01 00:00:00")
+    heads = [
+        H("PC0000000000000000007", "2026-07", "CR0059", "CR0059", "Pasteurized Skim Milk",
+          "981405", "476363.27"),
+        H("PC0000000000000000001", "2026-08", "CR0059", "CR0059", "Pasteurized Skim Milk",
+          "39411", "-47735.79"),
+        H("PC0000000000000000009", "2026-09", "CS0080", "CS0080", "210-Niuriss Smart2 半成品",
+          "5432.3", "-13482.75"),
+    ]
 
-    def PL(n, mat, qty, amount):
-        return (f"PCB{n:018d}", "PC0000000000000000001", "2026-08", "EL1", "100101", "生牛乳",
+    def PL(n, head, period, mat, qty, amount):
+        return (f"PCB{n:018d}", head, period, "EL1", "100101", "生牛乳",
                 f"PK{mat}", mat, mat, 1, None if qty is None else D(qty), None, D(amount), 0,
                 "2026-10-01 00:00:00")
-    lines = [PL(1, "CR0016", None, "27.26"), PL(2, "CR0069", "1195.9", "-16549.49"),
-             PL(3, "CR0070", "2178.09", "-31213.56")]
-    return [head], lines
+    lines = [PL(1, "PC0000000000000000001", "2026-08", "CR0016", None, "27.26"),
+             PL(2, "PC0000000000000000001", "2026-08", "CR0069", "1195.9", "-16549.49"),
+             PL(3, "PC0000000000000000001", "2026-08", "CR0070", "2178.09", "-31213.56"),
+             PL(4, "PC0000000000000000007", "2026-07", "CR0069", "24255.3356", "122683.49"),
+             PL(5, "PC0000000000000000007", "2026-07", "CR0070", "45397.8775", "229622.46"),
+             PL(6, "PC0000000000000000007", "2026-07", "CR0016", "9848.6551", "124057.32"),
+             PL(7, "PC0000000000000000009", "2026-09", "CR0059", "10262", "-59018.18"),
+             PL(8, "PC0000000000000000009", "2026-09", "CP0105", "8000", "45535.43")]
+    return heads, lines
 
 
 def _cost_objects():
@@ -519,3 +538,65 @@ async def test_bad_period_is_422_not_500(client, synced):
     r = await client.get("/finance/v1/cost-analysis/trace?material=CR0059&from=2026-13&to=2026-08",
                          headers=_h())
     assert r.status_code == 422
+
+
+# ── diagnosis: the conclusion first, the data as evidence ───────────────────
+
+async def test_diagnosis_explains_cr0059_august_with_its_evidence(db_session, synced):
+    from app.services import cost_diagnosis as dx
+    d = await dx.diagnose(db_session, "CR0059", "2026-07", "2026-09")
+    cost = next(f for f in d["findings"] if f["kind"] == "cost" and f["period"] == "2026-08")
+    assert cost["severity"] == "high"
+    assert "settlement variances on CR0069" in cost["title"]
+    because = " ".join(cost["because"])
+    # the provisional receipt, its settlement, and that the stock was already used
+    assert "CR2026072900030224" in because and "JS202608140002" in because
+    assert "all of it had been consumed by the end of 2026-07" in because
+    # the timing mismatch, and what the months would have cost
+    assert "charged to 2026-08's run of 39,411, 4% of that volume" in because
+    assert "2026-08 would have cost 0.3596/unit" in because
+    refs = {e["ref"] for e in cost["evidence"] if e["ref"]}
+    assert {"CR2026072900030224", "JS202608140002"} <= refs
+    # carried into September, then dumped on CS0080 — with the arithmetic
+    assert any(f["kind"] == "carry" and f["period"] == "2026-08" for f in d["findings"])
+    tail = next(f for f in d["findings"] if f["kind"] == "tail")
+    assert "IA2026092900003299" in tail["because"][0]
+    assert "= -46,589.02 still on the books" in tail["because"][0]
+    assert "CS0080" in tail["title"]
+    # the story in date order
+    periods = [s["period"] for s in d["chain"]]
+    assert periods == sorted(periods) and periods[0] == "2026-07"
+
+
+async def test_diagnosis_follows_inherited_value_to_its_root(db_session, synced):
+    from app.services import cost_diagnosis as dx
+    d = await dx.diagnose(db_session, "CS0080", "2026-09", "2026-09")
+    cost = next(f for f in d["findings"] if f["kind"] == "cost")
+    assert "inherited from CR0059" in cost["title"]
+    assert [h["material"] for h in d["root_chain"]] == ["CR0059"]
+    assert d["root_chain"][0]["period"] == "2026-08"
+    assert "Root cause upstream: CR0059" in d["headline"]
+
+
+async def test_diagnosis_names_the_settlement_behind_a_raw_material_adjustment(db_session, synced):
+    from app.services import cost_diagnosis as dx
+    d = await dx.diagnose(db_session, "CR0069", "2026-08", "2026-08")
+    f = next(f for f in d["findings"] if f["kind"] == "tail")
+    assert "Settlement JS202608140002 repriced the 2026-07 provisional receipt CR2026072900030224" \
+        in f["because"][0]
+    assert f["related"] == ["CR0059"]
+
+
+async def test_a_quiet_material_says_so(db_session, synced):
+    from app.services import cost_diagnosis as dx
+    d = await dx.diagnose(db_session, "CP0105", "2026-08", "2026-08")
+    assert d["findings"] == [] and "nothing abnormal" in d["headline"]
+
+
+async def test_trace_carries_its_diagnosis_and_access_is_gated(client, synced):
+    r = await client.get("/finance/v1/cost-analysis/trace?material=CR0059&from=2026-07&to=2026-09",
+                         headers=_h())
+    assert r.status_code == 200 and r.json()["diagnosis"]["findings"]
+    url = "/finance/v1/cost-analysis/diagnosis?material=CR0059&from=2026-08&to=2026-08"
+    assert (await client.get(url, headers=_h())).status_code == 200
+    assert (await client.get(url, headers=_h("requester"))).status_code == 403

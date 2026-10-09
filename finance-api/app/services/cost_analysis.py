@@ -67,10 +67,21 @@ TRANSFER_FAMILIES = {
 _FAMILY_OF = {code: fam for fam, pair in TRANSFER_FAMILIES.items() for code in pair}
 CROSS_MATERIAL_FAMILIES = {"cost_transfer"}
 
-# CM material collection: 18 = an issue the cost object consumed; 31 = the
-# amount-only outbound adjustment a settlement variance arrives through.
+# CM material collection source types, measured on the 2026 mirror:
+#   12  conversion cost collected at cost-centre level (no cost object) — not
+#       part of any one product's cost, never read here
+#   18  material consumption (the only type with a quantity)
+#   24  conversion cost allocated to the cost object (payroll, overhead,
+#       utilities — element only, no material)
+#   31  settlement-variance adjustment: a provisional price settled
+#       differently after the stock was used
+#   60  month-end tail adjustment: NC's IA posted when an issuing material's
+#       quantity reached zero with value left (the CR0059 → CS0080 dump)
 STUFF_CONSUMED = 18
-STUFF_ADJUSTMENT = 31
+STUFF_CONVERSION = 24
+STUFF_SETTLEMENT = 31
+STUFF_TAIL = 60
+ADJUSTMENT_TYPES = (STUFF_SETTLEMENT, STUFF_TAIL)
 
 # §6.0 — the consumption trade types seen in 2026. Anything else under I6 is
 # still consumption by bill type, but reported as unclassified.
@@ -412,9 +423,9 @@ async def _landings(db: AsyncSession, ia_rows: list[LedgerRow]) -> dict:
             continue
         res = await db.execute(text(
             "select distinct cost_object_code, cost_object_name from nc_cm_stuff_lines "
-            "where dr = 0 and source_type = :st and material_code = :m and period = :p "
+            "where dr = 0 and source_type = any(:st) and material_code = :m and period = :p "
             "and abs(amount - :a) < 0.01"),
-            {"st": STUFF_ADJUSTMENT, "m": r.material_code, "p": r.period, "a": r.amount})
+            {"st": list(ADJUSTMENT_TYPES), "m": r.material_code, "p": r.period, "a": r.amount})
         out[r.nc_pk] = [{"material_code": c, "material_name": n, "via": "cost_collection"}
                         for c, n in res.all()]
     return out
@@ -456,14 +467,16 @@ async def material_trace(db: AsyncSession, material: str, period_from: str,
         "select period, cost_object_code, cost_object_name, source_type, "
         "coalesce(sum(qty),0), coalesce(sum(amount),0) from nc_cm_stuff_lines "
         "where dr = 0 and material_code = :m and period between :a and :b "
+        "and source_type in (18, 31, 60) "
         "group by period, cost_object_code, cost_object_name, source_type "
         "order by period, cost_object_code, source_type"),
         {"m": material, "a": period_from, "b": period_to})
     consumers = [{
         "period": p, "cost_object_code": c, "cost_object_name": n,
-        "kind": "adjustment" if st == STUFF_ADJUSTMENT else "consumption",
+        "kind": {STUFF_SETTLEMENT: "settlement adjustment", STUFF_TAIL: "tail adjustment"}
+                .get(st, "consumption"),
         "qty": _f(_n(q)), "amount": _f(_n(a)),
-        "unit": _f(_unit(_n(a), _n(q))) if st != STUFF_ADJUSTMENT else None,
+        "unit": _f(_unit(_n(a), _n(q))) if st == STUFF_CONSUMED else None,
     } for p, c, n, st, q, a in res.all()]
 
     product_cost = await _product_cost(db, material, period_from, period_to)
@@ -491,10 +504,12 @@ async def material_trace(db: AsyncSession, material: str, period_from: str,
 
 async def _product_cost(db: AsyncSession, material: str, period_from: str,
                         period_to: str) -> list[dict]:
-    """§6.3 — NC's product cost for this material as a cost object, each input
-    split into what was consumed (18), what arrived as an amount-only
-    adjustment (31), and what was carried in from an earlier period (the rest
-    of NC's figure — e.g. June's no-output collection rolled into July)."""
+    """§6.3 — NC's product cost for this material as a cost object, every
+    input split by where its value came from in NC's own collection: consumed
+    (18), conversion cost allocated (24), settlement adjustment (31), tail
+    adjustment (60) — and carried in from an earlier month, which is whatever
+    of NC's figure the month's collection does not explain (e.g. June's
+    no-output collection rolled into July)."""
     heads = (await db.execute(text(
         "select nc_pk, period, cost_object_pk, qty, amount from nc_cm_prod_costs "
         "where dr = 0 and material_code = :m and period between :a and :b order by period"),
@@ -502,39 +517,50 @@ async def _product_cost(db: AsyncSession, material: str, period_from: str,
     out = []
     for pk, period, obj_pk, qty, amount in heads:
         lines = (await db.execute(text(
-            "select material_code, material_name, element_code, element_name, "
+            "select material_code, max(material_name), element_code, max(element_name), "
             "coalesce(sum(qty),0), coalesce(sum(amount),0) from nc_cm_prod_cost_lines "
-            "where dr = 0 and prod_cost_pk = :pk "
-            "group by material_code, material_name, element_code, element_name"),
+            "where dr = 0 and prod_cost_pk = :pk group by material_code, element_code"),
             {"pk": pk})).all()
-        stuff = defaultdict(lambda: [D0, D0, D0])   # mat -> [qty18, amt18, amt31]
-        for mat, st, q, a in (await db.execute(text(
-                "select material_code, source_type, coalesce(sum(qty),0), "
+        # key: material for material inputs, element for conversion cost
+        stuff = defaultdict(lambda: {18: [D0, D0], 24: D0, 31: D0, 60: D0})
+        for mat, el, st, q, a in (await db.execute(text(
+                "select material_code, element_code, source_type, coalesce(sum(qty),0), "
                 "coalesce(sum(amount),0) from nc_cm_stuff_lines where dr = 0 "
-                "and cost_object_pk = :o and period = :p group by material_code, source_type"),
+                "and cost_object_pk = :o and period = :p "
+                "group by material_code, element_code, source_type"),
                 {"o": obj_pk, "p": period})).all():
-            s = stuff[mat]
-            if st == STUFF_ADJUSTMENT:
-                s[2] += _n(a)
-            else:
-                s[0] += _n(q)
-                s[1] += _n(a)
+            s = stuff[("m", mat) if mat else ("e", el)]
+            if st == STUFF_CONSUMED:
+                s[18][0] += _n(q)
+                s[18][1] += _n(a)
+            elif st in (STUFF_CONVERSION, STUFF_SETTLEMENT, STUFF_TAIL):
+                s[st] += _n(a)
         inputs = []
         for mat, name, el_code, el_name, q, a in lines:
-            s = stuff.get(mat, [D0, D0, D0])
+            s = stuff.get(("m", mat) if mat else ("e", el_code),
+                          {18: [D0, D0], 24: D0, 31: D0, 60: D0})
             nc_amt = _n(a)
+            explained = s[18][1] + s[24] + s[31] + s[60]
             inputs.append({
                 "material_code": mat, "material_name": name,
                 "element_code": el_code, "element_name": el_name,
+                "kind": "material" if mat else "conversion",
                 "nc_qty": _f(_n(q)), "nc_amount": _f(nc_amt),
-                "consumed_qty": _f(s[0]), "consumed_amount": _f(s[1]),
-                "adjustment": _f(s[2]),
-                "carried_in": _f(nc_amt - s[1] - s[2]) if mat else None,
+                "consumed_qty": _f(s[18][0]), "consumed_amount": _f(s[18][1]),
+                "consumed_unit": _f(_unit(s[18][1], s[18][0])),
+                "conversion": _f(s[24]),
+                "settlement_adj": _f(s[31]), "tail_adj": _f(s[60]),
+                "adjustment": _f(s[31] + s[60]),
+                "carried_in": _f(nc_amt - explained),
             })
         q, a = _n(qty), _n(amount)
+        tot = lambda k: sum((i[k] or 0 for i in inputs), 0.0)  # noqa: E731
         out.append({
             "period": period, "qty": _f(q), "amount": _f(a), "unit": _f(_unit(a, q)),
-            "adjustment_total": _f(sum((i["adjustment"] or 0 for i in inputs), 0.0)),
+            "consumed_total": tot("consumed_amount"), "conversion_total": tot("conversion"),
+            "settlement_total": tot("settlement_adj"), "tail_total": tot("tail_adj"),
+            "carried_total": tot("carried_in"),
+            "adjustment_total": tot("adjustment"),
             "inputs": sorted(inputs, key=lambda i: (-(abs(i["nc_amount"] or 0)))),
         })
     return out
