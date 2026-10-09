@@ -152,7 +152,13 @@ modules:
         Milk components bought at a provisional price and settled later are
         the typical cause of a cost jump: if the stock was already consumed,
         NC pushes the settlement variance onto whatever consumes the material
-        in the month of settlement.
+        in the month of settlement. Material Cost Trace opens with a Summary that
+        states the cause first — which month went wrong, what drove it (a
+        settlement variance, a month-end tail adjustment, a negative-cost input,
+        cost carried in, a small run), what the months would have cost without
+        it, and, for a product that inherited the problem, the upstream
+        material and month where it started — with the figures and NC document
+        numbers as evidence underneath.
 
   - key: budget
     label: Budget

@@ -9,7 +9,9 @@
  * to look.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Loader2, RefreshCw } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -161,6 +163,136 @@ export function AccessMessage({ error }: { error: unknown }) {
       {denied
         ? 'AI Financial Analysis needs the “AI Financial Analysis” permission (finance.analysis.view). It is granted per role in Portal → Access Control.'
         : msg}
+    </div>
+  )
+}
+
+// ── Diagnosis: the conclusion first, the data as evidence ───────────────────
+
+export interface Evidence { label: string; value: string; ref: string | null }
+export interface RootHop { material: string; period: string; headline: string; conclusion?: string }
+export interface Finding {
+  kind: 'cost' | 'carry' | 'tail'; period: string; severity: 'high' | 'medium'
+  title: string; conclusion: string; because: string[]; evidence: Evidence[]
+  steps: { period: string; text: string }[]; related: string[]; root_chain?: RootHop[]
+}
+export interface Diagnosis {
+  material: { code: string; name: string | null }; headline: string
+  chain: { period: string; text: string }[]; findings: Finding[]
+  root_chain: RootHop[]; related: string[]
+}
+
+function prevMonth(p: string): string {
+  const y = Number(p.slice(0, 4)); const mo = Number(p.slice(5, 7))
+  return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`
+}
+export function traceLink(code: string, from: string, to: string): string {
+  return `/finance/analysis/trace/${encodeURIComponent(code)}?from=${from}&to=${to}`
+}
+
+function EvidenceTable({ rows }: { rows: Evidence[] }) {
+  return (
+    <table className="mt-1 w-full text-xs">
+      <tbody>
+        {rows.map((e, i) => (
+          <tr key={i} className="border-t border-neutral-100">
+            <td className="w-1/2 py-1 pr-3 text-neutral-500">{e.label}</td>
+            <td className="py-1 pr-3 font-mono tabular-nums text-neutral-800">{e.value}</td>
+            <td className="py-1 font-mono text-[11px] text-neutral-400">{e.ref ?? ''}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function FindingCard({ f }: { f: Finding }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className={cn('rounded-lg border bg-white p-3',
+      f.severity === 'high' ? 'border-red-200' : 'border-amber-200')}>
+      <div className="flex items-start gap-2">
+        <SeverityBadge severity={f.severity} />
+        <p className="text-sm font-semibold text-neutral-900">{f.title}</p>
+      </div>
+      <p className="mt-1.5 text-sm leading-relaxed text-neutral-800">{f.conclusion}</p>
+      {f.because.length > 0 && (
+        <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm leading-relaxed text-neutral-700">
+          {f.because.map((b, i) => <li key={i}>{b}</li>)}
+        </ul>
+      )}
+      {f.related.length > 0 && (
+        <p className="mt-1.5 text-xs text-neutral-500">
+          Related:{' '}
+          {f.related.map((r, i) => (
+            <span key={r}>{i > 0 && ', '}
+              <Link to={traceLink(r, prevMonth(f.period), f.period)} className="font-mono text-[#085E5E] underline">{r}</Link>
+            </span>
+          ))}
+        </p>
+      )}
+      <button onClick={() => setOpen(!open)} className="mt-2 inline-flex items-center gap-1 text-xs text-[#085E5E]">
+        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        Evidence ({f.evidence.length})
+      </button>
+      {open && <EvidenceTable rows={f.evidence} />}
+    </div>
+  )
+}
+
+/** The analysis: headline, root cause upstream, what happened in order, and
+ *  each finding with the figures behind it. */
+export function DiagnosisPanel({ d, compact = false }: { d: Diagnosis; compact?: boolean }) {
+  const ok = d.findings.length === 0
+  return (
+    <div className={cn('rounded-lg border p-4', ok ? 'border-neutral-200 bg-neutral-50' : 'border-[#085E5E]/30 bg-primary-50/40')}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#085E5E]">Summary</p>
+      <p className="mt-1 text-base font-semibold leading-snug text-neutral-900">{d.headline}</p>
+
+      {d.root_chain.length > 0 && (
+        <div className="mt-3">
+          <p className="text-xs font-medium text-neutral-600">Where it comes from</p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="rounded bg-white px-1.5 py-0.5 font-mono font-semibold">{d.material.code}</span>
+            {d.root_chain.map((h) => (
+              <span key={h.material} className="inline-flex items-center gap-1.5">
+                <ArrowLeft className="h-3 w-3 text-neutral-400" />
+                <Link to={traceLink(h.material, prevMonth(h.period), h.period)} title={h.headline}
+                      className="rounded bg-white px-1.5 py-0.5 font-mono text-[#085E5E] underline">
+                  {h.material} <span className="text-neutral-400">{h.period}</span>
+                </Link>
+              </span>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-neutral-600">{d.root_chain[d.root_chain.length - 1].headline}</p>
+        </div>
+      )}
+
+      {d.chain.length > 0 && !compact && (
+        <div className="mt-3">
+          <p className="text-xs font-medium text-neutral-600">What happened, in order</p>
+          <ol className="mt-1 space-y-1 text-sm">
+            {d.chain.map((s, i) => (
+              <li key={i} className="flex gap-2">
+                <span className="w-5 shrink-0 text-right text-xs text-neutral-400">{i + 1}.</span>
+                <span className="shrink-0 font-mono text-xs leading-5 text-neutral-500">{s.period}</span>
+                <span className="text-neutral-800">{s.text}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {d.findings.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {d.findings.map((f, i) => <FindingCard key={i} f={f} />)}
+        </div>
+      )}
+      {!compact && (
+        <p className="mt-3 text-[11px] text-neutral-500">
+          Every figure above is computed from NC&rsquo;s own ledger and cost data; the tables below are the evidence.
+        </p>
+      )}
     </div>
   )
 }

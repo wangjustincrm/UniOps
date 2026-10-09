@@ -18,7 +18,7 @@ import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
-import { AccessMessage, num, OpenPeriodBadge, qty, SyncBar, thisMonth } from '@/lib/costAnalysis'
+import { AccessMessage, type Diagnosis, DiagnosisPanel, num, OpenPeriodBadge, qty, SyncBar, thisMonth } from '@/lib/costAnalysis'
 
 interface Flow { qty: number | null; amount: number | null; label: string }
 interface Month {
@@ -65,7 +65,7 @@ interface Line {
 interface Trace {
   material: { code: string; name: string | null }; months: Month[]
   settlements: Settlement[]; out_adjustments: OutAdj[]; consumers: Consumer[]
-  product_cost: ProductCost[]; lines: Line[]
+  product_cost: ProductCost[]; lines: Line[]; diagnosis?: Diagnosis
 }
 
 // Display order of the flow columns; transfers and other in/out get their own net columns.
@@ -178,6 +178,12 @@ export default function MaterialTracePage() {
               <span className="font-mono font-semibold">{data.material.code}</span>{' '}
               <span className="text-neutral-600">{data.material.name}</span>
             </p>
+
+            {data.diagnosis && <div className="mb-6"><DiagnosisPanel d={data.diagnosis} /></div>}
+
+            <h2 className="mb-3 border-b border-neutral-200 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              Supporting data
+            </h2>
 
             <Section title="Month by month"
                      hint="Opening + receipts − issues = closing, rebuilt from every NC ledger line. Closed months are held against NC's month-end balance. Transfers between warehouses (incl. production picking) are shown net — they move stock, they do not consume it.">

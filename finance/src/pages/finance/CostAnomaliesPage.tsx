@@ -19,8 +19,8 @@ import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import {
-  AccessMessage, type Anomaly, type AnomaliesResp, num, OpenPeriodBadge, pct, qty, RULE_HELP,
-  SeverityBadge, SyncBar, thisMonth,
+  AccessMessage, type Anomaly, type AnomaliesResp, type Diagnosis, DiagnosisPanel, num,
+  OpenPeriodBadge, pct, qty, RULE_HELP, SeverityBadge, SyncBar, thisMonth,
 } from '@/lib/costAnalysis'
 
 const RULE_ORDER = ['A1', 'A3', 'A5', 'A8', 'A2', 'A4', 'A6']
@@ -48,10 +48,33 @@ function traceHref(a: Anomaly, from: string, to: string): string | null {
   return `/finance/analysis/trace/${encodeURIComponent(a.material_code)}?${p.toString()}`
 }
 
+function prevMonth(p: string): string {
+  const y = Number(p.slice(0, 4)); const mo = Number(p.slice(5, 7))
+  return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`
+}
+
+/** Why it happened — the diagnosis for this material around this month. */
+function Why({ a }: { a: Anomaly }) {
+  const enabled = !!a.material_code && !!a.period
+  const from = a.period ? prevMonth(a.period) : ''
+  const { data, error, isLoading } = useQuery({
+    queryKey: ['cost-diagnosis', a.material_code, from, a.period],
+    queryFn: () => financeApi.get<Diagnosis>(
+      `/cost-analysis/diagnosis?material=${encodeURIComponent(a.material_code!)}&from=${from}&to=${a.period}`),
+    enabled,
+    staleTime: 60_000,
+  })
+  if (!enabled) return null
+  if (isLoading) return <p className="flex items-center gap-1 text-xs text-neutral-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Analysing…</p>
+  if (error || !data) return null
+  return <DiagnosisPanel d={data} compact />
+}
+
 function Detail({ a }: { a: Anomaly }) {
   const m = a.metrics
   return (
     <div className="space-y-2 text-xs text-neutral-600">
+      <Why a={a} />
       <p className="text-neutral-500">{RULE_HELP[a.rule]}</p>
       {a.rule === 'A5' && (
         <div className="grid gap-2 sm:grid-cols-2">
