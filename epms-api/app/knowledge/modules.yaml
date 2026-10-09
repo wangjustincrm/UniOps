@@ -121,7 +121,7 @@ modules:
     covers: >
       The accounting side: the ledger, accounts payable and receivable, bank
       and payment execution, and the exchange with NC and QuickBooks.
-    who: Finance staff. Bank reconciliation is also open to whoever holds the Bank Reconciliation permission in Access Control — Payment Officers by default. Most people never open it.
+    who: Finance staff. Bank reconciliation is also open to whoever holds the Bank Reconciliation permission in Access Control — Payment Officers by default. AI Financial Analysis (unit costs and cost anomalies) needs its own AI Financial Analysis permission — Finance Manager and Finance Director by default — and is not visible with ordinary Finance access. Most people never open it.
     typical:
       - Execute approved payments and issue remittance advice
       - Reconcile accounts payable against what EPMS says is owed
@@ -130,6 +130,8 @@ modules:
       - Find a voucher across several months, or by the item, project or party it was booked against
       - See who prepared, checked and posted a voucher in NC, and whether it was cancelled
       - Reconcile a bank statement against the ledger and sign the period off (a USD or CNY account reconciles in its own currency, not in CAD)
+      - Find why a material's or product's cost looks wrong in a month — a negative or swinging unit cost, value left on zero stock — and where that value went (AI Financial Analysis → Cost Anomalies)
+      - Rebuild one material's cost month by month from NC's own ledger, with provisional receipts paired to their settlement and each issue adjustment traced to the product it landed on (AI Financial Analysis → Material Cost Trace)
     notes:
       - >-
         A vendor's invoice number must be unique (vendor name + invoice
@@ -139,6 +141,18 @@ modules:
         whatever the amounts. The same number from a different vendor is not a
         duplicate, and a bill reversed by an equal credit is not counted as a
         copy.
+      - >-
+        AI Financial Analysis reads NC's inventory-accounting and product-cost
+        data (2026 onwards) and only analyses it — it never changes NC and
+        sends no notifications or tasks; people open it to look. Unit costs
+        and product cost are NC's own figures. A month NC has not closed yet
+        is marked "Not closed in NC" and its figures can still change. Usage
+        means material consumption, not production picking: picking only moves
+        stock from the warehouse to the line and is shown as a transfer.
+        Milk components bought at a provisional price and settled later are
+        the typical cause of a cost jump: if the stock was already consumed,
+        NC pushes the settlement variance onto whatever consumes the material
+        in the month of settlement.
 
   - key: budget
     label: Budget
