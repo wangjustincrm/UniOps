@@ -32,6 +32,8 @@ interface MarginFinding extends Finding { material_code: string; material_name: 
 interface Resp {
   periods: string[]; rows: Row[]
   a7: { material_code: string; invoice: string; side: string }[]
+  pending_invoices: { invoice: string; date: string | null; material_code: string; status_flag: number | null; qty: number | null; amount: number | null }[]
+  costed_in_a_later_month: { material_code: string; invoice: string; invoice_month: string; cost_period: string }[]
   summary: { headline: string; findings: MarginFinding[] }
 }
 
@@ -152,6 +154,17 @@ export default function GrossMarginPage() {
                 </tbody>
               </table>
             </div>
+            {data.costed_in_a_later_month.length > 0 && (
+              <p className="mt-3 text-xs text-neutral-500">
+                Costed by NC in a later month, counted in the month of the sale: {data.costed_in_a_later_month.map((x) => `${x.material_code} ${x.invoice} (${x.invoice_month} → ${x.cost_period})`).join('; ')}.
+              </p>
+            )}
+            {data.pending_invoices.length > 0 && (
+              <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-700">
+                <p className="font-medium">Invoices not approved in NC — not counted as revenue</p>
+                <ul className="mt-1 list-disc pl-5">{data.pending_invoices.map((x, i) => <li key={i}><span className="font-mono">{x.invoice} {x.material_code}</span> {x.date} · {num(x.amount)} (status {x.status_flag ?? '—'})</li>)}</ul>
+              </div>
+            )}
             {data.a7.length > 0 && (
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                 <p className="font-medium">Sales without a matching cost of sales, or the reverse (A7)</p>

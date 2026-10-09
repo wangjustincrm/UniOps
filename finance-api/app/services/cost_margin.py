@@ -41,50 +41,83 @@ def _f(v):
     return None if v is None else float(v)
 
 
+# SO_SALEINVOICE.fstatusflag: every status enum NC carries for it agrees on
+# 1 = free (自由) and 2 = approved (审批通过). On 2026-10-09 all 32,812 live
+# invoices since 2020 were 2; the 4,012 at 1 were all deleted (dr=1). Revenue
+# counts approved invoices only; anything else is listed, never counted —
+# the AP mirror learned this the expensive way (unapproved bills, a false 20M).
+APPROVED = 2
+
+
 async def margin_matrix(db: AsyncSession, period_from: str, period_to: str) -> dict:
-    """Product × month: quantity, revenue, cost of sales, margin."""
+    """Product × month: quantity, revenue, cost of sales, margin.
+
+    Invoice by invoice. A cost-of-sales line (I5) names its invoice, and its
+    cost belongs to that invoice's month even when NC posts it in the next one
+    (an invoice of 30 September costed in October is September's sale). The
+    pairing is therefore made over the whole mirror, and the range is applied
+    to the invoice month afterwards — so a sale near a month-end is neither a
+    margin without cost nor a false A7.
+    """
     rev = (await db.execute(text(
-        "select material_code, max(material_name), to_char(bill_date, 'YYYY-MM'), "
-        "invoice_code, coalesce(sum(qty),0), coalesce(sum(amount),0) "
-        "from nc_so_invoice_lines where dr = 0 and to_char(bill_date, 'YYYY-MM') between :a and :b "
-        "group by material_code, to_char(bill_date, 'YYYY-MM'), invoice_code"),
-        {"a": period_from, "b": period_to})).all()
+        "select material_code, max(material_name), invoice_code, "
+        "to_char(min(bill_date), 'YYYY-MM'), coalesce(sum(qty),0), coalesce(sum(amount),0) "
+        "from nc_so_invoice_lines where dr = 0 and status_flag = :ok "
+        "group by material_code, invoice_code"), {"ok": APPROVED})).all()
+    pending = (await db.execute(text(
+        "select invoice_code, bill_date, material_code, max(material_name), status_flag, "
+        "coalesce(sum(qty),0), coalesce(sum(amount),0) from nc_so_invoice_lines "
+        "where dr = 0 and coalesce(status_flag, -1) <> :ok "
+        "and to_char(bill_date, 'YYYY-MM') between :a and :b "
+        "group by invoice_code, bill_date, material_code, status_flag order by bill_date"),
+        {"ok": APPROVED, "a": period_from, "b": period_to})).all()
     cogs = (await db.execute(text(
         "select material_code, max(material_name), period, src_code, bill_code, "
         "coalesce(sum(qty),0), coalesce(sum(amount),0) from nc_ia_ledger "
-        "where dr = 0 and bill_type = 'I5' and period between :a and :b "
-        "group by material_code, period, src_code, bill_code"),
-        {"a": period_from, "b": period_to})).all()
+        "where dr = 0 and bill_type = 'I5' "
+        "group by material_code, period, src_code, bill_code"))).all()
     # issue adjustments sitting on a cost-of-sales bill
     adj = (await db.execute(text(
         "select src_code, coalesce(sum(amount),0) from nc_ia_ledger "
-        "where dr = 0 and bill_type = 'IA' and src_type = 'I5' and period between :a and :b "
-        "group by src_code"), {"a": period_from, "b": period_to})).all()
+        "where dr = 0 and bill_type = 'IA' and src_type = 'I5' group by src_code"))).all()
     adj_by_bill = {b: Decimal(str(a)) for b, a in adj}
 
+    inv_month = {(mat, inv): per for mat, _n, inv, per, _q, _a in rev}
     cells: dict = defaultdict(lambda: {"qty": D0, "revenue": D0, "cost": D0, "cost_qty": D0,
-                                       "invoices": set(), "unpaired": []})
+                                       "invoices": set()})
     names: dict = {}
-    rev_keys = set()
-    for mat, name, per, inv, q, a in rev:
+    for mat, name, inv, per, q, a in rev:
+        if not (period_from <= per <= period_to):
+            continue
         c = cells[(mat, per)]
         c["qty"] += Decimal(str(q))
         c["revenue"] += Decimal(str(a))
         c["invoices"].add(inv)
         names[mat] = name
-        rev_keys.add((mat, inv))
     cost_keys = set()
+    late = []
     for mat, name, per, inv, bill, q, a in cogs:
+        cost_keys.add((mat, inv))
+        month = inv_month.get((mat, inv), per)   # the sale's month, else its own
+        if month != per and period_from <= month <= period_to:
+            late.append({"material_code": mat, "invoice": inv, "invoice_month": month,
+                         "cost_period": per})
+        if not (period_from <= month <= period_to):
+            continue
         names.setdefault(mat, name)
-        c = cells[(mat, per)]
+        c = cells[(mat, month)]
         c["cost"] += Decimal(str(a)) + adj_by_bill.get(bill, D0)
         c["cost_qty"] += Decimal(str(q))
-        cost_keys.add((mat, inv))
-    # A7: revenue without cost of sales, or the reverse — reported, not absorbed
+    # A7, paired over the whole mirror: reported only when the other side
+    # exists nowhere, for documents whose own month is in the range.
     a7 = ([{"material_code": m, "invoice": i, "side": "revenue without cost of sales"}
-           for m, i in sorted(rev_keys - cost_keys)]
-          + [{"material_code": m, "invoice": i, "side": "cost of sales without revenue"}
-             for m, i in sorted(cost_keys - rev_keys)])
+           for (m, i), per in sorted(inv_month.items())
+           if period_from <= per <= period_to and (m, i) not in cost_keys]
+          + [{"material_code": m, "invoice": inv, "side": "cost of sales without revenue"}
+             for m, _n, per, inv, _b, _q, _a in cogs
+             if period_from <= per <= period_to and (m, inv) not in inv_month])
+    a7 = [dict(t) for t in {tuple(sorted(x.items())) for x in a7}]
+    a7.sort(key=lambda x: (x["material_code"], x["invoice"] or ""))
 
     periods = ca.periods_between(period_from, period_to)
     rows = []
@@ -117,7 +150,12 @@ async def margin_matrix(db: AsyncSession, period_from: str, period_to: str) -> d
                                     if tot_r else None},
         })
     rows.sort(key=lambda r: -(r["total"]["revenue"] or 0))
-    return {"periods": periods, "rows": rows, "a7": a7}
+    return {"periods": periods, "rows": rows, "a7": a7,
+            "pending_invoices": [{"invoice": i, "date": d.isoformat() if d else None,
+                                  "material_code": mcode, "material_name": nm,
+                                  "status_flag": st, "qty": _f(q), "amount": _f(a)}
+                                 for i, d, mcode, nm, st, q, a in pending],
+            "costed_in_a_later_month": late}
 
 
 async def margin_summary(db: AsyncSession, matrix: dict) -> dict:

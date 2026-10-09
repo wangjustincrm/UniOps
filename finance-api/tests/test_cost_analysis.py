@@ -148,6 +148,8 @@ def _ledger_rows_base():
           bill_code="I72026041600037861"),
         L("2026-04", "I5", "S0138", "91.98", "1970510.22", src_type="32",
           src_code="SI2026041700126205", trantype="4C-01"),
+        L("2026-10", "I5", "S0103", "10", "179.44", src_type="32",
+          src_code="SI2026093000777777", trantype="4C-01"),
         # a logically deleted row — mirrored, never analysed
         L("2026-09", "I3", "CR0059", "999999", "999999", dr=1),
     ]
@@ -170,7 +172,7 @@ def _conversion_rows():
     for both, because NC allocates it by quantity produced."""
     out = []
     for n, obj, amt in ((901, "S0138", "16083.10"), (902, "S0115", "32166.20")):
-        out.append((f"STB{n:019d}", f"STC{obj}", f"CMM2{n:06d}", "2026-02", f"OBJ{obj}", obj, obj,
+        out.append((f"CNV{n:019d}", f"STC{obj}", f"CMM2{n:06d}", "2026-02", f"OBJ{obj}", obj, obj,
                     24, "2026-02-28 00:00:00", "5101", "制造费用", None, None, None, None, None,
                     D(amt), 0, "2026-10-01 00:00:00"))
     return out
@@ -245,14 +247,18 @@ def _cost_objects():
 
 
 def _invoice_rows():
-    def I(n, code, date, mat, qty, amt, cur="USD"):
-        return (f"SIB{n:019d}", f"SI{n}", code, f"{date} 00:00:00", 2, "C1", "Munchkin", cur,
+    def I(n, code, date, mat, qty, amt, cur="USD", status=2):
+        return (f"SIB{n:019d}", f"SI{n}", code, f"{date} 00:00:00", status, "C1", "Munchkin", cur,
                 D("1.3939"), "1", f"PK{mat}", mat, mat, D(qty), D(amt), D(amt), D("0"), 0,
                 "2026-10-01 00:00:00")
     return [I(1, "SI2026033000126201", "2026-03-30", "S0138", "13720.35", "375684.35"),
             I(2, "SI2026041700126205", "2026-04-17", "S0138", "91.98", "2491.83"),
             # revenue with no cost of sales in NC → A7
-            I(3, "SI2026090100999999", "2026-09-01", "S0093", "100", "4400.00", "CAD")]
+            I(3, "SI2026090100999999", "2026-09-01", "S0093", "100", "4400.00", "CAD"),
+            # a free (unapproved) invoice: listed, never revenue, never A7
+            I(4, "SI2026091500888888", "2026-09-15", "S0093", "50", "2200.00", "CAD", status=1),
+            # invoiced on 30 September, costed by NC in October
+            I(5, "SI2026093000777777", "2026-09-30", "S0103", "10", "536.00", "CAD")]
 
 
 def _voucher_rows():
@@ -778,3 +784,30 @@ async def test_margin_and_chain_are_gated(client, synced):
                 "/finance/v1/cost-analysis/chain?material=CS0080&period=2026-09"):
         assert (await client.get(url, headers=_h())).status_code == 200
         assert (await client.get(url, headers=_h("ap_clerk"))).status_code == 403
+
+
+async def test_only_approved_invoices_are_revenue(db_session, synced):
+    from app.services import cost_margin as mg
+    mx = await mg.margin_matrix(db_session, "2026-07", "2026-09")
+    s0093 = next(r for r in mx["rows"] if r["material_code"] == "S0093")
+    assert s0093["months"]["2026-09"]["revenue"] == 4400.00          # not + 2,200 free
+    assert [p["invoice"] for p in mx["pending_invoices"]] == ["SI2026091500888888"]
+    assert all(a["invoice"] != "SI2026091500888888" for a in mx["a7"])
+
+
+async def test_a_month_end_sale_costed_next_month_is_that_months_margin(db_session, synced):
+    """Invoiced 30 September, I5 posted in October. Asked about July–September:
+    the cost is September's, there is no A7, and the late posting is listed."""
+    from app.services import cost_margin as mg
+    mx = await mg.margin_matrix(db_session, "2026-07", "2026-09")
+    s0103 = next(r for r in mx["rows"] if r["material_code"] == "S0103")
+    sep = s0103["months"]["2026-09"]
+    assert sep["revenue"] == 536.00 and sep["cost"] == 179.44
+    assert not [a for a in mx["a7"] if a["invoice"] == "SI2026093000777777"]
+    assert mx["costed_in_a_later_month"] == [{"material_code": "S0103",
+                                              "invoice": "SI2026093000777777",
+                                              "invoice_month": "2026-09",
+                                              "cost_period": "2026-10"}]
+    # and October alone does not see a cost without its revenue
+    oct_ = await mg.margin_matrix(db_session, "2026-10", "2026-10")
+    assert not [a for a in oct_["a7"] if a["invoice"] == "SI2026093000777777"]
