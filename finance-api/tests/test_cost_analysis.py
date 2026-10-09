@@ -661,3 +661,23 @@ async def test_diagnosis_says_when_the_adjustment_voucher_is_unposted(db_session
     tail = next(f for f in d["findings"] if f["kind"] == "tail")
     assert "00000729 (2026-09) — is not posted yet" in tail["because"][0]
     assert any(e["value"].startswith("00000729 (2026-09) — Unposted") for e in tail["evidence"])
+
+
+async def test_a_sync_that_does_not_tie_out_is_shouted_not_just_logged(client, db_session, nc_on):
+    """The run stays `success` (the data was written — same contract as the AP
+    mirror), so the disagreement must reach the reader on its own: the status
+    payload the sync bar reads, and a high-severity A8 on the Anomalies page.
+    Otherwise tie_out_ok is a check nobody sees."""
+    def lossy():
+        ex = fake_extract()
+        ex.nc_totals["nc_ia_ledger"]["2026-08|I3"] = [2, "-47735.79"]
+        return ex
+    svc.start_run(None, fetch=lossy, pg_dsn=_DSN, run_worker=True)
+    st = (await client.get("/finance/v1/cost-analysis/status", headers=_h())).json()
+    assert st["last_success"]["tie_out_ok"] is False
+    assert "nc_ia_ledger" in st["last_success"]["tie_out_diffs"]
+    res = (await client.get("/finance/v1/cost-analysis/anomalies?from=2026-08&to=2026-08",
+                            headers=_h())).json()
+    a8 = [a for a in res["anomalies"] if a["rule"] == "A8" and a["period"] is None]
+    assert a8 and a8[0]["severity"] == "high"
+    assert a8[0]["detail"] == "last sync did not tie out against NC"

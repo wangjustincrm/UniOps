@@ -41,7 +41,7 @@ PHASE2_KEYS: dict[str, tuple[str, str, int]] = {
     "finance.budget.view_dept": ("finance", "Department-Related Budget View",   114),
     "finance.bank.reconcile": ("finance", "Bank Reconciliation",               115),
     "finance.bank.settings":  ("finance", "Manage Bank Accounts",              116),
-    # identity 0020_fin_analysis_perm — unit costs and margins, not view_finance.
+    # identity 0021_fin_analysis_perm — unit costs and margins, not view_finance.
     "finance.analysis.view":  ("finance", "AI Financial Analysis",             117),
     "budget.catalog.write":  ("budget",  "Edit Budget Catalog",     120),
     "budget.plan.write":     ("budget",  "Edit Budget Plans",       121),
@@ -73,7 +73,7 @@ PHASE2_DEFAULTS: dict[str, tuple[str, ...]] = {
     # plus payment_officer.
     "finance.bank.reconcile": ("system_admin", "finance_manager", "payment_officer"),
     "finance.bank.settings":  ("system_admin", "finance_manager", "payment_officer"),
-    # 0020_fin_analysis_perm also grants finance_director (a post created by
+    # 0021_fin_analysis_perm also grants finance_director (a post created by
     # migration 0015, not by seed_authz, so not listed here).
     "finance.analysis.view":  ("system_admin", "finance_manager"),
     # The two halves of 0010_budget_view_scope_perms' grants. That migration

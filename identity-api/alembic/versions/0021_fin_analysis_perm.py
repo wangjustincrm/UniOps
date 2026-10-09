@@ -10,15 +10,22 @@ short-circuit it, see 0013), finance_manager, finance_director. Each only if
 role_defs has the role, so a fresh database whose roles are seeded later does
 not abort on the foreign key.
 
-Numbered 0020, not 0016: feature/ehs-safety already holds 0016–0019. Whichever
-branch reaches production second re-points its first migration's
-down_revision at the other's last one (0019_location_perms ↔ this file).
+Numbered 0021: feature/ehs-safety holds 0016–0019 plus 0020_merge_main_and_ehs
+(down_revision = ("0019_location_perms", "0015_finance_director_role")). On
+this branch, cut from main, the parent is main's head 0015. Whichever of the
+two branches reaches production second must leave identity with ONE head:
 
-Revision id length: "0020_fin_analysis_perm" is 22 characters (limit 32).
+  * EHS first  → change this file's down_revision to "0020_merge_main_and_ehs".
+  * this first → EHS's 0020_merge_main_and_ehs must list "0021_fin_analysis_perm"
+                 in place of "0015_finance_director_role".
+
+Check with `alembic heads` (exactly one) before building the release.
+
+Revision id length: "0021_fin_analysis_perm" is 22 characters (limit 32).
 """
 from alembic import op
 
-revision = "0020_fin_analysis_perm"
+revision = "0021_fin_analysis_perm"
 down_revision = "0015_finance_director_role"
 branch_labels = None
 depends_on = None

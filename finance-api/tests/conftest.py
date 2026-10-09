@@ -218,7 +218,7 @@ def _migrate():
             # the bank-permission tests assign it that way.
             "payment_officer",
             # an ADDITIONAL-only post (identity 0015) — granted AI Financial
-            # Analysis by 0020_fin_analysis_perm.
+            # Analysis by 0021_fin_analysis_perm.
             "finance_director",
         )):
             conn.execute(sa.text(
@@ -236,7 +236,7 @@ def _migrate():
             # identity migration 0014_bank_perms
             ("finance.bank.reconcile", "finance"),
             ("finance.bank.settings", "finance"),
-            # identity migration 0020_fin_analysis_perm
+            # identity migration 0021_fin_analysis_perm
             ("finance.analysis.view", "finance"),
         )):
             conn.execute(sa.text(
