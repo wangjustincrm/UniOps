@@ -143,6 +143,7 @@ export default function GrossMarginPage() {
                                 <span className={cn(c.margin < 0 && 'text-red-700')}>Margin <b className="font-mono">{num(c.margin)}</b> ({c.margin_pct ?? '—'}%)</span>
                                 <Link to={traceLink(r.material_code, from, p)} className="text-[#085E5E] underline">Trace</Link>
                                 <Link to={`/finance/analysis/chain/${encodeURIComponent(r.material_code)}?period=${p}`} className="text-[#085E5E] underline">Cost chain</Link>
+                                <Link to={`/finance/analysis/batches/${encodeURIComponent(r.material_code)}?from=${from}&to=${p}`} className="text-[#085E5E] underline">Batches</Link>
                               </div>
                               <p className="mt-1 font-mono text-[11px] text-neutral-400">Invoices: {c.invoices.join(', ')}</p>
                             </td>

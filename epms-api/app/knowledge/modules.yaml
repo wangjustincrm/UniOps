@@ -134,6 +134,7 @@ modules:
       - Rebuild one material's cost month by month from NC's own ledger, with provisional receipts paired to their settlement and each issue adjustment traced to the product it landed on (AI Financial Analysis → Material Cost Trace)
       - See each product's gross margin month by month, invoice by invoice, and why a month went negative or swung — a document that put stock back at a wrong value, conversion cost spread by quantity, or a negative-cost input upstream (AI Financial Analysis → Gross Margin)
       - Walk a finished good's cost level by level down to purchased materials and find the deepest abnormal node (AI Financial Analysis → Cost Chain)
+      - Cost each production batch on its own — a figure NC does not have, since NC costs a product per month — and see how far NC's booking for a batch is from what it actually cost, followed batch by batch upstream (AI Financial Analysis → Batch Cost)
     notes:
       - >-
         A vendor's invoice number must be unique (vendor name + invoice
