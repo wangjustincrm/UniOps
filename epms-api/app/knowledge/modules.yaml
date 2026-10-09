@@ -94,6 +94,16 @@ modules:
         emails whoever holds that step (their delegate if they are away) and
         says who it reached. It is refused, with the reason shown, when nobody
         can be reached or a reminder for that step went out recently.
+      - >-
+        When the last approver approves a claim (general expense, mileage,
+        travel expense or a custom form), a PDF of the claim is added to its
+        Attachments as <claim number>.pdf. It carries the approval record —
+        who submitted and who approved each step, when, and their comments.
+        Once a claim is approved or paid, Regenerate PDF on the Attachments
+        card rebuilds it (for claims approved before this existed, or if the
+        first attempt failed) and replaces the old file rather than adding a
+        second. A Travel Application has its own form, regenerated from the
+        Travel Application card.
 
   - key: vms
     label: VMS — Visitor Management
