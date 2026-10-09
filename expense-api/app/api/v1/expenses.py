@@ -21,7 +21,7 @@ from app.schemas.expense import (
 )
 from app.services.approval_client import delegate_action
 from app.services.attachment_helper import delete_from_file_server
-from app.services import finance_client
+from app.services import claim_pdf, finance_client
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
@@ -571,6 +571,36 @@ async def _can_view_claim(db, claim, user_id: uuid.UUID, role: str) -> bool:
     return await _can_act_on_claim(db, claim, user_id, role)
 
 
+async def can_regenerate_pdf(db, claim, user: dict) -> bool:
+    """Regenerate PDF is open to whoever may read the claim. Regenerating only
+    re-renders what the claim and its approval record already say, so it is a
+    read in substance — and the approvers who acted are exactly the people who
+    notice a wrong name on the printed record."""
+    return await _can_view_claim(db, claim, uuid.UUID(user["sub"]), user.get("role", ""))
+
+
+@router.post("/{claim_id}/regenerate-pdf")
+async def regenerate_claim_pdf(claim_id: uuid.UUID, db: SessionDep,
+                               user: CurrentUserDep, token: BearerTokenDep):
+    """(Re)generate the claim's PDF and (re)attach it as <claim_number>.pdf.
+
+    Backfills claims approved before PDFs existed, retries one whose
+    approval-time generation failed, and refreshes it after a name or
+    workflow-label change. Replaces the earlier file; never adds a second.
+    """
+    claim = await expense_crud.get_by_id(db, claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="Expense claim not found")
+    if not await can_regenerate_pdf(db, claim, user):
+        raise HTTPException(status_code=403, detail="Not authorized to regenerate this document")
+    if claim.claim_type != "TRA" and claim.status not in claim_pdf.PDF_STATUSES:
+        raise HTTPException(status_code=409, detail="The PDF is only available once the claim is approved")
+    try:
+        return await claim_pdf.attach_pdf(db, claim, token)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 @router.get("/{claim_id}", response_model=ExpenseClaimResponse)
 async def get_expense(claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
     claim = await expense_crud.get_by_id(db, claim_id)
@@ -963,6 +993,7 @@ async def expense_action(
     # All other actions (submit / approve / return / reject / recall / cancel)
     # are delegated to approval-api which drives the configurable workflow.
     key = _action_key(claim.claim_type)
+    status_before = claim.status
     try:
         await delegate_action(key, str(claim_id), action, body.comment, token)
     except LookupError as exc:
@@ -973,7 +1004,25 @@ async def expense_action(
         raise HTTPException(status_code=502, detail=str(exc))
 
     # approval-api wrote back to the shared DB; refresh to get updated state.
+    # Columns too, not only the relationships: refresh(claim, [names]) reloads
+    # just those names, so status stayed whatever it was before the action.
+    await db.refresh(claim)
     await db.refresh(claim, ["line_items", "trip_items", "attachments", "approval_events"])
+
+    # The action that finished the chain files the claim's PDF, with the
+    # approval record on it. Usually the last approve — but a submit can finish
+    # it too when the engine skips every step, hence the status transition
+    # rather than the action name. Best-effort: the approval has already
+    # happened in approval-api, so a PDF failure must not turn it into an error
+    # for the approver — Regenerate PDF on the claim is the retry.
+    if status_before != "approved" and claim.status == "approved":
+        try:
+            await claim_pdf.attach_pdf(db, claim, token)
+        except Exception:
+            logger.warning("claim PDF generation failed for %s", claim.claim_number, exc_info=True)
+            await db.rollback()
+            await db.refresh(claim)          # rollback expired every column
+        await db.refresh(claim, ["line_items", "trip_items", "attachments", "approval_events"])
     return ExpenseClaimResponse.model_validate(claim)
 
 

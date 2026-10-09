@@ -12,10 +12,8 @@ _UNDEFINED_TABLE = "42P01"
 
 from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
 from app.crud import expense as expense_crud
-from app.models.expense import ExpenseAttachment
-from app.services.attachment_helper import delete_from_file_server, upload_to_file_server
-from app.services.pdf_tra import build_travel_application_pdf
-from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim, _user_role_codes
+from app.services import claim_pdf
+from app.api.v1.expenses import can_regenerate_pdf
 
 log = logging.getLogger(__name__)
 
@@ -81,89 +79,13 @@ async def user_directory(db: SessionDep, _: CurrentUserDep, q: str = ""):
 @router.post("/travel-applications/{claim_id}/pdf")
 async def regenerate_tra_pdf(claim_id: uuid.UUID, db: SessionDep,
                              user: CurrentUserDep, token: BearerTokenDep):
-    from sqlalchemy import bindparam
-    from sqlalchemy import select as sa_select
-    from app.models.approval_event_mirror import ApprovalEventMirror as AEM
-
+    """Kept for the TRA card's button; same path as POST /expenses/{id}/regenerate-pdf."""
     claim = await expense_crud.get_by_id(db, claim_id)
     if not claim or claim.claim_type != "TRA":
         raise HTTPException(status_code=404, detail="Travel Application not found")
-
-    # Document-level authz: only the owner, an approver of the claim, or a
-    # finance/admin role may regenerate/attach a PDF.
-    user_id = uuid.UUID(user["sub"])
-    role = user.get("role", "")
-    codes = await _user_role_codes(db, user_id, role)
-    authorized = (
-        user_id == claim.employee_id
-        or role == "system_admin"
-        # Role union — payment roles are usually assignments here.
-        or bool(codes & _CAN_PAY)
-        or await _can_act_on_claim(db, claim, user_id, role)
-    )
-    if not authorized:
+    if not await can_regenerate_pdf(db, claim, user):
         raise HTTPException(status_code=403, detail="Not authorized to regenerate this document")
-
-    # Real approval history lives in the shared approval_events table (mirrored here
-    # as ApprovalEventMirror) — `claim.approval_events` (ExpenseApprovalEvent) is never
-    # written anywhere in this service, so it would always render blank signatures.
-    # Same source `get_approval_status` (~expenses.py:369-381) already uses.
-    events = list((await db.execute(
-        sa_select(AEM).where(AEM.document_id == claim_id, AEM.action == "approve")
-        .order_by(AEM.created_at.asc())
-    )).scalars().all())
-
-    # Resolve actor display names from the shared users table — best-effort, same
-    # pattern as get_approval_status: that table is identity-owned and absent from
-    # this service's test DB, so a failure here must not 500 or poison the session
-    # for the ExpenseAttachment write below (hence the rollback).
-    names: dict = {}
-    actor_ids = list({e.actor_id for e in events})
-    if actor_ids:
-        try:
-            q = text("SELECT id, full_name FROM users WHERE id IN :ids").bindparams(
-                bindparam("ids", expanding=True))
-            names = {r[0]: r[1] for r in (await db.execute(q, {"ids": actor_ids})).all()}
-        except Exception:
-            await db.rollback()
-            names = {}
-
-    approvals = [{
-        "step_idx": getattr(e, "step_idx", None),
-        "actor_name": names.get(e.actor_id) or getattr(e, "actor_role", "") or "",
-        "acted_date": e.created_at.date().isoformat() if getattr(e, "created_at", None) else None,
-    } for e in events]
-
-    data = build_travel_application_pdf(claim, approvals=approvals)
-    filename = f"{claim.claim_number}.pdf"
     try:
-        storage_key = await upload_to_file_server(
-            data, filename, "application/pdf", "tra", claim.id, token)
+        return await claim_pdf.attach_pdf(db, claim, token)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
-
-    # Replace, don't accumulate. This used to append unconditionally, so every
-    # press of Regenerate PDF left another <claim_number>.pdf in the
-    # attachments card — N presses, N identical rows and N blobs in file-api,
-    # with nothing to tell the reader which one is current. Only the generated
-    # document is swept: a user's own upload that happens to share the name
-    # would have a different file_id and is matched by name here, so the sweep
-    # is deliberately scoped to rows whose name is exactly the generated one.
-    superseded = [a for a in claim.attachments if a.file_name == filename]
-    for old in superseded:
-        if old.file_id and old.file_id != str(storage_key):
-            try:
-                await delete_from_file_server(uuid.UUID(old.file_id), token)
-            except Exception:
-                # Best-effort: an orphaned blob is better than a failed
-                # regeneration. Same posture as the claim-delete path.
-                log.warning("file-api delete failed for %s; continuing", old.file_id)
-        await db.delete(old)
-
-    att = ExpenseAttachment(claim_id=claim.id, file_id=str(storage_key),
-                            file_name=filename, file_size_bytes=len(data),
-                            mime_type="application/pdf")
-    db.add(att)
-    await db.commit()
-    return {"file_name": filename, "file_id": str(storage_key),
-            "replaced": len(superseded)}
