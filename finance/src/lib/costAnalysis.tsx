@@ -206,14 +206,14 @@ function EvidenceTable({ rows }: { rows: Evidence[] }) {
   )
 }
 
-function FindingCard({ f }: { f: Finding }) {
+export function FindingCard({ f, prefix }: { f: Finding; prefix?: string }) {
   const [open, setOpen] = useState(false)
   return (
     <div className={cn('rounded-lg border bg-white p-3',
       f.severity === 'high' ? 'border-red-200' : 'border-amber-200')}>
       <div className="flex items-start gap-2">
         <SeverityBadge severity={f.severity} />
-        <p className="text-sm font-semibold text-neutral-900">{f.title}</p>
+        <p className="text-sm font-semibold text-neutral-900">{prefix && <span className="mr-1 font-mono">{prefix}</span>}{f.title}</p>
       </div>
       <p className="mt-1.5 text-sm leading-relaxed text-neutral-800">{f.conclusion}</p>
       {f.because.length > 0 && (

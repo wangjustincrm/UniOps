@@ -27,6 +27,8 @@ import BudgetCatalogPage from '@/pages/budget/BudgetCatalogPage'
 import FactorLibraryPage from '@/pages/budget/FactorLibraryPage'
 import CostAnomaliesPage from '@/pages/finance/CostAnomaliesPage'
 import MaterialTracePage from '@/pages/finance/MaterialTracePage'
+import GrossMarginPage from '@/pages/finance/GrossMarginPage'
+import CostChainPage from '@/pages/finance/CostChainPage'
 
 export const financeRoutes: RouteDef[] = [
   { path: '/finance/ap', element: <AccountsPayablePage />, tab: { title: 'Accounts Payable', icon: 'CreditCard', keyStrategy: 'static', pinned: true } },
@@ -68,5 +70,8 @@ export const financeRoutes: RouteDef[] = [
   // was re-focused with its old query when a second Trace link was clicked —
   // the shell's openTab focuses an existing key without touching its path.
   { path: '/finance/analysis/trace', element: <MaterialTracePage />, tab: { title: 'Material Cost Trace', icon: 'GitBranch', keyStrategy: 'static' } },
+  { path: '/finance/analysis/margin', element: <GrossMarginPage />, tab: { title: 'Gross Margin', icon: 'Percent', keyStrategy: 'static' } },
+  { path: '/finance/analysis/chain', element: <CostChainPage />, tab: { title: 'Cost Chain', icon: 'Network', keyStrategy: 'static' } },
+  { path: '/finance/analysis/chain/:material', element: <CostChainPage />, tab: { title: (p) => `Chain ${p.material ?? ''}`, icon: 'Network', keyStrategy: 'param', paramName: 'material' } },
   { path: '/finance/analysis/trace/:material', element: <MaterialTracePage />, tab: { title: (p) => `Trace ${p.material ?? ''}`, icon: 'GitBranch', keyStrategy: 'param', paramName: 'material' } },
 ]

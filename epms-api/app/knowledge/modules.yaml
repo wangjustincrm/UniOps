@@ -132,6 +132,8 @@ modules:
       - Reconcile a bank statement against the ledger and sign the period off (a USD or CNY account reconciles in its own currency, not in CAD)
       - Find why a material's or product's cost looks wrong in a month — a negative or swinging unit cost, value left on zero stock — and where that value went (AI Financial Analysis → Cost Anomalies)
       - Rebuild one material's cost month by month from NC's own ledger, with provisional receipts paired to their settlement and each issue adjustment traced to the product it landed on (AI Financial Analysis → Material Cost Trace)
+      - See each product's gross margin month by month, invoice by invoice, and why a month went negative or swung — a document that put stock back at a wrong value, conversion cost spread by quantity, or a negative-cost input upstream (AI Financial Analysis → Gross Margin)
+      - Walk a finished good's cost level by level down to purchased materials and find the deepest abnormal node (AI Financial Analysis → Cost Chain)
     notes:
       - >-
         A vendor's invoice number must be unique (vendor name + invoice
