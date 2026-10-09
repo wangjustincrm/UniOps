@@ -173,6 +173,25 @@ class NcSoInvoiceLine(_Mirror, Base):
     tax: Mapped[Decimal | None] = mapped_column(_M)
 
 
+class NcCostVoucher(_Mirror, Base):
+    """FIP_RELATION: an IA/CM document → the GL voucher it generated, with the
+    voucher's posting status (see 0041)."""
+    __tablename__ = "nc_cost_vouchers"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    nc_pk: Mapped[str] = mapped_column(String(25), nullable=False, unique=True)
+    src_system: Mapped[str | None] = mapped_column(String(10))
+    src_bill_type: Mapped[str | None] = mapped_column(String(20))
+    bill_code: Mapped[str | None] = mapped_column(String(60), index=True)
+    src_amount: Mapped[Decimal | None] = mapped_column(_M)
+    voucher_pk: Mapped[str | None] = mapped_column(String(25), index=True)
+    voucher_no: Mapped[str | None] = mapped_column(String(20))
+    voucher_period: Mapped[str | None] = mapped_column(String(7))
+    voucher_date: Mapped[date | None] = mapped_column(Date)
+    explanation: Mapped[str | None] = mapped_column(String(500))
+    voucher_status: Mapped[str] = mapped_column(String(12), nullable=False)
+
+
 class NcCostSyncRun(Base):
     __tablename__ = "nc_cost_sync_runs"
 

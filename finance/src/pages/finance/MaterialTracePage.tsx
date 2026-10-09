@@ -62,10 +62,17 @@ interface Line {
   trantype: string | null; qty: number | null; price: number | null; amount: number
   batch_code: string | null; mo_code: string | null; src_code: string | null; estimate: boolean
 }
+interface VoucherRow {
+  bill_code: string | null; document: string; period: string; document_amount: number | null
+  voucher: { voucher_no: string | null; period: string | null; date: string | null
+             explanation: string | null; status: string; status_label: string
+             amount_on_voucher: number | null } | null
+}
 interface Trace {
   material: { code: string; name: string | null }; months: Month[]
   settlements: Settlement[]; out_adjustments: OutAdj[]; consumers: Consumer[]
   product_cost: ProductCost[]; lines: Line[]; diagnosis?: Diagnosis
+  vouchers: VoucherRow[]; vouchers_unposted: number
 }
 
 // Display order of the flow columns; transfers and other in/out get their own net columns.
@@ -341,6 +348,42 @@ export default function MaterialTracePage() {
                           <td className="px-2 py-1.5 font-mono">{a.attached_to ?? '—'}</td>
                           <td className="px-2 py-1.5 font-mono">{a.mo_code ?? '—'}</td>
                           <td className="px-2 py-1.5">{a.landed_on.map((l) => `${l.material_code} ${l.material_name ?? ''}`).join('; ') || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Section>
+            )}
+
+            {data.vouchers.length > 0 && (
+              <Section title={`Vouchers behind the adjustments — unposted included${data.vouchers_unposted ? ` (${data.vouchers_unposted} unposted)` : ''}`}
+                       hint="Every GL voucher NC generated for this material's adjustments and for the issues they sit on, whatever its status. An unposted voucher is not in NC's ledger yet, so a posted-only report would not show it.">
+                <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                  <table className="w-full text-xs">
+                    <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
+                      <th className={th}>Month</th><th className={th}>Document</th><th className={th}>What</th>
+                      <th className={cn(th, 'text-right')}>Amount</th>
+                      <th className={th}>Voucher</th><th className={th}>Voucher month</th>
+                      <th className={th}>Status</th><th className={th}>Narration</th>
+                    </tr></thead>
+                    <tbody>
+                      {data.vouchers.map((v, n) => (
+                        <tr key={n} className="border-t border-neutral-100">
+                          <td className="px-2 py-1.5 font-mono">{v.period}</td>
+                          <td className="px-2 py-1.5 font-mono">{v.bill_code}</td>
+                          <td className="px-2 py-1.5">{v.document}</td>
+                          <td className={cn(td, neg(v.document_amount))}>{num(v.document_amount)}</td>
+                          <td className="px-2 py-1.5 font-mono">{v.voucher?.voucher_no ?? '—'}</td>
+                          <td className="px-2 py-1.5 font-mono">{v.voucher?.period ?? ''}</td>
+                          <td className="px-2 py-1.5">
+                            {!v.voucher ? <span className="text-neutral-500">No voucher yet</span>
+                              : <span className={cn('inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium',
+                                  v.voucher.status === 'posted' ? 'border-neutral-200 bg-neutral-50 text-neutral-600'
+                                  : v.voucher.status === 'unposted' ? 'border-amber-300 bg-amber-50 text-amber-800'
+                                  : 'border-red-200 bg-red-50 text-red-700')}>{v.voucher.status_label}</span>}
+                          </td>
+                          <td className="px-2 py-1.5 text-neutral-500">{v.voucher?.explanation ?? ''}</td>
                         </tr>
                       ))}
                     </tbody>

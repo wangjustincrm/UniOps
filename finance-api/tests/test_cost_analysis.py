@@ -89,7 +89,7 @@ def _ledger_rows():
         L("2026-08", "I2", "CR0069", "1264.77", "5312.03", est="Y", src_type="45",
           src_code="CR2026083000030239", batch="202608"),
         L("2026-08", "I6", "CR0069", "1264.77", "5312.03", trantype="4D-Cxx-CRM02"),
-        L("2026-08", "IA", "CR0069", None, "-21572.27"),
+        L("2026-08", "IA", "CR0069", None, "-21572.27", bill_code="IA2026083000003285"),
         # an ordinary purchase invoiced the month it arrived — NOT a variance
         L("2026-08", "I2", "CP0105", "8000", "3766.40", est="N", src_type="27",
           src_code="JS202608200001", batch="2511-J000019627"),
@@ -103,7 +103,7 @@ def _ledger_rows():
         L("2026-08", "IA", "CR0059", None, "-1.19"),
         L("2026-09", "I3", "CR0059", "84450", "32691.48", batch="P202609061101"),
         L("2026-09", "I6", "CR0059", "10262", "-12429.34", trantype="4D-01",
-          mo="55A22026082400006505", batch="P202608311101"),
+          mo="55A22026082400006505", batch="P202608311101", bill_code="I62026090800055499"),
         L("2026-09", "I6", "CR0059", "113599", "43975.24", trantype="4D-01",
           mo="55A22026082900006507"),
         L("2026-09", "IA", "CR0059", None, "-46588.85", mo="55A22026082400006505",
@@ -210,6 +210,27 @@ def _invoice_rows():
              D("13720.35"), D("375684.35"), D("269520.30"), D("0"), 0, "2026-10-01 00:00:00")]
 
 
+def _voucher_rows():
+    """FIP_RELATION ⋈ GL_VOUCHER as NC returns it: stored columns, then the
+    extra status columns the sync consumes."""
+    def V(n, bill, typ, amt, vpk, vno, per, tally, discard="N", missing=0):
+        return (f"FIP{n:019d}", "IA", typ, bill, amt, vpk, vno, per,
+                f"{per}-28 00:00:00" if per else None,
+                "材料出库成本", None, 0, "2026-10-01 00:00:00",
+                missing, 0, tally, discard, "N", "~")
+    return [
+        # September's tail dump and the issue it sits on — NOT posted yet
+        V(1, "IA2026092900003299", "IA", "-46588.85", "VPK729", 729, "2026-09", "~"),
+        V(2, "I62026090800055499", "I6", "-6213.46", "VPK729", 729, "2026-09", "~"),
+        # August's settlement adjustment on CR0069 — posted
+        V(3, "IA2026083000003285", "IA", "-21572.27", "VPK465", 465, "2026-08",
+          "2026-09-10 23:24:55"),
+        # a discarded voucher and one deleted from NC since
+        V(4, "IAOLD1", "IA", "1.00", "VPKX", 9, "2026-07", "~", discard="Y"),
+        V(5, "IAOLD2", "IA", "2.00", "VPKGONE", None, None, None, missing=1),
+    ]
+
+
 def _nc_totals_from(rows_by_table: dict) -> dict:
     """What NC's own aggregates would say — computed from the same rows, so a
     clean run ties out and a tampered one does not."""
@@ -225,6 +246,8 @@ def _nc_totals_from(rows_by_table: dict) -> dict:
                 key = r[idx["period"]]
             elif spec.group == ("month",):
                 key = r[idx["bill_date"]][:7]
+            elif spec.group == ("src_bill_type",):
+                key = r[idx["src_bill_type"]]
             else:
                 key = "*"
             amt = r[idx["amount"]] if "amount" in idx else D0
@@ -248,6 +271,7 @@ def fake_extract():
         "nc_cm_prod_cost_lines": lines,
         "nc_cm_stuff_lines": _stuff_rows(),
         "nc_so_invoice_lines": _invoice_rows(),
+        "nc_cost_vouchers": _voucher_rows(),
     }
     return svc.CostExtract(rows=rows, nc_totals=_nc_totals_from(rows))
 
@@ -600,3 +624,40 @@ async def test_trace_carries_its_diagnosis_and_access_is_gated(client, synced):
     url = "/finance/v1/cost-analysis/diagnosis?material=CR0059&from=2026-08&to=2026-08"
     assert (await client.get(url, headers=_h())).status_code == 200
     assert (await client.get(url, headers=_h("requester"))).status_code == 403
+
+
+# ── vouchers behind the adjustments, unposted included ───────────────────────
+
+async def test_sync_maps_voucher_status_by_nc_syncs_rules(db_session, synced):
+    st = dict((await db_session.execute(text(
+        "select bill_code, voucher_status from nc_cost_vouchers"))).all())
+    assert st["IA2026092900003299"] == "unposted"
+    assert st["IA2026083000003285"] == "posted"
+    assert st["IAOLD1"] == "discarded"
+    assert st["IAOLD2"] == "deleted"
+    vno = (await db_session.execute(text(
+        "select voucher_no from nc_cost_vouchers where bill_code = 'IA2026083000003285'"))).scalar()
+    assert vno == "00000465"
+
+
+async def test_trace_lists_adjustment_vouchers_including_unposted(db_session, synced):
+    t = await ca.material_trace(db_session, "CR0059", "2026-09", "2026-09")
+    by_bill = {}
+    for v in t["vouchers"]:
+        by_bill.setdefault(v["bill_code"], []).append(v)
+    dump = by_bill["IA2026092900003299"][0]
+    assert dump["voucher"]["voucher_no"] == "00000729"
+    assert dump["voucher"]["status"] == "unposted"
+    # the issue the dump sits on is listed with its voucher too
+    assert by_bill["I62026090800055499"][0]["voucher"]["voucher_no"] == "00000729"
+    assert t["vouchers_unposted"] >= 1
+    # an adjustment NC has not generated a voucher for is listed, not dropped
+    assert any(v["voucher"] is None for v in t["vouchers"])
+
+
+async def test_diagnosis_says_when_the_adjustment_voucher_is_unposted(db_session, synced):
+    from app.services import cost_diagnosis as dx
+    d = await dx.diagnose(db_session, "CR0059", "2026-09", "2026-09")
+    tail = next(f for f in d["findings"] if f["kind"] == "tail")
+    assert "00000729 (2026-09) — is not posted yet" in tail["because"][0]
+    assert any(e["value"].startswith("00000729 (2026-09) — Unposted") for e in tail["evidence"])

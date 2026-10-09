@@ -341,6 +341,18 @@ async def _tail_dump_finding(db, th, material, month, ia_rows, landing,
             evidence.append(_ev(f"{material} issued in {t} before adjustment",
                                 f"{q(out_q)} = {m(out_a)} ({u(issue_unit)}/unit)"))
         evidence.append(_ev("Tail adjustment", m(r.amount), r.bill_code))
+        vlist = (await ca.vouchers_for(db, {r.bill_code})).get(r.bill_code) or []
+        for v in vlist:
+            evidence.append(_ev(f"Voucher for {r.bill_code}",
+                                f"{v['voucher_no']} ({v['period']}) — {v['status_label']}",
+                                v["explanation"]))
+        if not vlist:
+            evidence.append(_ev(f"Voucher for {r.bill_code}", "none generated yet"))
+        unposted = [v for v in vlist if v["status"] == "unposted"]
+        vnote = (f" The voucher carrying it — {', '.join(v['voucher_no'] for v in unposted)} "
+                 f"({unposted[0]['period']}) — is not posted yet, so a posted-only ledger does "
+                 f"not show it." if unposted else
+                 (f" No voucher has been generated for {r.bill_code} yet." if not vlist else ""))
         absorbed = None
         if lands:
             row = (await db.execute(text(
@@ -394,7 +406,7 @@ async def _tail_dump_finding(db, th, material, month, ia_rows, landing,
         findings.append({
             "kind": "tail", "period": t, "severity": "high" if abs(r.amount) >= 10 * Decimal(str(th["a6_min_amount"])) else "medium",
             "title": f"{m(r.amount)} moved onto {target} in {t}",
-            "conclusion": con, "because": [why], "evidence": evidence,
+            "conclusion": con, "because": [why + vnote], "evidence": evidence,
             "steps": [{"period": t, "text": f"{r.bill_code} {m(r.amount)} → {target}"}],
             "related": [x["material_code"] for x in lands],
         })

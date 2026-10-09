@@ -75,6 +75,9 @@ class TableSpec:
     group: tuple[str, ...]
     dates: tuple[str, ...] = ()
     texts: dict = field(default_factory=dict)   # col -> max length
+    # extra NC columns read after `cols`, consumed by `post` (not stored)
+    extra: tuple[str, ...] = ()
+    post: object = None                         # fn(row: dict) -> None, in place
 
 
 LEDGER = TableSpec(
@@ -231,8 +234,58 @@ SO_INVOICE_LINES = TableSpec(
     texts={"material_name": 300, "customer_name": 300},
 )
 
+def _voucher_post(row: dict) -> None:
+    """Posting status by nc_sync's own rules, so "unposted" means the same as
+    on the Budget pages. A relation whose voucher is gone (or dr=1) → deleted."""
+    from app.services.nc_sync import _tallied, _voucher_state
+    if row.pop("v_missing") or row.pop("v_dr") == 1:
+        status = "deleted"
+        for k in ("v_tally", "v_discard", "v_tempsave", "v_err"):
+            row.pop(k)
+    else:
+        state = _voucher_state(row.pop("v_discard"), row.pop("v_tempsave"), row.pop("v_err"))
+        tally = row.pop("v_tally")
+        status = state if state != "normal" else ("posted" if _tallied(tally) else "unposted")
+    row["voucher_status"] = status
+    amt = row.get("src_amount")
+    try:
+        row["src_amount"] = Decimal(str(amt).replace(",", "")) if amt not in (None, "") else None
+    except Exception:                                          # noqa: BLE001
+        row["src_amount"] = None
+    if row.get("voucher_no"):
+        row["voucher_no"] = str(row["voucher_no"]).strip().zfill(8)
+
+
+VOUCHERS = TableSpec(
+    name="nc_cost_vouchers",
+    cols=("nc_pk", "src_system", "src_bill_type", "bill_code", "src_amount", "voucher_pk",
+          "voucher_no", "voucher_period", "voucher_date", "explanation", "voucher_status",
+          "dr", "nc_ts"),
+    extra=("v_missing", "v_dr", "v_tally", "v_discard", "v_tempsave", "v_err"),
+    select="""
+      select r.pk_relation, r.src_system, r.src_billtype, r.src_freedef1, r.src_freedef3,
+             r.des_relationid, v.num,
+             case when v.pk_voucher is null then null else v.year || '-' || v.period end,
+             substr(v.prepareddate, 1, 10),
+             v.explanation, null, r.dr, r.ts,
+             case when v.pk_voucher is null then 1 else 0 end, nvl(v.dr, 0), v.tallydate,
+             v.discardflag, v.tempsaveflag, v.errmessage
+        from NCSC.FIP_RELATION r
+        left join NCSC.GL_VOUCHER v on v.pk_voucher = r.des_relationid
+       where r.src_system in ('IA', 'CM') and r.des_system = 'GL'
+         and r.src_busidate >= :d""",
+    tie_out="""
+      select src_billtype, count(*), 0 from NCSC.FIP_RELATION
+       where src_system in ('IA', 'CM') and des_system = 'GL' and src_busidate >= :d
+       group by src_billtype""",
+    group=("src_bill_type",),
+    dates=("voucher_date",),
+    texts={"explanation": 500},
+    post=_voucher_post,
+)
+
 SPECS: tuple[TableSpec, ...] = (LEDGER, MONTH_BALANCES, COST_OBJECTS, PROD_COSTS,
-                                PROD_COST_LINES, STUFF_LINES, SO_INVOICE_LINES)
+                                PROD_COST_LINES, STUFF_LINES, SO_INVOICE_LINES, VOUCHERS)
 
 # Local aggregate matching each spec's NC tie-out, same grain, same order.
 _LOCAL_TIE = {
@@ -249,6 +302,8 @@ _LOCAL_TIE = {
                          "from nc_cm_stuff_lines group by period",
     "nc_so_invoice_lines": "select to_char(bill_date, 'YYYY-MM'), count(*), "
                            "coalesce(sum(amount),0) from nc_so_invoice_lines group by 1",
+    "nc_cost_vouchers": "select src_bill_type, count(*), 0 from nc_cost_vouchers "
+                        "group by src_bill_type",
 }
 
 _BINDS = {"p": PERIOD_FLOOR, "b": BALANCE_FLOOR, "d": DATE_FLOOR}
@@ -325,9 +380,10 @@ def transform(spec: TableSpec, raw_rows) -> list[tuple]:
     out = []
     pk_seen = set()
     for raw in raw_rows:
-        if len(raw) != len(spec.cols):
-            raise NcCostSyncError(f"{spec.name}: expected {len(spec.cols)} columns, got {len(raw)}")
-        row = dict(zip(spec.cols, raw))
+        names = spec.cols + spec.extra
+        if len(raw) != len(names):
+            raise NcCostSyncError(f"{spec.name}: expected {len(names)} columns, got {len(raw)}")
+        row = dict(zip(names, raw))
         for col, val in row.items():
             if isinstance(val, str) or val is None:
                 row[col] = _s(val)
@@ -342,6 +398,8 @@ def transform(spec: TableSpec, raw_rows) -> list[tuple]:
             raise NcCostSyncError(f"{spec.name}: NC id {row['nc_pk']} read twice")
         pk_seen.add(row["nc_pk"])
         row["dr"] = int(row["dr"] or 0)
+        if spec.post:
+            spec.post(row)
         out.append(tuple(row[c] for c in spec.cols))
     return out
 

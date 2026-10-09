@@ -431,6 +431,37 @@ async def _landings(db: AsyncSession, ia_rows: list[LedgerRow]) -> dict:
     return out
 
 
+VOUCHER_STATUS_LABELS = {
+    "posted": "Posted", "unposted": "Unposted", "discarded": "Discarded",
+    "tempsave": "Temp-saved", "error": "Error", "deleted": "Deleted in NC",
+}
+
+
+async def vouchers_for(db: AsyncSession, bill_codes: set[str]) -> dict[str, list[dict]]:
+    """bill code → the GL vouchers it generated, EVERY status included.
+
+    User, 2026-10-09: the vouchers taking part in an adjustment must include
+    unposted ones — September's cost vouchers were all unposted, the tail dump
+    onto CS0080 among them."""
+    codes = sorted(c for c in bill_codes if c)
+    if not codes:
+        return {}
+    res = await db.execute(text(
+        "select bill_code, voucher_no, voucher_period, voucher_date, explanation, "
+        "voucher_status, coalesce(sum(src_amount), 0) from nc_cost_vouchers "
+        "where dr = 0 and bill_code = any(:c) "
+        "group by bill_code, voucher_no, voucher_period, voucher_date, explanation, "
+        "voucher_status order by voucher_period, voucher_no"), {"c": codes})
+    out: dict[str, list[dict]] = defaultdict(list)
+    for code, vno, per, vdate, expl, st, amt in res.all():
+        out[code].append({"voucher_no": vno, "period": per,
+                          "date": vdate.isoformat() if vdate else None,
+                          "explanation": expl, "status": st,
+                          "status_label": VOUCHER_STATUS_LABELS.get(st, st),
+                          "amount_on_voucher": _f(_n(amt))})
+    return out
+
+
 # ── material trace (§8 Material Trace) ───────────────────────────────────────
 
 async def material_trace(db: AsyncSession, material: str, period_from: str,
@@ -481,6 +512,25 @@ async def material_trace(db: AsyncSession, material: str, period_from: str,
 
     product_cost = await _product_cost(db, material, period_from, period_to)
 
+    # Vouchers behind every adjustment, and behind the issue each one sits on —
+    # posted or not. A document with no voucher yet is listed too.
+    adj = [r for r in in_range if r.category in ("out_adjust", "in_adjust")]
+    attached = {r.src_code for r in adj if r.src_code}
+    docs = [(r.bill_code, CATEGORY_LABELS[r.category], r.amount, r.period) for r in adj]
+    docs += [(r.bill_code, "Issue an adjustment sits on", r.amount, r.period)
+             for r in in_range if r.bill_code in attached]
+    vmap = await vouchers_for(db, {d[0] for d in docs})
+    seen = set()
+    vouchers = []
+    for code, kind, amt, per in docs:
+        if code in seen:
+            continue
+        seen.add(code)
+        vs = vmap.get(code) or [None]
+        for v in vs:
+            vouchers.append({"bill_code": code, "document": kind, "period": per,
+                             "document_amount": _f(amt), "voucher": v})
+
     return {
         "material": {"code": material, "name": name},
         "range": {"from": period_from, "to": period_to},
@@ -489,6 +539,9 @@ async def material_trace(db: AsyncSession, material: str, period_from: str,
         "out_adjustments": out_adjustments,
         "consumers": consumers,
         "product_cost": product_cost,
+        "vouchers": vouchers,
+        "vouchers_unposted": sum(1 for v in vouchers if v["voucher"]
+                                 and v["voucher"]["status"] == "unposted"),
         "lines": [{
             "period": r.period, "bill_type": r.bill_type, "bill_code": r.bill_code,
             "biz_date": r.biz_date.isoformat() if r.biz_date else None,
