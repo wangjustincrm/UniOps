@@ -23,6 +23,7 @@ from app.db.base import get_db
 from app.models.nc_cost import RUNNING, FaConfig, NcCostSyncRun
 from app.services import cost_analysis as ca
 from app.services import cost_diagnosis as dx
+from app.services import cost_batch as bt
 from app.services import cost_margin as mg
 from app.services import nc_cost_sync as svc
 from app.tasks import nc_cost_sync_scheduler as sched
@@ -192,6 +193,23 @@ async def chain(material: str, period: str, user: dict = Depends(_can_view),
     if not material:
         raise HTTPException(status_code=422, detail="material is required")
     return await mg.cost_chain(db, material, _period(period, "period"))
+
+
+@router.get("/batches")
+async def batches(material: str, period_from: str = Query(..., alias="from"),
+                  period_to: str = Query(..., alias="to"),
+                  user: dict = Depends(_can_view), db: AsyncSession = Depends(get_db)):
+    a, b = _range(period_from, period_to)
+    return await bt.batches(db, material.strip().upper(), a, b)
+
+
+@router.get("/batch")
+async def batch(material: str, batch: str, user: dict = Depends(_can_view),
+                db: AsyncSession = Depends(get_db)):
+    tree = await bt.batch_cost(db, material.strip().upper(), batch.strip())
+    if tree is None:
+        raise HTTPException(status_code=404, detail="no completion receipt for that batch")
+    return {"batch": tree, "summary": bt.summarise(tree)}
 
 
 @router.get("/diagnosis")

@@ -148,6 +148,11 @@ def _ledger_rows_base():
           bill_code="I72026041600037861"),
         L("2026-04", "I5", "S0138", "91.98", "1970510.22", src_type="32",
           src_code="SI2026041700126205", trantype="4C-01"),
+        # one completion receipt, two batches of one order — the order number on
+        # one row only (S0104 February, measured on dev1)
+        L("2026-10", "I3", "S0199", "100", "1000", batch="BA", mo="MOX", bill_code="I3TESTBILL"),
+        L("2026-10", "I3", "S0199", "300", "3000", batch="BB", bill_code="I3TESTBILL"),
+        L("2026-10", "I6", "CP0106", "400", "2000", batch="PKG1", mo="MOX", trantype="4D-Cxx-001"),
         L("2026-10", "I5", "S0103", "10", "179.44", src_type="32",
           src_code="SI2026093000777777", trantype="4C-01"),
         # a logically deleted row — mirrored, never analysed
@@ -811,3 +816,45 @@ async def test_a_month_end_sale_costed_next_month_is_that_months_margin(db_sessi
     # and October alone does not see a cost without its revenue
     oct_ = await mg.margin_matrix(db_session, "2026-10", "2026-10")
     assert not [a for a in oct_["a7"] if a["invoice"] == "SI2026093000777777"]
+
+
+# ── P4: batch cost ──────────────────────────────────────────────────────────
+
+async def test_batch_cost_follows_batches_to_the_root(db_session, synced):
+    from app.services import cost_batch as bt
+    b = await bt.batch_cost(db_session, "CS0080", "20262101021")
+    assert b["basis"] == "batch" and b["mo_codes"] == ["55A22026082400006505"]
+    assert b["nc"]["amount"] == pytest.approx(-13482.75)
+    cr = next(i for i in b["inputs"] if i["material_code"] == "CR0059")
+    # valued at CR0059 batch P202608311101's own actual cost: August's
+    # consumption only, 14,170.76 / 39,411 — not NC's -1.2112
+    assert cr["source"] == "batch P202608311101"
+    assert cr["actual_unit"] == pytest.approx(14170.76 / 39411, rel=1e-6)
+    assert b["explained"]["adjustments_on_this_order"] == pytest.approx(-46588.84)
+    assert b["explained"]["inherited_from_inputs"] == pytest.approx(-12429.34 - cr["actual_amount"])
+    child = b["children"][0]
+    assert child["basis"] == "month" and "leaving out -61,906.55 of adjustments" in child["notes"][0]
+    s = bt.summarise(b)
+    assert "CS0080 ← CR0059 P202608311101" in " ".join(s["because"])
+
+
+async def test_batches_on_one_receipt_share_their_order(db_session, synced):
+    from app.services import cost_batch as bt
+    a = await bt.batch_cost(db_session, "S0199", "BA")
+    b = await bt.batch_cost(db_session, "S0199", "BB")
+    assert b["mo_codes"] == ["MOX"]                 # found through the receipt
+    assert a["actual"]["unit"] == pytest.approx(5.0) and b["actual"]["unit"] == pytest.approx(5.0)
+    lst = await bt.batches(db_session, "S0199", "2026-10", "2026-10")
+    assert {x["batch"]: x["mo_codes"] for x in lst["batches"]} == {"BA": ["MOX"], "BB": ["MOX"]}
+
+
+async def test_batch_endpoints_are_gated(client, synced):
+    url = "/finance/v1/cost-analysis/batch?material=CS0080&batch=20262101021"
+    r = await client.get(url, headers=_h())
+    assert r.status_code == 200 and r.json()["summary"]["headline"].startswith("CS0080 batch 20262101021")
+    assert (await client.get(url, headers=_h("ap_clerk"))).status_code == 403
+    r = await client.get("/finance/v1/cost-analysis/batches?material=CS0080&from=2026-09&to=2026-09",
+                         headers=_h())
+    assert r.status_code == 200 and r.json()["batches"][0]["batch"] == "20262101021"
+    assert (await client.get("/finance/v1/cost-analysis/batch?material=CS0080&batch=NOPE",
+                             headers=_h())).status_code == 404
