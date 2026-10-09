@@ -25,6 +25,8 @@ import BudgetPlansPage from '@/pages/budget/BudgetPlansPage'
 import BudgetPlanDetailPage from '@/pages/budget/BudgetPlanDetailPage'
 import BudgetCatalogPage from '@/pages/budget/BudgetCatalogPage'
 import FactorLibraryPage from '@/pages/budget/FactorLibraryPage'
+import CostAnomaliesPage from '@/pages/finance/CostAnomaliesPage'
+import MaterialTracePage from '@/pages/finance/MaterialTracePage'
 
 export const financeRoutes: RouteDef[] = [
   { path: '/finance/ap', element: <AccountsPayablePage />, tab: { title: 'Accounts Payable', icon: 'CreditCard', keyStrategy: 'static', pinned: true } },
@@ -59,4 +61,8 @@ export const financeRoutes: RouteDef[] = [
   { path: '/finance/coa', element: <CoaConfigPage />, tab: { title: 'Chart of Accounts', icon: 'FolderTree', keyStrategy: 'static' } },
   { path: '/finance/tax', element: <TaxSettingsPage />, tab: { title: 'Tax Settings', icon: 'Percent', keyStrategy: 'static' } },
   { path: '/finance/bank-settings', element: <BankSettingsPage />, tab: { title: 'Bank Settings', icon: 'Settings', keyStrategy: 'static' } },
+
+  // AI Financial Analysis (finance.analysis.view — not view_finance).
+  { path: '/finance/analysis/anomalies', element: <CostAnomaliesPage />, tab: { title: 'Cost Anomalies', icon: 'Activity', keyStrategy: 'static' } },
+  { path: '/finance/analysis/trace', element: <MaterialTracePage />, tab: { title: 'Material Cost Trace', icon: 'GitBranch', keyStrategy: 'static' } },
 ]
