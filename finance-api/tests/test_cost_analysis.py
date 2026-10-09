@@ -444,6 +444,27 @@ async def test_an_open_period_is_not_held_against_a_balance_nc_has_not_written(
     assert _hits(res, "A8", "CR0059", "2026-08")
 
 
+async def test_an_unpriced_open_month_is_not_a_zero_quantity_anomaly(db_session, synced):
+    """October: received at a price, issued before NC's month-end cost run
+    priced the issue — zero quantity with value left, which closes itself at
+    month-end. Not reported while the month is open; reported once closed."""
+    await db_session.execute(text(
+        "insert into nc_ia_ledger (id, nc_pk, period, bill_type, direction, material_pk, "
+        "material_code, qty, amount, dr, synced_at) values "
+        "(gen_random_uuid(), 'OCT1', '2026-10', 'I2', 0, 'PKX', 'CPOCT', 10, 50, 0, now()), "
+        "(gen_random_uuid(), 'OCT2', '2026-10', 'I6', 1, 'PKX', 'CPOCT', 10, 0, 0, now())"))
+    await db_session.commit()
+    res = await ca.anomalies(db_session, "2026-10", "2026-10")
+    assert not _hits(res, "A3", "CPOCT")
+    await db_session.execute(text(
+        "insert into nc_ia_month_balances (id, nc_pk, period, material_pk, material_code, qty, "
+        "amount, dr, synced_at) values (gen_random_uuid(), 'BOCT', '2026-10', 'PKX', 'CPOCT', "
+        "0, 50, 0, now())"))
+    await db_session.commit()
+    res = await ca.anomalies(db_session, "2026-10", "2026-10")
+    assert _hits(res, "A3", "CPOCT")
+
+
 async def test_component_adjustment_without_an_order_still_shows_where_it_landed(
         db_session, synced):
     t = await ca.material_trace(db_session, "CR0069", "2026-08", "2026-08")

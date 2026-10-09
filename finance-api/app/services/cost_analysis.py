@@ -621,8 +621,14 @@ async def anomalies(db: AsyncSession, period_from: str, period_to: str) -> dict:
             if unit is not None:
                 prev_unit, prev_period_with_prod = unit, p
             q, a = m["_q"], m["_a"]
-            if show and ((abs(q) <= QTY_EPS and abs(a) > Decimal(str(th["a3_min_amount"])))
-                         or (q > QTY_EPS and a < -AMT_EPS)):
+            # Zero quantity with value left is only abnormal once NC has run its
+            # month-end cost calculation: before that, issues in the month are
+            # still unpriced (amount 0) while receipts are, so every open month
+            # shows this for every material that moved — seen in October 2026
+            # on the dev mirror. Negative value on hand is reported regardless.
+            zero_qty_tail = (abs(q) <= QTY_EPS and abs(a) > Decimal(str(th["a3_min_amount"]))
+                             and m["period_closed"])
+            if show and (zero_qty_tail or (q > QTY_EPS and a < -AMT_EPS)):
                 out.append(_anomaly("A3", p, mat, name, {
                     "closing_qty": _f(q), "closing_amount": _f(a), "unit": _f(_unit(a, q))},
                     detail=("zero quantity, non-zero value" if abs(q) <= QTY_EPS
