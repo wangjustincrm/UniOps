@@ -159,11 +159,12 @@ class LedgerRow:
     estimate_flag: str | None
     audit_seq: int | None
     category: str = ""
+    note: str | None = None
 
 
 _LEDGER_COLS = ("nc_pk, period, bill_type, bill_code, biz_date, direction, material_code, "
                 "material_name, qty, price, amount, batch_code, mo_code, src_type, src_code, "
-                "upstream_code, trantype_code, trantype_name, estimate_flag, audit_seq")
+                "upstream_code, trantype_code, trantype_name, estimate_flag, audit_seq, note")
 
 
 def _row(r) -> LedgerRow:
@@ -172,7 +173,8 @@ def _row(r) -> LedgerRow:
         direction=int(r[5]), material_code=r[6], material_name=r[7], qty=_n(r[8]),
         price=None if r[9] is None else _n(r[9]), amount=_n(r[10]), batch_code=r[11],
         mo_code=r[12], src_type=r[13], src_code=r[14], upstream_code=r[15],
-        trantype_code=r[16], trantype_name=r[17], estimate_flag=r[18], audit_seq=r[19])
+        trantype_code=r[16], trantype_name=r[17], estimate_flag=r[18], audit_seq=r[19],
+        note=r[20])
 
 
 def classify(rows: list[LedgerRow]) -> None:

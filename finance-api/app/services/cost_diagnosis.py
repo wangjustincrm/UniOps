@@ -413,6 +413,110 @@ async def _tail_dump_finding(db, th, material, month, ia_rows, landing,
     return findings
 
 
+async def cost_composition(db: AsyncSession, material: str, period: str) -> dict | None:
+    """What a unit of `material` produced in `period` is made of — materials,
+    conversion cost, adjustments — and, when conversion dominates, how NC
+    spread that month's conversion cost across products. S0064 July 2026:
+    24.59/kg of which 19.40/kg conversion; July's 2.39M of conversion cost was
+    allocated to 4 products only."""
+    pcs = await ca._product_cost(db, material, period, period)
+    if not pcs or not pcs[0]["qty"]:
+        return None
+    pc = pcs[0]
+    qn = pc["qty"]
+    parts = [("materials", pc["consumed_total"]), ("conversion cost", pc["conversion_total"]),
+             ("settlement adjustments", pc["settlement_total"]),
+             ("tail adjustments", pc["tail_total"]), ("carried in", pc["carried_total"])]
+    floor = max(abs(pc["amount"] or 0) * 0.005, 0.01)
+    parts = [(k, v) for k, v in parts if abs(v or 0) >= floor]
+    text_parts = ", ".join(f"{k} {u(v / qn)}/unit" for k, v in parts)
+    sentence = f"{material} was produced in {period} at {u(pc['unit'])}/unit: {text_parts}."
+    evidence = [_ev(f"{material} {period} {k}", f"{m(v)} ({u(v / qn)}/unit)") for k, v in parts]
+    conv_share = (pc["conversion_total"] / pc["amount"]) if pc["amount"] else 0
+    if pc["conversion_total"] and conv_share >= 0.5:
+        tot, objs, mine = (await db.execute(text(
+            "select coalesce(sum(amount),0), count(distinct cost_object_code), "
+            "coalesce(sum(amount) filter (where cost_object_pk = (select cost_object_pk from "
+            "nc_cm_prod_costs where dr = 0 and material_code = :m and period = :p limit 1)),0) "
+            "from nc_cm_stuff_lines where dr = 0 and source_type = 24 and period = :p"),
+            {"m": material, "p": period})).one()
+        sentence += (f" Conversion cost is {pct(conv_share)} of it: in {period} NC spread "
+                     f"{m(tot)} of conversion cost (payroll, overhead, utilities) over {objs} "
+                     f"product(s), and {material} took {m(mine)} of it"
+                     + (f" ({pct(float(mine) / float(tot))})" if float(tot) else "") + ".")
+        evidence.append(_ev(f"Conversion cost allocated in {period}", f"{m(tot)} over {objs} products"))
+        # Is it spread per unit of output? Then every product carries the same
+        # conversion per kg, whatever it sells for.
+        per = (await db.execute(text(
+            "select p.material_code, sum(s.amount) / nullif(max(p.qty), 0) "
+            "from nc_cm_stuff_lines s join nc_cm_prod_costs p on p.cost_object_pk = "
+            "s.cost_object_pk and p.period = s.period and p.dr = 0 "
+            "where s.dr = 0 and s.source_type = 24 and s.period = :p group by p.material_code"),
+            {"p": period})).all()
+        units = [float(x) for _, x in per if x is not None]
+        if len(units) >= 2 and max(units) - min(units) <= 0.01 * max(abs(max(units)), 1e-9):
+            sentence += (f" NC allocates it by quantity produced: every one of the {len(units)} "
+                         f"products made in {period} carried the same {u(units[0])}/unit, so a "
+                         f"low-priced product bears as much conversion per unit as the dearest.")
+            evidence.append(_ev(f"Conversion per unit, all products {period}",
+                                ", ".join(f"{c} {u(x)}" for c, x in per if x is not None)))
+    return {"sentence": sentence, "evidence": evidence, "conversion_share": conv_share,
+            "unit": pc["unit"]}
+
+
+# inflow categories, and outflows that count as inflow when entered negative
+_IN = ("production", "purchase", "settlement", "purchase_provisional", "provisional_reversal",
+       "transfer_in", "other_in", "in_adjust")
+_OUT_AS_RETURN = ("other_out", "transfer_out", "consumption")
+
+
+async def stock_source_cause(db: AsyncSession, material: str, period: str,
+                             unit_cost_of_sales: float | None) -> dict | None:
+    """Why stock sold in `period` carried the unit cost it did: the inflow
+    whose unit value is out of line with the product's own production cost.
+    S0138 April 2026: a negative stock-count issue (I72026041600037861, 'blocked
+    by QA … released in 4/10') put 91.98 back at 21,423/unit."""
+    rows = [r for r in await ca._ledger(db, material=material) if r.period == period]
+    hist = await _prod_history(db, material)
+    normal = statistics.median([a / q for _, q, a in hist if a > 0]) if hist else None
+    cands = []
+    for r in rows:
+        inflow = (r.direction == 0 and r.category in _IN) or \
+                 (r.direction == 1 and r.category in _OUT_AS_RETURN and r.qty < 0)
+        if not inflow or not r.qty:
+            continue
+        qty, amt = (r.qty, r.amount) if r.direction == 0 else (-r.qty, -r.amount)
+        cands.append((r, float(qty), float(amt), float(amt) / float(qty)))
+    if not cands or normal is None or normal <= 0:
+        return None
+    odd = [c for c in cands if c[3] > 3 * normal or c[3] < normal / 3]
+    if not odd:
+        return None
+    by_bill: dict = {}
+    for r, qty, amt, unit in odd:
+        b = by_bill.setdefault(r.bill_code, {"r": r, "qty": 0.0, "amt": 0.0})
+        b["qty"] += qty
+        b["amt"] += amt
+    worst = max(by_bill.values(), key=lambda b: abs(b["amt"]))
+    r = worst["r"]
+    unit = worst["amt"] / worst["qty"]
+    what = ("a negative " + (r.trantype_name or ca.CATEGORY_LABELS[r.category]).strip()
+            if r.direction == 1 else (r.trantype_name or ca.CATEGORY_LABELS[r.category]).strip())
+    sentence = (f"The stock sold in {period} came in through {what} {r.bill_code}: "
+                f"{q(worst['qty'])} at {u(unit)}/unit ({m(worst['amt'])}), against a normal "
+                f"production cost of about {u(normal)}/unit — "
+                + (f"{unit / normal:,.0f}× it." if unit / normal >= 1.5 else f"{pct(unit / normal)} of it.")
+                + (f" NC note on the document: \u201c{r.note}\u201d." if r.note else "")
+                + (f" Cost of sales came out at {u(unit_cost_of_sales)}/unit as a result."
+                   if unit_cost_of_sales is not None else ""))
+    evidence = [_ev(f"{material} {period} inflow", f"{q(worst['qty'])} = {m(worst['amt'])} "
+                    f"({u(unit)}/unit)", r.bill_code),
+                _ev(f"{material} normal production cost (median)", f"{u(normal)}/unit")]
+    if r.note:
+        evidence.append(_ev("Note on the document", r.note, r.bill_code))
+    return {"sentence": sentence, "evidence": evidence, "bill_code": r.bill_code}
+
+
 async def _root(db: AsyncSession, code: str, period: str, depth: int, seen: set) -> list[dict]:
     """Follow inherited value upstream: the related material's own diagnosis
     over [period-1, period], and from its worst finding onward, until a

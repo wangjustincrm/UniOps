@@ -23,6 +23,7 @@ from app.db.base import get_db
 from app.models.nc_cost import RUNNING, FaConfig, NcCostSyncRun
 from app.services import cost_analysis as ca
 from app.services import cost_diagnosis as dx
+from app.services import cost_margin as mg
 from app.services import nc_cost_sync as svc
 from app.tasks import nc_cost_sync_scheduler as sched
 
@@ -173,6 +174,24 @@ async def trace(material: str, period_from: str = Query(..., alias="from"),
     # The conclusion first, the data as its evidence (user, 2026-10-09).
     out["diagnosis"] = await dx.diagnose(db, material, a, b, trace=out)
     return out
+
+
+@router.get("/margin")
+async def margin(period_from: str = Query(..., alias="from"),
+                 period_to: str = Query(..., alias="to"),
+                 user: dict = Depends(_can_view), db: AsyncSession = Depends(get_db)):
+    a, b = _range(period_from, period_to)
+    matrix = await mg.margin_matrix(db, a, b)
+    return {**matrix, "summary": await mg.margin_summary(db, matrix)}
+
+
+@router.get("/chain")
+async def chain(material: str, period: str, user: dict = Depends(_can_view),
+                db: AsyncSession = Depends(get_db)):
+    material = material.strip().upper()
+    if not material:
+        raise HTTPException(status_code=422, detail="material is required")
+    return await mg.cost_chain(db, material, _period(period, "period"))
 
 
 @router.get("/diagnosis")

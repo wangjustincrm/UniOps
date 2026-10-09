@@ -75,6 +75,14 @@ def L(period, bill_type, mat, qty, amount, *, direction=None, est=None, src_type
 
 
 def _ledger_rows():
+    rows = _ledger_rows_base()
+    # the QA-release note NC carries on the stock-count reversal
+    i = svc.LEDGER.cols.index("note")
+    return [tuple(("2026/2 some of 913 FG blocked by QA,and released in 4/10" if (c == i and r[3] == "I72026041600037861") else v)
+                  for c, v in enumerate(r)) for r in rows]
+
+
+def _ledger_rows_base():
     return [
         # CR0069 — provisional July, consumed July, settled August
         L("2026-07", "I2", "CR0069", "25156.79", "127243.04", est="Y", src_type="45",
@@ -131,6 +139,15 @@ def _ledger_rows():
           src_type="4I", src_code="TC2026100900612002", upstream="XT2026100900570001"),
         L("2026-09", "I4", "CR0042", "1870", "45990.12", trantype="4A-Cxx-010",
           src_type="4A", src_code="TR2026100900029001", upstream="XT2026100900570001"),
+        # S0138 — sold below cost in March; in April a stock-count reversal
+        # brings 91.98 back at 21,423/unit and the sale carries it out
+        L("2026-02", "I3", "S0138", "13720.35", "587925.00"),
+        L("2026-03", "I5", "S0138", "13720.35", "587925.00", src_type="32",
+          src_code="SI2026033000126201", trantype="4C-01"),
+        L("2026-04", "I7", "S0138", "-91.98", "-1970510.22", trantype="4I-Cxx-CRM004",
+          bill_code="I72026041600037861"),
+        L("2026-04", "I5", "S0138", "91.98", "1970510.22", src_type="32",
+          src_code="SI2026041700126205", trantype="4C-01"),
         # a logically deleted row — mirrored, never analysed
         L("2026-09", "I3", "CR0059", "999999", "999999", dr=1),
     ]
@@ -144,7 +161,19 @@ def _balance_rows():
     # As in NC on 2026-10-09: balances exist for closed months only, so
     # September (open) has none — CS0080's September stock has no NC balance.
     return [B("2026-08", "CR0059", "39411", "-47734.60"),
+            B("2026-02", "S0138", "13720.35", "587925.00"),
             B("2026-02", "CR0177", "19681", "563669.74")]
+
+
+def _conversion_rows():
+    """Source 24: conversion cost allocated per product — the SAME 16.0831/unit
+    for both, because NC allocates it by quantity produced."""
+    out = []
+    for n, obj, amt in ((901, "S0138", "16083.10"), (902, "S0115", "32166.20")):
+        out.append((f"STB{n:019d}", f"STC{obj}", f"CMM2{n:06d}", "2026-02", f"OBJ{obj}", obj, obj,
+                    24, "2026-02-28 00:00:00", "5101", "制造费用", None, None, None, None, None,
+                    D(amt), 0, "2026-10-01 00:00:00"))
+    return out
 
 
 def _stuff_rows():
@@ -165,6 +194,8 @@ def _stuff_rows():
         S("2026-08", "CR0059", "Pasteurized Skim Milk", 31, "CR0069", None, "-21572.27"),
         S("2026-08", "CR0059", "Pasteurized Skim Milk", 31, "CR0070", None, "-40361.54"),
         S("2026-09", "CS0080", "210-Niuriss Smart2 半成品", 18, "CR0059", "10262", "-12429.34"),
+        S("2026-02", "S0138", "913 Munchkin", 18, "CS0059", "1000", "22342.60"),
+        S("2026-02", "S0115", "9111 SMP FG", 18, "CS0114", "2000", "5721.40"),
         # NC files the tail dump as source 60, not 31 (measured on dev1 2026-10-09)
         S("2026-09", "CS0080", "210-Niuriss Smart2 半成品", 60, "CR0059", None, "-46588.84"),
         S("2026-09", "CS0026", "251基粉半成品", 18, "CR0059", "48787", "18885.45"),
@@ -176,6 +207,8 @@ def _prod_rows():
         return (pk, period, f"OBJ{obj}", f"PK{mat}", mat, name, "CC1", 1, D(qty), D(amount), 0,
                 "2026-10-01 00:00:00")
     heads = [
+        H("PC0000000000000000201", "2026-02", "S0138", "S0138", "913 Munchkin", "1000", "38425.70"),
+        H("PC0000000000000000202", "2026-02", "S0115", "S0115", "9111 SMP FG", "2000", "37887.60"),
         H("PC0000000000000000007", "2026-07", "CR0059", "CR0059", "Pasteurized Skim Milk",
           "981405", "476363.27"),
         H("PC0000000000000000001", "2026-08", "CR0059", "CR0059", "Pasteurized Skim Milk",
@@ -195,7 +228,14 @@ def _prod_rows():
              PL(5, "PC0000000000000000007", "2026-07", "CR0070", "45397.8775", "229622.46"),
              PL(6, "PC0000000000000000007", "2026-07", "CR0016", "9848.6551", "124057.32"),
              PL(7, "PC0000000000000000009", "2026-09", "CR0059", "10262", "-59018.18"),
-             PL(8, "PC0000000000000000009", "2026-09", "CP0105", "8000", "45535.43")]
+             PL(8, "PC0000000000000000009", "2026-09", "CP0105", "8000", "45535.43"),
+             PL(9, "PC0000000000000000201", "2026-02", "CS0059", "1000", "22342.60"),
+             PL(10, "PC0000000000000000202", "2026-02", "CS0114", "2000", "5721.40")]
+    # conversion cost lines: element only, no material
+    for n, head, amt in ((11, "PC0000000000000000201", "16083.10"),
+                         (12, "PC0000000000000000202", "32166.20")):
+        lines.append((f"PCB{n:018d}", head, "2026-02", "EL9", "5101", "制造费用", None, None, None,
+                      1, None, None, D(amt), 0, "2026-10-01 00:00:00"))
     return heads, lines
 
 
@@ -205,9 +245,14 @@ def _cost_objects():
 
 
 def _invoice_rows():
-    return [("SIB0000000000000000001", "SI1", "SI2026033000126201", "2026-03-30 00:00:00", 2,
-             "C1", "Munchkin", "USD", D("1.3939"), "1", "PKS0138", "S0138", "913 Munchkin",
-             D("13720.35"), D("375684.35"), D("269520.30"), D("0"), 0, "2026-10-01 00:00:00")]
+    def I(n, code, date, mat, qty, amt, cur="USD"):
+        return (f"SIB{n:019d}", f"SI{n}", code, f"{date} 00:00:00", 2, "C1", "Munchkin", cur,
+                D("1.3939"), "1", f"PK{mat}", mat, mat, D(qty), D(amt), D(amt), D("0"), 0,
+                "2026-10-01 00:00:00")
+    return [I(1, "SI2026033000126201", "2026-03-30", "S0138", "13720.35", "375684.35"),
+            I(2, "SI2026041700126205", "2026-04-17", "S0138", "91.98", "2491.83"),
+            # revenue with no cost of sales in NC → A7
+            I(3, "SI2026090100999999", "2026-09-01", "S0093", "100", "4400.00", "CAD")]
 
 
 def _voucher_rows():
@@ -269,7 +314,7 @@ def fake_extract():
         "nc_cm_cost_objects": _cost_objects(),
         "nc_cm_prod_costs": heads,
         "nc_cm_prod_cost_lines": lines,
-        "nc_cm_stuff_lines": _stuff_rows(),
+        "nc_cm_stuff_lines": _stuff_rows() + _conversion_rows(),
         "nc_so_invoice_lines": _invoice_rows(),
         "nc_cost_vouchers": _voucher_rows(),
     }
@@ -681,3 +726,55 @@ async def test_a_sync_that_does_not_tie_out_is_shouted_not_just_logged(client, d
     a8 = [a for a in res["anomalies"] if a["rule"] == "A8" and a["period"] is None]
     assert a8 and a8[0]["severity"] == "high"
     assert a8[0]["detail"] == "last sync did not tie out against NC"
+
+
+# ── P2: gross margin and the cost chain ──────────────────────────────────────
+
+async def test_margin_is_invoice_by_invoice_and_unmatched_sales_are_a7(db_session, synced):
+    from app.services import cost_margin as mg
+    mx = await mg.margin_matrix(db_session, "2026-01", "2026-09")
+    s0138 = next(r for r in mx["rows"] if r["material_code"] == "S0138")
+    mar = s0138["months"]["2026-03"]
+    assert mar["revenue"] == 375684.35 and mar["cost"] == 587925.00
+    assert mar["margin_pct"] == -56.5
+    assert mx["a7"] == [{"material_code": "S0093", "invoice": "SI2026090100999999",
+                         "side": "revenue without cost of sales"}]
+
+
+async def test_margin_summary_names_the_document_that_poisoned_the_stock(db_session, synced):
+    from app.services import cost_margin as mg
+    mx = await mg.margin_matrix(db_session, "2026-01", "2026-09")
+    s = await mg.margin_summary(db_session, mx)
+    apr = next(f for f in s["findings"] if (f["material_code"], f["period"]) == ("S0138", "2026-04"))
+    assert apr["severity"] == "high"
+    because = " ".join(apr["because"])
+    assert "I72026041600037861" in because and "blocked by QA" in because
+    assert "21,423.2466/unit" in because
+    assert any(e["ref"] == "I72026041600037861" for e in apr["evidence"])
+
+
+async def test_composition_says_conversion_is_spread_by_quantity(db_session, synced):
+    from app.services import cost_diagnosis as dx
+    c = await dx.cost_composition(db_session, "S0115", "2026-02")
+    assert "conversion cost 16.0831/unit" in c["sentence"]
+    assert "Conversion cost is 85% of it" in c["sentence"]
+    assert "allocates it by quantity produced" in c["sentence"]
+
+
+async def test_cost_chain_finds_the_deepest_abnormal_node(db_session, synced):
+    from app.services import cost_margin as mg
+    c = await mg.cost_chain(db_session, "CS0080", "2026-09")
+    assert c["tree"]["material_code"] == "CS0080" and c["tree"]["abnormal"]
+    kid = next(k for k in c["tree"]["children"] if k["material_code"] == "CR0059")
+    # consumed in September, but the stock was made in August — shown at August
+    assert kid["period"] == "2026-08" and kid["abnormal"] and kid["unit"] == pytest.approx(-1.2112)
+    # the issue said -1.2112; with the tail dump it really cost -59,018.18 / 10,262
+    assert kid["consumed"]["effective_unit"] == pytest.approx(-59018.18 / 10262)
+    assert "deepest is CR0059 in 2026-08" in c["headline"]
+
+
+async def test_margin_and_chain_are_gated(client, synced):
+    for url in ("/finance/v1/cost-analysis/margin?from=2026-01&to=2026-09",
+                "/finance/v1/cost-analysis/chain?material=CS0080&period=2026-09"):
+        assert (await client.get(url, headers=_h())).status_code == 200
+        assert (await client.get(url, headers=_h("ap_clerk"))).status_code == 403
