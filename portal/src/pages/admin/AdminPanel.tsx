@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
 import { NcSyncSection } from './nc-sync/NcSyncSection'
 import { WmsSyncSection } from './WmsSyncSection'
+import { TaskNotificationPolicies } from './TaskNotificationPolicies'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -902,7 +903,6 @@ function NotificationSettings() {
   const [channel, setChannel] = useState('')
   const [webhook, setWebhook] = useState('')
   const [followup, setFollowup] = useState('')
-  const [dailyFollowup, setDailyFollowup] = useState<boolean | null>(null)
   const [serviceGrDue, setServiceGrDue] = useState<boolean | null>(null)
   const [serviceGrDryRun, setServiceGrDryRun] = useState<boolean | null>(null)
   const [mailboxes, setMailboxes] = useState<Record<string, string> | null>(null)
@@ -919,7 +919,6 @@ function NotificationSettings() {
   const webhookVal = webhook !== '' ? webhook : (ns?.teams_webhook_url ?? '')
   // '08:00' mirrors the backend default (_DEFAULT_NOTIFICATION_SETTINGS / scheduler fallback).
   const followupVal = followup || ns?.followup_time || '08:00'
-  const dailyFollowupVal = dailyFollowup ?? ns?.daily_followup_enabled ?? false
   // Fallbacks mirror the server (crud/config.py): the sweep is off until
   // switched on, and once on it stays in dry-run until explicitly released.
   const serviceGrDueVal = serviceGrDue ?? ns?.service_gr_due_enabled ?? false
@@ -967,7 +966,6 @@ function NotificationSettings() {
           default_channel: channelVal as any,
           teams_webhook_url: webhookVal || null,
           followup_time: followupVal,
-          daily_followup_enabled: dailyFollowupVal,
           service_gr_due_enabled: serviceGrDueVal,
           service_gr_due_dry_run: serviceGrDryRunVal,
           role_shared_mailboxes: mailboxesVal,
@@ -1087,17 +1085,11 @@ function NotificationSettings() {
         {mailboxError && <p className="mt-2 text-xs text-red-600">{mailboxError}</p>}
       </div>
 
-      <Field label="Daily Follow-up" hint="When on, users with open tasks receive a reminder email every day. Off by default.">
-        <div className="flex items-center gap-2 pt-1.5">
-          <Toggle checked={dailyFollowupVal} onChange={(v) => setDailyFollowup(v)} />
-          <span className="text-xs text-neutral-500">{dailyFollowupVal ? 'On — daily reminders are sent' : 'Off — no daily reminders'}</span>
-        </div>
-      </Field>
-      <Field label="Daily Follow-up Time (UTC)" hint="Time to send pending task reminders each day. Changes take effect within 15 minutes — no restart needed.">
+      <Field label="Daily Digest Time (UTC)" hint="When the once-a-day task digest goes out — see Task Notifications below for which tasks it covers. Changes take effect within 15 minutes — no restart needed.">
         <Input type="time" value={followupVal} onChange={(e) => setFollowup(e.target.value)} />
       </Field>
 
-      <Field label="Service Completion Reminder" hint="When on, service and project POs whose expected completion date has passed raise a task asking the PR requester to create a GR. Runs at the follow-up time above. Off by default.">
+      <Field label="Service Completion Reminder" hint="When on, service and project POs whose expected completion date has passed raise a task asking the PR requester to create a GR. Runs at the digest time above. Off by default.">
         <div className="flex items-center gap-2 pt-1.5">
           <Toggle checked={serviceGrDueVal} onChange={(v) => setServiceGrDue(v)} />
           <span className="text-xs text-neutral-500">{serviceGrDueVal ? 'On — overdue service POs are chased' : 'Off — no completion reminders'}</span>
@@ -2327,7 +2319,7 @@ export default function AdminPanel() {
           {section === 'uom'           && <UnitsOfMeasure />}
           {section === 'users'         && <UserManagement />}
           {section === 'currency'      && <CurrencySettings />}
-          {section === 'notifications' && <NotificationSettings />}
+          {section === 'notifications' && <><NotificationSettings /><TaskNotificationPolicies /></>}
           {section === 'remittance'    && <RemittanceSettings />}
           {section === 'workflows'     && <ApprovalWorkflows />}
           {section === 'erp_mdm'     && <ErpMdmSection />}
