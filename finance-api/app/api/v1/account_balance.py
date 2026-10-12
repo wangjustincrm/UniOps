@@ -415,9 +415,13 @@ async def nc_actual_for_budget_check(
         fiscal_year: int = Query(...),
         cost_center_id: uuid.UUID = Query(...),
         account_id: uuid.UUID = Query(...)):
-    """NC posted actual for ONE (cost center × budget account × year), as the
-    year total — budget-api's `/balance` calls this so a PR's over-budget test
-    is decided on the same number the Budget Dashboard shows.
+    """NC actual for ONE (cost center × budget account × year), as the year
+    total, INCLUDING vouchers NC holds but has not tallied yet — budget-api's
+    `/balance` calls this so a PR's over-budget test is decided on the same
+    number the Budget Dashboard shows with "Include unposted vouchers" ticked
+    (its default). User decision 2026-10-12: while a month is being closed
+    nearly nothing is tallied, so a posted-only test let PRs through against
+    spend that was already entered.
 
     ★ Deliberately NOT scoped by `_cc_scope`, unlike every other NC read here.
     Those are reports: showing a reader less than the whole company is right,
@@ -461,19 +465,22 @@ async def nc_actual_for_budget_check(
     migration, and production runs only migrate-prod.sh, so the key would not
     exist there and every caller would 403.
 
-    Also load-bearing, and easy to lose: the CRUD below counts only
-    `JournalVoucher.status == POSTED`. Voided / draft / errored NC vouchers are
-    imported and marked now rather than dropped at sync, and they are held at
-    `draft` — so they stay out of this figure because of that filter and for no
-    other reason. Any future rewrite that reaches the lines without it starts
-    charging cancelled vouchers against people's budgets.
+    Also load-bearing, and easy to lose: the CRUD below counts posted vouchers
+    plus draft/reviewed ones NC still holds as normal (`fiscal.status_filter`).
+    Voided / temp-saved / errored / deleted-in-NC vouchers are imported and
+    marked rather than dropped at sync, so they stay out of this figure because
+    of that filter's `nc_voucher_state` test and for no other reason. Any future
+    rewrite that reaches the lines without it starts charging cancelled
+    vouchers against people's budgets.
     """
     # Same CRUD the dashboard's NC line runs, so the two can never drift: one
-    # definition of "NC posted actual", asked here for a single account.
-    # ★ No include_unposted, on purpose — the dashboard's checkbox is a view;
-    # a PR is judged on what NC has tallied (pinned in test_untallied_basis).
+    # definition of "NC actual", asked here for a single account.
+    # ★ Always include_unposted, and not a query parameter: the criterion is
+    # not a view, so a caller must not be able to pick the looser basis
+    # (pinned in test_untallied_basis).
     data = await crud.nc_actuals_monthly(
-        db, fiscal_year, cost_center_id=cost_center_id, account_id=account_id)
+        db, fiscal_year, cost_center_id=cost_center_id, account_id=account_id,
+        include_unposted=True)
     months = (data.get("accounts") or {}).get(str(account_id)) or {}
     total = sum((Decimal(str(v)) for v in months.values()), Decimal("0"))
     return {

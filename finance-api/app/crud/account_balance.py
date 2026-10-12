@@ -619,8 +619,8 @@ async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
     exclusion and every account-resolution branch above still applies.
 
     `include_unposted` adds vouchers NC holds but has not tallied (the Budget
-    Dashboard's checkbox). The over-budget criterion never passes it: a PR is
-    judged on the ledger, not on what may still be changed before month-end.
+    Dashboard's checkbox, ticked by default). The over-budget criterion always
+    passes it: a PR is judged on what has been entered in NC, tallied or not.
     """
     if cc_ids is not None and len(cc_ids) == 0:
         return {"fiscal_year": fiscal_year, "accounts": {}}

@@ -109,8 +109,8 @@ notes:
     adds the entered but untallied vouchers (only ones NC still holds as normal;
     discarded or deleted ones never count), and the over-budget colouring, alert
     cards, vendor drill and export follow it. Clear it to see tallied vouchers
-    only. It only changes this view: a PR's over-budget check is always judged
-    on tallied vouchers.
+    only. Clearing it only changes this view: a PR's over-budget check always
+    counts the untallied vouchers too.
   - >-
     With no cost centre selected the grid adds up every cost centre that has a
     current approved budget for the year — so a cost centre whose plan was never

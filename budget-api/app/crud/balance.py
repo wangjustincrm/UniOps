@@ -56,8 +56,8 @@ async def get_balance(
 ) -> BalanceResponse:
     """Remaining balance for one (cost center × account × year).
 
-    `actual_spent` is NC's posted actual, read from finance-api — the same
-    figure the Budget Dashboard shows. It is NOT this service's `budget_ledger`:
+    `actual_spent` is NC's actual including untallied vouchers, read from
+    finance-api — the same figure the Budget Dashboard shows by default. It is NOT this service's `budget_ledger`:
     nothing ever writes the purchase chain into that table (commit / release /
     actualize have no callers anywhere in the repo), so it holds only the
     2026-07-07 opening import, and serving that back made a PR's over-budget

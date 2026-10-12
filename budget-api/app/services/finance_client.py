@@ -35,7 +35,8 @@ async def nc_actual_for_budget_check(
     account_id: uuid.UUID,
     fiscal_year: int,
 ) -> Decimal | None:
-    """NC posted actual for one (cost center × account × year).
+    """NC actual for one (cost center × account × year), posted plus the
+    vouchers NC holds but has not tallied yet (finance-api decides that basis).
 
     Returns **None** — never Decimal("0") — when finance-api is unreachable,
     refuses, or answers something unparseable. The distinction is the whole
