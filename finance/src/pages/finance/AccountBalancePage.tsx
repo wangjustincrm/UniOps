@@ -52,7 +52,7 @@ export default function AccountBalancePage() {
   // NC's 科目余额表 has the same toggle: its ledger counts a voucher once NC
   // tallies it, and the report can fold in the ones only entered. Off by
   // default so the page keeps showing the ledger.
-  const [includeUnposted, setIncludeUnposted] = useState(false)
+  const [includeUnposted, setIncludeUnposted] = useState(true)
   const [expanded, setExpanded] = useState<Record<string, string[]>>({})
   const [picker, setPicker] = useState<string | null>(null)   // account_code being configured
   const [drill, setDrill] = useState<Drill | null>(null)
