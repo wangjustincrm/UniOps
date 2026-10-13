@@ -197,27 +197,50 @@ class TestTheLength:
     roster? this course length also needs to be on any reports."
     """
 
-    async def test_the_first_to_finish_sets_the_end_and_the_rest_have_half_an_hour(
+    async def test_the_first_pass_records_the_end_but_does_not_close_the_door(
             self, test_engine, db_session, monkeypatch):
+        """The first pass is the length of the training — a record. ★ It does
+        not close the join window: a pass a few minutes in would otherwise shut
+        out everybody still in the room (round-6 review, uniops-93)."""
         course = await _course(db_session)
         quiz = await _quiz(db_session, course)
         s = await _session(db_session, course, day=DAY, start=time(9))
         first, second, late = [await make_user(test_engine) for _ in range(3)]
         for who in (first, second):
-            await quiz_crud.join(db_session, quiz, who.id, now=at(9, 50))
+            await quiz_crud.join(db_session, quiz, who.id, now=at(9, 1))
 
-        # The clock of the first submission.
-        monkeypatch.setattr(quiz_crud, "datetime", _Clock(at(10, 40)))
+        monkeypatch.setattr(quiz_crud, "datetime", _Clock(at(9, 4)))
         await _answer(db_session, quiz, first, right=True, delivery=s)
-        assert s.end_time == time(10, 40)
-        assert course_crud.length_minutes(s) == 100
+        assert s.end_time == time(9, 4) and s.end_time_from_quiz
+        assert course_crud.length_minutes(s) == 4
 
-        monkeypatch.setattr(quiz_crud, "datetime", _Clock(at(10, 55)))
+        monkeypatch.setattr(quiz_crud, "datetime", _Clock(at(10, 30)))
         await _answer(db_session, quiz, second, right=True, delivery=s)
-        assert s.end_time == time(10, 40), "only the first finish sets it"
+        assert s.end_time == time(9, 4), "only the first pass sets it"
 
-        assert (await quiz_crud.join(db_session, quiz, late.id, now=at(11, 9))).joined
-        assert not (await quiz_crud.join(db_session, quiz, late.id, now=at(11, 11))).joined
+        # Well past thirty minutes after that early pass, the room still joins.
+        assert (await quiz_crud.join(db_session, quiz, late.id, now=at(10, 45))).joined
+
+    async def test_a_failed_attempt_sets_no_end(self, test_engine, db_session, monkeypatch):
+        """★ A blank sheet two minutes in set the end and closed the door."""
+        course = await _course(db_session)
+        quiz = await _quiz(db_session, course)
+        s = await _session(db_session, course, day=DAY, start=time(9))
+        me = await make_user(test_engine)
+        await quiz_crud.join(db_session, quiz, me.id, now=at(9, 1))
+        monkeypatch.setattr(quiz_crud, "datetime", _Clock(at(9, 2)))
+        await _answer(db_session, quiz, me, right=False, delivery=s)
+        assert s.end_time is None
+
+    async def test_an_entered_end_still_closes_half_an_hour_later(
+            self, test_engine, db_session):
+        course = await _course(db_session)
+        quiz = await _quiz(db_session, course)
+        await _session(db_session, course, day=DAY, start=time(9), end=time(10))
+        me = await make_user(test_engine)
+        assert (await quiz_crud.join(db_session, quiz, me.id, now=at(10, 29))).joined
+        other = await make_user(test_engine)
+        assert not (await quiz_crud.join(db_session, quiz, other.id, now=at(10, 31))).joined
 
     async def test_an_end_somebody_typed_is_kept(self, test_engine, db_session, monkeypatch):
         course = await _course(db_session)
@@ -444,3 +467,38 @@ async def test_through_the_api(hse_manager, worker, db_session):
     assert [(r["user_name"], r["passed"]) for r in results.json()] == [(me.full_name, True)]
     # Other people's scores are not an attendee's business.
     assert (await client.get(f"/api/v1/course-sessions/{s.id}/quiz-results")).status_code == 403
+
+
+class TestClosingTheSession:
+    async def test_a_cancelled_session_is_not_closed(self, test_engine, db_session):
+        """★ Closing issues certificates; a cancelled session never ran."""
+        from fastapi import HTTPException as _HTTP
+        course = await _course(db_session)
+        s = await _session(db_session, course, status="cancelled")
+        with pytest.raises(_HTTP) as refused:
+            await course_crud.complete(db_session, s)
+        assert refused.value.status_code == 409 and s.status == "cancelled"
+
+    async def test_an_unmarked_quiz_pass_holds_the_close_until_said(
+            self, test_engine, db_session):
+        """★ Closing records the unmarked as absent — wrong for somebody with a
+        passed attempt at this session. Named, and closed only on purpose."""
+        from fastapi import HTTPException as _HTTP
+        me = await make_user(test_engine, full_name="Sam Waiting")
+        course = await _course(db_session)
+        quiz = await _quiz(db_session, course)
+        s = await _session(db_session, course)
+        await quiz_crud.join(db_session, quiz, me.id, now=at(10))
+        await _answer(db_session, quiz, me, right=True, delivery=s)
+
+        with pytest.raises(_HTTP) as refused:
+            await course_crud.complete(db_session, s)
+        assert refused.value.status_code == 409
+        assert refused.value.detail["code"] == "unmarked_passes"
+        assert refused.value.detail["names"] == ["Sam Waiting"]
+        assert "Sam Waiting" in refused.value.detail["message"]
+        assert s.status == "scheduled"
+
+        await course_crud.complete(db_session, s, absent_ok=True)
+        row = await _enrolment(db_session, s, me)
+        assert s.status == "completed" and row.result == "absent"

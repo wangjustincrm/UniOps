@@ -350,7 +350,8 @@ async def _issue_record(
     return record
 
 
-async def complete(db: AsyncSession, delivery: CourseDelivery) -> CourseDelivery:
+async def complete(db: AsyncSession, delivery: CourseDelivery, *,
+                   absent_ok: bool = False) -> CourseDelivery:
     """Close the session: issue the passes, and record the unmarked as absent.
 
     Left as `enrolled`, they would count as neither trained nor untrained and
@@ -359,7 +360,25 @@ async def complete(db: AsyncSession, delivery: CourseDelivery) -> CourseDelivery
     """
     if delivery.status == "completed":
         return delivery
-    for enrolment in await roster(db, delivery.id):
+    # ★ A cancelled session is not closed into a completed one. Closing now
+    # issues certificates, so this would have certified a session that never ran.
+    if delivery.status == "cancelled":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"{delivery.delivery_no} was cancelled; it cannot be closed")
+    rows = await roster(db, delivery.id)
+    # ★ Somebody who passed the quiz and has not been marked would be recorded
+    # absent by closing — with a passed attempt at this very session on file.
+    # Named, and closed only when the person running it says so.
+    waiting = [e.user_name for e in rows if e.result == "enrolled" and e.quiz_passed_at]
+    if waiting and not absent_ok:
+        # A code beside the words: the page offers "Close anyway" for this
+        # refusal and no other (a cancelled session is a 409 too).
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "code": "unmarked_passes", "names": waiting,
+            "message": f"{', '.join(waiting)} passed the quiz and "
+                       f"{'is' if len(waiting) == 1 else 'are'} not marked yet. "
+                       "Mark them, or close anyway to record them as not attended."})
+    for enrolment in rows:
         if enrolment.result == "enrolled":
             enrolment.result = "absent"
         # ★ The certificate is issued here, on "Save and close the session",

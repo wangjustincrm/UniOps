@@ -47,6 +47,9 @@ BLOCKED_TYPES = {
 BLOCKED_EXTENSIONS = {
     ".html", ".htm", ".xhtml", ".svg", ".xml", ".js", ".mjs", ".exe", ".bat", ".cmd",
     ".com", ".msi", ".scr", ".sh", ".ps1", ".vbs", ".jar", ".hta",
+    # Web archives and other pages a browser renders; programs Windows runs.
+    ".mht", ".mhtml", ".xht", ".shtml", ".svgz", ".wsf", ".pif", ".cpl", ".reg",
+    ".lnk", ".py",
 }
 
 

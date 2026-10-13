@@ -16,7 +16,7 @@ import { useParams } from 'react-router-dom'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
 import { Check, Plus, QrCode, Trash2, X } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, errorCode } from '@/lib/api'
 import QrPanel from '@/components/QrPanel'
 import MaterialsList from '@/components/MaterialsList'
 import { formatDate, formatDateTime } from '@/lib/formatDate'
@@ -36,6 +36,8 @@ interface Session {
   enrolled: number; passed: number
   quiz_id: string | null; quiz_title: string | null; quiz_qr_token: string | null
   length_minutes: number | null
+  /** The end was taken from the first quiz pass, not typed by anybody. */
+  end_time_from_quiz: boolean
 }
 
 /** 1 h 30 min, 45 min — the same words as the printed report. */
@@ -128,13 +130,18 @@ export default function CourseSessionPage() {
             {formatDate(s.session_date)}
             {s.start_time && ` · ${s.start_time.slice(0, 5)}`}
             {s.end_time && `–${s.end_time.slice(0, 5)}`}
+            {s.end_time && s.end_time_from_quiz && (
+              <span className="ml-1 text-xs text-neutral-500">
+                (taken from the first quiz pass{mayRun && open ? ' · correct it with Change the arrangements' : ''})
+              </span>
+            )}
           </Detail>
           {/* ★ Round 6: "track the length of time the training is". From the
               start and end; the end is filled in by the first person to finish
               the quiz when nobody typed one. */}
           <Detail label="Length">
             {lengthText(s.length_minutes)
-              ?? (s.start_time ? 'Set when the first person finishes the quiz, or when an end time is entered'
+              ?? (s.start_time ? 'Set when the first person passes the quiz, or when an end time is entered'
                                : 'Needs a start and an end time')}
           </Detail>
           <Detail label="Where">{s.location_text ?? '—'}</Detail>
@@ -305,7 +312,9 @@ function QuizCard({ session, mayRun }: { session: Session; mayRun: boolean }) {
       </div>
       {mayRun && (
         <div className="mt-3 border-t border-neutral-100 pt-3">
-          {results.isError ? <LoadFailedNote what="The quiz results" /> : (
+          {results.isError ? <LoadFailedNote what="The quiz results" /> : results.isPending ? (
+            <p className="text-xs text-neutral-500">Loading the results…</p>
+          ) : (
             (results.data ?? []).length === 0
               ? <p className="text-xs text-neutral-500">Nobody has answered it at this session yet.</p>
               : (
@@ -372,12 +381,18 @@ function RosterPanel({
   const waiting = roster.filter((e) =>
     e.quiz_passed_at && (marks[e.id] ?? e.result) === 'enrolled').length
   const save = useMutation({
-    mutationFn: (complete: boolean) => api.post(`/api/v1/course-sessions/${session.id}/results`, {
-      results: Object.entries(marks).map(([enrolment_id, result]) => ({ enrolment_id, result })),
-      complete,
-    }),
+    mutationFn: ({ complete, anyway = false }: { complete: boolean; anyway?: boolean }) =>
+      api.post(`/api/v1/course-sessions/${session.id}/results`, {
+        results: Object.entries(marks).map(([enrolment_id, result]) => ({ enrolment_id, result })),
+        complete,
+        close_anyway: anyway,
+      }),
     onSuccess: () => { setMarks({}); onChanged() },
   })
+  // ★ The server names who passed the quiz but is unmarked and holds the close
+  // (409); closing anyway records them as not attended, so it is asked for.
+  const heldBack = errorCode(save.error) === 'unmarked_passes'
+    && save.variables?.complete && open
 
   return (
     <>
@@ -516,17 +531,25 @@ function RosterPanel({
       )}
 
       <ErrorNote error={save.error || remove.error || quizMark.error} />
+      {heldBack && mayWrite && (
+        <div className="mt-2 flex justify-end">
+          <button type="button" className={secondaryButton} disabled={save.isPending}
+                  onClick={() => { if (!save.isPending) save.mutate({ complete: true, anyway: true }) }}>
+            Close anyway and record them as not attended
+          </button>
+        </div>
+      )}
 
       {mayWrite && roster.length > 0 && (
         <div className="mt-3 flex flex-wrap justify-end gap-2">
           <button type="button" className={secondaryButton}
                   disabled={Object.keys(marks).length === 0 || save.isPending}
-                  onClick={() => { if (!save.isPending) save.mutate(false) }}>
+                  onClick={() => { if (!save.isPending) save.mutate({ complete: false }) }}>
             Save results
           </button>
           {open && (
             <button type="button" className={primaryButton} disabled={save.isPending}
-                    onClick={() => { if (!save.isPending) save.mutate(true) }}>
+                    onClick={() => { if (!save.isPending) save.mutate({ complete: true }) }}>
               {save.isPending ? 'Saving…' : 'Save and close the session'}
             </button>
           )}

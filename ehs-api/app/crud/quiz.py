@@ -279,10 +279,14 @@ async def score(
     # the person running the session marks the pass, and the certificate is
     # issued when they close it. A pass away from any session marks nothing —
     # the result is kept here, and whoever runs a session can mark it there.
-    if enrolment is not None:
+    # ★ Only a pass ends the session. Any answer did: a blank sheet handed in
+    # two minutes in set the end, and the join window closed thirty minutes
+    # later on everyone still to come — their attempts then hung off no
+    # session, could not be marked, and were recorded absent, under a session
+    # that had "run" for two minutes. Raised in review by uniops-93.
+    if enrolment is not None and passed:
         await _end_from_first_finish(db, enrolment.delivery_id, attempt.submitted_at)
-        if passed:
-            await _quiz_mark(db, enrolment)
+        await _quiz_mark(db, enrolment)
 
     return attempt, breakdown
 
@@ -327,6 +331,7 @@ async def _end_from_first_finish(
     if delivery.start_time is not None and end <= delivery.start_time:
         return
     delivery.end_time = end
+    delivery.end_time_from_quiz = True
     await db.flush()
 
 
@@ -354,11 +359,16 @@ def _join_window(d: CourseDelivery) -> tuple[datetime, datetime] | None:
 
     A session with no start time is judged by its date alone; one with a start
     and no end stays open until the day is over.
+
+    ★ Only an end somebody entered closes the window. An end inferred from the
+    first quiz pass is a record of how long it ran and nothing more: an early
+    pass would otherwise shut out everyone still in the room. Raised in review
+    by uniops-93.
     """
     if d.start_time is None:
         return None
     start = datetime.combine(d.session_date, d.start_time, tzinfo=statutory.ONTARIO)
-    if d.end_time is not None:
+    if d.end_time is not None and not d.end_time_from_quiz:
         end = datetime.combine(d.session_date, d.end_time, tzinfo=statutory.ONTARIO)
         closes = end + JOIN_CLOSES_AFTER
     else:

@@ -143,6 +143,9 @@ class AttemptOut(BaseModel):
     pass_mark_percent: int
     submitted_at: datetime
     training_record_id: uuid.UUID | None
+    # The session the attempt counted at, if any — the page says what a pass
+    # means from it: a session's roster, or nothing towards a certificate.
+    delivery_id: uuid.UUID | None = None
     # Shown straight after submitting. A wrong answer with no explanation
     # teaches nothing, which would make the quiz a filter rather than training.
     marked: list[MarkedQuestion]
@@ -263,6 +266,7 @@ async def take_quiz(
         pass_mark_percent=quiz.pass_mark_percent,
         submitted_at=attempt.submitted_at,
         training_record_id=attempt.training_record_id,
+        delivery_id=attempt.delivery_id,
         marked=[MarkedQuestion(**m) for m in marked],
     )
 

@@ -94,6 +94,7 @@ class DeliveryOut(BaseModel):
     # From the start and end times. Round 6: "track the length of time the
     # training is ... this course length also needs to be on any reports."
     length_minutes: int | None = None
+    end_time_from_quiz: bool = False
 
 
 class EnrolmentOut(BaseModel):
@@ -132,6 +133,9 @@ class MarkIn(BaseModel):
     # Marking is usually the last thing that happens, so this saves a second
     # call. Left false when HSE is marking part of a roster as they go.
     complete: bool = False
+    # Close even though somebody who passed the quiz is still unmarked, which
+    # records them as not attended. Round 6 review.
+    close_anyway: bool = False
 
     @model_validator(mode="after")
     def _something_to_do(self):
@@ -288,6 +292,9 @@ async def update_session(
     # "pair every denial with an admission".
     await _require_roster_rights(db, user, delivery)
     fields = payload.model_dump(exclude_unset=True)
+    # An end entered by a person replaces one inferred from the quiz.
+    if "end_time" in fields:
+        delivery.end_time_from_quiz = False
     if "coordinator_id" in fields:
         new_coordinator = fields.pop("coordinator_id")
         if not await has_permission(
@@ -394,17 +401,20 @@ async def mark_results(
         db, delivery, {r.enrolment_id: r.result for r in payload.results},
         marker_id=_user_id(user))
     if payload.complete:
-        await crud.complete(db, delivery)
+        await crud.complete(db, delivery, absent_ok=payload.close_anyway)
     return changed
 
 
 @router.post("/{delivery_id}/complete", response_model=DeliveryOut)
-async def complete_session(delivery_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+async def complete_session(
+    delivery_id: uuid.UUID, db: SessionDep, user: CanReportIncident,
+    close_anyway: bool = Query(default=False),
+):
     delivery = await crud.get_delivery(db, delivery_id)
     # Closing a session is part of marking it, and marking it is the
     # coordinator's job.
     await _require_roster_rights(db, user, delivery)
-    delivery = await crud.complete(db, delivery)
+    delivery = await crud.complete(db, delivery, absent_ok=close_anyway)
     return (await _with_counts(db, [delivery]))[0]
 
 

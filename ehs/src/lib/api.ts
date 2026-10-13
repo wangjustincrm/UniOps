@@ -88,10 +88,23 @@ function safeJson(text: string): unknown {
   }
 }
 
+/** The `code` of a refusal that carries one — `{detail: {code, message}}`. */
+export function errorCode(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null
+  const detail = (error.body as { detail?: unknown } | null)?.detail
+  return detail && typeof detail === 'object' && 'code' in detail
+    ? String((detail as { code: unknown }).code) : null
+}
+
 function detailOf(body: unknown): string | null {
   if (body && typeof body === 'object' && 'detail' in body) {
     const detail = (body as { detail: unknown }).detail
     if (typeof detail === 'string') return detail
+    // A refusal the page acts on carries a code beside its words.
+    if (detail && typeof detail === 'object' && 'message' in detail
+        && typeof (detail as { message: unknown }).message === 'string') {
+      return (detail as { message: string }).message
+    }
     // FastAPI validation errors arrive as a list of objects.
     if (Array.isArray(detail) && detail.length) {
       // Name the field: "Input should be greater than or equal to 1" alone

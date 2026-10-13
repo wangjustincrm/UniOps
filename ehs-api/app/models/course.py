@@ -22,7 +22,7 @@ import uuid
 from datetime import date, datetime, time
 
 from sqlalchemy import (
-    CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text, Time, UniqueConstraint,
+    Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text, Time, UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -51,6 +51,10 @@ class CourseDelivery(UUIDPrimaryKey, TimestampMixin, Base):
     # because a session with no fixed end is normal.
     start_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     end_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    # True when the end was inferred from the first quiz pass rather than
+    # entered. A record of length only: the join window ignores it. Round 6.
+    end_time_from_quiz: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false")
     location_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
     location_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 

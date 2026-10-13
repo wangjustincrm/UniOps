@@ -13,7 +13,7 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLink, Link2, Paperclip, X } from 'lucide-react'
-import { api, openFile } from '@/lib/api'
+import { api, useFileOpener } from '@/lib/api'
 import { ErrorNote, inputClass, secondaryButton } from '@/components/ui'
 
 export interface Material {
@@ -32,6 +32,7 @@ export default function MaterialsList({ base, mayWrite, what = 'this course' }: 
   const [linking, setLinking] = useState(false)
   const [url, setUrl] = useState('')
   const [title, setTitle] = useState('')
+  const opener = useFileOpener()
 
   const materials = useQuery({
     queryKey: ['materials', base],
@@ -59,11 +60,13 @@ export default function MaterialsList({ base, mayWrite, what = 'this course' }: 
   // ★ A failure to load must not look the same as there being none — the
   // third round reported exactly that as "the instructor cannot open the files".
   const items = materials.data ?? []
-  if (!mayWrite && items.length === 0 && !materials.isError) return null
+  if (!mayWrite && items.length === 0 && !materials.isError && !materials.isPending) return null
 
   return (
     <div className="flex flex-col gap-1 text-xs text-neutral-600">
-      {materials.isError ? (
+      {materials.isPending ? (
+        <span className="text-neutral-500">Loading the material…</span>
+      ) : materials.isError ? (
         <span className="text-warning-700">Could not load the material for {what}</span>
       ) : items.length === 0 ? (
         <span className="text-neutral-500">No material</span>
@@ -83,7 +86,8 @@ export default function MaterialsList({ base, mayWrite, what = 'this course' }: 
           ) : (
             <>
               <Paperclip className="h-3.5 w-3.5 shrink-0 text-neutral-400" aria-hidden />
-              <button type="button" onClick={() => openFile(`${base}/${m.id}`, m.filename)}
+              <button type="button" disabled={opener.busy}
+                      onClick={() => opener.open(`${base}/${m.id}`, m.filename)}
                       className="min-w-0 truncate text-left text-primary-700 hover:underline">
                 {m.filename}
               </button>
@@ -99,6 +103,8 @@ export default function MaterialsList({ base, mayWrite, what = 'this course' }: 
           )}
         </span>
       ))}
+
+      {opener.error && <span className="text-danger-700">{opener.error}</span>}
 
       {mayWrite && (
         <>

@@ -46,6 +46,8 @@ interface Attempt {
   id: string; score_percent: string; points_scored: number; points_possible: number
   passed: boolean; pass_mark_percent: number; submitted_at: string
   training_record_id: string | null; marked: Marked[]
+  /** The session this attempt counted toward, if it was taken at one. */
+  delivery_id: string | null
 }
 interface Results {
   people: number; passed: number; pass_rate: number | null
@@ -522,10 +524,18 @@ function ResultView({ attempt, quizId, documentId }: {
             Back to the document — you can sign it now
           </Link>
         )}
-        {attempt.passed && !documentId && (
+        {/* ★ Only an attempt taken at a session reaches a roster; one taken
+            outside any session is a practice run and says so. */}
+        {attempt.passed && !documentId && attempt.delivery_id && (
           <p className="mt-2 text-xs text-neutral-600">
             Your pass is on the session roster. The person running the session confirms it, and
             your certificate is issued when they close the session.
+          </p>
+        )}
+        {attempt.passed && !documentId && !attempt.delivery_id && (
+          <p className="mt-2 text-xs text-neutral-600">
+            This was not taken at a training session, so it is not on any roster and does not
+            issue a certificate. Scan the code at the session to count it.
           </p>
         )}
       </div>
