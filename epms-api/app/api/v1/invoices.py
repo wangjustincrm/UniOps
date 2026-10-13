@@ -118,6 +118,50 @@ async def _require_invoice_match_access(db, user: dict, inv) -> None:
         raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
 
 
+async def _is_agreement_owner(db, user: dict, inv) -> bool:
+    """Is the caller the named owner of the agreement this invoice is matched
+    to? The owner runs the agreement day to day and is the one who knows which
+    month a bill belongs to, so moving the invoice's billing period is theirs
+    to do as well as AP's (user decision 2026-10-13)."""
+    if inv.agreement_id is None:
+        return False
+    owner_id = (await db.execute(
+        select(PurchaseAgreement.owner_id).where(PurchaseAgreement.id == inv.agreement_id)
+    )).scalar_one_or_none()
+    return owner_id is not None and owner_id == uuid.UUID(user["sub"])
+
+
+async def _can_read_invoice(db, user: dict, inv, scope: dict) -> bool:
+    """The invoice detail read gate, shared by GET /{id} and GET /{id}/chain.
+
+    The chain endpoint used to hand-roll a shorter copy (is_visible only), so a
+    caller who could open the invoice through the agreement arm below — e.g. a
+    requester who owns the agreement — 404'd on the chain, and the page could
+    not tell them a PA already locks the invoice."""
+    # Access Control Matrix gate — treat absence of view_invoice as not-found.
+    if not scope["perms"].get("view_invoice", False):
+        return False
+    if not scope["restrict"]:
+        return True
+    caller_id = uuid.UUID(user["sub"])
+    if await _has_open_match_task(db, caller_id, inv.id):
+        return True
+    # Matcher retention: the person who performed the match retains detail visibility
+    # even after their task is completed (you can see what you acted on).
+    if inv.matched_by == caller_id:
+        return True
+    # An invoice matched to an agreement is part of that agreement's record,
+    # and that record is gated on epms.agreement.read with no row scope —
+    # the same rule list_invoices applies to the agreement-scoped listing.
+    # Without this the agreement page lists the invoice and clicking it
+    # 404s, which trades an empty list for a dead link.
+    if inv.agreement_id is not None and await has_permission(
+        db, scope["user_id"], scope["role"], "epms.agreement.read"
+    ) and await is_agreement_visible(db, inv.agreement_id, scope):
+        return True
+    return await invoice_crud.is_visible(db, inv, scope)
+
+
 def build_exception_task(inv, reason: str | None, actor_id: uuid.UUID | None) -> Task:
     """Construct (but do not persist/commit/notify) the resolve_exception
     AP-pool task for an invoice.
@@ -458,34 +502,8 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
     scope = await build_scope(db, user)
-    # Access Control Matrix gate — treat absence of view_invoice as not-found.
-    if not scope["perms"].get("view_invoice", False):
+    if not await _can_read_invoice(db, user, inv, scope):
         raise HTTPException(status_code=404, detail="Invoice not found")
-    if scope["restrict"]:
-        caller_id = uuid.UUID(user["sub"])
-        if await _has_open_match_task(db, caller_id, invoice_id):
-            await _attach_match_assignees(db, [inv])
-            await invoice_crud.attach_claimed_receipts(db, [inv])
-            return inv
-        # Matcher retention: the person who performed the match retains detail visibility
-        # even after their task is completed (you can see what you acted on).
-        if inv.matched_by == caller_id:
-            await _attach_match_assignees(db, [inv])
-            await invoice_crud.attach_claimed_receipts(db, [inv])
-            return inv
-        # An invoice matched to an agreement is part of that agreement's record,
-        # and that record is gated on epms.agreement.read with no row scope —
-        # the same rule list_invoices applies to the agreement-scoped listing.
-        # Without this the agreement page lists the invoice and clicking it
-        # 404s, which trades an empty list for a dead link.
-        if inv.agreement_id is not None and await has_permission(
-            db, scope["user_id"], scope["role"], "epms.agreement.read"
-        ) and await is_agreement_visible(db, inv.agreement_id, scope):
-            await _attach_match_assignees(db, [inv])
-            await invoice_crud.attach_claimed_receipts(db, [inv])
-            return inv
-        if not await invoice_crud.is_visible(db, inv, scope):
-            raise HTTPException(status_code=404, detail="Invoice not found")
     await _attach_match_assignees(db, [inv])
     await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
@@ -504,9 +522,7 @@ async def invoice_chain(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUser
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
     scope = await build_scope(db, user)
-    if not scope["perms"].get("view_invoice", False):
-        raise HTTPException(status_code=404, detail="Invoice not found")
-    if scope["restrict"] and not await invoice_crud.is_visible(db, inv, scope):
+    if not await _can_read_invoice(db, user, inv, scope):
         raise HTTPException(status_code=404, detail="Invoice not found")
     return await build_chain(db, inv, can_view_pa=scope["perms"].get("view_pa", False))
 
@@ -1118,13 +1134,15 @@ async def assign_invoice_billing_period(
     match_review with no period, gets approved there without gaining one, and
     then can never be paid ("not linked to a billing period") because /match
     refuses to run twice and the agreement's tolerance is no longer editable.
-    This is the way out of that state, authorised exactly like every other
-    action on this page (_require_invoice_match_access).
+    This is the way out of that state, authorised like every other action on
+    this page (_require_invoice_match_access) — plus the agreement's owner,
+    who can also move a linked invoice to another period.
     """
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    await _require_invoice_match_access(db, user, inv)
+    if not await _is_agreement_owner(db, user, inv):
+        await _require_invoice_match_access(db, user, inv)
     try:
         return await invoice_crud.assign_billing_period(db, inv, body.schedule_id)
     except ValueError as exc:

@@ -19,6 +19,7 @@ import { InvoiceReceiptsPanel } from '@/components/invoices/InvoiceReceiptsPanel
 import { InvoiceBillingPeriodPanel } from '@/components/invoices/InvoiceBillingPeriodPanel'
 import { ResolveExceptionPanel } from '@/components/invoices/ResolveExceptionPanel'
 import { useGr, useGrs } from '@/hooks/useGrs'
+import { useAgreement } from '@/hooks/useAgreements'
 import { useAuthStore } from '@/stores/auth.store'
 import { UnmatchDialog } from './UnmatchDialog'
 import type { UnmatchScope } from '@/hooks/useInvoices'
@@ -141,7 +142,13 @@ export default function InvoiceDetailPage() {
   // be read off the invoice. The chain endpoint already resolves exactly that,
   // so the buttons can say why they are unavailable instead of handing the
   // user a 422 after the fact. Only fetched for people who could act on it.
-  const { data: chain } = useInvoiceChain(canUnmatch ? (id ?? null) : null)
+  // The agreement's owner may move a recurring invoice to another billing
+  // period too (not unmatch it) — same rule as POST /invoices/{id}/billing-period.
+  const { data: recurringAgreement } = useAgreement(
+    inv?.agreement_type === 'recurring' ? (inv.agreement_id ?? '') : '')
+  const isAgreementOwner = !!user?.id && recurringAgreement?.owner_id === user.id
+  const canChangePeriod = canUnmatch || isAgreementOwner
+  const { data: chain } = useInvoiceChain(canChangePeriod ? (id ?? null) : null)
   const updateInvoice = useUpdateInvoice()
 
   // Tax lines are the source of truth for the header tax when present: the
@@ -1143,7 +1150,7 @@ export default function InvoiceDetailPage() {
                       raised on it — same PA rule as Unmatch above. */}
                   <InvoiceBillingPeriodPanel
                     invoice={inv}
-                    canChange={canUnmatch}
+                    canChange={canChangePeriod}
                     changeBlockedReason={
                       inv.status === 'approved' || inv.status === 'paid'
                         ? `This invoice has already entered payment (status "${inv.status}"), so its billing period is fixed.`

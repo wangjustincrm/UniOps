@@ -63,7 +63,8 @@ values:
         be given again.
       - >-
         An invoice in the wrong period can be moved from the invoice page
-        (Change period) until a payment application is raised on it.
+        (Change period) until a payment application is raised on it — by AP
+        or by the agreement's owner.
 
   - value: milestone
     label: Milestone
