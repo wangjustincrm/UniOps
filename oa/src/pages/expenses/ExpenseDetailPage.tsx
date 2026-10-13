@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useDocTabTitle } from '@/components/BackLink'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
-import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Banknote, AlertTriangle, Paperclip, Upload, Download, Trash2, Circle, Clock } from 'lucide-react'
+import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Banknote, AlertTriangle, Paperclip, Upload, Download, Trash2, Circle, Clock, FileText } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { STATUS, ACTION, isEditable, isInApproval } from '@/lib/status'
@@ -122,11 +122,21 @@ const ACTION_LABELS: Record<string, string> = {
 
 // ── Attachments card ──────────────────────────────────────────────────────────
 
-function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: boolean }) {
+function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
+  claimId: string; canUpload: boolean
+  // Approved / paid claims: the PDF with the approval record is filed here at
+  // approval; this rebuilds it (backfill, failed first attempt, name changes).
+  canRegeneratePdf: boolean
+}) {
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
+
+  const regenPdf = useMutation({
+    mutationFn: () => api.post(`/api/v1/expenses/${claimId}/regenerate-pdf`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['expense-attachments', claimId] }),
+  })
 
   const { data: attachments = [] } = useQuery<Attachment[]>({
     queryKey: ['expense-attachments', claimId],
@@ -184,6 +194,18 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
           <Paperclip className="h-4 w-4 text-neutral-400" />
           Attachments {attachments.length > 0 && `(${attachments.length})`}
         </h2>
+        <div className="flex items-center gap-4">
+        {canRegeneratePdf && (
+          <button
+            type="button"
+            disabled={regenPdf.isPending}
+            onClick={() => regenPdf.mutate()}
+            className="flex items-center gap-1.5 text-xs font-medium text-primary-700 hover:text-primary-900 disabled:opacity-50"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            {regenPdf.isPending ? 'Generating…' : 'Regenerate PDF'}
+          </button>
+        )}
         {canUpload && (
           <button
             type="button"
@@ -195,6 +217,7 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
             {uploading ? 'Uploading…' : 'Upload file'}
           </button>
         )}
+        </div>
         <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange}
           accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.csv,.doc,.docx" />
       </div>
@@ -202,6 +225,11 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
       {uploadError && (
         <div className="mx-5 mt-3">
           <ErrorBanner message={uploadError} />
+        </div>
+      )}
+      {regenPdf.isError && (
+        <div className="mx-5 mt-3">
+          <ErrorBanner message={regenPdf.error instanceof Error ? regenPdf.error.message : 'PDF generation failed'} />
         </div>
       )}
 
@@ -697,7 +725,13 @@ export default function ExpenseDetailPage() {
       )}
 
       {/* Attachments */}
-      <AttachmentsCard claimId={claim.id} canUpload={isEditable(claim.status)} />
+      <AttachmentsCard
+        claimId={claim.id}
+        canUpload={isEditable(claim.status)}
+        // TRA keeps its own button on the Travel Application card.
+        canRegeneratePdf={claim.claim_type !== 'TRA'
+          && (claim.status === STATUS.APPROVED || claim.status === STATUS.PAID)}
+      />
       </div>
 
       {/* Right: approval chain + history */}

@@ -5,10 +5,10 @@
  * selected (cost_center, fiscal_year) scope. Replaces the old /budget/summary
  * aggregation that lived in epms-api.
  *
- * Actual is NC posted throughout — the cards, the cells and the over-budget
- * marks — or, with "Include unposted vouchers" ticked, NC posted plus what NC
- * holds but has not tallied yet (a month still being closed reads nearly empty
- * otherwise). One flag drives every NC read on the page, drills and export too. budget-api's doc-side `actual_spent` is deliberately not shown: see
+ * Actual is NC posted plus what NC holds but has not tallied yet — the cards,
+ * the cells and the over-budget marks — while "Include unposted vouchers" is
+ * ticked (the default; a month still being closed reads nearly empty
+ * otherwise), or NC posted alone when it is cleared. One flag drives every NC read on the page, drills and export too. budget-api's doc-side `actual_spent` is deliberately not shown: see
  * PlanActualCell.
  */
 import { useState, useMemo, Fragment } from 'react'
@@ -60,7 +60,7 @@ export default function BudgetDashboard() {
   const [ccId, setCcId] = useState<string>('all')
   const [highlightId, setHighlightId] = useState<string | null>(null)
   const [collapsedL1, setCollapsedL1] = useState<Set<string>>(new Set())
-  const [includeUnposted, setIncludeUnposted] = useState(false)
+  const [includeUnposted, setIncludeUnposted] = useState(true)
   const ncLabel = includeUnposted ? 'NC incl. unposted' : 'NC posted'
   const [exporting, setExporting] = useState(false)
   const handleExport = async () => {

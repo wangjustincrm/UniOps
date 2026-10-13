@@ -140,24 +140,25 @@ def describe() -> dict:
             ),
         },
         "posted_only": (
-            "By default only vouchers NC has tallied (记账) count. An untallied "
-            "voucher is a draft in our mirror and colours nothing — so a month "
-            "finance is still closing reads nearly empty until NC tallies it."
+            "With the checkbox cleared only vouchers NC has tallied (记账) "
+            "count. An untallied voucher is a draft in our mirror and then "
+            "colours nothing — so a month finance is still closing reads nearly "
+            "empty until NC tallies it."
         ),
         # The checkbox on both budget pages. States derived from the filter
         # itself (fiscal.status_filter), not restated.
         "include_unposted_option": {
             "where": "Budget Dashboard and Finance Budget Actual — checkbox "
-                     "'Include unposted vouchers', off by default",
+                     "'Include unposted vouchers', ticked by default",
             "adds": (
                 "Vouchers NC holds but has not tallied yet, with statuses "
                 f"{list(UNPOSTED)} in our mirror — only while NC still holds "
                 f"them as '{LIVE_NC_STATE}'. Discarded, temp-saved, errored and "
                 "deleted-in-NC vouchers never count."
             ),
-            "not_used_by": (
-                "The PR over-budget check. It is always judged on tallied "
-                "vouchers only, whatever a page is showing."
+            "pr_over_budget_check": (
+                "The PR over-budget check always counts these too, whatever a "
+                "page is showing — it is never judged on tallied vouchers alone."
             ),
         },
         "value": (

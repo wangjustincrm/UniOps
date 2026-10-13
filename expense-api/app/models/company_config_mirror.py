@@ -1,6 +1,7 @@
 """Read-only mirror of EPMS company_config — used for GM/OPM department mapping."""
 import uuid
 
+from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,6 +13,8 @@ class EpmsCompanyConfig(Base):
     __tablename__ = "company_config"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    # Company name — the header of the approved-claim PDF (services/claim_pdf).
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     dept_gm_opm_mapping: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     # action_key → ordered list of steps [{id, role, label}]; drives OA approval
     # participation visibility (req 1) and the claim approval-status list (req 2).

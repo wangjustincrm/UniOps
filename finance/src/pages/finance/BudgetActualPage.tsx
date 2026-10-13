@@ -72,7 +72,9 @@ export default function BudgetActualPage() {
   const [jvId, setJvId] = useState<string | null>(null)
   // One basis for every panel on the page: a summary on one basis over a
   // composition on another would not add up to the row that was clicked.
-  const [includeUnposted, setIncludeUnposted] = useState(false)
+  // Ticked by default: a month still being closed reads nearly empty on
+  // tallied vouchers alone.
+  const [includeUnposted, setIncludeUnposted] = useState(true)
 
   const { data: perms } = useQuery({
     queryKey: ['jv-permissions'],

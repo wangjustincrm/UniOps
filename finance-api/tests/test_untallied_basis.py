@@ -11,7 +11,8 @@ What has to hold:
   2. Unposted means a voucher NC still holds as normal. The mirror also keeps
      drafts NC has discarded or deleted since import; counting those would
      report spend that will never be booked.
-  3. Off by default, and the PR over-budget criterion never takes it.
+  3. The PR over-budget criterion always takes it (user, 2026-10-12), and
+     cannot be talked out of it by a query parameter.
   4. Every read behind one page moves together, so a figure and its
      composition still add up on the unposted basis.
 """
@@ -163,7 +164,7 @@ async def test_month_grid_follows_the_basis(db_session, mixed):
         assert sum(Decimal(d["actual"]) for d in rows) == want, include
 
 
-# ── 3: the PR criterion never takes it ───────────────────────────────────────
+# ── 3: the PR criterion always takes it ───────────────────────────────────────
 
 @pytest_asyncio.fixture
 async def client(db_session):
@@ -182,16 +183,20 @@ def _token(role: str, sub=None) -> str:
         settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-async def test_budget_check_criterion_ignores_unposted(client, mixed):
+async def test_budget_check_criterion_counts_unposted(client, mixed):
+    """100 posted + 7 live draft. The discarded / deleted / temp-saved drafts and
+    the reversed voucher (15,000 between them) stay out — that is the filter
+    the criterion leans on. A caller asking for the posted basis gets the same
+    answer: the parameter does not exist on this endpoint."""
     params = {"fiscal_year": 2026, "cost_center_id": str(mixed["cc_a"]),
               "account_id": str(mixed["income_expense_item_id"])}
     h = {"Authorization": f"Bearer {_token('admin')}"}
     plain = await client.get("/finance/v1/gl/nc-actual-for-budget-check",
                              params=params, headers=h)
     asked = await client.get("/finance/v1/gl/nc-actual-for-budget-check",
-                             params={**params, "include_unposted": "true"}, headers=h)
+                             params={**params, "include_unposted": "false"}, headers=h)
     assert plain.status_code == asked.status_code == 200
-    assert Decimal(plain.json()["actual"]) == Decimal(asked.json()["actual"]) == Decimal("100.00")
+    assert Decimal(plain.json()["actual"]) == Decimal(asked.json()["actual"]) == Decimal("107.00")
 
 
 async def test_dashboard_endpoint_passes_the_flag_through(client, mixed):

@@ -104,12 +104,13 @@ notes:
     NC posted means tallied (记账) in NC. While finance is still closing a month,
     most of that month's vouchers are entered but not yet tallied, so the month
     reads nearly empty — and can even read negative, when a reversal of last
-    month's accrual is tallied before this month's real costs are. Ticking
-    "Include unposted vouchers" at the top of the page adds the entered but
-    untallied vouchers (only ones NC still holds as normal; discarded or deleted
-    ones never count), and the over-budget colouring, alert cards, vendor drill
-    and export follow it. It is off by default and only changes this view: a
-    PR's over-budget check is always judged on tallied vouchers.
+    month's accrual is tallied before this month's real costs are. So
+    "Include unposted vouchers" at the top of the page is ticked by default: it
+    adds the entered but untallied vouchers (only ones NC still holds as normal;
+    discarded or deleted ones never count), and the over-budget colouring, alert
+    cards, vendor drill and export follow it. Clear it to see tallied vouchers
+    only. Clearing it only changes this view: a PR's over-budget check always
+    counts the untallied vouchers too.
   - >-
     With no cost centre selected the grid adds up every cost centre that has a
     current approved budget for the year — so a cost centre whose plan was never
@@ -117,8 +118,8 @@ notes:
 
 when_a_cell_looks_wrong: >-
   Check them in this order. Is the month still being closed — if NC has not
-  tallied it yet the actual is mostly missing; tick "Include unposted vouchers"
-  to see it. Is the plan there at all — an unapproved or
+  tallied it yet the actual is mostly missing unless "Include unposted
+  vouchers" is ticked (it is by default, but someone may have cleared it). Is the plan there at all — an unapproved or
   superseded plan shows as no plan. Is the cost on the right month — NC uses the
   voucher's fiscal period, not the day anyone typed it. Is it charged to the
   right cost centre — that is the mapping rule, and the map is a short list you
