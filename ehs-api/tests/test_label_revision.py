@@ -198,6 +198,8 @@ class TestTheLabelFitsWhatIsOnIt:
             assert f"Hazard number {i}" in text, f"statement {i} was dropped"
 
     def test_the_sizes_are_offered_and_differ(self):
+        from reportlab.lib.units import inch
+
         from app.services import label_pdf
 
         codes = [s.code for s in label_pdf.SIZES]
@@ -205,26 +207,75 @@ class TestTheLabelFitsWhatIsOnIt:
         # The default is to fit rather than to pick one.
         assert label_pdf.DEFAULT_SIZE == label_pdf.FIT
         assert label_pdf.CHOICES[0] == label_pdf.FIT
-        # Four small labels to a sheet, one large one.
-        assert label_pdf.BY_SIZE["bottle"].per_page == 4
+        # ★ Round 6, TC-09: the small one is 4 × 6 in label stock, one to a
+        # page — the page is the label, which is what a label printer prints.
+        small = label_pdf.BY_SIZE["bottle"]
+        assert small.page == (6 * inch, 4 * inch) and small.per_page == 1
         assert label_pdf.BY_SIZE["sheet"].per_page == 1
 
-    def test_too_much_for_a_bottle_is_refused_by_name(self):
-        """★ The point of the change. It used to cut it off silently."""
-        import pytest as _pytest
+    def test_the_small_label_always_prints_everything(self):
+        """★ Round 6, TC-09: "regardless of the information on the SDS, the
+        whmis requirements say the label must be on workplace bottles." Chosen
+        by name, the small label shrinks the type rather than refusing — and
+        drops nothing."""
+        from reportlab.lib.units import inch
 
         from app.services import label_pdf
 
         many = [{"code": f"H3{i:02d}",
                  "text": f"Hazard number {i}, spelled out at the length these actually run to"}
                 for i in range(1, 15)]
+        pdf, used = label_pdf.render(self._label(hazard_statements=many),
+                                     chemical_id="abc", copies=1, size="bottle")
+        assert used.code == "bottle"
+        text = _pdf_text(pdf)
+        for i in range(1, 15):
+            assert f"Hazard number {i}," in text, f"statement {i} was dropped"
+        assert f"/MediaBox [ 0 0 {6 * inch:g} {4 * inch:g} ]".encode() in pdf \
+            or b"/MediaBox [ 0 0 432 288 ]" in pdf, "the page is the 4 x 6 label"
+
+    def test_too_much_for_a_drum_is_still_refused_by_name(self):
+        """The other sizes keep their floor: below it a statement is not
+        readable at arm's length, and the answer is a bigger label."""
+        import pytest as _pytest
+
+        from app.services import label_pdf
+
+        many = [{"code": f"H3{i:02d}",
+                 "text": f"Hazard number {i}, spelled out at the length these actually run to"}
+                for i in range(1, 40)]
         with _pytest.raises(label_pdf.LabelTooLarge) as caught:
             label_pdf.render(self._label(hazard_statements=many),
-                             chemical_id="abc", copies=1, size="bottle")
+                             chemical_id="abc", copies=1, size="drum")
         said = str(caught.value)
-        assert "does not fit" in said
-        assert "14 hazard statements" in said, said
+        assert "does not fit" in said and "39 hazard statements" in said, said
         assert "mm more" in said, "it must say how much does not fit"
+
+    def test_fit_does_not_shrink_the_small_label_below_readable(self):
+        """"Fit automatically" moves up a size while the type is readable; only
+        the small label chosen by name goes smaller."""
+        from app.services import label_pdf
+
+        many = [{"code": f"H3{i:02d}",
+                 "text": f"Hazard number {i}, spelled out at the length these actually run to"}
+                for i in range(1, 31)]
+        _, used = label_pdf.render(self._label(hazard_statements=many),
+                                   chemical_id="abc", copies=1, size=label_pdf.FIT)
+        assert used.code in ("drum", "sheet")
+        # …while the same content, asked for on the small label, is all there.
+        pdf, small = label_pdf.render(self._label(hazard_statements=many),
+                                      chemical_id="abc", copies=1, size="bottle")
+        assert small.code == "bottle" and "Hazard number 30," in _pdf_text(pdf)
+
+    def test_the_manufacturer_and_how_to_reach_them(self):
+        """Round 6, TC-09: "the manufacturer's name contact must be shown." """
+        from app.services import label_pdf
+
+        lbl = self._label(supplier="Acme Chemicals Ltd")
+        lbl.supplier_contact = "1-800-555-0100, 12 Industrial Rd, Kingston ON"
+        text = _pdf_text(label_pdf.render(lbl, chemical_id="abc", copies=1, size="bottle")[0])
+        assert "MANUFACTURER" in text
+        assert "Acme Chemicals Ltd" in text and "1-800-555-0100" in text
 
     def test_the_same_content_fits_the_large_label(self):
         """The admission beside the refusal: the answer is a bigger label, and
@@ -259,7 +310,9 @@ class TestTheLabelFitsWhatIsOnIt:
             chemical_id="abc", copies=1, size=label_pdf.FIT)
         assert small.code == "bottle"
 
-        # The real one: it steps up rather than refusing or truncating.
+        # The real one — six hazard statements and eight precautionary — fits
+        # whichever stock it picks without refusing or truncating. (Since round
+        # 6 the small stock is 4 × 6 in and often holds it.)
         many_h = [{"code": f"H3{i:02d}", "text": f"Hazard {i} spelled out as these run"}
                   for i in range(6)]
         many_p = [{"code": f"P2{i:02d}", "text": f"Precaution {i} spelled out as these run"}
@@ -267,7 +320,7 @@ class TestTheLabelFitsWhatIsOnIt:
         pdf, used = label_pdf.render(
             self._label(hazard_statements=many_h, precautionary_statements=many_p),
             chemical_id="abc", copies=1, size=label_pdf.FIT)
-        assert used.code in ("drum", "sheet")
+        assert used.code in [sz.code for sz in label_pdf.SIZES]
         text = _pdf_text(pdf)
         assert "Hazard 5" in text and "Precaution 7" in text, (
             "fitting must not mean dropping the tail of the list")
@@ -332,23 +385,25 @@ class TestThePictogramsStayOutOfTheQrCode:
             approved_at=_date(2026, 10, 5), approved_by_name="Marie Tremblay",
         )
 
-    def test_eight_pictograms_do_not_reach_the_qr_column(self):
-        """Measured on the drawing, not eyeballed: every pictogram's right edge
-        has to stop short of where the QR starts — on every size of label, since
-        the small one has the least room to spare."""
+    def test_eight_pictograms_sit_under_the_code_and_clear_of_the_words(self):
+        """Measured on the drawing, not eyeballed. Round 6, TC-09: "to save room,
+        move the hazard pictogram to beside or under the qr code." So every
+        pictogram is in the right-hand column — clear of the words — and below
+        the code, and inside the label, on every size."""
         from reportlab.lib.pagesizes import A4, landscape  # noqa: F401
         from reportlab.lib.units import mm
         from reportlab.pdfgen import canvas as pdfcanvas
 
         from app.services import label_pdf
 
-        drawn: list[tuple[float, float]] = []
+        drawn: list[tuple[float, float, float]] = []
         original = label_pdf._pictogram
 
         def spy(c, x, y, side, artwork, name):
-            drawn.append((x, side))
+            drawn.append((x, y, side))
             return original(c, x, y, side, artwork, name)
 
+        top = 600.0
         for size in label_pdf.SIZES:
             drawn.clear()
             label_pdf._pictogram = spy
@@ -357,21 +412,23 @@ class TestThePictogramsStayOutOfTheQrCode:
                 c = pdfcanvas.Canvas(buf, pagesize=landscape(A4))
                 label_pdf._one_label(
                     c, self._label([f"GHS0{i}" for i in range(1, 9)]), "abc",
-                    600.0, None, size=size, scale=size.scale, draw=True)
+                    top, None, size=size, scale=size.scale, draw=True)
             finally:
                 label_pdf._pictogram = original
 
             assert len(drawn) == 8, (
                 f"{size.code}: all eight must be drawn, not silently dropped")
-            # From the same constant the layout uses, so a change to the QR
-            # moves the assertion with it rather than leaving it asserting the
-            # old geometry.
-            qr_left = (label_pdf.MARGIN_X + size.width
-                       - label_pdf.QR_SIDE * size.scale - 6 * mm)
-            for x, side in drawn:
-                assert x + side <= qr_left + 0.5, (
-                    f"{size.code}: a pictogram reaches {(x + side) / mm:.0f} mm, "
-                    f"the QR starts at {qr_left / mm:.0f} mm")
+            # From the same constants the layout uses.
+            s_ = size.scale
+            pict = 20 * mm * s_
+            right_w = max(label_pdf.QR_SIDE * s_, 2 * pict + 2.5 * mm * s_)
+            right_x = label_pdf.MARGIN_X + size.width - right_w - 6 * mm
+            qr_bottom = top - 12 * mm * s_ - label_pdf.QR_SIDE * s_
+            for x, y, side in drawn:
+                assert x >= right_x - 0.5, f"{size.code}: a pictogram is over the words"
+                assert y + side <= qr_bottom + 0.5, f"{size.code}: a pictogram is over the code"
+                assert x + side <= label_pdf.MARGIN_X + size.width + 0.5, (
+                    f"{size.code}: a pictogram is off the label")
 
     def test_they_are_all_still_on_the_label(self):
         """★ The admission beside it: wrapping must not be a quiet cap by another

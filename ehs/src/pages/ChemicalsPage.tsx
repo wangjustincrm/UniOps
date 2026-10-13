@@ -48,6 +48,7 @@ interface Sheet {
 interface Chemical {
   id: string; chemical_no: string; name: string; product_name: string | null
   manufacturer: string | null; supplier: string | null; product_code: string | null
+  manufacturer_contact: string | null
   hazard_classes: { id: string | null; label: string }[]
   signal_word: string | null; physical_state: string | null
   location_id: string | null; location_path: string | null; department_name: string | null
@@ -59,6 +60,7 @@ interface Chemical {
 interface Label {
   id: string; chemical_id: string; product_identifier: string
   supplier: string | null
+  supplier_contact: string | null
   signal_word: string | null; pictograms: string[]
   first_aid: string | null; ppe_note: string | null
   hazard_statements: { code: string | null; text: string }[]
@@ -486,6 +488,7 @@ function Detail({ chemical, mayManage }: { chemical: Chemical; mayManage: boolea
         </Row>
         <Row label="Stored">{chemical.storage_note ?? chemical.location_path ?? '—'}</Row>
         <Row label="Supplier">{chemical.supplier ?? chemical.manufacturer ?? '—'}</Row>
+        <Row label="Manufacturer contact">{chemical.manufacturer_contact ?? '—'}</Row>
         <Row label="Product code">{chemical.product_code ?? '—'}</Row>
       </dl>
 
@@ -584,6 +587,7 @@ function LabelEditor({ label, onClose }: { label: Label; onClose: () => void }) 
   const queryClient = useQueryClient()
   const [productIdentifier, setProductIdentifier] = useState(label.product_identifier)
   const [supplier, setSupplier] = useState(label.supplier ?? '')
+  const [contact, setContact] = useState(label.supplier_contact ?? '')
   const [signalWord, setSignalWord] = useState(label.signal_word ?? '')
   const [pictograms, setPictograms] = useState<string[]>(label.pictograms ?? [])
   const [hazards, setHazards] = useState(label.hazard_statements ?? [])
@@ -601,6 +605,7 @@ function LabelEditor({ label, onClose }: { label: Label; onClose: () => void }) 
     mutationFn: () => api.patch(`/api/v1/labels/${label.id}`, {
       product_identifier: productIdentifier,
       supplier: supplier || null,
+      supplier_contact: contact || null,
       signal_word: signalWord || null,
       pictograms,
       // Blank rows are the ordinary result of adding one and changing your
@@ -632,9 +637,14 @@ function LabelEditor({ label, onClose }: { label: Label; onClose: () => void }) 
           <input className={inputClass} value={productIdentifier}
                  onChange={(e) => setProductIdentifier(e.target.value)} />
         </Field>
-        <Field label="Supplier">
+        <Field label="Manufacturer">
           <input className={inputClass} value={supplier}
                  onChange={(e) => setSupplier(e.target.value)} />
+        </Field>
+        {/* ★ Round 6, TC-09: "the manufacturer's name contact must be shown." */}
+        <Field label="Manufacturer contact" hint="Phone, address — as the data sheet gives it">
+          <input className={inputClass} value={contact}
+                 onChange={(e) => setContact(e.target.value)} />
         </Field>
         <Field label="Signal word" hint="GHS allows only these two, or neither">
           <select className={inputClass} value={signalWord}
@@ -1110,6 +1120,7 @@ function ChemicalForm({ existing, onClose }: { existing?: Chemical; onClose: () 
   const editing = Boolean(existing)
   const [name, setName] = useState(existing?.name ?? '')
   const [manufacturer, setManufacturer] = useState(existing?.manufacturer ?? '')
+  const [manufacturerContact, setManufacturerContact] = useState(existing?.manufacturer_contact ?? '')
   const [productCode, setProductCode] = useState(existing?.product_code ?? '')
   const [locationId, setLocationId] = useState<string | null>(existing?.location_id ?? null)
   const [hazardIds, setHazardIds] = useState<string[]>(
@@ -1125,6 +1136,7 @@ function ChemicalForm({ existing, onClose }: { existing?: Chemical; onClose: () 
   const body = () => ({
     name,
     manufacturer: manufacturer || null,
+    manufacturer_contact: manufacturerContact || null,
     product_code: productCode || null,
     location_id: locationId,
     hazard_classes: hazardIds.map((id) => ({ id, label: hazardLabels[id] ?? '' })),
@@ -1225,6 +1237,10 @@ function ChemicalForm({ existing, onClose }: { existing?: Chemical; onClose: () 
         <Field label="Manufacturer or supplier">
           <input className={inputClass} value={manufacturer}
                  onChange={(e) => setManufacturer(e.target.value)} />
+        </Field>
+        <Field label="Manufacturer contact" hint="Phone, address — printed on the label">
+          <input className={inputClass} value={manufacturerContact}
+                 onChange={(e) => setManufacturerContact(e.target.value)} />
         </Field>
         <Field label="Where it is kept">
           <LocationSelect value={locationId} onChange={(id) => setLocationId(id)} />

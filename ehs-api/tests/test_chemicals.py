@@ -172,3 +172,25 @@ async def test_retiring_a_product_stops_its_review_clock(hse_manager, db_session
         "select evidence_note from ehs_statutory_deadlines where source_id = :s"),
         {"s": sheet_id})).scalar()
     assert note == "Product no longer kept on site"
+
+
+async def test_the_manufacturer_and_their_contact_reach_the_label(hse_manager):
+    """Round 6, TC-09: "the manufacturer's name contact must be shown." Kept on
+    the chemical, carried onto a new label, editable there before approval."""
+    _, client = hse_manager
+    chem = (await client.post("/api/v1/chemicals", json={
+        "name": "Bleach 12%", "manufacturer": "Acme Chemicals Ltd", "supplier": "A distributor",
+        "manufacturer_contact": "1-800-555-0100"})).json()
+    assert chem["manufacturer_contact"] == "1-800-555-0100"
+
+    draft = await client.post(f"/api/v1/chemicals/{chem['id']}/labels")
+    assert draft.status_code in (200, 201), draft.text
+    label = draft.json()
+    # The maker, not whoever sold it, and how to reach them.
+    assert label["supplier"] == "Acme Chemicals Ltd"
+    assert label["supplier_contact"] == "1-800-555-0100"
+
+    fixed = await client.patch(f"/api/v1/labels/{label['id']}",
+                               json={"supplier_contact": "1-800-555-0199"})
+    assert fixed.status_code == 200, fixed.text
+    assert fixed.json()["supplier_contact"] == "1-800-555-0199"

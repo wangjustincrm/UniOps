@@ -43,6 +43,7 @@ class Statement(BaseModel):
 class LabelPatch(BaseModel):
     product_identifier: str | None = Field(default=None, max_length=250)
     supplier: str | None = Field(default=None, max_length=200)
+    supplier_contact: str | None = Field(default=None, max_length=300)
     signal_word: str | None = Field(default=None, pattern="^(Danger|Warning)$")
     pictograms: list[str] | None = None
     hazard_statements: list[Statement] | None = None
@@ -59,6 +60,7 @@ class LabelOut(BaseModel):
     sds_id: uuid.UUID | None
     product_identifier: str
     supplier: str | None
+    supplier_contact: str | None = None
     signal_word: str | None
     pictograms: list
     hazard_statements: list

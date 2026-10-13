@@ -70,7 +70,9 @@ async def draft_from_chemical(
         chemical_id=chemical.id,
         sds_id=sheet.id if sheet else None,
         product_identifier=chemical.product_name or chemical.name,
-        supplier=chemical.supplier or chemical.manufacturer,
+        # The maker first: round 6 asked for "the manufacturer's name contact".
+        supplier=chemical.manufacturer or chemical.supplier,
+        supplier_contact=chemical.manufacturer_contact,
         signal_word=chemical.signal_word,
         pictograms=[h.get("label") for h in (chemical.hazard_classes or [])
                     if isinstance(h, dict) and h.get("label")],

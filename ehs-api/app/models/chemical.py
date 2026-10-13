@@ -40,6 +40,9 @@ class Chemical(UUIDPrimaryKey, TimestampMixin, Base):
     product_name: Mapped[str | None] = mapped_column(String(250), nullable=True)
     manufacturer: Mapped[str | None] = mapped_column(String(200), nullable=True)
     supplier: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # How to reach the manufacturer — phone, address — as the data sheet gives
+    # it. Round 6: "the manufacturer's name contact must be shown" on the label.
+    manufacturer_contact: Mapped[str | None] = mapped_column(String(300), nullable=True)
     product_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     # GHS hazard classes, as a list of {id, label} taken from the vocabulary.

@@ -38,6 +38,8 @@ class ChemicalLabel(UUIDPrimaryKey, TimestampMixin, Base):
 
     product_identifier: Mapped[str] = mapped_column(String(250), nullable=False)
     supplier: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Round 6: how to reach them, printed beside the name.
+    supplier_contact: Mapped[str | None] = mapped_column(String(300), nullable=True)
     signal_word: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # [{code, text}] — H-statements. Codes are kept beside the wording because
     # the code is what a responder looks up and the wording is what is read.

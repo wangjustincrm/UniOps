@@ -95,6 +95,7 @@ async def create_chemical(db: AsyncSession, payload: dict) -> Chemical:
         product_name=payload.get("product_name"),
         manufacturer=payload.get("manufacturer"),
         supplier=payload.get("supplier"),
+        manufacturer_contact=payload.get("manufacturer_contact"),
         product_code=payload.get("product_code"),
         hazard_classes=payload.get("hazard_classes") or [],
         signal_word=payload.get("signal_word"),

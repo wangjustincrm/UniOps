@@ -39,6 +39,7 @@ class ChemicalIn(BaseModel):
     product_name: str | None = Field(default=None, max_length=250)
     manufacturer: str | None = Field(default=None, max_length=200)
     supplier: str | None = Field(default=None, max_length=200)
+    manufacturer_contact: str | None = Field(default=None, max_length=300)
     product_code: str | None = Field(default=None, max_length=80)
     # A product is routinely several of these at once; picking the worst and
     # dropping the rest loses what a first aider needs.
@@ -86,6 +87,7 @@ class ChemicalOut(BaseModel):
     product_name: str | None
     manufacturer: str | None
     supplier: str | None
+    manufacturer_contact: str | None = None
     product_code: str | None
     hazard_classes: list
     signal_word: str | None
