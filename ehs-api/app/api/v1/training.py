@@ -14,14 +14,14 @@ from sqlalchemy import select
 
 from uniops_authz import has_permission
 from app.models.config import EhsConfig
-from app.services import certificate_pdf, training_pdf, training_xlsx
+from app.services import certificate_pdf, materials, training_pdf, training_xlsx
 from app.services.http_headers import content_disposition
 
 from app.crud.incident import _resolve_name
 from app.models.course import CourseMaterial
 from app.models.training import Course
 from app.services.attachments import (
-    MAX_FILE_SIZE, delete_from_file_server, proxy_download, upload_to_file_server,
+    MAX_FILE_SIZE, proxy_download, upload_to_file_server,
 )
 from app.schemas.training import (
     CertificationIn,
@@ -126,8 +126,15 @@ class MaterialOut(BaseModel):
     filename: str
     content_type: str
     file_size: int
+    # Set for a link, in which case there is no file to download. Round 6.
+    url: str | None = None
     uploaded_by_name: str | None
     created_at: datetime
+
+
+class LinkIn(BaseModel):
+    url: str = Field(min_length=1, max_length=2000)
+    title: str | None = Field(default=None, max_length=255)
 
 
 @router.get("/courses/{course_id}/materials", response_model=list[MaterialOut])
@@ -153,27 +160,24 @@ async def add_course_material(
 
     A course is rarely one file — the deck, the handout, the sign-off sheet —
     and uploading a second used to overwrite the first with nothing saying so.
+    Any type but a page or a program, round 6.
     """
     course = await crud.get_course(db, course_id)
-    data = await file.read()
-    if len(data) > MAX_FILE_SIZE:
-        raise HTTPException(413, f"File exceeds {MAX_FILE_SIZE // 1024 // 1024} MB limit")
-    ctype = (file.content_type or "").split(";")[0].strip().lower()
-    if ctype not in COURSE_MATERIAL_TYPES:
-        raise HTTPException(415, f"Unsupported file type '{ctype}'. Allowed: PDF or an image.")
+    return await materials.add_file(
+        db, file, course_id=course.id, user_id=_user_id(user),
+        user_name=await _resolve_name(db, _user_id(user)), token=token)
 
-    name = file.filename or "course material"
-    row = CourseMaterial(
-        id=uuid.uuid4(), course_id=course.id,
-        file_id=await upload_to_file_server(data, name, ctype, "ehs_crs", course.id, token),
-        filename=name, content_type=ctype, file_size=len(data),
-        uploaded_by=_user_id(user),
-        uploaded_by_name=await _resolve_name(db, _user_id(user)),
-    )
-    db.add(row)
-    await db.flush()
-    await db.refresh(row)
-    return row
+
+@router.post("/courses/{course_id}/materials/link", response_model=MaterialOut,
+             status_code=status.HTTP_201_CREATED)
+async def add_course_link(
+    course_id: uuid.UUID, payload: LinkIn, db: SessionDep, user: CanWriteTraining,
+):
+    """A link — to a video, a site, a document kept elsewhere. Round 6."""
+    course = await crud.get_course(db, course_id)
+    return await materials.add_link(
+        db, payload.url, payload.title, course_id=course.id, user_id=_user_id(user),
+        user_name=await _resolve_name(db, _user_id(user)))
 
 
 @router.get("/courses/{course_id}/materials/{material_id}")
@@ -184,6 +188,8 @@ async def download_course_material_item(
     row = await db.get(CourseMaterial, material_id)
     if row is None or row.course_id != course_id:
         raise HTTPException(404, "No such material on this course")
+    if row.file_id is None:
+        raise HTTPException(409, f"{row.filename} is a link: {row.url}")
     return await proxy_download(row.file_id, token)
 
 
@@ -196,8 +202,8 @@ async def remove_course_material(
     row = await db.get(CourseMaterial, material_id)
     if row is None or row.course_id != course_id:
         raise HTTPException(404, "No such material on this course")
-    await delete_from_file_server(row.file_id, token)
-    await db.delete(row)
+    # ★ Sessions hold the same file; it is deleted only when none of them does.
+    await materials.remove(db, row, token)
 
 
 @router.get("/courses/{course_id}/material")

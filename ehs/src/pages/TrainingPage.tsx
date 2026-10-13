@@ -10,7 +10,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CalendarDays, Plus, Printer, Sheet, Upload, X, Paperclip } from 'lucide-react'
-import { api, apiBlob, openFile, useFileOpener } from '@/lib/api'
+import MaterialsList from '@/components/MaterialsList'
+import { api, apiBlob, useFileOpener } from '@/lib/api'
 import { Pagination, SearchBox, useListView, DateRangeFilter, useDateFilter } from '@/components/ListView'
 import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -751,10 +752,6 @@ function Certificate({ record, mayWrite }: { record: Record_; mayWrite: boolean 
   )
 }
 
-interface Material {
-  id: string; filename: string; content_type: string; file_size: number
-  uploaded_by_name: string | null; created_at: string
-}
 
 /**
  * Everything attached to a course.
@@ -799,85 +796,11 @@ function CourseQuiz({ quiz }: { quiz: QuizSummary }) {
 }
 
 function CourseMaterial({ course, mayWrite }: { course: Course; mayWrite: boolean }) {
-  const queryClient = useQueryClient()
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const materials = useQuery({
-    queryKey: ['course-materials', course.id],
-    queryFn: () => api.get<Material[]>(`/api/v1/training/courses/${course.id}/materials`),
-  })
-  const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: ['course-materials', course.id] })
-
-  const upload = useMutation({
-    mutationFn: (file: File) => {
-      const body = new FormData()
-      body.append('file', file)
-      return api.upload(`/api/v1/training/courses/${course.id}/materials`, body)
-    },
-    onSuccess: refresh,
-  })
-  const remove = useMutation({
-    mutationFn: (materialId: string) =>
-      api.del(`/api/v1/training/courses/${course.id}/materials/${materialId}`),
-    onSuccess: refresh,
-  })
-
-  // ★ "No material attached" is what the third round reported as the
-  // instructor not being able to open the files — so a failure to load them
-  // must not look the same as there being none.
-  const files = materials.data ?? []
-  if (!mayWrite && files.length === 0 && !materials.isError) return null
-
+  // ★ Round 6: any file but a page or a program, and links. One list for the
+  // course and its sessions — see MaterialsList.
   return (
-    <span className="flex flex-col gap-0.5 text-xs text-neutral-600">
-      {materials.isError ? (
-        <span className="text-warning-700">Could not load this course's material</span>
-      ) : files.length === 0 ? (
-        <span className="text-neutral-500">No material</span>
-      ) : null}
-      {/* ★ The filename was all there was. Uploading, listing and removing
-          were built and opening was not, so an instructor could see that the
-          handout existed and could not read it — which is the only thing they
-          wanted it for. */}
-      {files.map((m) => (
-        <span key={m.id} className="flex items-center gap-1.5">
-          <Paperclip className="h-3.5 w-3.5 shrink-0 text-neutral-400" aria-hidden />
-          <button
-            type="button"
-            onClick={() => openFile(
-              `/api/v1/training/courses/${course.id}/materials/${m.id}`, m.filename)}
-            className="min-w-0 truncate text-left text-primary-700 hover:underline"
-          >
-            {m.filename}
-          </button>
-          {mayWrite && (
-            <button type="button" aria-label={`Remove ${m.filename}`}
-                    disabled={remove.isPending}
-                    onClick={() => { if (!remove.isPending) remove.mutate(m.id) }}
-                    className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-50">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </span>
-      ))}
-      {mayWrite && (
-        <>
-          <input ref={inputRef} type="file" className="hidden"
-                 accept="application/pdf,image/png,image/jpeg,image/webp"
-                 onChange={(e) => {
-                   const file = e.target.files?.[0]
-                   if (file) upload.mutate(file)
-                   e.target.value = ''
-                 }} />
-          <button type="button" disabled={upload.isPending}
-                  onClick={() => inputRef.current?.click()}
-                  className="self-start rounded-md font-medium text-primary-700 disabled:opacity-40">
-            {upload.isPending ? 'Uploading…' : 'Attach a file'}
-          </button>
-        </>
-      )}
-    </span>
+    <MaterialsList base={`/api/v1/training/courses/${course.id}/materials`}
+                   mayWrite={mayWrite} what="this course" />
   )
 }
 

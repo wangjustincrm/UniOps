@@ -18,6 +18,7 @@ import { ehsRoutes } from '@/app/routes'
 import { Check, Plus, QrCode, Trash2, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import QrPanel from '@/components/QrPanel'
+import MaterialsList from '@/components/MaterialsList'
 import { formatDate, formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useEhsAuth } from '@/store/auth'
@@ -142,6 +143,14 @@ export default function CourseSessionPage() {
         </dl>
         {s.notes && <p className="mt-2 text-sm text-neutral-700">{s.notes}</p>}
         {mayRun && open && <ArrangementsEditor key={s.id} session={s} onSaved={invalidate} />}
+      </Card>
+
+      {/* ★ Round 6, TC-06: a session starts with a copy of its course's
+          material, and whoever runs it can add files and links. */}
+      <Card className="mb-4">
+        <SectionTitle className="mb-1.5">Material</SectionTitle>
+        <MaterialsList base={`/api/v1/course-sessions/${s.id}/materials`}
+                       mayWrite={mayRun} what="this session" />
       </Card>
 
       {s.quiz_id && <QuizCard session={s} mayRun={mayRun} />}

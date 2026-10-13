@@ -22,7 +22,8 @@ import uuid
 from datetime import date, datetime, time
 
 from sqlalchemy import (
-    Date, DateTime, ForeignKey, Integer, String, Text, Time, UniqueConstraint, func,
+    CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text, Time, UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -125,21 +126,38 @@ class CourseEnrolment(UUIDPrimaryKey, TimestampMixin, Base):
 
 
 class CourseMaterial(UUIDPrimaryKey, Base):
-    """One file attached to a course.
+    """One file or link, on a course or on one session of it.
 
     A course is rarely one file — the deck, the handout, the sign-off sheet,
     last year's revision — and the single `material_file_id` on the course row
     could only ever hold the last one uploaded. That column stays, backfilled
     into this table as the first item, so nothing already attached was lost.
+
+    Round 6: a session starts with a copy of its course's material (the same
+    file, referenced again — app.services.materials decides when a file may
+    actually be deleted), and either may hold a link instead of a file, which
+    is how a video too large to upload is attached.
     """
 
     __tablename__ = "ehs_course_materials"
-
-    course_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("ehs_courses.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+    __table_args__ = (
+        CheckConstraint("num_nonnulls(course_id, delivery_id) = 1",
+                        name="ck_ehs_course_material_owner"),
+        CheckConstraint("num_nonnulls(file_id, url) = 1",
+                        name="ck_ehs_course_material_kind"),
     )
-    file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_courses.id", ondelete="CASCADE"),
+        nullable=True, index=True,
+    )
+    delivery_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_course_deliveries.id", ondelete="CASCADE"),
+        nullable=True, index=True,
+    )
+    file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # For a link, what it is called on screen.
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

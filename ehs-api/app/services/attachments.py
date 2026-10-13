@@ -48,6 +48,11 @@ async def upload_to_file_server(
     return uuid.UUID(resp.json()["id"])
 
 
+# What a browser may show in place: none of these can run script.
+INLINE_SAFE = {"application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif",
+               "text/plain", "video/mp4", "video/webm", "audio/mpeg"}
+
+
 async def proxy_download(storage_key: uuid.UUID, bearer_token: str) -> Response:
     """Stream a file back from file-api.
 
@@ -62,11 +67,17 @@ async def proxy_download(storage_key: uuid.UUID, bearer_token: str) -> Response:
     if not resp.is_success:
         raise HTTPException(status_code=502, detail="File server error")
     disposition = resp.headers.get("content-disposition", "")
-    return Response(
-        content=resp.content,
-        media_type=resp.headers.get("content-type", "application/octet-stream"),
-        headers={"Content-Disposition": disposition} if disposition else {},
-    )
+    media_type = resp.headers.get("content-type", "application/octet-stream")
+    # ★ Round 6 opened training material to any file type. Only what cannot
+    # carry script may be shown in place; anything else is handed over as a
+    # download, and the browser is told not to guess otherwise.
+    if media_type.split(";")[0].strip().lower() not in INLINE_SAFE:
+        disposition = "attachment" + (disposition[disposition.find(";"):]
+                                      if ";" in disposition else "")
+    headers = {"X-Content-Type-Options": "nosniff"}
+    if disposition:
+        headers["Content-Disposition"] = disposition
+    return Response(content=resp.content, media_type=media_type, headers=headers)
 
 
 async def fetch_file_bytes(storage_key: uuid.UUID, bearer_token: str) -> bytes | None:

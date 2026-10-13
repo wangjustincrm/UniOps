@@ -20,7 +20,9 @@ from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
 from app.core.permissions import CanReadTraining, CanReportIncident, CanWriteTraining
 from app.crud import course as crud
+from app.models.course import CourseMaterial
 from app.models.quiz import QuizAttempt
+from app.services import materials
 from app.services.attachments import MAX_FILE_SIZE, proxy_download, upload_to_file_server
 from uniops_authz import has_permission
 
@@ -233,6 +235,9 @@ async def create_session(payload: DeliveryIn, db: SessionDep, user: CanWriteTrai
         end_time=payload.end_time, location_text=payload.location_text,
         location_id=payload.location_id, coordinator_id=payload.coordinator_id,
         notes=payload.notes, creator_id=_user_id(user))
+    # ★ Round 6: "When the training session is created, if there are attachments
+    # attached in the training course, transfer a copy over to the session."
+    await materials.copy_course_to_session(db, delivery.course_id, delivery.id)
     return (await _with_counts(db, [delivery]))[0]
 
 
@@ -407,6 +412,94 @@ async def complete_session(delivery_id: uuid.UUID, db: SessionDep, user: CanRepo
 async def cancel_session(delivery_id: uuid.UUID, db: SessionDep, user: CanWriteTraining):  # noqa: ARG001
     delivery = await crud.cancel(db, await crud.get_delivery(db, delivery_id))
     return (await _with_counts(db, [delivery]))[0]
+
+
+# ── This session's material ─────────────────────────────────────────────────
+# Round 6, TC-06: a session starts with a copy of its course's material, and
+# holds files of any type but a page or a program, and links.
+
+class SessionMaterialOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    filename: str
+    content_type: str
+    file_size: int
+    url: str | None = None
+    uploaded_by_name: str | None
+    created_at: datetime
+
+
+class SessionLinkIn(BaseModel):
+    url: str = Field(min_length=1, max_length=2000)
+    title: str | None = Field(default=None, max_length=255)
+
+
+async def _material_on(db, delivery_id: uuid.UUID, material_id: uuid.UUID) -> CourseMaterial:
+    row = await db.get(CourseMaterial, material_id)
+    if row is None or row.delivery_id != delivery_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such material on this session")
+    return row
+
+
+@router.get("/{delivery_id}/materials", response_model=list[SessionMaterialOut])
+async def list_session_materials(delivery_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    delivery = await crud.get_delivery(db, delivery_id)
+    await _require_session_access(db, user, delivery)
+    return list((await db.execute(
+        select(CourseMaterial).where(CourseMaterial.delivery_id == delivery.id)
+        .order_by(CourseMaterial.created_at))).scalars())
+
+
+@router.post("/{delivery_id}/materials", response_model=SessionMaterialOut,
+             status_code=status.HTTP_201_CREATED)
+async def add_session_file(
+    delivery_id: uuid.UUID, file: UploadFile, db: SessionDep, user: CanReportIncident,
+    token: BearerToken,
+):
+    delivery = await crud.get_delivery(db, delivery_id)
+    await _require_roster_rights(db, user, delivery)
+    uid = _user_id(user)
+    return await materials.add_file(
+        db, file, delivery_id=delivery.id, user_id=uid,
+        user_name=await crud._name(db, uid), token=token)
+
+
+@router.post("/{delivery_id}/materials/link", response_model=SessionMaterialOut,
+             status_code=status.HTTP_201_CREATED)
+async def add_session_link(
+    delivery_id: uuid.UUID, payload: SessionLinkIn, db: SessionDep, user: CanReportIncident,
+):
+    delivery = await crud.get_delivery(db, delivery_id)
+    await _require_roster_rights(db, user, delivery)
+    uid = _user_id(user)
+    return await materials.add_link(
+        db, payload.url, payload.title, delivery_id=delivery.id, user_id=uid,
+        user_name=await crud._name(db, uid))
+
+
+@router.get("/{delivery_id}/materials/{material_id}")
+async def open_session_material(
+    delivery_id: uuid.UUID, material_id: uuid.UUID, db: SessionDep, user: CanReportIncident,
+    token: BearerToken,
+):
+    delivery = await crud.get_delivery(db, delivery_id)
+    await _require_session_access(db, user, delivery)
+    row = await _material_on(db, delivery.id, material_id)
+    if row.file_id is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"{row.filename} is a link: {row.url}")
+    return await proxy_download(row.file_id, token)
+
+
+@router.delete("/{delivery_id}/materials/{material_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_session_material(
+    delivery_id: uuid.UUID, material_id: uuid.UUID, db: SessionDep, user: CanReportIncident,
+    token: BearerToken,
+):
+    delivery = await crud.get_delivery(db, delivery_id)
+    await _require_roster_rights(db, user, delivery)
+    # ★ The course and other sessions may hold the same file.
+    await materials.remove(db, await _material_on(db, delivery.id, material_id), token)
 
 
 @router.post("/{delivery_id}/material", response_model=DeliveryOut)
