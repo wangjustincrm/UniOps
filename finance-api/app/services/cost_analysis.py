@@ -351,6 +351,74 @@ def settlement_events(rows: list[LedgerRow]) -> list[dict]:
     return out
 
 
+def issued_ahead(rows: list[LedgerRow], balances: dict, ia: LedgerRow) -> dict | None:
+    """Was `ia` (an IA tail adjustment) only correcting an issue that NC costed
+    before that month's receipt was booked?
+
+    CS0026 September 2026: the stock was empty, issue I62026090900056119
+    (audit 9046) went out first at the last known price — May's 10.8249 — and
+    the completion receipt (audit 9047) came in afterwards at 7.2834. Quantity
+    was back to zero with -94,440.44 left in value, and NC's month-end
+    「记账异常结存出库调整」 IA2026092900003301 put exactly that back onto the
+    same issue. Net, the consumer took CS0026 at 7.2834 — its real cost. That
+    is a booking-order correction, not a cost problem, and must not be
+    reported as value "moved onto" the consumer.
+
+    `rows` are ONE material's ledger rows in (period, audit_seq) order, as
+    _ledger returns them. Returns None unless all of these hold: the adjusted
+    issue went out when the stock on hand could not cover it, a receipt in the
+    same month was booked after it, and issue + adjustment equals the issued
+    quantity at the month's available unit cost (opening + receipts) within 1%.
+    """
+    issue = next((r for r in rows if r.period == ia.period and r.direction == 1
+                  and r.category != "out_adjust" and r.bill_code == ia.src_code
+                  and r.qty > QTY_EPS), None)
+    if issue is None or issue.audit_seq is None:
+        return None
+    q, a = balances.get((ia.material_code, BALANCE_FLOOR), (D0, D0))
+    open_q = open_a = None
+    on_hand = None
+    in_q = in_a = D0
+    later_receipts = []
+    for r in rows:
+        if r.period > ia.period:
+            break
+        if r.period == ia.period and open_q is None:
+            open_q, open_a = q, a
+        if r is issue:
+            on_hand = q
+        if r.period == ia.period and r.direction == 0:
+            in_q += r.qty
+            in_a += r.amount
+            if (r.audit_seq or 0) > issue.audit_seq and r.qty > QTY_EPS:
+                later_receipts.append(r)
+        sign = 1 if r.direction == 0 else -1
+        q += sign * r.qty
+        a += sign * r.amount
+    if on_hand is None or open_q is None or not later_receipts:
+        return None
+    if on_hand >= issue.qty - QTY_EPS:
+        return None  # the stock covered it — nothing was issued ahead
+    avail_q = open_q + in_q
+    if avail_q <= QTY_EPS:
+        return None
+    true_unit = (open_a + in_a) / avail_q
+    issue_unit = issue.amount / issue.qty
+    corrected_unit = (issue.amount + ia.amount) / issue.qty
+    if abs(corrected_unit - true_unit) > max(Decimal("0.01"), abs(true_unit) * Decimal("0.01")):
+        return None
+    # Where the stale price came from: the latest earlier receipt at that price.
+    source = next((r for r in reversed(rows)
+                   if (r.period, r.audit_seq or 0) < (issue.period, issue.audit_seq)
+                   and r.direction == 0 and r.qty > QTY_EPS
+                   and abs(r.amount / r.qty - issue_unit) <= Decimal("0.0001")), None)
+    return {
+        "issue": issue, "receipts": later_receipts, "on_hand": on_hand,
+        "issue_unit": issue_unit, "true_unit": true_unit, "corrected_unit": corrected_unit,
+        "price_source": source,
+    }
+
+
 def transfer_breaks(rows: list[LedgerRow]) -> list[dict]:
     """§6.2 — pair transfer legs on the upstream document both were generated
     from (ZK transfer order / XT form conversion) and, except for a form
@@ -756,6 +824,11 @@ async def anomalies(db: AsyncSession, period_from: str, period_to: str) -> dict:
               and abs(r.amount) >= Decimal(str(th["a6_min_amount"]))]
     landing = await _landings(db, big_ia)
     for r in big_ia:
+        # A booking-order correction (issue costed before the month's receipt,
+        # IA restores the real cost) is not an anomaly — the diagnosis explains
+        # it as information instead.
+        if issued_ahead(by_mat[r.material_code], balances, r):
+            continue
         out.append(_anomaly("A6", r.period, r.material_code, r.material_name, {
             "amount": _f(r.amount), "attached_to": r.src_code, "mo_code": r.mo_code,
             "landed_on": landing.get(r.nc_pk, [])}, refs=[r.bill_code, r.src_code]))

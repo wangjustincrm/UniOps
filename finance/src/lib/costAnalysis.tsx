@@ -81,8 +81,9 @@ export function SeverityBadge({ severity }: { severity: string }) {
   return (
     <span className={cn('inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium',
       severity === 'high' ? 'border-red-200 bg-red-50 text-red-700'
-                          : 'border-amber-200 bg-amber-50 text-amber-800')}>
-      {severity === 'high' ? 'High' : 'Medium'}
+        : severity === 'info' ? 'border-neutral-200 bg-neutral-50 text-neutral-600'
+        : 'border-amber-200 bg-amber-50 text-amber-800')}>
+      {severity === 'high' ? 'High' : severity === 'info' ? 'Info' : 'Medium'}
     </span>
   )
 }
@@ -172,7 +173,9 @@ export function AccessMessage({ error }: { error: unknown }) {
 export interface Evidence { label: string; value: string; ref: string | null }
 export interface RootHop { material: string; period: string; headline: string; conclusion?: string }
 export interface Finding {
-  kind: 'cost' | 'carry' | 'tail'; period: string; severity: 'high' | 'medium'
+  // 'info': explained, not an anomaly — e.g. NC correcting an issue it costed
+  // before the month's receipt was booked.
+  kind: 'cost' | 'carry' | 'tail'; period: string; severity: 'high' | 'medium' | 'info'
   title: string; conclusion: string; because: string[]; evidence: Evidence[]
   steps: { period: string; text: string }[]; related: string[]; root_chain?: RootHop[]
 }
@@ -210,7 +213,8 @@ export function FindingCard({ f, prefix }: { f: Finding; prefix?: string }) {
   const [open, setOpen] = useState(false)
   return (
     <div className={cn('rounded-lg border bg-white p-3',
-      f.severity === 'high' ? 'border-red-200' : 'border-amber-200')}>
+      f.severity === 'high' ? 'border-red-200'
+        : f.severity === 'info' ? 'border-neutral-200' : 'border-amber-200')}>
       <div className="flex items-start gap-2">
         <SeverityBadge severity={f.severity} />
         <p className="text-sm font-semibold text-neutral-900">{prefix && <span className="mr-1 font-mono">{prefix}</span>}{f.title}</p>
@@ -243,7 +247,8 @@ export function FindingCard({ f, prefix }: { f: Finding; prefix?: string }) {
 /** The analysis: headline, root cause upstream, what happened in order, and
  *  each finding with the figures behind it. */
 export function DiagnosisPanel({ d, compact = false }: { d: Diagnosis; compact?: boolean }) {
-  const ok = d.findings.length === 0
+  // Info findings explain something that is not wrong; they don't tint the panel.
+  const ok = d.findings.every((f) => f.severity === 'info')
   return (
     <div className={cn('rounded-lg border p-4', ok ? 'border-neutral-200 bg-neutral-50' : 'border-[#085E5E]/30 bg-primary-50/40')}>
       <p className="text-xs font-semibold uppercase tracking-wide text-[#085E5E]">Summary</p>

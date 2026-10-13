@@ -316,8 +316,48 @@ async def _carry_finding(db, material, month, rows) -> dict | None:
     }
 
 
+def _issued_ahead_finding(material, month, r, target, ahead) -> dict:
+    """An IA that only corrects an issue NC costed before the month's receipt
+    was booked (ca.issued_ahead). Reported as information, never as an
+    anomaly: net of the adjustment the consumer took the material at its real
+    cost — CS0026 September 2026, -94,440.44 onto CW0001."""
+    t = month["period"]
+    iss = ahead["issue"]
+    rec = ahead["receipts"]
+    src = ahead["price_source"]
+    o_a, in_a = month["opening"]["amount"], month["receipts"]["amount"]
+    stale = (f"the last known cost, {u(ahead['issue_unit'])}/unit"
+             + (f" — the {src.period} receipt {src.bill_code}" if src else ""))
+    rec_codes = ", ".join(sorted({x.bill_code for x in rec if x.bill_code}))
+    return {
+        "kind": "tail", "period": t, "severity": "info",
+        "title": f"Booking-order correction in {t} ({m(r.amount)}) — not a cost problem",
+        "conclusion": (f"In {t}, {material} was issued ({iss.bill_code}, {q(iss.qty)}) before "
+                       f"that month's receipt was booked, with only {q(ahead['on_hand'])} on hand, "
+                       f"so NC priced the issue at {stale}. The receipt ({rec_codes}) came in "
+                       f"afterwards at {u(ahead['true_unit'])}/unit, and NC's month-end "
+                       f"adjustment {r.bill_code} ({m(r.amount)}) put the difference back onto the "
+                       f"same issue. Net, {target} took {material} at "
+                       f"{u(ahead['corrected_unit'])}/unit — {material}'s own {t} cost."),
+        "because": [f"{m(o_a)} opening + {m(in_a)} received − {m(iss.amount)} issued at the old "
+                    f"price = {m(o_a + in_a - float(iss.amount))} left when quantity reached zero; "
+                    f"{r.bill_code} reverses it."],
+        "evidence": [_ev(f"{material} issued in {t} (booked first)",
+                         f"{q(iss.qty)} = {m(iss.amount)} ({u(ahead['issue_unit'])}/unit)", iss.bill_code)]
+                    + [_ev(f"{material} received in {t} (booked after)",
+                           f"{q(x.qty)} = {m(x.amount)}", x.bill_code) for x in rec]
+                    + ([_ev("Old price came from", f"{src.period} {u(ahead['issue_unit'])}/unit",
+                            src.bill_code)] if src else [])
+                    + [_ev("Month-end correction", m(r.amount), r.bill_code),
+                       _ev(f"{target} took {material} net",
+                           f"{u(ahead['corrected_unit'])}/unit")],
+        # No timeline step and no related material: nothing to trace upstream.
+        "steps": [], "related": [],
+    }
+
+
 async def _tail_dump_finding(db, th, material, month, ia_rows, landing,
-                             settlements) -> list | None:
+                             settlements, rows, balances) -> list | None:
     t = month["period"]
     big = [r for r in ia_rows if r.period == t
            and abs(r.amount) >= Decimal(str(th["a6_min_amount"]))]
@@ -332,6 +372,10 @@ async def _tail_dump_finding(db, th, material, month, ia_rows, landing,
     for r in big:
         lands = landing.get(r.nc_pk, [])
         target = ", ".join(f"{x['material_code']} {x.get('material_name') or ''}".strip() for x in lands) or "an unidentified consumer"
+        ahead = ca.issued_ahead(rows, balances, r)
+        if ahead:
+            findings.append(_issued_ahead_finding(material, month, r, target, ahead))
+            continue
         evidence = [_ev(f"{material} opening {t}", f"{q(month['opening']['qty'])} valued at {m(month['opening']['amount'])}")]
         if prod:
             evidence.append(_ev(f"{material} produced in {t}",
@@ -527,7 +571,8 @@ async def _root(db: AsyncSession, code: str, period: str, depth: int, seen: set)
     d = await diagnose(db, code, ca.prev_period(period), period, _depth=0)
     cost = [f for f in d["findings"] if f["kind"] == "cost"]
     if not cost:
-        return [{"material": code, "period": period, "headline": d["headline"]}] if d["findings"] else []
+        issues = [f for f in d["findings"] if f["severity"] != "info"]
+        return [{"material": code, "period": period, "headline": d["headline"]}] if issues else []
     f = sorted(cost, key=lambda f: (f["severity"] != "high", f["period"]))[0]
     hop = {"material": code, "period": f["period"], "headline": f"{code}: {f['title']}",
            "conclusion": f["conclusion"]}
@@ -573,7 +618,7 @@ async def diagnose(db: AsyncSession, material: str, period_from: str, period_to:
         if f:
             findings.append(f)
         findings += await _tail_dump_finding(db, th, material, mo, ia_rows, landing,
-                                             settlements) or []
+                                             settlements, rows, balances) or []
 
     order = {"cost": 0, "carry": 1, "tail": 2}
     findings.sort(key=lambda f: (f["period"], order[f["kind"]]))
@@ -595,14 +640,19 @@ async def diagnose(db: AsyncSession, material: str, period_from: str, period_to:
                 if root_chain:
                     break
             f["root_chain"] = root_chain
-    if findings:
-        worst = sorted(findings, key=lambda f: (f["severity"] != "high", f["period"]))[0]
+    rank = {"high": 0, "medium": 1, "info": 2}
+    issues = [f for f in findings if f["severity"] != "info"]
+    if issues:
+        worst = sorted(issues, key=lambda f: (rank[f["severity"]], f["period"]))[0]
         headline = f"{material}: {worst['title']}."
         if root_chain:
             headline += f" Root cause upstream: {root_chain[-1]['headline']}."
     else:
         headline = (f"{material}: nothing abnormal in {period_from} – {period_to} — production "
                     f"cost, month-end value and adjustments are all within the thresholds.")
+        if findings:
+            headline += (f" {len(findings)} booking-order correction(s) by NC, explained below, "
+                         f"leave the cost unchanged.")
     return {"material": {"code": material, "name": name}, "headline": headline,
             "chain": chain, "findings": findings, "root_chain": root_chain,
             "related": sorted({r for f in findings for r in f["related"]} - {material})}

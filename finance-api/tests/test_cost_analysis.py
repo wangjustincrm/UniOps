@@ -939,3 +939,54 @@ async def test_composition_endpoint_is_gated(client, synced):
     url = "/finance/v1/cost-analysis/composition?material=CS0080&period=2026-09"
     assert (await client.get(url, headers=_h())).status_code == 200
     assert (await client.get(url, headers=_h("ap_clerk"))).status_code == 403
+
+
+# ── Booking-order corrections (issue costed before the month's receipt) ──────
+
+def _lr(period, bill_type, qty, amount, seq, *, bill_code, direction, src_code=None):
+    r = ca.LedgerRow(
+        nc_pk=f"PK{seq}", period=period, bill_type=bill_type, bill_code=bill_code,
+        biz_date=None, direction=direction, material_code="CS0026", material_name="CS0026",
+        qty=D(str(qty)) if qty is not None else D("0"), price=None, amount=D(str(amount)),
+        batch_code=None, mo_code="MO1", src_type=None, src_code=src_code, upstream_code=None,
+        trantype_code=None, trantype_name=None, estimate_flag="N", audit_seq=seq)
+    return r
+
+
+def _cs0026(issue_qty="26667", issue_amt="288667.61", ia_amt="-94440.44", may_left="0"):
+    """CS0026 as measured in NC: May's batch at 10.8249 used up (or not —
+    `may_left`), then September's issue booked BEFORE September's receipt."""
+    rows = [
+        _lr("2026-05", "I3", "26754.51", "289614.91", 1, bill_code="I3MAY", direction=0),
+        _lr("2026-05", "I6", str(D("26754.51") - D(may_left)),
+            str((D("26754.51") - D(may_left)) * D("10.8249")), 2, bill_code="I6MAY", direction=1),
+        _lr("2026-09", "I6", issue_qty, issue_amt, 3, bill_code="I6SEP", direction=1),
+        _lr("2026-09", "I3", "26667", "194227.17", 4, bill_code="I3SEP", direction=0),
+        _lr("2026-09", "IA", None, ia_amt, 5, bill_code="IASEP", direction=1, src_code="I6SEP"),
+    ]
+    ca.classify(rows)
+    return rows
+
+
+def test_an_issue_booked_before_its_receipt_is_a_booking_order_correction():
+    rows = _cs0026()
+    a = ca.issued_ahead(rows, {}, rows[-1])
+    assert a is not None
+    assert a["issue"].bill_code == "I6SEP" and [r.bill_code for r in a["receipts"]] == ["I3SEP"]
+    assert round(a["true_unit"], 4) == D("7.2834")
+    assert round(a["corrected_unit"], 4) == D("7.2834")
+    assert a["price_source"].bill_code == "I3MAY"
+
+
+def test_an_issue_the_stock_covered_is_not_a_booking_order_correction():
+    # 30,000 of May's batch still on hand: the issue did not run ahead of
+    # anything, so an adjustment on it is a real tail dump (CR0059's shape).
+    rows = _cs0026(may_left="30000")
+    assert ca.issued_ahead(rows, {}, rows[-1]) is None
+
+
+def test_an_adjustment_that_does_not_restore_the_month_cost_is_not_one():
+    # Issue still ran ahead, but the IA leaves the consumer far from the
+    # month's cost — value really moved, keep reporting it.
+    rows = _cs0026(ia_amt="-50000.00")
+    assert ca.issued_ahead(rows, {}, rows[-1]) is None
