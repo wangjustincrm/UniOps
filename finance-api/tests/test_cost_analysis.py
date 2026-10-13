@@ -911,3 +911,31 @@ async def test_standard_cost_endpoint_is_gated_and_validated(client, synced):
     assert (await client.get(url, headers=_h())).status_code == 200
     assert (await client.get(url, headers=_h("ap_clerk"))).status_code == 403
     assert (await client.get(url + "&window_months=99", headers=_h())).status_code == 422
+
+
+# ── P3: composition drilled to the bottom ───────────────────────────────────
+
+async def test_composition_expands_in_house_inputs_and_ties_out(db_session, synced):
+    from app.services import cost_composition as cc
+    r = await cc.composition(db_session, "CS0080", "2026-09")
+    assert r["available"] and r["total"] == pytest.approx(-13482.75)
+    assert r["tie_out"] == pytest.approx(0, abs=0.01)          # adds up to NC's figure
+    b = {x["bucket"]: x["amount"] for x in r["buckets"]}
+    share = 10262 / 39411                                      # units of CR0059 August consumed
+    # CR0059's own August cost, carried by quantity: milk 14,170.76, settlement -61,906.55
+    assert b["Settlement variances"] == pytest.approx(-61906.55 * share, abs=0.05)
+    assert b["Month-end tails"] == pytest.approx(-46588.84)
+    assert "Without it the product would have cost" in " ".join(r["because"])
+    assert not r["a9"]
+
+
+async def test_composition_of_a_product_with_no_cost_says_so(db_session, synced):
+    from app.services import cost_composition as cc
+    r = await cc.composition(db_session, "CP0105", "2026-09")
+    assert r["available"] is False
+
+
+async def test_composition_endpoint_is_gated(client, synced):
+    url = "/finance/v1/cost-analysis/composition?material=CS0080&period=2026-09"
+    assert (await client.get(url, headers=_h())).status_code == 200
+    assert (await client.get(url, headers=_h("ap_clerk"))).status_code == 403

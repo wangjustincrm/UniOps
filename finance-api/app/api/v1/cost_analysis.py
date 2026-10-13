@@ -24,6 +24,7 @@ from app.models.nc_cost import RUNNING, FaConfig, NcCostSyncRun
 from app.services import cost_analysis as ca
 from app.services import cost_diagnosis as dx
 from app.services import cost_batch as bt
+from app.services import cost_composition as cc
 from app.services import cost_margin as mg
 from app.services import cost_standard as sc
 from app.services import nc_cost_sync as svc
@@ -229,6 +230,17 @@ async def standard_cost(material: str, period_from: str = Query(..., alias="from
     return await sc.standard_cost(db, material, a, b, {
         "window_months": window_months, "mad_k": mad_k, "bom_tolerance": bom_tolerance,
         "exclude_stoppage": exclude_stoppage})
+
+
+@router.get("/composition")
+async def composition(material: str, period: str, user: dict = Depends(_can_view),
+                      db: AsyncSession = Depends(get_db)):
+    """Analytical: in-house inputs expanded down to purchased materials and
+    conversion; every level adds up to NC's own figure."""
+    material = material.strip().upper()
+    if not material:
+        raise HTTPException(status_code=422, detail="material is required")
+    return await cc.composition(db, material, _period(period, "period"))
 
 
 @router.get("/diagnosis")
