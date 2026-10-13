@@ -5,6 +5,7 @@ import {
   ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Settings,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, Scale, Target,
   RefreshCw, Wallet, Download, ShieldAlert, ClipboardCheck, HeartPulse, TrendingUp, CopyX,
+  Activity, GitBranch, Network, PieChart, Boxes, Ruler,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -79,6 +80,18 @@ const NAV: NavSection[] = [
     items: [
       { label: 'Bank Reconciliation', href: '/finance/bank', icon: Landmark, permission: 'view_finance' },
       { label: 'Bank Settings', href: '/finance/bank-settings', icon: Settings, permission: 'view_finance' },
+    ],
+  },
+  {
+    // Unit costs and margins: its own Access Control key, not view_finance.
+    title: 'AI Financial Analysis',
+    items: [
+      { label: 'Gross Margin', href: '/finance/analysis/margin', icon: PieChart, permission: 'finance.analysis.view' },
+      { label: 'Cost Anomalies', href: '/finance/analysis/anomalies', icon: Activity, permission: 'finance.analysis.view' },
+      { label: 'Cost Chain', href: '/finance/analysis/chain', icon: Network, permission: 'finance.analysis.view' },
+      { label: 'Batch Cost', href: '/finance/analysis/batches', icon: Boxes, permission: 'finance.analysis.view' },
+      { label: 'Standard Cost', href: '/finance/analysis/standard', icon: Ruler, permission: 'finance.analysis.view' },
+      { label: 'Material Cost Trace', href: '/finance/analysis/trace', icon: GitBranch, permission: 'finance.analysis.view' },
     ],
   },
   {
