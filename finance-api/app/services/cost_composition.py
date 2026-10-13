@@ -229,5 +229,6 @@ async def composition(db, material: str, period: str) -> dict:
             "unit": pu(total), "buckets": rows, "groups": dict(groups), "leaves": leaves[:25],
             "compare": compare, "tie_out": tie, "a9": a9,
             "headline": lead, "because": because,
-            "note": "Analytical figure: in-house inputs are expanded in the proportions of their "
-                    "own NC product cost, level by level; every level adds up to NC's own figure."}
+            "note": "Analytical figure: each in-house input is expanded by the units consumed, at "
+                    "its own NC product cost per unit, level by level; what NC charged beyond that "
+                    "is the issue price difference. Every level adds up to NC's own figure."}
