@@ -257,8 +257,10 @@ async def score(
     # the person running the session marks the pass, and the certificate is
     # issued when they close it. A pass away from any session marks nothing —
     # the result is kept here, and whoever runs a session can mark it there.
-    if enrolment is not None and passed:
-        await _quiz_mark(db, enrolment)
+    if enrolment is not None:
+        await _end_from_first_finish(db, enrolment.delivery_id, attempt.submitted_at)
+        if passed:
+            await _quiz_mark(db, enrolment)
 
     return attempt, breakdown
 
@@ -280,6 +282,32 @@ async def _enrolment_for(
                CourseDelivery.status != "cancelled"))).scalar_one_or_none()
 
 
+async def _end_from_first_finish(
+    db: AsyncSession, delivery_id: uuid.UUID, at: datetime,
+) -> None:
+    """The first finished quiz is when the session ended, if nobody said.
+
+    Round 6: "Could the first person to log in and scan the code and answer the
+    quiz (date and time stamped) be the end time of the course for the rest of
+    the staff roster? this course length also needs to be on any reports."
+
+    Only on the session's own day and after its start, so a late retake or a
+    clock that disagrees cannot record a session that ended before it began. An
+    end the runner typed is never overwritten.
+    """
+    delivery = await db.get(CourseDelivery, delivery_id)
+    if delivery is None or delivery.end_time is not None:
+        return
+    local = at.astimezone(statutory.ONTARIO)
+    if local.date() != delivery.session_date:
+        return
+    end = local.time().replace(second=0, microsecond=0)
+    if delivery.start_time is not None and end <= delivery.start_time:
+        return
+    delivery.end_time = end
+    await db.flush()
+
+
 async def _quiz_mark(db: AsyncSession, enrolment: CourseEnrolment) -> None:
     """Set "Quiz passed" on the roster. Only ever set, never taken away by a
     later failed retake — the pass happened."""
@@ -294,7 +322,9 @@ async def _quiz_mark(db: AsyncSession, enrolment: CourseEnrolment) -> None:
 # photo of it in a group chat, or a browser's history, would otherwise put
 # somebody who was not there on a statutory attendance record for the whole day.
 JOIN_OPENS_BEFORE = timedelta(minutes=30)
-JOIN_CLOSES_AFTER = timedelta(hours=2)
+# Round 6: "allow the QR code to be scanned within 30 minutes after the course
+# has completed." The end is the typed one, or the first finished quiz.
+JOIN_CLOSES_AFTER = timedelta(minutes=30)
 
 
 def _join_window(d: CourseDelivery) -> tuple[datetime, datetime] | None:

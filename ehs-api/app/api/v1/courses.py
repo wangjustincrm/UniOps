@@ -89,6 +89,9 @@ class DeliveryOut(BaseModel):
     quiz_id: uuid.UUID | None = None
     quiz_title: str | None = None
     quiz_qr_token: str | None = None
+    # From the start and end times. Round 6: "track the length of time the
+    # training is ... this course length also needs to be on any reports."
+    length_minutes: int | None = None
 
 
 class EnrolmentOut(BaseModel):
@@ -142,6 +145,7 @@ async def _with_counts(db, deliveries) -> list[DeliveryOut]:
         item = DeliveryOut.model_validate(delivery)
         item.enrolled = len(rows)
         item.passed = sum(1 for r in rows if r.result == "passed")
+        item.length_minutes = crud.length_minutes(delivery)
         quiz = await crud.quiz_for_course(db, delivery.course_id)
         if quiz is not None:
             item.quiz_id, item.quiz_title, item.quiz_qr_token = quiz.id, quiz.title, quiz.qr_token

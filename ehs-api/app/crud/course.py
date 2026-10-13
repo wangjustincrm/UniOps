@@ -41,6 +41,21 @@ async def _name(db: AsyncSession, user_id: uuid.UUID | None) -> str | None:
     return (await db.execute(select(User.full_name).where(User.id == user_id))).scalar()
 
 
+def length_minutes(delivery: CourseDelivery) -> int | None:
+    """How long the session ran, from its start and end times.
+
+    Round 6: "we need to track the length of time the training is ... this
+    course length also needs to be on any reports." None until both are known;
+    the end is filled in by the first person to finish the quiz when nobody
+    typed one (app.crud.quiz).
+    """
+    if delivery.start_time is None or delivery.end_time is None:
+        return None
+    start = delivery.start_time.hour * 60 + delivery.start_time.minute
+    end = delivery.end_time.hour * 60 + delivery.end_time.minute
+    return end - start if end > start else None
+
+
 async def get_delivery(db: AsyncSession, delivery_id: uuid.UUID) -> CourseDelivery:
     delivery = await db.get(CourseDelivery, delivery_id)
     if delivery is None:

@@ -981,3 +981,43 @@ async def test_a_name_that_looks_like_a_formula_stays_text(hse_manager, worker, 
              for c in row if isinstance(c.value, str) and "=1+1" in c.value]
     assert cells, "the search text should be stated on the sheet"
     assert all(c.data_type == "s" for c in cells)
+
+
+async def test_the_length_of_a_session_is_on_the_report(hse_manager, worker, courses):
+    """Round 6: "we need to track the length of time the training is ... this
+    course length also needs to be on any reports.\""""
+    import io
+
+    from openpyxl import load_workbook
+
+    from app.services.training_pdf import length_text
+
+    _, client = hse_manager
+    student, _ = worker
+    made = await client.post("/api/v1/course-sessions", json={
+        "course_id": str(courses["whmis"].id), "title": "WHMIS, timed",
+        "session_date": date.today().isoformat(),
+        "start_time": "09:00", "end_time": "10:30"})
+    assert made.status_code in (200, 201), made.text
+    sid = made.json()["id"]
+    assert made.json()["length_minutes"] == 90
+    enrolled = await client.post(f"/api/v1/course-sessions/{sid}/roster",
+                                 json={"user_ids": [str(student.id)]})
+    await client.post(f"/api/v1/course-sessions/{sid}/results", json={
+        "results": [{"enrolment_id": enrolled.json()[0]["id"], "result": "passed"}],
+        "complete": True})
+
+    records = (await client.get(f"/api/v1/training/records?user_id={student.id}")).json()
+    [mine] = [r for r in records if r.get("delivery_id") == sid]
+    assert mine["length_minutes"] == 90
+
+    got = await client.get("/api/v1/training/records/export", params={"user_id": str(student.id)})
+    sheet = load_workbook(io.BytesIO(got.content)).active
+    heads = [c.value for c in next(r for r in sheet.iter_rows() if any(
+        c.value == "Length (minutes)" for c in r))]
+    col = heads.index("Length (minutes)")
+    values = [r[col].value for r in sheet.iter_rows() if r[col].value not in (None, "Length (minutes)")]
+    assert 90 in values
+
+    assert length_text(90) == "1 h 30 min" and length_text(45) == "45 min"
+    assert length_text(120) == "2 h" and length_text(None) is None

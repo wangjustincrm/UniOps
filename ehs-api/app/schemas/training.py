@@ -84,6 +84,8 @@ class TrainingRecordOut(BaseModel):
     # record entered by hand, which had no session.
     run_by_name: str | None = None
     instructor_name: str | None = None
+    # How long the session it came from ran. Round 6.
+    length_minutes: int | None = None
 
 
 class CertificationIn(BaseModel):

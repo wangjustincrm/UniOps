@@ -34,6 +34,15 @@ interface Session {
   instructor_name: string | null; status: string; notes: string | null
   enrolled: number; passed: number
   quiz_id: string | null; quiz_title: string | null; quiz_qr_token: string | null
+  length_minutes: number | null
+}
+
+/** 1 h 30 min, 45 min — the same words as the printed report. */
+function lengthText(minutes: number | null): string | null {
+  if (!minutes) return null
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return [h ? `${h} h` : '', m ? `${m} min` : ''].filter(Boolean).join(' ')
 }
 interface QuizResult {
   user_id: string | null; user_name: string; score_percent: number; passed: boolean; submitted_at: string
@@ -118,6 +127,14 @@ export default function CourseSessionPage() {
             {formatDate(s.session_date)}
             {s.start_time && ` · ${s.start_time.slice(0, 5)}`}
             {s.end_time && `–${s.end_time.slice(0, 5)}`}
+          </Detail>
+          {/* ★ Round 6: "track the length of time the training is". From the
+              start and end; the end is filled in by the first person to finish
+              the quiz when nobody typed one. */}
+          <Detail label="Length">
+            {lengthText(s.length_minutes)
+              ?? (s.start_time ? 'Set when the first person finishes the quiz, or when an end time is entered'
+                               : 'Needs a start and an end time')}
           </Detail>
           <Detail label="Where">{s.location_text ?? '—'}</Detail>
           <Detail label="Run by">{s.coordinator_name ?? 'Not assigned'}</Detail>

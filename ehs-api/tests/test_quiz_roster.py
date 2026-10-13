@@ -154,7 +154,9 @@ class TestTheWindow:
     """★ The code is a fixed URL. A photo of it in a group chat must not put
     somebody on a statutory attendance record for the whole day."""
 
-    async def test_from_half_an_hour_before_to_two_hours_after(self, test_engine, db_session):
+    async def test_from_half_an_hour_before_to_half_an_hour_after(self, test_engine, db_session):
+        """Round 6: "allow the QR code to be scanned within 30 minutes after the
+        course has completed." Round 5 allowed two hours."""
         course = await _course(db_session)
         quiz = await _quiz(db_session, course)
         s = await _session(db_session, course, start=time(9), end=time(10))
@@ -166,8 +168,8 @@ class TestTheWindow:
 
         assert not await joins(at(8, 29))
         assert await joins(at(8, 30))
-        assert await joins(at(11, 59))
-        assert not await joins(at(12, 0))
+        assert await joins(at(10, 29))
+        assert not await joins(at(10, 30))
 
     async def test_a_start_and_no_end_stays_open_for_the_day(self, test_engine, db_session):
         me = await make_user(test_engine)
@@ -186,6 +188,64 @@ class TestTheWindow:
         got = await quiz_crud.join(db_session, quiz, me.id,
                                    now=datetime(2026, 10, 15, 1, 0, tzinfo=timezone.utc))
         assert got.joined.id == s.id
+
+
+class TestTheLength:
+    """Round 6: "we need to track the length of time the training is ... Could
+    the first person to log in and scan the code and answer the quiz (date and
+    time stamped) be the end time of the course for the rest of the staff
+    roster? this course length also needs to be on any reports."
+    """
+
+    async def test_the_first_to_finish_sets_the_end_and_the_rest_have_half_an_hour(
+            self, test_engine, db_session, monkeypatch):
+        course = await _course(db_session)
+        quiz = await _quiz(db_session, course)
+        s = await _session(db_session, course, day=DAY, start=time(9))
+        first, second, late = [await make_user(test_engine) for _ in range(3)]
+        for who in (first, second):
+            await quiz_crud.join(db_session, quiz, who.id, now=at(9, 50))
+
+        # The clock of the first submission.
+        monkeypatch.setattr(quiz_crud, "datetime", _Clock(at(10, 40)))
+        await _answer(db_session, quiz, first, right=True, delivery=s)
+        assert s.end_time == time(10, 40)
+        assert course_crud.length_minutes(s) == 100
+
+        monkeypatch.setattr(quiz_crud, "datetime", _Clock(at(10, 55)))
+        await _answer(db_session, quiz, second, right=True, delivery=s)
+        assert s.end_time == time(10, 40), "only the first finish sets it"
+
+        assert (await quiz_crud.join(db_session, quiz, late.id, now=at(11, 9))).joined
+        assert not (await quiz_crud.join(db_session, quiz, late.id, now=at(11, 11))).joined
+
+    async def test_an_end_somebody_typed_is_kept(self, test_engine, db_session, monkeypatch):
+        course = await _course(db_session)
+        quiz = await _quiz(db_session, course)
+        s = await _session(db_session, course, day=DAY, start=time(9), end=time(11))
+        me = await make_user(test_engine)
+        await quiz_crud.join(db_session, quiz, me.id, now=at(10))
+        monkeypatch.setattr(quiz_crud, "datetime", _Clock(at(10, 15)))
+        await _answer(db_session, quiz, me, right=True, delivery=s)
+        assert s.end_time == time(11)
+
+    async def test_no_start_means_no_length(self, db_session):
+        course = await _course(db_session)
+        s = await _session(db_session, course, end=time(11))
+        assert course_crud.length_minutes(s) is None
+
+
+class _Clock:
+    """Stands in for `datetime` inside app.crud.quiz, so `now()` is fixed."""
+
+    def __init__(self, fixed: datetime):
+        self._fixed = fixed
+
+    def now(self, tz=None):
+        return self._fixed.astimezone(tz) if tz else self._fixed
+
+    def __getattr__(self, name):
+        return getattr(datetime, name)
 
 
 class TestTheResult:

@@ -158,8 +158,8 @@ async def list_training(
 
 async def who_ran_them(
     db: AsyncSession, records: list[TrainingRecord]
-) -> dict[uuid.UUID, tuple[str | None, str | None]]:
-    """(run by, instructor) for each record that came from a session.
+) -> dict[uuid.UUID, tuple[str | None, str | None, int | None]]:
+    """(run by, instructor, length) for each record that came from a session.
 
     Round 5, TC-08: the report has to name both, and both live on the session.
 
@@ -172,15 +172,17 @@ async def who_ran_them(
     """
     from app.models.course import CourseDelivery
 
+    from app.crud.course import length_minutes
+
     ids = {r.delivery_id for r in records if r.delivery_id}
     if not ids:
         return {}
     rows = (await db.execute(
-        select(CourseDelivery.id, CourseDelivery.coordinator_name,
-               CourseDelivery.instructor_name)
-        .where(CourseDelivery.id.in_(ids)))).all()
-    by_delivery = {r[0]: (r[1], r[2]) for r in rows}
-    return {r.id: by_delivery.get(r.delivery_id, (None, None))
+        select(CourseDelivery).where(CourseDelivery.id.in_(ids)))).scalars().all()
+    # (run by, instructor, length in minutes) — the length since round 6.
+    by_delivery = {d.id: (d.coordinator_name, d.instructor_name, length_minutes(d))
+                   for d in rows}
+    return {r.id: by_delivery.get(r.delivery_id, (None, None, None))
             for r in records if r.delivery_id}
 
 

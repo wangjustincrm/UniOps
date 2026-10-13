@@ -48,14 +48,23 @@ MARGIN = 14 * mm
 # has no session and prints a dash, which is the honest answer rather than a
 # blank that reads as missing data.
 COLUMNS: tuple[tuple[str, float], ...] = (
-    ("Person", 46),
-    ("Course", 58),
+    ("Person", 44),
+    ("Course", 54),
     ("Completed", 23),
     ("Expires", 23),
-    ("Run by", 40),
-    ("Instructor", 40),
-    ("Entered by", 39),
+    ("Length", 18),
+    ("Run by", 38),
+    ("Instructor", 38),
+    ("Entered by", 31),
 )
+
+
+def length_text(minutes: int | None) -> str | None:
+    """1 h 30 min, 45 min, 2 h. None for a session with no start or end."""
+    if not minutes:
+        return None
+    h, m = divmod(minutes, 60)
+    return " ".join(p for p in (f"{h} h" if h else "", f"{m} min" if m else "") if p)
 ROW_H = 6.2 * mm
 # ★ Set once, with the size. ReportLab's leading defaults to 12 whatever the
 # font size is, and a row height chosen without saying so overlaps.
@@ -169,6 +178,7 @@ def render(
             r["course_label"],
             r["completed_on"],
             r["expires_on"],
+            length_text(r.get("length_minutes")),
             r["run_by_name"],
             r["instructor_name"],
             r["recorded_by_name"],

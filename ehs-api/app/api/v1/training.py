@@ -221,7 +221,8 @@ async def _with_who_ran_them(db, records) -> list[TrainingRecordOut]:
     out = []
     for r in records:
         item = TrainingRecordOut.model_validate(r)
-        item.run_by_name, item.instructor_name = ran.get(r.id, (None, None))
+        item.run_by_name, item.instructor_name, item.length_minutes = ran.get(
+            r.id, (None, None, None))
         out.append(item)
     return out
 
@@ -286,8 +287,9 @@ async def _register_for_export(
         "course_label": r.course_label,
         "completed_on": r.completed_on,
         "expires_on": r.expires_on,
-        "run_by_name": ran.get(r.id, (None, None))[0],
-        "instructor_name": ran.get(r.id, (None, None))[1],
+        "run_by_name": ran.get(r.id, (None, None, None))[0],
+        "instructor_name": ran.get(r.id, (None, None, None))[1],
+        "length_minutes": ran.get(r.id, (None, None, None))[2],
         "recorded_by_name": r.recorded_by_name,
     } for r in rows]
     described = training_pdf.describe(
