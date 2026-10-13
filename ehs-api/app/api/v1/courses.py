@@ -18,12 +18,12 @@ from sqlalchemy import select
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
-from app.core.permissions import CanReadTraining, CanReportIncident, CanWriteTraining
+from app.core.permissions import CanReportIncident, CanWriteTraining
 from app.crud import course as crud
 from app.models.course import CourseMaterial
 from app.models.quiz import QuizAttempt
 from app.services import materials
-from app.services.attachments import MAX_FILE_SIZE, proxy_download, upload_to_file_server
+from app.services.attachments import proxy_download
 from uniops_authz import has_permission
 
 router = APIRouter(prefix="/course-sessions")
@@ -500,36 +500,3 @@ async def remove_session_material(
     await _require_roster_rights(db, user, delivery)
     # ★ The course and other sessions may hold the same file.
     await materials.remove(db, await _material_on(db, delivery.id, material_id), token)
-
-
-@router.post("/{delivery_id}/material", response_model=DeliveryOut)
-async def attach_material(
-    delivery_id: uuid.UUID, file: UploadFile,
-    db: SessionDep, user: CanWriteTraining, token: BearerToken,  # noqa: ARG001
-):
-    """The handout or deck for this sitting.
-
-    Sits on the session rather than only on the course because a session often
-    uses a revised deck, and the register has to show what was actually taught.
-    """
-    delivery = await crud.get_delivery(db, delivery_id)
-    data = await file.read()
-    if len(data) > MAX_FILE_SIZE:
-        raise HTTPException(413, f"File exceeds {MAX_FILE_SIZE // 1024 // 1024} MB limit")
-    delivery.material_file_id = await upload_to_file_server(
-        data, file.filename or "material.pdf",
-        (file.content_type or "application/pdf").split(";")[0].strip().lower(),
-        "ehs_crs", delivery.id, token)
-    delivery.material_filename = file.filename or "material.pdf"
-    await db.flush()
-    return (await _with_counts(db, [delivery]))[0]
-
-
-@router.get("/{delivery_id}/material")
-async def download_material(
-    delivery_id: uuid.UUID, db: SessionDep, user: CanReadTraining, token: BearerToken,  # noqa: ARG001
-):
-    delivery = await crud.get_delivery(db, delivery_id)
-    if delivery.material_file_id is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No material attached to this session")
-    return await proxy_download(delivery.material_file_id, token)

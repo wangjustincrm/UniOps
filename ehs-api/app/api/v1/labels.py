@@ -263,8 +263,12 @@ async def label_pdf_download(
             f"Unknown label size '{size}'. Choose one of: "
             + ", ".join(label_pdf.CHOICES))
     try:
-        pdf, used = label_pdf.render(label, chemical_id=str(label.chemical_id),
-                                     copies=copies, artwork=artwork, size=size)
+        # The small label may leave statements off only where the code on it
+        # opens a current data sheet that carries them.
+        has_sheet = await chemical_crud.current_sheet(db, label.chemical_id) is not None
+        pdf, used, omitted = label_pdf.render_with_omitted(
+            label, chemical_id=str(label.chemical_id), copies=copies, artwork=artwork,
+            size=size, sds_available=has_sheet)
     except label_pdf.LabelTooLarge as e:
         # ★ Round 5, TC-21: "some of the data is being cut off". It used to cut
         # it off silently. A label short of a hazard statement is a WHMIS
@@ -281,5 +285,7 @@ async def label_pdf_download(
             f"label-{label.product_identifier[:40]}"),
             # Which stock it was actually laid out for — the point of asking
             # for 'fit' is not knowing in advance.
-            "X-Label-Size": used.code},
+            "X-Label-Size": used.code,
+            # How many statements the small label left for the data sheet.
+            "X-Label-Omitted": str(omitted)},
     )

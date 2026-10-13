@@ -63,6 +63,8 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+        # Read by the chemical page after printing a label (round 6).
+        expose_headers=["X-Label-Size", "X-Label-Omitted"],
     )
 
     # Pure ASGI request logger (avoids BaseHTTPMiddleware task spawn).

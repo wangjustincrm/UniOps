@@ -127,6 +127,12 @@ export const api = {
  * send. Callers turn the blob into an object URL and revoke it when done.
  */
 export async function apiBlob(path: string): Promise<Blob> {
+  return (await apiFile(path)).blob
+}
+
+/** A file and the headers it came with — for a server that says something
+ *  about what it produced (the label: which stock, what it left off). */
+export async function apiFile(path: string): Promise<{ blob: Blob; headers: Headers }> {
   const token = getToken()
   const res = await fetch(`${BASE}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -149,7 +155,7 @@ export async function apiBlob(path: string): Promise<Blob> {
     throw new ApiError(
       res.status, detail ?? `Could not load file (${res.status})`, null)
   }
-  return res.blob()
+  return { blob: await res.blob(), headers: res.headers }
 }
 
 export const epmsApi = {

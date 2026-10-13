@@ -213,26 +213,69 @@ class TestTheLabelFitsWhatIsOnIt:
         assert small.page == (6 * inch, 4 * inch) and small.per_page == 1
         assert label_pdf.BY_SIZE["sheet"].per_page == 1
 
-    def test_the_small_label_always_prints_everything(self):
+    def test_the_small_label_prints_and_says_what_it_left_for_the_sheet(self):
         """★ Round 6, TC-09: "regardless of the information on the SDS, the
-        whmis requirements say the label must be on workplace bottles." Chosen
-        by name, the small label shrinks the type rather than refusing — and
-        drops nothing."""
+        whmis requirements say the label must be on workplace bottles." Asked for
+        by name, the small label is not refused: at its readable floor it leaves
+        statements off the end and prints how many, pointing to the data sheet —
+        never silently, and never below readable type (round-6 review)."""
         from reportlab.lib.units import inch
 
         from app.services import label_pdf
 
         many = [{"code": f"H3{i:02d}",
                  "text": f"Hazard number {i}, spelled out at the length these actually run to"}
-                for i in range(1, 15)]
-        pdf, used = label_pdf.render(self._label(hazard_statements=many),
-                                     chemical_id="abc", copies=1, size="bottle")
-        assert used.code == "bottle"
+                for i in range(1, 31)]
+        lbl = self._label(hazard_statements=many)
+        precautions = len(lbl.precautionary_statements or [])
+        pdf, used, omitted = label_pdf.render_with_omitted(
+            lbl, chemical_id="abc", copies=1, size="bottle", sds_available=True)
+        assert used.code == "bottle" and omitted > 0
         text = _pdf_text(pdf)
-        for i in range(1, 15):
-            assert f"Hazard number {i}," in text, f"statement {i} was dropped"
-        assert f"/MediaBox [ 0 0 {6 * inch:g} {4 * inch:g} ]".encode() in pdf \
-            or b"/MediaBox [ 0 0 432 288 ]" in pdf, "the page is the 4 x 6 label"
+        assert f"+{omitted} more statement" in text and "scan the code" in text
+        printed = [i for i in range(1, 31) if f"Hazard number {i}," in text]
+        # The tail goes, the head stays, and the count adds up — precautionary
+        # statements are the first to go, then the end of the hazard list.
+        assert printed == list(range(1, len(printed) + 1))
+        assert len(printed) + omitted == 30 + precautions
+        assert b"/MediaBox [ 0 0 432 288 ]" in pdf or \
+            f"/MediaBox [ 0 0 {6 * inch:g} {4 * inch:g} ]".encode() in pdf
+
+    def test_never_below_readable_type(self):
+        from app.services import label_pdf
+
+        # The precautionary statements, the smallest body text, at 6 pt or more.
+        assert 8.5 * label_pdf.SMALL_READABLE_SCALE >= 6.0
+
+    def test_precautions_go_before_hazards(self):
+        from app.services import label_pdf
+
+        hazards = [{"code": f"H3{i:02d}", "text": f"Hazard {i}, spelled out as these run"}
+                   for i in range(1, 6)]
+        precautions = [{"code": f"P2{i:02d}",
+                        "text": f"Precaution {i}, spelled out at the length these actually run to"}
+                       for i in range(1, 40)]
+        pdf, _, omitted = label_pdf.render_with_omitted(
+            self._label(hazard_statements=hazards, precautionary_statements=precautions),
+            chemical_id="abc", copies=1, size="bottle", sds_available=True)
+        text = _pdf_text(pdf)
+        assert omitted > 0
+        assert all(f"Hazard {i}," in text for i in range(1, 6)), "every hazard statement stays"
+
+    def test_with_no_data_sheet_to_point_to_it_refuses(self):
+        """★ "Scan the code" leads nowhere without a current sheet, so the small
+        label refuses as before rather than leaving statements off."""
+        import pytest as _pytest
+
+        from app.services import label_pdf
+
+        many = [{"code": f"H3{i:02d}",
+                 "text": f"Hazard number {i}, spelled out at the length these actually run to"}
+                for i in range(1, 31)]
+        with _pytest.raises(label_pdf.LabelTooLarge) as caught:
+            label_pdf.render(self._label(hazard_statements=many), chemical_id="abc",
+                             copies=1, size="bottle", sds_available=False)
+        assert "30 hazard statements" in str(caught.value)
 
     def test_too_much_for_a_drum_is_still_refused_by_name(self):
         """The other sizes keep their floor: below it a statement is not
@@ -262,10 +305,11 @@ class TestTheLabelFitsWhatIsOnIt:
         _, used = label_pdf.render(self._label(hazard_statements=many),
                                    chemical_id="abc", copies=1, size=label_pdf.FIT)
         assert used.code in ("drum", "sheet")
-        # …while the same content, asked for on the small label, is all there.
-        pdf, small = label_pdf.render(self._label(hazard_statements=many),
-                                      chemical_id="abc", copies=1, size="bottle")
-        assert small.code == "bottle" and "Hazard number 30," in _pdf_text(pdf)
+        # …nor does it leave statements off: fitting never omits.
+        _, _, omitted = label_pdf.render_with_omitted(
+            self._label(hazard_statements=many), chemical_id="abc", copies=1,
+            size=label_pdf.FIT, sds_available=True)
+        assert omitted == 0
 
     def test_the_manufacturer_and_how_to_reach_them(self):
         """Round 6, TC-09: "the manufacturer's name contact must be shown." """
@@ -443,3 +487,44 @@ class TestThePictogramsStayOutOfTheQrCode:
         # hazard list genuinely fit the small label, and the row wrapping is what
         # makes that true rather than a cap pretending it is.
         assert used.code in [sz.code for sz in label_pdf.SIZES]
+
+
+async def test_the_small_label_leaves_statements_only_where_a_sheet_carries_them(
+        hse_manager, db_session):
+    """Round 6 review: the small label may leave statements for the data sheet
+    only where the code on it opens a current one; with none it refuses."""
+    _, client = hse_manager
+    many = [{"code": f"H3{i:02d}",
+             "text": f"Hazard number {i}, spelled out at the length these actually run to"}
+            for i in range(1, 31)]
+
+    async def label_for(with_sheet: bool) -> ChemicalLabel:
+        chem = Chemical(id=uuid.uuid4(), chemical_no=f"CHM-{uuid.uuid4().hex[:6]}",
+                        name="A product with a long sheet", is_active=True)
+        db_session.add(chem)
+        await db_session.commit()
+        sds_id = None
+        if with_sheet:
+            filed = await client.post(f"/api/v1/chemicals/{chem.id}/sds", json={
+                "revision": "1", "revision_date": date.today().isoformat()})
+            assert filed.status_code in (200, 201), filed.text
+            sds_id = uuid.UUID(filed.json()["id"])
+        label = ChemicalLabel(
+            id=uuid.uuid4(), chemical_id=chem.id, sds_id=sds_id,
+            product_identifier="A product with a long sheet", signal_word="Danger",
+            status="approved", approved_at=datetime.now(timezone.utc),
+            approved_by_name="Marie Tremblay", hazard_statements=many,
+            precautionary_statements=[], pictograms=[])
+        db_session.add(label)
+        await db_session.commit()
+        return label
+
+    with_sheet = await label_for(True)
+    got = await client.get(f"/api/v1/labels/{with_sheet.id}/pdf", params={"size": "bottle"})
+    assert got.status_code == 200, got.text
+    assert got.headers["x-label-size"] == "bottle"
+    assert int(got.headers["x-label-omitted"]) > 0
+
+    without = await label_for(False)
+    refused = await client.get(f"/api/v1/labels/{without.id}/pdf", params={"size": "bottle"})
+    assert refused.status_code == 409, refused.text

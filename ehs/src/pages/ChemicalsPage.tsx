@@ -22,7 +22,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, Download, FileText, FlaskConical, Plus, Printer,
   Search, Sparkles, Upload, X, QrCode } from 'lucide-react'
-import { api, apiBlob, ApiError } from '@/lib/api'
+import { api, apiBlob, apiFile, ApiError } from '@/lib/api'
 import { Pagination, useListView } from '@/components/ListView'
 import QrPanel from '@/components/QrPanel'
 import { formatDate } from '@/lib/formatDate'
@@ -800,14 +800,23 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
   // Fit by default: the smallest stock that holds everything on the label.
   const [labelSize, setLabelSize] = useState('fit')
   const [printError, setPrintError] = useState<string | null>(null)
+  const [printNote, setPrintNote] = useState<string | null>(null)
 
   const print = async (labelId: string) => {
     if (busy) return
     setBusy(true)
     setPrintError(null)
+    setPrintNote(null)
     try {
-      const blob = await apiBlob(
+      const { blob, headers } = await apiFile(
         `/api/v1/labels/${labelId}/pdf?copies=2&size=${encodeURIComponent(labelSize)}`)
+      // ★ Said on screen as well as on the label: the small stock left this
+      // many statements for the data sheet the code opens (round 6).
+      const omitted = Number(headers.get('X-Label-Omitted') ?? 0)
+      setPrintNote(omitted > 0
+        ? `This small label lists the first statements and says “+${omitted} more on the safety data sheet”. `
+          + 'Print the standard size to have them all on the container.'
+        : null)
       const url = URL.createObjectURL(blob)
       window.open(url, '_blank', 'noopener')
       setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -960,6 +969,9 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
                 </>
               )}
             </div>
+          )}
+          {printNote && (
+            <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">{printNote}</p>
           )}
           {printError && (
             <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">

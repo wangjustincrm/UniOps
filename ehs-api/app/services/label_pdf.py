@@ -124,10 +124,11 @@ CHOICES = (FIT,) + tuple(s.code for s in SIZES)
 # this a hazard statement stops being readable at arm's length, which is the
 # whole function of the label.
 MIN_SCALE_FACTOR = 0.72
-# How far a size that always prints may go, as a last resort: still type, if
-# small. Reached only when the small label is chosen by name for a product with
-# more on its sheet than the stock holds.
-LAST_RESORT_SCALE = 0.2
+# The small label's floor when it is asked for by name: the precautionary
+# statements (8.5 pt at scale 1) no smaller than 6 pt. Round 6 review
+# (uniops-93): a label shrunk until it fits and nobody can read it is the silent
+# truncation this module removed, printed in a different way.
+SMALL_READABLE_SCALE = 0.71
 
 
 def _wrap(c: pdfcanvas.Canvas, text: str, font: str, size: float,
@@ -259,6 +260,13 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
     for entry in list(label.precautionary_statements or []):
         line(_statement(entry), "Helvetica", 8.5, 4.1 * mm / scale)
 
+    # ★ Said on the label when the small stock could not hold every statement —
+    # never left out silently. See `render`.
+    omitted = getattr(label, "omitted_statements", 0)
+    if omitted:
+        line(f"+{omitted} more statement{'s' if omitted != 1 else ''} on the safety "
+             "data sheet — scan the code", "Helvetica-Bold", 8.5, 4.1 * mm / scale)
+
     # ── PPE, then first aid ─────────────────────────────────────────────────
     # ★ Round 5: "PPE required freeform text is not being copied to the label."
     # Before first aid, because it is what somebody needs *before* opening the
@@ -337,9 +345,35 @@ def _statement(entry) -> str:
     return str(entry)
 
 
+class _Trimmed:
+    """The label as printed on the small stock when not everything fits: the
+    same label, its statement lists shortened, and the count of what went."""
+
+    def __init__(self, label, hazards: list, precautions: list, omitted: int):
+        self._label = label
+        self.hazard_statements = hazards
+        self.precautionary_statements = precautions
+        self.omitted_statements = omitted
+
+    def __getattr__(self, name):
+        return getattr(self._label, name)
+
+
 def render(label, *, chemical_id: str, copies: int = 2,
            artwork: dict[str, bytes] | None = None,
-           size: str = DEFAULT_SIZE, _strict: bool = False) -> tuple[bytes, LabelSize]:
+           size: str = DEFAULT_SIZE, _strict: bool = False,
+           sds_available: bool = False) -> tuple[bytes, LabelSize]:
+    """The PDF and the stock it was laid out for. See `render_with_omitted`."""
+    pdf, used, _ = render_with_omitted(
+        label, chemical_id=chemical_id, copies=copies, artwork=artwork, size=size,
+        _strict=_strict, sds_available=sds_available)
+    return pdf, used
+
+
+def render_with_omitted(label, *, chemical_id: str, copies: int = 2,
+                        artwork: dict[str, bytes] | None = None,
+                        size: str = DEFAULT_SIZE, _strict: bool = False,
+                        sds_available: bool = False) -> tuple[bytes, LabelSize, int]:
     """One or more labels to an A4 sheet, laid out for a laminator.
 
     ★ Measured before it is drawn. The type shrinks to fit within a floor, and
@@ -353,12 +387,12 @@ def render(label, *, chemical_id: str, copies: int = 2,
         # its own overflow message is the one that reaches the caller.
         for candidate in SIZES[:-1]:
             try:
-                return render(label, chemical_id=chemical_id, copies=copies,
-                              artwork=artwork, size=candidate.code, _strict=True)
+                return render_with_omitted(label, chemical_id=chemical_id, copies=copies,
+                                           artwork=artwork, size=candidate.code, _strict=True)
             except LabelTooLarge:
                 continue
-        return render(label, chemical_id=chemical_id, copies=copies,
-                      artwork=artwork, size=SIZES[-1].code)
+        return render_with_omitted(label, chemical_id=chemical_id, copies=copies,
+                                   artwork=artwork, size=SIZES[-1].code)
 
     chosen = BY_SIZE.get(size) or SIZES[1]
     page_w, page_height = chosen.page or A4
@@ -374,18 +408,42 @@ def render(label, *, chemical_id: str, copies: int = 2,
     # wrapping changes the number of lines.
     usable = chosen.height - (2 * mm if on_stock else 10 * mm)
 
-    def need(at_scale: float) -> float:
-        return _one_label(c, label, chemical_id, first_top, artwork,
+    def need(at_scale: float, lbl=label) -> float:
+        return _one_label(c, lbl, chemical_id, first_top, artwork,
                           size=chosen, scale=at_scale, draw=False, left=left)
 
     scale = chosen.scale
     needed = need(scale)
     floor = chosen.scale * MIN_SCALE_FACTOR
     if chosen.always_prints and not _strict:
-        floor = LAST_RESORT_SCALE
+        floor = SMALL_READABLE_SCALE
     while needed > usable and scale > floor:
         scale = max(floor, scale - 0.02)
         needed = need(scale)
+
+    # ★ Round 6, TC-09: "regardless of the information on the SDS, the whmis
+    # requirements say the label must be on workplace bottles." So the small
+    # label, asked for by name, is not refused for want of room: at its readable
+    # floor it leaves statements off the end — precautionary first, then hazard —
+    # and prints how many, pointing to the data sheet the code opens. A workplace
+    # label must carry the identifier, safe handling and a reference to the SDS;
+    # the identifier, signal word, pictograms, PPE, first aid and manufacturer
+    # always stay. ★ Only where there is a current data sheet to point to — with
+    # none, "scan the code" would lead nowhere and this refuses as before. HSE is
+    # asked to confirm this reading on the round-7 page.
+    printed = label
+    omitted = 0
+    if needed > usable and chosen.always_prints and not _strict and sds_available:
+        hazards = list(label.hazard_statements or [])
+        precautions = list(label.precautionary_statements or [])
+        while needed > usable and (hazards or precautions):
+            if precautions:
+                precautions.pop()
+            else:
+                hazards.pop()
+            omitted += 1
+            printed = _Trimmed(label, hazards, precautions, omitted)
+            needed = need(scale, printed)
 
     if needed > usable:
         over = (needed - usable) / mm
@@ -403,8 +461,8 @@ def render(label, *, chemical_id: str, copies: int = 2,
         if slot == 0 and index:
             c.showPage()
         top = first_top - slot * (chosen.height + 8 * mm)
-        _one_label(c, label, chemical_id, top, artwork, size=chosen, scale=scale, left=left)
+        _one_label(c, printed, chemical_id, top, artwork, size=chosen, scale=scale, left=left)
 
     c.showPage()
     c.save()
-    return buffer.getvalue(), chosen
+    return buffer.getvalue(), chosen, omitted
