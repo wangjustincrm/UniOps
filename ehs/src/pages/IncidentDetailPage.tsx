@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, FileText, Plus } from 'lucide-react'
 import { api, apiBlob, ApiError } from '@/lib/api'
 import {
-  LoadFailedNote, PageHeader, SectionTitle,
+  ErrorNote, LoadFailedNote, PageHeader, primaryButton, secondaryButton, SectionTitle,
 } from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
 import { Countdown } from '@/components/Countdown'
@@ -24,6 +24,7 @@ import { ReturnToWorkPanel } from '@/components/ReturnToWorkPanel'
 import { NewActionDialog } from '@/components/NewActionDialog'
 import { RiskAssessmentDialog } from '@/components/RiskAssessmentDialog'
 import { RatingBadge, RiskScoringHistory, useScorings } from '@/components/RiskScoring'
+import { LocationSelect } from '@/components/LocationSelect'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
 import type { Deadline } from '@/lib/types'
@@ -40,6 +41,9 @@ interface Incident {
   description: string | null; equipment_involved: string | null
   witnesses_note: string | null; immediate_action_taken: string | null
   reported_by_name: string | null; reported_to_name: string | null; is_anonymous: boolean
+  /** HSE only, on an anonymous report: who filed it. Round 6, box 4. */
+  anonymous_reporter_name: string | null
+  location_id: string | null
   signature: string | null
   signer_name: string | null; signer_role: string | null; signed_at: string | null
   hse_reviewed_at: string | null; hse_reviewed_by_name: string | null
@@ -214,6 +218,7 @@ export default function IncidentDetailPage() {
   })
 
   const canClose = can('ehs.incident.close')
+  const [editing, setEditing] = useState(false)
 
   // Everything that changes an incident refreshes the register too. It did not,
   // so closing one from here left the list showing the status it had before —
@@ -259,6 +264,23 @@ export default function IncidentDetailPage() {
       <header className="border-b border-neutral-200 bg-white p-4">
         <p className="font-mono text-xs text-neutral-500">{inc.incident_no}</p>
       <PageHeader title={inc.title} subtitle={<>{inc.location_path ?? 'No area recorded'} {inc.occurred_at ? ` · ${formatDateTime(inc.occurred_at)}` : ''} {inc.is_anonymous ? ' · reported anonymously' : inc.reported_by_name ? ` · ${inc.reported_by_name}` : ''}</>} />
+        {/* ★ Round 6, box 4: "only the HSE role can see what user ID was used to
+            submit the incident to allow for further private discussions." The
+            server sends this to HSE and to nobody else. */}
+        {inc.is_anonymous && inc.anonymous_reporter_name && (
+          <p className="mt-1 text-xs text-neutral-600">
+            Reported anonymously by <span className="font-medium">{inc.anonymous_reporter_name}</span>
+            {' '}— shown to HSE only, for a private conversation.
+          </p>
+        )}
+        {canInvestigate && inc.status !== 'draft' && inc.status !== 'closed' && !editing && (
+          <button type="button" className="mt-2 text-xs font-semibold text-primary-700 hover:underline"
+                  onClick={() => setEditing(true)}>
+            Edit the report
+          </button>
+        )}
+        {editing && <EditReport incident={inc} onDone={() => { setEditing(false); touched() }}
+                                onCancel={() => setEditing(false)} />}
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <InjuryBadge injuryClass={inc.injury_class} />
           <MolBadge reportable={inc.mol_reportable} />
@@ -721,5 +743,94 @@ function CauseCard({ cause, incidentId, canRaise }: {
         />
       )}
     </article>
+  )
+}
+
+/**
+ * Correcting the account of what happened.
+ *
+ * Round 6, box 4: "Supervisors shall have edit rights to all incidents, near
+ * misses and hazard assessments to help manage them." The kind of incident and
+ * how badly somebody was hurt are the classification, with its own step,
+ * because they start statutory clocks. Saving a change withdraws HSE's review —
+ * what was reviewed is no longer what the record says — and the change log
+ * keeps every field under the editor's name.
+ */
+function EditReport({ incident, onDone, onCancel }: {
+  incident: Incident; onDone: () => void; onCancel: () => void
+}) {
+  const local = incident.occurred_at ? new Date(incident.occurred_at) : null
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const initial = {
+    title: incident.title,
+    date: local ? `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())}` : '',
+    time: local ? `${pad(local.getHours())}:${pad(local.getMinutes())}` : '',
+    location_id: incident.location_id ?? '',
+    description: incident.description ?? '',
+    equipment_involved: incident.equipment_involved ?? '',
+    witnesses_note: incident.witnesses_note ?? '',
+    immediate_action_taken: incident.immediate_action_taken ?? '',
+  }
+  const [form, setForm] = useState(initial)
+  const set = (k: keyof typeof initial, v: string) => setForm((f) => ({ ...f, [k]: v }))
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body: Record<string, unknown> = {}
+      for (const k of ['title', 'description', 'equipment_involved', 'witnesses_note',
+                       'immediate_action_taken', 'location_id'] as const) {
+        if (form[k] !== initial[k]) body[k] = form[k] === '' ? null : form[k]
+      }
+      if (form.date !== initial.date || form.time !== initial.time) {
+        body.occurred_at = new Date(`${form.date}T${form.time || '00:00'}`).toISOString()
+      }
+      return api.patch(`/api/v1/incidents/${incident.id}`, body)
+    },
+    onSuccess: onDone,
+  })
+
+  const area = 'min-h-[80px] w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-primary-400 focus:outline-none'
+  const box = 'min-h-[40px] w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:border-primary-400 focus:outline-none'
+  return (
+    <div className="mt-3 grid gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 sm:grid-cols-2">
+      <label className="sm:col-span-2 text-xs font-medium text-neutral-700">Title
+        <input className={box} value={form.title} onChange={(e) => set('title', e.target.value)} />
+      </label>
+      <label className="text-xs font-medium text-neutral-700">Date
+        <input type="date" className={box} value={form.date} onChange={(e) => set('date', e.target.value)} />
+      </label>
+      <label className="text-xs font-medium text-neutral-700">Time
+        <input type="time" className={box} value={form.time} onChange={(e) => set('time', e.target.value)} />
+      </label>
+      <div className="sm:col-span-2 text-xs font-medium text-neutral-700">Where
+        <LocationSelect value={form.location_id || null} onChange={(id) => set('location_id', id ?? '')} />
+      </div>
+      <label className="sm:col-span-2 text-xs font-medium text-neutral-700">What happened
+        <textarea className={area} value={form.description} onChange={(e) => set('description', e.target.value)} />
+      </label>
+      <label className="text-xs font-medium text-neutral-700">Equipment involved
+        <textarea className={area} value={form.equipment_involved} onChange={(e) => set('equipment_involved', e.target.value)} />
+      </label>
+      <label className="text-xs font-medium text-neutral-700">Witnesses
+        <textarea className={area} value={form.witnesses_note} onChange={(e) => set('witnesses_note', e.target.value)} />
+      </label>
+      <label className="sm:col-span-2 text-xs font-medium text-neutral-700">What was done straight away
+        <textarea className={area} value={form.immediate_action_taken} onChange={(e) => set('immediate_action_taken', e.target.value)} />
+      </label>
+      <div className="sm:col-span-2">
+        <ErrorNote error={save.error} />
+        <p className="mb-2 text-xs text-neutral-500">
+          Saving withdraws HSE&rsquo;s review, which will need doing again. Every change is in the history.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button type="button" className={secondaryButton} onClick={onCancel} disabled={save.isPending}>Cancel</button>
+          <button type="button" className={primaryButton}
+                  disabled={save.isPending || !form.title.trim() || !form.date}
+                  onClick={() => { if (!save.isPending) save.mutate() }}>
+            {save.isPending ? 'Saving…' : 'Save the report'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

@@ -107,6 +107,25 @@ class IncidentCreate(BaseModel):
         return self
 
 
+class IncidentEdit(BaseModel):
+    """What a supervisor may correct on a report after it is sent.
+
+    Round 6, box 4: "Supervisors shall have edit rights to all incidents, near
+    misses and hazard assessments to help manage them." The account of what
+    happened — not the kind of incident or how badly somebody was hurt, which
+    are the classification, start statutory clocks, and have their own step.
+    """
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    occurred_at: datetime | None = None
+    location_id: uuid.UUID | None = None
+    shift_code: str | None = Field(default=None, max_length=20)
+    description: str | None = None
+    equipment_involved: str | None = None
+    witnesses_note: str | None = None
+    immediate_action_taken: str | None = None
+
+
 class IncidentClassify(BaseModel):
     """Two independent facts, deliberately not one list of five.
 
@@ -216,6 +235,8 @@ class IncidentOut(BaseModel):
     reported_by: uuid.UUID | None
     reported_by_name: str | None
     is_anonymous: bool
+    # Set only for HSE, on an anonymous report: who filed it. Round 6, box 4.
+    anonymous_reporter_name: str | None = None
     description: str | None
     equipment_involved: str | None
     witnesses_note: str | None

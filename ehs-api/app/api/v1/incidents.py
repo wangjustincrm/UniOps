@@ -23,6 +23,7 @@ from app.core.permissions import (
 )
 from app.models.incident import IncidentPerson
 from sqlalchemy import select
+from app.models.mirrors import User
 from uniops_authz import has_permission
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,6 +34,7 @@ from app.services import notify
 from app.crud import investigation as inv_crud
 from app.schemas.incident import (
     IncidentClassify,
+    IncidentEdit,
     IncidentCreate,
     IncidentListItem,
     IncidentOut,
@@ -83,7 +85,19 @@ def _user_id(payload: dict) -> uuid.UUID:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token carries no usable subject") from None
 
 
-async def _to_out(db, incident) -> IncidentOut:
+async def sees_anonymous_reporters(db, user: dict) -> bool:
+    """Only HSE learns who filed an anonymous report.
+
+    Round 6, box 4: "an anonymous report ... will stay that way when other
+    supervisors view it. only the HSE role can see what user ID was used to
+    submit the incident to allow for further private discussions." Held to
+    `ehs.incident.close`, which only the HSE Manager has.
+    """
+    return await has_permission(
+        db, _user_id(user), user.get("role", ""), "ehs.incident.close")
+
+
+async def _to_out(db, incident, user: dict) -> IncidentOut:
     out = IncidentOut.model_validate(incident)
     out.persons = [  # type: ignore[assignment]
         p for p in await crud.load_persons(db, incident.id)
@@ -91,14 +105,28 @@ async def _to_out(db, incident) -> IncidentOut:
     out.deadlines = [  # type: ignore[assignment]
         d for d in await crud.load_deadlines(db, incident.id)
     ]
-    return IncidentOut.model_validate(out.model_dump())
+    out = IncidentOut.model_validate(out.model_dump())
+    if incident.is_anonymous:
+        if await sees_anonymous_reporters(db, user):
+            # HSE: who it was, by name, for the private conversation.
+            reporter = await db.get(User, incident.reported_by) if incident.reported_by else None
+            out.anonymous_reporter_name = reporter.full_name if reporter else None
+        else:
+            # ★ Everybody else: nothing that leads back to a person. The name
+            # was already dropped; the user id, the signature and the signer's
+            # name were still being sent to anyone who could open it.
+            out.reported_by = None
+            out.signature = None
+            out.signer_name = None
+            out.signer_role = None
+    return out
 
 
 @router.post("", response_model=IncidentOut, status_code=status.HTTP_201_CREATED)
 async def create_incident(payload: IncidentCreate, db: SessionDep, user: CanReportIncident):
     incident = await crud.create(db, payload, reporter_id=_user_id(user))
     # ★ Not told yet: this is a draft. The notice goes on submit — see below.
-    return await _to_out(db, incident)
+    return await _to_out(db, incident, user)
 
 
 @router.get("", response_model=list[IncidentListItem])
@@ -177,7 +205,7 @@ async def get_incident(incident_id: uuid.UUID, db: SessionDep, user: CanReportIn
             status.HTTP_403_FORBIDDEN,
             "You can only open incidents you reported or were involved in",
         )
-    return await _to_out(db, incident)
+    return await _to_out(db, incident, user)
 
 
 @router.post("/{incident_id}/submit", response_model=IncidentOut)
@@ -202,7 +230,42 @@ async def submit_incident(incident_id: uuid.UUID, db: SessionDep, user: CanRepor
     # crud.submit refuses anything but a draft, so this runs once per incident.
     # Same transaction: a submit that fails to save leaves no notice behind.
     await notify.incident_reported(db, incident)
-    return await _to_out(db, incident)
+    return await _to_out(db, incident, user)
+
+
+@router.patch("/{incident_id}", response_model=IncidentOut)
+async def edit_incident(
+    incident_id: uuid.UUID, payload: IncidentEdit, db: SessionDep, user: CanClassifyIncident,
+):
+    """Correct the account of what happened. Round 6, box 4: "Supervisors shall
+    have edit rights to all incidents, near misses and hazard assessments."
+
+    Held to the investigate key, which area supervisors and HSE hold. A closed
+    incident is reopened first, as for every other change to it; and a change to
+    the account withdraws HSE's review, because what was reviewed is no longer
+    what the record says. Every field is in the change log under the editor's
+    name — an anonymous report stays anonymous: editing it records the editor,
+    not the reporter.
+    """
+    incident = await crud.get(db, incident_id)
+    if incident.status == "draft":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "A draft is the reporter's; it can be edited once it is sent")
+    crud.assert_open(incident, "the report")
+    fields = payload.model_dump(exclude_unset=True)
+    if "title" in fields and not fields["title"]:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A report needs a title")
+    if "occurred_at" in fields and fields["occurred_at"] is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "A report needs to say when it happened")
+    if "location_id" in fields:
+        incident.location_path = await crud._resolve_location_path(db, fields["location_id"])
+    for key, value in fields.items():
+        setattr(incident, key, value)
+    if fields:
+        crud.withdraw_review(incident)
+    await db.flush()
+    return await _to_out(db, incident, user)
 
 
 @router.post("/{incident_id}/classify", response_model=IncidentOut)
@@ -229,7 +292,7 @@ async def classify_incident(
     if was != incident.status:
         await notify.incident_status_changed(
             db, incident, incident.status, by_name=incident.classified_by_name)
-    return await _to_out(db, incident)
+    return await _to_out(db, incident, user)
 
 
 # ── Investigation and causes ────────────────────────────────────────────────
@@ -248,7 +311,7 @@ async def hse_review_incident(
     await crud.hse_review(db, incident, _user_id(user))
     await notify.incident_status_changed(
         db, incident, "hse_reviewed", by_name=incident.hse_reviewed_by_name)
-    return await _to_out(db, incident)
+    return await _to_out(db, incident, user)
 
 
 @router.post("/{incident_id}/close", response_model=IncidentOut)
@@ -262,7 +325,7 @@ async def close_incident(incident_id: uuid.UUID, db: SessionDep, user: CanCloseI
         await notify.incident_status_changed(
             db, incident, "closed",
             by_name=await crud._resolve_name(db, _user_id(user)))
-    return await _to_out(db, incident)
+    return await _to_out(db, incident, user)
 
 
 @router.get("/{incident_id}/investigation", response_model=InvestigationOut | None)
@@ -289,7 +352,7 @@ async def reopen_incident(
     await crud.reopen(db, incident, _user_id(user))
     await notify.incident_status_changed(
         db, incident, "reopened", by_name=incident.reopened_by_name)
-    return await _to_out(db, incident)
+    return await _to_out(db, incident, user)
 
 
 @router.put("/{incident_id}/investigation", response_model=InvestigationOut)
@@ -457,7 +520,7 @@ async def mol_report_filed(
         evidence_note=payload.reference,
         when=payload.filed_at or datetime.now(timezone.utc),
     )
-    return await _to_out(db, incident)
+    return await _to_out(db, incident, user)
 
 
 @router.get("/{incident_id}/wsib-form7", response_model=Form7Package)
