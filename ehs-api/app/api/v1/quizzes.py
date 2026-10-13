@@ -69,6 +69,8 @@ class QuestionForAuthor(QuestionForLearner):
 
 class QuizIn(BaseModel):
     course_id: uuid.UUID | None = None
+    # Round 6: or the document it tests — signing asks for a pass first.
+    document_id: uuid.UUID | None = None
     title: str = Field(min_length=1, max_length=200)
     intro: str | None = None
     pass_mark_percent: int = Field(default=80, ge=1, le=100)
@@ -80,6 +82,7 @@ class QuizOut(BaseModel):
 
     id: uuid.UUID
     course_id: uuid.UUID | None
+    document_id: uuid.UUID | None = None
     title: str
     intro: str | None
     pass_mark_percent: int

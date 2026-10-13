@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text,
+    Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -29,9 +29,18 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
 
 class Quiz(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "ehs_quizzes"
+    __table_args__ = (
+        CheckConstraint("num_nonnulls(course_id, document_id) <= 1",
+                        name="ck_ehs_quiz_one_subject"),
+    )
 
     course_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ehs_courses.id", ondelete="CASCADE"),
+        nullable=True, index=True)
+    # Round 6: or a document — signing it asks for a pass first. Moves to the
+    # new version when the document is revised (crud/document.publish).
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_documents.id", ondelete="SET NULL"),
         nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     intro: Mapped[str | None] = mapped_column(Text, nullable=True)

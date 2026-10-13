@@ -15,7 +15,7 @@
  */
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Check, ClipboardList, Plus, QrCode, Trash2, UserCheck, X } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { Pagination, SearchBox, useListView } from '@/components/ListView'
@@ -27,7 +27,7 @@ import {
 } from '@/components/ui'
 
 interface Quiz {
-  id: string; course_id: string | null; title: string; intro: string | null
+  id: string; course_id: string | null; document_id: string | null; title: string; intro: string | null
   pass_mark_percent: number; max_attempts: number | null
   is_active: boolean; qr_token: string | null; question_count: number
 }
@@ -138,16 +138,27 @@ function NewQuizForm({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
   const [courseId, setCourseId] = useState('')
+  const [documentId, setDocumentId] = useState('')
+  // Round 6: a quiz tests a course or a document, not both.
+  const [tests, setTests] = useState<'course' | 'document'>('course')
   const [passMark, setPassMark] = useState('80')
 
   const courses = useQuery({
     queryKey: ['courses'],
     queryFn: () => api.get<Course[]>('/api/v1/training/courses'),
   })
+  const documents = useQuery({
+    queryKey: ['documents', 'published'],
+    queryFn: () => api.get<{ id: string; doc_no: string; title: string; version: string }[]>(
+      '/api/v1/documents?status=published'),
+    enabled: tests === 'document',
+  })
 
   const create = useMutation({
     mutationFn: () => api.post<Quiz>('/api/v1/quizzes', {
-      title, course_id: courseId || null, pass_mark_percent: Number(passMark),
+      title, pass_mark_percent: Number(passMark),
+      course_id: tests === 'course' ? (courseId || null) : null,
+      document_id: tests === 'document' ? (documentId || null) : null,
     }),
     onSuccess: (q) => {
       queryClient.invalidateQueries({ queryKey: ['quizzes'] })
@@ -177,22 +188,52 @@ function NewQuizForm({ onClose }: { onClose: () => void }) {
           <input className={inputClass} inputMode="numeric" value={passMark}
                  onChange={(e) => setPassMark(e.target.value.replace(/[^0-9]/g, ''))} />
         </Field>
-        <div className="sm:col-span-3">
-          <Field label="Course"
-                 hint="A pass writes a record against this course. Leave blank for a quiz that is only practice.">
-            <select className={inputClass} value={courseId}
-                    onChange={(e) => setCourseId(e.target.value)}>
-              <option value="">No course — practice only</option>
-              {courses.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </Field>
+        <div className="sm:col-span-3 flex flex-wrap gap-4 text-sm text-neutral-800">
+          <label className="flex items-center gap-2">
+            <input type="radio" name="tests" checked={tests === 'course'}
+                   onChange={() => setTests('course')} />
+            It tests a training course
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="radio" name="tests" checked={tests === 'document'}
+                   onChange={() => setTests('document')} />
+            It tests a document — a pass comes before signing it
+          </label>
         </div>
+        {tests === 'course' ? (
+          <div className="sm:col-span-3">
+            {/* ★ Round 6: a pass marks the session roster; the person running
+                the session marks the pass and closing it issues the record. */}
+            <Field label="Course"
+                   hint="Sessions of this course show its code. A pass is marked on the roster; the person running the session confirms it. Leave blank for practice only.">
+              <select className={inputClass} value={courseId}
+                      onChange={(e) => setCourseId(e.target.value)}>
+                <option value="">No course — practice only</option>
+                {courses.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </Field>
+          </div>
+        ) : (
+          <div className="sm:col-span-3">
+            {/* ★ Round 6: "add a quiz to a document". */}
+            <Field label="Document"
+                   hint="Anyone asked to sign it passes this first. It moves to each new version.">
+              <select className={inputClass} value={documentId}
+                      onChange={(e) => setDocumentId(e.target.value)}>
+                <option value="">Choose a published document</option>
+                {documents.data?.map((d) => (
+                  <option key={d.id} value={d.id}>{d.doc_no} · {d.title} (v{d.version})</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        )}
       </div>
       <ErrorNote error={create.error} />
       <div className="mt-3 flex justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
         <button type="button" className={primaryButton}
-                disabled={!title.trim() || create.isPending}
+                disabled={!title.trim() || create.isPending || (tests === 'document' && !documentId)}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
           {create.isPending ? 'Creating…' : 'Create and add questions'}
         </button>
@@ -241,11 +282,18 @@ export function TakeQuizPage() {
     join.mutate(undefined)
   }, [id, join])
 
+  const takeClient = useQueryClient()
   const submit = useMutation({
     mutationFn: () => api.post<Attempt>(`/api/v1/quizzes/${id}/attempts`, {
       answers, delivery_id: joined?.joined?.id ?? null,
     }),
-    onSuccess: setResult,
+    onSuccess: (r) => {
+      setResult(r)
+      // ★ A document's page is kept alive in its tab; without this it would
+      // still say "pass the quiz first" when the person goes back to sign.
+      const docId = quiz.data?.document_id
+      if (docId) takeClient.invalidateQueries({ queryKey: ['document', docId] })
+    },
   })
 
   if (questions.isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
@@ -269,7 +317,7 @@ export function TakeQuizPage() {
     return (
       <>
         <div className="mx-auto max-w-xl px-4 pt-4"><RosterNote join={join} got={joined} /></div>
-        <ResultView attempt={result} quizId={id} />
+        <ResultView attempt={result} quizId={id} documentId={quiz.data?.document_id ?? null} />
       </>
     )
   }
@@ -442,7 +490,9 @@ function RosterNote({ join, got, onPick }: {
  * A quiz that only says you failed is a filter. The explanation is the reason
  * this is worth running at the end of a session at all.
  */
-function ResultView({ attempt, quizId }: { attempt: Attempt; quizId: string }) {
+function ResultView({ attempt, quizId, documentId }: {
+  attempt: Attempt; quizId: string; documentId: string | null
+}) {
   const navigate = useNavigate()
   const wrong = attempt.marked.filter((m) => !m.correct)
 
@@ -466,7 +516,13 @@ function ResultView({ attempt, quizId }: { attempt: Attempt; quizId: string }) {
         {/* ★ Round 6: passing the quiz does not pass the course. The person
             running the session marks the pass, and the certificate is issued
             when they close it. */}
-        {attempt.passed && (
+        {attempt.passed && documentId && (
+          <Link to={`/documents/${documentId}`}
+                className="mt-2 inline-block text-xs font-semibold text-primary-700 hover:underline">
+            Back to the document — you can sign it now
+          </Link>
+        )}
+        {attempt.passed && !documentId && (
           <p className="mt-2 text-xs text-neutral-600">
             Your pass is on the session roster. The person running the session confirms it, and
             your certificate is issued when they close the session.

@@ -137,6 +137,13 @@ async def publish(
         previous = await db.get(SafetyDocument, doc.supersedes_id)
         if previous is not None and previous.status == "published":
             await retire(db, previous)
+        # ★ Its quiz goes with it. Round 6: a document can carry a quiz; left on
+        # the retired version, the new one would be signable with no quiz.
+        if previous is not None:
+            from app.models.quiz import Quiz
+            for quiz in (await db.execute(
+                    select(Quiz).where(Quiz.document_id == previous.id))).scalars():
+                quiz.document_id = doc.id
 
     await db.flush()
     await deadline_service.ensure_document_review_deadline(db, doc)
@@ -273,6 +280,16 @@ async def acknowledge(
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"{doc.doc_no} is {doc.status}; only a published version can be signed")
+
+    # ★ Round 6: "add a quiz to a document". Where the document carries one,
+    # signing that you have read it waits for a pass — a signature is the claim
+    # that it was understood, and the quiz is how that is checked.
+    from app.crud import quiz as quiz_crud
+    quiz = await quiz_crud.for_document(db, doc.id)
+    if quiz is not None and not await quiz_crud.has_passed(db, quiz.id, user_id):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Pass the quiz on {doc.doc_no} first — it is on the document's page.")
 
     existing = (await db.execute(
         select(DocumentAcknowledgement).where(

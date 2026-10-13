@@ -31,6 +31,11 @@ export interface SafetyDoc {
    *  document read fills these in. */
   superseded_by_id?: string | null
   superseded_by_version?: string | null
+  /** The quiz signing asks for a pass of, and whether the reader has passed it.
+   *  Only the single document read fills these in. Round 6. */
+  quiz_id?: string | null
+  quiz_title?: string | null
+  quiz_passed?: boolean
 }
 
 export const CATEGORY_LABELS: Record<string, string> = {

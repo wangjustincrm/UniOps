@@ -77,6 +77,20 @@ def require_active(quiz: Quiz) -> None:
             "for the current code.")
 
 
+async def for_document(db: AsyncSession, document_id: uuid.UUID) -> Quiz | None:
+    """The quiz a document asks for before it is signed, if it has one."""
+    return (await db.execute(
+        select(Quiz).where(Quiz.document_id == document_id, Quiz.is_active.is_(True))
+        .order_by(Quiz.created_at.desc()).limit(1))).scalars().first()
+
+
+async def has_passed(db: AsyncSession, quiz_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    return (await db.execute(
+        select(QuizAttempt.id).where(QuizAttempt.quiz_id == quiz_id,
+                                     QuizAttempt.user_id == user_id,
+                                     QuizAttempt.passed.is_(True)).limit(1))).first() is not None
+
+
 async def by_qr_token(db: AsyncSession, token: str) -> Quiz | None:
     return (await db.execute(
         select(Quiz).where(Quiz.qr_token == token))).scalar_one_or_none()
@@ -85,9 +99,17 @@ async def by_qr_token(db: AsyncSession, token: str) -> Quiz | None:
 async def create_quiz(db: AsyncSession, payload: dict, *, creator_id: uuid.UUID) -> Quiz:
     if payload.get("course_id") and await db.get(Course, payload["course_id"]) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+    if payload.get("course_id") and payload.get("document_id"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "A quiz tests a course or a document, not both")
+    if payload.get("document_id"):
+        from app.models.document import SafetyDocument
+        if await db.get(SafetyDocument, payload["document_id"]) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
     quiz = Quiz(
         id=uuid.uuid4(),
         course_id=payload.get("course_id"),
+        document_id=payload.get("document_id"),
         title=payload["title"],
         intro=payload.get("intro"),
         pass_mark_percent=payload.get("pass_mark_percent", 80),
@@ -393,8 +415,11 @@ async def join(
     """
     require_active(quiz)
     if quiz.course_id is None:
-        return JoinResult(note="This quiz is not part of a course, so there is no "
-                               "session roster to join.")
+        # A document's quiz, or one on its own: there is no roster to speak of,
+        # and saying so on a policy's quiz would only puzzle the person signing.
+        return JoinResult(note=None if quiz.document_id else
+                          "This quiz is not part of a course, so there is no "
+                          "session roster to join.")
     candidates = await sessions_today(db, quiz, now=now)
     if not candidates:
         return JoinResult(note="No session of this course is under way right now, so you "

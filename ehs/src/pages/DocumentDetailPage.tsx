@@ -137,6 +137,26 @@ export default function DocumentDetailPage() {
           </Link>
         </section>
       )}
+      {/* ★ Round 6: "add a quiz to a document". Signing waits for a pass. */}
+      {d.quiz_id && d.status === 'published' && (
+        <section className="mb-4 rounded-xl border border-neutral-200 bg-white p-3.5">
+          <h2 className="text-sm font-semibold text-neutral-900">Quiz: {d.quiz_title}</h2>
+          {d.quiz_passed ? (
+            <p className="mt-0.5 text-xs text-success-700">You have passed it.</p>
+          ) : (
+            <>
+              <p className="mt-0.5 text-xs text-neutral-600">
+                {d.requires_ack ? 'Pass it before you sign — the signature says you understood it.'
+                                : 'A check that the document was understood.'}
+              </p>
+              <Link to={`/quizzes/${d.quiz_id}/take`}
+                    className="mt-2 inline-block text-sm font-semibold text-primary-700 hover:underline">
+                Take the quiz
+              </Link>
+            </>
+          )}
+        </section>
+      )}
       {iOweASignature && <SignPanel doc={d} onSigned={invalidate} />}
 
       {mayManage && d.status === 'draft' && <DraftControls doc={d} onChanged={invalidate} />}
@@ -214,8 +234,11 @@ function SignPanel({ doc, onSigned }: { doc: SafetyDoc; onSigned: () => void }) 
       </div>
       <ErrorNote error={sign.error} />
       <div className="mt-3 flex justify-end">
+        {doc.quiz_id && !doc.quiz_passed && (
+          <p className="mr-3 self-center text-xs text-warning-700">Pass the quiz above first.</p>
+        )}
         <button type="button" className={primaryButton}
-                disabled={!signature || sign.isPending}
+                disabled={!signature || sign.isPending || Boolean(doc.quiz_id && !doc.quiz_passed)}
                 onClick={() => { if (!sign.isPending) sign.mutate() }}>
           <Check className="h-4 w-4" aria-hidden />
           {sign.isPending ? 'Recording…' : 'I have read this'}

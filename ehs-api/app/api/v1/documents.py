@@ -18,6 +18,7 @@ from app.core.permissions import (
     CanManageDocument, CanReadDocument, CanReadWorker,
 )
 from app.crud import document as crud
+from app.crud import quiz as quiz_crud
 from app.services.attachments import MAX_FILE_SIZE, proxy_download, upload_to_file_server
 
 router = APIRouter(prefix="/documents")
@@ -99,6 +100,11 @@ class DocumentOut(BaseModel):
     # arriving here long after the task that pointed at it was closed.
     superseded_by_id: uuid.UUID | None = None
     superseded_by_version: str | None = None
+    # The quiz this document asks for before signing, and whether the person
+    # asking has passed it. Round 6.
+    quiz_id: uuid.UUID | None = None
+    quiz_title: str | None = None
+    quiz_passed: bool = False
 
 
 class AckIn(BaseModel):
@@ -156,9 +162,13 @@ async def create_document(payload: DocumentIn, db: SessionDep, user: CanManageDo
 
 
 @router.get("/{document_id}", response_model=DocumentOut)
-async def get_document(document_id: uuid.UUID, db: SessionDep, user: CanReadDocument):  # noqa: ARG001
+async def get_document(document_id: uuid.UUID, db: SessionDep, user: CanReadDocument):
     doc = await crud.get_document(db, document_id)
     out = DocumentOut.model_validate(doc)
+    quiz = await quiz_crud.for_document(db, doc.id)
+    if quiz is not None:
+        out.quiz_id, out.quiz_title = quiz.id, quiz.title
+        out.quiz_passed = await quiz_crud.has_passed(db, quiz.id, _user_id(user))
     # Only looked up for a retired one: on a current document there is nothing
     # to say, and it would be a query per read for every list.
     if doc.status == "retired":
