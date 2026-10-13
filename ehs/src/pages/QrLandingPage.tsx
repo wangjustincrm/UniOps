@@ -69,7 +69,7 @@ export default function QrLandingPage() {
 
   if (target.error) {
     const message = target.error instanceof ApiError && target.error.status === 404
-      ? (target.error.body as { detail?: string })?.detail ?? 'This code is not in use.'
+      ? target.error.message || 'This code is not in use.'
       : 'That code could not be read. Try again, or find the item in Safety directly.'
     return (
       <div className="p-4">

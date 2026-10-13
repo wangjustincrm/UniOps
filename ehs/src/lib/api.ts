@@ -94,8 +94,13 @@ function detailOf(body: unknown): string | null {
     if (typeof detail === 'string') return detail
     // FastAPI validation errors arrive as a list of objects.
     if (Array.isArray(detail) && detail.length) {
-      const first = detail[0] as { msg?: string }
-      if (first?.msg) return first.msg
+      // Name the field: "Input should be greater than or equal to 1" alone
+      // does not say which box to change.
+      const first = detail[0] as { msg?: string; loc?: unknown[] }
+      const field = Array.isArray(first?.loc)
+        ? String(first.loc[first.loc.length - 1] ?? '').replace(/_/g, ' ')
+        : ''
+      if (first?.msg) return field && field !== 'body' ? `${field}: ${first.msg}` : first.msg
     }
   }
   return null

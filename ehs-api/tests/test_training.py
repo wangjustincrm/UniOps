@@ -520,6 +520,43 @@ class TestWhoeverIsRunningItCanRunIt:
         assert made.status_code in (200, 201), made.text
         return made.json()
 
+    async def test_the_coordinator_lists_the_sessions_they_run(
+            self, worker, session_run_by_a_worker):
+        """★ Round 6, TC-16: the person running a session had no list to find it
+        in — the only one was behind training-read. Their own are open to them;
+        everybody's is not."""
+        _, wc = worker
+        mine = await wc.get("/api/v1/course-sessions", params={"mine": "true"})
+        assert mine.status_code == 200, mine.text
+        assert [s["id"] for s in mine.json()] == [session_run_by_a_worker["id"]]
+        everyone = await wc.get("/api/v1/course-sessions")
+        assert everyone.status_code == 403
+
+    async def test_a_fully_marked_session_can_be_closed(
+            self, worker, session_run_by_a_worker, test_engine):
+        """★ Round 6: with everybody already marked, Save and close sent no
+        changes and was refused — a fully marked session could never close."""
+        from tests.conftest import make_user
+        _, wc = worker
+        sid = session_run_by_a_worker["id"]
+        attendee = await make_user(test_engine, role="requester")
+        added = await wc.post(f"/api/v1/course-sessions/{sid}/roster",
+                              json={"user_ids": [str(attendee.id)]})
+        assert added.status_code in (200, 201), added.text
+        eid = added.json()[0]["id"]
+        marked = await wc.post(f"/api/v1/course-sessions/{sid}/results", json={
+            "results": [{"enrolment_id": eid, "result": "passed"}]})
+        assert marked.status_code == 200, marked.text
+
+        closed = await wc.post(f"/api/v1/course-sessions/{sid}/results",
+                               json={"results": [], "complete": True})
+        assert closed.status_code == 200, closed.text
+        assert (await wc.get(f"/api/v1/course-sessions/{sid}")).json()["status"] == "completed"
+
+        # An empty request that closes nothing still does nothing, and says so.
+        idle = await wc.post(f"/api/v1/course-sessions/{sid}/results", json={"results": []})
+        assert idle.status_code == 422
+
     async def test_the_coordinator_opens_and_marks_their_own_session(
             self, worker, hse_manager, session_run_by_a_worker, test_engine):
         from tests.conftest import make_user

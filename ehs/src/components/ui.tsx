@@ -136,9 +136,13 @@ export function Empty({ children }: { children: ReactNode }) {
 
 export function ErrorNote({ error }: { error: unknown }) {
   if (!error) return null
+  // ★ The message, never `body.detail` itself. A validation refusal's detail
+  // is a list of objects, and handed to React as a child it took the whole tab
+  // down — round 6, TC-05 and TC-16: "Objects are not valid as a React child
+  // (found: object with keys {type, loc, msg, input, ctx})". ApiError has
+  // already turned it into words.
   const message =
-    (error as { body?: { detail?: string } })?.body?.detail ??
-    (error as Error)?.message ??
+    (typeof (error as Error)?.message === 'string' && (error as Error).message) ||
     'Something went wrong.'
   return (
     <p className="mt-2 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{message}</p>

@@ -13,7 +13,7 @@ import uuid
 from datetime import date, datetime, time
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
@@ -109,10 +109,20 @@ class ResultIn(BaseModel):
 
 
 class MarkIn(BaseModel):
-    results: list[ResultIn] = Field(min_length=1)
+    # ★ May be empty when closing. Round 6: with every attendee already marked,
+    # "Save and close the session" sent no changes and was refused 422 — so a
+    # fully marked session could never be closed. Empty is still refused when
+    # nothing is being closed, because then the request does nothing at all.
+    results: list[ResultIn] = Field(default_factory=list)
     # Marking is usually the last thing that happens, so this saves a second
     # call. Left false when HSE is marking part of a roster as they go.
     complete: bool = False
+
+    @model_validator(mode="after")
+    def _something_to_do(self):
+        if not self.results and not self.complete:
+            raise ValueError("Nothing to save: mark somebody, or close the session")
+        return self
 
 
 async def _with_counts(db, deliveries) -> list[DeliveryOut]:
@@ -169,13 +179,28 @@ async def _require_session_access(db, user: dict, delivery) -> None:
 
 @router.get("", response_model=list[DeliveryOut])
 async def list_sessions(
-    db: SessionDep, user: CanReadTraining,
+    db: SessionDep, user: CanReportIncident,
     course_id: uuid.UUID | None = None,
     mine: bool = Query(default=False, description="Sessions I have been asked to run"),
     attending: bool = Query(default=False, description="Sessions I am booked on"),
     status_in: list[str] | None = Query(default=None, alias="status"),
 ):
+    """Sessions. Everybody may list their own; the whole list needs training-read.
+
+    ★ Round 6, TC-16: "a worker can not add attendees or manage courses they are
+    running — Insufficient permissions." The person HSE names to run a session
+    is usually an ordinary employee, and the only list of sessions was behind
+    `ehs.training.read`, so the one they run could be reached from a task in My
+    Actions and from nowhere else. `mine` and `attending` are about the caller
+    and nobody else, so they are open to the caller.
+    """
     uid = _user_id(user)
+    if not (mine or attending) and not await has_permission(
+            db, uid, user.get("role", ""), "ehs.training.read"):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Listing every session needs the training-read permission; "
+            "the sessions you run are under My Training")
     return await _with_counts(db, await crud.list_deliveries(
         db, course_id=course_id,
         coordinator_id=uid if mine else None,

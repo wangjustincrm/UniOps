@@ -14,9 +14,10 @@
  * the reason this page is needed.
  */
 import { useQuery } from '@tanstack/react-query'
-import { GraduationCap } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { CalendarDays, ChevronRight, GraduationCap } from 'lucide-react'
 import { api, useFileOpener } from '@/lib/api'
-import { Card, Empty, LoadFailedNote, PageHeader } from '@/components/ui'
+import { Card, Empty, LoadFailedNote, PageHeader, SectionTitle } from '@/components/ui'
 import { formatDate } from '@/lib/formatDate'
 import { daysOverdue } from '@/lib/formatDate'
 
@@ -30,7 +31,20 @@ interface Record_ {
   user_name: string
 }
 
+interface RunningSession {
+  id: string; delivery_no: string; title: string; session_date: string
+  start_time: string | null; status: string; enrolled: number
+}
+
 export default function MyTrainingPage() {
+  // ★ Round 6, TC-16: whoever HSE names to run a session is usually an ordinary
+  // employee, and the only list of sessions was the Training screen, which they
+  // cannot open. Their own sessions are listed here instead, where they already
+  // come for their own training.
+  const running = useQuery({
+    queryKey: ['course-sessions', 'mine'],
+    queryFn: () => api.get<RunningSession[]>('/api/v1/course-sessions?mine=true'),
+  })
   const records = useQuery({
     queryKey: ['my-training'],
     queryFn: () => api.get<Record_[]>('/api/v1/training/records/mine'),
@@ -45,6 +59,32 @@ export default function MyTrainingPage() {
         title="My training"
         subtitle="What you have completed, and the certificate for each."
       />
+
+      {running.isError && <LoadFailedNote what="The sessions you run" />}
+      {(running.data ?? []).length > 0 && (
+        <section className="mb-5">
+          <SectionTitle className="mb-2">Sessions you are running</SectionTitle>
+          <ul className="flex flex-col gap-2">
+            {(running.data ?? []).map((s) => (
+              <li key={s.id}>
+                <Link to={`/training/sessions/${s.id}`}
+                      className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-3 hover:border-primary-300">
+                  <CalendarDays className="h-4 w-4 shrink-0 text-primary-600" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-neutral-900">{s.title}</span>
+                    <span className="block text-xs text-neutral-500">
+                      {s.delivery_no} · {formatDate(s.session_date)}
+                      {s.start_time && ` · ${s.start_time.slice(0, 5)}`} · {s.enrolled} on the roster
+                      {s.status !== 'scheduled' && ` · ${s.status === 'completed' ? 'closed' : s.status}`}
+                    </span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-neutral-300" aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {records.isError && <LoadFailedNote what="Your training record" />}
       {opener.error && (
