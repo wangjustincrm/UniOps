@@ -25,6 +25,7 @@ from app.services import cost_analysis as ca
 from app.services import cost_diagnosis as dx
 from app.services import cost_batch as bt
 from app.services import cost_margin as mg
+from app.services import cost_standard as sc
 from app.services import nc_cost_sync as svc
 from app.tasks import nc_cost_sync_scheduler as sched
 
@@ -210,6 +211,24 @@ async def batch(material: str, batch: str, user: dict = Depends(_can_view),
     if tree is None:
         raise HTTPException(status_code=404, detail="no completion receipt for that batch")
     return {"batch": tree, "summary": bt.summarise(tree)}
+
+
+@router.get("/standard-cost")
+async def standard_cost(material: str, period_from: str = Query(..., alias="from"),
+                        period_to: str = Query(..., alias="to"),
+                        window_months: int = Query(6, ge=1, le=12),
+                        mad_k: float = Query(3.0, gt=0, le=10),
+                        bom_tolerance: float = Query(0.05, ge=0, le=1),
+                        exclude_stoppage: bool = True,
+                        user: dict = Depends(_can_view), db: AsyncSession = Depends(get_db)):
+    """A suggestion only — nothing is written, NC keeps costing actuals."""
+    a, b = _range(period_from, period_to)
+    material = material.strip().upper()
+    if not material:
+        raise HTTPException(status_code=422, detail="material is required")
+    return await sc.standard_cost(db, material, a, b, {
+        "window_months": window_months, "mad_k": mad_k, "bom_tolerance": bom_tolerance,
+        "exclude_stoppage": exclude_stoppage})
 
 
 @router.get("/diagnosis")

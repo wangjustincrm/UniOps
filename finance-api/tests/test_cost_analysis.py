@@ -858,3 +858,56 @@ async def test_batch_endpoints_are_gated(client, synced):
     assert r.status_code == 200 and r.json()["batches"][0]["batch"] == "20262101021"
     assert (await client.get("/finance/v1/cost-analysis/batch?material=CS0080&batch=NOPE",
                              headers=_h())).status_code == 404
+
+
+# ── P5: standard cost suggestion ─────────────────────────────────────────────
+
+async def _bom(db_session, product, lines, default="Y"):
+    bom_id, src = uuid.uuid4(), f"BOM{product}"
+    await db_session.execute(text("insert into nc_bom (cbomid, hbdefault) values (:s, :d)"),
+                             {"s": src, "d": default})
+    await db_session.execute(text(
+        "insert into boms (id, product_material_code, version, status, nc_source_pk) "
+        "values (:i, :p, '1.0', 'approved', :s)"), {"i": bom_id, "p": product, "s": src})
+    for n, (code, qp) in enumerate(lines):
+        await db_session.execute(text(
+            "insert into bom_lines (id, bom_id, line_no, component_material_code, qty_per, uom) "
+            "values (:i, :b, :n, :c, :q, 'KGM')"),
+            {"i": uuid.uuid4(), "b": bom_id, "n": n, "c": code, "q": qp})
+    await db_session.commit()
+
+
+async def test_standard_cost_moves_the_settlement_variance_out_of_product_cost(db_session, synced):
+    from app.services import cost_standard as st
+    await _bom(db_session, "CR0059", [("CR0010", 1.0)])
+    r = await st.standard_cost(db_session, "CR0059", "2026-07", "2026-08")
+    card = r["card"]
+    assert card["usage_basis"] == "months (no production orders)"
+    cr69 = next(l for l in card["lines"] if l["material_code"] == "CR0069")
+    # the settled price, never the provisional 5.058
+    assert cr69["std_price"] == pytest.approx(105670.77 / 25156.79)
+    aug = next(m for m in r["simulation"] if m["period"] == "2026-08")
+    assert aug["settlement"] == pytest.approx(-61906.55)
+    # the decomposition closes: actual = standard + every variance
+    for m in r["simulation"]:
+        assert m["unexplained"] == pytest.approx(0, abs=0.05)
+    because = " ".join(r["summary"]["because"])
+    assert "2026-08" in because and "purchase price variance on the inputs" in because
+    assert "CR0010 in the BOM but never consumed" in because
+    assert "consumed but not in the BOM" in because
+    assert "for Finance to decide" in because
+
+
+async def test_standard_card_rolls_up_in_house_inputs(db_session, synced):
+    from app.services import cost_standard as st
+    r = await st.standard_cost(db_session, "CS0080", "2026-08", "2026-09")
+    line = next(l for l in r["card"]["lines"] if l["material_code"] == "CR0059")
+    assert line["self_made"] and line["price_basis"] == "its own standard (below)"
+    assert line["std_price"] == pytest.approx(line["child"]["std_unit"])
+
+
+async def test_standard_cost_endpoint_is_gated_and_validated(client, synced):
+    url = "/finance/v1/cost-analysis/standard-cost?material=CR0059&from=2026-07&to=2026-08"
+    assert (await client.get(url, headers=_h())).status_code == 200
+    assert (await client.get(url, headers=_h("ap_clerk"))).status_code == 403
+    assert (await client.get(url + "&window_months=99", headers=_h())).status_code == 422

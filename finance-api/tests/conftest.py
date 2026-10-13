@@ -130,6 +130,25 @@ def _migrate():
             " updated_at timestamptz NOT NULL DEFAULT now())"))
         conn.commit()
 
+    # MRP's BOM mirror (no ORM model here) — same physical DB in prod; the
+    # standard-cost suggestion (services/cost_standard.py) compares actual usage
+    # with the default BOM.
+    with eng.connect() as conn:
+        for stmt in (
+            "DROP TABLE IF EXISTS bom_lines CASCADE",
+            "DROP TABLE IF EXISTS boms CASCADE",
+            "DROP TABLE IF EXISTS nc_bom CASCADE",
+            "CREATE TABLE nc_bom (cbomid varchar(40) PRIMARY KEY, hbdefault varchar(1))",
+            "CREATE TABLE boms (id uuid PRIMARY KEY, product_material_code varchar(40) NOT NULL,"
+            " version varchar(20), status varchar(20), batch_output_qty numeric(28,8),"
+            " nc_source_pk varchar(40))",
+            "CREATE TABLE bom_lines (id uuid PRIMARY KEY, bom_id uuid NOT NULL REFERENCES boms(id),"
+            " line_no integer, component_material_code varchar(40) NOT NULL,"
+            " qty_per numeric(28,10), uom varchar(20), scrap_rate numeric(10,4))",
+        ):
+            conn.execute(sa.text(stmt))
+        conn.commit()
+
     # `tasks` is epms-owned too, and finance-api's mirror models only the four
     # columns the payment executor touches. jv_validation_tasks.py writes a real
     # inbox row over raw SQL (type / title / assigned_role / document_number …),
