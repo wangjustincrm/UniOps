@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select, text
+from sqlalchemy import case, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -202,6 +202,7 @@ async def list_(
     recordable_only: bool = False,
     limit: int = 50,
     offset: int = 0,
+    order: str = "newest",
 ) -> list[Incident]:
     stmt = select(Incident)
     if reported_by:
@@ -249,7 +250,19 @@ async def list_(
         stmt = stmt.where(Incident.form_kind == form_kind)
     if location_id:
         stmt = stmt.where(Incident.location_id == location_id)
-    stmt = stmt.order_by(Incident.occurred_at.desc().nullslast()).limit(limit).offset(offset)
+    if order == "status":
+        # By how far along it is — the open ones first, the way somebody
+        # working the register reads it — and newest first within each.
+        stage = case(
+            {"draft": 0, "submitted": 1, "under_investigation": 2,
+             "pending_closure": 3, "closed": 4},
+            value=Incident.status, else_=5)
+        stmt = stmt.order_by(stage, Incident.occurred_at.desc().nullslast())
+    elif order == "oldest":
+        stmt = stmt.order_by(Incident.occurred_at.asc().nullslast())
+    else:
+        stmt = stmt.order_by(Incident.occurred_at.desc().nullslast())
+    stmt = stmt.limit(limit).offset(offset)
     return list((await db.execute(stmt)).scalars())
 
 

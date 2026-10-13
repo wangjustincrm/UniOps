@@ -7,6 +7,7 @@
  * — "no incidents at the plant" and "you have not filed one" are very
  * different statements to put in front of a worker.
  */
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
@@ -56,11 +57,16 @@ export default function IncidentListPage() {
     from: search.get('occurred_from'), to: search.get('occurred_to'),
   })
   const { from, to } = dateFilter.range
+  // ★ Round 6, box 1: "allow the incident register list to be sorted by
+  // status." Asked of the server, so it orders the register rather than the
+  // fifty rows that happened to arrive.
+  const [order, setOrder] = useState<'newest' | 'oldest' | 'status'>('newest')
   const params = [
     ...drill,
     from ? `occurred_from=${from}` : '',
     to ? `occurred_to=${to}` : '',
     `limit=${limit}`,
+    order !== 'newest' ? `order=${order}` : '',
   ].filter(Boolean).join('&')
 
   const { data, isLoading, isError, error } = useQuery({
@@ -119,6 +125,13 @@ export default function IncidentListPage() {
       <SearchBox value={list.query} onChange={list.setQuery}
                  placeholder="Search by number, title, area or status">
         <DateRangeFilter {...dateFilter} />
+        <select aria-label="Sort" value={order}
+                onChange={(e) => setOrder(e.target.value as typeof order)}
+                className="h-10 rounded-lg border border-neutral-200 bg-white px-2 text-sm">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="status">By status — open first</option>
+        </select>
       </SearchBox>
 
       {incidents.length === 0 && (

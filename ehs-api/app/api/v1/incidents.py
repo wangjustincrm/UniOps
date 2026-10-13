@@ -153,6 +153,10 @@ async def list_incidents(
                     "or reportable to the Ministry."),
     limit: int = Query(default=50, le=200),
     offset: int = 0,
+    # Round 6, box 1: "allow the incident register list to be sorted by status."
+    # On the server, so it orders the whole register rather than the fifty rows
+    # that happened to arrive.
+    order: str = Query(default="newest", pattern="^(newest|oldest|status)$"),
 ):
     # Without ehs.incident.read the register is not browsable, but a person's
     # own reports are: the list narrows rather than refusing outright.
@@ -165,7 +169,7 @@ async def list_incidents(
         injury_classes=injury_class, department_id=department_id,
         no_department=no_department, body_part_label=body_part_label,
         injured_only=injured_only, recordable_only=recordable_only,
-        reported_by=_user_id(user) if mine_only else None,
+        reported_by=_user_id(user) if mine_only else None, order=order,
     )
     return [IncidentListItem.model_validate(r) for r in rows]
 

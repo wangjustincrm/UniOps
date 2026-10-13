@@ -50,3 +50,20 @@ async def test_with_no_actions_it_closes(hse_manager):
     _, client = hse_manager
     iid = await _incident(client)
     assert (await client.post(f"/api/v1/incidents/{iid}/close")).status_code == 200
+
+
+async def test_the_register_sorts_by_status(hse_manager):
+    """Round 6, box 1: "allow the incident register list to be sorted by status."
+    On the server, so it orders the register and not just the rows that came."""
+    _, client = hse_manager
+    open_one = await _incident(client)              # reviewed, still open
+    closed_one = await _incident(client)
+    assert (await client.post(f"/api/v1/incidents/{closed_one}/close")).status_code == 200
+
+    rows = (await client.get("/api/v1/incidents", params={"order": "status", "limit": 200})).json()
+    stages = [r["status"] for r in rows]
+    order = {"draft": 0, "submitted": 1, "under_investigation": 2, "pending_closure": 3, "closed": 4}
+    assert stages == sorted(stages, key=lambda st: order.get(st, 5))
+    ids = [r["id"] for r in rows]
+    assert ids.index(open_one) < ids.index(closed_one)
+    assert (await client.get("/api/v1/incidents", params={"order": "sideways"})).status_code == 422
