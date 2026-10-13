@@ -386,6 +386,18 @@ async def reopen(db: AsyncSession, incident: Incident, reopener_id: uuid.UUID) -
     return incident
 
 
+async def open_actions_on(db: AsyncSession, incident_id: uuid.UUID) -> list[str]:
+    """The numbers of corrective actions raised from this incident and not done."""
+    from app.models.action import Action
+
+    return list((await db.execute(
+        select(Action.action_no).where(
+            Action.source_type == "incident",
+            Action.source_id == incident_id,
+            Action.status.notin_(("closed", "cancelled")))
+        .order_by(Action.action_no))).scalars())
+
+
 async def close(db: AsyncSession, incident: Incident) -> Incident:
     """Close an incident, refusing where HSE has not reviewed it."""
     if incident.status == "closed":
@@ -398,6 +410,16 @@ async def close(db: AsyncSession, incident: Incident) -> Incident:
             status.HTTP_409_CONFLICT,
             "HSE must review an injury or equipment-damage incident before it is closed",
         )
+    # ★ Round 6: "when an incident has a capa that is not closed, do not allow
+    # the incident to be closed." A closed incident with work still owed on it
+    # reads as finished in every report while the fix it promised is not done.
+    open_actions = await open_actions_on(db, incident.id)
+    if open_actions:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{len(open_actions)} corrective action{'s are' if len(open_actions) != 1 else ' is'} "
+            f"still open on {incident.incident_no}: {', '.join(open_actions)}. "
+            "Close or cancel them first.")
     incident.status = "closed"
     incident.closed_at = datetime.now(timezone.utc)
     await db.flush()
