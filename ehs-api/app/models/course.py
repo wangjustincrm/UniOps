@@ -111,6 +111,13 @@ class CourseEnrolment(UUIDPrimaryKey, TimestampMixin, Base):
     marked_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Whether they passed the session's quiz, and who said so: "Online quiz"
+    # when they answered it here, or the person running the session for a
+    # quiz done on paper. Round 6: passing the quiz is necessary, not
+    # sufficient — the person running the session still marks the pass.
+    quiz_passed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    quiz_marked_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # The record issued into this person's file when they passed. Set once.
     training_record_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ehs_training_records.id", ondelete="SET NULL"),

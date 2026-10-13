@@ -463,9 +463,13 @@ function ResultView({ attempt, quizId }: { attempt: Attempt; quizId: string }) {
         <p className="mt-0.5 text-xs text-neutral-600">
           {attempt.points_scored} of {attempt.points_possible} points
         </p>
-        {attempt.training_record_id && (
-          <p className="mt-2 text-xs font-medium text-success-700">
-            Recorded in your training file.
+        {/* ★ Round 6: passing the quiz does not pass the course. The person
+            running the session marks the pass, and the certificate is issued
+            when they close it. */}
+        {attempt.passed && (
+          <p className="mt-2 text-xs text-neutral-600">
+            Your pass is on the session roster. The person running the session confirms it, and
+            your certificate is issued when they close the session.
           </p>
         )}
       </div>

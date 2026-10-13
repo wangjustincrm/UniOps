@@ -14,11 +14,13 @@ from datetime import date, datetime, time
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from sqlalchemy import select
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
 from app.core.permissions import CanReadTraining, CanReportIncident, CanWriteTraining
 from app.crud import course as crud
+from app.models.quiz import QuizAttempt
 from app.services.attachments import MAX_FILE_SIZE, proxy_download, upload_to_file_server
 from uniops_authz import has_permission
 
@@ -82,6 +84,11 @@ class DeliveryOut(BaseModel):
     notes: str | None
     enrolled: int = 0
     passed: int = 0
+    # The quiz this session is tested on, when its course has one. Round 6:
+    # "place the QR code for the quiz on the course session."
+    quiz_id: uuid.UUID | None = None
+    quiz_title: str | None = None
+    quiz_qr_token: str | None = None
 
 
 class EnrolmentOut(BaseModel):
@@ -95,6 +102,9 @@ class EnrolmentOut(BaseModel):
     marked_by_name: str | None
     # roster | quiz — quiz means they scanned the code in the room.
     joined_via: str = "roster"
+    # "Quiz passed": when, and by whom — "Online quiz" or the person running it.
+    quiz_passed_at: datetime | None = None
+    quiz_marked_by_name: str | None = None
     marked_at: datetime | None
     training_record_id: uuid.UUID | None
 
@@ -132,6 +142,9 @@ async def _with_counts(db, deliveries) -> list[DeliveryOut]:
         item = DeliveryOut.model_validate(delivery)
         item.enrolled = len(rows)
         item.passed = sum(1 for r in rows if r.result == "passed")
+        quiz = await crud.quiz_for_course(db, delivery.course_id)
+        if quiz is not None:
+            item.quiz_id, item.quiz_title, item.quiz_qr_token = quiz.id, quiz.title, quiz.qr_token
         out.append(item)
     return out
 
@@ -307,6 +320,50 @@ async def remove_from_roster(
     delivery = await crud.get_delivery(db, delivery_id)
     await _require_roster_rights(db, user, delivery)
     await crud.withdraw(db, delivery, enrolment_id)
+
+
+class QuizMarkIn(BaseModel):
+    passed: bool
+
+
+@router.post("/{delivery_id}/roster/{enrolment_id}/quiz", response_model=EnrolmentOut)
+async def mark_quiz(
+    delivery_id: uuid.UUID, enrolment_id: uuid.UUID, payload: QuizMarkIn,
+    db: SessionDep, user: CanReportIncident,
+):
+    """Mark the quiz passed by hand — a quiz done on paper. Round 6: "add a button
+    that indicates that the quiz has been passed by the attendee." An online pass
+    sets the same mark by itself."""
+    delivery = await crud.get_delivery(db, delivery_id)
+    await _require_roster_rights(db, user, delivery)
+    return await crud.set_quiz_passed(
+        db, delivery, enrolment_id, payload.passed, marker_id=_user_id(user))
+
+
+class QuizResultRow(BaseModel):
+    user_id: uuid.UUID | None
+    user_name: str
+    score_percent: float
+    passed: bool
+    submitted_at: datetime
+
+
+@router.get("/{delivery_id}/quiz-results", response_model=list[QuizResultRow])
+async def quiz_results(delivery_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    """Every quiz attempt made at this session, newest first.
+
+    Round 6: "place the quiz results also on the course session to allow the run
+    by person easier visibility." Held to whoever may change the roster: the
+    scores are other people's.
+    """
+    delivery = await crud.get_delivery(db, delivery_id)
+    await _require_roster_rights(db, user, delivery)
+    rows = (await db.execute(
+        select(QuizAttempt).where(QuizAttempt.delivery_id == delivery.id)
+        .order_by(QuizAttempt.submitted_at.desc()))).scalars().all()
+    return [QuizResultRow(user_id=a.user_id, user_name=a.user_name,
+                          score_percent=float(a.score_percent), passed=a.passed,
+                          submitted_at=a.submitted_at) for a in rows]
 
 
 @router.post("/{delivery_id}/results", response_model=list[EnrolmentOut])

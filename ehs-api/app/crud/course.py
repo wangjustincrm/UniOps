@@ -212,19 +212,39 @@ async def withdraw(db: AsyncSession, delivery: CourseDelivery, enrolment_id: uui
     await db.flush()
 
 
+async def quiz_for_course(db: AsyncSession, course_id: uuid.UUID | None):
+    """The quiz a session of this course is tested on, if it has one.
+
+    The most recently written active one: HSE replaces a quiz by writing a new
+    one, and the old stays in the list until it is retired.
+    """
+    from app.models.quiz import Quiz  # quiz imports this module
+    if course_id is None:
+        return None
+    return (await db.execute(
+        select(Quiz).where(Quiz.course_id == course_id, Quiz.is_active.is_(True))
+        .order_by(Quiz.created_at.desc()).limit(1))).scalars().first()
+
+
 async def mark_results(
     db: AsyncSession, delivery: CourseDelivery, results: dict[uuid.UUID, str],
     *, marker_id: uuid.UUID,
 ) -> list[CourseEnrolment]:
-    """Record pass / fail / absent, and issue a training record for each pass.
+    """Record pass / fail / absent.
 
-    HSE marks this by hand — there is no online test — so the only rule the
-    system enforces is that a pass produces exactly one register entry.
+    ★ Round 6: "in order for an attendee to pass the training session, they must
+    have passed the quiz and the run by person must also mark them as passed
+    before saving and closing the session and generating a training
+    certificate." So a pass needs the quiz mark where the course has a quiz, and
+    the record is issued when the session closes — see complete() — not here.
+    A session already closed issues it straight away, there being no close to
+    wait for.
     """
     marker_name = await _name(db, marker_id)
     now = datetime.now(timezone.utc)
     rows = await roster(db, delivery.id)
     by_id = {e.id: e for e in rows}
+    has_quiz = (await quiz_for_course(db, delivery.course_id)) is not None
 
     changed: list[CourseEnrolment] = []
     for enrolment_id, result in results.items():
@@ -232,19 +252,55 @@ async def mark_results(
         if enrolment is None:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, "Someone marked is not on this roster")
+        if (result == "passed" and has_quiz and enrolment.quiz_passed_at is None
+                and enrolment.result != "passed"):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"{enrolment.user_name} has not passed the quiz yet. Passing the "
+                "session needs the quiz first — online, or marked as passed here "
+                "for a quiz done on paper.")
         enrolment.result = result
         enrolment.marked_by = marker_id
         enrolment.marked_by_name = marker_name
         enrolment.marked_at = now
         changed.append(enrolment)
 
-        if result == "passed" and enrolment.training_record_id is None:
+        if (result == "passed" and enrolment.training_record_id is None
+                and delivery.status == "completed"):
             record = await _issue_record(db, delivery, enrolment, recorded_by=marker_id,
                                          recorded_by_name=marker_name)
             enrolment.training_record_id = record.id
 
     await db.flush()
     return changed
+
+
+async def set_quiz_passed(
+    db: AsyncSession, delivery: CourseDelivery, enrolment_id: uuid.UUID,
+    passed: bool, *, marker_id: uuid.UUID,
+) -> CourseEnrolment:
+    """The "Quiz passed" mark, set by hand — for a quiz done on paper.
+
+    Taking it away from somebody already marked passed is refused: their pass
+    rests on it, and the order is to change the result first.
+    """
+    enrolment = await db.get(CourseEnrolment, enrolment_id)
+    if enrolment is None or enrolment.delivery_id != delivery.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not on this session's roster")
+    if passed:
+        if enrolment.quiz_passed_at is None:
+            enrolment.quiz_passed_at = datetime.now(timezone.utc)
+            enrolment.quiz_marked_by_name = await _name(db, marker_id)
+    else:
+        if enrolment.result == "passed":
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"{enrolment.user_name} is marked passed, which rests on the quiz. "
+                "Change their result first.")
+        enrolment.quiz_passed_at = None
+        enrolment.quiz_marked_by_name = None
+    await db.flush()
+    return enrolment
 
 
 async def _issue_record(
@@ -280,7 +336,7 @@ async def _issue_record(
 
 
 async def complete(db: AsyncSession, delivery: CourseDelivery) -> CourseDelivery:
-    """Close the session. Everyone still unmarked is recorded as absent.
+    """Close the session: issue the passes, and record the unmarked as absent.
 
     Left as `enrolled`, they would count as neither trained nor untrained and
     the session would sit half-finished forever. Absent is the honest reading
@@ -291,6 +347,15 @@ async def complete(db: AsyncSession, delivery: CourseDelivery) -> CourseDelivery
     for enrolment in await roster(db, delivery.id):
         if enrolment.result == "enrolled":
             enrolment.result = "absent"
+        # ★ The certificate is issued here, on "Save and close the session",
+        # for everybody marked passed. Round 6: "a person does not pass and get a
+        # certificate until the run by person presses the save and close the
+        # session button."
+        elif enrolment.result == "passed" and enrolment.training_record_id is None:
+            record = await _issue_record(
+                db, delivery, enrolment, recorded_by=enrolment.marked_by,
+                recorded_by_name=enrolment.marked_by_name)
+            enrolment.training_record_id = record.id
     delivery.status = "completed"
     delivery.completed_at = datetime.now(timezone.utc)
     await task_service.close_tasks_for(db, doc_type=DOC_COURSE, doc_id=delivery.id)

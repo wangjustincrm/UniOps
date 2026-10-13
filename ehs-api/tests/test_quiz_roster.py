@@ -189,6 +189,11 @@ class TestTheWindow:
 
 
 class TestTheResult:
+    """★ Round 6, box 2: "in order for an attendee to pass the training session,
+    they must have passed the quiz and the run by person must also mark them as
+    passed before saving and closing the session and generating a training
+    certificate." Round 5 had the quiz pass them; it no longer does."""
+
     async def _on_roster(self, test_engine, db):
         me = await make_user(test_engine)
         course = await _course(db)
@@ -197,83 +202,111 @@ class TestTheResult:
         await quiz_crud.join(db, quiz, me.id, now=at(10))
         return me, quiz, s
 
-    async def test_a_pass_marks_the_roster_and_issues_one_record(self, test_engine, db_session):
+    async def _runner(self, test_engine):
+        return await make_user(test_engine, role="ehs_coordinator")
+
+    async def test_passing_the_quiz_marks_it_and_nothing_else(self, test_engine, db_session):
         me, quiz, s = await self._on_roster(test_engine, db_session)
         attempt = await _answer(db_session, quiz, me, right=True, delivery=s)
-
         row = await _enrolment(db_session, s, me)
-        assert row.result == "passed" and row.marked_by is None
-        assert row.marked_by_name == quiz_crud.QUIZ_MARKER
-        assert attempt.delivery_id == s.id
-        assert attempt.training_record_id == row.training_record_id is not None
-        record = await db_session.get(TrainingRecord, row.training_record_id)
-        assert record.delivery_id == s.id and record.completed_on == s.session_date
-        assert await _records(db_session, me) == 1
-
-    async def test_marking_them_passed_by_hand_afterwards_issues_no_second(
-            self, test_engine, db_session):
-        me, quiz, s = await self._on_roster(test_engine, db_session)
-        await _answer(db_session, quiz, me, right=True, delivery=s)
-        row = await _enrolment(db_session, s, me)
-        coord = await make_user(test_engine, role="ehs_coordinator")
-        await course_crud.mark_results(db_session, s, {row.id: "passed"}, marker_id=coord.id)
-        assert await _records(db_session, me) == 1
-
-    async def test_passed_by_hand_first_the_quiz_points_at_that_record(
-            self, test_engine, db_session):
-        me, quiz, s = await self._on_roster(test_engine, db_session)
-        row = await _enrolment(db_session, s, me)
-        coord = await make_user(test_engine, role="ehs_coordinator")
-        await course_crud.mark_results(db_session, s, {row.id: "passed"}, marker_id=coord.id)
-
-        attempt = await _answer(db_session, quiz, me, right=True, delivery=s)
-        assert attempt.training_record_id == row.training_record_id
-        assert await _records(db_session, me) == 1
-        assert row.marked_by == coord.id
-
-    async def test_failed_by_hand_is_not_overturned_by_the_quiz(self, test_engine, db_session):
-        me, quiz, s = await self._on_roster(test_engine, db_session)
-        row = await _enrolment(db_session, s, me)
-        coord = await make_user(test_engine, role="ehs_coordinator")
-        await course_crud.mark_results(db_session, s, {row.id: "failed"}, marker_id=coord.id)
-
-        attempt = await _answer(db_session, quiz, me, right=True, delivery=s)
-        assert row.result == "failed" and row.marked_by == coord.id
+        assert row.quiz_passed_at is not None and row.quiz_marked_by_name == "Online quiz"
+        assert row.result == "enrolled"
         assert attempt.training_record_id is None
         assert await _records(db_session, me) == 0
 
-    async def test_pass_then_fail_stays_passed(self, test_engine, db_session):
-        """★ Only upward. The record is somebody's statutory evidence."""
-        me, quiz, s = await self._on_roster(test_engine, db_session)
-        await _answer(db_session, quiz, me, right=True, delivery=s)
-        row = await _enrolment(db_session, s, me)
-        record_id = row.training_record_id
-
-        await _answer(db_session, quiz, me, right=False, delivery=s)
-        assert row.result == "passed" and row.training_record_id == record_id
-        assert await db_session.get(TrainingRecord, record_id) is not None
-
-    async def test_fail_then_pass_is_passed(self, test_engine, db_session):
+    async def test_a_failed_attempt_marks_nothing_and_a_later_one_does_not_unmark(
+            self, test_engine, db_session):
         me, quiz, s = await self._on_roster(test_engine, db_session)
         await _answer(db_session, quiz, me, right=False, delivery=s)
         row = await _enrolment(db_session, s, me)
-        assert row.result == "failed" and row.training_record_id is None
-
+        assert row.quiz_passed_at is None
         await _answer(db_session, quiz, me, right=True, delivery=s)
-        assert row.result == "passed" and row.training_record_id is not None
+        await _answer(db_session, quiz, me, right=False, delivery=s)
+        assert row.quiz_passed_at is not None
 
-    async def test_closing_the_session_then_passing_lifts_absent(self, test_engine, db_session):
-        """Closing marks the unmarked absent; nobody decided that by hand."""
+    async def test_marking_passed_needs_the_quiz_first(self, test_engine, db_session):
+        from fastapi import HTTPException as _HTTP
         me, quiz, s = await self._on_roster(test_engine, db_session)
-        await course_crud.complete(db_session, s)
         row = await _enrolment(db_session, s, me)
-        assert row.result == "absent"
+        runner = await self._runner(test_engine)
+        with pytest.raises(_HTTP) as refused:
+            await course_crud.mark_results(db_session, s, {row.id: "passed"}, marker_id=runner.id)
+        assert refused.value.status_code == 409 and "has not passed the quiz" in refused.value.detail
+
         await _answer(db_session, quiz, me, right=True, delivery=s)
+        await course_crud.mark_results(db_session, s, {row.id: "passed"}, marker_id=runner.id)
         assert row.result == "passed"
+
+    async def test_the_certificate_is_issued_on_close_and_only_once(
+            self, test_engine, db_session):
+        me, quiz, s = await self._on_roster(test_engine, db_session)
+        row = await _enrolment(db_session, s, me)
+        runner = await self._runner(test_engine)
+        await _answer(db_session, quiz, me, right=True, delivery=s)
+        await course_crud.mark_results(db_session, s, {row.id: "passed"}, marker_id=runner.id)
+        assert row.training_record_id is None and await _records(db_session, me) == 0
+
+        await course_crud.complete(db_session, s)
+        assert row.training_record_id is not None
+        record = await db_session.get(TrainingRecord, row.training_record_id)
+        assert record.delivery_id == s.id and record.completed_on == s.session_date
+
+        await course_crud.mark_results(db_session, s, {row.id: "passed"}, marker_id=runner.id)
+        assert await _records(db_session, me) == 1
+
+    async def test_a_paper_quiz_can_be_marked_by_hand(self, test_engine, db_session):
+        me = await make_user(test_engine)
+        course = await _course(db_session)
+        await _quiz(db_session, course)
+        s = await _session(db_session, course)
+        await course_crud.enrol(db_session, s, [me.id])
+        row = await _enrolment(db_session, s, me)
+        runner = await self._runner(test_engine)
+
+        await course_crud.set_quiz_passed(db_session, s, row.id, True, marker_id=runner.id)
+        assert row.quiz_passed_at is not None and row.quiz_marked_by_name == runner.full_name
+        await course_crud.mark_results(db_session, s, {row.id: "passed"}, marker_id=runner.id)
+
+    async def test_the_mark_a_pass_rests_on_cannot_be_taken_away(
+            self, test_engine, db_session):
+        from fastapi import HTTPException as _HTTP
+        me, quiz, s = await self._on_roster(test_engine, db_session)
+        row = await _enrolment(db_session, s, me)
+        runner = await self._runner(test_engine)
+        await _answer(db_session, quiz, me, right=True, delivery=s)
+        await course_crud.mark_results(db_session, s, {row.id: "passed"}, marker_id=runner.id)
+        with pytest.raises(_HTTP) as refused:
+            await course_crud.set_quiz_passed(db_session, s, row.id, False, marker_id=runner.id)
+        assert refused.value.status_code == 409
+        # Changing the result first, then the mark, is the way round.
+        await course_crud.mark_results(db_session, s, {row.id: "failed"}, marker_id=runner.id)
+        await course_crud.set_quiz_passed(db_session, s, row.id, False, marker_id=runner.id)
+        assert row.quiz_passed_at is None
+
+    async def test_a_course_with_no_quiz_is_passed_by_the_runner_alone(
+            self, test_engine, db_session):
+        me = await make_user(test_engine)
+        course = await _course(db_session)
+        s = await _session(db_session, course)
+        await course_crud.enrol(db_session, s, [me.id])
+        row = await _enrolment(db_session, s, me)
+        runner = await self._runner(test_engine)
+        await course_crud.mark_results(db_session, s, {row.id: "passed"}, marker_id=runner.id)
+        await course_crud.complete(db_session, s)
+        assert await _records(db_session, me) == 1
+
+    async def test_a_pass_away_from_any_session_issues_nothing(self, test_engine, db_session):
+        """No session, no certificate: the result is kept on the quiz."""
+        me = await make_user(test_engine)
+        course = await _course(db_session)
+        quiz = await _quiz(db_session, course)
+        attempt = await _answer(db_session, quiz, me, right=True, delivery=None)
+        assert attempt.passed and attempt.training_record_id is None
+        assert await _records(db_session, me) == 0
 
     async def test_a_session_you_are_not_on_is_ignored(self, test_engine, db_session):
         """★ The id comes from the browser. Taken on trust it would mark
-        anybody as having attended any session."""
+        anybody as having sat any session's quiz."""
         me = await make_user(test_engine)
         course = await _course(db_session)
         quiz = await _quiz(db_session, course)
@@ -335,10 +368,19 @@ async def test_through_the_api(hse_manager, worker, db_session):
     taken = await client.post(f"/api/v1/quizzes/{quiz.id}/attempts", json={
         "answers": {str(question.id): ["t"]}, "delivery_id": str(s.id)})
     assert taken.status_code == 201, taken.text
-    assert taken.json()["passed"] and taken.json()["training_record_id"]
+    assert taken.json()["passed"] and taken.json()["training_record_id"] is None
 
     roster = await hse.get(f"/api/v1/course-sessions/{s.id}/roster")
     assert roster.status_code == 200, roster.text
     [row] = [r for r in roster.json() if r["user_id"] == str(me.id)]
-    assert row["joined_via"] == "quiz" and row["result"] == "passed"
-    assert row["marked_by_name"] == "Online quiz"
+    assert row["joined_via"] == "quiz" and row["result"] == "enrolled"
+    assert row["quiz_marked_by_name"] == "Online quiz" and row["quiz_passed_at"]
+
+    # The session carries its quiz, and its results are on it.
+    detail = (await hse.get(f"/api/v1/course-sessions/{s.id}")).json()
+    assert detail["quiz_id"] == str(quiz.id)
+    results = await hse.get(f"/api/v1/course-sessions/{s.id}/quiz-results")
+    assert results.status_code == 200, results.text
+    assert [(r["user_name"], r["passed"]) for r in results.json()] == [(me.full_name, True)]
+    # Other people's scores are not an attendee's business.
+    assert (await client.get(f"/api/v1/course-sessions/{s.id}/quiz-results")).status_code == 403

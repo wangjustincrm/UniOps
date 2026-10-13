@@ -4,10 +4,9 @@
 answer key, which never leaves here, and it is the only place a mark is
 decided. Everything else is bookkeeping around it.
 
-Passing writes a training record the same way a course session does, and stores
-its id on the attempt so the two can never disagree about whether it was
-issued. Somebody who has already passed does not get a second record for
-passing again.
+Passing does not write a training record. Round 6: a pass taken at a session
+marks "Quiz passed" on that roster, and the certificate is issued when the
+person running the session marks them passed and closes it.
 """
 from __future__ import annotations
 
@@ -25,8 +24,8 @@ from sqlalchemy.exc import IntegrityError
 from app.crud import course as course_crud
 from app.models.course import CourseDelivery, CourseEnrolment
 from app.models.mirrors import User
+from app.models.training import Course
 from app.models.quiz import Quiz, QuizAttempt, QuizQuestion
-from app.models.training import Course, TrainingRecord
 from app.services import statutory
 
 QUESTION_KINDS = ("single", "multi", "true_false")
@@ -254,32 +253,17 @@ async def score(
     db.add(attempt)
     await db.flush()
 
-    if enrolment is not None:
-        await _onto_roster(db, attempt, enrolment)
-    elif passed:
-        record = await _issue_record(db, quiz, attempt)
-        if record is not None:
-            attempt.training_record_id = record.id
-            await db.flush()
+    # ★ Round 6: passing the quiz does not pass the course. It marks the roster;
+    # the person running the session marks the pass, and the certificate is
+    # issued when they close it. A pass away from any session marks nothing —
+    # the result is kept here, and whoever runs a session can mark it there.
+    if enrolment is not None and passed:
+        await _quiz_mark(db, enrolment)
 
     return attempt, breakdown
 
 
-# Who the roster says marked a result the quiz decided. A person marking by hand
-# always sets `marked_by`; this name with no `marked_by` is how a row the quiz
-# wrote is told apart from one somebody decided.
 QUIZ_MARKER = "Online quiz"
-
-
-def _quiz_may_mark(enrolment: CourseEnrolment) -> bool:
-    """Whether the quiz may set this person's result.
-
-    ★ Never over a decision a person made. Round 4 gave the person running the
-    session the say on pass and fail; the quiz fills in what nobody has decided
-    yet — still enrolled, marked absent by closing the session, or a result the
-    quiz itself wrote on an earlier attempt.
-    """
-    return enrolment.marked_by is None and enrolment.marked_by_name in (None, QUIZ_MARKER)
 
 
 async def _enrolment_for(
@@ -296,38 +280,13 @@ async def _enrolment_for(
                CourseDelivery.status != "cancelled"))).scalar_one_or_none()
 
 
-async def _onto_roster(
-    db: AsyncSession, attempt: QuizAttempt, enrolment: CourseEnrolment,
-) -> None:
-    """An attempt taken at a session, written back to that session's roster.
-
-    Without this a person who scanned in and passed sits on the roster as
-    `enrolled`, and closing the session turns them into `absent`.
-
-    ★ One training record per person per session, whichever comes first. If the
-    person running it already marked them passed, the attempt points at that
-    record rather than issuing a second; if the quiz issues it, the enrolment
-    keeps it, so marking them passed by hand afterwards does not issue another.
-    """
-    if attempt.passed:
-        # A record is issued only where the quiz has the say. Somebody the
-        # person running it marked failed is not certified by passing anyway.
-        if enrolment.training_record_id is None and _quiz_may_mark(enrolment):
-            delivery = await db.get(CourseDelivery, enrolment.delivery_id)
-            record = await course_crud._issue_record(
-                db, delivery, enrolment,
-                recorded_by=attempt.user_id, recorded_by_name=attempt.user_name)
-            enrolment.training_record_id = record.id
-        attempt.training_record_id = enrolment.training_record_id
-
-    # ★ Only upward. A later pass lifts an earlier quiz fail; once passed, a
-    # retake that fails changes nothing — the result stays and so does the
-    # record, which is somebody's statutory evidence.
-    if _quiz_may_mark(enrolment) and enrolment.result != "passed":
-        enrolment.result = "passed" if attempt.passed else "failed"
-        enrolment.marked_by_name = QUIZ_MARKER
-        enrolment.marked_at = attempt.submitted_at
-    await db.flush()
+async def _quiz_mark(db: AsyncSession, enrolment: CourseEnrolment) -> None:
+    """Set "Quiz passed" on the roster. Only ever set, never taken away by a
+    later failed retake — the pass happened."""
+    if enrolment.quiz_passed_at is None:
+        enrolment.quiz_passed_at = datetime.now(timezone.utc)
+        enrolment.quiz_marked_by_name = QUIZ_MARKER
+        await db.flush()
 
 
 # ★ How far either side of a session's times a scan still joins it. HSE's
@@ -445,55 +404,6 @@ async def join(
     except IntegrityError:
         return JoinResult(joined=chosen)
     return JoinResult(joined=chosen, added=True)
-
-
-async def _issue_record(
-    db: AsyncSession, quiz: Quiz, attempt: QuizAttempt
-) -> TrainingRecord | None:
-    """The register entry a pass produces.
-
-    Nothing is written when the quiz is not attached to a course — a standalone
-    quiz is a teaching aid, and inventing a training record for it would put
-    something in a person's file that no course backs.
-
-    Passing again does not issue a second record.
-    """
-    if quiz.course_id is None or attempt.user_id is None:
-        return None
-
-    already = (await db.execute(
-        select(QuizAttempt).where(
-            QuizAttempt.quiz_id == quiz.id,
-            QuizAttempt.user_id == attempt.user_id,
-            QuizAttempt.passed.is_(True),
-            QuizAttempt.training_record_id.is_not(None),
-        ))).scalars().first()
-    if already is not None:
-        return None
-
-    course = await db.get(Course, quiz.course_id)
-    if course is None:
-        return None
-
-    completed = attempt.submitted_at.date()
-    expires = (completed + timedelta(days=30 * course.validity_months)
-               if course.validity_months else None)
-
-    record = TrainingRecord(
-        id=uuid.uuid4(),
-        user_id=attempt.user_id,
-        user_name=attempt.user_name,
-        course_id=course.id,
-        course_label=course.name,
-        completed_on=completed,
-        expires_on=expires,
-        delivery="internal",
-        recorded_by=attempt.user_id,
-        recorded_by_name=attempt.user_name,
-    )
-    db.add(record)
-    await db.flush()
-    return record
 
 
 async def results(db: AsyncSession, quiz_id: uuid.UUID) -> dict:

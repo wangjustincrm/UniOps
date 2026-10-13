@@ -15,8 +15,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
-import { Check, Plus, QrCode, Trash2 } from 'lucide-react'
+import { Check, Plus, QrCode, Trash2, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import QrPanel from '@/components/QrPanel'
 import { formatDate, formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useEhsAuth } from '@/store/auth'
@@ -32,12 +33,17 @@ interface Session {
   location_text: string | null; coordinator_id: string | null; coordinator_name: string | null
   instructor_name: string | null; status: string; notes: string | null
   enrolled: number; passed: number
+  quiz_id: string | null; quiz_title: string | null; quiz_qr_token: string | null
+}
+interface QuizResult {
+  user_id: string | null; user_name: string; score_percent: number; passed: boolean; submitted_at: string
 }
 interface Enrolment {
   id: string; user_id: string | null; user_name: string; department_name: string | null
   result: string; marked_by_name: string | null; marked_at: string | null
   // roster | quiz — quiz means they scanned the quiz code in the room.
   joined_via: string
+  quiz_passed_at: string | null; quiz_marked_by_name: string | null
   training_record_id: string | null
 }
 
@@ -120,6 +126,8 @@ export default function CourseSessionPage() {
         {s.notes && <p className="mt-2 text-sm text-neutral-700">{s.notes}</p>}
         {mayRun && open && <ArrangementsEditor key={s.id} session={s} onSaved={invalidate} />}
       </Card>
+
+      {s.quiz_id && <QuizCard session={s} mayRun={mayRun} />}
 
       {/* ★ A failed roster read is not an empty roster: "Nobody on the roster"
           is a statement about the session, and making it on the strength of a
@@ -241,6 +249,71 @@ function ArrangementsEditor({ session, onSaved }: { session: Session; onSaved: (
   )
 }
 
+/**
+ * The session's quiz: its code for the room, and how the room did.
+ *
+ * Round 6: "place the QR code for the quiz on the course session. place the
+ * quiz results also on the course session to allow the run by person easier
+ * visibility of the quiz results."
+ */
+function QuizCard({ session, mayRun }: { session: Session; mayRun: boolean }) {
+  const [showing, setShowing] = useState(false)
+  const results = useQuery({
+    queryKey: ['course-session', session.id, 'quiz-results'],
+    queryFn: () => api.get<QuizResult[]>(`/api/v1/course-sessions/${session.id}/quiz-results`),
+    enabled: mayRun,
+  })
+  return (
+    <Card className="mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <SectionTitle className="mb-0.5">Quiz</SectionTitle>
+          <p className="text-sm text-neutral-800">{session.quiz_title}</p>
+        </div>
+        {mayRun && session.status === 'scheduled' && session.quiz_qr_token && (
+          <button type="button" className={primaryButton} onClick={() => setShowing(true)}>
+            <QrCode className="h-4 w-4" aria-hidden />
+            Show the quiz code
+          </button>
+        )}
+      </div>
+      {mayRun && (
+        <div className="mt-3 border-t border-neutral-100 pt-3">
+          {results.isError ? <LoadFailedNote what="The quiz results" /> : (
+            (results.data ?? []).length === 0
+              ? <p className="text-xs text-neutral-500">Nobody has answered it at this session yet.</p>
+              : (
+                <ul className="flex flex-col gap-1">
+                  {(results.data ?? []).map((r, i) => (
+                    <li key={`${r.user_id}-${i}`} className="flex items-center gap-3 text-sm">
+                      <span className="min-w-0 flex-1 truncate text-neutral-800">{r.user_name}</span>
+                      <span className={`tabular-nums font-semibold ${r.passed ? 'text-success-700' : 'text-warning-700'}`}>
+                        {Math.round(r.score_percent)}% {r.passed ? 'passed' : 'not passed'}
+                      </span>
+                      <span className="shrink-0 text-xs tabular-nums text-neutral-500">
+                        {formatDateTime(r.submitted_at)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )
+          )}
+        </div>
+      )}
+      {showing && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-white p-6"
+             role="dialog" aria-modal="true" aria-label="Scan to take the quiz">
+          <QrPanel token={session.quiz_qr_token} caption="Scan to take the quiz" sub={session.title} size={300} />
+          <button type="button" className={secondaryButton} onClick={() => setShowing(false)}>
+            <X className="h-4 w-4" aria-hidden />
+            Close
+          </button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 function RosterPanel({
   session, roster, mayWrite, onChanged,
 }: {
@@ -264,6 +337,14 @@ function RosterPanel({
       api.del(`/api/v1/course-sessions/${session.id}/roster/${enrolmentId}`),
     onSuccess: onChanged,
   })
+  const quizMark = useMutation({
+    mutationFn: ({ id, passed }: { id: string; passed: boolean }) =>
+      api.post(`/api/v1/course-sessions/${session.id}/roster/${id}/quiz`, { passed }),
+    onSuccess: onChanged,
+  })
+  // Passed the quiz, not yet marked: closing would record them as not attended.
+  const waiting = roster.filter((e) =>
+    e.quiz_passed_at && (marks[e.id] ?? e.result) === 'enrolled').length
   const save = useMutation({
     mutationFn: (complete: boolean) => api.post(`/api/v1/course-sessions/${session.id}/results`, {
       results: Object.entries(marks).map(([enrolment_id, result]) => ({ enrolment_id, result })),
@@ -330,6 +411,12 @@ function RosterPanel({
                           {e.marked_by_name === 'Online quiz' && e.result !== 'enrolled' && ' · marked by the quiz'}
                         </span>
                       )}
+                      {session.quiz_id && e.quiz_passed_at && (
+                        <span className="mt-0.5 mr-2 inline-flex items-center gap-1 rounded bg-success-50 px-1.5 py-0.5 text-xs text-success-700">
+                          <Check className="h-3 w-3" aria-hidden />
+                          Quiz passed{e.quiz_marked_by_name === 'Online quiz' ? ' online' : ` · marked by ${e.quiz_marked_by_name ?? 'hand'}`}
+                        </span>
+                      )}
                       {e.training_record_id && (
                         <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-success-700">
                           <Check className="h-3 w-3" aria-hidden />
@@ -340,12 +427,30 @@ function RosterPanel({
                     </span>
 
                     {mayWrite ? (
-                      <div className="flex shrink-0 gap-1" role="group"
+                      <div className="flex shrink-0 flex-wrap gap-1" role="group"
                            aria-label={`Result for ${e.user_name}`}>
+                        {/* ★ Round 6: "add a button that indicates that the quiz has
+                            been passed by the attendee." Set by itself when they pass
+                            online; pressed here for a quiz done on paper. */}
+                        {session.quiz_id && (
+                          <button type="button" aria-pressed={Boolean(e.quiz_passed_at)}
+                                  disabled={quizMark.isPending}
+                                  onClick={() => { if (!quizMark.isPending) quizMark.mutate({ id: e.id, passed: !e.quiz_passed_at }) }}
+                                  className={'min-h-[36px] rounded-lg px-2.5 text-xs font-semibold transition-colors ' +
+                                    (e.quiz_passed_at ? 'bg-success-50 text-success-800 ring-1 ring-success-300'
+                                      : 'border border-dashed border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50')}>
+                            Quiz passed
+                          </button>
+                        )}
                         {RESULTS.map((r) => (
                           <button
                             key={r.key} type="button"
                             aria-pressed={current === r.key}
+                            // ★ A pass needs the quiz first, where there is one.
+                            disabled={r.key === 'passed' && Boolean(session.quiz_id)
+                              && !e.quiz_passed_at && e.result !== 'passed'}
+                            title={r.key === 'passed' && session.quiz_id && !e.quiz_passed_at
+                              ? 'Needs the quiz passed first' : undefined}
                             onClick={() => setMarks((m) => ({ ...m, [e.id]: r.key }))}
                             className={
                               'min-h-[36px] rounded-lg px-2.5 text-xs font-semibold transition-colors ' +
@@ -355,7 +460,7 @@ function RosterPanel({
                                   : r.key === 'failed'
                                     ? 'bg-danger-600 text-white'
                                     : 'bg-neutral-600 text-white'
-                                : 'border border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50')
+                                : 'border border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50 disabled:opacity-40')
                             }
                           >
                             {r.label}
@@ -384,7 +489,7 @@ function RosterPanel({
         </ul>
       )}
 
-      <ErrorNote error={save.error || remove.error} />
+      <ErrorNote error={save.error || remove.error || quizMark.error} />
 
       {mayWrite && roster.length > 0 && (
         <div className="mt-3 flex flex-wrap justify-end gap-2">
@@ -401,9 +506,15 @@ function RosterPanel({
           )}
         </div>
       )}
+      {open && waiting > 0 && (
+        <p className="mt-2 text-right text-xs font-medium text-warning-700">
+          {waiting} {waiting === 1 ? 'person has' : 'people have'} passed the quiz but {waiting === 1 ? 'is' : 'are'} not marked yet.
+        </p>
+      )}
       {open && (
         <p className="mt-2 text-right text-xs text-neutral-500">
-          Closing records anyone still unmarked as having not attended.
+          Closing issues a certificate to everyone marked Passed, and records anyone still
+          unmarked as having not attended.
         </p>
       )}
     </>
