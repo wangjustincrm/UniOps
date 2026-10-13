@@ -33,6 +33,95 @@ const BREAK_LABELS: Record<string, string> = {
   tail_total: 'tail adj.', carried_total: 'carried in',
 }
 
+interface Bucket { bucket: string; group: string; amount: number; per_unit: number | null; share: number | null }
+interface Composition {
+  available: boolean; material: string; period: string; qty?: number; total?: number; unit?: number | null
+  buckets?: Bucket[]; leaves?: { material_code: string; material_name: string | null; bucket: string; amount: number; per_unit_of_product: number | null }[]
+  compare?: { period: string; per_unit: Record<string, number>; unit: number } | null
+  tie_out?: number; a9?: boolean; headline: string; because?: string[]; note?: string
+}
+
+const GROUP_CLS: Record<string, string> = {
+  materials: 'bg-[#085E5E]', conversion: 'bg-sky-500', adjustments: 'bg-amber-500', unattributable: 'bg-neutral-400',
+}
+
+function CompositionSection({ material, period }: { material: string; period: string }) {
+  const { data, error } = useQuery({
+    queryKey: ['cost-composition', material, period],
+    queryFn: () => financeApi.get<Composition>(`/cost-analysis/composition?material=${encodeURIComponent(material)}&period=${period}`),
+  })
+  if (error) return <AccessMessage error={error} />
+  if (!data) return <p className="flex items-center gap-1 py-3 text-xs text-neutral-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Drilling the cost down…</p>
+  if (!data.available) return <p className="mb-6 text-sm text-neutral-500">{data.headline}</p>
+  const pos = (data.buckets ?? []).filter((b) => b.amount > 0)
+  const posTotal = pos.reduce((s, b) => s + b.amount, 0)
+  return (
+    <div className="mb-6">
+      <p className="mb-2 text-sm font-semibold text-neutral-800">What a unit of {data.material} is made of ({data.period}) — down to purchased materials</p>
+      <div className="mb-3 rounded-lg border border-neutral-200 bg-white p-3">
+        <p className="text-sm font-semibold text-neutral-900">{data.headline}</p>
+        {(data.because ?? []).length > 0 && (
+          <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm leading-relaxed text-neutral-700">
+            {data.because!.map((b, i) => <li key={i}>{b}</li>)}
+          </ul>
+        )}
+        {posTotal > 0 && (
+          <div className="mt-3 flex h-3 w-full overflow-hidden rounded" title="Positive components only">
+            {pos.map((b) => <div key={b.bucket} className={GROUP_CLS[b.group]} style={{ width: `${(b.amount / posTotal) * 100}%`, opacity: 0.45 + 0.55 * (b.amount / posTotal) }} title={`${b.bucket} ${num(b.per_unit, 4)}/unit`} />)}
+          </div>
+        )}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="overflow-x-auto rounded-lg border border-neutral-200">
+          <table className="w-full text-xs">
+            <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
+              <th className="px-2 py-1.5 font-medium">Component</th>
+              <th className="px-2 py-1.5 text-right font-medium">Per unit</th>
+              <th className="px-2 py-1.5 text-right font-medium">Share</th>
+              <th className="px-2 py-1.5 text-right font-medium">{data.compare ? `Per unit ${data.compare.period}` : ''}</th>
+            </tr></thead>
+            <tbody>
+              {(data.buckets ?? []).map((b) => (
+                <tr key={b.bucket} className="border-t border-neutral-100">
+                  <td className="px-2 py-1.5"><span className={cn('mr-1.5 inline-block h-2 w-2 rounded-sm', GROUP_CLS[b.group])} />{b.bucket}</td>
+                  <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', b.amount < 0 && 'text-red-700')}>{num(b.per_unit, 4)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono tabular-nums text-neutral-500">{b.share != null ? `${(b.share * 100).toFixed(1)}%` : ''}</td>
+                  <td className="px-2 py-1.5 text-right font-mono tabular-nums text-neutral-500">{data.compare ? num(data.compare.per_unit[b.bucket] ?? 0, 4) : ''}</td>
+                </tr>
+              ))}
+              <tr className="border-t border-neutral-200 font-semibold">
+                <td className="px-2 py-1.5">NC unit cost</td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">{num(data.unit, 4)}</td>
+                <td />
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">{data.compare ? num(data.compare.unit, 4) : ''}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div className="overflow-x-auto rounded-lg border border-neutral-200">
+          <table className="w-full text-xs">
+            <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
+              <th className="px-2 py-1.5 font-medium">Purchased material (all levels)</th>
+              <th className="px-2 py-1.5 font-medium">Component</th>
+              <th className="px-2 py-1.5 text-right font-medium">Per unit of {data.material}</th>
+            </tr></thead>
+            <tbody>
+              {(data.leaves ?? []).slice(0, 12).map((l) => (
+                <tr key={l.material_code} className="border-t border-neutral-100">
+                  <td className="px-2 py-1.5"><span className="font-mono">{l.material_code}</span> <span className="text-neutral-500">{l.material_name}</span></td>
+                  <td className="px-2 py-1.5 text-neutral-500">{l.bucket}</td>
+                  <td className="px-2 py-1.5 text-right font-mono tabular-nums">{num(l.per_unit_of_product, 4)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] text-neutral-500">{data.note} Ties out to NC within {num(Math.abs(data.tie_out ?? 0), 2)}.{data.a9 ? ' A9: part of the cost could not be traced (see above).' : ''}</p>
+    </div>
+  )
+}
+
 function prevMonth(p: string) {
   const y = Number(p.slice(0, 4)); const m = Number(p.slice(5, 7))
   return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`
@@ -125,6 +214,8 @@ export default function CostChainPage() {
               <p className="mt-1 text-sm font-semibold leading-relaxed text-neutral-900">{data.headline}</p>
             </div>
             <h2 className="mb-3 border-b border-neutral-200 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">Supporting data</h2>
+            <CompositionSection material={material} period={period} />
+            <p className="mb-2 text-sm font-semibold text-neutral-800">The chain, level by level</p>
             <div className="overflow-x-auto rounded-lg border border-neutral-200">
               <table className="w-full text-xs">
                 <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
