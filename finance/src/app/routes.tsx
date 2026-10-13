@@ -30,6 +30,7 @@ import MaterialTracePage from '@/pages/finance/MaterialTracePage'
 import GrossMarginPage from '@/pages/finance/GrossMarginPage'
 import CostChainPage from '@/pages/finance/CostChainPage'
 import BatchCostPage from '@/pages/finance/BatchCostPage'
+import StandardCostPage from '@/pages/finance/StandardCostPage'
 
 export const financeRoutes: RouteDef[] = [
   { path: '/finance/ap', element: <AccountsPayablePage />, tab: { title: 'Accounts Payable', icon: 'CreditCard', keyStrategy: 'static', pinned: true } },
@@ -76,5 +77,7 @@ export const financeRoutes: RouteDef[] = [
   { path: '/finance/analysis/chain/:material', element: <CostChainPage />, tab: { title: (p) => `Chain ${p.material ?? ''}`, icon: 'Network', keyStrategy: 'param', paramName: 'material' } },
   { path: '/finance/analysis/batches', element: <BatchCostPage />, tab: { title: 'Batch Cost', icon: 'Boxes', keyStrategy: 'static' } },
   { path: '/finance/analysis/batches/:material', element: <BatchCostPage />, tab: { title: (p) => `Batches ${p.material ?? ''}`, icon: 'Boxes', keyStrategy: 'param', paramName: 'material' } },
+  { path: '/finance/analysis/standard', element: <StandardCostPage />, tab: { title: 'Standard Cost', icon: 'Ruler', keyStrategy: 'static' } },
+  { path: '/finance/analysis/standard/:material', element: <StandardCostPage />, tab: { title: (p) => `Standard ${p.material ?? ''}`, icon: 'Ruler', keyStrategy: 'param', paramName: 'material' } },
   { path: '/finance/analysis/trace/:material', element: <MaterialTracePage />, tab: { title: (p) => `Trace ${p.material ?? ''}`, icon: 'GitBranch', keyStrategy: 'param', paramName: 'material' } },
 ]

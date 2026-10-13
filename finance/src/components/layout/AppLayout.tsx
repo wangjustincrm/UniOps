@@ -5,7 +5,7 @@ import {
   ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Settings,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, Scale, Target,
   RefreshCw, Wallet, Download, ShieldAlert, ClipboardCheck, HeartPulse, TrendingUp, CopyX,
-  Activity, GitBranch, Network, PieChart, Boxes,
+  Activity, GitBranch, Network, PieChart, Boxes, Ruler,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -90,6 +90,7 @@ const NAV: NavSection[] = [
       { label: 'Cost Anomalies', href: '/finance/analysis/anomalies', icon: Activity, permission: 'finance.analysis.view' },
       { label: 'Cost Chain', href: '/finance/analysis/chain', icon: Network, permission: 'finance.analysis.view' },
       { label: 'Batch Cost', href: '/finance/analysis/batches', icon: Boxes, permission: 'finance.analysis.view' },
+      { label: 'Standard Cost', href: '/finance/analysis/standard', icon: Ruler, permission: 'finance.analysis.view' },
       { label: 'Material Cost Trace', href: '/finance/analysis/trace', icon: GitBranch, permission: 'finance.analysis.view' },
     ],
   },

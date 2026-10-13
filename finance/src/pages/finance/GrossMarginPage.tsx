@@ -144,6 +144,7 @@ export default function GrossMarginPage() {
                                 <Link to={traceLink(r.material_code, from, p)} className="text-[#085E5E] underline">Trace</Link>
                                 <Link to={`/finance/analysis/chain/${encodeURIComponent(r.material_code)}?period=${p}`} className="text-[#085E5E] underline">Cost chain</Link>
                                 <Link to={`/finance/analysis/batches/${encodeURIComponent(r.material_code)}?from=${from}&to=${p}`} className="text-[#085E5E] underline">Batches</Link>
+                                <Link to={`/finance/analysis/standard/${encodeURIComponent(r.material_code)}?from=${from}&to=${to}`} className="text-[#085E5E] underline">Standard cost</Link>
                               </div>
                               <p className="mt-1 font-mono text-[11px] text-neutral-400">Invoices: {c.invoices.join(', ')}</p>
                             </td>
