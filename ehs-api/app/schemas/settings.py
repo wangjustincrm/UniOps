@@ -70,6 +70,7 @@ class ConfigOut(BaseModel):
     statutory_scan_interval_minutes: int
     incident_notify_groups: dict
     incident_status_notify: dict = Field(default_factory=dict)
+    incident_notify_include: dict = Field(default_factory=dict)
     email_templates: dict
     lost_time_rules: dict
     # Null until somebody picks one — every meeting before that used the
@@ -92,6 +93,7 @@ class ConfigUpdate(BaseModel):
     statutory_scan_interval_minutes: int | None = Field(default=None, ge=0, le=1440)
     incident_notify_groups: dict | None = None
     incident_status_notify: dict | None = None
+    incident_notify_include: dict | None = None
     email_templates: dict | None = None
     lost_time_rules: dict | None = None
     # The form the JHSC minutes are written on. Empty string clears it back to
@@ -120,6 +122,25 @@ class ConfigUpdate(BaseModel):
             if not isinstance(ids, list):
                 raise ValueError(f"The list for '{event}' must be a list of people")
             out[event] = [str(uuid.UUID(str(i))) for i in dict.fromkeys(ids)]
+        return out
+
+    @field_validator("incident_notify_include")
+    @classmethod
+    def _known_lists_and_flags(cls, v):
+        """Only lists the notifier reads, and only the two flags it knows."""
+        if v is None:
+            return v
+        from app.services.incident_type import BY_CODE
+        from app.services.notify import STATUS_EVENTS
+        known = {"*", *BY_CODE, *(f"status:{e}" for e in STATUS_EVENTS)}
+        out: dict[str, dict[str, bool]] = {}
+        for key, flags in v.items():
+            if key not in known:
+                raise ValueError(f"'{key}' is not a list on Who is told")
+            if not isinstance(flags, dict) or set(flags) - {"reporter", "supervisor"}:
+                raise ValueError(f"The list '{key}' takes reporter and supervisor, nothing else")
+            out[key] = {"reporter": bool(flags.get("reporter")),
+                        "supervisor": bool(flags.get("supervisor"))}
         return out
 
     @model_validator(mode="after")

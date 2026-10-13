@@ -75,6 +75,12 @@ class EhsConfig(TimestampMixin, Base):
     incident_status_notify: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}",
     )
+    # {list key: {"reporter": bool, "supervisor": bool}} — whether a list also
+    # reaches the person who reported the incident and their supervisor. Keys:
+    # an incident type, "*", or "status:<event>". Round 6, TC-07.
+    incident_notify_include: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}",
+    )
     email_templates: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}",
     )

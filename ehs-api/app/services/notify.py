@@ -116,6 +116,56 @@ async def _incident_audience(db: AsyncSession, incident_type: str | None) -> lis
         db, [u.id for u in await by_roles(db, DEFAULT_INCIDENT_ROLES)])
 
 
+def _include_flags(cfg, key: str) -> dict:
+    return ((cfg.incident_notify_include if cfg else None) or {}).get(key) or {}
+
+
+def _report_list_key(cfg, incident_type: str | None) -> str:
+    """Which new-report list is in force, so its ticks are the ones read.
+
+    The kind of incident's own list when it has been set up at all — somebody
+    named or a box ticked — and "Any incident" otherwise, the same fall-through
+    the names follow.
+    """
+    key = incident_type or ""
+    groups = (cfg.incident_notify_groups if cfg else None) or {}
+    if groups.get(key) or any(_include_flags(cfg, key).values()):
+        return key
+    return "*"
+
+
+async def reporter_and_supervisor(
+    db: AsyncSession, incident, flags: dict,
+) -> tuple[list[User], list[str]]:
+    """The reporter and their supervisor, where the list asks for them.
+
+    The supervisor is the one recorded against the reporter under Portal →
+    Admin → Users; where none is recorded, the person the reporter said they
+    told on the form. Returns the people and a line for each saying why they
+    are on it.
+
+    ★ Neither for an anonymous report. Copying the reporter would put their
+    address on the same email as everybody else's, and copying their supervisor
+    would tell the supervisor who reported it — either undoes the anonymity the
+    reporter asked for.
+    """
+    if incident.is_anonymous or not any(flags.values()):
+        return [], []
+    ids: list[uuid.UUID] = []
+    why: list[str] = []
+    reporter = await db.get(User, incident.reported_by) if incident.reported_by else None
+    if flags.get("reporter") and reporter is not None:
+        ids.append(reporter.id)
+        why.append("the person who reported it")
+    if flags.get("supervisor"):
+        boss = reporter.supervisor_id if reporter is not None else None
+        boss = boss or incident.reported_to_id
+        if boss:
+            ids.append(boss)
+            why.append("their supervisor")
+    return await mail.recipients(db, ids), why
+
+
 # ── Incidents ────────────────────────────────────────────────────────────────
 
 async def incident_reported(db: AsyncSession, incident) -> None:
@@ -124,8 +174,16 @@ async def incident_reported(db: AsyncSession, incident) -> None:
     Not a task: nobody on this list has been assigned anything yet. Whoever
     ends up investigating gets a task when the incident is classified.
     """
-    people = await _incident_audience(
-        db, (incident.extra or {}).get("incident_type"))
+    kind = (incident.extra or {}).get("incident_type")
+    people = await _incident_audience(db, kind)
+
+    # ★ Round 6, TC-07: the reporter and their supervisor, where the list in
+    # force has them ticked. Added to whoever else is told, never instead.
+    cfg = await _config(db)
+    also, also_why = await reporter_and_supervisor(
+        db, incident, _include_flags(cfg, _report_list_key(cfg, kind)))
+    known_ids = {u.id for u in people}
+    people = people + [u for u in also if u.id not in known_ids]
 
     # ★ And whoever is answerable for the area it happened in. Round 4: "when the
     # location where the incident is recorded on a form, ensure the area
@@ -165,6 +223,8 @@ async def incident_reported(db: AsyncSession, incident) -> None:
     ]
     if named_here:
         lines += ["", named_here]
+    if also_why:
+        lines += ["", f"Copied to {' and '.join(also_why)}."]
     if incident.mol_reportable:
         lines += ["", "This has been flagged as reportable to the Ministry. "
                       "OHSA s.51(1) allows forty-eight hours from the occurrence "
@@ -212,9 +272,14 @@ async def incident_status_changed(
     label = STATUS_EVENTS[event]
     cfg = await _config(db)
     ids = ((cfg.incident_status_notify if cfg else None) or {}).get(event) or []
-    if not ids:
-        return
     people = await mail.recipients(db, [uuid.UUID(str(i)) for i in ids])
+    # ★ Round 6: "when there are status changes on the incident (investigation,
+    # closed) notify the reporter and their supervisor. Make this a rule that
+    # can be modified down the road." The two boxes on each list are the rule.
+    also, also_why = await reporter_and_supervisor(
+        db, incident, _include_flags(cfg, f"status:{event}"))
+    known_ids = {u.id for u in people}
+    people = people + [u for u in also if u.id not in known_ids]
     if not people:
         return
 
@@ -224,7 +289,9 @@ async def incident_status_changed(
         lines.append(incident.title)
     if incident.location_path:
         lines.append(f"Where: {incident.location_path}")
-    lines += ["", "You are on the list for this change under Settings → Who is told."]
+    if also_why:
+        lines += ["", f"Copied to {' and '.join(also_why)}, as Settings → Who is told asks."]
+    lines += ["", "Sent to the list for this change under Settings → Who is told."]
 
     await mail.queue(
         db,

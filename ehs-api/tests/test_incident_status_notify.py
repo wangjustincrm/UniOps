@@ -157,3 +157,109 @@ class TestEachChange:
         [sent] = await _mail(db_session, iid, "incident_hse_reviewed")
         assert "<a href=\"https://x.example\"" not in sent.body_html
         assert "&lt;a href=" in sent.body_html
+
+
+class TestTheReporterAndTheirSupervisor:
+    """Round 6, TC-07: "a checkbox on all 'who is told' items to include the
+    requester and the requester's supervisor"; and from the answers, "notify
+    the reporter and their supervisor" on investigation and closing."""
+
+    async def _people(self, test_engine, db):
+        from app.models.mirrors import User
+        boss = await make_user(test_engine, role="requester")
+        reporter = await make_user(test_engine, role="requester")
+        row = await db.get(User, reporter.id)
+        row.supervisor_id = boss.id
+        await db.flush()
+        return reporter, boss
+
+    async def _report_as(self, test_engine, db, reporter, *, anonymous=False, told=None):
+        from tests.conftest import authed_client, make_token
+        async with authed_client(make_token(reporter.id, reporter.role), db) as c:
+            body = {"form_kind": "equipment", "title": "Forklift into the racking",
+                    "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                    "incident_type": "property_damage", "is_anonymous": anonymous}
+            if told:
+                body["reported_to_id"] = str(told.id)
+            made = await c.post("/api/v1/incidents", json=body)
+            assert made.status_code in (200, 201), made.text
+            iid = made.json()["id"]
+            sent = await c.post(f"/api/v1/incidents/{iid}/submit")
+            assert sent.status_code == 200, sent.text
+        return iid
+
+    async def test_a_closing_list_with_only_the_boxes_ticked(
+            self, hse_manager, test_engine, db_session):
+        _, hse = hse_manager
+        reporter, boss = await self._people(test_engine, db_session)
+        saved = await hse.put("/api/v1/settings/config", json={
+            "incident_status_notify": {},
+            "incident_notify_include": {"status:closed": {"reporter": True, "supervisor": True}}})
+        assert saved.status_code == 200, saved.text
+        iid = await self._report_as(test_engine, db_session, reporter)
+        await hse.post(f"/api/v1/incidents/{iid}/hse-review")
+        assert (await hse.post(f"/api/v1/incidents/{iid}/close")).status_code == 200
+        [sent] = await _mail(db_session, iid, "incident_closed")
+        assert sorted(sent.to_addrs) == sorted([reporter.email, boss.email])
+        assert "the person who reported it and their supervisor" in sent.body_text
+
+    async def test_unticked_tells_neither(self, hse_manager, test_engine, db_session):
+        """The admission beside the denial: the same close, boxes off."""
+        _, hse = hse_manager
+        reporter, _ = await self._people(test_engine, db_session)
+        await hse.put("/api/v1/settings/config", json={
+            "incident_status_notify": {}, "incident_notify_include": {}})
+        iid = await self._report_as(test_engine, db_session, reporter)
+        await hse.post(f"/api/v1/incidents/{iid}/hse-review")
+        await hse.post(f"/api/v1/incidents/{iid}/close")
+        assert await _mail(db_session, iid, "incident_closed") == []
+
+    async def test_a_new_report_copies_them_alongside_the_list(
+            self, hse_manager, test_engine, db_session):
+        _, hse = hse_manager
+        reporter, boss = await self._people(test_engine, db_session)
+        named = await make_user(test_engine, role="requester")
+        await hse.put("/api/v1/settings/config", json={
+            "incident_notify_groups": {"property_damage": [str(named.id)]},
+            "incident_notify_include": {"property_damage": {"reporter": False, "supervisor": True}}})
+        iid = await self._report_as(test_engine, db_session, reporter)
+        [sent] = await _mail(db_session, iid, "incident_reported")
+        assert sorted(sent.to_addrs) == sorted([named.email, boss.email])
+
+    async def test_with_no_supervisor_recorded_the_person_they_told(
+            self, hse_manager, test_engine, db_session):
+        _, hse = hse_manager
+        reporter = await make_user(test_engine, role="requester")
+        told = await make_user(test_engine, role="requester")
+        await hse.put("/api/v1/settings/config", json={
+            "incident_status_notify": {},
+            "incident_notify_include": {"status:under_investigation": {"supervisor": True}}})
+        iid = await self._report_as(test_engine, db_session, reporter, told=told)
+        await hse.post(f"/api/v1/incidents/{iid}/classify", json={"injury_class": "none"})
+        [sent] = await _mail(db_session, iid, "incident_under_investigation")
+        assert sent.to_addrs == [told.email]
+
+    async def test_an_anonymous_report_copies_neither(
+            self, hse_manager, test_engine, db_session):
+        """★ Copying the reporter would put their address beside everybody
+        else's; copying their supervisor would say who reported it."""
+        _, hse = hse_manager
+        reporter, boss = await self._people(test_engine, db_session)
+        named = await make_user(test_engine, role="requester")
+        await hse.put("/api/v1/settings/config", json={
+            "incident_status_notify": {"closed": [str(named.id)]},
+            "incident_notify_include": {"status:closed": {"reporter": True, "supervisor": True}}})
+        iid = await self._report_as(test_engine, db_session, reporter, anonymous=True)
+        await hse.post(f"/api/v1/incidents/{iid}/hse-review")
+        await hse.post(f"/api/v1/incidents/{iid}/close")
+        [sent] = await _mail(db_session, iid, "incident_closed")
+        assert sent.to_addrs == [named.email]
+
+    async def test_only_known_lists_and_flags(self, hse_manager):
+        _, hse = hse_manager
+        bad_key = await hse.put("/api/v1/settings/config", json={
+            "incident_notify_include": {"status:submitted": {"reporter": True}}})
+        assert bad_key.status_code == 422
+        bad_flag = await hse.put("/api/v1/settings/config", json={
+            "incident_notify_include": {"closed": {"manager": True}}})
+        assert bad_flag.status_code == 422

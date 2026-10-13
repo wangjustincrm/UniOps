@@ -50,7 +50,14 @@ interface IncidentTypeOption {
 interface Config {
   incident_notify_groups: Record<string, string[]>
   incident_status_notify: Record<string, string[]>
+  incident_notify_include: Record<string, Include>
 }
+
+/** Round 6, TC-07: "a checkbox on all 'who is told' items to include the
+ * requester and the requester's supervisor." Keyed like the lists: a type,
+ * "*", or "status:<event>". */
+interface Include { reporter: boolean; supervisor: boolean }
+const NO_INCLUDE: Include = { reporter: false, supervisor: false }
 
 /** The changes the server sends for — app.services.notify.STATUS_EVENTS. */
 const STATUS_ROWS: { key: string; label: string; hint: string }[] = [
@@ -72,6 +79,7 @@ export default function NotifyGroupsPage() {
   const queryClient = useQueryClient()
   const [groups, setGroups] = useState<Record<string, string[]> | null>(null)
   const [onStatus, setOnStatus] = useState<Record<string, string[]> | null>(null)
+  const [include, setInclude] = useState<Record<string, Include>>({})
 
   const config = useQuery({
     queryKey: ['settings', 'config'],
@@ -107,6 +115,7 @@ export default function NotifyGroupsPage() {
     if (config.data && groups === null) {
       setGroups(config.data.incident_notify_groups ?? {})
       setOnStatus(config.data.incident_status_notify ?? {})
+      setInclude(config.data.incident_notify_include ?? {})
     }
   }, [config.data, groups])
 
@@ -114,6 +123,7 @@ export default function NotifyGroupsPage() {
     mutationFn: () => api.put('/api/v1/settings/config', {
       incident_notify_groups: groups ?? {},
       incident_status_notify: onStatus ?? {},
+      incident_notify_include: include,
     }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'config'] }),
   })
@@ -149,6 +159,9 @@ export default function NotifyGroupsPage() {
     setGroups({ ...groups, [key]: ids })
   const setStatusFor = (key: string, ids: string[]) =>
     setOnStatus({ ...onStatus, [key]: ids })
+  const includeFor = (key: string) => include[key] ?? NO_INCLUDE
+  const setIncludeFor = (key: string, next: Include) =>
+    setInclude({ ...include, [key]: next })
 
   return (
     <div className="p-4">
@@ -158,6 +171,12 @@ export default function NotifyGroupsPage() {
       />
 
       {people.isError && <LoadFailedNote what="The staff directory" />}
+
+      <p className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+        <b>Their supervisor</b> is the supervisor recorded against the reporter under Portal →
+        Admin → Users, or, where none is recorded, the person the reporter said they told on the
+        form. <b>An anonymous report copies neither</b> — either would say who reported it.
+      </p>
 
       <SectionTitle className="mb-1 mt-1">When an incident is reported</SectionTitle>
       {/* ★ Said here because it decides whether an empty list is safe. */}
@@ -170,6 +189,8 @@ export default function NotifyGroupsPage() {
       {rows.map((row) => (
         <ListCard key={row.key} label={row.label} hint={row.hint}
                   ids={groups[row.key] ?? []} nameOf={nameOf}
+                  include={includeFor(row.key)}
+                  onInclude={(next) => setIncludeFor(row.key, next)}
                   empty={row.key === ANY
                     ? 'Nobody named — incidents go to HSE and the coordinator.'
                     : 'Nobody named — uses the list above.'}
@@ -178,15 +199,18 @@ export default function NotifyGroupsPage() {
 
       <SectionTitle className="mb-1 mt-6">When an incident’s status changes</SectionTitle>
       <p className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-        Each change has its own list. <b>Nobody named means nobody is emailed</b> for that
-        change — unlike a new report, which always reaches HSE. Emailed only when the
-        status actually changes, so correcting a classification later does not send it again.
+        Each change has its own list. <b>Nobody named and nothing ticked means nobody is
+        emailed</b> for that change — unlike a new report, which always reaches HSE. Emailed
+        only when the status actually changes, so correcting a classification later does not
+        send it again.
       </p>
 
       {STATUS_ROWS.map((row) => (
         <ListCard key={row.key} label={row.label} hint={row.hint}
                   ids={onStatus[row.key] ?? []} nameOf={nameOf}
-                  empty="Nobody named — no email is sent for this change."
+                  include={includeFor(`status:${row.key}`)}
+                  onInclude={(next) => setIncludeFor(`status:${row.key}`, next)}
+                  empty="Nobody named — only the boxes ticked below are told."
                   onChange={(ids) => setStatusFor(row.key, ids)} />
       ))}
 
@@ -205,9 +229,10 @@ export default function NotifyGroupsPage() {
 }
 
 /** One list: who is on it, a way to take somebody off, and a way to add. */
-function ListCard({ label, hint, ids, nameOf, empty, onChange }: {
+function ListCard({ label, hint, ids, nameOf, empty, onChange, include, onInclude }: {
   label: string; hint: string; ids: string[]; nameOf: (id: string) => string
   empty: string; onChange: (ids: string[]) => void
+  include: Include; onInclude: (next: Include) => void
 }) {
   const [adding, setAdding] = useState<PersonValue>(EMPTY_PERSON)
   return (
@@ -235,6 +260,19 @@ function ListCard({ label, hint, ids, nameOf, empty, onChange }: {
           ))}
         </ul>
       )}
+
+      <div className="mb-2 flex flex-wrap gap-x-5 gap-y-1">
+        <label className="flex min-h-[36px] items-center gap-2 text-sm text-neutral-800">
+          <input type="checkbox" checked={include.reporter}
+                 onChange={(e) => onInclude({ ...include, reporter: e.target.checked })} />
+          The person who reported it
+        </label>
+        <label className="flex min-h-[36px] items-center gap-2 text-sm text-neutral-800">
+          <input type="checkbox" checked={include.supervisor}
+                 onChange={(e) => onInclude({ ...include, supervisor: e.target.checked })} />
+          Their supervisor
+        </label>
+      </div>
 
       <PersonPicker
         value={adding}
