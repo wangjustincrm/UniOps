@@ -250,8 +250,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
-import { FileText, Plus, Send } from 'lucide-react'
-import { api } from '@/lib/api'
+import { FileText, Plus, Printer, Send } from 'lucide-react'
+import { api, useFileOpener } from '@/lib/api'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
@@ -301,6 +301,7 @@ export default function JhscMeetingPage() {
 
   useTabTitle(ehsRoutes, meeting.data?.meeting_no)
 
+  const printer = useFileOpener()
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['jhsc-meeting', id] })
     queryClient.invalidateQueries({ queryKey: ['jhsc-attendance', id] })
@@ -362,7 +363,20 @@ export default function JhscMeetingPage() {
       />
 
       {/* ── Agenda and minutes ──────────────────────────────────────────── */}
-      <SectionTitle className="mb-2 mt-6">Minutes</SectionTitle>
+      <div className="mb-2 mt-6 flex flex-wrap items-center justify-between gap-2">
+        <SectionTitle>Minutes</SectionTitle>
+        {/* ★ Round 6, TC-04: "there is no means to print the meeting minutes
+            including the attendance, agenda, minutes, and recommendations." */}
+        <button type="button" className={secondaryButton} disabled={printer.busy}
+                onClick={() => printer.open(`/api/v1/jhsc/meetings/${m.id}/print`,
+                                            `minutes-${m.meeting_no}.pdf`)}>
+          <Printer className="h-4 w-4" aria-hidden />
+          {printer.busy ? 'Preparing…' : 'Print the minutes'}
+        </button>
+      </div>
+      {printer.error && (
+        <p className="mb-2 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{printer.error}</p>
+      )}
       <MinutesPanel meeting={m} editable={mayManage && !published} onSaved={invalidate} />
     </div>
   )
@@ -578,6 +592,39 @@ function ReplyForm(
   )
 }
 
+/**
+ * The minutes written on the committee's form, read back onto the meeting.
+ *
+ * ★ Round 6, TC-04: "a saved meeting minutes form does not get saved on the
+ * meeting." It was attached — the meeting held the form's id — but this page
+ * showed only the meeting's own text box, empty when the minutes are on a form,
+ * and said "No minutes recorded" over a filled-in, submitted form.
+ */
+function FormMinutes({ meeting }: { meeting: Meeting }) {
+  const rows = useQuery({
+    queryKey: ['jhsc-minutes', meeting.id, meeting.minutes_submission_id],
+    queryFn: () => api.get<{ label: string; text: string | null; heading: boolean }[]>(
+      `/api/v1/jhsc/meetings/${meeting.id}/minutes-answers`),
+    enabled: Boolean(meeting.minutes_submission_id),
+  })
+  if (!meeting.minutes_submission_id) return null
+  if (rows.isError) return <LoadFailedNote what="The minutes form" />
+  return (
+    <dl className="flex flex-col gap-2">
+      {(rows.data ?? []).map((r, i) => r.heading ? (
+        <dt key={i} className="mt-1 text-sm font-semibold text-neutral-900">{r.label}</dt>
+      ) : (
+        <div key={i}>
+          <dt className="text-xs font-medium text-neutral-500">{r.label}</dt>
+          <dd className="whitespace-pre-wrap text-sm text-neutral-900">
+            {r.text ?? <span className="text-neutral-400">Not answered</span>}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 function MinutesPanel(
   { meeting, editable, onSaved }: { meeting: Meeting; editable: boolean; onSaved: () => void },
 ) {
@@ -630,9 +677,13 @@ function MinutesPanel(
             <p className="mb-3 whitespace-pre-wrap text-sm text-neutral-700">{meeting.agenda}</p>
           </>
         )}
-        {meeting.minutes
-          ? <p className="whitespace-pre-wrap text-sm text-neutral-900">{meeting.minutes}</p>
-          : <p className="text-sm text-neutral-500">No minutes recorded.</p>}
+        {meeting.minutes && (
+          <p className="whitespace-pre-wrap text-sm text-neutral-900">{meeting.minutes}</p>
+        )}
+        <FormMinutes meeting={meeting} />
+        {!meeting.minutes && !meeting.minutes_submission_id && (
+          <p className="text-sm text-neutral-500">No minutes recorded.</p>
+        )}
       </Card>
     )
   }
@@ -674,6 +725,7 @@ function MinutesPanel(
                 A filled-in form is attached to this meeting.
               </p>
             )}
+            <div className="mt-2"><FormMinutes meeting={meeting} /></div>
             <ErrorNote error={startMinutes.error} />
           </div>
         ) : (

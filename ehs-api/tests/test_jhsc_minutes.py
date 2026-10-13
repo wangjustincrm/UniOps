@@ -109,3 +109,55 @@ async def test_it_says_so_when_no_minutes_form_has_been_chosen(hse_manager, db_s
     refused = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")
     assert refused.status_code == 409, refused.text
     assert "Settings" in refused.json()["detail"]
+
+
+async def test_the_minutes_written_on_the_form_are_read_back_onto_the_meeting(
+        hse_manager, minutes_template):
+    """★ Round 6, TC-04: "a saved meeting minutes form does not get saved on the
+    meeting." It was attached; the meeting showed only its own empty text box
+    and said "No minutes recorded" over a filled-in form."""
+    _, client = hse_manager
+    meeting = await _a_meeting(client)
+    started = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")
+    sid = started.json()["submission_id"]
+    saved = await client.put(f"/api/v1/forms/submissions/{sid}/answers",
+                             json={"values": {"present": "Kirk, Marie and the night crew"}})
+    assert saved.status_code == 200, saved.text
+
+    rows = await client.get(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-answers")
+    assert rows.status_code == 200, rows.text
+    assert rows.json() == [{"label": "Who was there",
+                            "text": "Kirk, Marie and the night crew", "heading": False}]
+
+
+async def test_a_meeting_with_no_form_has_no_form_rows(hse_manager):
+    _, client = hse_manager
+    meeting = await _a_meeting(client)
+    rows = await client.get(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-answers")
+    assert rows.status_code == 200 and rows.json() == []
+
+
+async def test_the_minutes_print_as_one_document(hse_manager, minutes_template):
+    """Round 6, TC-04: "no means to print the meeting minutes including the
+    attendance, agenda, minutes, and recommendations." """
+    from tests.test_label_revision import _pdf_text
+
+    _, client = hse_manager
+    meeting = await _a_meeting(client)
+    await client.patch(f"/api/v1/jhsc/meetings/{meeting['id']}",
+                       json={"agenda": "Ladders, then the eyewash"})
+    started = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")
+    await client.put(f"/api/v1/forms/submissions/{started.json()['submission_id']}/answers",
+                     json={"values": {"present": "Everyone on days"}})
+    await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations",
+                      json={"recommendation": "Replace the cracked step ladder in 104"})
+
+    got = await client.get(f"/api/v1/jhsc/meetings/{meeting['id']}/print")
+    assert got.status_code == 200, got.text
+    assert got.headers["content-type"] == "application/pdf"
+    text = _pdf_text(got.content)
+    assert text, "the extractor found nothing — an empty extraction passes every 'not in'"
+    for expected in ("Attendance", "Agenda", "Ladders, then the eyewash", "Minutes",
+                     "Who was there", "Everyone on days", "Recommendations",
+                     "Replace the cracked step ladder in 104"):
+        assert expected in text, expected

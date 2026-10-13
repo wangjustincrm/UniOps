@@ -1,0 +1,189 @@
+"""A committee meeting's minutes, read and printed as one document.
+
+Round 6, TC-04: "there is a disconnect between the meeting minutes and the
+agenda. a saved meeting minutes form does not get saved on the meeting and there
+is no means to print the meeting minutes including the attendance, agenda,
+minutes, and recommendations."
+
+The minutes *were* attached — the meeting carries the form's id and the form
+names the meeting. What was missing is that nothing read them back: the meeting
+showed only its own free-text box, which is empty when the minutes are written on
+a form, so it said "No minutes recorded" over a filled-in, submitted form. So the
+answers are read here, in the form's own order, and both the meeting page and
+the printed minutes use the same rows.
+"""
+from __future__ import annotations
+
+import io
+import uuid
+from dataclasses import dataclass
+from datetime import date, datetime
+
+from xml.sax.saxutils import escape
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.form import FormAnswer, FormSubmission
+from app.services import pdf_fonts, statutory
+
+
+@dataclass
+class Row:
+    label: str
+    text: str | None
+    # A section heading on the form rather than a question.
+    heading: bool = False
+
+
+def _text(answer: FormAnswer, question: dict) -> str | None:
+    qtype = answer.question_type
+    if qtype == "photo":
+        n = len(answer.value_ids or [])
+        return f"{n} photograph{'s' if n != 1 else ''}" if n else None
+    if qtype == "signature":
+        # The value is the drawing itself; a document says that it was signed.
+        return "Signed" if answer.value_text else None
+    if answer.value_labels:
+        return ", ".join(str(x) for x in answer.value_labels)
+    if qtype == "yes_no_na" and answer.value_text:
+        return {"yes": "Yes", "no": "No", "na": "N/A"}.get(answer.value_text.lower(),
+                                                         answer.value_text)
+    if qtype == "select" and answer.value_text:
+        labels = {str(o.get("key")): o.get("label") for o in question.get("options") or []}
+        return labels.get(answer.value_text, answer.value_text)
+    if answer.value_text:
+        return answer.value_text
+    if answer.value_number is not None:
+        n = answer.value_number
+        return str(int(n)) if n == int(n) else str(n)
+    if answer.value_date is not None:
+        return answer.value_date.strftime("%-d %b %Y")
+    if answer.value_bool is not None:
+        return "Yes" if answer.value_bool else "No"
+    return None
+
+
+async def rows_for(db: AsyncSession, submission_id: uuid.UUID | None) -> list[Row]:
+    """The minutes form's questions and answers, in the form's order."""
+    if submission_id is None:
+        return []
+    sub = await db.get(FormSubmission, submission_id)
+    if sub is None:
+        return []
+    answers = {a.question_key: a for a in (await db.execute(
+        select(FormAnswer).where(FormAnswer.submission_id == sub.id))).scalars()}
+    out: list[Row] = []
+    for q in sub.schema_snapshot or []:
+        qtype = q.get("type")
+        if qtype == "group":
+            out.append(Row(q.get("label") or "", None, heading=True))
+            continue
+        if qtype == "instruction":
+            continue
+        a = answers.get(q.get("key"))
+        out.append(Row(q.get("label") or q.get("key") or "", _text(a, q) if a else None))
+    return out
+
+
+# ── The printed minutes ─────────────────────────────────────────────────────
+
+INK = colors.HexColor("#111827")
+MUTED = colors.HexColor("#6B7280")
+RULE = colors.HexColor("#D1D5DB")
+
+
+def _style(size: float, *, bold: bool = False, colour=INK, after: float = 2) -> ParagraphStyle:
+    return ParagraphStyle(
+        "s", fontName="Helvetica-Bold" if bold else "Helvetica", fontSize=size,
+        leading=size * 1.3, textColor=colour, alignment=TA_LEFT, spaceAfter=after)
+
+
+def _p(text: str | None, style: ParagraphStyle) -> Paragraph:
+    """A paragraph, escaped, with line breaks kept and CJK set in a face that
+    has the glyphs (a name in Chinese printed as black boxes otherwise)."""
+    body = escape(text or "—").replace("\n", "<br/>")
+    if pdf_fonts.has_cjk(text):
+        style = ParagraphStyle("cjk", parent=style,
+                               fontName=pdf_fonts.font_for(text, bold=style.fontName.endswith("Bold")))
+    return Paragraph(body, style)
+
+
+def render(*, meeting, attendance, recommendations, rows: list[Row],
+           printed_by: str | None) -> bytes:
+    """Attendance, agenda, minutes and recommendations, in that order."""
+    h1, h2 = _style(15, bold=True, after=4), _style(11, bold=True, after=3)
+    body, small = _style(9.5), _style(8, colour=MUTED)
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=18 * mm, rightMargin=18 * mm,
+                            topMargin=16 * mm, bottomMargin=16 * mm,
+                            title=f"Minutes {meeting.meeting_no}")
+    story: list = []
+
+    title = meeting.title or "Joint Health and Safety Committee"
+    story.append(_p(f"{title} — minutes", h1))
+    when = meeting.held_on.strftime("%-d %B %Y") if isinstance(meeting.held_on, date) else ""
+    times = " – ".join(t.astimezone(statutory.ONTARIO).strftime("%H:%M")
+                       for t in (meeting.started_at, meeting.ended_at) if t)
+    facts = [meeting.meeting_no, when, times, meeting.location_text,
+             (f"Inspection: {meeting.inspection_department_name}"
+              if meeting.inspection_department_name else None)]
+    story.append(_p(" · ".join(f for f in facts if f), small))
+    story.append(Spacer(1, 5 * mm))
+
+    story.append(_p("Attendance", h2))
+    if attendance:
+        data = [[_p(a.user_name, body), _p(a.representation or "", body),
+                 _p({"present": "Present", "absent": "Absent",
+                     "regrets": "Regrets"}.get(a.attendance, a.attendance), body)]
+                for a in attendance]
+        t = Table(data, colWidths=[70 * mm, 55 * mm, 45 * mm])
+        t.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.25, RULE),
+                               ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        story.append(t)
+    else:
+        story.append(_p("Not recorded.", body))
+    story.append(Spacer(1, 4 * mm))
+
+    story.append(_p("Agenda", h2))
+    story.append(_p(meeting.agenda or "Not recorded.", body))
+    story.append(Spacer(1, 4 * mm))
+
+    story.append(_p("Minutes", h2))
+    if meeting.minutes:
+        story.append(_p(meeting.minutes, body))
+    if rows:
+        for r in rows:
+            if r.heading:
+                story.append(Spacer(1, 2 * mm))
+                story.append(_p(r.label, _style(10, bold=True)))
+            else:
+                story.append(_p(r.label, _style(8.5, bold=True, colour=MUTED, after=0)))
+                story.append(_p(r.text or "Not answered", body))
+    if not meeting.minutes and not rows:
+        story.append(_p("No minutes recorded.", body))
+    story.append(Spacer(1, 4 * mm))
+
+    story.append(_p("Recommendations", h2))
+    if recommendations:
+        for rec in recommendations:
+            story.append(_p(f"{rec.seq}. {rec.recommendation}", body))
+            bits = [f"Raised by {rec.raised_by_name}" if rec.raised_by_name else None,
+                    f"Sent {rec.sent_at.astimezone(statutory.ONTARIO).strftime('%-d %b %Y')}"
+                    if rec.sent_at else "Not yet sent",
+                    f"Response: {rec.response}" if rec.response else "No response yet"]
+            story.append(_p(" · ".join(b for b in bits if b), small))
+    else:
+        story.append(_p("None.", body))
+
+    printed = datetime.now(statutory.ONTARIO).strftime("%-d %b %Y %H:%M")
+    story.append(Spacer(1, 6 * mm))
+    story.append(_p(f"Printed {printed}" + (f" by {printed_by}" if printed_by else ""), small))
+    doc.build(story)
+    return buf.getvalue()

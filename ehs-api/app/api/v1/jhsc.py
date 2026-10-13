@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime
 from types import SimpleNamespace
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from sqlalchemy import select
@@ -19,6 +19,8 @@ from app.models.config import EhsConfig
 from app.models.form import FormTemplate
 from app.models.mirrors import User
 from app.services import mail, notify
+from app.services import minutes as minutes_service
+from app.services.http_headers import content_disposition
 
 router = APIRouter(prefix="/jhsc")
 
@@ -184,6 +186,45 @@ async def update_meeting(
         setattr(meeting, key, value)
     await db.flush()
     return meeting
+
+
+class MinutesRowOut(BaseModel):
+    label: str
+    text: str | None
+    heading: bool = False
+
+
+@router.get("/meetings/{meeting_id}/minutes-answers", response_model=list[MinutesRowOut])
+async def minutes_answers(meeting_id: uuid.UUID, db: SessionDep, user: CanReadJhsc):  # noqa: ARG001
+    """The minutes form's questions and answers, for showing on the meeting.
+
+    Round 6, TC-04: "a saved meeting minutes form does not get saved on the
+    meeting." It was attached; nothing read it back.
+    """
+    meeting = await crud.get_meeting(db, meeting_id)
+    return [MinutesRowOut(label=r.label, text=r.text, heading=r.heading)
+            for r in await minutes_service.rows_for(db, meeting.minutes_submission_id)]
+
+
+@router.get("/meetings/{meeting_id}/print")
+async def print_minutes(meeting_id: uuid.UUID, db: SessionDep, user: CanReadJhsc):
+    """The minutes as one document: attendance, agenda, minutes, recommendations.
+
+    Round 6, TC-04: "there is no means to print the meeting minutes including
+    the attendance, agenda, minutes, and recommendations."
+    """
+    meeting = await crud.get_meeting(db, meeting_id)
+    printer = await db.get(User, _user_id(user))
+    pdf = minutes_service.render(
+        meeting=meeting,
+        attendance=await crud.attendance_for(db, meeting.id),
+        recommendations=await crud.list_recommendations(
+            db, meeting_id=meeting.id, outstanding_only=False),
+        rows=await minutes_service.rows_for(db, meeting.minutes_submission_id),
+        printed_by=printer.full_name if printer else None,
+    )
+    return Response(content=pdf, media_type="application/pdf", headers={
+        "Content-Disposition": content_disposition(f"minutes-{meeting.meeting_no}")})
 
 
 @router.get("/meetings/{meeting_id}/attendance", response_model=list[AttendanceOut])
