@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import {
   UserCheck,
   ArrowRight, CheckCircle2, AlertCircle,
-  Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock, Network,
+  Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock, Network, Warehouse,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, encodeSession } from '@/lib/api'
+import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, INVENTORY_URL, encodeSession } from '@/lib/api'
 import { cn, formatAmount, timeAgo } from '@/lib/utils'
 import { groupTasks } from '@/lib/groupTasks'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
@@ -498,6 +498,9 @@ export default function PortalHome() {
   // every MRP page's on-load reads need it); system_admin sees everything.
   const hasMrpAccess =
     role === 'system_admin' || !!perms?.['mrp.report.view']
+  // Inventory mirrors the sidebar (navConfig: gated on inventory.view).
+  const hasInventoryAccess =
+    role === 'system_admin' || !!perms?.['inventory.view']
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
@@ -516,6 +519,7 @@ export default function PortalHome() {
   // Bare MRP root (redirects to its default page) — same shape as navConfig's
   // resolveNavHref('mrp'), separate origin so the session fragment rides along.
   const mrpHref = session ? `${MRP_URL}/#__session=${session}` : MRP_URL
+  const inventoryHref = session ? `${INVENTORY_URL}/#__session=${session}` : INVENTORY_URL
 
   const allTasks = useMemo<UnifiedTask[]>(() => {
     const withSession = (url: string) => (session ? `${url}#__session=${session}` : url)
@@ -687,6 +691,15 @@ export default function PortalHome() {
       label: 'MRP',
       description: 'Demand forecast, MPS production planning, BOM explorer',
       href: mrpHref,
+      healthy: undefined,
+      loading: false,
+    }] : []),
+    ...(hasInventoryAccess ? [{
+      icon: <Warehouse className="h-5 w-5 text-emerald-600" />,
+      iconBg: 'bg-emerald-50',
+      label: 'Inventory',
+      description: 'WMS and NC stock side by side — reconcile, explain differences, trace batches.',
+      href: inventoryHref,
       healthy: undefined,
       loading: false,
     }] : []),

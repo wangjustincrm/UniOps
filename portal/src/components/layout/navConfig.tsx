@@ -13,7 +13,7 @@
  */
 import {
   Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
-  Network, Repeat,
+  Network, Repeat, Warehouse,
 } from 'lucide-react'
 
 // MRP has no single landing tile like the other modules — Portal links
@@ -23,7 +23,7 @@ import {
 // PortalSidebar/PortalPageLayout/PortalHome) and re-exported here so existing
 // importers keep working; lib/api is where every module origin now lives, so
 // the returnUrl allow-list sees this one too.
-import { MRP_URL } from '@/lib/api'
+import { MRP_URL, INVENTORY_URL } from '@/lib/api'
 export { MRP_URL }
 
 export interface NavItemDef {
@@ -86,6 +86,10 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       // have every fetch 403 forever (I5, final-phase review). mrp.demand.write
       // is still required for the in-page write actions.
       { label: 'MRP',         icon: Network,      href: 'mrp', permission: 'mrp.report.view' },
+      // Inventory: WMS and NC stock side by side. Every page reads under
+      // inventory.view; cost columns and Settings writes have their own keys
+      // and are gated inside the module.
+      { label: 'Inventory',   icon: Warehouse,    href: 'inventory', permission: 'inventory.view' },
     ],
   },
   {
@@ -140,6 +144,7 @@ export function resolveNavHref(key: string, ctx: HrefContext): string {
   // same shape as the sibling module entries above. The session fragment is
   // still needed because MRP is a separate origin.
   if (key === 'mrp') return ctx.session ? `${MRP_URL}/#__session=${ctx.session}` : MRP_URL
+  if (key === 'inventory') return ctx.session ? `${INVENTORY_URL}/#__session=${ctx.session}` : INVENTORY_URL
   if (key === 'admin') return '/admin'
   if (key.startsWith('portal:')) return key.slice('portal:'.length)
   if (key.startsWith('epms:')) {

@@ -365,6 +365,7 @@ export const VMS_URL  = (import.meta.env.VITE_VMS_URL  as string | undefined) ||
 export const FINANCE_URL = (import.meta.env.VITE_FINANCE_URL as string | undefined) || 'http://localhost:5177'
 export const BOOKING_URL = (import.meta.env.VITE_BOOKING_URL as string | undefined) || 'http://localhost:5178'
 export const MRP_URL  = (import.meta.env.VITE_MRP_URL  as string | undefined) || 'http://localhost:5179'
+export const INVENTORY_URL = (import.meta.env.VITE_INVENTORY_URL as string | undefined) || 'http://localhost:5181'
 
 // btoa() only handles Latin1; user data (e.g. Chinese full_name) is UTF-8, which
 // makes btoa throw "characters outside of the Latin1 range". Encode the JSON as
@@ -387,7 +388,7 @@ export function encodeSession(token: string, refreshToken: string, user: object)
 // hands the session back to that origin via the same `#__session=` mechanism
 // the nav links use, so the user lands on the page they originally asked for.
 
-const RETURN_URL_ORIGINS = [EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, MRP_URL]
+const RETURN_URL_ORIGINS = [EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, MRP_URL, INVENTORY_URL]
 
 /**
  * Validate a caller-supplied returnUrl against the module origins we know.
