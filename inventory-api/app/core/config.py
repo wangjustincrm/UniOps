@@ -75,6 +75,20 @@ class Settings(BaseSettings):
         "1402", "1403", "1404", "1405", "1406", "1407", "1408", "1471",
     ]
 
+    # ── WMS (Flux) Oracle read-only connection — THICK mode ─────────────────
+    # Flux runs Oracle <=11g; python-oracledb thin mode refuses it (DPY-3010),
+    # hence the Instant Client baked into the Dockerfile (same as mrp-api).
+    # inventory-api reads only the transaction log and lot attributes here;
+    # the current-stock mirror stays mrp-api's (design D2/D2').
+    wms_host: str | None = None
+    wms_port: int = 1521
+    wms_service: str | None = None
+    wms_user: str | None = None
+    wms_password: str | None = None
+    oracle_client_lib: str = "/opt/oracle/instantclient_19_28"
+    WMS_WAREHOUSE: str = "CANADA"
+    WMS_CUSTOMER: str = "10024"
+
     # ── NC sync scheduler ────────────────────────────────────────────────────
     # The interval is the `nc_sync_interval_minutes` parameter (Settings page),
     # not an env var — same split as mrp-api's WMS scheduler. These two are

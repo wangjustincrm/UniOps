@@ -65,6 +65,7 @@ REQUIRED = {
     "gl_line": ("pk_voucher", "year", "period", "account_code"),
 }
 
+NC_CHECKS = ("ic_flow_vs_onhand", "ia_ledger_vs_monthnab", "gl_lines_vs_balance")
 QTY_TOLERANCE = Decimal("0.0001")
 AMOUNT_TOLERANCE = Decimal("0.005")
 MAX_ISSUES_STORED_PER_CHECK = 500
@@ -200,10 +201,10 @@ async def _tieout(db: AsyncSession, reference: dict) -> list[dict]:
     return issues
 
 
-async def _write_state(db: AsyncSession, **fields) -> None:
-    state = await db.get(InvSyncState, SOURCE)
+async def _write_state(db: AsyncSession, source: str = SOURCE, **fields) -> None:
+    state = await db.get(InvSyncState, source)
     if state is None:
-        state = InvSyncState(source=SOURCE, tieout_issue_count=0)
+        state = InvSyncState(source=source, tieout_issue_count=0)
         db.add(state)
     for k, v in fields.items():
         setattr(state, k, v)
@@ -226,7 +227,8 @@ async def run_nc_sync(db: AsyncSession, extract: Callable[[], dict] = reader.ext
         await db.flush()
 
         issues = await _tieout(db, raw.get("reference", {}))
-        await db.execute(delete(InvTieoutIssue))
+        # Only this sync's own checks — the WMS sync keeps its findings here too.
+        await db.execute(delete(InvTieoutIssue).where(InvTieoutIssue.check_name.in_(NC_CHECKS)))
         per_check: dict[str, int] = {}
         stored = []
         for i in issues:

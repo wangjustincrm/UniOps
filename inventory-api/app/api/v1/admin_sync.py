@@ -15,6 +15,7 @@ from app.models import InvSyncState, InvTieoutIssue
 from app.services import params
 from app.services.nc_sync.lock import is_sync_running, nc_sync_lock
 from app.services.nc_sync.service import SOURCE, nc_configured, run_nc_sync
+from app.services.wms_sync import service as wms
 
 router = APIRouter(prefix="/admin", tags=["admin-sync"])
 
@@ -27,9 +28,8 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat()
 
 
-@router.get("/nc-sync/status")
-async def nc_sync_status(db: SessionDep, _: ViewDep) -> dict:
-    state = await db.get(InvSyncState, SOURCE)
+async def _status(db, source: str, configured: bool) -> dict:
+    state = await db.get(InvSyncState, source)
     interval = await params.get_param(db, params.NC_SYNC_INTERVAL_KEY)
     last_attempt = state.last_synced_at if state else None
     next_due_at = None
@@ -38,7 +38,7 @@ async def nc_sync_status(db: SessionDep, _: ViewDep) -> dict:
             last_attempt = last_attempt.replace(tzinfo=timezone.utc)
         next_due_at = last_attempt + timedelta(minutes=interval)
     return {
-        "configured": nc_configured(),
+        "configured": configured,
         "interval_minutes": interval,
         "status": state.status if state else None,
         "last_synced_at": _iso(state.last_synced_at if state else None),
@@ -52,6 +52,18 @@ async def nc_sync_status(db: SessionDep, _: ViewDep) -> dict:
         "next_due_at": _iso(next_due_at),
         "running": await is_sync_running(db),
     }
+
+
+@router.get("/nc-sync/status")
+async def nc_sync_status(db: SessionDep, _: ViewDep) -> dict:
+    return await _status(db, SOURCE, nc_configured())
+
+
+@router.get("/wms-sync/status")
+async def wms_sync_status(db: SessionDep, _: ViewDep) -> dict:
+    """The WMS *transaction history* mirror owned by inventory-api — not
+    mrp-api's current-stock mirror, which has its own status endpoint."""
+    return await _status(db, wms.SOURCE, wms.wms_configured())
 
 
 @router.get("/nc-sync/tieout-issues")
@@ -91,3 +103,17 @@ async def trigger_nc_sync(db: SessionDep, _: AdminDep) -> dict:
             return await run_nc_sync(db)
         except Exception as exc:  # recorded on the state row by run_nc_sync
             raise HTTPException(status_code=502, detail=f"NC sync failed: {type(exc).__name__}") from exc
+
+
+@router.post("/wms-sync")
+async def trigger_wms_sync(db: SessionDep, _: AdminDep) -> dict:
+    if not wms.wms_configured():
+        raise HTTPException(status_code=503, detail="WMS connection is not configured")
+    async with nc_sync_lock(db) as got:
+        if not got:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                detail="A sync is already running; wait for it to finish.")
+        try:
+            return await wms.run_wms_sync(db)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"WMS sync failed: {type(exc).__name__}") from exc

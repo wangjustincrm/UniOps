@@ -9,6 +9,7 @@ import pytest
 
 READS = [
     ("get", "/api/v1/admin/nc-sync/status", None),
+    ("get", "/api/v1/admin/wms-sync/status", None),
     ("get", "/api/v1/admin/nc-sync/tieout-issues", None),
     ("get", "/api/v1/settings/params", None),
     ("get", "/api/v1/settings/warehouse-classes", None),
@@ -48,9 +49,11 @@ async def test_reads_need_inventory_view(client, non_admin_token, monkeypatch, m
     assert (await _call(client, non_admin_token, method, url, body)).status_code == 200
 
 
-@pytest.mark.parametrize("method,url,body", WRITES + [("post", "/api/v1/admin/nc-sync", None)])
+@pytest.mark.parametrize("method,url,body", WRITES + [("post", "/api/v1/admin/nc-sync", None),
+                                                   ("post", "/api/v1/admin/wms-sync", None)])
 async def test_writes_need_inventory_admin(client, non_admin_token, monkeypatch, method, url, body):
     monkeypatch.setattr("app.api.v1.admin_sync.nc_configured", lambda: False)
+    monkeypatch.setattr("app.services.wms_sync.service.wms_configured", lambda: False)
     _grant(monkeypatch, "inventory.view", "inventory.cost.view")
     assert (await _call(client, non_admin_token, method, url, body)).status_code == 403
     _grant(monkeypatch, "inventory.admin")

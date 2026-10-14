@@ -1,4 +1,8 @@
-"""Keep the NC mirrors fresh on a schedule.
+"""Keep the NC mirrors and the WMS transaction history fresh on a schedule.
+
+Both sources share the interval setting and the single-flight lock, and each
+is due-checked against its OWN state row — a WMS outage does not hold back
+NC, and vice versa.
 
 Same shape as mrp-api's WMS scheduler (asyncio task started in lifespan, short
 fixed tick + "is it due?" against the state row, transaction-scoped advisory
@@ -20,6 +24,7 @@ from app.models import InvSyncState
 from app.services import params
 from app.services.nc_sync.lock import nc_sync_lock
 from app.services.nc_sync.service import SOURCE, nc_configured, run_nc_sync
+from app.services.wms_sync import service as wms
 
 log = logging.getLogger(__name__)
 
@@ -36,36 +41,52 @@ def is_due(*, last_attempt_at: datetime | None, interval_minutes: int, now: date
     return now - last_attempt_at >= timedelta(minutes=interval_minutes)
 
 
-async def run_tick_with_session(db) -> str:
-    """'disabled' | 'not_configured' | 'not_due' | 'synced' | 'failed'."""
+SOURCES = (
+    (SOURCE, nc_configured, run_nc_sync),
+    (wms.SOURCE, wms.wms_configured, wms.run_wms_sync),
+)
+
+
+async def run_tick_with_session(db) -> dict[str, str]:
+    """Per source: 'disabled' | 'not_configured' | 'locked' | 'not_due' | 'synced' | 'failed'."""
     interval = await params.get_param(db, params.NC_SYNC_INTERVAL_KEY)
-    if interval <= 0:
-        return "disabled"
-    if not nc_configured():
-        return "not_configured"
-    state = await db.get(InvSyncState, SOURCE)
-    if not is_due(last_attempt_at=state.last_synced_at if state else None,
-                  interval_minutes=interval, now=datetime.now(timezone.utc)):
-        return "not_due"
-    try:
-        await run_nc_sync(db)
-    except Exception:  # noqa: BLE001 — recorded on the state row; keep the loop alive
-        log.exception("Scheduled NC inventory sync failed")
-        return "failed"
-    return "synced"
+    out: dict[str, str] = {}
+    for source, configured, run in SOURCES:
+        if interval <= 0:
+            out[source] = "disabled"
+            continue
+        if not configured():
+            out[source] = "not_configured"
+            continue
+        # The lock is transaction-scoped and every sync commits, so it is
+        # taken afresh for EACH source — one lock around the loop would be
+        # released by the first source's commit and leave the second unguarded.
+        async with nc_sync_lock(db) as got:
+            if not got:
+                out[source] = "locked"
+                continue
+        state = await db.get(InvSyncState, source)
+        if not is_due(last_attempt_at=state.last_synced_at if state else None,
+                      interval_minutes=interval, now=datetime.now(timezone.utc)):
+            out[source] = "not_due"
+            continue
+        try:
+            await run(db)
+            out[source] = "synced"
+        except Exception:  # noqa: BLE001 — recorded on the state row; keep the loop alive
+            log.exception("Scheduled %s sync failed", source)
+            out[source] = "failed"
+    return out
 
 
 async def _run_tick() -> None:
     async with AsyncSessionLocal() as db:
-        async with nc_sync_lock(db) as got:
-            if not got:
-                log.debug("NC inventory sync tick skipped — a sync is already running")
-                return
-            try:
-                await run_tick_with_session(db)
-            except Exception:  # noqa: BLE001
-                await db.rollback()
-                log.exception("NC inventory sync tick failed")
+        try:
+            result = await run_tick_with_session(db)
+            log.debug("Inventory sync tick: %s", result)
+        except Exception:  # noqa: BLE001
+            await db.rollback()
+            log.exception("Inventory sync tick failed")
 
 
 async def _loop() -> None:
