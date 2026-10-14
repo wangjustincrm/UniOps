@@ -148,6 +148,16 @@ modules:
       - Get a suggested standard cost for a product — usage from actual consumption against the BOM, settled prices, conversion per unit — and see what 2026 would have looked like under it (AI Financial Analysis → Standard Cost; a suggestion only, nothing is written to NC, and the conversion basis is Finance's decision)
     notes:
       - >-
+        Bank reconciliation counts unposted vouchers (ones NC has not tallied
+        yet) on the ledger side by default — "Include unposted vouchers" at the
+        top of the period is ticked. The choice is saved on that period, so the
+        difference, auto-match and the sign-off report all follow it, and the
+        report says so. Unposted ledger lines are tagged "Unposted". Untick it
+        to reconcile against posted vouchers only; that is refused while a
+        cleared group still holds an unposted line (unmatch it first). A period
+        signed off before this change stays on posted vouchers only. Vouchers NC
+        has discarded or deleted are never counted.
+      - >-
         A vendor's invoice number must be unique (vendor name + invoice
         number), and NC itself does not check it. Finance → AP Duplicate
         Invoices is that check: it runs after every hourly AP sync and gives AP
