@@ -233,11 +233,13 @@ async def advice_lines(advice_id: uuid.UUID, _: CurrentUser,
 @router.get("/{account_id}/book")
 async def book_side(account_id: uuid.UUID, _: CurrentUser,
                     date_from: date = Query(...), date_to: date = Query(...),
+                    include_unposted: bool = Query(default=True),
                     db: AsyncSession = Depends(get_db)):
     """NC's ledger for this bank account, the way NC's own drill-down shows it."""
     acct = await _account(db, account_id)
     try:
-        period = await bank_book.book_period(db, acct, date_from, date_to)
+        period = await bank_book.book_period(db, acct, date_from, date_to,
+                                             include_unposted)
     except LookupError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     counterparts = await bank_book.transfer_counterparts(db, period.lines)
@@ -255,7 +257,7 @@ async def book_side(account_id: uuid.UUID, _: CurrentUser,
             "contra_codes": b.contra_codes, "contra_names": b.contra_names,
             "contra_kind": b.contra_kind,
             "contra_label": bank_book.KIND_LABELS.get(b.contra_kind, b.contra_kind),
-            "partner_name": b.partner_name,
+            "partner_name": b.partner_name, "posted": b.posted,
             "transfer_counterpart": counterparts.get(b.jv_line_id),
         } for b in period.lines],
         "base_only_lines": _base_only_payload(period),
@@ -324,6 +326,7 @@ async def list_periods(account_id: uuid.UUID, _: CurrentUser,
         diff, stmt_closing, book_closing = _figures(r)
         out.append({"id": str(r.id), "period_start": r.period_start.isoformat(),
                     "period_end": r.period_end.isoformat(), "status": r.status,
+                    "include_unposted": r.include_unposted,
                     "difference": diff,
                     "statement_closing": stmt_closing, "book_closing": book_closing,
                     "finalized_at": r.finalized_at.isoformat() if r.finalized_at else None,
@@ -345,7 +348,8 @@ async def get_period(recon_id: uuid.UUID, _: CurrentUser,
 
     txns = await crud._period_txns(db, rec)
     claimed_txn, claimed_book = await crud._claimed(db, rec)
-    period = await bank_book.book_period(db, acct, rec.period_start, rec.period_end)
+    period = await bank_book.book_period(db, acct, rec.period_start, rec.period_end,
+                                         rec.include_unposted)
 
     matches = (await db.execute(
         select(BankReconMatch).where(BankReconMatch.reconciliation_id == rec.id)
@@ -371,6 +375,7 @@ async def get_period(recon_id: uuid.UUID, _: CurrentUser,
         "period_start": rec.period_start.isoformat(),
         "period_end": rec.period_end.isoformat(),
         "currency": rec.currency, "summary": summary,
+        "include_unposted": rec.include_unposted,
         "bank_lines": [{
             "id": str(t.id), "txn_date": t.txn_date.isoformat(),
             "description": t.description, "amount": str(t.amount),
@@ -382,7 +387,7 @@ async def get_period(recon_id: uuid.UUID, _: CurrentUser,
             "amount": str(b.amount), "local_amount": str(b.local_amount),
             "contra_kind": b.contra_kind,
             "contra_label": bank_book.KIND_LABELS.get(b.contra_kind, b.contra_kind),
-            "contra_codes": b.contra_codes,
+            "contra_codes": b.contra_codes, "posted": b.posted,
             "cleared": b.jv_line_id in claimed_book} for b in period.lines],
         "base_only_lines": _base_only_payload(period),
         "matches": [{
@@ -409,6 +414,30 @@ async def auto_match(recon_id: uuid.UUID, user: CurrentUser,
         raise HTTPException(status_code=409, detail=str(exc))
     await db.commit()
     return result
+
+
+class BasisIn(BaseModel):
+    include_unposted: bool
+
+
+@router.put("/reconciliations/{recon_id}/basis")
+async def set_basis(recon_id: uuid.UUID, body: BasisIn, user: CurrentUser,
+                    db: AsyncSession = Depends(get_db)):
+    """Tick / untick "Include unposted vouchers" for one period."""
+    await bank_authz.require(db, user, bank_authz.RECONCILE)
+    rec = await _recon(db, recon_id)
+    acct = await _account(db, rec.bank_account_id)
+    try:
+        await crud.set_basis(db, rec, acct, body.include_unposted)
+        summary = await crud.recompute(db, rec, acct)
+    except crud.Frozen as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    await db.commit()
+    return {"include_unposted": rec.include_unposted, "summary": summary}
 
 
 class MatchIn(BaseModel):
@@ -465,7 +494,8 @@ async def candidates(recon_id: uuid.UUID, txn_id: uuid.UUID, _: CurrentUser,
     txn = await db.get(BankTransaction, txn_id)
     if txn is None:
         raise HTTPException(status_code=404, detail="Statement line not found")
-    period = await bank_book.book_period(db, acct, rec.period_start, rec.period_end)
+    period = await bank_book.book_period(db, acct, rec.period_start, rec.period_end,
+                                         rec.include_unposted)
     _claimed_txn, claimed_book = await crud._claimed(db, rec)
     views = [bank_matching.BookLineView(
         id=b.jv_line_id, voucher_date=b.voucher_date, summary=b.summary,
@@ -512,7 +542,8 @@ async def _snapshot(db: AsyncSession, rec: BankReconciliation, acct: BankAccount
     summary = await crud.recompute(db, rec, acct)
     txns = await crud._period_txns(db, rec)
     claimed_txn, claimed_book = await crud._claimed(db, rec)
-    period = await bank_book.book_period(db, acct, rec.period_start, rec.period_end)
+    period = await bank_book.book_period(db, acct, rec.period_start, rec.period_end,
+                                         rec.include_unposted)
 
     cleared_payments, cleared_deposits = [], []
     for b in period.lines:
@@ -528,7 +559,8 @@ async def _snapshot(db: AsyncSession, rec: BankReconciliation, acct: BankAccount
         txns, period.lines, claimed_txn, claimed_book)
     return bank_recon_report.build_snapshot(
         rec, period.bank_account_label, summary, cleared_payments, cleared_deposits,
-        out_bank, out_book, prepared_by)
+        out_bank, out_book, prepared_by,
+        unposted_count=sum(1 for b in period.lines if not b.posted))
 
 
 @router.get("/reconciliations/{recon_id}/report")

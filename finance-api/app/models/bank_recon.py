@@ -21,7 +21,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer,
-    Numeric, String, Text, UniqueConstraint,
+    Numeric, String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -213,6 +213,11 @@ class BankReconciliation(UUIDPrimaryKey, TimestampMixin, Base):
     difference: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False, default=Decimal("0"))
 
     status: Mapped[str] = mapped_column(String(12), nullable=False, default=OPEN, index=True)
+    # The period's book basis: count vouchers NC has not tallied yet. One flag
+    # per period, not per request — auto-match, manual matches, the difference
+    # and the signed snapshot all read the ledger and must read the same one.
+    include_unposted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true"))
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     finalized_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

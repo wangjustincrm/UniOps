@@ -70,6 +70,7 @@ from decimal import Decimal
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud.fiscal import status_filter
 from app.models.bank import BankAccount
 from app.models.journal_voucher import POSTED, JournalVoucher, JournalVoucherLine
 from app.models.nc_bank_account import NcBankAccount
@@ -220,9 +221,15 @@ async def resolve_nc_account(db: AsyncSession, account: BankAccount) -> NcBankAc
 
 
 def _posted_filter(include_unposted: bool):
-    """NC's TALLYDATE decides: an un-tallied voucher is not in NC's ledger, and
-    the account-balance report excludes it. Reconciliation follows the ledger."""
-    return sa_true() if include_unposted else (JournalVoucher.status == POSTED)
+    """NC's TALLYDATE decides what is in NC's ledger. A reconciliation period
+    chooses whether it also counts the vouchers NC has not tallied yet
+    (`BankReconciliation.include_unposted`, on by default since 2026-10-14 —
+    the same default as the Budget and Account Balance pages).
+
+    "Unposted" is fiscal.status_filter's definition, never "every status": the
+    mirror keeps drafts NC has since discarded, temp-saved or deleted, and none
+    of those is a movement on the account."""
+    return status_filter(include_unposted)
 
 
 # NC VOUCHERKIND 2 — the opening voucher it writes into period 00 to carry a
@@ -253,11 +260,6 @@ def _excludes_opening_vouchers():
     """NULL kind = a go-forward UniOps JV, which has no NC voucher kind and is a
     real movement — it must stay in."""
     return func.coalesce(JournalVoucher.nc_voucher_kind, 0) != _OPENING_VOUCHER_KIND
-
-
-def sa_true():
-    from sqlalchemy import true
-    return true()
 
 
 async def _cash_subtree(db: AsyncSession) -> list[str]:
