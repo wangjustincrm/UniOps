@@ -45,6 +45,22 @@ async def reconciliation(
     rows = await recon.load(db, a, include_unposted)
     for r in rows.values():
         recon.attribute(r, d, qty_tol, amt_tol)
+
+    # Batch groups for EVERY batchable material (not just the page), so that
+    # the batch_label cause takes part in the status, the counts and the
+    # category filter like every other cause. ~1.4k materials, three queries.
+    batches: dict[str, list[dict]] = {}
+    if expand_batches:
+        batches = await recon.load_batches(
+            db, a, [r.code for r in rows.values() if not (r.no_batch_since and r.no_batch_since <= d)])
+        for code, groups in batches.items():
+            r = rows[code]
+            # C10: totals agree but batches do not → a labelling difference.
+            if (r.wms is not None and r.residual["ic_wms"] is not None
+                    and abs(r.residual["ic_wms"]) <= qty_tol
+                    and any(abs(g["ic_wms"] - g["wms"]) > qty_tol for g in groups)):
+                r.categories.append({"code": "batch_label", "side": "ic_wms",
+                                     "qty": Decimal(0), "amount": Decimal(0)})
     statuses = {code: recon.status_of(r, qty_tol, amt_tol) for code, r in rows.items()}
 
     # Totals over everything (before filtering), so the cards never change
@@ -92,11 +108,6 @@ async def reconciliation(
     total = len(sel)
     page_rows = sel[(page - 1) * page_size: page * page_size]
 
-    batches = {}
-    if expand_batches:
-        expandable = [r.code for r in page_rows if not (r.no_batch_since and r.no_batch_since <= d)]
-        batches = await recon.load_batches(db, a, expandable)
-
     def cat_out(c):
         return {"code": c["code"], "label": recon.CATEGORIES[c["code"]][1], "side": c["side"],
                 "qty": _s(c["qty"]), "amount": _s(c["amount"]) if show_amt and c["amount"] else None}
@@ -137,13 +148,6 @@ async def reconciliation(
                 "ic_wms": _s(g["ic_wms"]), "ic_other": _s(g["ic_other"]), "ia": _s(g["ia"]),
                 "diff_ic_wms": _s(g["ic_wms"] - g["wms"]) if r.wms is not None else None,
             } for g in groups]
-            # C10: totals agree but batches do not → it is a labelling difference.
-            if (r.wms is not None and res["ic_wms"] is not None and abs(res["ic_wms"]) <= qty_tol
-                    and any(abs(g["ic_wms"] - g["wms"]) > qty_tol for g in groups)):
-                item["categories"].append({"code": "batch_label", "label": recon.CATEGORIES["batch_label"][1],
-                                           "side": "ic_wms", "qty": "0", "amount": None})
-                if item["status"] == "ok":
-                    item["status"] = "explained"
         items.append(item)
 
     extra = await recon.unattributable(db, a, include_unposted)
@@ -156,7 +160,11 @@ async def reconciliation(
         "date": d.isoformat(), "nc_time_zone": tz, "period": a.period,
         "wms_live": d >= recon.WMS_GO_LIVE, "include_unposted": include_unposted,
         "amounts_visible": show_amt, "tolerance": {"qty": str(qty_tol), "amount": str(amt_tol)},
-        "categories": [{"code": k, "side": v[0], "label": v[1]} for k, v in recon.CATEGORIES.items()],
+        # batch_label is only computed with expand_batches; listing it
+        # otherwise would offer a filter that can never match.
+        "categories": [{"code": k, "side": v[0], "label": v[1]} for k, v in recon.CATEGORIES.items()
+                       if k != "batch_label" or expand_batches],
+        "sort_note": "Difference sorts order by the UNEXPLAINED remainder, largest first.",
         "totals": totals,
         "total": total, "page": page, "page_size": page_size, "items": items,
         "gl_impairment": [gl_extra(r) for r in extra["impairment"]],

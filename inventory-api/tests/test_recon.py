@@ -218,6 +218,13 @@ async def test_recon_endpoint(client, auth_headers, seeded):
     assert groups["25G363"]["wms"] == "90" and groups["25G363"]["ic_wms"] == "100"
     assert groups["WMS-ONLY"]["match"] == "wms_only"
 
+    # batch_label is a real cause: filterable and counted, not page-only.
+    f = (await client.get("/api/v1/recon", params={"date": "2026-08-31", "expand_batches": "true",
+                                                   "category": "batch_label"}, headers=auth_headers)).json()
+    assert [i["material_code"] for i in f["items"]] == ["CR0190"]
+    plain = (await client.get("/api/v1/recon", params={"date": "2026-08-31"}, headers=auth_headers)).json()
+    assert "batch_label" not in {c["code"] for c in plain["categories"]}
+
     af = items["CF00AF"]
     assert af["batch_expandable"] is False and "batches" not in af
     assert [c["code"] for c in af["categories"]] == ["nc_stopped"]
