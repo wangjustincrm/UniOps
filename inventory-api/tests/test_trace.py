@@ -156,3 +156,18 @@ async def test_trace_refuses_batch_for_no_batch_materials(client, auth_headers, 
     await db_session.commit()
     r = await client.get("/api/v1/trace", params={"material": "CF00AF", "batch": "X"}, headers=auth_headers)
     assert r.status_code == 422
+
+
+async def test_material_and_batch_options(client, auth_headers, seeded):
+    m = (await client.get("/api/v1/trace/materials", params={"q": "s01"}, headers=auth_headers)).json()
+    assert [i["code"] for i in m["items"]] == ["S0104"]
+    assert m["items"][0]["in_nc"] is True and m["items"][0]["wms_qty"] == "176.4"
+    b = (await client.get("/api/v1/trace/batches", params={"material": "s0104"}, headers=auth_headers)).json()
+    [g] = b["items"]
+    assert g["batch"] == "26E248121010211" and g["match"] == "both"
+    assert (g["nc_qty"], g["wms_qty"], g["wms_lots"]) == ("5216.4", "176.4", 3)
+    # Typing part of either number narrows; whitespace is ignored.
+    assert (await client.get("/api/v1/trace/batches", params={"material": "S0104", "q": "26E 2481"},
+                             headers=auth_headers)).json()["total"] == 1
+    assert (await client.get("/api/v1/trace/batches", params={"material": "S0104", "q": "ZZZ"},
+                             headers=auth_headers)).json()["total"] == 0
