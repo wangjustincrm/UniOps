@@ -179,6 +179,10 @@ async def test_gl_ledger_posting_toggle_and_impairment_line(client, auth_headers
     lines = (await client.get(f"{URL}/ledger/lines", params={
         "date": "2026-08-31", "account_code": "140306"}, headers=auth_headers)).json()
     assert lines["total"] == 1 and lines["items"][0]["amount"] == "9"
+    # A material missing from the material mirror is still drillable by pk.
+    by_pk = (await client.get(f"{URL}/ledger/lines", params={
+        "date": "2026-08-31", "account_code": "140302", "material_pk": "M1"}, headers=auth_headers)).json()
+    assert by_pk["total"] == 3
 
 
 def _grant(monkeypatch, *keys):

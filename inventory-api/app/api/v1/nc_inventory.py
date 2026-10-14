@@ -393,6 +393,7 @@ async def ledger(db: SessionDep, payload: ViewDep, q: CommonDep,
         "total": total, "page": q.page, "page_size": q.page_size,
         "items": [{
             "account_code": r.acct, "account_name": r.acct_name,
+            "material_pk": r.mat,
             "material_code": r.mat_code, "material_name": r.mat_name if r.mat else "(no material)",
             "uom": r.uom, "qty": _s(r.qty), "amount": _s(r.amt) if show_amt else None,
             "unposted_lines": r.unposted_lines,
@@ -404,15 +405,18 @@ async def ledger(db: SessionDep, payload: ViewDep, q: CommonDep,
 async def ledger_lines(db: SessionDep, payload: ViewDep,
                        account_code: Annotated[str, Query(max_length=40)],
                        material_code: Annotated[str | None, Query(max_length=60)] = None,
+                       material_pk: Annotated[str | None, Query(max_length=20)] = None,
                        date_: Annotated[date | None, Query(alias="date")] = None,
                        include_unposted: bool = True,
                        page: Annotated[int, Query(ge=1)] = 1,
                        page_size: Annotated[int, Query(ge=1, le=500)] = 100) -> dict:
-    """Voucher lines behind one ledger row. No material_code = the lines that
-    carry no material auxiliary."""
+    """Voucher lines behind one ledger row. No material_code / material_pk =
+    the lines that carry no material auxiliary. material_pk exists for GL
+    lines whose material is not in the NC material mirror (deleted in NC):
+    they have no code to ask by, and must not fall into "(no material)"."""
     a = await _asof(db, date_)
     show_amt = await can_view_cost(payload, db)
-    mat = await _material_pk(db, material_code) if material_code else None
+    mat = material_pk or (await _material_pk(db, material_code) if material_code else None)
     p = {**a.sql_params, "acct": account_code, "mat": mat, "include_unposted": include_unposted,
          "limit": page_size, "offset": (page - 1) * page_size}
     where = (f"g.account_code = :acct and {asof.GL_LINE_ASOF} and {_GL_POSTED} and "
