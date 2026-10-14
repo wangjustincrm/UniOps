@@ -45,7 +45,7 @@ const SOURCES: Record<SyncSource, {
   wms: {
     title: 'WMS history sync',
     name: 'WMS',
-    description: 'WMS transaction history since go-live (2025-02-03) — used for WMS stock on past dates and batch trace. Current WMS stock itself comes from MRP\'s WMS sync.',
+    description: 'WMS went live in January 2025; its transaction history starts 2025-02-03 (opening stock imported) — used for WMS stock on past dates and batch trace. Current WMS stock itself comes from MRP\'s WMS sync.',
     statusKey: ['inv-wms-sync-status'],
     status: settingsApi.wmsSyncStatus,
     run: async () => {

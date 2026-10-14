@@ -24,6 +24,8 @@ export const SIDE_LABELS: Record<ReconSide, string> = {
   gl_ia: 'GL−IA',
 }
 
+import type { WmsHistory } from '@/lib/wmsHistory'
+
 export interface ReconCategoryDef {
   code: string
   side: ReconSide
@@ -98,6 +100,7 @@ export interface ReconResponse {
   nc_time_zone: string
   period: string
   wms_live: boolean
+  wms_history: WmsHistory
   include_unposted: boolean
   amounts_visible: boolean
   tolerance: { qty: string; amount: string }

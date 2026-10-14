@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Download, Info, Loader2, Search, X } from 'lucide-react'
+import { Download, Loader2, Search, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatMoney, formatQty } from '@/lib/number'
 import { previousMonthEnd, todayToronto } from '@/lib/time'
@@ -17,6 +17,7 @@ import { MATERIAL_CLASSES } from '@/pages/nc/ncApi'
 import { EmptyRow, ErrorBox, LoadingRows, Pager, SortTh } from '@/pages/nc/NcUi'
 import { useDebounced } from '@/pages/nc/useDebounced'
 import { usePageFor } from '@/pages/nc/usePageFor'
+import { WmsHistoryNote } from '@/components/WmsHistoryNote'
 import { reconApi, STATUSES, type ReconSort, type ReconStatus } from './reconApi'
 import { GlExtraTable, ReconRowView } from './ReconRows'
 import { exportReconciliation } from './exportRecon'
@@ -277,12 +278,7 @@ export default function ReconciliationPage() {
             As of {data.date} · NC clock {data.nc_time_zone} · tolerance qty {data.tolerance.qty} / amount {data.tolerance.amount}
             {!data.include_unposted && ' · posted GL vouchers only'}
           </p>
-          {!data.wms_live && (
-            <p className="flex items-start gap-1.5 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700">
-              <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              WMS went live on 2025-02-03 — no WMS figures before that date.
-            </p>
-          )}
+          <WmsHistoryNote info={data.wms_history} warn={!data.wms_live} />
         </div>
       )}
 

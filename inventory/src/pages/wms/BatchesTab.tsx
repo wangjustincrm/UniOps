@@ -128,7 +128,10 @@ function BatchLocations({
           <th className="px-3 py-1.5 text-left">Tracking ID</th>
           <th className="px-3 py-1.5 text-right">Qty</th>
           <th className="px-3 py-1.5 text-left">Produced</th>
-          <th className="px-3 py-1.5 text-left">Received</th>
+          <th className="px-3 py-1.5 text-left"
+            title="Dates before 2025-02-03 were carried over by WMS's opening-stock import — WMS has no movements before that day.">
+            Received
+          </th>
           <th className="px-3 py-1.5 text-left">Expiry</th>
           <th className="px-3 py-1.5 text-left">Quality</th>
         </tr>

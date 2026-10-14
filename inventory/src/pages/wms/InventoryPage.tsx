@@ -19,6 +19,8 @@ import { BatchesTab } from './BatchesTab'
 import { AgingTab } from './AgingTab'
 import { MaterialsTab } from './MaterialsTab'
 import { WmsFreshness } from './WmsFreshness'
+import { WmsHistoryNote } from '@/components/WmsHistoryNote'
+import { useWmsHistory } from '@/lib/wmsHistory'
 
 const TABS = [
   { key: 'batches', label: 'Batches', icon: Layers,
@@ -34,6 +36,7 @@ type TabKey = typeof TABS[number]['key']
 export default function InventoryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const toasts = useToasts()
+  const wmsHistory = useWmsHistory()
   const raw = searchParams.get('tab')
   const tab: TabKey = TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'batches'
   // Default to raw ingredients: it is the class with shelf life that anybody
@@ -77,6 +80,7 @@ export default function InventoryPage() {
             WMS stock as synced by MRP's WMS sync. For WMS stock on a past date or NC comparison,
             see <Link to="/reconciliation" className="underline hover:text-neutral-600">Reconciliation</Link>.
           </p>
+          <WmsHistoryNote info={wmsHistory.data} />
         </div>
 
         <div className="flex flex-wrap items-center gap-4">

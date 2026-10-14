@@ -108,8 +108,9 @@ export interface TraceResponse {
   batch_scope: { nc_batches: string[] | null; wms_lots: string[] | null }
   no_batch_since: string | null
   date: string
-  /** WMS go-live — the window's first day. */
+  /** First day of WMS history (opening-stock import) — the window's first day. */
   start: string
+  wms_history: import('@/lib/wmsHistory').WmsHistory
   nc_time_zone: string
   scope_note: string
   opening: { nc: string; wms: string }

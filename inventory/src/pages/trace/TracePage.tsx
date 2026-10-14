@@ -7,6 +7,7 @@
 //   /trace            — the entry form (material, optional batch, date)
 //   /trace/:material  — one tab per material; batch and date in the query.
 // Dates are plain "YYYY-MM-DD" strings on Toronto's clock, never parsed.
+import { WmsHistoryNote } from '@/components/WmsHistoryNote'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
@@ -58,7 +59,7 @@ function TraceStart() {
       <header>
         <h1 className="text-xl font-semibold text-neutral-900">Trace</h1>
         <p className="text-xs text-neutral-500">
-          NC and WMS movements of one material side by side, from WMS go-live to a date — with running
+          NC and WMS movements of one material side by side, from the start of WMS history (2025-02-03) to a date — with running
           balances, pairing and the first point where the two stop agreeing.
         </p>
       </header>
@@ -222,10 +223,11 @@ function TraceView({ material }: { material: string }) {
           </h1>
           {t && (
             <p className="text-xs text-neutral-500">
-              From {t.start} (WMS go-live) to {t.date}
+              From {t.start} (WMS history start) to {t.date}
               <span className="text-neutral-400"> · {t.scope_note} NC clock: {t.nc_time_zone}.</span>
             </p>
           )}
+          {t && <WmsHistoryNote info={t.wms_history} />}
         </div>
         <div className="flex items-center gap-2">
           <Link to="/trace" className="text-xs font-medium text-primary-700 hover:underline">Trace another material</Link>
