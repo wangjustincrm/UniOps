@@ -1,18 +1,22 @@
 import type { RouteDef } from '@uniops/shell'
-import PlaceholderPage from '@/pages/placeholder/PlaceholderPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
 import NcInventoryPage from '@/pages/nc/NcInventoryPage'
 import ReconciliationPage from '@/pages/recon/ReconciliationPage'
+import TracePage from '@/pages/trace/TracePage'
+import WmsInventoryPage from '@/pages/wms/InventoryPage'
 
 // Module navigation (design §7): WMS Inventory / NC Inventory /
-// Reconciliation / Trace / Settings. Phase 1 shipped Settings, phase 2 NC
-// Inventory, phase 4 Reconciliation; the other two are placeholders until
-// their phase lands. Every page reads under inventory.view (AppLayout shows a
-// no-access screen without it).
+// Reconciliation / Trace / Settings. Every page reads under inventory.view
+// (AppLayout shows a no-access screen without it).
+//
+// Trace is one tab PER MATERIAL (/trace/:material, batch and date in the
+// query): a single static tab keyed on ?material= would only be focused —
+// with its old content — when another page links to a different material.
+// /trace on its own is the entry form.
 export const inventoryRoutes: RouteDef[] = [
   {
     path: '/wms',
-    element: <PlaceholderPage title="WMS Inventory" message="WMS Inventory moves here from MRP in phase 3." />,
+    element: <WmsInventoryPage />,
     tab: { title: 'WMS Inventory', icon: 'Boxes', keyStrategy: 'static' },
   },
   {
@@ -27,8 +31,13 @@ export const inventoryRoutes: RouteDef[] = [
   },
   {
     path: '/trace',
-    element: <PlaceholderPage title="Trace" message="Coming in phase 5." />,
+    element: <TracePage />,
     tab: { title: 'Trace', icon: 'Route', keyStrategy: 'static' },
+  },
+  {
+    path: '/trace/:material',
+    element: <TracePage />,
+    tab: { title: (p) => `Trace ${p.material}`, icon: 'Route', keyStrategy: 'param', paramName: 'material' },
   },
   {
     path: '/settings',

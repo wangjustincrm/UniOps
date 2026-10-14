@@ -1,11 +1,11 @@
 // Reconciliation table pieces: one material row, its expansion (causes, GL by
 // source, batch groups), and the small GL tables under the main table.
-import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Route } from 'lucide-react'
 import { Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import { absExceeds, addDecimal, formatMoney, formatQty, isNegative, isZero } from '@/lib/number'
 import { MaterialCell, Uom, thCls } from '@/pages/nc/NcUi'
+import { TraceLink } from '@/pages/trace/TraceLink'
 import { SIDE_LABELS, type ReconBatchGroup, type ReconCause, type ReconGlExtra, type ReconRow, type ReconStatus } from './reconApi'
 
 const numCls = 'px-3 py-2 text-right font-mono text-xs tabular-nums whitespace-nowrap'
@@ -77,10 +77,31 @@ function MatchBadge({ match }: { match: ReconBatchGroup['match'] }) {
   return <Badge variant="warning" className="text-[10px]">NC only</Badge>
 }
 
-function Expansion({ r, showAmt, tolQty, onShowBatches }: {
+/** The batch number to trace a batch group by: its first NC batch, else the
+ *  first value of its label (the API joins several with " / "). Null for the
+ *  "(no batch)" group, which no single number selects. */
+function groupTraceBatch(b: ReconBatchGroup): string | null {
+  if (b.nc_batches.length > 0) return b.nc_batches[0]
+  const first = b.label.split(' / ')[0]?.trim()
+  return first && first !== '(no batch)' ? first : null
+}
+
+function BatchTraceLink({ material, b, date }: { material: string; b: ReconBatchGroup; date: string }) {
+  const batch = groupTraceBatch(b)
+  if (!batch) return null
+  return (
+    <TraceLink material={material} batch={batch} date={date} title={`Trace batch group ${b.label}`}
+      className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline">
+      <Route aria-hidden className="h-3.5 w-3.5" />Trace
+    </TraceLink>
+  )
+}
+
+function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
   r: ReconRow
   showAmt: boolean
   tolQty: string
+  date: string
   onShowBatches: () => void
 }) {
   const sources = r.gl_by_source ? Object.entries(r.gl_by_source) : []
@@ -168,6 +189,7 @@ function Expansion({ r, showAmt, tolQty, onShowBatches }: {
                   <th className="px-3 py-1.5 text-right">NC (other wh.)</th>
                   <th className="px-3 py-1.5 text-right">IA</th>
                   <th className="px-3 py-1.5 text-right">IC−WMS</th>
+                  <th className="px-3 py-1.5" aria-label="Trace" />
                 </tr>
               </thead>
               <tbody>
@@ -185,6 +207,11 @@ function Expansion({ r, showAmt, tolQty, onShowBatches }: {
                     <td className={cn(subNumCls,
                       absExceeds(b.diff_ic_wms, tolQty) ? 'font-medium text-danger-600' : 'text-neutral-400')}>
                       {formatQty(b.diff_ic_wms)}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      {/* Not for materials on the no-batch list: NC stopped
+                          recording them by batch, and the API refuses it. */}
+                      {!r.no_batch_since && <BatchTraceLink material={r.material_code} b={b} date={date} />}
                     </td>
                   </tr>
                 ))}
@@ -260,16 +287,16 @@ export function ReconRowView({ r, showAmt, tol, date, open, onToggle, onShowBatc
           </span>
         </td>
         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-          <Link to={`/trace?material=${encodeURIComponent(r.material_code)}&date=${date}`}
+          <TraceLink material={r.material_code} date={date}
             className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline">
             <Route aria-hidden className="h-3.5 w-3.5" />Trace
-          </Link>
+          </TraceLink>
         </td>
       </tr>
       {open && (
         <tr className="border-t border-neutral-100 bg-neutral-50/60">
           <td colSpan={cols} className="px-4 py-3">
-            <Expansion r={r} showAmt={showAmt} tolQty={tol.qty} onShowBatches={onShowBatches} />
+            <Expansion r={r} showAmt={showAmt} tolQty={tol.qty} date={date} onShowBatches={onShowBatches} />
           </td>
         </tr>
       )}

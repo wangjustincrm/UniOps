@@ -74,8 +74,10 @@ export function Pager({ page, pageSize, total, busy, onPage }: {
 
 /** Header cell that sorts. The API sorts each key in one fixed direction
  *  (qty/amount largest first, codes ascending), so there is no toggle. */
-export function SortTh<K extends string>({ label, sortKey, current, onSort, align = 'left', descending = false }: {
+export function SortTh<K extends string>({ label, sortKey, current, onSort, align = 'left', descending = false, sortTitle }: {
   label: string
+  /** Tooltip; defaults to "Sort by <label>". */
+  sortTitle?: string
   sortKey: K
   current: K
   onSort: (k: K) => void
@@ -88,7 +90,7 @@ export function SortTh<K extends string>({ label, sortKey, current, onSort, alig
       aria-sort={active ? (descending ? 'descending' : 'ascending') : undefined}>
       <button type="button" onClick={() => onSort(sortKey)}
         className={cn('inline-flex items-center gap-1 uppercase hover:text-neutral-800', active && 'text-neutral-900')}
-        title={`Sort by ${label}${descending ? ' (largest first)' : ''}`}>
+        title={sortTitle ?? `Sort by ${label}${descending ? ' (largest first)' : ''}`}>
         {label}
         {active && (descending
           ? <ChevronDown aria-hidden className="h-3 w-3" />

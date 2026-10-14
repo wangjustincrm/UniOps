@@ -26,9 +26,11 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 const DEFAULT_STATUS: ReconStatus[] = ['unexplained', 'explained']
 const SORTS: { key: ReconSort; label: string }[] = [
   { key: 'material', label: 'Material' },
-  { key: 'ic_wms', label: '|IC−WMS|' },
-  { key: 'ia_ic', label: '|IA−IC|' },
-  { key: 'gl_ia', label: '|GL−IA|' },
+  // The API orders difference sorts by the UNEXPLAINED remainder, largest
+  // first (recon.py sort_note) — not by the raw difference.
+  { key: 'ic_wms', label: 'Largest unexplained IC−WMS' },
+  { key: 'ia_ic', label: 'Largest unexplained IA−IC' },
+  { key: 'gl_ia', label: 'Largest unexplained GL−IA' },
 ]
 
 const selectCls =
@@ -331,18 +333,18 @@ export default function ReconciliationPage() {
                 <th className="px-3 py-2 text-right" title="All NC warehouses, including transient">NC total</th>
                 <th className="px-3 py-2 text-right">IA qty</th>
                 <th className="px-3 py-2 text-right">GL qty</th>
-                <SortTh label="IC−WMS" sortKey="ic_wms" current={sort} align="right" descending
+                <SortTh label="IC−WMS" sortTitle="Sort by largest unexplained IC−WMS" sortKey="ic_wms" current={sort} align="right" descending
                   onSort={(k) => setParams({ sort: k })} />
-                <SortTh label="IA−IC" sortKey="ia_ic" current={sort} align="right" descending
+                <SortTh label="IA−IC" sortTitle="Sort by largest unexplained IA−IC" sortKey="ia_ic" current={sort} align="right" descending
                   onSort={(k) => setParams({ sort: k })} />
                 {showAmt ? <th className="px-3 py-2 text-right">GL−IA qty</th> : (
-                  <SortTh label="GL−IA qty" sortKey="gl_ia" current={sort} align="right" descending
+                  <SortTh label="GL−IA qty" sortTitle="Sort by largest unexplained GL−IA" sortKey="gl_ia" current={sort} align="right" descending
                     onSort={(k) => setParams({ sort: k })} />
                 )}
                 {showAmt && <th className="px-3 py-2 text-right">IA amount</th>}
                 {showAmt && <th className="px-3 py-2 text-right">GL amount</th>}
                 {showAmt && (
-                  <SortTh label="GL−IA amount" sortKey="gl_ia" current={sort} align="right" descending
+                  <SortTh label="GL−IA amount" sortTitle="Sort by largest unexplained GL−IA" sortKey="gl_ia" current={sort} align="right" descending
                     onSort={(k) => setParams({ sort: k })} />
                 )}
                 <th className="px-3 py-2 text-left">Status</th>
