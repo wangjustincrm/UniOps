@@ -21,7 +21,7 @@ from app.core.permissions import (
     CanReadIncident,
     CanReportIncident,
 )
-from app.models.incident import IncidentPerson
+from app.models.incident import Incident, IncidentPerson
 from sqlalchemy import select
 from app.models.mirrors import User
 from uniops_authz import has_permission
@@ -95,6 +95,23 @@ async def sees_anonymous_reporters(db, user: dict) -> bool:
     """
     return await has_permission(
         db, _user_id(user), user.get("role", ""), "ehs.incident.close")
+
+
+async def hidden_reporters(db, user: dict, incident_ids) -> dict[uuid.UUID, uuid.UUID]:
+    """For records hung on incidents: incident id → the reporter to keep hidden.
+
+    Only anonymous reports, and only for a caller who is not HSE. A risk
+    assessment, an action or a photo the reporter made on their own anonymous
+    report would otherwise sign it with their name.
+    """
+    ids = {i for i in incident_ids if i is not None}
+    if not ids or await sees_anonymous_reporters(db, user):
+        return {}
+    rows = (await db.execute(
+        select(Incident.id, Incident.reported_by)
+        .where(Incident.id.in_(ids), Incident.is_anonymous.is_(True),
+               Incident.reported_by.is_not(None)))).all()
+    return {r.id: r.reported_by for r in rows}
 
 
 async def _to_out(db, incident, user: dict) -> IncidentOut:

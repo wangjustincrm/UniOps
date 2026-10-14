@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.api.v1.incidents import _may_read, _user_id
+from app.api.v1.incidents import _may_read, _user_id, sees_anonymous_reporters
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud import incident as crud
 from app.crud.incident import _resolve_name
@@ -36,6 +36,8 @@ class AttachmentMeta(BaseModel):
     file_size: int
     uploaded_by_name: str | None
     created_at: str
+    # The name is withheld: the anonymous reporter uploaded this.
+    by_anonymous_reporter: bool = False
 
 
 def _meta(a: IncidentAttachment) -> AttachmentMeta:
@@ -60,13 +62,21 @@ async def _incident_or_403(db, incident_id: uuid.UUID, user: dict, *, writing: s
 
 @router.get("", response_model=list[AttachmentMeta])
 async def list_attachments(incident_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
-    await _incident_or_403(db, incident_id, user)
+    incident = await _incident_or_403(db, incident_id, user)
     rows = (await db.execute(
         select(IncidentAttachment)
         .where(IncidentAttachment.incident_id == incident_id)
         .order_by(IncidentAttachment.created_at)
     )).scalars().all()
-    return [_meta(r) for r in rows]
+    out = [_meta(r) for r in rows]
+    # ★ Round-6 review: the photo the reporter took named them, on a report
+    # filed anonymously. What anybody else uploaded is still named.
+    if incident.is_anonymous and incident.reported_by and not await sees_anonymous_reporters(db, user):
+        for meta, row in zip(out, rows):
+            if row.uploaded_by == incident.reported_by:
+                meta.uploaded_by_name = None
+                meta.by_anonymous_reporter = True
+    return out
 
 
 @router.post("", response_model=AttachmentMeta, status_code=status.HTTP_201_CREATED)

@@ -71,6 +71,7 @@ interface CauseTree {
 interface Attachment {
   id: string; filename: string; content_type: string
   file_size: number; uploaded_by_name: string | null; created_at: string
+  by_anonymous_reporter?: boolean
 }
 interface Form7 {
   is_complete: boolean
@@ -167,7 +168,8 @@ function Photo({ incidentId, att }: { incidentId: string; att: Attachment }) {
       )}
       <figcaption className="truncate px-2 py-1.5 text-[11px] text-neutral-500">
         {att.filename}
-        {att.uploaded_by_name ? ` · ${att.uploaded_by_name}` : ''}
+        {att.by_anonymous_reporter ? ' · the reporter (anonymous)'
+          : att.uploaded_by_name ? ` · ${att.uploaded_by_name}` : ''}
       </figcaption>
     </figure>
   )

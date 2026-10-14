@@ -8,7 +8,9 @@ private discussions."
 """
 from datetime import datetime, timedelta, timezone
 
+from app.core.actor import set_actor
 from tests.conftest import authed_client, make_token, make_user
+from tests.test_worker_reach import risk_matrix  # noqa: F401  (fixture)
 
 SIGNATURE = "data:image/png;base64,iVBORw0KGgo="
 
@@ -132,3 +134,90 @@ class TestASupervisorEditsTheReport:
         async with authed_client(make_token(who.id, who.role), db_session) as c:
             closed = await c.patch(f"/api/v1/incidents/{iid}", json={"title": "Too late"})
         assert closed.status_code == 409 and "Reopen it first" in closed.text
+
+
+class TestWhatTheyMadeOnTheirOwnReport:
+    """★ Round-6 review (uniops-93): the report was masked, and what hangs on it
+    was not — a photo the reporter took, the risk assessment they made on the
+    report screen. Each signed it with their name."""
+
+    async def _photo(self, db, iid, who):
+        import uuid as _uuid
+        from app.models.incident import IncidentAttachment
+        # As the upload endpoint would: the uploader is the actor on the trail.
+        set_actor(who.id, who.full_name)
+        db.add(IncidentAttachment(
+            id=_uuid.uuid4(), incident_id=_uuid.UUID(iid), storage_key=_uuid.uuid4(),
+            filename="scene.jpg", content_type="image/jpeg", file_size=1,
+            uploaded_by=who.id, uploaded_by_name=who.full_name))
+        await db.commit()
+        set_actor(None)
+
+    async def test_their_photo_does_not_name_them(self, test_engine, db_session, hse_manager):
+        reporter, iid = await _report(test_engine, db_session, anonymous=True)
+        await self._photo(db_session, iid, reporter)
+        helper, _ = await _client_as(test_engine, db_session, "area_supervisor")
+        await self._photo(db_session, iid, helper)
+
+        _, sup = await _client_as(test_engine, db_session, "area_supervisor")
+        async with sup as c:
+            listed = (await c.get(f"/api/v1/incidents/{iid}/attachments")).json()
+        mine = [a for a in listed if a["by_anonymous_reporter"]]
+        assert len(mine) == 1 and mine[0]["uploaded_by_name"] is None
+        # The admission: somebody else's upload is still named.
+        assert any(a["uploaded_by_name"] == helper.full_name for a in listed)
+
+        _, hse = hse_manager
+        named = (await hse.get(f"/api/v1/incidents/{iid}/attachments")).json()
+        assert any(a["uploaded_by_name"] == "Dana Reporter" for a in named)
+
+        # The photo's own trail names the uploader; masked too.
+        photo_id = next(a["id"] for a in listed if a["by_anonymous_reporter"])
+        params = {"table": "ehs_incident_attachments", "row_id": photo_id}
+        _, sup2 = await _client_as(test_engine, db_session, "area_supervisor")
+        async with sup2 as c:
+            trail = (await c.get("/api/v1/change-log", params=params)).json()
+        assert trail, "the photo's trail must be there"
+        assert all(e["changed_by_name"] != "Dana Reporter" for e in trail)
+        raw = (await hse.get("/api/v1/change-log", params=params)).json()
+        assert any(e["changed_by_name"] == "Dana Reporter" for e in raw)
+
+    async def test_their_risk_assessment_does_not_name_them(
+            self, test_engine, db_session, hse_manager, risk_matrix):
+        reporter, iid = await _report(test_engine, db_session, anonymous=True)
+        async with authed_client(make_token(reporter.id, reporter.role), db_session) as c:
+            made = await c.post("/api/v1/risk/assessments", json={
+                "source_type": "incident", "source_id": iid,
+                "hazard_label": "Wet floor", "consequence_type": "people",
+                "likelihood_code": "C", "severity_level": 3})
+        assert made.status_code in (200, 201), made.text
+        aid = made.json()["id"]
+        url = f"/api/v1/risk/assessments?source_type=incident&source_id={iid}"
+
+        _, sup = await _client_as(test_engine, db_session, "area_supervisor")
+        async with sup as c:
+            seen = (await c.get(url)).json()
+            trail = (await c.get("/api/v1/change-log", params={
+                "table": "ehs_risk_assessments", "row_id": aid})).json()
+        assert seen[0]["assessed_by_name"] is None and seen[0]["by_anonymous_reporter"]
+        assert trail and all(e["changed_by_name"] != "Dana Reporter" for e in trail)
+        assert all(str(reporter.id) not in (e["new_value"] or "") for e in trail)
+        assert all("Dana Reporter" not in (e["new_value"] or "") for e in trail)
+
+        _, hse = hse_manager
+        assert (await hse.get(url)).json()[0]["assessed_by_name"] == "Dana Reporter"
+
+    async def test_on_a_named_report_the_assessment_is_signed(
+            self, test_engine, db_session, risk_matrix):
+        reporter, iid = await _report(test_engine, db_session, anonymous=False)
+        async with authed_client(make_token(reporter.id, reporter.role), db_session) as c:
+            assert (await c.post("/api/v1/risk/assessments", json={
+                "source_type": "incident", "source_id": iid,
+                "hazard_label": "Wet floor", "consequence_type": "people",
+                "likelihood_code": "C", "severity_level": 3})).status_code in (200, 201)
+        _, sup = await _client_as(test_engine, db_session, "area_supervisor")
+        async with sup as c:
+            seen = (await c.get(
+                f"/api/v1/risk/assessments?source_type=incident&source_id={iid}")).json()
+        assert seen[0]["assessed_by_name"] == "Dana Reporter"
+        assert not seen[0]["by_anonymous_reporter"]

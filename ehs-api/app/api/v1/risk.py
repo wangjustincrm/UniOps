@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
-from app.api.v1.incidents import _may_read, _user_id
+from app.api.v1.incidents import _may_read, _user_id, hidden_reporters
 from uniops_authz import has_permission
 from app.core.deps import SessionDep
 from app.core.permissions import CanReportIncident
@@ -86,6 +86,8 @@ class AssessmentOut(BaseModel):
     residual_rating: str | None
     assessed_by_name: str | None
     assessed_at: datetime
+    # The name is withheld: the anonymous reporter made this assessment.
+    by_anonymous_reporter: bool = False
 
 
 @router.get("/matrix", response_model=MatrixOut)
@@ -226,5 +228,14 @@ async def list_assessments(
         q = q.where(RiskAssessment.source_type == source_type)
     if source_id:
         q = q.where(RiskAssessment.source_id == source_id)
-    return list((await db.execute(
+    rows = list((await db.execute(
         q.order_by(RiskAssessment.assessed_at.desc()).limit(limit))).scalars().all())
+    # ★ Round-6 review: a worker may make the first assessment of the report
+    # they filed, and on an anonymous report that signed it with their name.
+    hidden = await hidden_reporters(db, user, [r.source_id for r in rows])
+    out = [AssessmentOut.model_validate(r) for r in rows]
+    for o, r in zip(out, rows):
+        if r.source_id in hidden and r.assessed_by == hidden[r.source_id]:
+            o.assessed_by_name = None
+            o.by_anonymous_reporter = True
+    return out

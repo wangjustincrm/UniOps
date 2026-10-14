@@ -38,6 +38,7 @@ export interface Assessment {
   residual_likelihood_code: string | null; residual_severity_level: number | null
   residual_rating: string | null
   assessed_by_name: string | null; assessed_at: string
+  by_anonymous_reporter?: boolean
 }
 
 export function RatingBadge({ rating }: { rating: string | null }) {
@@ -111,7 +112,7 @@ export function RiskScoringHistory({
             </span>
             <span className="text-neutral-400">·</span>
             <span className="text-neutral-600">
-              {a.assessed_by_name ?? 'Unknown'}, {formatDate(a.assessed_at)}
+              {a.by_anonymous_reporter ? 'The reporter (anonymous)' : a.assessed_by_name ?? 'Unknown'}, {formatDate(a.assessed_at)}
             </span>
           </span>
           {showHazard && a.hazard_label && (
