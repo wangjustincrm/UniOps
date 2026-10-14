@@ -103,9 +103,6 @@ async def sweep_statutory(db: AsyncSession, now: datetime) -> int:
             continue
         deadline.escalation_level = level
         overdue = level >= 3
-        remaining = deadline.due_at - now
-        when = ("overdue" if overdue
-                else f"due in {int(remaining.total_seconds() // 3600)}h")
         doc_type = deadline_service.DEADLINE_DOC_TYPE.get(
             deadline.source_type, task_service.DOC_INCIDENT)
         # The obligation's own name leads the title, and is how its task is
@@ -113,9 +110,7 @@ async def sweep_statutory(db: AsyncSession, now: datetime) -> int:
         # one place so the two cannot drift: one record can owe two of these,
         # and matching on the document alone would fold them into one prompt.
         lead = deadline_service.task_lead(deadline.kind)
-        title = f"{lead}{when}"
-        description = (f"{deadline.regulation_ref or 'Statutory obligation'}. "
-                       f"Due {deadline.due_at.isoformat()}.")
+        title, description = deadline_service.task_text(deadline, now)
         priority = "high" if level >= 2 else "normal"
 
         # ★ One obligation, one prompt. Escalating used to add a task rather

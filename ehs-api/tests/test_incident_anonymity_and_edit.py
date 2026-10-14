@@ -265,6 +265,34 @@ class TestWhenItHappenedOnceAClockRunsFromIt:
         assert datetime.fromisoformat(after["starts_at"]) == new_time
         assert datetime.fromisoformat(after["due_at"]) == new_time + timedelta(hours=48)
 
+    async def test_the_open_task_says_the_new_due_time(
+            self, test_engine, db_session, hse_manager):
+        """★ Round-6 review: the task's words carry the due time, and only the
+        next escalation rewrote them — My Actions showed the old date."""
+        import uuid as _uuid
+        from sqlalchemy import select
+        from app.models.mirrors import Task
+        from app.services import tasks as task_service
+        from app.tasks import scheduler
+        _, hse = hse_manager
+        iid, before = await self._clocked(test_engine, db_session, hse)
+        mol = next(d for d in before if d["kind"] == "mol_48h")
+        await scheduler.sweep_statutory(
+            db_session, datetime.fromisoformat(mol["due_at"]) - timedelta(hours=1))
+        await db_session.commit()
+
+        new_time = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(minutes=30)
+        moved = await hse.patch(f"/api/v1/incidents/{iid}", json={"occurred_at": new_time.isoformat()})
+        assert moved.status_code == 200, moved.text
+        due = next(d for d in moved.json()["deadlines"] if d["kind"] == "mol_48h")["due_at"]
+
+        db_session.expire_all()
+        tasks = (await db_session.execute(select(Task).where(
+            Task.document_id == _uuid.UUID(iid), Task.type == task_service.TASK_STATUTORY,
+            Task.title.startswith("mol 48h")))).scalars().all()
+        assert tasks, "the sweep raised a task to rewrite"
+        assert all(datetime.fromisoformat(due).isoformat() in (t.description or "") for t in tasks)
+
     async def test_a_satisfied_clock_stays_as_recorded(
             self, test_engine, db_session, hse_manager):
         import uuid as _uuid

@@ -13,7 +13,7 @@ written report, on different deadlines measured from different instants.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,6 +48,20 @@ def task_lead(kind: str) -> str:
     wording in one place only and the two stop finding each other's work.
     """
     return f"{kind.replace('_', ' ')} — "
+
+
+def task_text(deadline: StatutoryDeadline, now: datetime) -> tuple[str, str]:
+    """The title and description of an obligation's task, from its due time.
+
+    One place for both the sweep that raises the task and a recount that moves
+    the due time, so the two cannot word it differently.
+    """
+    remaining = deadline.due_at - now
+    when = ("overdue" if remaining.total_seconds() <= 0
+            else f"due in {int(remaining.total_seconds() // 3600)}h")
+    return (f"{task_lead(deadline.kind)}{when}",
+            f"{deadline.regulation_ref or 'Statutory obligation'}. "
+            f"Due {deadline.due_at.isoformat()}.")
 
 
 async def load_holidays(db: AsyncSession) -> frozenset[date]:
@@ -154,6 +168,19 @@ async def recount_from_occurrence(
         d.due_at = statutory.compute_due(d.kind, incident.occurred_at, holidays)
         d.escalation_level = 0
         moved.append(d)
+    # ★ Round-6 review: the open task carries the due time in its words, which
+    # the sweep rewrites only when it next escalates — until then My Actions
+    # showed the old date. Rewritten here, from the same wording.
+    if moved:
+        from app.services import tasks as task_service
+        now = datetime.now(timezone.utc)
+        open_tasks = await task_service.open_tasks_for(
+            db, doc_type=task_service.DOC_INCIDENT, doc_id=incident.id)
+        for d in moved:
+            lead = task_lead(d.kind)
+            for t in open_tasks:
+                if t.type == task_service.TASK_STATUTORY and (t.title or "").startswith(lead):
+                    t.title, t.description = task_text(d, now)
     await ensure_incident_deadlines(db, incident, holidays=holidays)
     await db.flush()
     return moved
