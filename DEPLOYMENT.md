@@ -112,7 +112,7 @@ at build time).
 
   | Subdomain (`.canadaroyalmilk.com`) | → container        |
   |------------------------------------|--------------------|
-  | `portal`/`epms`/`oa`/`vms`/`finance`/`mrp` | the web images |
+  | `portal`/`epms`/`oa`/`vms`/`finance`/`mrp`/`inventory` | the web images |
   | `epms-api`                         | epms-api `8000`    |
   | `oa-api`                           | expense-api `8006` |
   | `vms-api`                          | vms-api `8008`     |
@@ -120,6 +120,7 @@ at build time).
   | `budget-api`                       | budget-api `8007`  |
   | `mdm-api`                          | mdm-api `8002`     |
   | `mrp-api`                          | mrp-api `8011`     |
+  | `inventory-api`                    | inventory-api `8013` |
   | `files`                            | File server `10.10.50.66:8005` |
 
   (`booking`/`booking-api` also route through the same edge — see "Booking
@@ -152,7 +153,7 @@ at build time).
   reach the edge too (or use split-DNS — see DNS below).
 - **DNS** A records (→ `66.102.68.69`): `portal`, `epms`, `oa`, `vms`, `finance`,
   `mrp`, `epms-api`, `oa-api`, `vms-api`, `finance-api`, `budget-api`, `mdm-api`,
-  `mrp-api`, `files` — each `.canadaroyalmilk.com`. (Use specific records, **not**
+  `mrp-api`, `inventory`, `inventory-api`, `files` — each `.canadaroyalmilk.com`. (Use specific records, **not**
   a wildcard on the company apex.) Internal: rely on firewall hairpin, or add the
   same names in the internal DNS pointing at `10.10.50.65` (split-DNS). (`booking`/
   `booking-api` need their own A records too — see "Booking Module Release
@@ -486,6 +487,45 @@ release:
    there is no pre-existing data to be stale in the first place — this only
    matters for a dev/staging DB that had already synced BOMs before 0015
    landed.
+
+---
+
+## Inventory Module Release Steps
+
+`inventory-api` (`:8013`, image `uniops-inventory-api`) and the `inventory`
+frontend (`:5181`, image `uniops-inventory-web`) follow the same
+build/push/deploy pattern as the other services (the release goes from 17 to
+19 images). One-time steps for the first Inventory release:
+
+1. **Migrations, in this order** — identity-api `0022_inventory_perms`
+   (registers `inventory.view` / `inventory.cost.view` / `inventory.admin`,
+   granted to `system_admin` only), then inventory-api `alembic upgrade head`.
+   Both are in `migrate-prod.sh` (identity-api runs before inventory-api).
+   inventory-api owns its own `alembic_version_inventory` table and its first
+   migration has `down_revision=None`; like mrp-api, **do not remove it from
+   the list** — a deploy without it has a healthy `/health` and no tables.
+
+2. **NC65 read-only connection** — inventory-api reads the same `NC65_*`
+   values from `.env` as epms-api / mdm-api / finance-api (thin mode, no
+   Oracle client). Blank values do not fail the deploy; Refresh on
+   Inventory → Settings then answers "not configured" (503).
+
+3. **First NC sync** — after deploy, open Inventory → Settings and press
+   **Refresh** (needs `inventory.admin`). Check that the tie-out shows ✓; the
+   scheduled interval is a setting on the same page (`0` = off).
+
+4. **Grant access** — Portal → Admin → Access Control: grant `inventory.view`
+   (quantities), `inventory.cost.view` (amounts) and `inventory.admin`
+   (Settings writes, Refresh) to the roles that need them. Nothing besides
+   `system_admin` gets them by default.
+
+5. **DNS + Caddy** — `inventory.canadaroyalmilk.com` and
+   `inventory-api.canadaroyalmilk.com` are in the `Caddyfile`. Their public A
+   records (→ `66.102.68.69`) and internal split-DNS entries (→ `10.10.50.65`)
+   must exist **before** the edge is restarted with the new Caddyfile.
+   `ALLOWED_ORIGINS` in the server `.env` must include
+   `https://inventory.canadaroyalmilk.com`, and `.env` needs `INVENTORY_URL` /
+   `INVENTORY_API_URL` before the web images are built (they are baked in).
 
 ---
 

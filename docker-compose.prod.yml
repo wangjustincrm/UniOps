@@ -317,6 +317,42 @@ services:
       retries: 5
       start_period: 20s
 
+  inventory-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-inventory-api:${TAG:-latest}
+    build: { context: ., dockerfile: inventory-api/Dockerfile }
+    environment:
+      <<: *db-env
+      APP_NAME: UniOps Inventory API
+      APP_VERSION: 0.1.0
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      DEBUG: "false"
+      ENVIRONMENT: production
+      API_V1_PREFIX: /api/v1
+      # NC65 read-only connection for the NC stock/cost/GL mirrors (values live
+      # in the gitignored .env as NC65_*; missing values = Refresh returns 503).
+      # The sync interval is a setting on Inventory -> Settings, not an env var.
+      NC_HOST: ${NC65_HOST:-}
+      NC_PORT: ${NC65_PORT:-1521}
+      NC_SERVICE: ${NC65_SERVICE:-}
+      NC_USER: ${NC65_USER:-}
+      NC_PASSWORD: ${NC65_PASSWORD:-}
+      # WMS (Flux) read-only, thick mode — the transaction-history mirror
+      # (any-date WMS stock + batch trace). Blank = WMS refresh returns 503.
+      WMS_HOST: ${WMS_HOST:-}
+      WMS_PORT: ${WMS_PORT:-1521}
+      WMS_SERVICE: ${WMS_SERVICE:-}
+      WMS_USER: ${WMS_USER:-}
+      WMS_PASSWORD: ${WMS_PASSWORD:-}
+    ports: ["8013:8013"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8013
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8013/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   vms-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-vms-api:${TAG:-latest}
@@ -414,6 +450,7 @@ services:
         VITE_FINANCE_URL: ${FINANCE_URL}
         VITE_BOOKING_URL: ${BOOKING_URL}
         VITE_MRP_URL: ${MRP_URL}
+        VITE_INVENTORY_URL: ${INVENTORY_URL}
         VITE_EPMS_API_URL: ${EPMS_API_URL}
         VITE_OA_API_URL: ${OA_API_URL}
         VITE_VMS_API_URL: ${VMS_API_URL}
@@ -527,6 +564,26 @@ services:
         VITE_EPMS_API_URL: ${EPMS_API_URL}
         VITE_MDM_API_URL: ${MDM_API_URL}
     ports: ["5179:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  inventory-web:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-inventory-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: inventory/Dockerfile
+      args:
+        VITE_API_URL: ${INVENTORY_API_URL}
+        # WMS Inventory reads mrp-api's /inventory/* directly (design §7.1).
+        VITE_MRP_API_URL: ${MRP_API_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+    ports: ["5181:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
       interval: 30s
