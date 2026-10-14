@@ -14,6 +14,11 @@ READS = [
     ("get", "/api/v1/settings/params", None),
     ("get", "/api/v1/settings/warehouse-classes", None),
     ("get", "/api/v1/settings/no-batch-materials", None),
+    ("get", "/api/v1/nc/meta", None),
+    ("get", "/api/v1/nc/stock", None),
+    ("get", "/api/v1/nc/cost", None),
+    ("get", "/api/v1/nc/ledger", None),
+    ("get", "/api/v1/recon", None),
 ]
 WRITES = [
     ("put", "/api/v1/settings/params/nc_sync_interval_minutes", {"value": 30}),
