@@ -9,6 +9,7 @@ import {
   formatTraceTime, rowHidden, signedQty,
   type TraceLine, type TraceResponse, type TraceRow, type TraceSummaryLine,
 } from './traceApi'
+import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
 const numCls = 'text-right font-mono text-xs tabular-nums whitespace-nowrap'
 
@@ -190,9 +191,9 @@ export function MovementsTable({ rows, indices, highlight, registerRow }: {
     })
   }
   return (
-    <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+    <ScrollTable>
       <table className="min-w-full text-sm">
-        <thead className={thCls}>
+        <thead className={stickyHeadCls}>
           <tr>
             <th className="px-3 py-2 text-left font-medium"><SideHeader label="NC" /></th>
             <th className="border-x border-neutral-200 px-3 py-2 text-left">Time · category · match</th>
@@ -254,6 +255,6 @@ export function MovementsTable({ rows, indices, highlight, registerRow }: {
           })}
         </tbody>
       </table>
-    </div>
+    </ScrollTable>
   )
 }

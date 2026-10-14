@@ -14,12 +14,13 @@ import { cn } from '@/lib/utils'
 import { formatMoney, formatQty } from '@/lib/number'
 import { previousMonthEnd, todayToronto } from '@/lib/time'
 import { MATERIAL_CLASSES } from '@/pages/nc/ncApi'
-import { EmptyRow, ErrorBox, LoadingRows, Pager, SortTh, tableWrapCls, thCls } from '@/pages/nc/NcUi'
+import { EmptyRow, ErrorBox, LoadingRows, Pager, SortTh } from '@/pages/nc/NcUi'
 import { useDebounced } from '@/pages/nc/useDebounced'
 import { usePageFor } from '@/pages/nc/usePageFor'
 import { reconApi, STATUSES, type ReconSort, type ReconStatus } from './reconApi'
 import { GlExtraTable, ReconRowView } from './ReconRows'
 import { exportReconciliation } from './exportRecon'
+import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
 const PAGE_SIZE = 100
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
@@ -321,9 +322,9 @@ export default function ReconciliationPage() {
       {q.isError && <ErrorBox error={q.error} fallback="Could not load the reconciliation." />}
 
       {!(q.isError && !data) && (
-        <div className={cn(tableWrapCls, q.isFetching && data && 'opacity-70')}>
+        <ScrollTable className={cn(q.isFetching && data && 'opacity-70')}>
           <table className="min-w-full text-sm">
-            <thead className={thCls}>
+            <thead className={stickyHeadCls}>
               <tr>
                 <th className="w-8 px-2 py-2" aria-label="Expand" />
                 <SortTh label="Material" sortKey="material" current={sort} onSort={(k) => setParams({ sort: k === 'material' ? '' : k })} />
@@ -366,7 +367,7 @@ export default function ReconciliationPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       )}
 
       <Pager page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} busy={q.isFetching} onPage={setPage} />

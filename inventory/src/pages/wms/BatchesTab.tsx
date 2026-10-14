@@ -25,6 +25,7 @@ import {
   type AgingBucketKey, type BatchFilters,
 } from './inventoryApi'
 import { InventorySummary } from './InventorySummary'
+import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
 const PAGE_SIZE = 25
 
@@ -285,9 +286,9 @@ export function BatchesTab({
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+      <ScrollTable>
         <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+          <thead className={stickyHeadCls}>
             <tr>
               {SORTABLE.map(({ key, label }) => (
                 <Fragment key={key}>
@@ -451,7 +452,7 @@ export function BatchesTab({
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollTable>
 
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-neutral-500">

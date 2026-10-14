@@ -71,7 +71,7 @@ function Num({ v, money = false, uom }: { v: string | null; money?: boolean; uom
   )
 }
 
-function MatchBadge({ match }: { match: ReconBatchGroup['match'] }) {
+export function MatchBadge({ match }: { match: ReconBatchGroup['match'] }) {
   if (match === 'both') return <Badge variant="success" className="text-[10px]">Both</Badge>
   if (match === 'wms_only') return <Badge variant="warning" className="text-[10px]">WMS only</Badge>
   return <Badge variant="warning" className="text-[10px]">NC only</Badge>

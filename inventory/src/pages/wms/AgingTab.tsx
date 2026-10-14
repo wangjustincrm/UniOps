@@ -20,6 +20,7 @@ import {
   AGING_BUCKET_ORDER, formatDateOnly, inventoryApi, qty,
   type AgingBucketKey,
 } from './inventoryApi'
+import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
 const PAGE_SIZE = 25
 
@@ -173,9 +174,9 @@ export function AgingTab({
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+      <ScrollTable>
         <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+          <thead className={stickyHeadCls}>
             <tr>
               <th className="px-3 py-2 text-left">Material</th>
               <th className="px-3 py-2 text-left">Supplier batch</th>
@@ -246,7 +247,7 @@ export function AgingTab({
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollTable>
 
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-neutral-500">

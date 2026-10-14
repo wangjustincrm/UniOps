@@ -10,16 +10,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Download, Loader2, Route, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, Loader2, Route } from 'lucide-react'
 import { Badge, Skeleton } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { formatQty, isZero } from '@/lib/number'
 import { todayToronto } from '@/lib/time'
 import { ErrorBox } from '@/pages/nc/NcUi'
-import { rowHidden, traceApi, type TraceLine, type TraceResponse } from './traceApi'
+import { rowHidden, traceApi, type TraceLine, type TraceMaterialOption, type TraceResponse } from './traceApi'
 import { normCode, useOpenTrace } from './traceNav'
 import { MovementsTable, SummaryTable } from './TraceRows'
+import { BatchPicker, MaterialPicker } from './TracePickers'
 import { exportTrace } from './exportTrace'
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
@@ -40,15 +41,16 @@ export default function TracePage() {
 function TraceStart() {
   const today = todayToronto()
   const openTrace = useOpenTrace()
-  const [material, setMaterial] = useState('')
+  const [material, setMaterial] = useState<TraceMaterialOption | null>(null)
   const [batch, setBatch] = useState('')
   const [date, setDate] = useState(today)
+  const noBatchSince = material?.no_batch_since ?? null
+  const batchLocked = !!noBatchSince && noBatchSince <= date
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    const code = normCode(material)
-    if (!code) return
-    openTrace(code, { batch: batch.trim() || null, date: date && date !== today ? date : null })
+    if (!material) return
+    openTrace(material.code, { batch: (!batchLocked && batch) || null, date: date && date !== today ? date : null })
   }
 
   return (
@@ -62,24 +64,27 @@ function TraceStart() {
       </header>
       <form onSubmit={submit}
         className="flex flex-wrap items-end gap-3 rounded-lg border border-neutral-200 bg-white px-3 py-3">
-        <label className="flex flex-col gap-1 text-xs text-neutral-600">
-          Material code
-          <input value={material} onChange={(e) => setMaterial(e.target.value)} required maxLength={60}
-            placeholder="e.g. CR0059" className={cn(inputCls, 'w-44 font-mono uppercase')} autoFocus />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-neutral-600">
-          Batch (optional)
-          <input value={batch} onChange={(e) => setBatch(e.target.value)} maxLength={200}
-            placeholder="NC batch, QC or supplier batch" className={cn(inputCls, 'w-64 font-mono')} />
-        </label>
+        <div className="flex flex-col gap-1 text-xs text-neutral-600">
+          <label htmlFor="trace-material">Material</label>
+          <MaterialPicker id="trace-material" value={material?.code ?? ''} autoFocus className="w-64"
+            onChange={(o) => { if (o.code !== material?.code) setBatch(''); setMaterial(o) }}
+            onDeselect={() => { setMaterial(null); setBatch('') }} />
+        </div>
+        <div className="flex flex-col gap-1 text-xs text-neutral-600">
+          <label htmlFor="trace-batch">Batch (optional)</label>
+          <BatchPicker key={material?.code ?? ''} id="trace-batch" material={material?.code ?? null}
+            value={batch} onChange={(b) => setBatch(b)} className="w-72"
+            lockedNote={batchLocked ? noBatchNote(noBatchSince!) : null} />
+        </div>
         <label className="flex flex-col gap-1 text-xs text-neutral-600">
           To date
           <input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value || today)} className={inputCls} />
         </label>
-        <button type="submit" disabled={!material.trim()}
+        <button type="submit" disabled={!material}
           className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary-600 px-4 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50">
           <Route aria-hidden className="h-4 w-4" />Trace
         </button>
+        {batchLocked && <p className="basis-full text-xs text-neutral-500">{noBatchNote(noBatchSince!)}</p>}
         <p className="basis-full text-[11px] text-neutral-400">
           Leave the batch empty to trace the whole material. A batch number matches its whole batch group
           (NC batch, WMS QC batch or supplier batch).
@@ -101,36 +106,8 @@ function Tile({ label, children, tone }: { label: string; children: React.ReactN
   )
 }
 
-/** The batch box keeps its own draft; keyed on the URL's batch so a link
- *  that arrives with a new batch resets it. */
-function BatchBox({ initial, disabled, onApply }: {
-  initial: string
-  disabled: boolean
-  onApply: (batch: string) => void
-}) {
-  const [draft, setDraft] = useState(initial)
-  return (
-    <form className="flex items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); onApply(draft.trim()) }}>
-      <label className="flex items-center gap-2 text-xs text-neutral-600">
-        Batch
-        <span className="relative">
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} disabled={disabled} maxLength={200}
-            placeholder={disabled ? 'material level only' : 'whole material'}
-            className={cn(inputCls, 'w-56 pr-7 font-mono')} />
-          {draft && !disabled && (
-            <button type="button" aria-label="Clear batch"
-              onClick={() => { setDraft(''); onApply('') }}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700">
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </span>
-      </label>
-      <button type="submit" disabled={disabled || draft.trim() === initial} className={cn(btnCls, 'h-9 px-2.5 text-xs')}>
-        Apply
-      </button>
-    </form>
-  )
+function noBatchNote(since: string): string {
+  return `NC stopped recording this material by batch on ${since} — material-level trace only.`
 }
 
 function findRowIndex(t: TraceResponse, match: (ln: TraceLine, kind: string) => boolean): number {
@@ -139,6 +116,7 @@ function findRowIndex(t: TraceResponse, match: (ln: TraceLine, kind: string) => 
 
 function TraceView({ material }: { material: string }) {
   const [searchParams, setSearchParams] = useSearchParams()
+  const openTrace = useOpenTrace()
   const today = todayToronto()
   const rawDate = searchParams.get('date')
   const date = rawDate && DATE_ONLY.test(rawDate) && rawDate <= today ? rawDate : today
@@ -209,6 +187,11 @@ function TraceView({ material }: { material: string }) {
     : -1
 
   const batchLocked = !!t?.no_batch_since && t.no_batch_since <= date
+  // What the batch box shows: the group label picked from the list, else the
+  // one the trace came back with (a link carries only the batch number).
+  const [pickedLabels, setPickedLabels] = useState<Record<string, string>>({})
+  const batchDisplay = !batch ? ''
+    : pickedLabels[batch] ?? (t?.batch === batch && t.batch_group ? t.batch_group : batch)
   const batchRefused = q.isError && !!batch && q.error instanceof ApiError && q.error.status === 422
 
   async function onExport() {
@@ -255,8 +238,23 @@ function TraceView({ material }: { material: string }) {
 
       <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-3">
         <div className="flex flex-wrap items-center gap-3">
-          <BatchBox key={batch} initial={batch} disabled={batchLocked}
-            onApply={(b) => setParams({ batch: b })} />
+          <div className="flex items-center gap-2 text-xs text-neutral-600">
+            <label htmlFor="trace-view-material">Material</label>
+            <MaterialPicker key={material} id="trace-view-material" value={material} className="w-56"
+              onChange={(o) => {
+                if (o.code !== material) openTrace(o.code, { date: date !== today ? date : null })
+              }} />
+          </div>
+          <div className="flex items-center gap-2 text-xs text-neutral-600">
+            <label htmlFor="trace-view-batch">Batch</label>
+            <BatchPicker key={`${material}|${batch}|${batchDisplay}`} id="trace-view-batch" material={material}
+              value={batch} display={batchDisplay}
+              lockedNote={batchLocked ? noBatchNote(t!.no_batch_since!) : null}
+              onChange={(b, label) => {
+                if (b) setPickedLabels((m) => ({ ...m, [b]: label }))
+                setParams({ batch: b })
+              }} className="w-72" />
+          </div>
           <label className="flex items-center gap-2 text-xs text-neutral-600">
             To date
             <input type="date" value={date} max={today}
@@ -265,11 +263,7 @@ function TraceView({ material }: { material: string }) {
           </label>
           {q.isFetching && <Loader2 aria-label="Loading" className="h-4 w-4 animate-spin text-neutral-400" />}
         </div>
-        {batchLocked && (
-          <p className="text-xs text-neutral-500">
-            NC stopped recording this material by batch on {t!.no_batch_since} — material-level trace only.
-          </p>
-        )}
+        {batchLocked && <p className="text-xs text-neutral-500">{noBatchNote(t!.no_batch_since!)}</p>}
         {t?.batch && (
           <div className="flex flex-col gap-1 text-xs text-neutral-600">
             <span>

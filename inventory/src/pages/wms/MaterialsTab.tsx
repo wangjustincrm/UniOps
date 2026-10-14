@@ -16,6 +16,7 @@ import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { formatDateOnly, inventoryApi, isPositiveQty, qty } from './inventoryApi'
 import { isZero } from '@/lib/number'
+import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
 const PAGE_SIZE = 25
 
@@ -184,9 +185,9 @@ export function MaterialsTab({
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+      <ScrollTable>
         <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+          <thead className={stickyHeadCls}>
             <tr>
               <th className="px-3 py-2 text-left">Material</th>
               <th className="px-3 py-2 text-right">On hand</th>
@@ -284,7 +285,7 @@ export function MaterialsTab({
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollTable>
 
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-neutral-500">

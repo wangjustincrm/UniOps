@@ -127,9 +127,40 @@ export interface TraceResponse {
   rows: TraceRow[]
 }
 
+/** Material picker option (GET /trace/materials). Quantities are today's. */
+export interface TraceMaterialOption {
+  code: string
+  name: string | null
+  uom: string | null
+  in_nc: boolean
+  nc_qty: string | null
+  wms_qty: string | null
+  /** Date-only string: NC stopped recording this material by batch. */
+  no_batch_since: string | null
+}
+
+/** Batch picker option (GET /trace/batches): one batch GROUP. `batch` is the
+ *  value to trace by; `label` is what to show. */
+export interface TraceBatchOption {
+  batch: string
+  label: string
+  nc_batches: string[]
+  supplier_batches: string[]
+  wms_lots: number
+  match: 'both' | 'wms_only' | 'nc_only'
+  nc_qty: string
+  wms_qty: string
+  last_movement: string | null
+}
+
 export const traceApi = {
   get: (material: string, batch: string | null, date: string) =>
     api.get<TraceResponse>(`/trace${qs({ material, batch, date })}`),
+  materials: (q: string, limit = 50) =>
+    api.get<{ items: TraceMaterialOption[] }>(`/trace/materials${qs({ q: q.trim(), limit })}`),
+  batches: (material: string, q: string) =>
+    api.get<{ material: string; total: number; items: TraceBatchOption[] }>(
+      `/trace/batches${qs({ material, q: q.trim() })}`),
 }
 
 /** "2025-03-01 14:05:00.123" → "2025-03-01 14:05"; a date-only string stays

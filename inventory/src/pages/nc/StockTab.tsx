@@ -11,8 +11,9 @@ import {
   WAREHOUSE_CLASSES, ncApi,
   type StockBatchRow, type StockMaterialRow, type StockSort, type StockSummaryRow,
 } from './ncApi'
-import { EmptyRow, ErrorBox, LoadingRows, MaterialCell, Pager, SortTh, Uom, tableWrapCls, thCls } from './NcUi'
+import { EmptyRow, ErrorBox, LoadingRows, MaterialCell, Pager, SortTh, Uom } from './NcUi'
 import { usePageFor } from './usePageFor'
+import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
 const PAGE_SIZE = 50
 
@@ -72,7 +73,7 @@ function BatchTable({ items, stateAvailable, sort, onSort, loading, emptyText }:
   const dash = <span className="text-neutral-300">—</span>
   return (
     <table className="min-w-full text-sm">
-      <thead className={thCls}>
+      <thead className={stickyHeadCls}>
         <tr>
           <SortTh label="Warehouse" sortKey="warehouse" current={sort} onSort={onSort} />
           <SortTh label="Material" sortKey="material" current={sort} onSort={onSort} />
@@ -128,7 +129,7 @@ function MaterialTable({ items, stateAvailable, sort, onSort, loading, emptyText
   const cols = stateAvailable ? 8 : 7
   return (
     <table className="min-w-full text-sm">
-      <thead className={thCls}>
+      <thead className={stickyHeadCls}>
         <tr>
           <SortTh label="Material" sortKey="material" current={sort} onSort={onSort} />
           <SortTh label="Total" sortKey="qty" current={sort} onSort={onSort} align="right" descending />
@@ -235,7 +236,7 @@ export function StockTab({ date, classCode, search }: { date: string; classCode:
         </p>
       )}
 
-      {!(q.isError && !shown) && <div className={cn(tableWrapCls, q.isFetching && shown && 'opacity-70')}>
+      {!(q.isError && !shown) && <ScrollTable className={cn(q.isFetching && shown && 'opacity-70')}>
         {group === 'batch' ? (
           <BatchTable items={(shown?.items ?? []) as StockBatchRow[]} stateAvailable={stateAvailable}
             sort={sort} onSort={setSort} loading={loading} emptyText={emptyText} />
@@ -243,7 +244,7 @@ export function StockTab({ date, classCode, search }: { date: string; classCode:
           <MaterialTable items={(shown?.items ?? []) as StockMaterialRow[]} stateAvailable={stateAvailable}
             sort={sort} onSort={setSort} loading={loading} emptyText={emptyText} />
         )}
-      </div>}
+      </ScrollTable>}
 
       <Pager page={page} pageSize={PAGE_SIZE} total={shown?.total ?? 0} busy={q.isFetching} onPage={setPage} />
     </div>

@@ -11,6 +11,7 @@ import { formatMoney, formatQty, isNegative } from '@/lib/number'
 import { ncApi, type LedgerAccountRow, type LedgerRow } from './ncApi'
 import { EmptyRow, ErrorBox, LoadingRows, Pager, Uom, tableWrapCls, thCls } from './NcUi'
 import { usePageFor } from './usePageFor'
+import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
 const PAGE_SIZE = 50
 const LINES_PAGE_SIZE = 100
@@ -183,9 +184,9 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
       )}
 
       {!(q.isError && !data) && (
-        <div className={cn(tableWrapCls, q.isFetching && data && 'opacity-70')}>
+        <ScrollTable className={cn(q.isFetching && data && 'opacity-70')}>
           <table className="min-w-full text-sm">
-            <thead className={thCls}>
+            <thead className={stickyHeadCls}>
               <tr>
                 <th className="w-8 px-2 py-2" aria-label="Expand" />
                 <th className="px-3 py-2 text-left">Account</th>
@@ -252,7 +253,7 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       )}
 
       <Pager page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} busy={q.isFetching} onPage={setPage} />

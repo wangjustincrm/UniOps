@@ -8,8 +8,9 @@ import { Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import { formatMoney, formatQty, formatUnitPrice, isNegative } from '@/lib/number'
 import { ncApi, type CostRow, type CostSort } from './ncApi'
-import { EmptyRow, ErrorBox, LoadingRows, MaterialCell, Pager, SortTh, Uom, tableWrapCls, thCls } from './NcUi'
+import { EmptyRow, ErrorBox, LoadingRows, MaterialCell, Pager, SortTh, Uom, thCls } from './NcUi'
 import { usePageFor } from './usePageFor'
+import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
 const PAGE_SIZE = 50
 const LINES_PAGE_SIZE = 100
@@ -229,9 +230,9 @@ export function CostTab({ date, classCode, search }: { date: string; classCode: 
       {q.isError && <ErrorBox error={q.error} fallback="Could not load NC cost." />}
 
       {!(q.isError && !data) && (
-        <div className={cn(tableWrapCls, q.isFetching && data && 'opacity-70')}>
+        <ScrollTable className={cn(q.isFetching && data && 'opacity-70')}>
           <table className="min-w-full text-sm">
-            <thead className={thCls}>
+            <thead className={stickyHeadCls}>
               <tr>
                 <th className="w-8 px-2 py-2" aria-label="Expand" />
                 <SortTh label="Material" sortKey="material" current={sort} onSort={setSort} />
@@ -253,7 +254,7 @@ export function CostTab({ date, classCode, search }: { date: string; classCode: 
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       )}
 
       <Pager page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} busy={q.isFetching} onPage={setPage} />
