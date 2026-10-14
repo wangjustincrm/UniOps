@@ -57,3 +57,47 @@ export const formatUnitPrice = (v: string | null | undefined) => formatDecimal(v
 export function isNegative(v: string | null | undefined): boolean {
   return !!v && v.trim().startsWith('-') && /[1-9]/.test(v)
 }
+
+/** True when the decimal string is zero (or empty). */
+export function isZero(v: string | null | undefined): boolean {
+  return !v || !/[1-9]/.test(v)
+}
+
+function toScaled(v: string, frac: number): bigint | null {
+  const m = PLAIN.exec(v.trim())
+  if (!m || (m[2] === '' && (m[3] ?? '') === '')) return null
+  return BigInt((m[2] || '0') + (m[3] ?? '').padEnd(frac, '0').slice(0, frac))
+}
+
+/** |value| > tolerance, compared on the decimal digits (no float). Used to
+ *  decide whether a residual is "unexplained" the same way the API does. */
+export function absExceeds(value: string | null | undefined, tolerance: string): boolean {
+  if (value == null || value === '') return false
+  const frac = Math.max(
+    (value.split('.')[1] ?? '').length,
+    (tolerance.split('.')[1] ?? '').length,
+  )
+  const a = toScaled(value.replace(/^-/, ''), frac)
+  const b = toScaled(tolerance.replace(/^-/, ''), frac)
+  if (a === null || b === null) return Math.abs(Number(value)) > Math.abs(Number(tolerance))
+  return a > b
+}
+
+/** Exact sum of two plain decimal strings (no float). */
+export function addDecimal(a: string, b: string): string {
+  const fa = (a.split('.')[1] ?? '').length
+  const fb = (b.split('.')[1] ?? '').length
+  const f = Math.max(fa, fb)
+  const scale = (v: string) => {
+    const neg = v.trim().startsWith('-')
+    const [i, d = ''] = v.trim().replace(/^-/, '').split('.')
+    const n = BigInt((i || '0') + d.padEnd(f, '0'))
+    return neg ? -n : n
+  }
+  const s = scale(a) + scale(b)
+  const neg = s < 0n
+  const digits = (neg ? -s : s).toString().padStart(f + 1, '0')
+  const whole = digits.slice(0, digits.length - f)
+  const frac = f > 0 ? digits.slice(digits.length - f) : ''
+  return `${neg ? '-' : ''}${whole}${frac ? `.${frac}` : ''}`
+}

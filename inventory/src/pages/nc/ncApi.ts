@@ -253,7 +253,7 @@ export interface CommonFilters {
   page_size: number
 }
 
-function qs(params: Record<string, string | number | boolean | string[] | undefined | null>): string {
+export function qs(params: Record<string, string | number | boolean | string[] | undefined | null>): string {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
     if (v == null || v === '') continue

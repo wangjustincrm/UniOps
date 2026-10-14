@@ -2,11 +2,13 @@ import type { RouteDef } from '@uniops/shell'
 import PlaceholderPage from '@/pages/placeholder/PlaceholderPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
 import NcInventoryPage from '@/pages/nc/NcInventoryPage'
+import ReconciliationPage from '@/pages/recon/ReconciliationPage'
 
 // Module navigation (design §7): WMS Inventory / NC Inventory /
 // Reconciliation / Trace / Settings. Phase 1 shipped Settings, phase 2 NC
-// Inventory; the other three are placeholders until their phase lands. Every page reads under
-// inventory.view (AppLayout shows a no-access screen without it).
+// Inventory, phase 4 Reconciliation; the other two are placeholders until
+// their phase lands. Every page reads under inventory.view (AppLayout shows a
+// no-access screen without it).
 export const inventoryRoutes: RouteDef[] = [
   {
     path: '/wms',
@@ -20,7 +22,7 @@ export const inventoryRoutes: RouteDef[] = [
   },
   {
     path: '/reconciliation',
-    element: <PlaceholderPage title="Reconciliation" message="Coming in phase 4." />,
+    element: <ReconciliationPage />,
     tab: { title: 'Reconciliation', icon: 'GitCompare', keyStrategy: 'static' },
   },
   {

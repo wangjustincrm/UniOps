@@ -62,3 +62,15 @@ export function todayToronto(now: Date = new Date()): string {
     timeZone: LOCAL_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(now)
 }
+
+/** Last day of the month before `today` ("YYYY-MM-DD" → "YYYY-MM-DD"),
+ *  computed on the digits — a date-only string never goes through Date. */
+export function previousMonthEnd(today: string): string {
+  const y = Number(today.slice(0, 4))
+  const m = Number(today.slice(5, 7))
+  const py = m === 1 ? y - 1 : y
+  const pm = m === 1 ? 12 : m - 1
+  const leap = (py % 4 === 0 && py % 100 !== 0) || py % 400 === 0
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][pm - 1]
+  return `${py}-${String(pm).padStart(2, '0')}-${String(days).padStart(2, '0')}`
+}
