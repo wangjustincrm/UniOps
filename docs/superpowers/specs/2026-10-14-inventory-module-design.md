@@ -228,7 +228,7 @@
 
 ### 5.3 调度
 
-- 照 WMS 同步和 NC 同步的现有形状：后台 asyncio 调度器，用 advisory lock 防并发，间隔参数**在 Portal Admin 可调**。
+- 照 WMS 同步和 NC 同步的现有形状：后台 asyncio 调度器，用 advisory lock 防并发，间隔参数**在 Inventory → Settings 可调**（实现时改的：放在模块自己的设置页，Portal Admin 不另加设置区）。NC 和 WMS 事务日志两个来源共用这个间隔，各自按自己的状态行判断是否到期，每个来源单独加锁。
   - 默认 60 分钟，0 表示停用。
   - 部署开关 `INV_NC_SYNC_SCHEDULER_ENABLED`，dev 环境设为 `false`。
 - 每个页面右上角有「数据截至 …」时效条，加一个 **Refresh** 按钮（需要 `inventory.admin` 权限）。
@@ -350,7 +350,7 @@
 - 物料不能按批次展开时（D11），只做物料级追溯。
 - 下钻和导出：每一行都能链接到单据号，整页可以导出 xlsx。
 
-### 7.5 Settings（需要 `inventory.admin`）
+### 7.5 Settings（有 `inventory.view` 就能看，写操作需要 `inventory.admin`）
 
 - **NC 不按批次跟踪的物料名单**：初值 CF00AF、CF00WT，带「自哪天起」字段（D11）。
 - **仓库分类**（§4.6）：初值 SC11/12/13/16 = WMS 管理，SC05/06/07/08/15/17 = 外部代储，Pro01/Pro02 = 生产线边，Pro03/015/016/021 = 瞬时临时仓。
@@ -387,7 +387,7 @@
 | `inventory.cost.view` | 看**金额**：IA 金额和单价、GL 金额、金额差、C8/C9 | 同上 |
 | `inventory.admin` | Settings、手动 Refresh | 同上 |
 
-- 没有 `cost.view` 权限时，**后端在响应里直接去掉金额字段**，并且有测试钉住这一点。
+- 没有 `cost.view` 权限时，**后端在响应里直接去掉金额字段**，并且有测试钉住这一点。tie-out 明细里按金额度量的行也算金额：只返回条数（`amount_issues_hidden`），不返回行。
 - 前端按权限决定显示哪些导航和列。
 - 新增权限键要在 identity 的 `seed_authz.py` 里登记，发布时运行 seed。
 
@@ -417,7 +417,7 @@
 | 5 | `Caddyfile` | 加 `inventory.` 和 `inventory-api.canadaroyalmilk.com`（`import site_tls`，证书自动签发）。★**必须先建好公网 DNS 和内网 split-DNS**，否则签证书失败 |
 | 6 | `DEPLOYMENT.md` | 更新子域名表、DNS 清单，新增 Inventory Module Release Steps |
 | 7 | `migrate-prod.sh` / `reset-db.sh` / `run_tests.sh` / `check-health.sh` | 加 inventory-api |
-| 8 | `portal/` | `lib/api.ts`（URL + `RETURN_URL_ORIGINS`）、`navConfig.tsx`、`PortalHome.tsx` 卡片、`AdminPanel.tsx` 加「Inventory Sync」设置区（照 WmsSyncSection）、`Dockerfile` 的 ARG **和** ENV 成对加（只加 ARG 会静默回落到 localhost，已经踩过三次） |
+| 8 | `portal/` | `lib/api.ts`（URL + `RETURN_URL_ORIGINS`）、`navConfig.tsx`、`PortalHome.tsx` 卡片（同步设置放在 Inventory Settings，**不加** Portal Admin 设置区）、`Dockerfile` 的 ARG **和** ENV 成对加（只加 ARG 会静默回落到 localhost，已经踩过三次） |
 | 9 | AI 助理 | **本期不动**（D18），所有功能完善后单独开分支 |
 | 10 | 发布 | 镜像从 17 个变成 **19 个**；发布手册加 `alembic_version_inventory` 前置检查，并 diff 前端烤入的域名 |
 
@@ -442,5 +442,5 @@ Q1 已不需要（WMS 事务日志能还原任意日期）；Q2–Q10 的答复�
 | P2 | NC Inventory 三个 tab + 任意日期 | 08-31 的数字与 §4.5 实测一致 |
 | P3 | WMS Inventory 迁移 + mrp-api 补 LOTATT04 + 每日快照 | MRP 跳转可用，QC batch 列有值 |
 | P4 | Reconciliation + 自动归类 + 导出 | 08-31 全部差异归类后「待查」可解释 |
-| P5 | Trace 批次追溯 + WMS 事务日志镜像 | CR0190 / CP0168 / S0104 三个批次的分歧点与 §4.8 实测一致 |
+| P5 | Trace 批次追溯（WMS 事务日志镜像已提前在 P2 期间完成，因为对比页的任意日期 WMS 也要用它） | CR0190 / CP0168 / S0104 三个批次的分歧点与 §4.8 实测一致 |
 | P6 | 权限矩阵、发布清单（AI 助理不在本期） | 发布 |
