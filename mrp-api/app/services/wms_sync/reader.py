@@ -84,7 +84,7 @@ def fetch_inventory() -> list[dict]:
         cur = con.cursor()
         cur.execute("""
             select l.warehouseid, l.sku, l.lotnum, l.qty, l.qtyallocated, l.qtyonhold,
-                   a.lotatt01, a.lotatt02, a.lotatt03, a.lotatt05, a.lotatt08,
+                   a.lotatt01, a.lotatt02, a.lotatt03, a.lotatt04, a.lotatt05, a.lotatt08,
                    a.lotatt13, a.lotatt14, l.edittime, p.uomdescr as uom
             from INV_LOT l
             join INV_LOT_ATT a

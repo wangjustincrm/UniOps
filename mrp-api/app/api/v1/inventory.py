@@ -55,7 +55,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import Select, case, func, or_, select
 
-from app.core.authz import require_permission
+from app.core.authz import require_any_permission
 from app.core.deps import SessionDep
 from app.models.epms_mirror import MdmMaterial
 from app.models.status_mapping import MrpStatusMapping
@@ -77,7 +77,9 @@ from app.services.inventory_aging import (
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
-ReadDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
+# mrp.report.view (MRP) or inventory.view (the Inventory module, where the
+# WMS Inventory screens now live).
+ReadDep = Annotated[dict, Depends(require_any_permission("mrp.report.view", "inventory.view"))]
 
 #: The shelf-life horizon the summary warns on, asked for separately from the
 #: aging bands (which are 30 / 60 / 180). Kept as a named constant so the
@@ -144,6 +146,9 @@ class WmsInventoryLotResponse(BaseModel):
     #: Shelf-life band, or None for a lot that does not expire.
     aging_bucket: str | None = None
     supplier_batch: str | None
+    #: LOTATT04 — NC's QC batch number (empty on finished goods, where NC's
+    #: batch sits in LOTATT05 instead).
+    qc_batch: str | None = None
     supplier_code: str | None
     source_doc: str | None
     wms_edit_time: datetime | None
@@ -325,6 +330,7 @@ def _apply_lot_filters(
             WmsInventoryLot.material_code.ilike(needle),
             WmsInventoryLot.lot_no.ilike(needle),
             WmsInventoryLot.supplier_batch.ilike(needle),
+            WmsInventoryLot.qc_batch.ilike(needle),
             MdmMaterial.name.ilike(needle),
         ))
     if expiring_before:
@@ -436,6 +442,9 @@ class InventoryBatchResponse(BaseModel):
     base_uom: str | None = None
     #: None for stock the warehouse recorded without one (92 lots today).
     supplier_batch: str | None
+    #: NC QC batch numbers (LOTATT04) among this batch's lots, comma-separated;
+    #: None when none of them carries one.
+    qc_batches: str | None = None
     qty: Decimal
     qty_allocated: Decimal
     qty_onhold: Decimal
@@ -603,6 +612,7 @@ async def list_batches(
         case((func.count(func.distinct(WmsInventoryLot.wms_status)) == 1,
               func.min(WmsInventoryLot.wms_status)),
              else_="mixed"),
+        func.string_agg(func.distinct(WmsInventoryLot.qc_batch), ", "),
     ).outerjoin(MdmMaterial, MdmMaterial.code == WmsInventoryLot.material_code)
     base = _apply_lot_filters(base, **filters).group_by(*grouping)
 
@@ -683,7 +693,7 @@ async def list_batches(
     items = []
     for (warehouse, code, batch, name, qty_, allocated, onhold, lot_count,
          expiry_min, expiry_max, inbound, status, supplier_code,
-         base_uom, produced_min, produced_max, quality) in (
+         base_uom, produced_min, produced_max, quality, qc_batches) in (
             await db.execute(stmt)).all():
         items.append(InventoryBatchResponse(
             warehouse_id=warehouse,
@@ -691,6 +701,7 @@ async def list_batches(
             material_name=name,
             base_uom=base_uom,
             supplier_batch=batch,
+            qc_batches=qc_batches,
             qty=qty_,
             qty_allocated=allocated,
             qty_onhold=onhold,

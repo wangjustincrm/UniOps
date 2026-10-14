@@ -60,6 +60,7 @@ def transform_lot(raw: dict, mapping: dict[str, str], today: date) -> dict:
         "wms_status": raw.get("lotatt08"), "mapped_status": status,
         "production_date": _d(raw.get("lotatt01")), "expiry_date": expiry,
         "inbound_date": _d(raw.get("lotatt03")),
-        "supplier_batch": raw.get("lotatt05"), "supplier_code": raw.get("lotatt13"),
+        "supplier_batch": raw.get("lotatt05"), "qc_batch": raw.get("lotatt04"),
+        "supplier_code": raw.get("lotatt13"),
         "source_doc": raw.get("lotatt14"), "wms_edit_time": raw.get("edittime"),
     }
