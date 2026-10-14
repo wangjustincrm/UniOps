@@ -30,7 +30,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import asof, params
-from app.services.recon import WMS_GO_LIVE, group_batches, norm_batch
+from app.services.recon import group_batches, norm_batch, wms_history_start
 
 ZERO = Decimal(0)
 LOCAL = ZoneInfo(params.LOCAL_TIME_ZONE)
@@ -323,7 +323,7 @@ async def load(db: AsyncSession, code: str, d: date, batch: str | None) -> dict:
     tz = await params.get_param(db, params.NC_TIME_ZONE_KEY)
     qty_tol = Decimal(str(await params.get_param(db, params.QTY_TOLERANCE_KEY)))
     a = asof.make_asof(d, tz)
-    start = WMS_GO_LIVE
+    start = await wms_history_start(db)
 
     mat = (await db.execute(text(
         "select pk_material, code, name, uom_code from inv_nc_material where code = :c"), {"c": code})).first()
@@ -377,7 +377,7 @@ async def load(db: AsyncSession, code: str, d: date, batch: str | None) -> dict:
                         "unsigned": r.fbillflag == 2, "nc_time": r.dbizdate}))
 
     wms_lines: list[Line] = []
-    if d >= WMS_GO_LIVE:
+    if d >= start:
         rows = (await db.execute(text("""
             select m.move_id, m.transactionid, m.txn_type, m.doctype, m.docno, m.lotnum, m.qty, m.txn_time,
                    m.reasoncode, m.reason, m.addwho,

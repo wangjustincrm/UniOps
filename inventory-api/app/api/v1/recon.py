@@ -42,7 +42,9 @@ async def reconciliation(
     amt_tol = Decimal(str(await params.get_param(db, params.AMOUNT_TOLERANCE_KEY)))
     show_amt = await can_view_cost(payload, db)
 
-    rows = await recon.load(db, a, include_unposted)
+    wms_start = await recon.wms_history_start(db)
+    wms_live = d >= wms_start
+    rows = await recon.load(db, a, include_unposted, wms_start)
     for r in rows.values():
         recon.attribute(r, d, qty_tol, amt_tol)
 
@@ -52,7 +54,7 @@ async def reconciliation(
     batches: dict[str, list[dict]] = {}
     if expand_batches:
         batches = await recon.load_batches(
-            db, a, [r.code for r in rows.values() if not (r.no_batch_since and r.no_batch_since <= d)])
+            db, a, [r.code for r in rows.values() if not (r.no_batch_since and r.no_batch_since <= d)], wms_start)
         for code, groups in batches.items():
             r = rows[code]
             # C10: totals agree but batches do not → a labelling difference.
@@ -69,7 +71,7 @@ async def reconciliation(
         return sum((getattr(r, attr) for r in rows.values() if getattr(r, attr) is not None), Decimal(0))
 
     totals = {
-        "wms": _s(tot("wms")) if d >= recon.WMS_GO_LIVE else None,
+        "wms": _s(tot("wms")) if wms_live else None,
         "ic_wms": _s(tot("ic_wms")), "ic_external": _s(tot("ic_external")),
         "ic_production": _s(tot("ic_production")), "ic_transient": _s(tot("ic_transient")),
         "ic_total": _s(sum((r.ic_total for r in rows.values()), Decimal(0))),
@@ -158,7 +160,8 @@ async def reconciliation(
 
     return {
         "date": d.isoformat(), "nc_time_zone": tz, "period": a.period,
-        "wms_live": d >= recon.WMS_GO_LIVE, "include_unposted": include_unposted,
+        "wms_live": wms_live, "wms_history": recon.wms_history_info(wms_start),
+        "include_unposted": include_unposted,
         "amounts_visible": show_amt, "tolerance": {"qty": str(qty_tol), "amount": str(amt_tol)},
         # batch_label is only computed with expand_batches; listing it
         # otherwise would offer a filter that can never match.

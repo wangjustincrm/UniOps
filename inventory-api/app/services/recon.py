@@ -29,7 +29,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import asof
 
-WMS_GO_LIVE = date(2025, 2, 3)
+# WMS went live in January 2025 (user, 2026-10-14) — a handful of setup ASNs
+# from 2025-01-11 — but its stock history starts with the opening-stock import
+# on 2025-02-03, the first completed transaction in the log. Before that WMS
+# has no figures at all. Fixed by the user's confirmation rather than derived
+# from the mirror, so it cannot drift if WMS ever archives its log.
+WMS_GO_LIVE_MONTH = "2025-01"
+WMS_HISTORY_START = date(2025, 2, 3)
+WMS_HISTORY_FALLBACK = WMS_HISTORY_START   # default for function signatures
+
+
+async def wms_history_start(db: AsyncSession) -> date:  # noqa: ARG001 — kept async for a future setting
+    return WMS_HISTORY_START
+
+
+def wms_history_info(start: date) -> dict:
+    """What every page says about WMS before its history begins."""
+    return {
+        "go_live_month": WMS_GO_LIVE_MONTH,
+        "history_start": start.isoformat(),
+        "note": (f"WMS went live in January 2025; its stock history starts on {start.isoformat()} "
+                 "(opening stock imported). There are no WMS figures before that date."),
+    }
 ZERO = Decimal(0)
 
 # Category codes → (side, English label). The frontend shows the label; the
@@ -201,7 +222,8 @@ def status_of(row: MaterialRow, qty_tol: Decimal, amt_tol: Decimal) -> str:
 
 # ── Data loading ────────────────────────────────────────────────────────────
 
-async def load(db: AsyncSession, a: asof.AsOf, include_unposted: bool) -> dict[str, MaterialRow]:
+async def load(db: AsyncSession, a: asof.AsOf, include_unposted: bool,
+               wms_start: date = WMS_HISTORY_FALLBACK) -> dict[str, MaterialRow]:
     """Every material that has a non-zero figure anywhere on D, keyed by code."""
     p = {**a.sql_params, "include_unposted": include_unposted,
          "wms_cutoff": datetime.combine(a.d, time(23, 59, 59))}
@@ -317,7 +339,7 @@ async def load(db: AsyncSession, a: asof.AsOf, include_unposted: bool) -> dict[s
             row.gl_by_source[r.src] = row.gl_by_source.get(r.src, ZERO) + (r.amt or ZERO)
 
     # WMS on D (from the transaction history), keyed by SKU = NC code.
-    if a.d >= WMS_GO_LIVE:
+    if a.d >= wms_start:
         for r in (await db.execute(text("""
             select sku, sum(qty) q from inv_wms_move
             where txn_time <= :wms_cutoff group by 1"""), p)).all():
@@ -450,13 +472,14 @@ def group_batches(wms_lots: list[dict], nc_batches: list[dict]) -> list[dict]:
     return out
 
 
-async def load_batches(db: AsyncSession, a: asof.AsOf, codes: list[str]) -> dict[str, list[dict]]:
+async def load_batches(db: AsyncSession, a: asof.AsOf, codes: list[str],
+                       wms_start: date = WMS_HISTORY_FALLBACK) -> dict[str, list[dict]]:
     """Batch groups for the given material codes on D."""
     if not codes:
         return {}
     p = {**a.sql_params, "codes": codes, "wms_cutoff": datetime.combine(a.d, time(23, 59, 59))}
     wms: dict[str, list[dict]] = defaultdict(list)
-    if a.d >= WMS_GO_LIVE:
+    if a.d >= wms_start:
         for r in (await db.execute(text("""
             select m.sku, m.lotnum, l.qc_batch, l.supplier_batch, sum(m.qty) q
             from inv_wms_move m left join inv_wms_lot l on l.sku = m.sku and l.lotnum = m.lotnum

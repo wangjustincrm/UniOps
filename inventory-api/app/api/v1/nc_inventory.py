@@ -17,6 +17,7 @@ from app.api.v1.perms import ViewDep, can_view_cost
 from app.core.deps import SessionDep
 from app.models import InvSyncState
 from app.services import asof, params
+from app.services import recon as recon_svc
 
 router = APIRouter(prefix="/nc", tags=["nc-inventory"])
 
@@ -101,6 +102,7 @@ async def meta(db: SessionDep, payload: ViewDep,
         "ia": await _period_status(db, a),
         "undated_ic_rows_with_qty": undated,
         "amounts_visible": await can_view_cost(payload, db),
+        "wms_history": recon_svc.wms_history_info(await recon_svc.wms_history_start(db)),
         "sync": {
             "last_success_at": state.last_success_at.isoformat() if state and state.last_success_at else None,
             "status": state.status if state else None,

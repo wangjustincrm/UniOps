@@ -255,3 +255,7 @@ async def test_recon_withholds_amounts(client, non_admin_token, monkeypatch, see
 async def test_recon_before_wms_go_live(client, auth_headers, seeded):
     body = (await client.get("/api/v1/recon", params={"date": "2025-01-31"}, headers=auth_headers)).json()
     assert body["wms_live"] is False and body["totals"]["wms"] is None
+    assert body["wms_history"]["history_start"] == "2025-02-03"
+    assert "January 2025" in body["wms_history"]["note"]
+    on = (await client.get("/api/v1/recon", params={"date": "2025-02-03"}, headers=auth_headers)).json()
+    assert on["wms_live"] is True

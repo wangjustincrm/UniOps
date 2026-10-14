@@ -91,3 +91,8 @@ def test_is_due():
     assert not scheduler.is_due(last_attempt_at=now - timedelta(minutes=59), interval_minutes=60, now=now)
     assert scheduler.is_due(last_attempt_at=now - timedelta(minutes=60), interval_minutes=60, now=now)
     assert not scheduler.is_due(last_attempt_at=now + timedelta(minutes=5), interval_minutes=60, now=now)
+
+
+async def test_wms_history_note(client, auth_headers):
+    r = (await client.get("/api/v1/settings/wms-history", headers=auth_headers)).json()
+    assert r["history_start"] == "2025-02-03" and r["go_live_month"] == "2025-01"

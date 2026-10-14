@@ -56,6 +56,13 @@ async def put_param(key: str, body: ParamWrite, db: SessionDep, payload: AdminDe
     return {"key": key, "value": value}
 
 
+@router.get("/wms-history")
+async def wms_history(db: SessionDep, _: ViewDep) -> dict:
+    """When WMS figures begin — for any page that shows WMS data."""
+    from app.services import recon
+    return recon.wms_history_info(await recon.wms_history_start(db))
+
+
 # ── Warehouse classes ───────────────────────────────────────────────────────
 
 @router.get("/warehouse-classes")
