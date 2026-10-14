@@ -98,6 +98,17 @@ class Line:
     tier: int | None = None
 
 
+def seq_key(ln: "Line") -> tuple:
+    """Order of movements on one side: time, then DOCUMENT NUMBER, then line.
+
+    Several movements often share one timestamp (a stock-count batch posted at
+    23:01). NC and WMS number documents sequentially as they are created, so
+    the number is the order things happened in; the internal id is not —
+    sorting by it showed CF0086 going 0 → 25 → 50 → 0 instead of
+    625 → 0 → 25 → 50 (user, 2026-10-14)."""
+    return (ln.time or datetime.min, ln.doc or "", ln.id)
+
+
 def nc_category(trantype: str | None, other_wh_is_wms: bool) -> str:
     if other_wh_is_wms and trantype in ("4A-Cxx-099", "4I-Cxx-099", "4A-Cxx-055", "4I-Cxx-055"):
         return "internal"           # SC11 ↔ SC16: one physical warehouse to WMS
@@ -214,7 +225,7 @@ def first_divergence(nc: list[Line], wms: list[Line], nc_opening: Decimal,
     the LAST moment the balances agreed. None when they agree at the end."""
     events = sorted(
         [ln for ln in nc + wms if ln.time is not None],
-        key=lambda ln: (ln.time, 0 if ln.side == "nc" else 1, ln.id))
+        key=lambda ln: (ln.time, 0 if ln.side == "nc" else 1, ln.doc or "", ln.id))
     nc_bal, wms_bal = nc_opening, ZERO
     # -1 = "agreed before the first event"; None = never agreed.
     last_agree_index = -1 if abs(nc_bal - wms_bal) <= qty_tol else None

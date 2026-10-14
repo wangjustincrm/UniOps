@@ -151,7 +151,7 @@ async def trace_material(
     # Running balance per side, in time order.
     def balances(lines, opening):
         out, bal = {}, opening
-        for ln in sorted(lines, key=lambda x: (x.time or datetime.min, x.id)):
+        for ln in sorted(lines, key=trace.seq_key):
             bal += ln.qty
             out[ln.id] = bal
         return out, bal
@@ -162,12 +162,16 @@ async def trace_material(
     # Rows: one per pair group, one per unmatched line; ordered by time.
     rows = []
     for g in t["groups"]:
+        g["nc"].sort(key=trace.seq_key)
+        g["wms"].sort(key=trace.seq_key)
         lines = g["nc"] + g["wms"]
         when = min((ln.time for ln in lines if ln.time), default=None)
+        first = min(lines, key=trace.seq_key)
         nq = sum((ln.qty for ln in g["nc"]), Decimal(0))
         wq = sum((ln.qty for ln in g["wms"]), Decimal(0))
         rows.append({
             "kind": "pair", "tier": g["tier"], "key": g["key"], "time": when,
+            "_seq": trace.seq_key(first),
             "category": (g["nc"] or g["wms"])[0].category,
             "nc": [_line(ln, nc_bal[ln.id]) for ln in g["nc"]],
             "wms": [_line(ln, wms_bal[ln.id]) for ln in g["wms"]],
@@ -178,6 +182,7 @@ async def trace_material(
             bal = nc_bal if ln.side == "nc" else wms_bal
             rows.append({
                 "kind": f"{ln.side}_only", "tier": None, "key": None, "time": ln.time,
+                "_seq": trace.seq_key(ln),
                 "category": ln.category,
                 "nc": [_line(ln, bal[ln.id])] if ln.side == "nc" else [],
                 "wms": [_line(ln, bal[ln.id])] if ln.side == "wms" else [],
@@ -185,7 +190,7 @@ async def trace_material(
                 "wms_qty": _s(ln.qty) if ln.side == "wms" else "0",
                 "diff": _s(ln.qty if ln.side == "nc" else -ln.qty),
             })
-    rows.sort(key=lambda r: (r["time"] or datetime.min, r["kind"]))
+    rows.sort(key=lambda r: (r["_seq"], r["kind"]))
 
     div = t["divergence"]
     div_out = None
@@ -233,5 +238,6 @@ async def trace_material(
         },
         "divergence": div_out,
         "summary": summary,
-        "rows": [{**r, "time": (r["time"].isoformat(sep=" ") if r["time"] else None)} for r in rows],
+        "rows": [{**{k: v for k, v in r.items() if k != "_seq"},
+                  "time": (r["time"].isoformat(sep=" ") if r["time"] else None)} for r in rows],
     }

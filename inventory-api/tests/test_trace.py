@@ -171,3 +171,32 @@ async def test_material_and_batch_options(client, auth_headers, seeded):
                              headers=auth_headers)).json()["total"] == 1
     assert (await client.get("/api/v1/trace/batches", params={"material": "S0104", "q": "ZZZ"},
                              headers=auth_headers)).json()["total"] == 0
+
+
+async def test_same_time_movements_follow_document_numbers(client, auth_headers, db_session):
+    """CF0086 on 2025-12-23 23:01: three NC documents with one timestamp. The
+    balance must run 625 → 0 → 25 → 50 (document order), not by internal id."""
+    from app.models import NcMaterial as M, NcWarehouse as W
+    await db_session.execute(insert(W), [{"pk_stordoc": "W13", "code": "SC13", "iscalculatedinvcost": True}])
+    await db_session.execute(insert(M), [{"pk_material": "M86", "code": "CF0086"}])
+    t = datetime(2025, 12, 24, 12, 1)   # NC clock → 2025-12-23 23:01 Toronto
+    rows = [
+        # ids deliberately in the WRONG order relative to the document numbers
+        ("A3", "TC2025122400202346", -625, "4I-Cxx-103"),
+        ("A1", "TC2025122400202351", 25, "4I-Cxx-CRM004"),
+        ("A2", "TC2025122400202352", 25, "4I-Cxx-CRM004"),
+    ]
+    await db_session.execute(insert(NcIcFlow), [
+        {"pk_flow": pk, "cwarehouseid": "W13", "cmaterialoid": "M86", "vbillcode": bill,
+         "ninnum": D(q) if q > 0 else None, "noutnum": D(-q) if q < 0 else None,
+         "biz_time": t, "vtrantypecode": tt, "fbillflag": 3}
+        for pk, bill, q, tt in rows])
+    # Opening 625 before the window.
+    await db_session.execute(insert(NcIcFlow), [{
+        "pk_flow": "A0", "cwarehouseid": "W13", "cmaterialoid": "M86", "vbillcode": "OPEN",
+        "ninnum": D(625), "biz_time": datetime(2025, 1, 10), "vtrantypecode": "45-Cxx-CRM02", "fbillflag": 3}])
+    await db_session.commit()
+    b = (await client.get("/api/v1/trace", params={"material": "CF0086", "date": "2026-01-31"},
+                          headers=auth_headers)).json()
+    seq = [(ln["doc"], ln["balance"]) for r in b["rows"] for ln in r["nc"]]
+    assert seq == [("TC2025122400202346", "0"), ("TC2025122400202351", "25"), ("TC2025122400202352", "50")]
