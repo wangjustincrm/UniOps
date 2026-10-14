@@ -1,0 +1,9 @@
+@import "tailwindcss";
+/* Tailwind v4 does not scan node_modules, so utility classes that appear ONLY
+   inside @uniops/shell (e.g. the primary Button's `bg-primary-600`) are never
+   generated — the component then renders white text on no background and is
+   invisible while still occupying layout. Point Tailwind at the shell source
+   explicitly. The relative path resolves identically on the host and in the
+   dev container, where the package is mounted alongside the app. */
+@source "../../packages/shell/src";
+@import "@uniops/shell/tokens.css";
