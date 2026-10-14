@@ -10,6 +10,8 @@ import {
 import { cn } from '@/lib/utils'
 import { signOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
+import { encodeSession, INVENTORY_URL } from '@/lib/api'
+import { useMrpAuth } from '@/store/auth'
 
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 
@@ -28,10 +30,14 @@ function getStoredSession(): { token: string | null; user: { id?: string; full_n
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
-const NAV = [
+// `external` items leave MRP: WMS Inventory moved to the Inventory module
+// (inventory design §7.1), so its entry links out — to that module's WMS page,
+// with the same #__session= handoff Portal uses — and opens in a new tab so
+// the planner keeps their MRP tabs.
+const NAV: { label: string; href: string; icon: typeof Boxes; external?: boolean }[] = [
   { label: 'Sales Forecast',      href: '/forecast',            icon: TrendingUp       },
   { label: 'Consignment Stock',   href: '/consignment-stock',   icon: PackageSearch    },
-  { label: 'Inventory',           href: '/inventory',           icon: Boxes            },
+  { label: 'Inventory ↗',         href: '/wms',                 icon: Boxes, external: true },
   { label: 'BOM Explorer',        href: '/bom-explorer',        icon: Network          },
   { label: 'Capacity Rules',      href: '/capacity-rules',      icon: SlidersHorizontal },
   { label: 'Production Plan',     href: '/production-plan',     icon: CalendarRange    },
@@ -51,6 +57,10 @@ function Sidebar({
 }) {
   const location = useLocation()
   const { data: branding } = useBranding()
+  const { token, refreshToken, user } = useMrpAuth()
+  const session = token && user ? encodeSession(token, refreshToken ?? '', user) : ''
+  const externalHref = (path: string) =>
+    session ? `${INVENTORY_URL}${path}#__session=${session}` : `${INVENTORY_URL}${path}`
   const brandName = branding?.name || 'UniOps'
   const brandTagline = branding?.tagline || 'MRP'
   const brandLogo = branding?.logo_data_url || null
@@ -114,7 +124,20 @@ function Sidebar({
             MRP
           </p>
         )}
-        {NAV.map(({ label, href, icon: Icon }) => (
+        {NAV.map(({ label, href, icon: Icon, external }) => external ? (
+          <a
+            key={href}
+            href={externalHref(href)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onClose}
+            title={collapsed ? label : 'Opens the Inventory module in a new tab'}
+            className={cn(navLinkCls(false), 'relative')}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            {!collapsed && <span className="truncate">{label}</span>}
+          </a>
+        ) : (
           <NavLink
             key={href}
             to={href}

@@ -817,6 +817,7 @@ services:
       VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:${EPMS_API_PORT:-8000}
       VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:${MDM_API_PORT:-8002}
       VITE_PORTAL_URL: http://${LAN_HOST:-localhost}:${PORTAL_PORT:-5174}
+      VITE_INVENTORY_URL: http://${LAN_HOST:-localhost}:${INVENTORY_PORT:-5181}
     # --install-links copies the file:../packages/shell dep into /app/node_modules
     # as a real package (not a symlink to /packages/shell), so its transitive deps
     # resolve from /app/node_modules inside the container.
