@@ -27,6 +27,9 @@ def nc_configured() -> bool:
 
 def _connect():
     import oracledb
+
+    from app.services.oracle_client import ensure_mode
+    ensure_mode()   # thick when available — see oracle_client.py
     oracledb.defaults.fetch_decimals = True
     dsn = oracledb.makedsn(settings.nc_host, settings.nc_port, service_name=settings.nc_service)
     return oracledb.connect(user=settings.nc_user, password=settings.nc_password, dsn=dsn)

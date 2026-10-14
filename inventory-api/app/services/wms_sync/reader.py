@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from app.core.config import settings
 
-_client_ready = False
-
 # Transaction types that change on-hand quantity (design §4.7). PA/PK/MV are
 # location moves, HD/RL holds and releases, 90/99 document close/cancel events.
 QTY_TXN_TYPES = ("IN", "SO", "AD", "TR")
@@ -21,11 +19,9 @@ def wms_configured() -> bool:
 
 
 def _ensure_thick() -> None:
-    global _client_ready
-    if not _client_ready:
-        import oracledb
-        oracledb.init_oracle_client(lib_dir=settings.oracle_client_lib)
-        _client_ready = True
+    # Shared with the NC reader: the mode is per process (oracle_client.py).
+    from app.services.oracle_client import ensure_mode
+    ensure_mode()
 
 
 def _rows(cur, sql: str, params: dict | None = None) -> list[dict]:
