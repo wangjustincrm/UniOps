@@ -27,7 +27,8 @@ export default function SettingsPage() {
           </p>
         )}
       </div>
-      <SyncStatusCard canAdmin={canAdmin} toasts={toasts} />
+      <SyncStatusCard canAdmin={canAdmin} toasts={toasts} source="nc" />
+      <SyncStatusCard canAdmin={canAdmin} toasts={toasts} source="wms" />
       <ParametersCard canAdmin={canAdmin} toasts={toasts} />
       <WarehouseClassesCard canAdmin={canAdmin} toasts={toasts} />
       <NoBatchMaterialsCard canAdmin={canAdmin} toasts={toasts} />

@@ -1,4 +1,5 @@
-// NC mirror freshness, the last run's figures and its tie-out, plus Refresh.
+// Mirror freshness, the last run's figures and its tie-out, plus Refresh —
+// one card per source: the NC mirrors, and the WMS transaction history.
 //
 // Age is measured from last_success_at (the last run that replaced the
 // mirrors), never from the last attempt: during an NC outage the two diverge,
@@ -11,7 +12,49 @@ import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { formatDateTimeToronto, formatDuration, formatNumber, relativeAge } from '@/lib/time'
 import type { useToasts } from '@/hooks/useToasts'
-import { settingsApi, type NcSyncStatus } from './settingsApi'
+import {
+  WMS_TIEOUT_CHECKS, settingsApi, tieoutCheckLabel, type NcSyncStatus,
+} from './settingsApi'
+
+export type SyncSource = 'nc' | 'wms'
+
+interface RunOutcome { tieout_ok: boolean; issues: number; duration_ms: number }
+
+const SOURCES: Record<SyncSource, {
+  title: string
+  name: string
+  description: string | null
+  statusKey: string[]
+  status: () => Promise<NcSyncStatus>
+  run: () => Promise<RunOutcome>
+  refreshTitle: string
+}> = {
+  nc: {
+    title: 'NC sync status',
+    name: 'NC',
+    description: null,
+    statusKey: ['inv-nc-sync-status'],
+    status: settingsApi.syncStatus,
+    run: async () => {
+      const r = await settingsApi.runSync()
+      return { tieout_ok: r.tieout_ok, duration_ms: r.duration_ms,
+               issues: Object.values(r.tieout_issues).reduce((a, b) => a + b, 0) }
+    },
+    refreshTitle: 'Pull the NC mirrors now',
+  },
+  wms: {
+    title: 'WMS history sync',
+    name: 'WMS',
+    description: 'WMS transaction history since go-live (2025-02-03) — used for WMS stock on past dates and batch trace. Current WMS stock itself comes from MRP\'s WMS sync.',
+    statusKey: ['inv-wms-sync-status'],
+    status: settingsApi.wmsSyncStatus,
+    run: async () => {
+      const r = await settingsApi.runWmsSync()
+      return { tieout_ok: r.tieout_ok, duration_ms: r.duration_ms, issues: r.tieout_issues }
+    },
+    refreshTitle: 'Pull the WMS transaction history now',
+  },
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -22,7 +65,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function CountsTable({ status }: { status: NcSyncStatus }) {
+function CountsTable({ status, name }: { status: NcSyncStatus; name: string }) {
   const tables = Array.from(new Set([
     ...Object.keys(status.row_counts), ...Object.keys(status.filtered_counts),
   ])).sort()
@@ -34,7 +77,7 @@ function CountsTable({ status }: { status: NcSyncStatus }) {
           <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-400">
             <th className="py-2 pr-4 font-medium">Mirror table</th>
             <th className="py-2 pr-4 text-right font-medium">Rows</th>
-            <th className="py-2 text-right font-medium" title="Rows NC returned that were dropped as unusable (duplicates, missing keys)">
+            <th className="py-2 text-right font-medium" title={`Rows ${name} returned that were dropped as unusable (duplicates, missing keys)`}>
               Filtered out
             </th>
           </tr>
@@ -64,19 +107,38 @@ function diffOf(mirror: string | null, nc: string | null): string {
   return Number.isFinite(d) ? formatNumber(d, 4) : '—'
 }
 
-function TieoutIssuesTable() {
-  const q = useQuery({ queryKey: ['inv-tieout-issues'], queryFn: settingsApi.tieoutIssues })
+function TieoutIssuesTable({ source }: { source: SyncSource }) {
+  // The endpoint serves every source's findings. The WMS card asks for its
+  // one check; the NC card takes the rest (filtered here, as the endpoint
+  // filters by a single check only).
+  const q = useQuery({
+    queryKey: ['inv-tieout-issues', source],
+    queryFn: () => settingsApi.tieoutIssues(source === 'wms' ? WMS_TIEOUT_CHECKS[0] : undefined),
+  })
   if (q.isLoading) return <p className="text-sm text-neutral-500">Loading tie-out issues…</p>
   if (q.isError) {
     return <p className="text-sm text-danger-600">Could not load tie-out issues: {(q.error as Error).message}</p>
   }
   const data = q.data!
-  if (data.items.length === 0) return <p className="text-sm text-neutral-500">No issues stored.</p>
+  const mine = (check: string) => (source === 'wms') === WMS_TIEOUT_CHECKS.includes(check)
+  const items = data.items.filter((i) => mine(i.check))
+  const byCheck = Object.entries(data.by_check).filter(([k]) => mine(k))
+  const totalStored = byCheck.reduce((a, [, n]) => a + n, 0)
+  const hidden = data.amount_issues_hidden > 0 && (
+    <p className="text-xs text-neutral-500">
+      {data.amount_issues_hidden} amount-based issue{data.amount_issues_hidden === 1 ? ' is' : 's are'} hidden
+      {' '}— requires the ‘View Inventory Amounts’ permission.
+    </p>
+  )
+  if (items.length === 0) {
+    return hidden || <p className="text-sm text-neutral-500">No issues stored.</p>
+  }
   return (
     <div className="space-y-2">
+      {hidden}
       <p className="text-xs text-neutral-500">
-        By check: {Object.entries(data.by_check).map(([k, n]) => `${k} ${n}`).join(' · ')}
-        {data.items.length < data.total_stored && ` — showing ${data.items.length} of ${data.total_stored}`}
+        By check: {byCheck.map(([k, n]) => `${tieoutCheckLabel(k)} ${n}`).join(' · ')}
+        {items.length < totalStored && ` — showing ${items.length} of ${totalStored}`}
       </p>
       <div className="max-h-96 overflow-auto rounded-lg border border-neutral-200">
         <table className="w-full text-sm">
@@ -86,14 +148,14 @@ function TieoutIssuesTable() {
               <th className="px-3 py-2 font-medium">Measure</th>
               <th className="px-3 py-2 font-medium">Label</th>
               <th className="px-3 py-2 text-right font-medium">Mirror</th>
-              <th className="px-3 py-2 text-right font-medium">NC</th>
+              <th className="px-3 py-2 text-right font-medium">{source === 'wms' ? 'WMS' : 'NC'}</th>
               <th className="px-3 py-2 text-right font-medium">Diff</th>
             </tr>
           </thead>
           <tbody>
-            {data.items.map((i) => (
+            {items.map((i) => (
               <tr key={`${i.check}|${i.measure}|${i.key}`} className="border-b border-neutral-100 last:border-0">
-                <td className="px-3 py-1.5 font-mono text-xs">{i.check}</td>
+                <td className="px-3 py-1.5 text-xs" title={i.check}>{tieoutCheckLabel(i.check)}</td>
                 <td className="px-3 py-1.5">{i.measure}</td>
                 <td className="px-3 py-1.5" title={i.key}>{i.label || i.key}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(i.mirror_value, 4)}</td>
@@ -108,41 +170,47 @@ function TieoutIssuesTable() {
   )
 }
 
-export function SyncStatusCard({ canAdmin, toasts }: {
+export function SyncStatusCard({ canAdmin, toasts, source = 'nc' }: {
   canAdmin: boolean
   toasts: ReturnType<typeof useToasts>
+  source?: SyncSource
 }) {
+  const cfg = SOURCES[source]
   const queryClient = useQueryClient()
   const [showIssues, setShowIssues] = useState(false)
 
   const statusQuery = useQuery({
-    queryKey: ['inv-nc-sync-status'],
-    queryFn: settingsApi.syncStatus,
+    queryKey: cfg.statusKey,
+    queryFn: cfg.status,
     // Keeps "6 min ago" honest on a screen left open, and shows a scheduled
     // run landing without a manual reload.
     refetchInterval: 60_000,
   })
 
   const refresh = useMutation({
-    mutationFn: settingsApi.runSync,
+    mutationFn: cfg.run,
     onSuccess: (r) => {
-      const issues = Object.values(r.tieout_issues).reduce((a, b) => a + b, 0)
-      if (r.tieout_ok) toasts.success(`NC synced in ${formatDuration(r.duration_ms)} — tie-out OK.`)
-      else toasts.error(`NC synced, but the tie-out found ${issues} issue${issues === 1 ? '' : 's'}.`)
+      if (r.tieout_ok) toasts.success(`${cfg.name} synced in ${formatDuration(r.duration_ms)} — tie-out OK.`)
+      else toasts.error(`${cfg.name} synced, but the tie-out found ${r.issues} issue${r.issues === 1 ? '' : 's'}.`)
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 409) {
-        toasts.error('An NC sync is already running — wait for it to finish.')
+        // NC and WMS syncs share one lock: either one running blocks both.
+        toasts.error(err.message || 'A sync is already running — wait for it to finish.')
       } else if (err instanceof ApiError && err.status === 503) {
-        toasts.error('The NC connection is not configured on this server.')
+        toasts.error(`The ${cfg.name} connection is not configured on this server.`)
       } else {
-        toasts.error(err instanceof Error ? err.message : 'NC sync failed.')
+        toasts.error(err instanceof Error ? err.message : `${cfg.name} sync failed.`)
       }
     },
     onSettled: async () => {
+      // Both cards: the two syncs share a lock, so "running" moves on both.
       await queryClient.invalidateQueries({ queryKey: ['inv-nc-sync-status'] })
+      await queryClient.invalidateQueries({ queryKey: ['inv-wms-sync-status'] })
       await queryClient.invalidateQueries({ queryKey: ['inv-tieout-issues'] })
       await queryClient.invalidateQueries({ queryKey: ['inv-warehouse-classes'] })
+      // NC Inventory page (freshness strip and every table).
+      await queryClient.invalidateQueries({ queryKey: ['nc'] })
     },
   })
 
@@ -154,7 +222,8 @@ export function SyncStatusCard({ canAdmin, toasts }: {
     <Card>
       <CardHeader className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <CardTitle>NC sync status</CardTitle>
+          <CardTitle>{cfg.title}</CardTitle>
+          {cfg.description && <p className="mt-0.5 max-w-2xl text-xs text-neutral-600">{cfg.description}</p>}
           <p className="mt-0.5 text-xs text-neutral-500">Times are shown on Toronto time.</p>
         </div>
         {canAdmin && (
@@ -162,7 +231,7 @@ export function SyncStatusCard({ canAdmin, toasts }: {
             variant="secondary" size="sm"
             onClick={() => refresh.mutate()}
             disabled={busy || (s != null && !s.configured)}
-            title={s && !s.configured ? 'The NC connection is not configured on this server' : 'Pull the NC mirrors now'}
+            title={s && !s.configured ? `The ${cfg.name} connection is not configured on this server` : cfg.refreshTitle}
           >
             {busy
               ? <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />
@@ -181,7 +250,7 @@ export function SyncStatusCard({ canAdmin, toasts }: {
             {!s.configured && (
               <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700">
                 <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-                The NC connection is not configured on this server, so the mirrors cannot be refreshed.
+                The {cfg.name} connection is not configured on this server, so {source === 'wms' ? 'the history' : 'the mirrors'} cannot be refreshed.
               </div>
             )}
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -224,12 +293,12 @@ export function SyncStatusCard({ canAdmin, toasts }: {
             )}
 
             <div>
-              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-400">Tie-out to NC</p>
+              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-400">Tie-out to {cfg.name}</p>
               {s.tieout_ok == null ? (
                 <p className="text-sm text-neutral-500">Not run yet.</p>
               ) : s.tieout_ok ? (
                 <p className="flex items-center gap-1.5 text-sm text-success-700">
-                  <CheckCircle2 aria-hidden className="h-4 w-4" /> Mirrors tie out to NC.
+                  <CheckCircle2 aria-hidden className="h-4 w-4" /> {source === 'wms' ? 'Transactions tie out to current WMS lots.' : 'Mirrors tie out to NC.'}
                 </p>
               ) : (
                 <div className="space-y-3">
@@ -245,12 +314,12 @@ export function SyncStatusCard({ canAdmin, toasts }: {
                       ? <ChevronDown aria-hidden className="h-3.5 w-3.5" />
                       : <ChevronRight aria-hidden className="h-3.5 w-3.5" />}
                   </button>
-                  {showIssues && <TieoutIssuesTable />}
+                  {showIssues && <TieoutIssuesTable source={source} />}
                 </div>
               )}
             </div>
 
-            <CountsTable status={s} />
+            <CountsTable status={s} name={cfg.name} />
           </>
         )}
       </CardContent>

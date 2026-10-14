@@ -230,7 +230,7 @@ function Header({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
 // ── AppLayout ─────────────────────────────────────────────────────────────────
 
 const INVENTORY_INITIAL_TABS: TabMeta[] = [
-  { key: '/wms', title: 'WMS Inventory', kind: 'page', path: '/wms', icon: 'Boxes', pinned: true, closable: false },
+  { key: '/nc', title: 'NC Inventory', kind: 'page', path: '/nc', icon: 'Database', pinned: true, closable: false },
 ]
 
 // True when rendered inside an iframe (a drill-down tab from another module):

@@ -13,9 +13,10 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          {/* Default landing → WMS Inventory. AppLayout owns all in-app rendering
-              via the tab host (route table lives in src/app/routes.tsx). */}
-          <Route path="/" element={<Navigate to="/wms" replace />} />
+          {/* Default landing → NC Inventory (WMS Inventory is still a placeholder
+              until phase 3). AppLayout owns all in-app rendering via the tab
+              host (route table lives in src/app/routes.tsx). */}
+          <Route path="/" element={<Navigate to="/nc" replace />} />
           <Route path="/*" element={<AppLayout />} />
         </Routes>
       </BrowserRouter>

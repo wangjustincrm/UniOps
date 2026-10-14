@@ -53,3 +53,12 @@ export function formatNumber(value: string | number | null | undefined, maxDigit
   if (!Number.isFinite(n)) return String(value)
   return n.toLocaleString('en-US', { maximumFractionDigits: maxDigits })
 }
+
+/** Today's date on Toronto's clock as "YYYY-MM-DD" — built from the current
+ *  instant, so no date-only string is parsed. */
+export function todayToronto(now: Date = new Date()): string {
+  // en-CA formats a date as YYYY-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: LOCAL_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now)
+}

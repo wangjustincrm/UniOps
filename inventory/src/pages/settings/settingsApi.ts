@@ -34,12 +34,30 @@ export interface TieoutIssue {
 }
 
 export interface TieoutIssues {
-  /** Rows stored (capped per check); tieout_issue_count on the status is the
-   *  uncapped total. */
+  /** Rows stored (capped per check) that this caller may see;
+   *  tieout_issue_count on the status is the uncapped total. */
   total_stored: number
+  /** Findings measured in money, counted but not returned to callers without
+   *  inventory.cost.view (0 for those who hold it). */
+  amount_issues_hidden: number
+  amounts_visible: boolean
   by_check: Record<string, number>
   items: TieoutIssue[]
 }
+
+/** Tie-out check names → what the page calls them. */
+export const TIEOUT_CHECK_LABELS: Record<string, string> = {
+  ic_flow_vs_onhand: 'NC stock: flows vs on-hand',
+  ia_ledger_vs_monthnab: 'NC cost: ledger vs month-end balance',
+  gl_lines_vs_balance: 'NC GL: posted lines vs GL balance',
+  wms_moves_vs_inv_lot: 'WMS: transactions vs current lots',
+}
+
+/** Which source's sync writes each check (inventory-api nc_sync.NC_CHECKS /
+ *  wms_sync.CHECK). */
+export const WMS_TIEOUT_CHECKS = ['wms_moves_vs_inv_lot']
+
+export const tieoutCheckLabel = (check: string) => TIEOUT_CHECK_LABELS[check] ?? check
 
 export interface NcSyncResult {
   status: 'success'
@@ -47,6 +65,17 @@ export interface NcSyncResult {
   filtered: Record<string, number>
   tieout_ok: boolean
   tieout_issues: Record<string, number>
+  duration_ms: number
+}
+
+/** POST /admin/wms-sync. Unlike NC, tieout_issues is a single count (one
+ *  check). */
+export interface WmsSyncResult {
+  status: 'success'
+  rows: Record<string, number>
+  filtered: Record<string, number>
+  tieout_ok: boolean
+  tieout_issues: number
   duration_ms: number
 }
 
@@ -106,7 +135,12 @@ export interface NoBatchMaterial {
 export const settingsApi = {
   syncStatus: () => api.get<NcSyncStatus>('/admin/nc-sync/status'),
   runSync: () => api.post<NcSyncResult>('/admin/nc-sync'),
-  tieoutIssues: () => api.get<TieoutIssues>('/admin/nc-sync/tieout-issues?limit=1000'),
+  /** Same status shape as NC (inventory-api admin_sync._status). */
+  wmsSyncStatus: () => api.get<NcSyncStatus>('/admin/wms-sync/status'),
+  runWmsSync: () => api.post<WmsSyncResult>('/admin/wms-sync'),
+  /** All sources' findings, or one check's. */
+  tieoutIssues: (check?: string) => api.get<TieoutIssues>(
+    `/admin/nc-sync/tieout-issues?limit=1000${check ? `&check=${encodeURIComponent(check)}` : ''}`),
 
   params: () => api.get<ParamsResponse>('/settings/params'),
   putParam: (key: string, value: unknown) =>
