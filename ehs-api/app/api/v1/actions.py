@@ -62,8 +62,29 @@ async def _detail(db, action) -> ActionDetail:
     return detail
 
 
+async def _refuse_on_a_closed_incident(db, payload: ActionCreate) -> None:
+    """★ Round-6 review: closing now waits for its corrective actions, and a
+    new one could still be raised on the closed record afterwards — an open
+    action on a closed incident, the state closing exists to rule out. The
+    incident is found by its id (named directly, or through the cause), not by
+    the source_type the caller sent.
+    """
+    from app.crud import incident as incident_crud
+    from app.models.incident import Cause, Incident
+
+    incident_id = payload.source_id
+    if payload.cause_id is not None:
+        cause = await db.get(Cause, payload.cause_id)
+        if cause is not None and cause.incident_id is not None:
+            incident_id = cause.incident_id
+    incident = await db.get(Incident, incident_id) if incident_id else None
+    if incident is not None:
+        incident_crud.assert_open(incident, "its corrective actions")
+
+
 @router.post("", response_model=ActionDetail, status_code=status.HTTP_201_CREATED)
 async def create_action(payload: ActionCreate, db: SessionDep, user: CanWriteAction):  # noqa: ARG001
+    await _refuse_on_a_closed_incident(db, payload)
     action = await crud.create(db, payload)
     return await _detail(db, action)
 

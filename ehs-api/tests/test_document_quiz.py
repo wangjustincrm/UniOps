@@ -94,3 +94,50 @@ async def test_a_quiz_tests_one_thing(hse_manager, db_session):
     both = await hse.post("/api/v1/quizzes", json={
         "title": "Both", "course_id": course["id"], "document_id": doc_id})
     assert both.status_code == 422
+
+
+async def test_a_quiz_with_no_questions_holds_nothing(hse_manager, worker, db_session):
+    """★ Round-6 review: made and not yet written, it held signing shut."""
+    _, hse = hse_manager
+    _, me = worker
+    doc_id = await _published(hse, db_session, title="Ladder policy")
+    made = await hse.post("/api/v1/quizzes", json={"title": "Not written yet", "document_id": doc_id})
+    assert made.status_code in (200, 201), made.text
+    assert (await me.get(f"/api/v1/documents/{doc_id}")).json()["quiz_id"] is None
+    assert (await me.post(f"/api/v1/documents/{doc_id}/acknowledge", json=SIG)).status_code in (200, 201)
+
+
+async def test_retiring_the_quiz_lets_the_document_be_signed(hse_manager, worker, db_session):
+    _, hse = hse_manager
+    _, me = worker
+    doc_id = await _published(hse, db_session, title="Forklift policy")
+    qid, _ = await _quiz_on(hse, doc_id)
+    assert (await me.post(f"/api/v1/documents/{doc_id}/acknowledge", json=SIG)).status_code == 409
+
+    assert (await me.post(f"/api/v1/quizzes/{qid}/retire")).status_code == 403
+    retired = await hse.post(f"/api/v1/quizzes/{qid}/retire")
+    assert retired.status_code == 200 and retired.json()["is_active"] is False
+    assert (await me.post(f"/api/v1/documents/{doc_id}/acknowledge", json=SIG)).status_code in (200, 201)
+
+
+async def test_the_code_by_the_door_sends_them_to_the_quiz(hse_manager, worker, db_session):
+    """★ Round-6 review: it offered "I have read this", which was then refused."""
+    _, hse = hse_manager
+    _, me = worker
+    doc_id = await _published(hse, db_session, title="PPE policy")
+    qid, question = await _quiz_on(hse, doc_id)
+    token = (await hse.get(f"/api/v1/documents/{doc_id}")).json()["qr_token"]
+
+    before = (await me.get(f"/api/v1/qr/{token}")).json()
+    assert before["quiz_id"] == qid and before["quiz_passed"] is False
+    await me.post(f"/api/v1/quizzes/{qid}/attempts", json={"answers": {question: ["t"]}})
+    assert (await me.get(f"/api/v1/qr/{token}")).json()["quiz_passed"] is True
+
+
+async def test_a_document_with_no_quiz_says_so_on_its_code(hse_manager, worker, db_session):
+    _, hse = hse_manager
+    _, me = worker
+    doc_id = await _published(hse, db_session, title="Visitor policy")
+    token = (await hse.get(f"/api/v1/documents/{doc_id}")).json()["qr_token"]
+    got = (await me.get(f"/api/v1/qr/{token}")).json()
+    assert got["quiz_id"] is None and "acknowledge" in got["actions"]

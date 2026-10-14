@@ -49,6 +49,11 @@ class QrTarget(BaseModel):
     # When this person already acknowledged this version, if they have. Only a
     # document carries it.
     signed_at: datetime | None = None
+    # A document whose signing waits for a quiz, and whether this person has
+    # passed it. ★ Round-6 review: the code by the door offered "I have read
+    # this", which the server then refused for want of the quiz.
+    quiz_id: uuid.UUID | None = None
+    quiz_passed: bool | None = None
     label: str
     # Where the front end should go. Relative, because the same token resolves
     # inside the module and inside the Portal shell.
@@ -102,16 +107,21 @@ async def resolve(token: str, db: SessionDep, user: CanReportIncident):  # noqa:
         # August, and pressing the button quietly returns the old record — so
         # the screen would say "Signed" about an act that did not just happen.
         signed_at = None
+        quiz_id = quiz_passed = None
         if document.requires_ack:
             signed_at = await document_crud.acknowledged_at(
                 db, document, user_id=_user_id(user))
+            quiz = await quiz_crud.for_document(db, document.id)
+            if quiz is not None:
+                quiz_id = quiz.id
+                quiz_passed = await quiz_crud.has_passed(db, quiz.id, _user_id(user))
         return QrTarget(
             kind="document", id=document.id,
             label=f"{document.title} v{document.version}",
             path=f"/documents/{document.id}",
             actions=(["read", "acknowledge"] if document.requires_ack and not signed_at
                      else ["read"]),
-            signed_at=signed_at,
+            signed_at=signed_at, quiz_id=quiz_id, quiz_passed=quiz_passed,
         )
 
     quiz = await quiz_crud.by_qr_token(db, token)

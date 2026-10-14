@@ -77,11 +77,28 @@ def require_active(quiz: Quiz) -> None:
             "for the current code.")
 
 
+def has_questions():
+    """A quiz with no questions tests nothing, and nobody can pass it.
+
+    ★ Round-6 review: a quiz created on a document and not yet written held
+    signing shut for everybody — there was nothing to pass.
+    """
+    return select(QuizQuestion.id).where(QuizQuestion.quiz_id == Quiz.id).exists()
+
+
 async def for_document(db: AsyncSession, document_id: uuid.UUID) -> Quiz | None:
     """The quiz a document asks for before it is signed, if it has one."""
     return (await db.execute(
-        select(Quiz).where(Quiz.document_id == document_id, Quiz.is_active.is_(True))
+        select(Quiz).where(Quiz.document_id == document_id, Quiz.is_active.is_(True),
+                           has_questions())
         .order_by(Quiz.created_at.desc()).limit(1))).scalars().first()
+
+
+async def retire(db: AsyncSession, quiz: Quiz) -> Quiz:
+    """Stop asking for this quiz. Its attempts are kept; nothing is deleted."""
+    quiz.is_active = False
+    await db.flush()
+    return quiz
 
 
 async def has_passed(db: AsyncSession, quiz_id: uuid.UUID, user_id: uuid.UUID) -> bool:

@@ -221,3 +221,95 @@ class TestWhatTheyMadeOnTheirOwnReport:
                 f"/api/v1/risk/assessments?source_type=incident&source_id={iid}")).json()
         assert seen[0]["assessed_by_name"] == "Dana Reporter"
         assert not seen[0]["by_anonymous_reporter"]
+
+
+class TestWhenItHappenedOnceAClockRunsFromIt:
+    """★ Round-6 review (uniops-93): editing the time left the MOL 48 hours
+    counted from a time the record no longer said — and refusing it outright
+    left a wrong time with no way to correct it. HSE corrects it; the clocks
+    still owed move with it; anybody else is told why not."""
+
+    async def _clocked(self, test_engine, db, hse):
+        _, iid = await _report(test_engine, db, anonymous=False)
+        got = await hse.post(f"/api/v1/incidents/{iid}/classify", json={
+            "injury_class": "medical_aid", "mol_reportable": True,
+            "mol_reportable_reason": "critical_injury"})
+        assert got.status_code == 200, got.text
+        deadlines = (await hse.get(f"/api/v1/incidents/{iid}")).json()["deadlines"]
+        assert {d["kind"] for d in deadlines} >= {"mol_48h"}
+        return iid, deadlines
+
+    async def test_a_supervisor_is_told_only_hse_can(self, test_engine, db_session, hse_manager):
+        _, hse = hse_manager
+        iid, _ = await self._clocked(test_engine, db_session, hse)
+        _, sup = await _client_as(test_engine, db_session, "area_supervisor")
+        later = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        async with sup as c:
+            refused = await c.patch(f"/api/v1/incidents/{iid}", json={"occurred_at": later})
+            assert refused.status_code == 409 and "Only HSE" in refused.text
+            # The rest of the account is still theirs to correct.
+            assert (await c.patch(f"/api/v1/incidents/{iid}",
+                                  json={"title": "Fell from the mezzanine"})).status_code == 200
+
+    async def test_hse_moves_it_and_the_owed_clocks_follow(
+            self, test_engine, db_session, hse_manager):
+        _, hse = hse_manager
+        iid, before = await self._clocked(test_engine, db_session, hse)
+        mol = next(d for d in before if d["kind"] == "mol_48h")
+        new_time = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(minutes=30)
+
+        moved = await hse.patch(f"/api/v1/incidents/{iid}", json={"occurred_at": new_time.isoformat()})
+        assert moved.status_code == 200, moved.text
+        after = next(d for d in moved.json()["deadlines"] if d["kind"] == "mol_48h")
+        assert after["id"] == mol["id"], "the row is reused, so its history stays"
+        assert datetime.fromisoformat(after["starts_at"]) == new_time
+        assert datetime.fromisoformat(after["due_at"]) == new_time + timedelta(hours=48)
+
+    async def test_a_satisfied_clock_stays_as_recorded(
+            self, test_engine, db_session, hse_manager):
+        import uuid as _uuid
+        from app.models.statutory import StatutoryDeadline
+        _, hse = hse_manager
+        iid, before = await self._clocked(test_engine, db_session, hse)
+        mol = next(d for d in before if d["kind"] == "mol_48h")
+        row = await db_session.get(StatutoryDeadline, _uuid.UUID(mol["id"]))
+        row.satisfied_at = datetime.now(timezone.utc)
+        await db_session.commit()
+
+        new_time = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(minutes=30)
+        moved = await hse.patch(f"/api/v1/incidents/{iid}", json={"occurred_at": new_time.isoformat()})
+        assert moved.status_code == 200, moved.text
+        kept = next(d for d in moved.json()["deadlines"] if d["kind"] == "mol_48h")
+        assert kept["starts_at"] == mol["starts_at"] and kept["due_at"] == mol["due_at"]
+
+    async def test_without_a_clock_a_supervisor_corrects_the_time(self, test_engine, db_session):
+        """The admission: the lock is on the clock, not on the field."""
+        _, iid = await _report(test_engine, db_session, anonymous=False)
+        _, sup = await _client_as(test_engine, db_session, "area_supervisor")
+        later = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        async with sup as c:
+            assert (await c.patch(f"/api/v1/incidents/{iid}",
+                                  json={"occurred_at": later})).status_code == 200
+
+
+class TestNoNewActionOnAClosedIncident:
+    async def test_refused_once_closed_and_taken_while_open(
+            self, test_engine, db_session, hse_manager):
+        _, hse = hse_manager
+        owner = await make_user(test_engine, role="area_supervisor")
+        _, iid = await _report(test_engine, db_session, anonymous=False, kind="near_miss")
+        body = {"source_type": "incident", "source_id": iid, "title": "Mop the floor",
+                "hierarchy_of_control": "administrative", "owner_id": str(owner.id),
+                "due_date": (datetime.now(timezone.utc) + timedelta(days=7)).date().isoformat()}
+        opened = await hse.post("/api/v1/actions", json=body)
+        assert opened.status_code == 201, opened.text
+        # Closing waits for open actions; take this one out of the way.
+        import uuid as _uuid
+        from app.models.action import Action
+        row = await db_session.get(Action, _uuid.UUID(opened.json()["id"]))
+        row.status = "cancelled"
+        await db_session.commit()
+        assert (await hse.post(f"/api/v1/incidents/{iid}/close")).status_code == 200, "closed"
+
+        refused = await hse.post("/api/v1/actions", json={**body, "source_type": "observation"})
+        assert refused.status_code == 409 and "Reopen it first" in refused.text

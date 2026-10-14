@@ -203,6 +203,16 @@ async def get_quiz(quiz_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
     return await _quiz_out(db, await crud.get_quiz(db, quiz_id))
 
 
+@router.post("/quizzes/{quiz_id}/retire", response_model=QuizOut)
+async def retire_quiz(quiz_id: uuid.UUID, db: SessionDep, user: CanWriteTraining):  # noqa: ARG001
+    """Take a quiz out of use — a document or a course stops asking for it.
+
+    ★ Round-6 review: there was no way to. A quiz put on a document by mistake
+    held its signing until somebody wrote questions for it.
+    """
+    return await _quiz_out(db, await crud.retire(db, await crud.get_quiz(db, quiz_id)))
+
+
 @router.get("/quizzes/{quiz_id}/questions", response_model=list[QuestionForLearner])
 async def get_questions(quiz_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
     """What a learner sees. Deliberately without the answers. Refused once the

@@ -128,6 +128,37 @@ async def ensure_incident_deadlines(
     return created
 
 
+async def recount_from_occurrence(
+    db: AsyncSession, incident: Incident, previous: datetime,
+    *, holidays: frozenset[date] | None = None,
+) -> list[StatutoryDeadline]:
+    """HSE corrected when it happened: recount the clocks that ran from it.
+
+    ★ Round-6 review (uniops-93): a time entered wrong — a night-shift report
+    filled in afterwards — left the MOL 48 hours counted from the wrong time,
+    and nothing could move it. Only a clock still owed moves; one already
+    satisfied is a legal step taken and stays as it was. The row is reused, as
+    a renewed certificate's is, so the change log shows the old and new dates.
+    """
+    if incident.occurred_at is None:
+        return []
+    holidays = holidays if holidays is not None else await load_holidays(db)
+    moved: list[StatutoryDeadline] = []
+    for d in (await db.execute(
+            select(StatutoryDeadline).where(
+                StatutoryDeadline.source_type == "incident",
+                StatutoryDeadline.source_id == incident.id,
+                StatutoryDeadline.starts_at == previous,
+                StatutoryDeadline.satisfied_at.is_(None)))).scalars():
+        d.starts_at = incident.occurred_at
+        d.due_at = statutory.compute_due(d.kind, incident.occurred_at, holidays)
+        d.escalation_level = 0
+        moved.append(d)
+    await ensure_incident_deadlines(db, incident, holidays=holidays)
+    await db.flush()
+    return moved
+
+
 async def satisfy(
     db: AsyncSession,
     deadline: StatutoryDeadline,

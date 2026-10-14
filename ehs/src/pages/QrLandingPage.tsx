@@ -28,6 +28,9 @@ interface QrTarget {
   actions: string[]
   /** When this person already signed this version of a document. */
   signed_at: string | null
+  /** A quiz the document asks for before it is signed, and whether it is passed. */
+  quiz_id?: string | null
+  quiz_passed?: boolean | null
 }
 
 const ICONS: Record<string, typeof MapPin> = {
@@ -138,7 +141,24 @@ export default function QrLandingPage() {
             policy by the door exists so somebody can read it and say they
             have; sending them to another page to do that is the step where it
             stops happening. */}
-        {t.actions.includes('acknowledge') && (
+        {/* ★ Round-6 review: where the document carries a quiz, signing waits
+            for a pass — so the step offered here is the quiz, not a button the
+            server would refuse. */}
+        {t.actions.includes('acknowledge') && t.quiz_id && !t.quiz_passed && (
+          <div className="rounded-xl border border-neutral-200 bg-white p-3.5">
+            <p className="text-sm font-semibold text-neutral-900">Take the quiz, then sign</p>
+            <p className="mt-0.5 text-xs text-neutral-500">
+              This document is signed once its quiz is passed. The quiz takes you back
+              to the document to sign.
+            </p>
+            <button type="button" className={`${primaryButton} mt-3 w-full`}
+                    onClick={() => navigate(`/quizzes/${t.quiz_id}/take`)}>
+              <ClipboardCheck className="h-4 w-4" aria-hidden />
+              Take the quiz
+            </button>
+          </div>
+        )}
+        {t.actions.includes('acknowledge') && !(t.quiz_id && !t.quiz_passed) && (
           <AcknowledgeHere documentId={t.id} label={t.label} />
         )}
         {t.signed_at && (

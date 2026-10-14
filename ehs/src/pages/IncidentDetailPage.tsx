@@ -281,7 +281,7 @@ export default function IncidentDetailPage() {
             Edit the report
           </button>
         )}
-        {editing && <EditReport incident={inc} onDone={() => { setEditing(false); touched() }}
+        {editing && <EditReport incident={inc} isHse={canClose} onDone={() => { setEditing(false); touched() }}
                                 onCancel={() => setEditing(false)} />}
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <InjuryBadge injuryClass={inc.injury_class} />
@@ -432,9 +432,13 @@ export default function IncidentDetailPage() {
 
         {/* ── The record ────────────────────────────────────────────────── */}
         <section className="border-t border-neutral-200 bg-neutral-50 p-4 lg:border-l lg:border-t-0">
-          {canClose && inc.status !== 'closed' && (
+          {/* ★ Round-6 review: this read `canClose && status !== 'closed'`,
+              which shut out its own closed branch — Reopen never rendered. */}
+          {canClose && (
             <div className="mb-4 rounded-lg border border-neutral-200 bg-white p-3">
-              <SectionTitle className="mb-2">Closing this incident</SectionTitle>
+              <SectionTitle className="mb-2">
+                {inc.status === 'closed' ? 'This incident is closed' : 'Closing this incident'}
+              </SectionTitle>
               {inc.status === 'closed' ? (
                 <>
                   <p className="text-xs text-neutral-500">
@@ -451,6 +455,11 @@ export default function IncidentDetailPage() {
                     >
                       {reopen.isPending ? 'Reopening…' : 'Reopen'}
                     </button>
+                  )}
+                  {reopen.isError && (
+                    <p className="mt-2 text-xs text-danger-700">
+                      {(reopen.error as ApiError).message}
+                    </p>
                   )}
                   {inc.reopened_at && (
                     <p className="mt-1.5 text-xs text-neutral-500">
@@ -758,8 +767,8 @@ function CauseCard({ cause, incidentId, canRaise }: {
  * what was reviewed is no longer what the record says — and the change log
  * keeps every field under the editor's name.
  */
-function EditReport({ incident, onDone, onCancel }: {
-  incident: Incident; onDone: () => void; onCancel: () => void
+function EditReport({ incident, isHse, onDone, onCancel }: {
+  incident: Incident; isHse: boolean; onDone: () => void; onCancel: () => void
 }) {
   const local = incident.occurred_at ? new Date(incident.occurred_at) : null
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -775,6 +784,16 @@ function EditReport({ incident, onDone, onCancel }: {
   }
   const [form, setForm] = useState(initial)
   const set = (k: keyof typeof initial, v: string) => setForm((f) => ({ ...f, [k]: v }))
+
+  // ★ Round-6 review: legal clocks counted from when it happened. Only HSE
+  // moves the time then, and the clocks still owed are recounted from it — so
+  // HSE says so before saving. Everybody else sees why the boxes are locked.
+  const occurred = incident.occurred_at ? new Date(incident.occurred_at).getTime() : null
+  const clocks = incident.deadlines.filter((d) => new Date(d.starts_at).getTime() === occurred)
+  const timeLocked = clocks.length > 0 && !isHse
+  const timeChanged = form.date !== initial.date || form.time !== initial.time
+  const [recountOk, setRecountOk] = useState(false)
+  const needsRecountOk = clocks.length > 0 && isHse && timeChanged
 
   const save = useMutation({
     mutationFn: () => {
@@ -799,11 +818,28 @@ function EditReport({ incident, onDone, onCancel }: {
         <input className={box} value={form.title} onChange={(e) => set('title', e.target.value)} />
       </label>
       <label className="text-xs font-medium text-neutral-700">Date
-        <input type="date" className={box} value={form.date} onChange={(e) => set('date', e.target.value)} />
+        <input type="date" className={box} value={form.date} disabled={timeLocked}
+               onChange={(e) => set('date', e.target.value)} />
       </label>
       <label className="text-xs font-medium text-neutral-700">Time
-        <input type="time" className={box} value={form.time} onChange={(e) => set('time', e.target.value)} />
+        <input type="time" className={box} value={form.time} disabled={timeLocked}
+               onChange={(e) => set('time', e.target.value)} />
       </label>
+      {timeLocked && (
+        <p className="sm:col-span-2 text-xs text-neutral-600">
+          Only HSE can change when this happened: statutory deadlines are counted from it.
+        </p>
+      )}
+      {needsRecountOk && (
+        <label className="sm:col-span-2 flex items-start gap-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">
+          <input type="checkbox" className="mt-0.5" checked={recountOk}
+                 onChange={(e) => setRecountOk(e.target.checked)} />
+          <span>
+            Recount the statutory deadlines from the new time. {clocks.filter((d) => !d.satisfied_at).length} still
+            owed will move; any already satisfied stay as recorded.
+          </span>
+        </label>
+      )}
       <div className="sm:col-span-2 text-xs font-medium text-neutral-700">Where
         <LocationSelect value={form.location_id || null} onChange={(id) => set('location_id', id ?? '')} />
       </div>
@@ -827,7 +863,8 @@ function EditReport({ incident, onDone, onCancel }: {
         <div className="flex justify-end gap-2">
           <button type="button" className={secondaryButton} onClick={onCancel} disabled={save.isPending}>Cancel</button>
           <button type="button" className={primaryButton}
-                  disabled={save.isPending || !form.title.trim() || !form.date}
+                  disabled={save.isPending || !form.title.trim() || !form.date
+                    || (needsRecountOk && !recountOk)}
                   onClick={() => { if (!save.isPending) save.mutate() }}>
             {save.isPending ? 'Saving…' : 'Save the report'}
           </button>

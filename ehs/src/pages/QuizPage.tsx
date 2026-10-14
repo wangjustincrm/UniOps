@@ -63,6 +63,15 @@ export default function QuizPage() {
   const { can } = usePermissions()
   const mayWrite = can('ehs.training.write')
   const [creating, setCreating] = useState(false)
+  const queryClient = useQueryClient()
+  // ★ Round-6 review: a quiz could not be taken out of use, so one put on a
+  // document by mistake held its signing. Pressed twice, because it stops the
+  // document or course asking for it.
+  const [retiring, setRetiring] = useState<string | null>(null)
+  const retire = useMutation({
+    mutationFn: (id: string) => api.post(`/api/v1/quizzes/${id}/retire`),
+    onSuccess: () => { setRetiring(null); queryClient.invalidateQueries({ queryKey: ['quizzes'] }) },
+  })
 
   const quizzes = useQuery({
     queryKey: ['quizzes'],
@@ -121,7 +130,27 @@ export default function QuizPage() {
                         Edit
                       </button>
                     )}
+                    {mayWrite && (
+                      <button type="button" className={secondaryButton}
+                              disabled={retire.isPending}
+                              onClick={() => {
+                                if (retire.isPending) return
+                                if (retiring === q.id) retire.mutate(q.id)
+                                else setRetiring(q.id)
+                              }}>
+                        {retiring === q.id ? (retire.isPending ? 'Retiring…' : 'Confirm: retire') : 'Retire'}
+                      </button>
+                    )}
                   </span>
+                  {retiring === q.id && (
+                    <p className="w-full text-xs text-neutral-600">
+                      Retiring takes it out of use: its document or course stops asking for it.
+                      Past attempts are kept.
+                      <button type="button" className="ml-2 font-medium text-primary-700"
+                              onClick={() => setRetiring(null)}>Keep it</button>
+                    </p>
+                  )}
+                  {retiring === q.id && <div className="w-full"><ErrorNote error={retire.error} /></div>}
                 </div>
               </Card>
             </li>

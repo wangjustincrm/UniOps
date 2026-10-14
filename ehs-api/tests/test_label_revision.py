@@ -406,6 +406,52 @@ def _pdf_text(pdf: bytes) -> str:
     return "\n".join(out)
 
 
+class TestAChineseSupplierPrints:
+    """★ Round-6 review: the manufacturer line was set in Helvetica, so a
+    supplier named in Chinese printed as black boxes. Evidence is the embedded
+    face, as on the certificate; skipped where the image has no CJK font."""
+
+    _label = TestTheLabelFitsWhatIsOnIt._label
+
+    def test_cjk_text_asks_for_the_cjk_face(self, monkeypatch):
+        """Runs without the font: the line is set in whatever font_for names."""
+        from app.services import label_pdf, pdf_fonts
+        asked = []
+
+        def spy(text, *, bold=False):
+            asked.append(text)
+            return "Courier"
+        monkeypatch.setattr(pdf_fonts, "font_for", spy)
+        pdf, _ = label_pdf.render(self._label(supplier="广州化工有限公司"),
+                               chemical_id="abc", copies=1)
+        assert any("广州化工有限公司" in t for t in asked)
+        assert b"Courier" in pdf
+
+    def test_the_face_is_embedded(self):
+        from app.services import label_pdf
+        from app.services.pdf_fonts import cjk_available
+        if not cjk_available():
+            pytest.skip("no CJK font in this image — rebuild with fonts-wqy-zenhei")
+        pdf, _ = label_pdf.render(self._label(supplier="广州化工有限公司"),
+                               chemical_id="abc", copies=1)
+        assert b"FontFile" in pdf
+
+    def test_a_latin_supplier_embeds_nothing(self):
+        """The admission: Latin text stays in Helvetica, which is not embedded."""
+        from app.services import label_pdf
+        pdf, _ = label_pdf.render(self._label(), chemical_id="abc", copies=1)
+        assert pdf.startswith(b"%PDF") and b"FontFile" not in pdf
+
+    def test_a_long_run_without_spaces_is_broken_to_fit(self):
+        from reportlab.pdfgen import canvas as pdfcanvas
+        import io
+        from app.services import label_pdf
+        c = pdfcanvas.Canvas(io.BytesIO())
+        run = "x" * 400
+        lines = label_pdf._wrap(c, run, "Helvetica", 8, 100)
+        assert "".join(lines) == run and all(c.stringWidth(l, "Helvetica", 8) <= 100 for l in lines)
+
+
 class TestThePictogramsStayOutOfTheQrCode:
     """★ Round 5 review (uniops-41), against a cap I removed.
 

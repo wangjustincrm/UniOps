@@ -53,6 +53,7 @@ from reportlab.lib.units import inch, mm
 from reportlab.pdfgen import canvas as pdfcanvas
 
 from app.core.config import settings
+from app.services import pdf_fonts
 
 GHS_RED = HexColor("#D0021B")
 
@@ -145,6 +146,14 @@ def _wrap(c: pdfcanvas.Canvas, text: str, font: str, size: float,
             if current:
                 lines.append(current)
             current = word
+            # A run with no spaces — Chinese is written without them — is
+            # broken by character rather than run off the edge.
+            while c.stringWidth(current, font, size) > width and len(current) > 1:
+                cut = len(current) - 1
+                while cut > 1 and c.stringWidth(current[:cut], font, size) > width:
+                    cut -= 1
+                lines.append(current[:cut])
+                current = current[cut:]
     if current:
         lines.append(current)
     return lines
@@ -224,6 +233,10 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
 
     def line(text: str, font: str, pts: float, lead: float, colour=black) -> None:
         nonlocal y
+        # ★ Round-6 review: a supplier named in Chinese printed as black boxes.
+        # Text with CJK is set in the embedded face, here and on every line.
+        if pdf_fonts.has_cjk(text):
+            font = pdf_fonts.font_for(text, bold=font.endswith("Bold"))
         for wrapped in _wrap(c, text, font, at(pts), text_w):
             c.setFont(font, at(pts))
             if draw:

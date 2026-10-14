@@ -254,6 +254,19 @@ async def submit_incident(incident_id: uuid.UUID, db: SessionDep, user: CanRepor
     return await _to_out(db, incident, user)
 
 
+async def _clocks_counted_from(db, incident) -> bool:
+    """Whether any of this incident's deadlines started at its occurrence."""
+    from app.models.statutory import StatutoryDeadline
+    if incident.occurred_at is None:
+        return False
+    return (await db.execute(
+        select(StatutoryDeadline.id).where(
+            StatutoryDeadline.source_type == "incident",
+            StatutoryDeadline.source_id == incident.id,
+            StatutoryDeadline.starts_at == incident.occurred_at)
+        .limit(1))).first() is not None
+
+
 @router.patch("/{incident_id}", response_model=IncidentOut)
 async def edit_incident(
     incident_id: uuid.UUID, payload: IncidentEdit, db: SessionDep, user: CanClassifyIncident,
@@ -279,6 +292,21 @@ async def edit_incident(
     if "occurred_at" in fields and fields["occurred_at"] is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "A report needs to say when it happened")
+    # ★ Round-6 review: a legal clock counted from when it happened (the MOL
+    # 48 hours; WSIB where awareness was not recorded) must not be left counted
+    # from a time the record no longer says. HSE may correct the time, and the
+    # clocks still owed are recounted from it; anybody else is refused.
+    previous = incident.occurred_at
+    recount = False
+    if ("occurred_at" in fields and fields["occurred_at"] != previous
+            and await _clocks_counted_from(db, incident)):
+        if not await has_permission(db, _user_id(user), user.get("role", ""),
+                                    "ehs.incident.close"):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Only HSE can change when this happened, because statutory deadlines "
+                "are counted from it.")
+        recount = True
     if "location_id" in fields:
         incident.location_path = await crud._resolve_location_path(db, fields["location_id"])
     for key, value in fields.items():
@@ -286,6 +314,9 @@ async def edit_incident(
     if fields:
         crud.withdraw_review(incident)
     await db.flush()
+    if recount:
+        from app.services import deadlines as deadline_service
+        await deadline_service.recount_from_occurrence(db, incident, previous)
     return await _to_out(db, incident, user)
 
 

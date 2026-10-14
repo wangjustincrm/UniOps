@@ -233,11 +233,14 @@ async def quiz_for_course(db: AsyncSession, course_id: uuid.UUID | None):
     The most recently written active one: HSE replaces a quiz by writing a new
     one, and the old stays in the list until it is retired.
     """
-    from app.models.quiz import Quiz  # quiz imports this module
+    from app.crud.quiz import has_questions  # quiz imports this module
+    from app.models.quiz import Quiz
     if course_id is None:
         return None
+    # One with no questions yet cannot be passed, so it holds nothing.
     return (await db.execute(
-        select(Quiz).where(Quiz.course_id == course_id, Quiz.is_active.is_(True))
+        select(Quiz).where(Quiz.course_id == course_id, Quiz.is_active.is_(True),
+                           has_questions())
         .order_by(Quiz.created_at.desc()).limit(1))).scalars().first()
 
 
