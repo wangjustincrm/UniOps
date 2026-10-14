@@ -60,3 +60,32 @@ async def test_writes_need_inventory_admin(client, non_admin_token, monkeypatch,
     r = await _call(client, non_admin_token, method, url, body)
     # Admitted: 200/204, or 503 for the sync trigger with NC unconfigured.
     assert r.status_code in (200, 204, 503), r.text
+
+
+async def test_tieout_amount_rows_need_cost_view(client, non_admin_token, monkeypatch, db_session):
+    """A tie-out finding measured in money is an amount (design §9)."""
+    from decimal import Decimal
+
+    from sqlalchemy import insert
+
+    from app.models import InvTieoutIssue
+    await db_session.execute(insert(InvTieoutIssue), [
+        {"check_name": "gl_lines_vs_balance", "measure": "amount", "key": "2026|1404",
+         "label": "1404 · 2026", "mirror_value": Decimal("10"), "nc_value": Decimal("11")},
+        {"check_name": "ic_flow_vs_onhand", "measure": "qty", "key": "k", "label": "SC11 · X",
+         "mirror_value": Decimal("1"), "nc_value": Decimal("2")},
+    ])
+    await db_session.commit()
+    h = {"Authorization": f"Bearer {non_admin_token}"}
+    url = "/api/v1/admin/nc-sync/tieout-issues"
+
+    _grant(monkeypatch, "inventory.view")
+    body = (await client.get(url, headers=h)).json()
+    assert [i["measure"] for i in body["items"]] == ["qty"]
+    assert body["amount_issues_hidden"] == 1 and body["amounts_visible"] is False
+    assert "gl_lines_vs_balance" not in body["by_check"]
+
+    _grant(monkeypatch, "inventory.view", "inventory.cost.view")
+    body = (await client.get(url, headers=h)).json()
+    assert sorted(i["measure"] for i in body["items"]) == ["amount", "qty"]
+    assert body["amount_issues_hidden"] == 0

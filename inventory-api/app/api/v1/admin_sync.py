@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 
-from app.api.v1.perms import AdminDep, ViewDep
+from app.api.v1.perms import AdminDep, ViewDep, can_view_cost
 from app.core.deps import SessionDep
 from app.models import InvSyncState, InvTieoutIssue
 from app.services import params
@@ -68,20 +68,31 @@ async def wms_sync_status(db: SessionDep, _: ViewDep) -> dict:
 
 @router.get("/nc-sync/tieout-issues")
 async def tieout_issues(
-    db: SessionDep, _: ViewDep,
+    db: SessionDep, payload: ViewDep,
     check: str | None = Query(None, max_length=40),
     limit: int = Query(200, ge=1, le=1000),
 ) -> dict:
-    stmt = select(InvTieoutIssue)
-    count_stmt = select(func.count()).select_from(InvTieoutIssue)
+    """All sources' tie-out findings. IA/GL findings measured in money are
+    amounts like any other: without inventory.cost.view they are counted
+    (`amount_issues_hidden`) but their rows are not returned (design §9)."""
+    show_amt = await can_view_cost(payload, db)
+    conds = []
     if check:
-        stmt = stmt.where(InvTieoutIssue.check_name == check)
-        count_stmt = count_stmt.where(InvTieoutIssue.check_name == check)
-    rows = (await db.execute(stmt.order_by(InvTieoutIssue.check_name, InvTieoutIssue.key).limit(limit))).scalars().all()
+        conds.append(InvTieoutIssue.check_name == check)
+    hidden = 0
+    if not show_amt:
+        hidden = (await db.execute(select(func.count()).select_from(InvTieoutIssue).where(
+            InvTieoutIssue.measure == "amount", *conds))).scalar_one()
+        conds.append(InvTieoutIssue.measure != "amount")
+    rows = (await db.execute(select(InvTieoutIssue).where(*conds)
+                             .order_by(InvTieoutIssue.check_name, InvTieoutIssue.key).limit(limit))).scalars().all()
     by_check = dict((await db.execute(
-        select(InvTieoutIssue.check_name, func.count()).group_by(InvTieoutIssue.check_name))).all())
+        select(InvTieoutIssue.check_name, func.count()).where(*conds)
+        .group_by(InvTieoutIssue.check_name))).all())
     return {
-        "total_stored": (await db.execute(count_stmt)).scalar_one(),
+        "total_stored": (await db.execute(select(func.count()).select_from(InvTieoutIssue).where(*conds))).scalar_one(),
+        "amount_issues_hidden": hidden,
+        "amounts_visible": show_amt,
         "by_check": by_check,
         "items": [{
             "check": r.check_name, "measure": r.measure, "key": r.key, "label": r.label,
