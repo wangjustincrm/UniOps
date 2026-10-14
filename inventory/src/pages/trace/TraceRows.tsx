@@ -33,23 +33,23 @@ export function SummaryTable({ t, showHidden }: { t: TraceResponse; showHidden: 
         <thead className={thCls}>
           <tr>
             <th className="px-3 py-2 text-left">Category</th>
-            <th className="px-3 py-2 text-right">NC</th>
-            <th className="px-3 py-2 text-right">WMS</th>
+            <th className={cn('px-3 py-2 text-right', NC_HEAD)}>NC</th>
+            <th className={cn('px-3 py-2 text-right', WMS_HEAD)}>WMS</th>
             <th className="px-3 py-2 text-right">Difference</th>
           </tr>
         </thead>
         <tbody>
           <tr className="border-t border-neutral-100 bg-neutral-50/60">
             <td className="px-3 py-1.5 text-xs text-neutral-600">Opening (before {t.start})</td>
-            <td className={cn('px-3 py-1.5', numCls)}>{formatQty(t.opening.nc)}</td>
-            <td className={cn('px-3 py-1.5', numCls)}>{formatQty(t.opening.wms)}</td>
+            <td className={cn('px-3 py-1.5', numCls, NC_CELL)}>{formatQty(t.opening.nc)}</td>
+            <td className={cn('px-3 py-1.5', numCls, WMS_CELL)}>{formatQty(t.opening.wms)}</td>
             <td className={cn('px-3 py-1.5', numCls, diffTone(openingDiff(t)))}>{formatQty(openingDiff(t))}</td>
           </tr>
           {lines.map((s) => (
             <tr key={s.category} className={cn('border-t border-neutral-100', s.hidden_by_default && 'text-neutral-400')}>
               <td className="px-3 py-1.5 text-xs">{s.label}</td>
-              <td className={cn('px-3 py-1.5', numCls, qtyTone(s.nc))}>{signedQty(s.nc)}</td>
-              <td className={cn('px-3 py-1.5', numCls, qtyTone(s.wms))}>{signedQty(s.wms)}</td>
+              <td className={cn('px-3 py-1.5', numCls, NC_CELL, qtyTone(s.nc))}>{signedQty(s.nc)}</td>
+              <td className={cn('px-3 py-1.5', numCls, WMS_CELL, qtyTone(s.wms))}>{signedQty(s.wms)}</td>
               <td className={cn('px-3 py-1.5', numCls, diffTone(s.diff))}>{formatQty(s.diff)}</td>
             </tr>
           ))}
@@ -60,8 +60,8 @@ export function SummaryTable({ t, showHidden }: { t: TraceResponse; showHidden: 
           )}
           <tr className="border-t border-neutral-200 bg-neutral-50/60 font-medium">
             <td className="px-3 py-1.5 text-xs text-neutral-700">Closing ({t.date})</td>
-            <td className={cn('px-3 py-1.5', numCls)}>{formatQty(t.closing.nc)}</td>
-            <td className={cn('px-3 py-1.5', numCls)}>{formatQty(t.closing.wms)}</td>
+            <td className={cn('px-3 py-1.5', numCls, NC_CELL)}>{formatQty(t.closing.nc)}</td>
+            <td className={cn('px-3 py-1.5', numCls, WMS_CELL)}>{formatQty(t.closing.wms)}</td>
             <td className={cn('px-3 py-1.5', numCls, diffTone(t.closing.diff))}>{formatQty(t.closing.diff)}</td>
           </tr>
         </tbody>
@@ -111,6 +111,14 @@ function LineBadges({ ln, kind }: { ln: TraceLine; kind: TraceRow['kind'] }) {
     </>
   )
 }
+
+// Each side keeps its own tint everywhere on the page so NC and WMS can be
+// told apart at a glance (user request 2026-10-14). Neither colour is a
+// status colour: red/green/amber keep meaning "unmatched / ok / warning".
+const NC_HEAD = 'bg-sky-100 text-sky-900'
+const NC_CELL = 'bg-sky-50/70'
+const WMS_HEAD = 'bg-violet-100 text-violet-900'
+const WMS_CELL = 'bg-violet-50/70'
 
 function SideCell({ lines, total, kind }: { lines: TraceLine[]; total: string; kind: TraceRow['kind'] }) {
   if (lines.length === 0) return <span className="text-xs text-neutral-300">—</span>
@@ -195,9 +203,9 @@ export function MovementsTable({ rows, indices, highlight, registerRow }: {
       <table className="min-w-full text-sm">
         <thead className={stickyHeadCls}>
           <tr>
-            <th className="px-3 py-2 text-left font-medium"><SideHeader label="NC" /></th>
+            <th className={cn('px-3 py-2 text-left font-medium', NC_HEAD)}><SideHeader label="NC" /></th>
             <th className="border-x border-neutral-200 px-3 py-2 text-left">Time · category · match</th>
-            <th className="px-3 py-2 text-left font-medium"><SideHeader label="WMS" /></th>
+            <th className={cn('px-3 py-2 text-left font-medium', WMS_HEAD)}><SideHeader label="WMS" /></th>
           </tr>
         </thead>
         <tbody>
@@ -212,11 +220,12 @@ export function MovementsTable({ rows, indices, highlight, registerRow }: {
               <Fragment key={i}>
                 <tr ref={(el) => registerRow(i, el)}
                   className={cn('border-t border-neutral-100 align-top',
-                    r.kind !== 'pair' && 'bg-danger-50/50',
                     rowHidden(r) && 'text-neutral-400',
                     highlight === i && 'outline outline-2 -outline-offset-2 outline-danger-500')}>
-                  <td className="px-3 py-1.5"><SideCell lines={r.nc} total={r.nc_qty} kind={r.kind} /></td>
-                  <td className="border-x border-neutral-100 px-3 py-1.5">
+                  <td className={cn('px-3 py-1.5', NC_CELL, r.kind === 'nc_only' && 'border-l-4 border-l-danger-400')}>
+                    <SideCell lines={r.nc} total={r.nc_qty} kind={r.kind} />
+                  </td>
+                  <td className={cn('border-x border-neutral-100 px-3 py-1.5', r.kind !== 'pair' && 'bg-danger-50')}>
                     <div className="flex items-start gap-1.5">
                       <button type="button" onClick={() => toggle(i)} aria-expanded={isOpen}
                         aria-label={isOpen ? 'Hide details' : 'Show details'}
@@ -237,17 +246,19 @@ export function MovementsTable({ rows, indices, highlight, registerRow }: {
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-1.5"><SideCell lines={r.wms} total={r.wms_qty} kind={r.kind} /></td>
+                  <td className={cn('px-3 py-1.5', WMS_CELL, r.kind === 'wms_only' && 'border-l-4 border-l-danger-400')}>
+                    <SideCell lines={r.wms} total={r.wms_qty} kind={r.kind} />
+                  </td>
                 </tr>
                 {isOpen && (
                   <tr className="border-t border-neutral-100 bg-neutral-50/60">
-                    <td className="px-4 py-2"><DetailList lines={r.nc} side="NC" /></td>
+                    <td className={cn('px-4 py-2', NC_CELL)}><DetailList lines={r.nc} side="NC" /></td>
                     <td className="border-x border-neutral-100 px-4 py-2 text-[11px] text-neutral-500">
                       {r.kind === 'pair'
                         ? <>Group: NC {signedQty(r.nc_qty)} · WMS {signedQty(r.wms_qty)} · diff <span className={diffTone(r.diff)}>{formatQty(r.diff)}</span></>
                         : 'Unmatched — no movement on the other side was paired with this one.'}
                     </td>
-                    <td className="px-4 py-2"><DetailList lines={r.wms} side="WMS" /></td>
+                    <td className={cn('px-4 py-2', WMS_CELL)}><DetailList lines={r.wms} side="WMS" /></td>
                   </tr>
                 )}
               </Fragment>
