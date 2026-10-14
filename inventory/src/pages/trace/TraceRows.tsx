@@ -85,12 +85,20 @@ function openingDiff(t: TraceResponse): string {
 
 const sideGrid = 'grid grid-cols-[minmax(9rem,1fr)_6.5rem_7.5rem] items-baseline gap-x-2'
 
-function SideHeader({ label }: { label: string }) {
+function SideHeader({ label, closing, date }: { label: string; closing: string; date: string }) {
+  // The closing balance sits in the (sticky) header so it is visible without
+  // scrolling to the last movement (user request 2026-10-14).
   return (
     <div className={sideGrid}>
       <span>{label} document</span>
       <span className="text-right">Qty</span>
-      <span className="text-right">Balance</span>
+      <span className="flex flex-col items-end">
+        <span>Balance</span>
+        <span className={cn(numCls, 'text-sm font-semibold normal-case tracking-normal')}
+          title={`${label} balance at the end of ${date}`}>
+          {formatQty(closing)}
+        </span>
+      </span>
     </div>
   )
 }
@@ -182,8 +190,11 @@ function MatchCell({ r }: { r: TraceRow }) {
   )
 }
 
-export function MovementsTable({ rows, indices, highlight, registerRow }: {
+export function MovementsTable({ rows, indices, highlight, registerRow, closing, date }: {
   rows: TraceRow[]
+  /** End-of-window balances, shown in the header. */
+  closing: { nc: string; wms: string; diff: string }
+  date: string
   /** Indices into `rows` to show (after the hidden filter). */
   indices: number[]
   highlight: number | null
@@ -203,9 +214,17 @@ export function MovementsTable({ rows, indices, highlight, registerRow }: {
       <table className="min-w-full text-sm">
         <thead className={stickyHeadCls}>
           <tr>
-            <th className={cn('px-3 py-2 text-left font-medium', NC_HEAD)}><SideHeader label="NC" /></th>
-            <th className="border-x border-neutral-200 px-3 py-2 text-left">Time · category · match</th>
-            <th className={cn('px-3 py-2 text-left font-medium', WMS_HEAD)}><SideHeader label="WMS" /></th>
+            <th className={cn('px-3 py-2 text-left font-medium', NC_HEAD)}><SideHeader label="NC" closing={closing.nc} date={date} /></th>
+            <th className="border-x border-neutral-200 px-3 py-2 text-left">
+              <span className="flex flex-col">
+                <span>Time · category · match</span>
+                <span className={cn(numCls, 'text-sm font-semibold normal-case tracking-normal', diffTone(closing.diff))}
+                  title="NC − WMS at the end of the window">
+                  End difference {formatQty(closing.diff)}
+                </span>
+              </span>
+            </th>
+            <th className={cn('px-3 py-2 text-left font-medium', WMS_HEAD)}><SideHeader label="WMS" closing={closing.wms} date={date} /></th>
           </tr>
         </thead>
         <tbody>

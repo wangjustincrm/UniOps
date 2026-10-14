@@ -391,7 +391,8 @@ function TraceView({ material }: { material: string }) {
                 {' · '}balances are each side's running total; NC opening {formatQty(t.opening.nc)}, WMS starts at 0
               </span>
             </div>
-            <MovementsTable key={dataKey} rows={t.rows} indices={indices} highlight={highlight?.index ?? null} registerRow={registerRow} />
+            <MovementsTable key={dataKey} rows={t.rows} indices={indices} highlight={highlight?.index ?? null} registerRow={registerRow}
+              closing={t.closing} date={t.date} />
           </section>
         </>
       )}
