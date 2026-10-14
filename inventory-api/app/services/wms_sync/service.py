@@ -22,7 +22,7 @@ import anyio
 from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import InvSyncState, InvTieoutIssue, WmsCode, WmsDoc, WmsLot, WmsMove
+from app.models import InvSyncState, InvTieoutIssue, WmsCode, WmsDoc, WmsLot, WmsMove, WmsSku
 from app.services.nc_sync.service import (
     MAX_ISSUES_STORED_PER_CHECK, QTY_TOLERANCE, _bulk_insert, _write_state,
 )
@@ -118,7 +118,14 @@ def shape_extract(raw: dict) -> tuple[dict[str, list[dict]], dict[str, int]]:
         seen.add(key)
         codes.append({"codetype": key[0], "codeid": key[1], "languageid": key[2],
                       "descr": clean_str(r.get("descr"))})
-    return {"move": moves, "lot": lots, "doc": docs, "code": codes}, filtered
+    skus, seen = [], set()
+    for r in t.get("sku", []):
+        sku = clean_str(r.get("sku"))
+        if sku is None or sku in seen:
+            continue
+        seen.add(sku)
+        skus.append({"sku": sku, "uom": clean_str(r.get("uom"))})
+    return {"move": moves, "lot": lots, "doc": docs, "code": codes, "sku": skus}, filtered
 
 
 async def _tieout(db: AsyncSession, reference: dict) -> list[dict]:
@@ -143,12 +150,13 @@ async def run_wms_sync(db: AsyncSession, extract: Callable[[], dict] = reader.ex
     try:
         raw = await anyio.to_thread.run_sync(extract)
         shaped, filtered = shape_extract(raw)
-        for model in (WmsMove, WmsLot, WmsDoc, WmsCode):
+        for model in (WmsMove, WmsLot, WmsDoc, WmsCode, WmsSku):
             await db.execute(delete(model))
         await _bulk_insert(db, WmsMove, shaped["move"])
         await _bulk_insert(db, WmsLot, shaped["lot"])
         await _bulk_insert(db, WmsDoc, shaped["doc"])
         await _bulk_insert(db, WmsCode, shaped["code"])
+        await _bulk_insert(db, WmsSku, shaped["sku"])
         await db.flush()
 
         issues = await _tieout(db, raw.get("reference", {}))

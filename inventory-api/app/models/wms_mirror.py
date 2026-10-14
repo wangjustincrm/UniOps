@@ -90,6 +90,17 @@ class WmsDoc(Base):
     added: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
 
 
+class WmsSku(Base):
+    """Each SKU's base unit in WMS: the EA level of its packaging ladder
+    (BAS_PACKAGE_DETAILS.PACKUOM='EA' → UOMDESCR: KG / PIECES / EA). Not
+    BAS_SKU's own unit columns — those say 'EA' everywhere and are
+    unmaintained (same finding as mrp-api's WMS reader)."""
+    __tablename__ = "inv_wms_sku"
+
+    sku: Mapped[str] = mapped_column(String(50), primary_key=True)
+    uom: Mapped[str | None] = mapped_column(String(40))
+
+
 class WmsCode(Base):
     """BSM_CODE_ML labels for TRN_TYP / DOC_TYP / ASN_TYP / SO_TYP / ADJ_TYP."""
     __tablename__ = "inv_wms_code"

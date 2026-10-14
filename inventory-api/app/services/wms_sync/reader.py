@@ -95,6 +95,13 @@ def extract_all() -> dict:
                 from doc_transfer_header where warehouseid = :wh""", {"wh": settings.WMS_WAREHOUSE})
         )
 
+        t["sku"] = _rows(cur, """
+            select s.sku, max(p.uomdescr) uom
+            from bas_sku s
+            left join bas_package_details p
+              on p.packid = s.packid and p.customerid = s.customerid and p.packuom = 'EA'
+            where s.customerid = :cust group by s.sku""", {"cust": settings.WMS_CUSTOMER})
+
         codes = ",".join(f"'{c}'" for c in CODE_TYPES)
         t["code"] = _rows(cur, f"""
             select codetype, codeid, languageid, codedescr descr from bsm_code_ml
