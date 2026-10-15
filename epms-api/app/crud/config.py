@@ -131,6 +131,16 @@ _DEFAULT_NOTIFICATION_SETTINGS = {
 _DEFAULT_EMAIL_TEMPLATE = lambda subject, body: {"subject": subject, "body": body}  # noqa: E731
 
 _DEFAULT_EMAIL_TEMPLATES: dict = {
+    # ── Any task type without a template of its own ─────────────────────────
+    # The notifier used to fall back to pr_approval_request, so an OA claim
+    # sent back for revision went out as "Action Required: Approve PR …" with
+    # the claimant named as the vendor (44 such emails 2026-10-09..14). A plain
+    # "you have a new task" is honest about what it knows.
+    "task_assigned": _DEFAULT_EMAIL_TEMPLATE(
+        "New task: {task_title}",
+        "Hi {recipient_name},\n\nYou have a new task in UniOps:\n\n<b>{task_title}</b>\n"
+        "{task_description}\n\n<a href=\"{link}\">Open {document_number}</a>\n\n{company_name}",
+    ),
     # ── PR ────────────────────────────────────────────────────────────────────
     "pr_approval_request": _DEFAULT_EMAIL_TEMPLATE(
         "Action Required: Approve PR {pr_number}",
