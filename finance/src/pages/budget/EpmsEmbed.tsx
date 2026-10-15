@@ -68,9 +68,18 @@ export default function EpmsEmbed({ epmsPath, title, subtitle, activeKey }: Epms
         </a>
       }
     >
+      {/* The framed EPMS page calls epms-/budget-/finance-api, which resolve to
+          a 10.x address. If Chrome ever classes the frame as public (e.g. it
+          was loaded via the office's public secondary DNS and then served from
+          cache), Local Network Access blocks every one of those calls — and a
+          cross-origin frame can neither prompt nor inherit the top page's
+          "allow" unless the permission is delegated here. Both the original
+          token and its later local/loopback split are listed; Chrome ignores
+          the ones it does not know. */}
       <iframe
         title={title}
         src={src}
+        allow="local-network-access; local-network; loopback-network"
         className="block w-full h-full border-0 bg-white"
       />
     </PortalChromeLayout>
