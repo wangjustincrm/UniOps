@@ -341,3 +341,52 @@ class TestNoNewActionOnAClosedIncident:
 
         refused = await hse.post("/api/v1/actions", json={**body, "source_type": "observation"})
         assert refused.status_code == 409 and "Reopen it first" in refused.text
+
+
+class TestTheInjuredReporterStaysAnonymous:
+    """★ Round 7, TC-08: "supervisor can view who was injured on an anonymous
+    medical incident." Reporting your own injury names you as the injured."""
+
+    async def _self_reported(self, test_engine, db, *, anonymous=True, also_named=None):
+        reporter = await make_user(test_engine, role="requester", full_name="Dana Reporter")
+        persons = [{"role": "injured", "user_id": str(reporter.id), "person_name": "Dana Reporter",
+                    "body_part_label": "Left hand"}]
+        if also_named:
+            persons.append({"role": "witness", "person_name": also_named})
+        async with authed_client(make_token(reporter.id, reporter.role), db) as c:
+            made = await c.post("/api/v1/incidents", json={
+                "form_kind": "medical", "title": "Cut on the slicer",
+                "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+                "incident_type": "first_aid", "is_anonymous": anonymous,
+                "signature": SIGNATURE, "description": "Cut.", "persons": persons})
+            assert made.status_code in (200, 201), made.text
+            iid = made.json()["id"]
+            assert (await c.post(f"/api/v1/incidents/{iid}/submit")).status_code == 200
+        return reporter, iid
+
+    async def test_a_supervisor_sees_the_injury_not_the_name(
+            self, test_engine, db_session, hse_manager):
+        reporter, iid = await self._self_reported(test_engine, db_session, also_named="Sam Witness")
+        _, sup = await _client_as(test_engine, db_session, "area_supervisor")
+        async with sup as c:
+            got = (await c.get(f"/api/v1/incidents/{iid}")).json()
+            form7 = (await c.get(f"/api/v1/incidents/{iid}/wsib-form7")).json()
+        injured = next(p for p in got["persons"] if p["role"] == "injured")
+        assert injured["person_name"] == "Withheld — anonymous report"
+        assert injured["user_id"] is None and injured["body_part_label"] == "Left hand"
+        # Somebody else on the report is still named.
+        assert any(p["person_name"] == "Sam Witness" for p in got["persons"])
+        assert "Dana Reporter" not in str(got) and str(reporter.id) not in str(got)
+        assert "Dana Reporter" not in str(form7)
+
+        _, hse = hse_manager
+        named = (await hse.get(f"/api/v1/incidents/{iid}")).json()
+        assert any(p["person_name"] == "Dana Reporter" for p in named["persons"])
+        assert (await hse.get(f"/api/v1/incidents/{iid}/wsib-form7")).json()["worker_name"] == "Dana Reporter"
+
+    async def test_on_a_named_report_the_injured_is_named(self, test_engine, db_session):
+        _, iid = await self._self_reported(test_engine, db_session, anonymous=False)
+        _, sup = await _client_as(test_engine, db_session, "area_supervisor")
+        async with sup as c:
+            got = (await c.get(f"/api/v1/incidents/{iid}")).json()
+        assert any(p["person_name"] == "Dana Reporter" for p in got["persons"])

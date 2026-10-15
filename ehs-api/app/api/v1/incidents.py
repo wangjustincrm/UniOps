@@ -114,6 +114,31 @@ async def hidden_reporters(db, user: dict, incident_ids) -> dict[uuid.UUID, uuid
     return {r.id: r.reported_by for r in rows}
 
 
+WITHHELD = "Withheld — anonymous report"
+
+
+async def withheld_reporter(db, incident, user: dict) -> tuple[uuid.UUID, str | None] | None:
+    """The anonymous reporter to keep hidden from this caller: their id and name.
+
+    None for a named report, and for HSE, who alone may know who it was.
+    """
+    if not incident.is_anonymous or incident.reported_by is None:
+        return None
+    if await sees_anonymous_reporters(db, user):
+        return None
+    reporter = await db.get(User, incident.reported_by)
+    return incident.reported_by, (reporter.full_name if reporter else None)
+
+
+def is_the_reporter(person, hidden: tuple[uuid.UUID, str | None]) -> bool:
+    """Whether a person named on the report is the anonymous reporter — by
+    account, or, for a name typed in, by that name."""
+    rid, name = hidden
+    if person.user_id is not None:
+        return person.user_id == rid
+    return bool(name) and (person.person_name or "").strip().casefold() == name.casefold()
+
+
 async def _to_out(db, incident, user: dict) -> IncidentOut:
     out = IncidentOut.model_validate(incident)
     out.persons = [  # type: ignore[assignment]
@@ -136,6 +161,16 @@ async def _to_out(db, incident, user: dict) -> IncidentOut:
             out.signature = None
             out.signer_name = None
             out.signer_role = None
+            # ★ Round 7, TC-08: "supervisor can view who was injured on an
+            # anonymous medical incident." Somebody reporting their own injury
+            # is named as the injured person, which names the reporter. Their
+            # row keeps the injury and loses the name.
+            hidden = await withheld_reporter(db, incident, user)
+            if hidden is not None:
+                for person in out.persons:
+                    if is_the_reporter(person, hidden):
+                        person.person_name = WITHHELD
+                        person.user_id = None
     return out
 
 
@@ -584,7 +619,19 @@ async def wsib_form7(incident_id: uuid.UUID, db: SessionDep, user: CanReadIncide
     so whoever files knows what to gather before they start.
     """
     from app.services.wsib import build_package
-    return await build_package(db, await crud.get(db, incident_id))
+    incident = await crud.get(db, incident_id)
+    package = await build_package(db, incident)
+    # ★ Round 7, TC-08: the worker on Form 7 is the injured person — on a
+    # self-reported anonymous injury, the reporter. HSE files it and sees them.
+    hidden = await withheld_reporter(db, incident, user)
+    if hidden is not None and any(
+            p.role == "injured" and is_the_reporter(p, hidden)
+            for p in await crud.load_persons(db, incident.id)):
+        package.worker_name = WITHHELD
+        package.worker_employee_no = None
+        package.worker_department = None
+        package.worker_hire_date = None
+    return package
 
 
 @router.post("/{incident_id}/wsib-form7/filed", response_model=Form7Package)
