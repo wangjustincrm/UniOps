@@ -788,8 +788,13 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
   // ★ Round-6 review: legal clocks counted from when it happened. Only HSE
   // moves the time then, and the clocks still owed are recounted from it — so
   // HSE says so before saving. Everybody else sees why the boxes are locked.
-  const occurred = incident.occurred_at ? new Date(incident.occurred_at).getTime() : null
-  const clocks = incident.deadlines.filter((d) => new Date(d.starts_at).getTime() === occurred)
+  // ★ Round 7, TC-12: by kind, as the server decides (counted_from_occurrence)
+  // — not by matching a clock's start to the current time, which stopped
+  // matching after the first correction and dropped the prompt and the lock.
+  const fromOccurrence = (kind: string) =>
+    kind === 'mol_48h' || (kind === 'wsib_form7' && !incident.employer_aware_at)
+  const clocks = incident.deadlines.filter((d) => fromOccurrence(d.kind))
+  const owed = clocks.filter((d) => !d.satisfied_at).length
   const timeLocked = clocks.length > 0 && !isHse
   const timeChanged = form.date !== initial.date || form.time !== initial.time
   const [recountOk, setRecountOk] = useState(false)
@@ -835,8 +840,9 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
           <input type="checkbox" className="mt-0.5" checked={recountOk}
                  onChange={(e) => setRecountOk(e.target.checked)} />
           <span>
-            Recount the statutory deadlines from the new time. {clocks.filter((d) => !d.satisfied_at).length} still
-            owed will move; any already satisfied stay as recorded.
+            Recount the statutory deadlines from the new time.{' '}
+            {owed > 0 ? `${owed} still owed will move` : 'None is still owed, so none will move'}
+            {clocks.length > owed ? `; ${clocks.length - owed} already met stay as recorded.` : '.'}
           </span>
         </label>
       )}

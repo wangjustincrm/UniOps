@@ -290,15 +290,15 @@ async def submit_incident(incident_id: uuid.UUID, db: SessionDep, user: CanRepor
 
 
 async def _clocks_counted_from(db, incident) -> bool:
-    """Whether any of this incident's deadlines started at its occurrence."""
+    """Whether this incident has a deadline that runs from when it happened —
+    owed or already met (a filed report states the time)."""
     from app.models.statutory import StatutoryDeadline
-    if incident.occurred_at is None:
-        return False
+    from app.services.deadlines import counted_from_occurrence
     return (await db.execute(
         select(StatutoryDeadline.id).where(
             StatutoryDeadline.source_type == "incident",
             StatutoryDeadline.source_id == incident.id,
-            StatutoryDeadline.starts_at == incident.occurred_at)
+            StatutoryDeadline.kind.in_(counted_from_occurrence(incident)))
         .limit(1))).first() is not None
 
 
@@ -351,7 +351,7 @@ async def edit_incident(
     await db.flush()
     if recount:
         from app.services import deadlines as deadline_service
-        await deadline_service.recount_from_occurrence(db, incident, previous)
+        await deadline_service.recount_from_occurrence(db, incident)
     return await _to_out(db, incident, user)
 
 

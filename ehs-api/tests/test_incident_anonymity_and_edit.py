@@ -310,6 +310,35 @@ class TestWhenItHappenedOnceAClockRunsFromIt:
         kept = next(d for d in moved.json()["deadlines"] if d["kind"] == "mol_48h")
         assert kept["starts_at"] == mol["starts_at"] and kept["due_at"] == mol["due_at"]
 
+    async def test_a_second_correction_is_still_locked_and_still_recounts(
+            self, test_engine, db_session, hse_manager):
+        """★ Round 7, TC-12: "changing the time again does not put the checkbox
+        up again." The rule compared a clock's start with the incident's time,
+        which stopped matching after the first correction."""
+        import uuid as _uuid
+        from app.models.statutory import StatutoryDeadline
+        _, hse = hse_manager
+        iid, before = await self._clocked(test_engine, db_session, hse)
+        mol = next(d for d in before if d["kind"] == "mol_48h")
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        for minutes in (30, 50):
+            t = now - timedelta(minutes=minutes)
+            moved = await hse.patch(f"/api/v1/incidents/{iid}", json={"occurred_at": t.isoformat()})
+            assert moved.status_code == 200, moved.text
+            due = next(d for d in moved.json()["deadlines"] if d["kind"] == "mol_48h")["due_at"]
+            assert datetime.fromisoformat(due) == t + timedelta(hours=48)
+
+        # Met, the clock keeps its old start; the time is still HSE's to change.
+        row = await db_session.get(StatutoryDeadline, _uuid.UUID(mol["id"]))
+        row.satisfied_at = datetime.now(timezone.utc)
+        await db_session.commit()
+        await hse.patch(f"/api/v1/incidents/{iid}", json={"occurred_at": (now - timedelta(minutes=70)).isoformat()})
+        _, sup = await _client_as(test_engine, db_session, "area_supervisor")
+        async with sup as c:
+            refused = await c.patch(f"/api/v1/incidents/{iid}",
+                                    json={"occurred_at": (now - timedelta(minutes=90)).isoformat()})
+        assert refused.status_code == 409 and "Only HSE" in refused.text
+
     async def test_without_a_clock_a_supervisor_corrects_the_time(self, test_engine, db_session):
         """The admission: the lock is on the clock, not on the field."""
         _, iid = await _report(test_engine, db_session, anonymous=False)

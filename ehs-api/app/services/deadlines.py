@@ -142,8 +142,24 @@ async def ensure_incident_deadlines(
     return created
 
 
+def counted_from_occurrence(incident: Incident) -> set[str]:
+    """The kinds of clock that run from when it happened, for this incident.
+
+    ★ Round 7, TC-12: decided by kind, not by comparing a clock's start with
+    the current time of the incident. After one correction a satisfied clock
+    keeps the old start while the incident has the new time, so the two stopped
+    matching: the second correction was not offered the recount, and the time
+    was no longer locked at all. The MOL report always runs from the occurrence;
+    WSIB's does only while no awareness time is recorded (clocks_for_incident).
+    """
+    kinds = {"mol_48h"}
+    if incident.employer_aware_at is None:
+        kinds.add("wsib_form7")
+    return kinds
+
+
 async def recount_from_occurrence(
-    db: AsyncSession, incident: Incident, previous: datetime,
+    db: AsyncSession, incident: Incident,
     *, holidays: frozenset[date] | None = None,
 ) -> list[StatutoryDeadline]:
     """HSE corrected when it happened: recount the clocks that ran from it.
@@ -162,7 +178,7 @@ async def recount_from_occurrence(
             select(StatutoryDeadline).where(
                 StatutoryDeadline.source_type == "incident",
                 StatutoryDeadline.source_id == incident.id,
-                StatutoryDeadline.starts_at == previous,
+                StatutoryDeadline.kind.in_(counted_from_occurrence(incident)),
                 StatutoryDeadline.satisfied_at.is_(None)))).scalars():
         d.starts_at = incident.occurred_at
         d.due_at = statutory.compute_due(d.kind, incident.occurred_at, holidays)
