@@ -10,7 +10,7 @@ export interface WorkflowConfig {
   poLowValueBypassCAD: number           // threshold when enabled, default 5000
   approvalReminderDays: number          // reminder before auto-escalate, default 2
   approvalAutoEscalationDays: number    // auto-escalate after N days, default 5
-  overBudgetMode: 'fm_gm_opm' | 'fm_only' // who approves over-budget, default fm_gm_opm
+  overBudgetMode: 'fm_gm_opm' | 'fm_only' | 'allow' | 'hard_block' // who approves over-budget, default fm_gm_opm
   consolidateGmOpmApproval: boolean     // merge OB-2 + value escalation into one, default true
 }
 
@@ -37,7 +37,7 @@ export interface PrepaymentConfig {
 export interface BudgetAdminConfig {
   yellowThresholdPct: number      // default 80
   redThresholdPct: number         // default 100
-  overBudgetMode: 'fm_gm_opm' | 'fm_only' | 'hard_block'
+  overBudgetMode: 'fm_gm_opm' | 'fm_only' | 'allow' | 'hard_block'
 }
 
 export interface CollectionConfig {

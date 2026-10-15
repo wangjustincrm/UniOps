@@ -66,7 +66,7 @@ class PrepaymentConfig(BaseModel):
 class BudgetAdminConfig(BaseModel):
     yellow_threshold_pct: float = 80
     red_threshold_pct: float = 100
-    over_budget_mode: str = "fm_gm_opm"   # fm_gm_opm | fm_only | hard_block
+    over_budget_mode: str = "fm_gm_opm"   # fm_gm_opm | fm_only | allow | hard_block
     # Fiscal years selectable in "New Budget Plan" / plan filter dropdowns.
     # Edited in Portal → Budget Config so finance can add e.g. 2028 in advance
     # without a code change. Stored as a sorted list of distinct integers.

@@ -276,7 +276,10 @@ async def build_effective_workflow(
     if doc_type == "pr" and getattr(doc, "over_budget", False):
         bac = (cfg.budget_admin_config if cfg else None) or {}
         mode = bac.get("over_budget_mode", "fm_gm_opm")
-        if mode != "hard_block":
+        # `allow`: submit proceeds on the normal workflow with no pre-approval
+        # steps — the justification is still demanded by the PR form and shown
+        # to every approver. Unknown values keep failing safe to an FM step.
+        if mode not in ("hard_block", "allow"):
             prepend = [{"id": "ob_finance_manager", "role": "finance_manager",
                         "label": "Over-Budget — Finance Manager"}]
             if mode == "fm_gm_opm":

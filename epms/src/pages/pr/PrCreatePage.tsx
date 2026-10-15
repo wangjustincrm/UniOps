@@ -805,7 +805,7 @@ export default function PrCreatePage() {
                     </div>
                   )}
 
-                  {/* Justification — required when over-budget AND mode allows pre-approval (fm_only / fm_gm_opm) */}
+                  {/* Justification — required when over-budget AND mode is not hard_block (fm_gm_opm / fm_only / allow) */}
                   {isOverBudget && !isHardBlock && (
                     <FormField label="Over-Budget Justification" required htmlFor="justification" error={errors.justification?.message}>
                       <textarea

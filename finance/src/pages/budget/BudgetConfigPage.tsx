@@ -17,7 +17,7 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 interface BudgetAdminConfig {
   yellow_threshold_pct: number
   red_threshold_pct: number
-  over_budget_mode: 'fm_gm_opm' | 'fm_only' | 'hard_block'
+  over_budget_mode: 'fm_gm_opm' | 'fm_only' | 'allow' | 'hard_block'
   available_fiscal_years: number[]
 }
 
@@ -328,6 +328,10 @@ function CompanyConfigSection() {
             {
               v: 'fm_only' as const, label: 'Finance Manager only',
               desc: 'Single approval. Faster, but GM/OPM visibility is bypassed.',
+            },
+            {
+              v: 'allow' as const, label: 'Allow without extra approval',
+              desc: 'No over-budget approval step is added; the PR follows its normal approval workflow. The requester must still enter an Over-Budget Justification, which every approver can see.',
             },
             {
               v: 'hard_block' as const, label: 'Hard block',

@@ -145,3 +145,30 @@ async def test_step_structure_has_required_keys(engine_db_session):
         assert "id" in step, f"Missing 'id' in step: {step}"
         assert "role" in step, f"Missing 'role' in step: {step}"
         assert "label" in step, f"Missing 'label' in step: {step}"
+
+
+@pytest.mark.asyncio
+async def test_allow_mode_no_ob_steps_injected(engine_db_session):
+    """allow mode: an over-budget PR is let through on the plain base workflow —
+    no ob_ pre-approval steps (the justification is enforced by the PR form)."""
+    db = engine_db_session
+    pr, cfg = await _seed_pr_and_cfg(db, over_budget=True, over_budget_mode="allow")
+
+    steps = await build_effective_workflow(db, "pr", pr, cfg)
+    ids = [s["id"] for s in steps]
+
+    assert [i for i in ids if i.startswith("ob_")] == [], f"allow mode injected ob_ steps: {ids}"
+    assert "dept_manager" in ids
+    assert "gm_or_opm" in ids
+
+
+@pytest.mark.asyncio
+async def test_unknown_mode_still_fails_safe_to_finance_manager(engine_db_session):
+    """A mode value the engine does not recognise must not silently drop the
+    over-budget gate — it keeps the Finance Manager pre-approval."""
+    db = engine_db_session
+    pr, cfg = await _seed_pr_and_cfg(db, over_budget=True, over_budget_mode="no_such_mode")
+
+    steps = await build_effective_workflow(db, "pr", pr, cfg)
+
+    assert steps[0]["id"] == "ob_finance_manager"

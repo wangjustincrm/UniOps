@@ -31,7 +31,7 @@ export interface PrepaymentConfig {
 export interface BudgetAdminConfig {
   yellow_threshold_pct: number
   red_threshold_pct: number
-  over_budget_mode: 'fm_gm_opm' | 'fm_only' | 'hard_block'
+  over_budget_mode: 'fm_gm_opm' | 'fm_only' | 'allow' | 'hard_block'
   /**
    * Fiscal years offered in the "New Budget Plan" dropdown and plan-list
    * year filter. Edited in Portal → Budget Config. May be missing on
