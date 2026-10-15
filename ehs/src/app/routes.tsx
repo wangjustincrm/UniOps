@@ -27,6 +27,7 @@ import JhscPage from '@/pages/JhscPage'
 import JsaPage, { JsaDetailPage } from '@/pages/JsaPage'
 import PermitsPage from '@/pages/PermitsPage'
 import QrLandingPage from '@/pages/QrLandingPage'
+import TaskRedirectPage from '@/pages/TaskRedirectPage'
 import QuizPage, { EditQuizPage, TakeQuizPage } from '@/pages/QuizPage'
 import SafetyEquipmentPage from '@/pages/SafetyEquipmentPage'
 import ReportsPage from '@/pages/ReportsPage'
@@ -222,6 +223,12 @@ export const ehsRoutes: RouteDef[] = [
     path: '/equipment',
     element: <SafetyEquipmentPage />,
     tab: { title: 'Safety equipment', icon: 'Wrench', keyStrategy: 'static' },
+  },
+  {
+    // From the Portal's inbox: Safety says where its own task opens.
+    path: '/go/task/:id',
+    element: <TaskRedirectPage />,
+    tab: { title: 'Opening task', icon: 'ClipboardCheck', keyStrategy: 'param', paramName: 'id' },
   },
   {
     // Where a scanned label lands. No tab of its own: it forwards to whatever

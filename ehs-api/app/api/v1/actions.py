@@ -314,15 +314,34 @@ async def my_tasks(db: SessionDep, user: CanReportIncident):
 
     out = []
     for t in rows:
-        template = task_service.DOC_PATHS.get(t.document_type)
         out.append(AssignedTaskOut(
             id=t.id, type=t.type, title=t.title, description=t.description,
             priority=t.priority, document_type=t.document_type,
             document_id=t.document_id, document_number=t.document_number,
             created_at=t.created_at,
-            path=template.format(id=t.document_id) if template else "",
+            path=task_service.path_for(t),
         ))
     return out
+
+
+class TaskPathOut(BaseModel):
+    path: str
+
+
+@router.get("/tasks/{task_id}/open", response_model=TaskPathOut)
+async def where_a_task_opens(task_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
+    """Where a Safety task opens, for the Portal's inbox.
+
+    ★ Round 7, TC-03: the Portal kept its own short list of where Safety
+    documents live — incidents, actions, certificates — and sent every other
+    Safety task (a session to run, a policy to sign, a toolbox talk) to a page
+    that does not exist. It now asks here, so there is one answer. Only a
+    location is returned; the page it names applies its own permission.
+    """
+    task = await db.get(Task, task_id)
+    if task is None or not (task.document_type or "").startswith("ehs_"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such Safety task")
+    return TaskPathOut(path=task_service.path_for(task) or "/actions/mine")
 
 
 @router.get("/{action_id}", response_model=ActionDetail)

@@ -86,6 +86,7 @@ TASK_CLOSE_PERMIT = "ehs_close_permit"
 # it: a task that lands on a register is a task that has told somebody to go
 # and find their own work, which is the thing an inbox is for.
 DOC_PATHS: dict[str, str] = {
+    DOC_ACTION: "/actions/{id}",
     "ehs_tbt": "/toolbox-talks?delivery={id}",
     DOC_RUN: "/forms",
     "ehs_doc": "/documents/{id}",
@@ -108,6 +109,23 @@ DOC_PATHS: dict[str, str] = {
     # sheet's clock, so an outstanding review is always on the current one.
     "ehs_sds": "/chemicals?sheet={id}",
 }
+
+
+# ★ Where the document alone does not say. Round 7, TC-03 and TC-05: a
+# session's tasks opened "/training" — the training register, which an
+# ordinary employee may not read — so the person running a session pressed
+# their own task and was told they had no permission. Whoever runs it goes to
+# the session; whoever attends it goes to their own training.
+TASK_PATHS: dict[str, str] = {
+    TASK_COURSE_ADMIN: "/training/sessions/{id}",
+    TASK_COURSE_ATTEND: "/training/mine",
+}
+
+
+def path_for(task) -> str:
+    """Where a task opens in Safety, or "" when nowhere better than My Actions."""
+    template = TASK_PATHS.get(task.type) or DOC_PATHS.get(task.document_type)
+    return template.format(id=task.document_id) if template else ""
 
 
 async def open_task(

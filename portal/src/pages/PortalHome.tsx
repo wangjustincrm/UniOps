@@ -121,16 +121,14 @@ const DOC_PATH: Record<string, string> = {
   // Without this the fallback below deep-links to /dashboard/<uuid>, which is
   // not a page.
   posign: '/po',
-  // Safety doc types deep-link into the Safety frontend, not EPMS — see
-  // EHS_DOC_TYPES below. Without these the fallback sends every Safety task
-  // to /dashboard/<uuid>, which is not a page.
-  ehs_inc: '/incidents',
-  ehs_act: '/actions',
-  ehs_cert: '/training',
 }
 
-// Tasks whose document_type belongs to Safety (deep-linked to EHS_URL).
-const EHS_DOC_TYPES = new Set(['ehs_inc', 'ehs_act', 'ehs_cert'])
+// ★ Every Safety task (document_type "ehs_…") opens through Safety's own
+// /go/task/<task id>, which asks Safety where that task belongs. This list
+// used to hold three Safety paths, and every other Safety task — a training
+// session to run, a policy to sign — fell through to /dashboard/<uuid>, which
+// is not a page. Safety is the only place that knows its routes.
+const isEhsTask = (docType: string) => docType.toLowerCase().startsWith('ehs_')
 
 // Tasks whose document_type belongs to VMS (deep-linked to VMS_URL, not EPMS_URL).
 const VMS_DOC_TYPES = new Set(['vms_visit', 'vms_train', 'vms_ppe'])
@@ -581,10 +579,10 @@ export default function PortalHome() {
       } else if (isVms) {
         module = 'VMS'; base = VMS_URL
         path = vmsDeeplinkPath(t.document_type, t.document_id)
-      } else if (EHS_DOC_TYPES.has(t.document_type.toLowerCase())) {
+      } else if (isEhsTask(t.document_type)) {
         // Safety-owned doc surfaced through the shared task table.
         module = 'SAFETY'; base = EHS_URL
-        path = `${DOC_PATH[t.document_type.toLowerCase()] ?? '/actions'}/${t.document_id}`
+        path = `/go/task/${t.id}`
       } else if (oaPath) {
         // OA-owned doc surfaced via approval-api → deep-link into OA, not EPMS.
         module = 'EXPENSE'; base = OA_URL
