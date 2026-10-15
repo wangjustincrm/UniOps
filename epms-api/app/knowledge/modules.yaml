@@ -65,6 +65,13 @@ modules:
         .msg or .eml, or printed to PDF. The basis and the attached email are
         both required: the email is the only document behind the credit, and a
         manual credit cannot be approved until it is attached.
+      - >-
+        A document an approver returns (requisition, order, payment
+        application, agreement, and so on) goes back to whoever raised it to
+        change and resubmit. Resubmitting does not start the approval over: it
+        goes straight back to the approver who returned it, and the approvals
+        given before that stand. The same holds for every kind of document in
+        UniOps.
 
   - key: oa
     label: OA — Office Automation
@@ -88,6 +95,11 @@ modules:
         need uploading again. General and travel expense claims need at least
         one attachment before they can be submitted. The comment typed when
         submitting appears in the claim's Approval Timeline.
+      - >-
+        A claim an approver returns can be changed and sent back by the person
+        who raised it: open the claim, Edit, Save Changes, then Submit. It goes
+        straight back to the approver who returned it — the approvals given
+        before that stand and are not asked for again.
       - >-
         A submitted claim that is stuck with an approver can be chased from the
         claim itself: Approval Status → Send reminder under the pending step
@@ -124,7 +136,8 @@ modules:
         A visit an approver returns for edit comes back to its Host or the
         person who booked it: open the visit, use Edit visit, then Submit for
         approval. The Host can also cancel a visit someone else booked for
-        them.
+        them. A resubmitted visit goes straight back to the approver who
+        returned it; earlier approvals stand.
 
   - key: finance
     label: Finance

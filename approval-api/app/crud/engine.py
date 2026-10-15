@@ -786,15 +786,18 @@ def first_actionable_step(
     dept_has_director: bool,
     dept_has_supervisor: bool,
     cross_dept_pa: bool,
+    start: int = 0,
 ) -> tuple[int, list[tuple[int, str, str]]]:
     """Walk the auto-skipped prefix and return where the document actually lands.
+
+    `start` is where the walk begins: 0 for a first submission, the step it was
+    sent back from for a resubmission (see resume_step).
 
     Returns (start, skipped) where skipped is [(step_idx, role, reason)] — the
     caller decides what to do with those (execution records an ApprovalEvent per
     skip; a dry run just reports them). Pure: no writes, so both can share it.
     """
     skipped: list[tuple[int, str, str]] = []
-    start = 0
     while start < len(workflow):
         role = workflow[start]["role"]
         skip, reason = _should_skip_step(role, doc_type, doc, director_uid,
@@ -805,6 +808,36 @@ def first_actionable_step(
         skipped.append((start, role, reason))
         start += 1
     return start, skipped
+
+
+async def resume_step(db: AsyncSession, doc_type: str, doc: Any, status: str,
+                      workflow: list[dict]) -> int:
+    """Where a submission picks the workflow up: the step a returned document
+    was sent back from, otherwise the top.
+
+    Resubmitting used to restart every chain at step 0, so the approvers who had
+    already signed — four of five on EXP-20260929-0001 — had to sign again for
+    a document they had cleared. Their approvals stand now and it goes straight
+    back to whoever returned it (company rule, every document type).
+
+    `return` resets approval_step_idx to 0, so the step comes from the return
+    event, which records the step it was taken at. No such event (imported
+    data), or a step the workflow no longer has → the top, as before. Only
+    `returned` resumes: a recalled document is a draft again and starts over.
+    """
+    if status != "returned":
+        return 0
+    step = (await db.execute(
+        select(ApprovalEvent.step_idx)
+        .where(ApprovalEvent.document_type == doc_type,
+               ApprovalEvent.document_id == doc.id,
+               ApprovalEvent.action == "return")
+        .order_by(ApprovalEvent.created_at.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    if step is None or not 0 <= step < len(workflow):
+        return 0
+    return step
 
 
 async def resolve_step_assignment(
@@ -1356,7 +1389,8 @@ async def preflight_submit(db: AsyncSession, doc_type: str,
     # about before you go fix something else and come back.
     start, _skipped = first_actionable_step(
         doc_type, ctx.doc, ctx.workflow, ctx.director_uid, ctx.supervisor_uid,
-        ctx.dept_has_director, ctx.dept_has_supervisor, ctx.cross_dept_pa)
+        ctx.dept_has_director, ctx.dept_has_supervisor, ctx.cross_dept_pa,
+        start=await resume_step(db, doc_type, ctx.doc, status, ctx.workflow))
     if start >= len(ctx.workflow):
         # Whole workflow auto-skips: submission goes straight to approved.
         checks.append(Check(id="approver_routing", layer="config", passed=True))
@@ -1425,12 +1459,14 @@ async def execute_action(
         # hard_block: refuse over-budget PR submission outright (PRD OBG / Budget Config)
         if doc_type == "pr" and over_budget_mode == "hard_block":
             raise ValueError(MSG_BUDGET_HARD_BLOCK)
+        # Read before the status flips — only a `returned` document resumes.
+        resume_at = await resume_step(db, doc_type, doc, _status_of(meta, doc), workflow)
         _set_status(meta, doc, "submitted")
         if hasattr(doc, "submitted_at"):
             doc.submitted_at = now
         start, skipped_prefix = first_actionable_step(
             doc_type, doc, workflow, director_uid, supervisor_uid,
-            dept_has_director, dept_has_supervisor, cross_dept_pa)
+            dept_has_director, dept_has_supervisor, cross_dept_pa, start=resume_at)
         for idx, skipped_role, reason in skipped_prefix:
             db.add(ApprovalEvent(
                 document_type=doc_type, document_id=doc.id, document_number=doc_number,
