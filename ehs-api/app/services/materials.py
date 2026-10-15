@@ -53,6 +53,29 @@ BLOCKED_EXTENSIONS = {
 }
 
 
+# ★ Round 7, TC-05: what the file server will actually keep for Safety — its
+# own list plus the slides, video and audio it accepts from this service only
+# (file-api, SERVICE_EXTRA_CONTENT_TYPES). "Any file but a page or a program"
+# was promised here, and a 19 MB video came back as the file server's raw 415.
+# Said here, before the upload, in words; the extension check above still
+# applies, because the type is whatever the browser claimed.
+ALLOWED_TYPES = {
+    "application/pdf",
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/heic",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.ms-powerpoint",
+    "text/csv", "text/plain",
+    "video/mp4", "video/quicktime", "video/webm",
+    "audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav",
+}
+ACCEPTED = ("a PDF, a Word, Excel or PowerPoint file, a picture, a text file, "
+            "or a video or sound recording (MP4, MOV, WebM, MP3, M4A, WAV)")
+
+
 def _blocked(filename: str, ctype: str) -> bool:
     name = filename.lower()
     return ctype in BLOCKED_TYPES or any(name.endswith(ext) for ext in BLOCKED_EXTENSIONS)
@@ -76,6 +99,10 @@ async def add_file(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             f"'{name}' is a web page or a program, which this cannot store. "
             "Save it as a PDF, or add a link to it.")
+    if ctype not in ALLOWED_TYPES:
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            f"'{name}' cannot be stored here. Attach {ACCEPTED} — or add a link to it.")
     row = CourseMaterial(
         id=uuid.uuid4(), course_id=course_id, delivery_id=delivery_id,
         file_id=await upload_to_file_server(

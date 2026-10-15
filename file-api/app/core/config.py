@@ -35,6 +35,18 @@ class Settings(BaseSettings):
         "application/vnd.ms-outlook",  # .msg (Outlook)
         "message/rfc822",  # .eml
     ]
+    # ★ Accepted from one service only, on top of the list above. Safety's
+    # training material is slides and short videos (round 7: "attaching a 19
+    # meg video returns … Unsupported file type 'video/mp4'"); nothing else in
+    # UniOps has asked for either, so they are not opened to every module.
+    SERVICE_EXTRA_CONTENT_TYPES: dict[str, list[str]] = {
+        "ehs": [
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",  # .pptx
+            "application/vnd.ms-powerpoint",  # .ppt
+            "video/mp4", "video/quicktime", "video/webm",
+            "audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav",
+        ],
+    }
 
     @property
     def database_url_sync(self) -> str:

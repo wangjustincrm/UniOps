@@ -46,7 +46,8 @@ async def upload_file(
         raise HTTPException(status_code=413, detail=f"File exceeds {settings.MAX_FILE_SIZE // 1024 // 1024} MB limit")
     # content-type allowlist (documents + images) — reject executables/scripts/etc.
     ctype = (file.content_type or "").split(";")[0].strip().lower()
-    if ctype not in settings.ALLOWED_CONTENT_TYPES:
+    if (ctype not in settings.ALLOWED_CONTENT_TYPES
+            and ctype not in settings.SERVICE_EXTRA_CONTENT_TYPES.get(service, [])):
         raise HTTPException(
             status_code=415,
             detail=f"Unsupported file type '{file.content_type}'. Allowed: PDF, images, Office docs, CSV/text.",

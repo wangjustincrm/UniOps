@@ -126,7 +126,8 @@ export default function MaterialsList({ base, mayWrite, what = 'this course' }: 
             </button>
           </span>
           <span className="text-[11px] text-neutral-500">
-            Any file up to 50 MB except a web page or a program. A long video goes in as a link.
+            PDF, Word, Excel, PowerPoint, pictures, text, video or sound (MP4, MOV, WebM, MP3, M4A,
+            WAV), up to 50 MB. A long video goes in as a link.
           </span>
           {linking && (
             <span className="mt-1 flex flex-col gap-1.5 sm:flex-row">

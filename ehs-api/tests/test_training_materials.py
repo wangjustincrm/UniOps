@@ -59,6 +59,9 @@ class TestAnyFileButARunnableOne:
         ("walkthrough.mp4", "video/mp4"),
         ("sign-off.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
         ("roster.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        ("slides.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        ("phone-clip.mov", "video/quicktime"),
+        ("briefing.mp3", "audio/mpeg"),
     ])
     async def test_accepted(self, hse_manager, course, files, name, ctype):
         _, client = hse_manager
@@ -85,6 +88,23 @@ class TestAnyFileButARunnableOne:
 
 
 class TestLinks:
+    @pytest.mark.parametrize("name,ctype", [
+        ("bundle.zip", "application/zip"),
+        ("unknown.bin", "application/octet-stream"),
+    ])
+    async def test_what_the_file_server_would_refuse_is_refused_in_words(
+            self, hse_manager, course, files, name, ctype):
+        """★ Round 7, TC-05: the stand-in file server above accepts anything, so
+        these tests passed while the real one refused a video with a raw 415.
+        What Safety accepts is now a list the file server is known to keep for
+        it, and anything else is refused here, saying what would be taken."""
+        _, client = hse_manager
+        got = await client.post(f"/api/v1/training/courses/{course.id}/materials",
+                                files=_file(name, ctype))
+        assert got.status_code == 415
+        assert "PowerPoint" in got.text and "MP4" in got.text
+        assert files.stored == {}
+
     async def test_a_link_is_an_item_named_by_its_title_or_its_site(
             self, hse_manager, course):
         _, client = hse_manager
