@@ -245,9 +245,13 @@ async def get_permit(permit_id: uuid.UUID, db: SessionDep, user: CanRequestPermi
 
 @router.patch("/permits/{permit_id}", response_model=PermitOut)
 async def update_permit(
-    permit_id: uuid.UUID, payload: PermitPatch, db: SessionDep, user: CanRequestPermit,  # noqa: ARG001
+    permit_id: uuid.UUID, payload: PermitPatch, db: SessionDep, user: CanRequestPermit,
 ):
     permit = await crud.get_permit(db, permit_id)
+    # ★ Changing a permit needs at least the right to open it. The edit had no
+    # check of its own, so anybody who may request permits could change the
+    # times or the precautions on somebody else's.
+    await _readable(db, user, permit)
     updated = await crud.update_permit(db, permit, payload.model_dump(exclude_unset=True))
     return await _out(db, updated, with_blockers=True)
 

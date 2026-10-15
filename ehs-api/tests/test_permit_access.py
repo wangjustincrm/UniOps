@@ -96,3 +96,46 @@ async def test_the_register_sees_everybodys(worker, hse_manager, permit_type):
     _, hse = hse_manager
     assert (await hse.get(f"/api/v1/permits/{permit['id']}/signatures")).status_code == 200
     assert (await hse.get(f"/api/v1/permits/{permit['id']}/gas")).status_code == 200
+
+
+async def test_the_times_can_be_corrected_by_whoever_raised_it(
+        worker, test_engine, db_session, hse_manager, permit_type):
+    """★ Round 7: "This permit cannot be issued yet: The end time is not after
+    the start time. but a way to correct this error is not available." """
+    from tests.conftest import authed_client, make_token, make_user
+    _, client = worker
+    now = datetime.now(timezone.utc)
+    made = await client.post("/api/v1/permits", json={
+        "type_id": str(permit_type.id), "work_description": "Weld the bracket",
+        "valid_from": now.isoformat(), "valid_to": (now - timedelta(hours=1)).isoformat()})
+    assert made.status_code in (200, 201), made.text
+    pid = made.json()["id"]
+    assert "The end time is not after the start time." in (await client.get(f"/api/v1/permits/{pid}")).json()["blockers"]
+
+    fixed = await client.patch(f"/api/v1/permits/{pid}", json={
+        "valid_to": (now + timedelta(hours=3)).isoformat()})
+    assert fixed.status_code == 200, fixed.text
+    assert "The end time is not after the start time." not in fixed.json()["blockers"]
+
+
+async def test_only_whoever_may_open_a_permit_may_change_it(
+        worker, test_engine, db_session, hse_manager, permit_type):
+    """★ The edit had no check of its own: anybody who may request permits
+    could change the times or the precautions on somebody else's."""
+    from tests.conftest import authed_client, make_token, make_user
+    _, client = worker
+    now = datetime.now(timezone.utc)
+    pid = (await _a_permit(client, permit_type))["id"]
+    assert (await client.patch(f"/api/v1/permits/{pid}", json={
+        "valid_to": (now + timedelta(hours=3)).isoformat()})).status_code == 200
+
+    # Somebody else who may request permits may not change this one…
+    other = await make_user(test_engine, role="requester")
+    async with authed_client(make_token(other.id, other.role), db_session) as c:
+        refused = await c.patch(f"/api/v1/permits/{pid}", json={
+            "valid_to": (now + timedelta(hours=5)).isoformat()})
+    assert refused.status_code == 403
+    # …and whoever runs the register still may.
+    _, hse = hse_manager
+    assert (await hse.patch(f"/api/v1/permits/{pid}", json={
+        "valid_to": (now + timedelta(hours=6)).isoformat()})).status_code == 200
