@@ -290,6 +290,8 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
         </div>
       )}
 
+      {editable && <PermitTimes key={permit.id} permit={permit} onSaved={invalidate} />}
+
       {type && (
         <PrecautionList permit={permit} type={type} editable={editable}
                         onSaved={invalidate} />
@@ -361,6 +363,57 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
       {closing && (
         <CloseDialog permit={permit} onClose={() => setClosing(false)} onDone={invalidate} />
       )}
+    </div>
+  )
+}
+
+/** An ISO time as a datetime-local box reads it, in this browser's time. */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/**
+ * When the permit runs, while it can still be changed.
+ *
+ * ★ Round 7: "This permit cannot be issued yet: The end time is not after the
+ * start time. but a way to correct this error is not available." The times
+ * were set only when the permit was raised; the server accepted a change to
+ * them all along, and nothing on screen offered one.
+ */
+function PermitTimes({ permit, onSaved }: { permit: Permit; onSaved: () => void }) {
+  const initial = { from: toLocalInput(permit.valid_from), to: toLocalInput(permit.valid_to) }
+  const [from, setFrom] = useState(initial.from)
+  const [to, setTo] = useState(initial.to)
+  const changed = from !== initial.from || to !== initial.to
+  const save = useMutation({
+    mutationFn: () => api.patch(`/api/v1/permits/${permit.id}`, {
+      valid_from: from ? new Date(from).toISOString() : null,
+      valid_to: to ? new Date(to).toISOString() : null,
+    }),
+    onSuccess: onSaved,
+  })
+  return (
+    <div className="mb-4">
+      <SectionTitle className="mb-1.5">When the work runs</SectionTitle>
+      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <Field label="Starts">
+          <input type="datetime-local" className={inputClass} value={from}
+                 onChange={(e) => setFrom(e.target.value)} />
+        </Field>
+        <Field label="Ends">
+          <input type="datetime-local" className={inputClass} value={to}
+                 onChange={(e) => setTo(e.target.value)} />
+        </Field>
+        <button type="button" className={secondaryButton}
+                disabled={!changed || save.isPending}
+                onClick={() => { if (!save.isPending) save.mutate() }}>
+          {save.isPending ? 'Saving…' : 'Save the times'}
+        </button>
+      </div>
+      <ErrorNote error={save.error} />
     </div>
   )
 }
