@@ -218,7 +218,17 @@ async def update_claim(
         await db.flush()
         await db.refresh(claim, ["travelers"])
 
-    if data.line_items is not None:
+    # Only a MIL claim has mileage (user, 2026-10-14). The OA form sends a
+    # general expense with `trip_items: []`; when both branches ran, that empty
+    # trip list re-computed the claim as mileage — total 0.00, total_km 0 —
+    # over the totals the lines had just produced (EXP-20260929-0001). So each
+    # collection is applied only to the claim type it belongs to, and a non-MIL
+    # claim never carries a km figure.
+    is_mil = claim.claim_type == "MIL"
+    if not is_mil:
+        claim.total_km = None
+
+    if data.line_items is not None and not is_mil:
         for existing in list(claim.line_items):
             await db.delete(existing)
         await db.flush()
@@ -233,7 +243,7 @@ async def update_claim(
         if claim.claim_type == "TRV":
             claim.is_over_budget = await _trv_over_meal_limit(db, claim.line_items)
 
-    if data.trip_items is not None:
+    if data.trip_items is not None and is_mil:
         for existing in list(claim.trip_items):
             await db.delete(existing)
         await db.flush()
