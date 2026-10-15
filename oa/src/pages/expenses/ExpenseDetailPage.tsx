@@ -459,7 +459,8 @@ export default function ExpenseDetailPage() {
 
   // EXP-007 / TRV-008: receipt-based claims require ≥1 attachment before submission.
   const requiresAttachment = ['EXP', 'TRV'].includes(claim.claim_type)
-  const missingAttachment = requiresAttachment && claim.status === STATUS.DRAFT && attachments.length === 0
+  // Draft and returned alike: a returned claim is resubmitted from here too.
+  const missingAttachment = requiresAttachment && isEditable(claim.status) && attachments.length === 0
 
   // Permissions resolved server-side (see the /permissions query above).
   const isOwner = perms?.is_owner ?? false
@@ -503,7 +504,11 @@ export default function ExpenseDetailPage() {
 
           {/* Action buttons */}
           <div className="flex gap-2">
-            {claim.status === STATUS.DRAFT && isOwner && (
+            {/* Returned claims need Submit as well as Edit: Save Changes leaves the
+                claim `returned` (approval-api accepts submit from draft or
+                returned), and with only Edit here a returned claim could be
+                changed but never sent back into approval. */}
+            {isEditable(claim.status) && isOwner && (
               <button
                 onClick={() => setActiveAction(ACTION.SUBMIT)}
                 disabled={missingAttachment}
@@ -513,7 +518,7 @@ export default function ExpenseDetailPage() {
                 Submit
               </button>
             )}
-            {claim.status === STATUS.RETURNED && isOwner && (
+            {isEditable(claim.status) && isOwner && (
               <button
                 onClick={() => navigate(`/expenses/${claim.id}/edit`)}
                 className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
