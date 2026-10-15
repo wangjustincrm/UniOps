@@ -81,11 +81,20 @@ def pick_quality_manager(
     return None
 
 
+# approval-api copies the title into tasks.document_number and
+# approval_events.document_number, both varchar(40) (epms-api owns them). A
+# longer title made every submit fail with a 500 (prod 2026-10-15: "VMS Visit
+# — Axel Struzina (Malette Electric)", 44 characters).
+TITLE_MAX = 40
+
+
 def make_visit_title(*, first_name: str, last_name: str, company: str) -> str:
     """Format the title field that ends up in the Portal task inbox."""
     suffix = f" ({company})" if company.strip() else ""
     label = f"VMS Visit — {first_name} {last_name}{suffix}".strip()
-    return label[:255]
+    if len(label) > TITLE_MAX:
+        label = label[:TITLE_MAX - 1].rstrip() + "…"
+    return label
 
 
 async def submit_for_approval(visit_id: uuid.UUID, bearer_token: str) -> dict:

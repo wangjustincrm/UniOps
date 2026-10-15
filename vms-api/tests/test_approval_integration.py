@@ -45,11 +45,19 @@ def test_gmp_lab_all_require_both_approval_and_qm(area):
     assert access_requires_quality_manager(area) is True
 
 
-def test_make_visit_title_truncates_to_255():
-    long_company = "X" * 500
-    title = make_visit_title(first_name="A", last_name="B", company=long_company)
-    assert len(title) <= 255
-    assert title.startswith("VMS Visit — A B")
+def test_make_visit_title_fits_document_number_column():
+    # tasks / approval_events.document_number are varchar(40): a longer title
+    # failed every submit with a 500 (prod, 2026-10-15).
+    title = make_visit_title(first_name="Axel", last_name="Struzina", company="Malette Electric")
+    assert len(title) <= 40
+    assert title.startswith("VMS Visit — Axel Struzina (Malette")
+    assert title.endswith("…")
+    long = make_visit_title(first_name="A", last_name="B", company="X" * 500)
+    assert len(long) <= 40 and long.startswith("VMS Visit — A B")
+
+
+def test_make_visit_title_short_is_unchanged():
+    assert make_visit_title(first_name="Ann", last_name="Lee", company="Acme") == "VMS Visit — Ann Lee (Acme)"
 
 
 def test_pick_quality_manager_first_active():
