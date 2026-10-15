@@ -1844,6 +1844,7 @@ const NOTIF_CHANNEL_OPTIONS = [
 ]
 
 const EMAIL_TEMPLATE_LABELS: Record<string, string> = {
+  task_assigned: 'General — New Task (any task without its own template)',
   pr_approval_request: 'PR — Approval Request',
   pr_returned: 'PR — Returned for Revision',
   pr_rejected: 'PR — Rejected',

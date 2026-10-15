@@ -373,6 +373,7 @@ async def _dispatch(
         "vendor_name": task.vendor or "",
         "amount": str(task.amount) if task.amount else "",
         "task_title": task.title,
+        "task_description": task.description or "",
         **extra_vars,
     }
 
@@ -487,7 +488,8 @@ async def _send_with_retry(
 
 
 def _infer_template(task_type: str, is_followup: bool) -> str:
-    """Map task type to a template key."""
+    """Map task type to a template key; types with no template of their own
+    get the generic "new task" one (task_assigned), never another type's."""
     if is_followup:
         return "daily_pending_reminder"
     return {
@@ -508,7 +510,7 @@ def _infer_template(task_type: str, is_followup: bool) -> str:
         "match_invoice": "match_invoice_assigned",
         "review_match": "match_review_request",
         "resolve_exception": "exception_resolution_request",
-    }.get(task_type, "pr_approval_request")
+    }.get(task_type, "task_assigned")
 
 
 # ── Admin alerting ────────────────────────────────────────────────────────────

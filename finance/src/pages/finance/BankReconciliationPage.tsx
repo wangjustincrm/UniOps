@@ -66,6 +66,9 @@ interface BookLine {
   jv_line_id: string; jv_number: string; voucher_date: string; summary: string | null
   amount: string; contra_kind: string; contra_label: string; contra_codes: string[]
   cleared: boolean
+  /** false = NC has not tallied the voucher yet; only present when the period
+   *  includes unposted vouchers. */
+  posted?: boolean
   /** The same line in CAD (NC 本币). Only differs from `amount` on a non-CAD account. */
   local_amount?: string
 }
@@ -91,6 +94,9 @@ interface Period {
   id: string; status: string; period_start: string; period_end: string; currency: string
   summary: Summary; bank_lines: BankLine[]; book_lines: BookLine[]; matches: MatchGroup[]
   base_only_lines?: BaseOnlyLine[]
+  /** The period's book basis — stored on the period, so auto-match, matches, the
+   *  difference and the sign-off report all read the same ledger. */
+  include_unposted: boolean
 }
 interface Finding {
   kind: string; message: string; bank_ids: string[]; advice_ids: string[]; book_ids: string[]
@@ -367,6 +373,13 @@ export default function BankReconciliationPage() {
     onError: (e: Error) => flash('err', e.message),
   })
 
+  const setBasis = useMutation({
+    mutationFn: (include_unposted: boolean) => financeApi.put(
+      `/bank-recon/reconciliations/${reconId}/basis`, { include_unposted }),
+    onSuccess: () => { clearPicks(); refresh() },
+    onError: (e: Error) => flash('err', e.message),
+  })
+
   const reopen = useMutation({
     mutationFn: () => financeApi.post(`/bank-recon/reconciliations/${reconId}/reopen`, {}),
     onSuccess: () => { flash('ok', 'Reopened.'); refresh() },
@@ -459,6 +472,7 @@ export default function BankReconciliationPage() {
   const baseOnly = period?.base_only_lines ?? []
   const busy = autoMatch.isPending || matchByHand.isPending || finalize.isPending
     || reopen.isPending || importStatement.isPending || importAdvices.isPending
+    || setBasis.isPending
 
   const toggle = (set: Set<string>, id: string, apply: (s: Set<string>) => void) => {
     const next = new Set(set)
@@ -656,6 +670,18 @@ export default function BankReconciliationPage() {
 
             {/* ── actions ───────────────────────────────────────────────── */}
             <div className="mb-3 flex flex-wrap items-center gap-2">
+              {/* Ticked by default, like the Budget and Account Balance pages. The
+                  box is the period's own basis (saved on the period), not a view
+                  filter: the difference and the signed report follow it too. */}
+              <label className={cn('flex items-center gap-1.5 text-sm text-neutral-700',
+                                   (!canManage || frozen) && 'opacity-60')}
+                     title="Count vouchers NC has not tallied yet on the ledger side. Saved on this period; the sign-off report states it.">
+                <input type="checkbox" checked={period.include_unposted}
+                       disabled={!canManage || frozen || setBasis.isPending}
+                       onChange={(e) => setBasis.mutate(e.target.checked)} />
+                Include unposted vouchers
+                {setBasis.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              </label>
               {canManage && !frozen && (
                 <>
                   <input ref={stmtInput} type="file" accept="application/pdf" className="hidden"
@@ -1067,7 +1093,14 @@ export default function BankReconciliationPage() {
                           </td>
                           <td className="px-2 py-1.5">
                             <div className="truncate" title={b.summary ?? ''}>{b.summary || '—'}</div>
-                            <div className="font-mono text-[11px] text-neutral-400">{b.jv_number}</div>
+                            <div className="font-mono text-[11px] text-neutral-400">
+                              {b.jv_number}
+                              {b.posted === false && (
+                                <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 font-sans text-[10px] font-medium text-amber-700">
+                                  Unposted
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-2 py-1.5">
                             <Pill tone={KIND_TONE[b.contra_kind]}>{b.contra_label}</Pill>

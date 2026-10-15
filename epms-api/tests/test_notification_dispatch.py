@@ -516,3 +516,44 @@ def test_confirm_receipt_template_and_link():
     assert _infer_template("confirm_receipt", is_followup=False) == "confirm_receipt"
     link = _task_link("po", pid, task_type="confirm_receipt")
     assert link.endswith(f"/gr/new?poId={pid}")
+
+
+# ── Task types without a template of their own ───────────────────────────────
+
+def test_untemplated_task_types_get_the_generic_template_not_the_pr_one():
+    """The fallback used to be pr_approval_request: 44 emails 2026-10-09..14
+    (process_pa, approve_exp, revise_exp, …) went out as "Approve PR"."""
+    from app.services.notification import _infer_template
+    for task_type in ("revise_exp", "approve_exp", "approve_mil", "process_pa",
+                      "revise_pa", "confirm_period", "create_prepayment_pa"):
+        assert _infer_template(task_type, is_followup=False) == "task_assigned", task_type
+    # Types that do have one keep it.
+    assert _infer_template("approve_pr", is_followup=False) == "pr_approval_request"
+    assert _infer_template("revise_pr", is_followup=False) == "pr_returned"
+
+
+async def test_returned_claim_is_announced_as_a_new_task(monkeypatch):
+    sent: list[tuple] = []
+
+    async def _fake_send_email(to, subject, html, **kwargs):
+        sent.append((to, subject, html))
+
+    monkeypatch.setattr("app.services.email.send_email", _fake_send_email)
+    async with session_module.AsyncSessionLocal() as db:
+        await _set_notif_settings(db, default_channel="email_only")
+        user = await _make_user(db)
+        task = Task(
+            type="revise_exp", document_type="exp", document_id=uuid.uuid4(),
+            document_number="EXP-TEST-1", assigned_role="requester",
+            assigned_user_id=user.id, title="Revise EXP: EXP-TEST-1 — EXP Claim",
+            description="Your EXP has been returned for revision.",
+            vendor="Notify Target", amount=378.55,
+        )
+        await notification.dispatch_task_notification(task, db)
+
+    (mail,) = [m for m in sent if m[0] == user.email]
+    _to_addr, subject, html = mail
+    assert subject == "New task: Revise EXP: EXP-TEST-1 — EXP Claim"
+    assert "Your EXP has been returned for revision." in html
+    assert ">Open EXP-TEST-1</a>" in html
+    assert "Purchase Request" not in html and "Vendor" not in html
