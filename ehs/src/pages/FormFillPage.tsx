@@ -97,6 +97,15 @@ export default function FormFillPage() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pending = useRef<FormValues>({})
 
+  // ★ Round 7, TC-01: "the meeting minutes contains Meeting Date Not answered
+  // and other not answered fields that are answered on the form." Another tab
+  // reads these answers — the committee meeting the minutes belong to — and it
+  // stays open while the form is filled in. It had read the form while it was
+  // blank and kept that copy, so it showed every answer as missing.
+  const readersOfTheAnswers = () => {
+    queryClient.invalidateQueries({ queryKey: ['jhsc-minutes'] })
+  }
+
   const flush = async () => {
     const batch = pending.current
     pending.current = {}
@@ -105,6 +114,7 @@ export default function FormFillPage() {
     try {
       await api.put(`/api/v1/forms/submissions/${id}/answers`, { values: batch })
       setSaveState('saved')
+      readersOfTheAnswers()
     } catch (e) {
       // Put the batch back so the next save retries it rather than losing it.
       pending.current = { ...batch, ...pending.current }
@@ -214,6 +224,7 @@ export default function FormFillPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['form-submission', id] })
       queryClient.invalidateQueries({ queryKey: ['form-submissions'] })
+      readersOfTheAnswers()
       navigate('/forms/submissions')
     },
     onError: (e: unknown) => setError(e instanceof ApiError ? e.message : String(e)),
