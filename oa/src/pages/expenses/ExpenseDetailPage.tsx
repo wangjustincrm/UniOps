@@ -590,7 +590,9 @@ export default function ExpenseDetailPage() {
             <p className="mt-0.5 text-sm font-medium text-neutral-800">{claim.vehicle_description}</p>
           </div>
         )}
-        {claim.total_km != null && (
+        {/* Only a mileage claim has km (user, 2026-10-14) — a general expense
+            once carried total_km = 0 from a save bug and showed "Total km". */}
+        {claim.claim_type === 'MIL' && claim.total_km != null && (
           <div>
             <p className="text-xs font-medium text-neutral-500">Total km</p>
             <p className="mt-0.5 text-sm font-mono font-medium text-neutral-800">{Number(claim.total_km).toFixed(1)} km</p>
