@@ -29,6 +29,7 @@ import QrPanel from '@/components/QrPanel'
 import { formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useMyProfile } from '@/hooks/useMyProfile'
+import { useEhsAuth } from '@/store/auth'
 import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { SignaturePad } from '@/components/SignaturePad'
@@ -47,7 +48,7 @@ interface Permit {
   id: string; permit_no: string; type_id: string | null; type_label: string
   work_description: string; location_id: string | null; location_path: string | null
   department_name: string | null; contractor_company: string | null
-  requested_by_name: string | null
+  requested_by: string | null; requested_by_name: string | null
   valid_from: string | null; valid_to: string | null
   precautions_confirmed: Record<string, boolean>
   issued_at: string | null; issued_by_name: string | null
@@ -276,6 +277,12 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
   })
 
   const editable = permit.status === 'draft' || permit.status === 'suspended'
+  // ★ The same rule as the server's (permits._editable): whoever raised it, or
+  // whoever issues permits. On status alone, an auditor opening somebody
+  // else's draft was offered boxes that answered 403 on saving. Raised in
+  // review by uniops-55.
+  const me = useEhsAuth((st) => st.user?.id) ?? null
+  const mayChange = editable && (permit.requested_by === me || mayIssue)
 
   return (
     <div className="border-t border-neutral-100 p-3.5">
@@ -290,10 +297,10 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
         </div>
       )}
 
-      {editable && <PermitTimes key={permit.id} permit={permit} onSaved={invalidate} />}
+      {mayChange && <PermitTimes key={permit.id} permit={permit} onSaved={invalidate} />}
 
       {type && (
-        <PrecautionList permit={permit} type={type} editable={editable}
+        <PrecautionList permit={permit} type={type} editable={mayChange}
                         onSaved={invalidate} />
       )}
 

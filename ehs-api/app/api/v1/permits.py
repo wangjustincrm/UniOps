@@ -142,6 +142,8 @@ class PermitOut(BaseModel):
     equipment_id: uuid.UUID | None
     jsa_id: uuid.UUID | None
     contractor_company: str | None
+    # Who raised it, so the page offers the edit only to whoever may make it.
+    requested_by: uuid.UUID | None = None
     requested_by_name: str | None
     valid_from: datetime | None
     valid_to: datetime | None
