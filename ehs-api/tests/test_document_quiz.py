@@ -9,9 +9,10 @@ from app.models.document import SafetyDocument
 SIG = {"signature": "data:image/png;base64,iVBORw0KGgo="}
 
 
-async def _published(client, db, *, title="Working at Heights Policy") -> str:
+async def _published(client, db, *, title="Working at Heights Policy", review_months=None) -> str:
     made = await client.post("/api/v1/documents", json={
-        "title": title, "doc_type": "policy", "requires_ack": True})
+        "title": title, "doc_type": "policy", "requires_ack": True,
+        **({"review_months": review_months} if review_months else {})})
     assert made.status_code in (200, 201), made.text
     doc_id = made.json()["id"]
     # file-api is not running here; the join is written straight onto the row,
@@ -195,3 +196,46 @@ async def test_attempts_are_counted_per_version(hse_manager, worker, db_session)
     again = await me.post(f"/api/v1/quizzes/{qid}/attempts", json={"answers": {question: ["t"]}})
     assert again.status_code == 201 and again.json()["passed"], again.text
     assert (await me.post(f"/api/v1/documents/{v2_id}/acknowledge", json=SIG)).status_code in (200, 201)
+
+
+async def test_archiving_takes_a_document_out_of_force(hse_manager, worker, db_session):
+    """★ Round 7, TC-11: "add an archive option on all documents." Archiving
+    asks nobody to sign it any more and closes its review deadline — which
+    retiring never did, for a replaced version either."""
+    from sqlalchemy import select
+    from app.models.statutory import StatutoryDeadline
+    _, hse = hse_manager
+    _, me = worker
+    doc_id = await _published(hse, db_session, title="Old visitor policy", review_months=12)
+
+    async def open_reviews(doc):
+        return (await db_session.execute(select(StatutoryDeadline).where(
+            StatutoryDeadline.source_type == "document",
+            StatutoryDeadline.source_id == uuid.UUID(doc),
+            StatutoryDeadline.satisfied_at.is_(None)))).scalars().all()
+
+    assert await open_reviews(doc_id), "a published policy has a review date"
+    assert (await me.post(f"/api/v1/documents/{doc_id}/retire")).status_code == 403
+    archived = await hse.post(f"/api/v1/documents/{doc_id}/retire")
+    assert archived.status_code == 200 and archived.json()["status"] == "retired"
+    db_session.expire_all()
+    assert not await open_reviews(doc_id)
+    assert (await me.post(f"/api/v1/documents/{doc_id}/acknowledge", json=SIG)).status_code != 201
+
+
+async def test_a_replaced_version_stops_being_reviewed(hse_manager, db_session):
+    from sqlalchemy import select
+    from app.models.statutory import StatutoryDeadline
+    _, hse = hse_manager
+    doc_id = await _published(hse, db_session, title="Noise policy", review_months=12)
+    v2_id = (await hse.post(f"/api/v1/documents/{doc_id}/new-version", json={"version": "2"})).json()["id"]
+    row = await db_session.get(SafetyDocument, uuid.UUID(v2_id))
+    row.file_id = uuid.uuid4()
+    await db_session.commit()
+    assert (await hse.post(f"/api/v1/documents/{v2_id}/publish", json={})).status_code == 200
+    db_session.expire_all()
+    left = (await db_session.execute(select(StatutoryDeadline).where(
+        StatutoryDeadline.source_type == "document",
+        StatutoryDeadline.source_id == uuid.UUID(doc_id),
+        StatutoryDeadline.satisfied_at.is_(None)))).scalars().all()
+    assert not left, "v1 is not in force; it has nothing to review"

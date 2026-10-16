@@ -194,9 +194,28 @@ async def new_version(
     return draft
 
 
-async def retire(db: AsyncSession, doc: SafetyDocument) -> SafetyDocument:
+async def retire(db: AsyncSession, doc: SafetyDocument, *,
+                 user_id: uuid.UUID | None = None, user_name: str | None = None) -> SafetyDocument:
+    """Take a version out of force — archived, or replaced by a newer one.
+
+    ★ Its review deadline closes with it. It did not: every policy version
+    replaced by a newer one kept its annual-review clock, which would run
+    overdue and escalate about a version nobody may use (11 on dev3, found
+    building round 7's archive). A version not in force has nothing to review.
+    """
+    from datetime import datetime, timezone
+    from app.models.statutory import StatutoryDeadline
     doc.status = "retired"
     await task_service.close_tasks_for(db, doc_type=DOC_DOCUMENT, doc_id=doc.id)
+    for deadline in (await db.execute(
+            select(StatutoryDeadline).where(
+                StatutoryDeadline.source_type == "document",
+                StatutoryDeadline.source_id == doc.id,
+                StatutoryDeadline.satisfied_at.is_(None)))).scalars():
+        await deadline_service.satisfy(
+            db, deadline, user_id=user_id, user_name=user_name,
+            evidence_note="This version is no longer in force; nothing to review",
+            when=datetime.now(timezone.utc))
     await db.flush()
     return doc
 
