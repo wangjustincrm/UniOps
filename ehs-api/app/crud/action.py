@@ -125,7 +125,21 @@ async def create(
         priority=action.priority,
     )
     await db.flush()
+    await _tell_the_owner_on_its_incident(db, action)
     return action
+
+
+async def _tell_the_owner_on_its_incident(db: AsyncSession, action: Action) -> None:
+    """Round 7, TC-09 — see notify.action_owner_told. The incident is found by
+    its id, directly or through the cause, not by the source_type sent."""
+    from app.models.incident import Cause, Incident
+    from app.services import notify
+    cause = await db.get(Cause, action.cause_id) if action.cause_id else None
+    incident_id = (cause.incident_id if cause and cause.incident_id else action.source_id)
+    incident = await db.get(Incident, incident_id) if incident_id else None
+    if incident is None:
+        return
+    await notify.action_owner_told(db, action, incident, cause.label if cause else None)
 
 
 async def get(db: AsyncSession, action_id: uuid.UUID) -> Action:

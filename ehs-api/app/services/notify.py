@@ -338,6 +338,45 @@ async def statutory_escalated(db: AsyncSession, deadline, *, overdue: bool) -> N
 
 # ── Corrective actions ───────────────────────────────────────────────────────
 
+async def action_owner_told(db: AsyncSession, action, incident, cause_label: str | None) -> None:
+    """Tell the owner of a corrective action raised on an incident, and file
+    it with the incident.
+
+    ★ Round 7, TC-09: "when a root cause is added and/or a capa is added to an
+    incident, log the communication to the capa task owner in the notification
+    sent log on the incident main form." Filed against the incident so it is
+    listed under the incident's "Notifications sent". Sent when the action is
+    raised, which is when it gets its owner — it is never re-sent on a save.
+
+    ★ Nothing about who reported it: on an anonymous report the owner must not
+    learn the reporter from this (uniops-55). The text names the incident, the
+    place, the cause and the action; mail.queue escapes all of it.
+    """
+    people = await mail.recipients(db, [action.owner_id])
+    if not people:
+        return
+    lines = [
+        f"You own corrective action {action.action_no}: {action.title}.",
+        f"Due {action.due_date.strftime('%-d %B %Y')}.",
+        "",
+        f"It was raised on {incident.incident_no}"
+        + (f" at {incident.location_path}" if incident.location_path else "") + ".",
+    ]
+    if cause_label:
+        lines += [f"It addresses the cause: {cause_label}."]
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"Corrective action {action.action_no} on {incident.incident_no}",
+        body="\n".join(lines),
+        doc_type=task_service.DOC_INCIDENT,
+        doc_id=incident.id,
+        template_key="action_owner_told",
+        link=mail.module_link(f"/actions/{action.id}"),
+        link_label="Open the corrective action",
+    )
+
+
 async def action_escalated(
     db: AsyncSession, action, *, level: int, days_late: int,
     supervisor_id: uuid.UUID | None,
