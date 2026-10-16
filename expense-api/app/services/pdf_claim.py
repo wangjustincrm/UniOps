@@ -206,6 +206,8 @@ def build_claim_pdf(
         if claim.travel_from_date or claim.travel_to_date:
             dates = f"{_d(claim.travel_from_date)} – {_d(claim.travel_to_date)}"
         pairs += [("Destination", claim.travel_destination), ("Travel Dates", dates)]
+        if claim.travel_country and claim.travel_country != "CA":
+            pairs += [("Country", claim.travel_country), ("", None)]
         if travel_application_number:
             pairs += [("Travel Application", travel_application_number), ("", None)]
     if ct == "MIL":
@@ -280,9 +282,15 @@ def build_claim_pdf(
         data = [[Paragraph(h, th_r if i >= 5 else th_style) for i, h in enumerate(hdr)]]
         for li in claim.line_items:
             acct = f"{li.budget_account_code} — {li.budget_account_name}" if li.budget_account_name else li.budget_account_code
+            when, desc = _d(li.expense_date), li.description
+            if li.period_from is not None:  # TRV date-range line
+                when = f"{_d(li.period_from)} – {_d(li.period_to)}"
+                desc = f"{desc}\n{li.period_days} days × {_money(li.daily_rate)}"
+            if li.invoice_amount is not None:
+                desc = f"{desc}\nInvoice {_money(li.invoice_amount)}"
             data.append([
-                Paragraph(str(li.line_number), td_style), Paragraph(_d(li.expense_date), td_style),
-                Paragraph(_rich(li.description), td_style), Paragraph(_rich(acct), td_style),
+                Paragraph(str(li.line_number), td_style), Paragraph(_rich(when), td_style),
+                Paragraph(_rich(desc), td_style), Paragraph(_rich(acct), td_style),
                 Paragraph(_rich(li.cost_center_name or "—"), td_style),
                 Paragraph(_money(li.net_amount), td_r), Paragraph(_money(li.tax_amount), td_r),
                 Paragraph(_money(li.total_amount), td_r),
