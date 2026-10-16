@@ -266,27 +266,101 @@ async def _get_workflow(db: AsyncSession, doc_type: str) -> list[dict]:
     )
 
 
+# ── Over-budget pre-approval steps (PR only) ─────────────────────────────────
+#
+# The mode a PR was submitted under is FROZEN on the PR (ob_mode_applied), not
+# re-read from Budget Config on every call. Re-reading it is what broke
+# PR-20261015-0003 (ISS-0006): Budget Config moved fm_only → allow, the
+# Over-Budget step vanished from every already-submitted PR, the remaining
+# approvals slid one step_idx onto the wrong role in the timeline, and the five
+# PRs still waiting on the Finance Manager became unapprovable — step 0 now
+# meant Department Manager, so the FM's task 403'd.
+#
+# A LOOSER mode does reach in-flight PRs, but as a waiver, never by rebuilding
+# the list: the step stays where it was and is auto-skipped with a reason
+# (_ob_step_waived), so step indices — and the history recorded against them —
+# never move. A STRICTER mode never adds steps to a PR already submitted.
+
+OB_MODE_NONE = "none"   # not over budget at submission → no pre-approval steps
+_OB_STEP_IDS = ("ob_finance_manager", "ob_gm_or_opm")
+_OB_MODE_LABELS = {
+    "fm_gm_opm": "Finance Manager + GM/OPM",
+    "fm_only": "Finance Manager only",
+    "allow": "Allow without extra approval",
+    "hard_block": "Hard block",
+}
+
+
+def config_ob_mode(cfg: CompanyConfig | None) -> str:
+    """Budget Config's over-budget mode as saved right now."""
+    bac = (cfg.budget_admin_config if cfg else None) or {}
+    return bac.get("over_budget_mode", "fm_gm_opm")
+
+
+def _ob_prefix(mode: str) -> list[dict]:
+    # `allow`: submit proceeds on the normal workflow with no pre-approval
+    # steps — the justification is still demanded by the PR form and shown
+    # to every approver. Unknown values keep failing safe to an FM step.
+    if mode in (OB_MODE_NONE, "hard_block", "allow"):
+        return []
+    prepend = [{"id": "ob_finance_manager", "role": "finance_manager",
+                "label": "Over-Budget — Finance Manager"}]
+    if mode == "fm_gm_opm":
+        prepend.append({"id": "ob_gm_or_opm", "role": "gm_or_opm",
+                        "label": "Over-Budget — GM / OPM"})
+    return prepend
+
+
+def submission_ob_mode(doc: Any, status: str, cfg: CompanyConfig | None) -> str:
+    """The mode a submission of `doc` in `status` freezes onto it.
+
+    A first submission takes Budget Config as it stands. A resubmission after
+    `return` is the same approval run continuing — approvals already given
+    stand (resume_step) — so it keeps the mode it was frozen with, unless the
+    PR itself crossed the budget line while it was back with the requester, in
+    which case the step list genuinely changes and the run restarts.
+    """
+    live = config_ob_mode(cfg) if getattr(doc, "over_budget", False) else OB_MODE_NONE
+    applied = getattr(doc, "ob_mode_applied", None)
+    if status == "returned" and applied is not None \
+            and (applied == OB_MODE_NONE) == (live == OB_MODE_NONE):
+        return applied
+    return live
+
+
+def _ob_step_waived(node: dict, cfg_mode: str) -> str | None:
+    """Skip reason when Budget Config no longer requires this over-budget step,
+    else None. Only loosening waives; `hard_block` never waives (it forbids
+    over-budget spend — letting in-flight PRs through would invert it)."""
+    if node.get("id") not in _OB_STEP_IDS or cfg_mode == "hard_block":
+        return None
+    if any(n["id"] == node["id"] for n in _ob_prefix(cfg_mode)):
+        return None
+    # "Auto-skipped" is what the timelines key on to render a struck-through step.
+    return ("Auto-skipped (over-budget approval no longer required — Budget Config "
+            f"mode changed to {_OB_MODE_LABELS.get(cfg_mode, cfg_mode)})")
+
+
 async def build_effective_workflow(
     db: AsyncSession, doc_type: str, doc: Any, cfg: CompanyConfig | None,
+    *, ob_mode: str | None = None,
 ) -> list[dict]:
     """The ordered step list actually walked for THIS document: base workflow_defs
-    plus any runtime-injected over-budget steps. Optional supervisor/director nodes
-    stay in the list (skip is decided per-step at execution/render time)."""
+    plus the over-budget steps of the mode frozen on the PR at submission
+    (`ob_mode` overrides it — the submit path passes the mode being frozen).
+    Optional supervisor/director nodes stay in the list (skip is decided per-step
+    at execution/render time)."""
     workflow = await _get_workflow(db, doc_type)
-    if doc_type == "pr" and getattr(doc, "over_budget", False):
-        bac = (cfg.budget_admin_config if cfg else None) or {}
-        mode = bac.get("over_budget_mode", "fm_gm_opm")
-        # `allow`: submit proceeds on the normal workflow with no pre-approval
-        # steps — the justification is still demanded by the PR form and shown
-        # to every approver. Unknown values keep failing safe to an FM step.
-        if mode not in ("hard_block", "allow"):
-            prepend = [{"id": "ob_finance_manager", "role": "finance_manager",
-                        "label": "Over-Budget — Finance Manager"}]
-            if mode == "fm_gm_opm":
-                prepend.append({"id": "ob_gm_or_opm", "role": "gm_or_opm",
-                                "label": "Over-Budget — GM / OPM"})
-            workflow = prepend + workflow
-    return workflow
+    if doc_type != "pr":
+        return workflow
+    mode = ob_mode
+    if mode is None and getattr(doc, "status", None) != "draft":
+        mode = getattr(doc, "ob_mode_applied", None)
+    if mode is None:
+        # A draft (a recalled one starts over too), or a PR submitted before
+        # the mode was frozen and never backfilled: what a submission walks now.
+        mode = submission_ob_mode(doc, "draft", cfg)
+    return _ob_prefix(mode) + workflow
 
 
 # Default workflows shipped as PRD §3.3 seed values.
@@ -790,6 +864,7 @@ def first_actionable_step(
     dept_has_supervisor: bool,
     cross_dept_pa: bool,
     start: int = 0,
+    cfg_ob_mode: str | None = None,
 ) -> tuple[int, list[tuple[int, str, str]]]:
     """Walk the auto-skipped prefix and return where the document actually lands.
 
@@ -803,9 +878,9 @@ def first_actionable_step(
     skipped: list[tuple[int, str, str]] = []
     while start < len(workflow):
         role = workflow[start]["role"]
-        skip, reason = _should_skip_step(role, doc_type, doc, director_uid,
-                                         supervisor_uid, dept_has_director,
-                                         dept_has_supervisor, cross_dept_pa)
+        skip, reason = _step_skip(workflow[start], doc_type, doc, director_uid,
+                                  supervisor_uid, dept_has_director,
+                                  dept_has_supervisor, cross_dept_pa, cfg_ob_mode)
         if not skip:
             break
         skipped.append((start, role, reason))
@@ -841,6 +916,22 @@ async def resume_step(db: AsyncSession, doc_type: str, doc: Any, status: str,
     if step is None or not 0 <= step < len(workflow):
         return 0
     return step
+
+
+async def submission_start(db: AsyncSession, doc_type: str, ctx: "ActionContext",
+                           status: str) -> int:
+    """resume_step against the list a submission walks. If the over-budget steps
+    in front changed since the last submission (the PR crossed the budget line
+    while it was returned), the recorded return index points into a different
+    list — restart from the top rather than resume at the wrong step."""
+    workflow = ctx.submit_workflow if ctx.submit_workflow is not None else ctx.workflow
+    if doc_type == "pr":
+        applied = getattr(ctx.doc, "ob_mode_applied", None)
+        if applied is not None and ctx.submit_ob_mode is not None and \
+                [n["id"] for n in _ob_prefix(applied)] != \
+                [n["id"] for n in _ob_prefix(ctx.submit_ob_mode)]:
+            return 0
+    return await resume_step(db, doc_type, ctx.doc, status, workflow)
 
 
 async def resolve_step_assignment(
@@ -1258,6 +1349,21 @@ def _should_skip_step(role, doc_type, doc, director_uid, supervisor_uid,
     return False, ""
 
 
+def _step_skip(node, doc_type, doc, director_uid, supervisor_uid,
+               dept_has_director, dept_has_supervisor,
+               cross_dept_pa=False, cfg_ob_mode=None):
+    """_should_skip_step plus the over-budget waiver. Takes the workflow NODE,
+    not its role: an over-budget step shares its role (finance_manager /
+    gm_or_opm) with ordinary steps, only the node id tells them apart."""
+    if doc_type == "pr" and cfg_ob_mode is not None:
+        reason = _ob_step_waived(node, cfg_ob_mode)
+        if reason:
+            return True, reason
+    return _should_skip_step(node["role"], doc_type, doc, director_uid,
+                             supervisor_uid, dept_has_director,
+                             dept_has_supervisor, cross_dept_pa)
+
+
 # ── Main execution entry point ────────────────────────────────────────────────
 
 @dataclass
@@ -1284,6 +1390,14 @@ class ActionContext:
     dept_has_supervisor: bool
     workflow: list[dict]
     over_budget_mode: str
+    # Budget Config's over-budget mode right now ("" for non-PR) — drives the
+    # waiver of over-budget steps a looser mode no longer requires.
+    cfg_ob_mode: str = ""
+    # What a submit freezes (PR only): the mode, and the step list it yields.
+    # A submission is the one moment the frozen mode is (re)decided, so it walks
+    # this list rather than `workflow` (the list frozen by the LAST submission).
+    submit_ob_mode: str | None = None
+    submit_workflow: list[dict] | None = None
 
 
 async def load_action_context(db: AsyncSession, doc_type: str,
@@ -1319,14 +1433,21 @@ async def load_action_context(db: AsyncSession, doc_type: str,
     dept_has_director = bool(routing_dept_id) and str(routing_dept_id) in (dept_director or {})
     dept_has_supervisor = bool(routing_dept_id) and bool((dept_supervisor or {}).get(str(routing_dept_id)))
 
-    # Build the effective workflow for this document: base workflow_defs plus any
-    # runtime-injected over-budget steps (PR only). Optional supervisor/director
+    # Build the effective workflow for this document: base workflow_defs plus the
+    # over-budget steps frozen on the PR at submission. Optional supervisor/director
     # nodes stay in the list; skip is decided per-step at execution/render time.
     workflow = await build_effective_workflow(db, doc_type, doc, cfg)
     over_budget_mode = ""
-    if doc_type == "pr" and getattr(doc, "over_budget", False):
-        over_budget_mode = ((cfg.budget_admin_config if cfg else None) or {}).get(
-            "over_budget_mode", "fm_gm_opm")
+    cfg_ob_mode = ""
+    submit_ob_mode = None
+    submit_workflow = workflow
+    if doc_type == "pr":
+        cfg_ob_mode = config_ob_mode(cfg)
+        if getattr(doc, "over_budget", False):
+            over_budget_mode = cfg_ob_mode
+        submit_ob_mode = submission_ob_mode(doc, _status_of(meta, doc), cfg)
+        submit_workflow = await build_effective_workflow(
+            db, doc_type, doc, cfg, ob_mode=submit_ob_mode)
 
     return ActionContext(
         meta=meta, doc=doc, step=_step_of(meta, doc), cfg=cfg, rm=rm,
@@ -1335,6 +1456,8 @@ async def load_action_context(db: AsyncSession, doc_type: str,
         director_uid=director_uid, supervisor_uid=supervisor_uid,
         dept_has_director=dept_has_director, dept_has_supervisor=dept_has_supervisor,
         workflow=workflow, over_budget_mode=over_budget_mode,
+        cfg_ob_mode=cfg_ob_mode, submit_ob_mode=submit_ob_mode,
+        submit_workflow=submit_workflow,
     )
 
 
@@ -1390,17 +1513,19 @@ async def preflight_submit(db: AsyncSession, doc_type: str,
     # Routing is evaluated even when an earlier gate already failed — an
     # unconfigured department manager is exactly the kind of thing worth knowing
     # about before you go fix something else and come back.
+    sub_workflow = ctx.submit_workflow if ctx.submit_workflow is not None else ctx.workflow
     start, _skipped = first_actionable_step(
-        doc_type, ctx.doc, ctx.workflow, ctx.director_uid, ctx.supervisor_uid,
+        doc_type, ctx.doc, sub_workflow, ctx.director_uid, ctx.supervisor_uid,
         ctx.dept_has_director, ctx.dept_has_supervisor, ctx.cross_dept_pa,
-        start=await resume_step(db, doc_type, ctx.doc, status, ctx.workflow))
-    if start >= len(ctx.workflow):
+        start=await submission_start(db, doc_type, ctx, status),
+        cfg_ob_mode=ctx.cfg_ob_mode or None)
+    if start >= len(sub_workflow):
         # Whole workflow auto-skips: submission goes straight to approved.
         checks.append(Check(id="approver_routing", layer="config", passed=True))
     else:
         try:
             await resolve_step_assignment(
-                db, doc_type, ctx.doc, start, ctx.workflow, ctx.rm, ctx.dept_gm_opm,
+                db, doc_type, ctx.doc, start, sub_workflow, ctx.rm, ctx.dept_gm_opm,
                 routing_dept_id=ctx.routing_dept_id, director_uid=ctx.director_uid,
                 supervisor_uid=ctx.supervisor_uid, cross_dept_pa=ctx.cross_dept_pa)
             checks.append(Check(id="approver_routing", layer="config", passed=True))
@@ -1463,13 +1588,19 @@ async def execute_action(
         if doc_type == "pr" and over_budget_mode == "hard_block":
             raise ValueError(MSG_BUDGET_HARD_BLOCK)
         # Read before the status flips — only a `returned` document resumes.
-        resume_at = await resume_step(db, doc_type, doc, _status_of(meta, doc), workflow)
+        resume_at = await submission_start(db, doc_type, ctx, _status_of(meta, doc))
+        if ctx.submit_workflow is not None:
+            workflow = ctx.submit_workflow
+        if doc_type == "pr":
+            # Freeze the over-budget mode this approval run walks — see _ob_prefix.
+            doc.ob_mode_applied = ctx.submit_ob_mode
         _set_status(meta, doc, "submitted")
         if hasattr(doc, "submitted_at"):
             doc.submitted_at = now
         start, skipped_prefix = first_actionable_step(
             doc_type, doc, workflow, director_uid, supervisor_uid,
-            dept_has_director, dept_has_supervisor, cross_dept_pa, start=resume_at)
+            dept_has_director, dept_has_supervisor, cross_dept_pa, start=resume_at,
+            cfg_ob_mode=ctx.cfg_ob_mode or None)
         for idx, skipped_role, reason in skipped_prefix:
             db.add(ApprovalEvent(
                 document_type=doc_type, document_id=doc.id, document_number=doc_number,
@@ -1519,9 +1650,12 @@ async def execute_action(
             next_role = workflow[next_step]["role"]
             # Conditional skip (per-document) — fires before the same-approver
             # check so non-GMP visits don't even check who holds the QM role.
-            cond_skip, reason = _should_skip_step(
-                next_role, doc_type, doc, director_uid, supervisor_uid,
-                dept_has_director, dept_has_supervisor, cross_dept_pa)
+            # Includes an over-budget step Budget Config has since stopped
+            # requiring (FM approved under fm_gm_opm, mode is now fm_only).
+            cond_skip, reason = _step_skip(
+                workflow[next_step], doc_type, doc, director_uid, supervisor_uid,
+                dept_has_director, dept_has_supervisor, cross_dept_pa,
+                ctx.cfg_ob_mode or None)
             if cond_skip:
                 db.add(ApprovalEvent(
                     document_type=doc_type, document_id=doc.id, document_number=doc_number,
@@ -1741,10 +1875,18 @@ _GM_OPM_ROLES = {"gm", "opm", "gm_or_opm"}
 _USER_SPECIFIC_ROLES = {"dept_manager", "director", "supervisor", "quality_manager"}
 
 
-def _step_index_for_task_role(workflow: list[dict], task_role: str) -> int | None:
+def _step_index_for_task_role(workflow: list[dict], task_role: str,
+                              prefer: int | None = None) -> int | None:
     """Workflow index a task's role belongs to (gm/opm/gm_or_opm → the gm_or_opm
-    node). None when the role isn't in this workflow (e.g. a legacy ap_clerk task)."""
+    node). None when the role isn't in this workflow (e.g. a legacy ap_clerk task).
+
+    A role can sit on two nodes — the over-budget GM/OPM step and an ordinary
+    GM/OPM step — so `prefer` (the stored step) wins when its node matches;
+    otherwise the first match."""
     target = "gm_or_opm" if task_role in _GM_OPM_ROLES else task_role
+    if prefer is not None and 0 <= prefer < len(workflow) \
+            and workflow[prefer]["role"] == target:
+        return prefer
     for i, node in enumerate(workflow):
         if node["role"] == target:
             return i
@@ -1816,10 +1958,12 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
     dept_has_director = bool(routing_dept_id) and str(routing_dept_id) in (dept_director or {})
     dept_has_supervisor = bool(routing_dept_id) and bool((dept_supervisor or {}).get(str(routing_dept_id)))
     workflow = await build_effective_workflow(db, doc_type, doc, cfg)
+    cfg_ob_mode = config_ob_mode(cfg) if doc_type == "pr" else None
 
     # Real current step: the open approve task's role (reliable) → else stored idx.
     if open_tasks:
-        mapped = [(_step_index_for_task_role(workflow, t.assigned_role), t) for t in open_tasks]
+        mapped = [(_step_index_for_task_role(workflow, t.assigned_role, _step_of(meta, doc)), t)
+                  for t in open_tasks]
         mapped = [(i, t) for i, t in mapped if i is not None]
         if not mapped:
             return None  # only unknown-role tasks (e.g. ap_clerk) — leave alone
@@ -1831,18 +1975,20 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
 
     actions: list[str] = []
 
-    # Case A — true step is now a skippable optional (Director/Supervisor gone): advance.
-    skip_now, _r = _should_skip_step(
-        workflow[true_step]["role"], doc_type, doc, director_uid, supervisor_uid,
-        dept_has_director, dept_has_supervisor, cross_dept_pa)
+    # Case A — true step is now skippable: an optional level gone (Director /
+    # Supervisor), or an over-budget step Budget Config no longer requires
+    # (mode loosened to fm_only / allow — the FM's task moves on). Advance.
+    skip_now, _r = _step_skip(
+        workflow[true_step], doc_type, doc, director_uid, supervisor_uid,
+        dept_has_director, dept_has_supervisor, cross_dept_pa, cfg_ob_mode)
     if skip_now:
         start = true_step
         skipped: list[str] = []
         while start < len(workflow):
             r = workflow[start]["role"]
-            sk, reason = _should_skip_step(
-                r, doc_type, doc, director_uid, supervisor_uid, dept_has_director,
-                dept_has_supervisor, cross_dept_pa)
+            sk, reason = _step_skip(
+                workflow[start], doc_type, doc, director_uid, supervisor_uid,
+                dept_has_director, dept_has_supervisor, cross_dept_pa, cfg_ob_mode)
             if not sk:
                 break
             db.add(ApprovalEvent(
@@ -1881,7 +2027,7 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
         db, doc_type, doc, true_step, workflow, rm, dept_gm_opm, routing_dept_id, director_uid,
         supervisor_uid, cross_dept_pa)
     role = workflow[true_step]["role"]
-    stray = any(_step_index_for_task_role(workflow, t.assigned_role) != true_step for t in open_tasks)
+    stray = any(_step_index_for_task_role(workflow, t.assigned_role, true_step) != true_step for t in open_tasks)
     if role in _USER_SPECIFIC_ROLES:
         if des_uid is None:
             actions.append(f"WARN {role} unresolved @step{true_step} — assign one in config, then re-sync")
@@ -1916,15 +2062,19 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
     return {"doc_type": doc_type, "number": number, "actions": actions, "final_step": _step_of(meta, doc)}
 
 
-async def resync_inflight_approvals(db: AsyncSession) -> dict:
+async def resync_inflight_approvals(db: AsyncSession, *, over_budget_prs_only: bool = False) -> dict:
     """Realign every in-flight document with an open approval task to the current
     routing config. Mutates the session; caller commits/rolls back. Each document
-    is isolated in a SAVEPOINT so one bad doc can't corrupt the batch."""
-    rows = (await db.execute(
-        select(Task.document_type, Task.document_id)
-        .where(Task.type.like("approve%"), Task.is_completed.is_(False))
-        .distinct()
-    )).all()
+    is isolated in a SAVEPOINT so one bad doc can't corrupt the batch.
+
+    `over_budget_prs_only` narrows it to over-budget PRs — what a Budget Config
+    save can affect (a loosened over-budget mode waives their pending steps)."""
+    q = (select(Task.document_type, Task.document_id)
+         .where(Task.type.like("approve%"), Task.is_completed.is_(False)))
+    if over_budget_prs_only:
+        q = q.where(Task.document_type == "pr", Task.document_id.in_(
+            select(PurchaseRequest.id).where(PurchaseRequest.over_budget.is_(True))))
+    rows = (await db.execute(q.distinct())).all()
     resynced: list[dict] = []
     errors: list[dict] = []
     for doc_type, doc_id in rows:

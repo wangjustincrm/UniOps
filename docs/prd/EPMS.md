@@ -469,14 +469,22 @@ When a PR is over budget, the system reads the **Over-Budget Approval Mode** (co
 | `allow` — Allow without extra approval (added 2026-10) | No step added; the PR follows its normal chain. The justification is still required and is visible to every approver on the PR Detail page. |
 | `hard_block` — Hard block | Submission is refused with a message telling the requester to reduce the amount or split the PR. No justification field. |
 
-> The pre-approval steps are injected at runtime by the approval engine based on the PR's over-budget flag and the current mode; they are **not** stored in the PR workflow definition. The mode is read when each approval action runs, so changing it affects in-flight PRs from their next step onward. Any unrecognised value behaves like *Finance Manager only*.
+> The pre-approval steps are added by the approval engine; they are **not** part of the PR workflow definition. **The mode is frozen on the PR when it is submitted** (`purchase_requests.ob_mode_applied`: `none` when the PR was within budget, otherwise the mode in force), and the PR's step list — and therefore its Approval Timeline — is always built from that frozen value, never from Budget Config as it stands later. Any unrecognised value behaves like *Finance Manager only*.
+
+**OBG-010 — Changing the mode while PRs are in approval.** A change applies in full to PRs submitted afterwards. PRs already in approval only ever get *lighter*:
+
+- **Looser mode** (`fm_gm_opm` → `fm_only`, or anything → `allow`): an over-budget step the new mode no longer requires and that the PR has **not yet passed** is skipped. Saving Budget Config re-aligns every in-flight over-budget PR at once: the Finance Manager's (or GM/OPM's) open task is closed, the step is recorded as *"Auto-skipped (over-budget approval no longer required — Budget Config mode changed to …)"* and shown struck through on the timeline, and the PR moves to its next approver. A step still pending when an approver acts is skipped the same way. The save confirmation says how many PRs were updated, and warns if the re-alignment could not run (saving again retries it).
+- **Stricter mode** (e.g. `allow` → `fm_only`): never adds steps to a PR already submitted.
+- **`hard_block`** does not waive pending over-budget steps (it forbids over-budget spend; in-flight PRs keep their approvals). It only refuses new submissions and resubmissions.
+
+> Before 2026-10 the mode was re-read on every action. Switching `fm_only` → `allow` on 2026-10-16 removed the Finance Manager step from every submitted over-budget PR, so approved PRs showed their approvers under the wrong roles and PRs waiting on the Finance Manager could no longer be approved (ISS-0006). Existing PRs were backfilled from their recorded approvals when the frozen mode was introduced.
 
 Over-Budget FR IDs:
 
 | FR ID | Requirement |
 |-------|-------------|
 | **OBG-002** | The task assigned to Finance Manager (and GM/OPM in `fm_gm_opm` mode) for over-budget pre-approval must display the PR number, total amount, and the requester's justification text inline in the task inbox — without requiring the approver to open the PR Detail page. |
-| **OBG-003** | If the Finance Manager (or GM/OPM) **rejects** at an over-budget step, the PR is rejected (terminal). If they **return** it, the PR goes back to the requester; on resubmission it resumes at the step that returned it, and the over-budget steps are re-derived from the PR's current over-budget flag. |
+| **OBG-003** | If the Finance Manager (or GM/OPM) **rejects** at an over-budget step, the PR is rejected (terminal). If they **return** it, the PR goes back to the requester; on resubmission it resumes at the step that returned it under the mode frozen at its first submission (a looser current mode still waives pending over-budget steps, OBG-010). If the PR crossed the budget line while it was returned (now within budget, or newly over budget), the over-budget steps change, so it restarts from the first step under the current mode. |
 | **OBG-004** | In `fm_gm_opm` mode, after Finance Manager approves the PR advances to the GM/OPM over-budget pre-approval step. In `fm_only` mode there is no such step and the PR proceeds directly into its normal chain. |
 | **OBG-005** | GM/OPM over-budget pre-approval (only in `fm_gm_opm` mode): if approved, the PR continues into its normal chain; reject and return behave as in OBG-003. |
 | **OBG-007** | The over-budget justification text is required (non-empty, no minimum character count) when the PR is over-budget and the mode is `fm_gm_opm`, `fm_only` or `allow`. This is enforced by the PR form; the API stores whatever is sent. It is stored on the PR and displayed as a prominent amber block on the **PR Detail page** (visible to all approvers) and inline in the over-budget pre-approval task description (OBG-002). |

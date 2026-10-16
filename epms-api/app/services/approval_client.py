@@ -75,6 +75,21 @@ async def resync_document(doc_type: str, doc_id: str, bearer_token: str) -> dict
     return resp.json()
 
 
+async def resync_over_budget(bearer_token: str) -> dict:
+    """Call POST /routing/resync-over-budget on the Approval Engine after a Budget
+    Config save: a loosened over-budget mode waives the pre-approval steps that
+    in-flight over-budget PRs are still waiting on, so the Finance Manager's
+    task moves on instead of stranding (2026-10-16, ISS-0006). Raises
+    RuntimeError on unreachable / error; the config save is already committed.
+    """
+    url = f"{settings.APPROVAL_ENGINE_URL}/routing/resync-over-budget"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(url, headers={"Authorization": f"Bearer {bearer_token}"})
+    if not resp.is_success:
+        raise RuntimeError(f"resync-over-budget {resp.status_code}: {resp.text[:200]}")
+    return resp.json()
+
+
 async def resync_inflight(bearer_token: str) -> dict:
     """Call POST /routing/resync-inflight on the Approval Engine: re-point every
     in-flight document at whoever the CURRENT config resolves to.

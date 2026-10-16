@@ -70,6 +70,10 @@ class PurchaseRequest(UUIDPrimaryKey, TimestampMixin, Base):
     # CompanyConfig.budget_admin_config.over_budget_mode.
     over_budget: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     over_budget_justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The over_budget_mode frozen at submission (none | fm_only | fm_gm_opm |
+    # allow). Written by approval-api on submit; NULL until first submitted.
+    # Changing Budget Config later must not rebuild a submitted PR's steps.
+    ob_mode_applied: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approval_step_idx: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

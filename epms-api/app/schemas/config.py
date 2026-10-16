@@ -276,3 +276,7 @@ class ConfigResponse(BaseModel):
 
     updated_at: datetime
     updated_by: uuid.UUID | None
+
+    # PATCH only: outcome of re-aligning in-flight over-budget PRs after a
+    # Budget Config save ("ok: N …" / "failed: …"); None when not attempted.
+    over_budget_resync: str | None = None
