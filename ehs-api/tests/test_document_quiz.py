@@ -11,7 +11,7 @@ SIG = {"signature": "data:image/png;base64,iVBORw0KGgo="}
 
 async def _published(client, db, *, title="Working at Heights Policy", review_months=None) -> str:
     made = await client.post("/api/v1/documents", json={
-        "title": title, "doc_type": "policy", "requires_ack": True,
+        "title": title, "doc_type": "policy", "requires_ack": True, "ack_everyone": True,
         **({"review_months": review_months} if review_months else {})})
     assert made.status_code in (200, 201), made.text
     doc_id = made.json()["id"]
@@ -239,3 +239,47 @@ async def test_a_replaced_version_stops_being_reviewed(hse_manager, db_session):
         StatutoryDeadline.source_id == uuid.UUID(doc_id),
         StatutoryDeadline.satisfied_at.is_(None)))).scalars().all()
     assert not left, "v1 is not in force; it has nothing to review"
+
+
+async def test_a_document_everyone_had_to_sign_still_reaches_everyone(hse_manager, db_session):
+    """★ Raised in review by uniops-55: before round 7 an empty list meant the
+    plant. Without the backfill in 0067, a published document everybody had
+    to sign would quietly reach nobody. Simulated here: the row as it was
+    before the migration, then the migration's own SQL."""
+    import importlib.util
+    import pathlib
+    from sqlalchemy import text
+    from app.crud import document as doc_crud
+    from app.models.mirrors import User
+    from sqlalchemy import select
+
+    _, hse = hse_manager
+    doc_id = await _published(hse, db_session, title="Plant-wide policy")
+    row = await db_session.get(SafetyDocument, uuid.UUID(doc_id))
+    row.ack_everyone, row.ack_roles, row.ack_user_ids = False, [], []
+    await db_session.commit()
+    assert await doc_crud._audience(db_session, row) == [], "the old row, read by the new rule"
+
+    statements: list[str] = []
+
+    class _Op:
+        def add_column(self, *a, **k):
+            pass  # the column is there already: create_all built it
+
+        def execute(self, sql):
+            statements.append(sql)
+
+    path = next(pathlib.Path("alembic/versions").glob("*_0067_document_ack_everyone.py"))
+    spec = importlib.util.spec_from_file_location("m0067", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.op = _Op()
+    module.upgrade()
+    for sql in statements:
+        await db_session.execute(text(sql))
+    await db_session.commit()
+
+    await db_session.refresh(row)
+    assert row.ack_everyone is True
+    active = (await db_session.execute(select(User.id).where(User.is_active.is_(True)))).scalars().all()
+    assert {u.id for u in await doc_crud._audience(db_session, row)} == set(active)

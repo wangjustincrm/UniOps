@@ -78,6 +78,7 @@ async def create_document(db: AsyncSession, payload: dict, *, owner_id: uuid.UUI
         effective_on=payload.get("effective_on"),
         review_months=payload.get("review_months"),
         requires_ack=payload.get("requires_ack", False),
+        ack_everyone=bool(payload.get("ack_everyone")),
         ack_roles=payload.get("ack_roles") or [],
         ack_user_ids=[str(u) for u in (payload.get("ack_user_ids") or [])],
         qr_token=_new_qr_token(),
@@ -109,6 +110,12 @@ async def publish(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "Attach the document before publishing it — there is nothing for "
             "anyone to read")
+    # ★ Round 7, TC-11: who has to sign is said before it goes out.
+    if doc.requires_ack and not (doc.ack_everyone or doc.ack_roles or doc.ack_user_ids):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Say who has to sign it before publishing — everybody, or the people "
+            "it concerns")
     if doc.status == "published":
         return doc
 
@@ -179,7 +186,8 @@ async def new_version(
         title=doc.title, category=doc.category, summary=doc.summary,
         version=version,
         review_months=doc.review_months,
-        requires_ack=doc.requires_ack, ack_roles=list(doc.ack_roles or []),
+        requires_ack=doc.requires_ack, ack_everyone=doc.ack_everyone,
+        ack_roles=list(doc.ack_roles or []),
         # ★ The named people come across too. Without this a document sent to
         # three people and to no role became a document with no audience at
         # all on its next revision — and no audience means the plant, so one
@@ -244,18 +252,20 @@ async def replacement_for(
 async def _audience(db: AsyncSession, doc: SafetyDocument) -> list[User]:
     """Who has to sign this one.
 
-    An empty `ack_roles` means everybody. A list narrows it, matched against
+    `ack_everyone` means the plant. Otherwise roles and named people, together;
     the primary role *and* any additional role — a person who is a first aider
     in addition to their job is in the first-aid procedure's audience.
     """
     roles = list(doc.ack_roles or [])
     named = [uuid.UUID(str(u)) for u in (doc.ack_user_ids or [])]
 
-    # Neither roles nor names: the plant. That is what an unqualified policy
-    # means and it is the existing behaviour.
-    if not roles and not named:
+    # The plant, when that was chosen. ★ Round 7: no longer what an empty list
+    # falls back to — an empty audience is refused at publishing.
+    if doc.ack_everyone:
         return list((await db.execute(
             select(User).where(User.is_active.is_(True)))).scalars())
+    if not roles and not named:
+        return []
 
     # ★ The union, not the intersection. Naming somebody adds them to a role's
     # audience rather than narrowing it — the same mistake was made once on the

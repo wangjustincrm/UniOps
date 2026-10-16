@@ -59,6 +59,11 @@ class SafetyDocument(UUIDPrimaryKey, TimestampMixin, Base):
 
     requires_ack: Mapped[bool] = mapped_column(Boolean, nullable=False,
                                                default=False, server_default="false")
+    # ★ Round 7, TC-11: "make the who has to sign a mandatory field." Everybody
+    # is now a choice somebody made, not what an empty list fell back to — a
+    # forgotten field put a procedure on four hundred people's lists.
+    ack_everyone: Mapped[bool] = mapped_column(Boolean, nullable=False,
+                                               default=False, server_default="false")
     # Empty list = everybody. A list of role codes narrows it — the forklift
     # procedure does not need a signature from the accounts office.
     # Named individuals, in addition to whatever roles are listed. A procedure

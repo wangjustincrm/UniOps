@@ -510,6 +510,7 @@ async def test_one_person_signing_a_policy_does_not_sign_it_for_everybody(
         "title": "Working at Heights Policy",
         "doc_type": "policy",
         "requires_ack": True,
+        "ack_everyone": True,
     })
     assert created.status_code in (200, 201), created.text
     doc_id = created.json()["id"]

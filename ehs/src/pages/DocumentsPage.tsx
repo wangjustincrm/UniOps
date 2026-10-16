@@ -207,6 +207,11 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
   // one line corresponds to no role, and sending it to whoever holds the
   // nearest one teaches thirty others to ignore the next thing they are sent.
   const [named, setNamed] = useState<PersonValue[]>([])
+  // ★ Round 7, TC-11: "make the who has to sign a mandatory field." Chosen,
+  // never defaulted: a blank used to mean the whole plant.
+  const [audience, setAudience] = useState<'everyone' | 'named' | null>(null)
+  const audienceMissing = requiresAck
+    && (audience === null || (audience === 'named' && named.length === 0))
   const [adding, setAdding] = useState<PersonValue>(EMPTY_PERSON)
 
   // ★ The document itself, on the form that creates it. Round 4: "add the
@@ -230,7 +235,8 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
           title, category, summary: summary || null, version,
           review_months: reviewMonths ? Number(reviewMonths) : null,
           requires_ack: requiresAck,
-          ack_user_ids: named.map((p) => p.userId).filter(Boolean),
+          ack_everyone: requiresAck && audience === 'everyone',
+          ack_user_ids: audience === 'named' ? named.map((p) => p.userId).filter(Boolean) : [],
         })
         createdId.current = doc.id
       }
@@ -324,13 +330,23 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
 
       {requiresAck && (
         <div className="mt-2 rounded-lg border border-neutral-200 p-3">
-          <p className="text-xs font-medium text-neutral-700">Who has to sign it</p>
-          <p className="mt-0.5 text-xs text-neutral-500">
-            {named.length === 0
-              ? 'Everybody, unless you name people here.'
-              : 'Only the people named here.'}
-          </p>
-          {named.length > 0 && (
+          <p className="text-xs font-medium text-neutral-700">Who has to sign it <span className="text-danger-600">*</span></p>
+          <div className="mt-1.5 flex flex-col gap-1.5 text-sm text-neutral-800">
+            <label className="flex items-center gap-2">
+              <input type="radio" name="audience" checked={audience === 'everyone'}
+                     onChange={() => setAudience('everyone')} />
+              Everybody in the plant
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="audience" checked={audience === 'named'}
+                     onChange={() => setAudience('named')} />
+              Only the people I name
+            </label>
+          </div>
+          {audience === 'named' && named.length === 0 && (
+            <p className="mt-1 text-xs text-warning-700">Name at least one person.</p>
+          )}
+          {audience === 'named' && named.length > 0 && (
             <ul className="mt-2 flex flex-wrap gap-1.5">
               {named.map((p) => (
                 <li key={p.userId ?? p.name}
@@ -345,7 +361,7 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
               ))}
             </ul>
           )}
-          <div className="mt-2">
+          {audience === 'named' && <div className="mt-2">
             <PersonPicker
               value={adding}
               onChange={(v) => {
@@ -359,7 +375,7 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
                 }
               }}
             />
-          </div>
+          </div>}
         </div>
       )}
       {partial && (
@@ -371,7 +387,7 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
       <div className="mt-3 flex justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
         <button type="button" className={primaryButton}
-                disabled={!title.trim() || create.isPending}
+                disabled={!title.trim() || audienceMissing || create.isPending}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
           {create.isPending ? 'Creating…' : 'Create'}
         </button>

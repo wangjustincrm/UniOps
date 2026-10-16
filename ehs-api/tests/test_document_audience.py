@@ -14,6 +14,9 @@ async def _published(client, **kw) -> dict:
         "title": "Line 2 changeover procedure",
         "category": "procedure",
         "requires_ack": True,
+        # ★ Round 7: everybody is said, not implied. A test that names people
+        # or roles turns this off below.
+        "ack_everyone": not (kw.get("ack_roles") or kw.get("ack_user_ids")),
         # Publishing refuses a document with nothing to read, and the real
         # upload needs the file server, which these tests do not run. The id is
         # the only part of that the document itself holds, so this goes through
@@ -76,12 +79,26 @@ async def test_naming_somebody_adds_to_a_role_rather_than_narrowing_it(
     assert manager.role == "ehs_manager"
 
 
-async def test_a_document_with_no_audience_still_means_everybody(hse_manager):
-    """Unqualified means the plant, which is what it meant before."""
+async def test_everybody_is_a_choice_and_nobody_is_refused(hse_manager):
+    """★ Round 7, TC-11: "make the who has to sign a mandatory field." An
+    empty list used to mean the plant, so a field left blank put a procedure on
+    everybody's list. Everybody is now chosen; saying nobody is refused at
+    publishing, by name."""
     _, client = hse_manager
-    doc = await _published(client, ack_roles=[], ack_user_ids=[])
+    doc = await _published(client, ack_everyone=True)
     counted = (await client.get(f"/api/v1/documents/{doc['id']}/signing-status")).json()
     assert counted["audience"] >= 2
+
+    nobody = (await client.post("/api/v1/documents", json={
+        "title": "Unaddressed", "category": "procedure", "requires_ack": True,
+        "file_id": str(uuid.uuid4()), "filename": "x.pdf"})).json()
+    refused = await client.post(f"/api/v1/documents/{nobody['id']}/publish")
+    assert refused.status_code == 422 and "Say who has to sign it" in refused.text
+    # The admission: one that needs no signature publishes with no audience.
+    plain = (await client.post("/api/v1/documents", json={
+        "title": "For reference", "category": "procedure", "requires_ack": False,
+        "file_id": str(uuid.uuid4()), "filename": "y.pdf"})).json()
+    assert (await client.post(f"/api/v1/documents/{plain['id']}/publish")).status_code in (200, 201)
 
 
 async def test_a_revision_keeps_the_people_it_was_sent_to(hse_manager, worker):
