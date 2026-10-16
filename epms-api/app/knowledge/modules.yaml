@@ -93,8 +93,24 @@ modules:
         A receipt scanned on a claim line (Scan) is kept as that line's receipt
         and attached to the claim automatically when it is saved — it does not
         need uploading again. General and travel expense claims need at least
-        one attachment before they can be submitted. The comment typed when
-        submitting appears in the claim's Approval Timeline.
+        one attachment before they can be submitted — except a travel expense
+        claim whose lines are all date-range lines, which may go without one.
+        The comment typed when submitting appears in the claim's Approval
+        Timeline.
+      - >-
+        Long trips need not be claimed one day at a time. On a Travel Expense
+        line, switch Single day to Date range and give the From and To dates
+        (inside the trip dates): Days claimed starts at the number of days in
+        the range and can be lowered but not raised; enter the Daily rate,
+        and the line amount is days × rate. For meals and incidentals the
+        daily rate may not exceed the limit set in Expense Config. An invoice
+        is optional on a date-range line, but if one is attached its amount
+        must be entered and the line total may not exceed it — one hotel
+        invoice can cover the whole stay. The trip's Country decides tax: in
+        Canada each line has a Tax picker (GST, the province's HST, PST, QST
+        or No tax; it starts on Ontario HST), anywhere else adds no tax.
+        Travel expense claims are in CAD only — convert foreign-currency
+        receipts to CAD yourself before entering them.
       - >-
         A claim an approver returns can be changed and sent back by the person
         who raised it: open the claim, Edit, Save Changes, then Submit. It goes
