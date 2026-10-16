@@ -226,6 +226,54 @@ async def list_incidents(
     return [IncidentListItem.model_validate(r) for r in rows]
 
 
+class RegisterSummary(BaseModel):
+    open: int
+    under_investigation: int
+    closed: int
+    root_causes: int
+    corrective_actions: int
+
+
+@router.get("/summary", response_model=RegisterSummary)
+async def register_summary(db: SessionDep, user: CanReportIncident):
+    """The figures above the register.
+
+    Round 7, TC-10: "create a dashboard on the incident registry with the
+    following boxes, Open Incidents, number of closed incidents, Incidents under
+    investigation, number of Root causes identified, number of CAPA's recorded."
+
+    Over what this person's register shows: every incident with the register
+    permission, their own reports without it — the same narrowing as the list,
+    so a figure never counts rows the list would not show. ★ Drafts are not
+    incidents yet and are left out, as everywhere else they are counted.
+    Corrective actions cancelled are not counted as recorded.
+    """
+    from app.models.action import Action
+    from app.models.incident import Cause
+    from sqlalchemy import func
+
+    mine_only = not await has_permission(
+        db, _user_id(user), user.get("role", ""), "ehs.incident.read")
+    seen = select(Incident.id).where(Incident.status != "draft")
+    if mine_only:
+        seen = seen.where(Incident.reported_by == _user_id(user))
+
+    by_status = dict((await db.execute(
+        select(Incident.status, func.count()).where(Incident.id.in_(seen))
+        .group_by(Incident.status))).all())
+    roots = (await db.execute(
+        select(func.count()).select_from(Cause)
+        .where(Cause.incident_id.in_(seen), Cause.cause_type == "root"))).scalar() or 0
+    actions = (await db.execute(
+        select(func.count()).select_from(Action)
+        .where(Action.source_id.in_(seen), Action.status != "cancelled"))).scalar() or 0
+    return RegisterSummary(
+        open=sum(n for st, n in by_status.items() if st != "closed"),
+        under_investigation=by_status.get("under_investigation", 0),
+        closed=by_status.get("closed", 0),
+        root_causes=roots, corrective_actions=actions)
+
+
 class IncidentTypeOption(BaseModel):
     code: str
     label: str

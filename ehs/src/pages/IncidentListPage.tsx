@@ -106,6 +106,8 @@ export default function IncidentListPage() {
     <div className="p-4">
       <h1 className="mb-3 text-base font-semibold text-neutral-900">{heading}</h1>
 
+      {drill.length === 0 && !filtering && <RegisterFigures />}
+
       {/* What this list has been narrowed to, and the way back out. A filter
           that is doing something but says nothing is how somebody reads a
           drilled-down register as the whole register. */}
@@ -175,6 +177,55 @@ export default function IncidentListPage() {
       <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
                   onPage={list.setPage} capped={capped}
                   loaded={incidents.length} noun="incidents" />
+    </div>
+  )
+}
+
+
+interface Summary {
+  open: number; under_investigation: number; closed: number
+  root_causes: number; corrective_actions: number
+}
+
+/**
+ * The figures above the register.
+ *
+ * Round 7, TC-10: "create a dashboard on the incident registry with the
+ * following boxes, Open Incidents, number of closed incidents, Incidents under
+ * investigation, number of Root causes identified, number of CAPA's recorded."
+ *
+ * Shown over the whole register only: under a filter they would disagree with
+ * the rows beneath them. ★ Never a 0 that is not one — while loading the boxes
+ * show a dash, and a failure says so rather than reading as "no incidents".
+ */
+function RegisterFigures() {
+  const summary = useQuery({
+    queryKey: ['incident-summary'],
+    queryFn: () => api.get<Summary>('/api/v1/incidents/summary'),
+  })
+  if (summary.isError) {
+    return (
+      <p className="mb-3 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">
+        The register figures could not be loaded. The list below is unaffected.
+      </p>
+    )
+  }
+  const d = summary.data
+  const tiles: [string, number | undefined][] = [
+    ['Open incidents', d?.open],
+    ['Under investigation', d?.under_investigation],
+    ['Closed incidents', d?.closed],
+    ['Root causes identified', d?.root_causes],
+    ['Corrective actions recorded', d?.corrective_actions],
+  ]
+  return (
+    <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5" aria-label="Register figures">
+      {tiles.map(([label, n]) => (
+        <div key={label} className="rounded-lg border border-neutral-200 bg-white px-3 py-2">
+          <p className="text-xl font-semibold tabular-nums text-neutral-900">{n ?? '—'}</p>
+          <p className="text-xs text-neutral-500">{label}</p>
+        </div>
+      ))}
     </div>
   )
 }
