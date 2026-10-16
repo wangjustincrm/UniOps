@@ -211,6 +211,8 @@ export default function IncidentReportPage() {
   const { can } = usePermissions()
   const showInjuryDetail = form.kind === 'medical' && Boolean(selectedType?.injury_detail)
     && can('ehs.incident.medical.read')
+  // Somebody is named as hurt — picked from the directory or written in.
+  const namedInjured = Boolean(form.injured.userId || form.injured.name.trim())
 
   const submit = useMutation({
     mutationFn: async () => {
@@ -546,7 +548,10 @@ export default function IncidentReportPage() {
         </Field>
       )}
 
-      {form.kind === 'medical' && (
+      {/* ★ Round 7: "make the following fields viewable only when a name is
+          entered into the who was hurt, what part of the body, what kind of
+          injury, who gave treatment, and what treatment was given." */}
+      {form.kind === 'medical' && namedInjured && (
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="What part of the body?"
                  help="Grouped the way WSIB groups them, so Form 7 can be filled from this.">
@@ -561,7 +566,7 @@ export default function IncidentReportPage() {
         </div>
       )}
 
-      {form.kind === 'medical' && (
+      {form.kind === 'medical' && namedInjured && (
         <>
           {/* The first aid register, on the form rather than beside it.
               Regulation 1101 wants a record of the treatment; it does not
