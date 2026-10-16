@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Loader2 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { mdmApi, api } from '@/lib/api'
+import { PRESET_PAYMENT_TERMS } from '@/lib/paymentTerms'
 
 interface ErpSupplierRow {
   erp_supplier_code: string
@@ -119,7 +120,7 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
                 <label className="text-xs">Payment terms
                   <select className="block w-full mt-1 rounded border border-neutral-200 px-2 py-1 text-sm"
                     value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}>
-                    {['net15','net30','net45','net60','cod','prepaid'].map(t => <option key={t} value={t}>{t}</option>)}
+                    {PRESET_PAYMENT_TERMS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </label>
                 <label className="text-xs">Currency

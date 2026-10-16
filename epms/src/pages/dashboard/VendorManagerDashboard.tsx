@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { formatDate } from '@/lib/utils'
+import { formatPaymentTerms } from '@/lib/paymentTerms'
 
 export default function VendorManagerDashboard() {
   const { data } = useDashboard()
@@ -59,7 +60,7 @@ export default function VendorManagerDashboard() {
                     <td className="py-2 pr-3 max-w-[160px] truncate font-medium text-neutral-800">{vendor.name}</td>
                     <td className="py-2 pr-3 text-neutral-500">{vendor.category}</td>
                     <td className="py-2 pr-3 text-neutral-500">{vendor.contact_name}</td>
-                    <td className="py-2 pr-3 text-neutral-500 capitalize">{vendor.payment_terms}</td>
+                    <td className="py-2 pr-3 text-neutral-500">{formatPaymentTerms(vendor.payment_terms)}</td>
                     <td className="py-2 pr-3 text-neutral-500">{formatDate(vendor.created_at)}</td>
                     <td className="py-2 pr-3">
                       {vendor.is_active ? (

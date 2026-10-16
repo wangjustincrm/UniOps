@@ -37,11 +37,13 @@ from datetime import date
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# The closed set the EPMS vendor form offers (epms/src/services/vendors.ts).
-# Anything else that reaches the column is treated as no term rather than
-# guessed at — the guess would be invisible and would move real money.
-TERM_DAYS: dict[str, int] = {
-    "net15": 15, "net30": 30, "net60": 60, "net90": 90,
+# What epms-api / mdm-api accept for vendors.payment_terms: `net<N>` for any
+# N in 1..365 (Net 14, Net 21… not just the form's presets), plus two non-day
+# terms. Anything else that reaches the column is treated as no term rather
+# than guessed at — the guess would be invisible and would move real money.
+NET_TERM_RE = r"^net[0-9]{1,3}$"
+MAX_NET_DAYS = 365
+NON_DAY_TERMS: dict[str, int] = {
     # Due on delivery and prepaid both mean "nothing to wait for".
     "cod": 0, "prepayment": 0,
 }
@@ -69,10 +71,16 @@ BUCKET_LABELS = dict((k, lbl) for k, lbl, _ in BUCKETS) | {
     UNDATED: "No payment term on file",
 }
 
-# Built from TERM_DAYS so the mapping exists once. A term we do not recognise
-# lands in NULL and therefore in `undated`, which is the intended behaviour.
-_TERM_CASE = "case " + " ".join(
-    f"when v.payment_terms = '{k}' then {n}" for k, n in TERM_DAYS.items()) + " end"
+# A term we do not recognise lands in NULL and therefore in `undated`, which
+# is the intended behaviour. The cast is nested under the regex branch (not
+# AND-ed with it — SQL does not promise left-to-right evaluation), so it only
+# ever sees 1-3 digits.
+_NET_DAYS = "substr(v.payment_terms, 4)::int"
+_TERM_CASE = (
+    f"case when v.payment_terms ~ '{NET_TERM_RE}' then "
+    f"case when {_NET_DAYS} between 1 and {MAX_NET_DAYS} then {_NET_DAYS} end "
+    + " ".join(f"when v.payment_terms = '{k}' then {n}" for k, n in NON_DAY_TERMS.items())
+    + " end")
 
 _DAYS_SQL = "(t.due_date - current_date)"
 _BUCKET_CASE = ("case when t.due_date is null then '" + UNDATED + "' " + " ".join(

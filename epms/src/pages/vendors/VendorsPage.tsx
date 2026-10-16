@@ -15,21 +15,13 @@ import type { VendorImportResult } from '@/hooks/useVendors'
 import type { ApiVendor, CreateVendorBody, UpdateVendorBody } from '@/services/vendors'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
+import {
+  PRESET_PAYMENT_TERMS, MAX_NET_DAYS, customDaysToTerms, formatPaymentTerms, isPresetTerms, netDays,
+} from '@/lib/paymentTerms'
 import { ErpVendorImportDrawer } from './ErpVendorImportDrawer'
 
-const PAYMENT_TERMS_LABELS: Record<ApiVendor['payment_terms'], string> = {
-  net15: 'Net 15',
-  net30: 'Net 30',
-  net60: 'Net 60',
-  net90: 'Net 90',
-  cod: 'COD',
-  prepayment: 'Prepayment',
-}
-
-const PAYMENT_TERMS_OPTIONS = Object.entries(PAYMENT_TERMS_LABELS) as [
-  ApiVendor['payment_terms'],
-  string,
-][]
+// Select value for "Custom (Net N days)"; the day count lives in customDays.
+const CUSTOM_TERMS = '__custom'
 
 
 // ─── Form types ───────────────────────────────────────────────────────────────
@@ -44,7 +36,8 @@ interface VendorFormData {
   remittanceEmail: string
   phone: string
   address: string
-  paymentTerms: ApiVendor['payment_terms']
+  paymentTerms: string
+  customDays: string
   maxPrepaymentPct: string
   currency: string
   active: boolean
@@ -62,10 +55,27 @@ const BLANK_FORM: VendorFormData = {
   phone: '',
   address: '',
   paymentTerms: 'net30',
+  customDays: '',
   maxPrepaymentPct: '',
   currency: 'CAD',
   active: true,
   notes: '',
+}
+
+function termsToForm(terms: string): Pick<VendorFormData, 'paymentTerms' | 'customDays'> {
+  if (isPresetTerms(terms)) return { paymentTerms: terms, customDays: '' }
+  // Non-preset net<N> opens as Custom with the days filled in. Anything else
+  // (a legacy code) opens as Custom with the box empty, so saving forces a
+  // real choice instead of silently re-sending a code nothing understands.
+  const n = netDays(terms)
+  return { paymentTerms: CUSTOM_TERMS, customDays: n != null ? String(n) : '' }
+}
+
+/** The code to send; only call after validate() passed. */
+function formTerms(f: VendorFormData): string {
+  if (f.paymentTerms !== CUSTOM_TERMS) return f.paymentTerms
+  const r = customDaysToTerms(f.customDays)
+  return 'terms' in r ? r.terms : f.paymentTerms
 }
 
 function vendorToForm(v: ApiVendor): VendorFormData {
@@ -79,7 +89,7 @@ function vendorToForm(v: ApiVendor): VendorFormData {
     remittanceEmail: v.remittance_email ?? '',
     phone: v.phone ?? '',
     address: v.address ?? '',
-    paymentTerms: v.payment_terms,
+    ...termsToForm(v.payment_terms),
     maxPrepaymentPct: v.max_prepayment_pct != null ? String(v.max_prepayment_pct) : '',
     currency: v.currency,
     active: v.is_active,
@@ -249,17 +259,45 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         {/* Payment Terms */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-neutral-700">Payment Terms</label>
-          <select
-            className={inputCls()}
-            value={form.paymentTerms}
-            onChange={(e) => set('paymentTerms', e.target.value as ApiVendor['payment_terms'])}
-          >
-            {PAYMENT_TERMS_OPTIONS.map(([val, label]) => (
-              <option key={val} value={val}>
-                {label}
-              </option>
-            ))}
-          </select>
+          <div className="flex gap-2">
+            <select
+              className={inputCls()}
+              value={form.paymentTerms}
+              onChange={(e) => set('paymentTerms', e.target.value)}
+            >
+              {PRESET_PAYMENT_TERMS.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+              <option value={CUSTOM_TERMS}>Custom (Net N days)…</option>
+            </select>
+            {form.paymentTerms === CUSTOM_TERMS && (
+              <div className="relative w-32 shrink-0">
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_NET_DAYS}
+                  step={1}
+                  inputMode="numeric"
+                  aria-label="Net days"
+                  className={cn(inputCls(errors.customDays), 'pr-11')}
+                  value={form.customDays}
+                  onChange={(e) => set('customDays', e.target.value)}
+                  placeholder="21"
+                  autoFocus
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
+                  days
+                </span>
+              </div>
+            )}
+          </div>
+          {errors.customDays ? (
+            <p className="text-xs text-danger-600">{errors.customDays}</p>
+          ) : form.paymentTerms === CUSTOM_TERMS && (
+            <p className="text-xs text-neutral-400">Due this many days after the invoice date.</p>
+          )}
         </div>
 
         {/* Max Prepayment % — only relevant when payment_terms = prepayment */}
@@ -431,6 +469,10 @@ export default function VendorsPage() {
     if (!normalizeEmailList(f.remittanceEmail).valid) {
       e.remittanceEmail = 'Invalid email address'
     }
+    if (f.paymentTerms === CUSTOM_TERMS) {
+      const r = customDaysToTerms(f.customDays)
+      if ('error' in r) e.customDays = r.error
+    }
     setFormErrors(e)
     return Object.keys(e).length === 0
   }
@@ -468,7 +510,7 @@ export default function VendorsPage() {
         remittance_email: normalizeEmailList(formData.remittanceEmail).normalized,
         phone: formData.phone.trim() || undefined,
         address: formData.address.trim() || undefined,
-        payment_terms: formData.paymentTerms,
+        payment_terms: formTerms(formData),
         max_prepayment_pct: formData.maxPrepaymentPct ? parseFloat(formData.maxPrepaymentPct) : null,
         currency: formData.currency.trim() || 'CAD',
         notes: formData.notes.trim() || undefined,
@@ -490,7 +532,7 @@ export default function VendorsPage() {
         remittance_email: normalizeEmailList(formData.remittanceEmail).normalized,
         phone: formData.phone.trim() || undefined,
         address: formData.address.trim() || undefined,
-        payment_terms: formData.paymentTerms,
+        payment_terms: formTerms(formData),
         max_prepayment_pct: formData.maxPrepaymentPct ? parseFloat(formData.maxPrepaymentPct) : null,
         currency: formData.currency.trim() || 'CAD',
         notes: formData.notes.trim() || undefined,
@@ -753,7 +795,7 @@ export default function VendorsPage() {
 
                   {/* Payment Terms */}
                   <td className="px-4 py-3 text-neutral-600 whitespace-nowrap">
-                    {PAYMENT_TERMS_LABELS[vendor.payment_terms]}
+                    {formatPaymentTerms(vendor.payment_terms)}
                   </td>
 
                   {/* Currency */}

@@ -1,4 +1,5 @@
 import { api, fetchAllPages } from '@/lib/api'
+import type { PaymentTerms } from '@/lib/paymentTerms'
 
 export interface ApiVendor {
   id: string
@@ -14,7 +15,7 @@ export interface ApiVendor {
   remittance_email?: string | null
   phone?: string
   address?: string
-  payment_terms: 'net15' | 'net30' | 'net60' | 'net90' | 'cod' | 'prepayment'
+  payment_terms: PaymentTerms
   max_prepayment_pct: number | null
   currency: string
   notes?: string
@@ -32,7 +33,7 @@ export interface CreateVendorBody {
   remittance_email?: string
   phone?: string
   address?: string
-  payment_terms: 'net15' | 'net30' | 'net60' | 'net90' | 'cod' | 'prepayment'
+  payment_terms: PaymentTerms
   max_prepayment_pct?: number | null
   currency: string
   notes?: string
@@ -49,7 +50,7 @@ export interface UpdateVendorBody {
   remittance_email?: string
   phone?: string
   address?: string
-  payment_terms?: 'net15' | 'net30' | 'net60' | 'net90' | 'cod' | 'prepayment'
+  payment_terms?: PaymentTerms
   max_prepayment_pct?: number | null
   currency?: string
   notes?: string

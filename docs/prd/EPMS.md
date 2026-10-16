@@ -1289,7 +1289,7 @@ The Vendor Master is owned by the master-data service (MDM business partners, su
 | Contact Email | Optional. Accepts several addresses separated by `,` or `;` (saved comma-separated). Default recipient for Place Order via Email (§3.12.3). |
 | Remittance Email | Optional; several addresses allowed as above. Used for payment remittance advice (§3.18). |
 | Phone, Address, Notes | Optional |
-| Payment Terms | Net 15, Net 30, Net 60, Net 90, COD, Prepayment (default Net 30) |
+| Payment Terms | Presets Net 15, Net 30, Net 60, Net 90, COD, Prepayment (default Net 30), plus **Custom (Net N days)** for any whole number of days 1–365 (e.g. Net 14, Net 21). Stored as `net<N>`, `cod` or `prepayment`; epms-api and mdm-api reject anything else on write (a "Net 21" spelling in a CSV import is normalised to `net21`). The ERP-import drawer offers the presets only. |
 | Currency | Default CAD |
 | Status | Active / Inactive |
 | Max Prepayment % | Maximum prepayment percentage permitted for this vendor (1–100; overrides system-wide Prepayment Config cap when set). Only shown in the vendor form when Payment Terms = Prepayment. |

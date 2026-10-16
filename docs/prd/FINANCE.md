@@ -318,7 +318,7 @@ Budget planning, the dashboard, catalog, factors and budget settings (including 
 | FR ID | Requirement |
 |---|---|
 | FIN-CF-01 | Based on NC's **approved open balance**, per currency, excluding dismissed bills. |
-| FIN-CF-02 | Due date = NC bill date + the **vendor master payment term** (net15/30/60/90; COD and prepayment = 0). An unknown or missing term is **not** defaulted to net30. Such bills are reported as **undated** ("No payment term on file") with the amount and the supplier list. |
+| FIN-CF-02 | Due date = NC bill date + the **vendor master payment term** (`net<N>` = N days for any N in 1–365, not only the Net 15/30/60/90 presets; COD and prepayment = 0). An unknown or missing term is **not** defaulted to net30. Such bills are reported as **undated** ("No payment term on file") with the amount and the supplier list. |
 | FIN-CF-03 | Buckets: overdue >180 / 91–180 / 31–90 / ≤30 days; due within 7 / 8–30 / 31–60 / 61–90 / beyond 90 days; undated. Clicking a figure lists its bills. |
 | FIN-CF-04 | Missing-terms panel lists NC suppliers with no vendor record, and the largest single-date amount, which is typically NC's go-live opening load. |
 | FIN-CF-05 | **Not implemented:** invoice-level term precedence (invoice term → vendor term → "term unknown"); further layers (UniOps invoices not yet in NC, received-not-invoiced, ordered-not-received, recurring agreement schedules, a monthly milk layer). See FIN-OI-12. |
