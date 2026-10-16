@@ -149,7 +149,8 @@ export default function CourseSessionPage() {
           <Detail label="Instructor">{s.instructor_name ?? 'Not recorded yet'}</Detail>
         </dl>
         {s.notes && <p className="mt-2 text-sm text-neutral-700">{s.notes}</p>}
-        {mayRun && open && <ArrangementsEditor key={s.id} session={s} onSaved={invalidate} />}
+        {mayRun && open && <ArrangementsEditor key={s.id} session={s} onSaved={invalidate}
+                                                mayReassign={can('ehs.training.write')} />}
       </Card>
 
       {/* ★ Round 6, TC-06: a session starts with a copy of its course's
@@ -198,7 +199,18 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
  * Who runs it is not here: that is HSE's nomination and the server refuses it
  * to anybody else.
  */
-function ArrangementsEditor({ session, onSaved }: { session: Session; onSaved: () => void }) {
+function ArrangementsEditor({ session, onSaved, mayReassign }: {
+  session: Session; onSaved: () => void
+  /** ★ Round 7, TC-06: "allow the HSE role to change the run by person." The
+   *  server took a new coordinator from training-write all along; nothing on
+   *  screen offered it. Still HSE's alone — see the endpoint. */
+  mayReassign: boolean
+}) {
+  const initialRunner: PersonValue = {
+    ...EMPTY_PERSON, userId: session.coordinator_id, name: session.coordinator_name ?? '',
+  }
+  const [runner, setRunner] = useState<PersonValue>(initialRunner)
+  const runnerChanged = mayReassign && runner.userId !== session.coordinator_id
   const initial = {
     session_date: session.session_date,
     start_time: session.start_time?.slice(0, 5) ?? '',
@@ -216,8 +228,10 @@ function ArrangementsEditor({ session, onSaved }: { session: Session; onSaved: (
   const changed = (Object.keys(initial) as (keyof typeof initial)[])
     .filter((k) => form[k] !== initial[k])
   const save = useMutation({
-    mutationFn: () => api.patch(`/api/v1/course-sessions/${session.id}`,
-      Object.fromEntries(changed.map((k) => [k, form[k] === '' ? null : form[k]]))),
+    mutationFn: () => api.patch(`/api/v1/course-sessions/${session.id}`, {
+      ...Object.fromEntries(changed.map((k) => [k, form[k] === '' ? null : form[k]])),
+      ...(runnerChanged ? { coordinator_id: runner.userId } : {}),
+    }),
     onSuccess: () => { setEditing(false); onSaved() },
   })
 
@@ -225,7 +239,7 @@ function ArrangementsEditor({ session, onSaved }: { session: Session; onSaved: (
     return (
       <div className="mt-3 border-t border-neutral-100 pt-3">
         <button type="button" className={secondaryButton}
-                onClick={() => { setForm(initial); setEditing(true) }}>
+                onClick={() => { setForm(initial); setRunner(initialRunner); setEditing(true) }}>
           Change the arrangements
         </button>
       </div>
@@ -248,6 +262,11 @@ function ArrangementsEditor({ session, onSaved }: { session: Session; onSaved: (
                  onChange={(e) => set('end_time', e.target.value)} />
         </Field>
       </div>
+      {mayReassign && (
+        <Field label="Who runs it" hint="They are given the session’s task; the previous person’s is closed">
+          <PersonPicker value={runner} onChange={setRunner} allowExternal={false} />
+        </Field>
+      )}
       <Field label="Where">
         <input className={inputClass} value={form.location_text}
                onChange={(e) => set('location_text', e.target.value)}
@@ -272,7 +291,7 @@ function ArrangementsEditor({ session, onSaved }: { session: Session; onSaved: (
             Cancel
           </button>
           <button type="button" className={primaryButton}
-                  disabled={save.isPending || changed.length === 0 || !form.session_date}
+                  disabled={save.isPending || (changed.length === 0 && !runnerChanged) || !form.session_date}
                   onClick={() => { if (!save.isPending) save.mutate() }}>
             {save.isPending ? 'Saving…' : 'Save the arrangements'}
           </button>
