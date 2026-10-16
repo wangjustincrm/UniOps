@@ -139,3 +139,23 @@ async def test_only_whoever_may_open_a_permit_may_change_it(
     _, hse = hse_manager
     assert (await hse.patch(f"/api/v1/permits/{pid}", json={
         "valid_to": (now + timedelta(hours=6)).isoformat()})).status_code == 200
+
+
+@pytest.mark.parametrize("role,allowed", [
+    ("auditor", False),          # reads the register, changes nothing
+    ("jhsc_member", False),
+    ("area_supervisor", True),   # issues permits
+])
+async def test_reading_the_register_is_not_the_right_to_change_it(
+        worker, test_engine, db_session, permit_type, role, allowed):
+    """★ Raised in review by uniops-55: the edit was gated on the read rule,
+    which admits the auditor and the JHSC."""
+    from tests.conftest import authed_client, make_token, make_user
+    _, client = worker
+    pid = (await _a_permit(client, permit_type))["id"]
+    who = await make_user(test_engine, role=role)
+    async with authed_client(make_token(who.id, who.role), db_session) as c:
+        assert (await c.get(f"/api/v1/permits/{pid}")).status_code == 200, "they can read it"
+        got = await c.patch(f"/api/v1/permits/{pid}", json={
+            "valid_to": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()})
+    assert got.status_code == (200 if allowed else 403), got.text

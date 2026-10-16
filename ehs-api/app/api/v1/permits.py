@@ -179,6 +179,24 @@ async def _may_browse(db, payload: dict) -> bool:
                                 "ehs.permit.read")
 
 
+async def _editable(db, payload: dict, permit) -> None:
+    """Whoever raised the permit, or whoever may issue permits.
+
+    ★ The edit had no check of its own, so anybody who may request permits
+    could change the times or the precautions on somebody else's. Gating it on
+    `_readable` (b16710ed) was a read gate on a write: `ehs.permit.read` is
+    held by the auditor and the JHSC, who are there to look. Raised in review
+    by uniops-55 — the same shape as the session PATCH in round 5.
+    """
+    if permit.requested_by == _user_id(payload):
+        return
+    if await has_permission(db, _user_id(payload), payload.get("role", ""), "ehs.permit.issue"):
+        return
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN,
+        "Only whoever raised this permit, or somebody who issues permits, can change it")
+
+
 async def _readable(db, payload: dict, permit) -> None:
     """The same rule `get_permit` applies, for the parts of a permit.
 
@@ -248,10 +266,7 @@ async def update_permit(
     permit_id: uuid.UUID, payload: PermitPatch, db: SessionDep, user: CanRequestPermit,
 ):
     permit = await crud.get_permit(db, permit_id)
-    # ★ Changing a permit needs at least the right to open it. The edit had no
-    # check of its own, so anybody who may request permits could change the
-    # times or the precautions on somebody else's.
-    await _readable(db, user, permit)
+    await _editable(db, user, permit)
     updated = await crud.update_permit(db, permit, payload.model_dump(exclude_unset=True))
     return await _out(db, updated, with_blockers=True)
 
