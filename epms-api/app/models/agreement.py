@@ -9,8 +9,9 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text, cast, literal
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -100,3 +101,34 @@ class PurchaseAgreement(UUIDPrimaryKey, TimestampMixin, Base):
 
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+
+    # ── Derived, for the Assistant's ontology (ISS-0002) ──────────────────────
+    # The planner may not do arithmetic, so "how much of the NTE is left" and
+    # "which expire within 30 days" need the answer to exist as a column.
+
+    # NULL when there is no ceiling — "no limit", not "nothing left".
+    @hybrid_property
+    def remaining_amount(self) -> Decimal | None:
+        if self.not_to_exceed is None:
+            return None
+        return self.not_to_exceed - (self.consumed_amount or Decimal("0"))
+
+    @remaining_amount.inplace.expression
+    @classmethod
+    def _remaining_amount_expression(cls):
+        return cls.not_to_exceed - cls.consumed_amount
+
+    # Days from today (plant-local) to valid_to; negative once it has passed.
+    # Grace days are NOT included — valid_to is the date on the agreement.
+    @hybrid_property
+    def days_until_expiry(self) -> int:
+        from app.core.delegation import local_today
+        return (self.valid_to - local_today()).days
+
+    @days_until_expiry.inplace.expression
+    @classmethod
+    def _days_until_expiry_expression(cls):
+        from app.core.delegation import local_today
+        # date - date is an integer number of days in PostgreSQL. Bound when the
+        # query is built, so it is today at the plant, not the server's UTC date.
+        return cls.valid_to - cast(literal(local_today()), Date)
