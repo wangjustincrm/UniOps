@@ -271,7 +271,7 @@ Rules for anyone extending it:
 - Role-based access control: navigation items and page content filtered by the user's effective roles and Access Control Matrix permissions (§1.3)
 - Session persisted via `localStorage` (Zustand persist, key: `epms-auth`)
 - JWT access + refresh tokens
-- **Global sign-out** (see PRD-PORTAL §4.1 — cross-origin design): signing out from EPMS removes `epms-auth` from EPMS's own localStorage, then redirects to `{PORTAL_URL}/logout` so Portal clears its own session. Final destination: Portal `/login`.
+- **Global sign-out** (see PORTAL.md §2.6 — cross-origin design): signing out from EPMS removes `epms-auth` from EPMS's own localStorage, then redirects to `{PORTAL_URL}/logout` so Portal clears its own session. Final destination: Portal `/login`.
 - **Idle timeout**: after **60 minutes** of inactivity, the server refresh token is blacklisted (`POST /auth/logout`), then global sign-out is triggered.
 - **401 handling**: any HTTP 401 from the EPMS API (after a failed silent token refresh) triggers global sign-out.
 
@@ -501,7 +501,7 @@ The engine is designed around two concepts:
 - **Workflow** — an ordered list of named approval steps, each specifying a role token.
 - **Action Key** — a string identifier that binds a document/form type to a workflow. Every submission event carries an action key; the engine looks up the bound workflow and executes it.
 
-Workflows and their bindings are configured in **Portal Admin Panel → Approval Workflows** (§5.8 of PRD-PORTAL) and stored in `CompanyConfig.workflow_defs[action_key]`. Department-level routing (GM or OPM, Director, Supervisor layer) is configured separately in **Portal → Admin → Approval Routing** (§3.3.8).
+Workflows and their bindings are configured in **Portal Admin Panel → Approval Workflows** (PORTAL.md §5.8) and stored in `CompanyConfig.workflow_defs[action_key]`. Department-level routing (GM or OPM, Director, Supervisor layer) is configured separately in **Portal → Admin → Approval Routing** (§3.3.8).
 
 #### 3.3.1 Action Keys
 
@@ -884,7 +884,7 @@ As of 2026-05-27 ownership of Cost Centers has moved to **mdm-api** and the mana
 - **PMS Data Import** — legacy PMS import runs and attachment import (§3.16)
 
 **Sections that moved out of EPMS:**
-- **Approval Workflows** — moved to **Portal Admin Panel → Approval Workflows** (§5.8 of PRD-PORTAL). Binds action keys to configurable step sequences; stored in `CompanyConfig.workflow_defs`; drives the shared approval engine for all modules (see §3.3 for full specification). Department routing (who is the Department Manager / Director / GM-or-OPM for each department) is maintained in **Portal → Admin → Approval Routing** (§3.3.8). The former EPMS "Dept → GM/OPM Mapping" section has been removed.
+- **Approval Workflows** — moved to **Portal Admin Panel → Approval Workflows** (PORTAL.md §5.8). Binds action keys to configurable step sequences; stored in `CompanyConfig.workflow_defs`; drives the shared approval engine for all modules (see §3.3 for full specification). Department routing (who is the Department Manager / Director / GM-or-OPM for each department) is maintained in **Portal → Admin → Approval Routing** (§3.3.8). The former EPMS "Dept → GM/OPM Mapping" section has been removed.
 - **Budget Config** — moved to **Portal → Finance → Budget Config**: cost centers, available fiscal years, warning/over-budget thresholds (default 80 % / 100 %), Over-Budget Approval Mode (`fm_gm_opm` / `fm_only` / `allow` / `hard_block`, see §3.2.6), factor-decomposition limits, opening balances. Saving requires the Admin Panel permission.
 - **Role Management** — moved to Portal → Admin → Access Control (permission matrix and per-user primary/additional roles), Portal → Admin → Approval Routing (§3.3.8) and Portal → Admin → Approval Delegation (§1.5). See §3.6.7.
 - **Notification Settings** — moved to Portal → Admin → Notification Settings: task SMTP, default channel (Email / Teams / Both / None), Teams Webhook URL, role shared mailboxes, daily digest time and the per-task-type email policy (see §3.9.4)
@@ -898,7 +898,7 @@ The Budget Accounts sub-panel (inline-editable Annual Budget / Committed / Actua
 
 Page houses two sub-sections, both configured in **EPMS Admin Panel → Email Settings**:
 
-**1. PO Email SMTP** — Dedicated mailbox for vendor-facing PO emails (`po_smtp_*` on CompanyConfig). Fields: Host / Port / Username / Password (masked) / From Address / TLS. Any field left blank falls back to the **internal task notification SMTP** profile (Portal Admin → Notification Settings, `smtp_*`). Why split: many companies route procurement correspondence through a dedicated `purchasing@` mailbox while internal approvals flow through `noreply@`. "Test PO SMTP" calls `POST /api/v1/config/test-smtp` with `{ kind: "po" }` to exercise the full fallback path before issuing a real PO. Port 465 uses implicit TLS; any other port with TLS on uses STARTTLS. See §PRD-EMAIL-SPLIT in PRD-PORTAL §5.7.
+**1. PO Email SMTP** — Dedicated mailbox for vendor-facing PO emails (`po_smtp_*` on CompanyConfig). Fields: Host / Port / Username / Password (masked) / From Address / TLS. Any field left blank falls back to the **internal task notification SMTP** profile (Portal Admin → Notification Settings, `smtp_*`). Why split: many companies route procurement correspondence through a dedicated `purchasing@` mailbox while internal approvals flow through `noreply@`. "Test PO SMTP" calls `POST /api/v1/config/test-smtp` with `{ kind: "po" }` to exercise the full fallback path before issuing a real PO. Port 465 uses implicit TLS; any other port with TLS on uses STARTTLS. See EMAIL-SPLIT in PORTAL.md §5.7.
 
 **2. PO Email Template** — Subject and body editable. Variable substitution uses `{variable_name}` syntax. Subject + body persist on `po_email_subject` / `po_email_body`. The template renders client-side before the Procurement Officer reviews it on the Send PO modal.
 
