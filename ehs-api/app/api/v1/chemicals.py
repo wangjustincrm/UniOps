@@ -214,6 +214,33 @@ async def list_sheets(chemical_id: uuid.UUID, db: SessionDep, user: CanReadDocum
     return await crud.sheets_for(db, chemical_id)
 
 
+class CurrentSheetOut(BaseModel):
+    chemical_name: str
+    sds_id: uuid.UUID | None
+    filename: str | None
+    has_file: bool
+
+
+@router.get("/chemicals/{chemical_id}/sds/current", response_model=CurrentSheetOut)
+async def current_sheet(chemical_id: uuid.UUID, db: SessionDep, user: CanReadDocument):  # noqa: ARG001
+    """The data sheet in force for a product, whichever revision that is today.
+
+    ★ Round 7, TC-07: "scanning the qr code on mobile device opens the chemical
+    register and does not open the SDS sheet and it should." The code on a
+    label is printed once and stuck on a bottle for years; WHMIS wants the
+    *current* sheet, so the code names the product and this resolves it at
+    scan time rather than the label pointing at one revision's file. Raised in
+    review by uniops-55.
+    """
+    chemical = await crud.get_chemical(db, chemical_id)
+    sheet = await crud.current_sheet(db, chemical_id)
+    return CurrentSheetOut(
+        chemical_name=chemical.product_name or chemical.name,
+        sds_id=sheet.id if sheet else None,
+        filename=sheet.filename if sheet else None,
+        has_file=bool(sheet and sheet.file_id))
+
+
 @router.post("/chemicals/{chemical_id}/sds", response_model=SheetOut,
              status_code=status.HTTP_201_CREATED)
 async def add_sheet(

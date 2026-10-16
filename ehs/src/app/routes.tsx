@@ -28,6 +28,7 @@ import JsaPage, { JsaDetailPage } from '@/pages/JsaPage'
 import PermitsPage from '@/pages/PermitsPage'
 import QrLandingPage from '@/pages/QrLandingPage'
 import TaskRedirectPage from '@/pages/TaskRedirectPage'
+import CurrentSdsPage from '@/pages/CurrentSdsPage'
 import QuizPage, { EditQuizPage, TakeQuizPage } from '@/pages/QuizPage'
 import SafetyEquipmentPage from '@/pages/SafetyEquipmentPage'
 import ReportsPage from '@/pages/ReportsPage'
@@ -202,6 +203,12 @@ export const ehsRoutes: RouteDef[] = [
     path: '/chemicals',
     element: <ChemicalsPage />,
     tab: { title: 'Chemicals', icon: 'FlaskConical', keyStrategy: 'static' },
+  },
+  {
+    // The code on a label: the product's data sheet in force today.
+    path: '/chemicals/:id/sds',
+    element: <CurrentSdsPage />,
+    tab: { title: 'Data sheet', icon: 'FileText', keyStrategy: 'param', paramName: 'id' },
   },
   {
     // Scanning a drum lands on the inventory row for that product.
