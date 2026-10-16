@@ -241,11 +241,24 @@ class TestTheLabelFitsWhatIsOnIt:
         assert b"/MediaBox [ 0 0 432 288 ]" in pdf or \
             f"/MediaBox [ 0 0 {6 * inch:g} {4 * inch:g} ]".encode() in pdf
 
-    def test_never_below_readable_type(self):
+    @pytest.mark.parametrize("size", ["bottle", "drum", "sheet"])
+    def test_the_body_prints_at_ten_point_on_every_size(self, size):
+        """★ Round 7, TC-07: "the font is too small, increase the font size to
+        10 point." Measured on what is drawn: every statement, PPE, first aid
+        and manufacturer line, at 10 pt or more — including a small label that
+        had to leave statements for the data sheet."""
         from app.services import label_pdf
 
-        # The precautionary statements, the smallest body text, at 6 pt or more.
-        assert 8.5 * label_pdf.SMALL_READABLE_SCALE >= 6.0
+        lbl = self._label(supplier="Acme Chemicals Ltd")
+        lbl.supplier_contact = "1-800-555-0100"
+        pdf, _, _ = label_pdf.render_with_omitted(lbl, chemical_id="abc", copies=1,
+                                                  size=size, sds_available=True)
+        drawn = _pdf_text_sizes(pdf)
+        body = [(pt, t) for pt, t in drawn
+                if t.startswith(("H3", "P2", "PPE", "FIRST AID", "MANUFACTURER", "Acme",
+                                 "Rinse", "+"))]
+        assert body, "the body text was not found"
+        assert all(pt >= 10 for pt, _ in body), [x for x in body if x[0] < 10]
 
     def test_precautions_go_before_hazards(self):
         from app.services import label_pdf
@@ -299,9 +312,12 @@ class TestTheLabelFitsWhatIsOnIt:
         the small label chosen by name goes smaller."""
         from app.services import label_pdf
 
+        # ★ Round 7: 14 rather than 30 — at 10 pt that no longer shrinks, 30
+        # long statements fit no stock and are refused by name (the test
+        # below the small label's), which is the honest answer.
         many = [{"code": f"H3{i:02d}",
                  "text": f"Hazard number {i}, spelled out at the length these actually run to"}
-                for i in range(1, 31)]
+                for i in range(1, 15)]
         _, used = label_pdf.render(self._label(hazard_statements=many),
                                    chemical_id="abc", copies=1, size=label_pdf.FIT)
         assert used.code in ("drum", "sheet")
@@ -404,6 +420,40 @@ def _pdf_text(pdf: bytes) -> str:
     # "is not in" assertion pass — so say so rather than returning "".
     assert out, "no text could be extracted from the PDF; the helper is broken"
     return "\n".join(out)
+
+
+def _pdf_text_sizes(pdf: bytes) -> list[tuple[float, str]]:
+    """Each string drawn, with the font size it was drawn at — the printed size,
+    which is what "10 point" means to whoever reads the label."""
+    import base64
+    import re
+    import zlib
+
+    out: list[tuple[float, str]] = []
+    for m in re.finditer(rb"\bstream\b", pdf):
+        rest = pdf[m.end():].lstrip(b"\r\n")
+        stop = rest.find(b"endstream")
+        if stop == -1:
+            continue
+        raw = rest[:stop].strip()
+        body = None
+        for decode in (lambda d: zlib.decompress(base64.a85decode(d, adobe=True)),
+                       zlib.decompress):
+            try:
+                body = decode(raw)
+                break
+            except Exception:  # noqa: BLE001
+                continue
+        if body is None:
+            continue
+        size = 0.0
+        for tok in re.finditer(rb"/F\d+ ([\d.]+) Tf|\((.*?)\)\s*Tj", body):
+            if tok.group(1):
+                size = float(tok.group(1))
+            else:
+                out.append((size, tok.group(2).decode("latin-1")))
+    assert out, "no text could be extracted from the PDF; the helper is broken"
+    return out
 
 
 class TestAChineseSupplierPrints:

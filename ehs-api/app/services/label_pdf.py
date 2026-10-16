@@ -62,7 +62,19 @@ MARGIN_X = 10 * mm
 # The QR's side at scale 1. Named because the text column's width is derived
 # from it: the two have to move together or a pictogram ends up over the code,
 # and the code is the only thing on the label that reaches the data sheet.
-QR_SIDE = 26 * mm
+# ★ Round 7, TC-07: "increase the QR code 25%." Changed here, where the
+# right-hand column's width is derived from it, and nowhere else — scaled only
+# where it is drawn, it would grow over the words (uniops-55).
+QR_SIDE = 32.5 * mm
+
+# ★ Round 7, TC-07: "the font is too small, increase the font size to 10
+# point." The body — every statement, PPE, first aid, the manufacturer — is
+# printed at these sizes on every stock, whatever the label's scale. Before,
+# it was 8.5 pt times the scale: 6.8 pt on the small label, less once shrunk.
+BODY_PT = 10.0
+HAZARD_PT = 10.5
+BODY_LEAD = 4.4 * mm
+HAZARD_LEAD = 4.8 * mm
 
 
 class LabelTooLarge(ValueError):
@@ -124,12 +136,11 @@ CHOICES = (FIT,) + tuple(s.code for s in SIZES)
 # How far the type may shrink before the label is declared too small. Below
 # this a hazard statement stops being readable at arm's length, which is the
 # whole function of the label.
-MIN_SCALE_FACTOR = 0.72
-# The small label's floor when it is asked for by name: the precautionary
-# statements (8.5 pt at scale 1) no smaller than 6 pt. Round 6 review
-# (uniops-93): a label shrunk until it fits and nobody can read it is the silent
-# truncation this module removed, printed in a different way.
-SMALL_READABLE_SCALE = 0.71
+# ★ Round 7: 1.0 — the type no longer shrinks to fit. With the body at 10 pt,
+# shrinking would only squeeze the line spacing under the type. What does not
+# fit moves up a size (Fit), or is refused by name, or — on the small label —
+# leaves statements for the data sheet and says how many.
+MIN_SCALE_FACTOR = 1.0
 
 
 def _wrap(c: pdfcanvas.Canvas, text: str, font: str, size: float,
@@ -267,18 +278,18 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
     # ★ No cap. Six of seven statements printed, with nothing saying so, is the
     # fault round 5 reported as "data is being cut off".
     for entry in list(label.hazard_statements or []):
-        line(_statement(entry), "Helvetica-Bold", 9.5, 4.6 * mm / scale)
+        line(_statement(entry), "Helvetica-Bold", HAZARD_PT / scale, HAZARD_LEAD / scale)
 
     y -= 1 * mm * scale
     for entry in list(label.precautionary_statements or []):
-        line(_statement(entry), "Helvetica", 8.5, 4.1 * mm / scale)
+        line(_statement(entry), "Helvetica", BODY_PT / scale, BODY_LEAD / scale)
 
     # ★ Said on the label when the small stock could not hold every statement —
     # never left out silently. See `render`.
     omitted = getattr(label, "omitted_statements", 0)
     if omitted:
         line(f"+{omitted} more statement{'s' if omitted != 1 else ''} on the safety "
-             "data sheet — scan the code", "Helvetica-Bold", 8.5, 4.1 * mm / scale)
+             "data sheet — scan the code", "Helvetica-Bold", BODY_PT / scale, BODY_LEAD / scale)
 
     # ── PPE, then first aid ─────────────────────────────────────────────────
     # ★ Round 5: "PPE required freeform text is not being copied to the label."
@@ -286,29 +297,32 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
     # container.
     if label.ppe_note:
         y -= 1.5 * mm * scale
-        line("PPE REQUIRED", "Helvetica-Bold", 8.5, 4.2 * mm / scale)
-        line(label.ppe_note, "Helvetica", 8.5, 4.1 * mm / scale)
+        line("PPE REQUIRED", "Helvetica-Bold", BODY_PT / scale, BODY_LEAD / scale)
+        line(label.ppe_note, "Helvetica", BODY_PT / scale, BODY_LEAD / scale)
 
     if label.first_aid:
         y -= 1.5 * mm * scale
-        line("FIRST AID", "Helvetica-Bold", 8.5, 4.2 * mm / scale, colour=GHS_RED)
-        line(label.first_aid, "Helvetica", 8.5, 4.1 * mm / scale)
+        line("FIRST AID", "Helvetica-Bold", BODY_PT / scale, BODY_LEAD / scale, colour=GHS_RED)
+        line(label.first_aid, "Helvetica", BODY_PT / scale, BODY_LEAD / scale)
 
     # ── Manufacturer: name and how to reach them ────────────────────────────
     # Round 6, TC-09: "the manufacturer's name contact must be shown."
     contact = getattr(label, "supplier_contact", None)
     if label.supplier or contact:
         y -= 2 * mm * scale
-        line("MANUFACTURER", "Helvetica-Bold", 8, 4 * mm / scale)
-        line(" · ".join(x for x in (label.supplier, contact) if x), "Helvetica", 8,
-             4 * mm / scale, colour=HexColor("#444444"))
+        line("MANUFACTURER", "Helvetica-Bold", BODY_PT / scale, BODY_LEAD / scale)
+        line(" · ".join(x for x in (label.supplier, contact) if x), "Helvetica", BODY_PT / scale,
+             BODY_LEAD / scale, colour=HexColor("#444444"))
 
     text_height = top - y
 
     # ── Right: the QR to the product record, then the pictograms ────────────
     qr_top = top - 12 * mm * scale
     if draw:
-        target = f"{settings.SAFETY_WEB_URL.rstrip('/')}/chemicals/{chemical_id}"
+        # ★ Round 7, TC-07: the code opens the data sheet, and the one in force
+        # when it is scanned — the product's fixed address, resolved then, not
+        # a revision's file (CurrentSdsPage). It used to open the register.
+        target = f"{settings.SAFETY_WEB_URL.rstrip('/')}/chemicals/{chemical_id}/sds"
         widget = qr.QrCodeWidget(target)
         bounds = widget.getBounds()
         drawing = Drawing(qr_side, qr_side, transform=[
@@ -428,8 +442,6 @@ def render_with_omitted(label, *, chemical_id: str, copies: int = 2,
     scale = chosen.scale
     needed = need(scale)
     floor = chosen.scale * MIN_SCALE_FACTOR
-    if chosen.always_prints and not _strict:
-        floor = SMALL_READABLE_SCALE
     while needed > usable and scale > floor:
         scale = max(floor, scale - 0.02)
         needed = need(scale)
