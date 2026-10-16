@@ -35,10 +35,16 @@ class Settings(BaseSettings):
         "application/vnd.ms-outlook",  # .msg (Outlook)
         "message/rfc822",  # .eml
     ]
-    # ★ Accepted from one service only, on top of the list above. Safety's
-    # training material is slides and short videos (round 7: "attaching a 19
-    # meg video returns … Unsupported file type 'video/mp4'"); nothing else in
-    # UniOps has asked for either, so they are not opened to every module.
+    # Accepted when the upload names that service, on top of the list above.
+    # Safety's training material is slides and short videos (round 7:
+    # "attaching a 19 meg video returns … Unsupported file type 'video/mp4'").
+    # ★ This keeps the other modules' screens from offering these types; it is
+    # not a security boundary. `service` is a query parameter the caller sets,
+    # so any signed-in user can name "ehs" (raised in review by uniops-55).
+    # Accepted as it stands because nothing here can run in a browser: the
+    # files are served as downloads under their own names, and the size limit
+    # applies as to everything else. Proving the caller is ehs-api would need a
+    # service credential, which is a deployment change of its own.
     SERVICE_EXTRA_CONTENT_TYPES: dict[str, list[str]] = {
         "ehs": [
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",  # .pptx
