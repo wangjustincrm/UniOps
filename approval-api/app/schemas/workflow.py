@@ -18,9 +18,22 @@ class WorkflowNodeDef(BaseModel):
     condition: str | None = None
 
 
+class OverBudgetRule(BaseModel):
+    """What happens to a PR that is over budget, as Budget Config stands now."""
+    mode: str
+    mode_label: str
+    # Steps put in front of the normal chain for an over-budget PR, in order.
+    added_steps: list[WorkflowNodeDef]
+    blocks_submission: bool
+    note: str
+
+
 class WorkflowDef(BaseModel):
     doc_type: str
     steps: list[WorkflowNodeDef]
+    # PR only: the over-budget rule. Not in `steps` because it does not apply to
+    # every PR — only to one whose total exceeds what is left on its budget.
+    over_budget: OverBudgetRule | None = None
 
 
 class AllWorkflowDefs(BaseModel):
