@@ -372,7 +372,7 @@ export function TakeQuizPage() {
 
   return (
     <div className="mx-auto max-w-xl p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+      <p className="text-sm font-semibold uppercase tracking-wider text-neutral-500">
         {quiz.data?.title}
       </p>
       <RosterNote join={join} got={joined}
@@ -382,16 +382,16 @@ export function TakeQuizPage() {
           <div className="h-full rounded-full bg-primary-500 transition-all"
                style={{ width: `${((index + 1) / rows.length) * 100}%` }} aria-hidden />
         </div>
-        <span className="shrink-0 text-xs tabular-nums text-neutral-500">
+        <span className="shrink-0 text-sm tabular-nums text-neutral-500">
           {index + 1} / {rows.length}
         </span>
       </div>
 
-      <h1 className="mb-1 text-lg font-semibold leading-snug text-neutral-900">
+      <h1 className="mb-1 text-xl font-semibold leading-snug text-neutral-900">
         {q.prompt}
       </h1>
       {multi && (
-        <p className="mb-3 text-xs text-neutral-500">
+        <p className="mb-3 text-sm text-neutral-500">
           Pick every one that applies — a partly right answer scores nothing here.
         </p>
       )}
@@ -404,7 +404,7 @@ export function TakeQuizPage() {
               <button type="button" onClick={() => toggle(o.key)}
                       aria-pressed={picked}
                       className={
-                        'flex min-h-[56px] w-full items-center gap-3 rounded-xl border px-4 text-left text-sm transition-colors ' +
+                        'flex min-h-[60px] w-full items-center gap-3 rounded-xl border px-4 py-2 text-left text-base transition-colors ' +
                         (picked
                           ? 'border-primary-500 bg-primary-50 font-medium text-primary-900'
                           : 'border-neutral-300 bg-white text-neutral-800 hover:border-neutral-400')
@@ -427,18 +427,18 @@ export function TakeQuizPage() {
       <ErrorNote error={submit.error} />
 
       <div className="mt-5 flex items-center justify-between gap-2">
-        <button type="button" className={secondaryButton} disabled={index === 0}
+        <button type="button" className={`${secondaryButton} min-h-[48px] px-5 text-base`} disabled={index === 0}
                 onClick={() => setIndex((i) => i - 1)}>
           Back
         </button>
         {last ? (
-          <button type="button" className={primaryButton}
+          <button type="button" className={`${primaryButton} min-h-[48px] px-6 text-base`}
                   disabled={!answeredAll || submit.isPending}
                   onClick={() => { if (!submit.isPending) submit.mutate() }}>
             {submit.isPending ? 'Marking…' : 'Finish'}
           </button>
         ) : (
-          <button type="button" className={primaryButton}
+          <button type="button" className={`${primaryButton} min-h-[48px] px-6 text-base`}
                   disabled={chosen.length === 0}
                   onClick={() => setIndex((i) => i + 1)}>
             Next
@@ -446,7 +446,7 @@ export function TakeQuizPage() {
         )}
       </div>
       {last && !answeredAll && (
-        <p className="mt-2 text-right text-xs text-neutral-500">
+        <p className="mt-2 text-right text-sm text-neutral-500">
           Every question needs an answer before you can finish.
         </p>
       )}
@@ -476,7 +476,7 @@ function RosterNote({ join, got, onPick }: {
 }) {
   if (join.isError) {
     return (
-      <p className="mb-3 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">
+      <p className="mb-3 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800">
         You could not be added to the session roster. Take the quiz anyway, and tell the
         person running the course so they can add you.
       </p>
@@ -485,7 +485,7 @@ function RosterNote({ join, got, onPick }: {
   if (!got) return null
   if (got.joined) {
     return (
-      <p className="mb-3 flex items-start gap-2 rounded-lg bg-success-50 px-3 py-2 text-xs text-success-800">
+      <p className="mb-3 flex items-start gap-2 rounded-lg bg-success-50 px-3 py-2 text-sm text-success-800">
         <UserCheck className="mt-px h-4 w-4 shrink-0" aria-hidden />
         <span>
           {got.added ? 'You have been added to the roster for ' : 'You are on the roster for '}
@@ -498,7 +498,7 @@ function RosterNote({ join, got, onPick }: {
     return (
       <div className="mb-4 rounded-xl border border-neutral-200 bg-white p-3">
         <p className="mb-2 text-sm font-medium text-neutral-800">Which session are you in?</p>
-        <p className="mb-2 text-xs text-neutral-500">{got.note}</p>
+        <p className="mb-2 text-sm text-neutral-500">{got.note}</p>
         <ul className="flex flex-col gap-1.5">
           {got.choices.map((d) => (
             <li key={d.id}>
@@ -512,7 +512,7 @@ function RosterNote({ join, got, onPick }: {
       </div>
     )
   }
-  return got.note ? <p className="mb-3 text-xs text-neutral-500">{got.note}</p> : null
+  return got.note ? <p className="mb-3 text-sm text-neutral-500">{got.note}</p> : null
 }
 
 /**
@@ -541,7 +541,7 @@ function ResultView({ attempt, quizId, documentId }: {
           attempt.passed ? 'text-success-700' : 'text-warning-700'}`}>
           {attempt.passed ? 'Passed' : `Not this time — the pass mark is ${attempt.pass_mark_percent}%`}
         </p>
-        <p className="mt-0.5 text-xs text-neutral-600">
+        <p className="mt-0.5 text-sm text-neutral-600">
           {attempt.points_scored} of {attempt.points_possible} points
         </p>
         {/* ★ Round 6: passing the quiz does not pass the course. The person
@@ -549,20 +549,20 @@ function ResultView({ attempt, quizId, documentId }: {
             when they close it. */}
         {attempt.passed && documentId && (
           <Link to={`/documents/${documentId}`}
-                className="mt-2 inline-block text-xs font-semibold text-primary-700 hover:underline">
+                className="mt-2 inline-block text-sm font-semibold text-primary-700 hover:underline">
             Back to the document — you can sign it now
           </Link>
         )}
         {/* ★ Only an attempt taken at a session reaches a roster; one taken
             outside any session is a practice run and says so. */}
         {attempt.passed && !documentId && attempt.delivery_id && (
-          <p className="mt-2 text-xs text-neutral-600">
+          <p className="mt-2 text-sm text-neutral-600">
             Your pass is on the session roster. The person running the session confirms it, and
             your certificate is issued when they close the session.
           </p>
         )}
         {attempt.passed && !documentId && !attempt.delivery_id && (
-          <p className="mt-2 text-xs text-neutral-600">
+          <p className="mt-2 text-sm text-neutral-600">
             This was not taken at a training session, so it is not on any roster and does not
             issue a certificate. Scan the code at the session to count it.
           </p>
