@@ -17,7 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTabTitle } from '@uniops/shell'
 import { api, ApiError } from '@/lib/api'
 import {
-  PageHeader, SectionTitle,
+  LoadFailedNote, PageHeader, SectionTitle,
 } from '@/components/ui'
 import { ehsRoutes } from '@/app/routes'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
@@ -165,7 +165,7 @@ export default function InvestigationPage() {
   }, [injurySeeded, injuredPerson])
 
   useEffect(() => {
-    if (loaded || existing.isLoading || tree.isLoading) return
+    if (loaded || existing.isLoading || tree.isLoading || existing.isError || tree.isError) return
     const inv = existing.data
     if (inv) {
       setLead(inv.investigator_id
@@ -258,6 +258,21 @@ export default function InvestigationPage() {
 
   if (incident.isLoading || existing.isLoading) {
     return <p className="p-4 text-sm text-neutral-500">Loading…</p>
+  }
+  // ★ Raised in review by uniops-55: a failed read of the investigation or its
+  // causes came back as no data, which this page took for a new one — the
+  // lead set to whoever opened it and every box empty — and saving would
+  // have written that over what was there. So a failure stops the page.
+  if (existing.isError || tree.isError) {
+    return (
+      <div className="p-4">
+        <LoadFailedNote what={existing.isError ? 'The investigation' : 'Its causes'} />
+        <p className="mt-2 text-sm text-neutral-600">
+          Nothing can be edited until it loads, so nothing already recorded is overwritten.
+          Reload the page to try again.
+        </p>
+      </div>
+    )
   }
   if (incident.isError) {
     return <p className="p-4 text-sm text-danger-700">{(incident.error as ApiError).message}</p>
