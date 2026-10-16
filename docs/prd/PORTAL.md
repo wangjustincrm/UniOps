@@ -595,7 +595,7 @@ A document that was **returned** resumes, on resubmission, at the step that retu
 
 The engine can report, without submitting, every reason a submission would currently be refused: status, over-budget hard block, and an approval step that cannot be routed. Each reason says who can fix it. Field-level checks are added by the owning module. The Assistant uses this (EPMS.md §3.3.9).
 
-The effective step list of a document (including injected over-budget steps) is available for the Data Maintenance Approval State panel and the module timelines. *The generic workflow read-out used by the Assistant covers only PR, PO, PA, PO sign-off and VMS visits, and uses outdated fallback defaults. The Assistant therefore cannot explain the Agreement, OA, Travel Application, custom-form or Budget Plan chains* (**Defect**, §14).
+The effective step list of a document (including injected over-budget steps) is available for the Data Maintenance Approval State panel and the module timelines. The per-type workflow read-out used by the Assistant returns the chain the engine actually executes (configured definition, else the engine's own default) for PR, PO, PO sign-off, agreements, PA and Direct PA, Expense / Mileage / Travel Expense claims, Travel Application, Budget Plan and VMS visits; for a PR it also reports the current over-budget rule (mode, added steps, whether submission is blocked). *Custom-form (CFM) chains are not covered* (**Open**, §14).
 
 *If every step of a workflow is skipped at submission, the document becomes Approved, but the follow-up actions do not run. Those actions are: activating an agreement, creating the Create PO / Process Payment / Process Expense task, confirming a VMS visit, and making a budget plan current* (**Defect**, §14).
 
@@ -756,7 +756,7 @@ EPMS Admin keeps Email Settings (PO-to-vendor SMTP and template), PDF Templates,
 | PO-34 | All-skipped submission skips the follow-up actions (§6.5) | Defect |
 | PO-35 | Pool-role steps (e.g. AP Clerk) honour only the primary role; Department Manager resolution is primary-role only and arbitrary when a department has two (§6.1) | Defect |
 | PO-36 | Engine relies on the caller for Submit and Cancel actor checks (§6.2) | Defect |
-| PO-37 | Workflow read-out for the Assistant covers only PR/PO/PA/PO sign-off/VMS, with outdated defaults (§6.5) | Defect |
+| PO-37 | Workflow read-out for the Assistant does not cover custom-form (CFM) chains (§6.5). Fixed 2026-10: it no longer uses outdated defaults and covers agreements, OA claims, Travel Application and Budget Plan | Open |
 | PO-38 | Admin checks in the approval engine honour System Admin only as a primary role (§5.9–§5.10) | Open |
 | PO-39 | Digest time is UTC rather than plant-local (§7) | Open |
 | PO-40 | Audit history for role, permission and configuration changes (AC-006, SEC-008) | Not implemented |

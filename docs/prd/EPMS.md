@@ -2390,14 +2390,17 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 
 | FR ID | Requirement |
 |---|---|
-| **AST-001** | Every signed-in EPMS user has an Assistant panel on every page. It receives the current page context (module, route, and the PR/PO/GR/Invoice/PA open on screen). |
+| **AST-001** | Every signed-in EPMS user has an Assistant panel on every page. It receives the current page context (module, route, and the PR/PO/GR/Invoice/PA open on screen). For an on-screen PR, PO or PA the server adds the document's **number** (only if the user may see it), so "who is the vendor on this one?" is answered from the document's data, not from its approval history. |
 | **AST-002** | Data answers come only from rows the user may see: the entity must pass the user's Access Control Matrix view permission, and the user's document row scope is always applied server-side. The model never writes SQL; it picks entities/fields/operators from a whitelisted ontology (EPMS documents plus budget, finance, master-data, MRP and settings entities), and anything not in the ontology is rejected. Queries run read-only with a short timeout. |
 | **AST-003** | Each answer shows the query that produced it. Lists are capped at 100 rows (200 for grouped results) and the answer says when it was cut. |
 | **AST-004** | "Why can't I submit this document?" is answered by running the same submit checks the Submit button runs (§3.3.9). |
-| **AST-005** | "What should I do?" lists the user's open Task Inbox items (same rule as §3.7.1). "How does <PR/PO/PA> approval work?" is answered from the current workflow configuration. |
+| **AST-005** | "What should I do?" lists the user's open Task Inbox items (same rule as §3.7.1). "How does <document> approval work?" is answered from the chain the approval engine actually runs (its configured definition, else the engine's own default) for PR, PO, PO sign-off, Purchase Agreement, Payment Application (incl. Direct PA), Expense / Mileage / Travel Expense claims, Travel Application, Budget Plan and Visitor Request. For a PR it also states the **current Over-Budget Approval Mode** and the steps it adds in front of the normal chain (or that submission is blocked), and that the mode is fixed when a PR is submitted (OBG-010). |
 | **AST-006** | An answer can be exported to Excel (up to 50 000 rows). |
 | **AST-007** | A user can mark up to 10 questions to re-ask with one click. |
 | **AST-008** | The assistant uses the Claude Haiku model only; usage (tokens) is logged per call. |
+| **AST-009** | **Reply language.** Every reply is in the language of the user's *current* question, whatever earlier turns used. The server decides it from the question (Chinese script → Chinese; an explicit "answer in English/中文/español" → that language) and tells every answering step; for other Latin-script questions the model is told to use the question's language. A message that only asks for another language ("用中文回答") repeats the previous answer in that language. System-written replies (refusals, "which document do you mean?") are rendered in the user's language too. |
+| **AST-010** | **Fixed Chinese terms.** In Chinese replies, role, approval-level and document names use one fixed translation each, followed by the English name the first time (e.g. 总监 (Director), 主管 (Supervisor), 应付审核 (AP Review), 里程报销单 (MIL)). Names without a fixed translation stay in English. |
+| **AST-011** | **Agreements.** Purchase Agreements are queryable (needs `epms.agreement.read`; same row scope as the Agreements page): number, kind, vendor, status, valid from/to, days until expiry, grace days, Not to Exceed, consumed and remaining. An empty Not to Exceed means *no ceiling*. Status `active` means approved, not "still in force" — the system never moves an agreement to `expired`. |
 
 ---
 
