@@ -150,12 +150,31 @@ async def test_smtp(body: TestSmtpRequest, db: SessionDep, _: AdminDep):
 
 
 @router.patch("", response_model=ConfigResponse)
-async def update_config(body: ConfigUpdate, db: SessionDep, user: AdminDep):
+async def update_config(body: ConfigUpdate, db: SessionDep, user: AdminDep, token: BearerToken):
     """Update company config (system_admin only)."""
     cfg = await config_crud.get_or_create(db)
     await config_crud.update(db, cfg, body, uuid.UUID(user["sub"]))
     await db.commit()
-    return await _full_response(db, user)
+    resp = await _full_response(db, user)
+    if body.budget_admin_config is not None:
+        resp.over_budget_resync = await _resync_over_budget(token)
+    return resp
+
+
+async def _resync_over_budget(token: str) -> str:
+    """After a Budget Config save, let the approval engine re-align in-flight
+    over-budget PRs: a looser over-budget mode waives the steps they are still
+    waiting on (the Finance Manager's task moves on). Runs on every Budget Config
+    save, not only on a mode change — it is idempotent and cheap, and re-saving
+    is then the way to apply it after an outage. Best-effort: the save is
+    committed (approval-api reads the shared DB on its own connection) and must
+    survive an approval-api outage; the caller is told the outcome instead."""
+    try:
+        result = await approval_client.resync_over_budget(bearer_token=token)
+        return f"ok: {len(result.get('resynced') or [])} in-flight over-budget PR(s) re-aligned"
+    except Exception as e:
+        logger.warning("budget config saved but over-budget resync failed: %s", e)
+        return f"failed: {e}"
 
 
 # ── Per-task-type notification policy (Portal → Admin → Notifications) ───────

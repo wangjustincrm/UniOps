@@ -23,6 +23,8 @@ interface BudgetAdminConfig {
 
 interface CompanyConfigPartial {
   budget_admin_config?: Partial<BudgetAdminConfig>
+  // PATCH only: outcome of re-aligning in-flight over-budget PRs after the save.
+  over_budget_resync?: string | null
 }
 
 
@@ -242,8 +244,24 @@ function CompanyConfigSection() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await save.mutateAsync({ budget_admin_config: form })
-      setToast({ ok: true, msg: 'Budget Config saved.' })
+      const res = await save.mutateAsync({ budget_admin_config: form })
+      const resync = res?.over_budget_resync ?? ''
+      if (resync.startsWith('failed')) {
+        // Saved, but PRs already in approval were not re-aligned — say so, the
+        // Finance Manager may still be holding steps the new mode waives.
+        setToast({
+          ok: false,
+          msg: 'Budget Config saved, but PRs already in approval could not be updated. Save again to retry.',
+        })
+        return
+      }
+      const moved = Number(/^ok: (\d+)/.exec(resync)?.[1] ?? 0)
+      setToast({
+        ok: true,
+        msg: moved > 0
+          ? `Budget Config saved. ${moved} over-budget PR(s) already in approval were updated.`
+          : 'Budget Config saved.',
+      })
       setTimeout(() => setToast(null), 3500)
     } catch (err: any) {
       setToast({ ok: false, msg: err.message ?? 'Save failed' })
@@ -320,6 +338,12 @@ function CompanyConfigSection() {
         description="Determines what happens when a Purchase Request would push a budget account past its annual limit."
       >
         <div className="flex flex-col gap-3 max-w-2xl">
+          <p className="text-xs text-neutral-500">
+            A PR keeps the mode it was submitted under. A change applies to new submissions; PRs already in
+            approval only ever get lighter — an over-budget step the new mode no longer requires is skipped
+            (e.g. switching to "Allow" passes a PR waiting on the Finance Manager to its next approver). A
+            stricter mode never adds steps to them.
+          </p>
           {[
             {
               v: 'fm_gm_opm' as const, label: 'Finance Manager + GM/OPM',
