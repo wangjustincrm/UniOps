@@ -286,6 +286,23 @@ class IncidentOut(BaseModel):
         chosen = incident_type.BY_CODE.get(code)
         return chosen.label if chosen else None
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def incident_type_code(self) -> str | None:
+        """The code behind the label, so the page can offer a change of it."""
+        code = (self.extra or {}).get("incident_type")
+        return code if isinstance(code, str) else None
+
+
+class IncidentReclassify(BaseModel):
+    """Round 7: the kind of incident, changed by the investigator before it closes."""
+
+    incident_type: str
+    # As on the report: a class, "none" for nobody hurt, or left out to take
+    # what the new kind implies.
+    injury_class: str | None = Field(
+        default=None, pattern="^(first_aid|medical_aid|lost_time|none)$")
+
 
 class IncidentListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)

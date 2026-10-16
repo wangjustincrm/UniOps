@@ -53,6 +53,7 @@ interface Incident {
   /** Which of HSE's twelve options the reporter picked, in words. The server
    *  derives it from the stored code so the list lives in one place. */
   incident_type_label: string | null
+  incident_type_code?: string | null
   classified_at: string | null; classified_by_name: string | null
   submitted_at: string | null; closed_at: string | null; created_at: string
   persons: Person[]; deadlines: Deadline[]
@@ -307,6 +308,9 @@ export default function IncidentDetailPage() {
                 is the choice the reporter made, and it was stored, read by the
                 notifier and shown to nobody. */}
             <Row label="What kind of incident" value={inc.incident_type_label} />
+            {canInvestigate && inc.status !== 'draft' && inc.status !== 'closed' && (
+              <ChangeKind incident={inc} onDone={touched} />
+            )}
             {/* ★ Named as the form names it. It was "Description", which is
                 what the column is called — and the same round reported "what
                 else should we know" as not displayed, when it was, under a
@@ -937,6 +941,66 @@ function NotRequired({ deadlineId, onDone }: { deadlineId: string; onDone: () =>
       {save.isError && (
         <p className="mt-1.5 text-xs text-danger-700">{(save.error as ApiError).message}</p>
       )}
+    </div>
+  )
+}
+
+
+interface KindOption {
+  code: string; label: string; form_kind: string; asks_injury_class: boolean
+}
+
+/**
+ * Changing what kind of incident it was, before it closes.
+ *
+ * Round 7 (answer box): "a medical incident may become a lost time injury after
+ * the initial report is created. allow for the investigator to reclassify the
+ * injury by selecting a different What kind of incident pick list before the
+ * incident is closed." The kinds offered are those on the same form; the
+ * server re-derives the injury class and the legal clocks, and says so.
+ */
+function ChangeKind({ incident, onDone }: { incident: Incident; onDone: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [code, setCode] = useState(incident.incident_type_code ?? '')
+  const kinds = useQuery({
+    queryKey: ['incident-types', incident.form_kind],
+    queryFn: () => api.get<KindOption[]>(`/api/v1/incidents/types?form_kind=${incident.form_kind}`),
+    enabled: open,
+  })
+  const save = useMutation({
+    mutationFn: () => api.post(`/api/v1/incidents/${incident.id}/reclassify`, { incident_type: code }),
+    onSuccess: () => { setOpen(false); onDone() },
+  })
+  if (!open) {
+    return (
+      <button type="button" onClick={() => { setCode(incident.incident_type_code ?? ''); setOpen(true) }}
+              className="-mt-1 mb-1 text-xs font-semibold text-primary-700 hover:underline">
+        Change the kind of incident
+      </button>
+    )
+  }
+  return (
+    <div className="mb-2 rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
+      <select className="min-h-[40px] w-full rounded-lg border border-neutral-300 bg-white px-2 text-sm"
+              aria-label="Kind of incident" value={code} onChange={(e) => setCode(e.target.value)}>
+        {(kinds.data ?? []).map((k) => <option key={k.code} value={k.code}>{k.label}</option>)}
+      </select>
+      <p className="mt-1.5 text-xs text-neutral-600">
+        The injury class and the legal clocks follow the new kind: a clock it owes is started, one
+        it no longer owes is closed with the reason. HSE&rsquo;s review is withdrawn.
+      </p>
+      {kinds.isError && <p className="mt-1 text-xs text-danger-700">The kinds of incident could not be loaded.</p>}
+      {save.isError && <p className="mt-1 text-xs text-danger-700">{(save.error as ApiError).message}</p>}
+      <div className="mt-2 flex justify-end gap-2">
+        <button type="button" className="min-h-[36px] rounded-lg border border-neutral-300 px-3 text-xs font-semibold"
+                onClick={() => setOpen(false)} disabled={save.isPending}>Cancel</button>
+        <button type="button"
+                className="min-h-[36px] rounded-lg bg-primary-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
+                disabled={!code || code === incident.incident_type_code || save.isPending}
+                onClick={() => { if (!save.isPending) save.mutate() }}>
+          {save.isPending ? 'Saving…' : 'Change it'}
+        </button>
+      </div>
     </div>
   )
 }

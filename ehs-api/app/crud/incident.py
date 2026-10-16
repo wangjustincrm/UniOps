@@ -399,6 +399,79 @@ def assert_open(incident: Incident, what: str) -> None:
         )
 
 
+async def reclassify(db: AsyncSession, incident: Incident, code: str,
+                     injury_class: str | None, *, user_id: uuid.UUID) -> Incident:
+    """Change what kind of incident this was, before it closes.
+
+    ★ Round 7 (answer box): "a medical incident may become a lost time injury
+    after the initial report is created. allow for the investigator to
+    reclassify the injury by selecting a different What kind of incident pick
+    list before the incident is closed."
+
+    Within the form it came in on: a medical report becomes another kind of
+    medical incident; becoming an equipment report would be a different form,
+    and is refused. What the kind implies is derived again — the injury class,
+    the Ministry flag, the category — and HSE's review is withdrawn, since what
+    was reviewed has changed.
+
+    The clocks follow (raised in review by uniops-55): a clock the new kind
+    owes is started; one still running that it no longer owes is closed as
+    "No longer applies — incident type changed from X to Y", so it neither
+    lingers on the calendar nor holds the incident open for ever. A clock
+    already met is left as it is. Every field change is in the change log.
+    """
+    from app.services import deadlines as deadline_service
+    from app.models.statutory import StatutoryDeadline
+
+    assert_open(incident, "the kind of incident")
+    if incident.status == "draft":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "A draft is the reporter's; it can be changed once it is sent")
+    new = incident_type.BY_CODE.get(code)
+    if new is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Unknown kind of incident '{code}'")
+    if new.form_kind != incident.form_kind:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"{new.label.split(' — ')[0]} is reported on a different form. Raise it as a new "
+            "report and refer to this one in it.")
+    old_code = (incident.extra or {}).get("incident_type")
+    old = incident_type.BY_CODE.get(old_code) if isinstance(old_code, str) else None
+    if old_code == code and injury_class is None:
+        return incident
+
+    incident.extra = {**(incident.extra or {}), "incident_type": new.code}
+    if injury_class == "none":
+        incident.injury_class = None
+    else:
+        incident.injury_class = injury_class or new.injury_class or new.default_injury_class
+    # A Ministry flag HSE set by classifying, with its reason, stays theirs.
+    incident.mol_reportable = new.mol_reportable or bool(incident.mol_reportable_reason)
+    if new.category_code:
+        incident.category_id, incident.category_label = await _resolve_category(
+            db, new.category_code)
+    withdraw_review(incident)
+    await db.flush()
+
+    await deadline_service.ensure_incident_deadlines(db, incident)
+    owed = {kind for kind, _ in deadline_service.clocks_for_incident(incident)}
+    was = old.label.split(" — ")[0] if old else "unrecorded"
+    now_label = new.label.split(" — ")[0]
+    name = await _resolve_name(db, user_id)
+    for d in (await db.execute(select(StatutoryDeadline).where(
+            StatutoryDeadline.source_type == "incident",
+            StatutoryDeadline.source_id == incident.id,
+            StatutoryDeadline.satisfied_at.is_(None)))).scalars().all():
+        if d.kind not in owed:
+            await deadline_service.satisfy(
+                db, d, user_id=user_id, user_name=name,
+                evidence_note=f"Not required: no longer applies — incident type changed "
+                              f"from {was} to {now_label}",
+                when=datetime.now(timezone.utc))
+    await db.flush()
+    return incident
+
+
 def withdraw_review(incident: Incident) -> None:
     """Changing the substance of an incident un-reviews it.
 

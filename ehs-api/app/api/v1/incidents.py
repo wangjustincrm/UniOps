@@ -35,6 +35,7 @@ from app.crud import investigation as inv_crud
 from app.schemas.incident import (
     IncidentClassify,
     IncidentEdit,
+    IncidentReclassify,
     IncidentCreate,
     IncidentListItem,
     IncidentOut,
@@ -400,6 +401,18 @@ async def edit_incident(
     if recount:
         from app.services import deadlines as deadline_service
         await deadline_service.recount_from_occurrence(db, incident)
+    return await _to_out(db, incident, user)
+
+
+@router.post("/{incident_id}/reclassify", response_model=IncidentOut)
+async def reclassify_incident(
+    incident_id: uuid.UUID, payload: IncidentReclassify, db: SessionDep, user: CanClassifyIncident,
+):
+    """Change what kind of incident it was, before it closes — round 7. Held to
+    the investigate key, like editing the report. See crud.reclassify."""
+    incident = await crud.reclassify(
+        db, await crud.get(db, incident_id), payload.incident_type, payload.injury_class,
+        user_id=_user_id(user))
     return await _to_out(db, incident, user)
 
 
