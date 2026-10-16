@@ -1,8 +1,10 @@
 # EPMS — Product Requirements Document
-**Version:** 2.25
+**Version:** 2.26
 **Date:** 2026-10-16
 **Status:** In Production
 
+> **v2.26 (2026-10-16)** — PA line items follow line-matched invoices (PA-018); Data Maintenance no longer rewrites a PA's pre-tax amount from lines that disagree with it, and asks before a line edit changes it (DM-007). OI-AF / OI-AG added.
+>
 > **v2.25 (2026-10-16)** — Brought in line with the system as deployed on main (`33375e50`). Every change was checked against the code; requirements that are wanted but not built are marked **Not implemented** and listed in §11.
 > - **Roles & access:** primary + additional roles; company-unique posts; new Finance Director, ERP PA Officer and Payment Officer roles; Absence Cover replaced by Approval Delegation (§1.5); role/matrix/routing administration moved to Portal.
 > - **PR & budget:** Department selector, Service/Project Owner, catalog-only budget codes; over-budget check against plan minus NC actuals; fourth over-budget mode *Allow* (§3.2).
@@ -1054,6 +1056,7 @@ System-level corrections to procurement records are made in **Portal → Data Ma
 | **DM-004** | Agreements and Agreement Receipts can be maintained here (§3.17). |
 | **DM-005** | A PA's invoice and receipt links can be repaired; on an already-paid PA the repair also replays the invoice and AP payment write-back. PA totals can be recomputed when a charge or tax rate is changed without editing lines. |
 | **DM-006** | Deleting the last PA of a PO reopens that PO's Create PA task. |
+| **DM-007** | A PA's pre-tax amount cannot be edited in Data Maintenance; its lines are the only input. (a) Changing only a charge or the tax rate recomputes from the lines only when they add up to the stored pre-tax amount; when they do not, the pre-tax amount is kept and the tax is re-derived from it only if the rate changed. (b) A line edit that would change the pre-tax amount is refused unless the operator confirms it; the edit dialog shows the current and the new amount and enables Save only once the change is confirmed. A line edit that leaves the pre-tax amount unchanged needs no confirmation. |
 
 ### 3.7 Dashboard
 
@@ -1978,7 +1981,7 @@ AP staff (holders of *Match Invoice*) and admins can reverse a match from Invoic
 3. **Step 3 — Payment Details**: the user reviews the charge breakdown below and submits.
 
 **Charge breakdown:**
-- **Pre-tax subtotal** — auto-filled from the selected invoices' pre-tax amounts (or from selected PO lines if no invoice is selected); editable.
+- **Pre-tax subtotal** — auto-filled from the PA's line items when they follow the invoices (PA-018) — for an invoice split across POs that is this PA's share only; otherwise from the selected invoices' pre-tax amounts, or from the selected PO lines if no invoice is selected. Editable.
 - **Tax** — auto-filled from the selected invoices' tax amounts; with no invoice selected, pre-tax × the PO's (or agreement's) tax rate, CAD only, 13% if no rate is recorded. Editable; once edited it is no longer recalculated. Tax code and rate are stored with the PA; clearing the tax clears its rate and code.
 - **Shipping / Freight** and **Other charges** (+ note) — added after tax; **never taxed**. A charge that is taxable must be entered as a line item so it falls in the subtotal.
 - **Prepayment applied** (settlement PAs only).
@@ -1990,8 +1993,10 @@ Payment method and funding bank account are chosen when the payment is executed 
 
 **PA line items:**
 
-Each PA includes a line item breakdown mirroring the invoice lines selected, with:
-- Description, Qty, Unit Price, Line Total, Invoice reference
+Each PA carries line items: Description, Qty, Unit, Unit Price, Line Total, and a note naming the invoice the line came from.
+
+- **When every selected invoice was matched line by line** (each invoice line allocated to a PO line, §3.14), the lines are built from those invoices and shown read-only: one line per invoice line allocated to one of the PA's POs, on that PO line, with the invoiced quantity and unit price and a line total equal to the allocated amount; plus one line, with no PO line, per non-PO fee on an invoice whose header PO is on the PA (so a fee on an invoice split across POs is paid once). A fee-only invoice headed on one of the PA's POs is treated the same way. The server builds the lines again on create and on edit and ignores any lines sent with the request (PA-018).
+- **Otherwise** (any invoice matched only against the PO total, or no invoice selected) the user ticks the PO lines the PA covers; a ticked line is taken at the PO line's full quantity.
 
 Discount and negative lines are allowed (unit price ≤ 0 permitted).
 
@@ -2014,6 +2019,7 @@ Discount and negative lines are allowed (unit price ≤ 0 permitted).
 | **PA-015** | If the PA is created but its submission fails, the user is taken to the saved draft with the error; nothing is lost. |
 | **PA-016** | PA list search covers PA #, vendor, PO # (any linked PO) and agreement #; filters by status and department (PR department or agreement department); shows the current approval step under the status. |
 | **PA-017** | PA Detail shows invoice-vs-PO variance per line (with line detail), house-account receipt-vs-invoice differences, and an *Attachments* button collecting every attachment along the chain (PR, PO, GR, invoices, agreement receipts) for ZIP download or printing. In the document chain the PA is nested under its source invoice. |
+| **PA-018** | **Line items follow line-matched invoices.** When every invoice on a PO-route PA was matched line by line to the PA's POs, the PA's line items are derived from those invoices (see *PA line items* above) on create and on every edit that changes the invoices, the lines or the PO set; lines sent by the client are ignored. If any invoice was matched only against the PO total, the client's hand-picked lines are stored as sent. Agreement PAs carry no line items. |
 
 PA-004 (total ≤ sum of invoice totals) and PA-005 (payment method / vendor bank on the PA) are retired: the total is computed as described above, and method and bank are chosen at execution.
 
@@ -2754,3 +2760,5 @@ Status values: **Open** (decision or data needed), **Not implemented** (requirem
 | OI-AC | Dashboard items not built: System Health card is a static label; User Activity panel and Dashboard Config page do not exist | Dashboard (§3.7) | Not implemented |
 | OI-AD | Server-side permission gaps: GR actions (acknowledge / collect / confirm / reject / cancel) and PO "Regenerate PDF" do not check the user's permission or document visibility | Security (§4.4) | Defect |
 | OI-AE | WCAG 2.1 AA accessibility pass | UI (§4.1) | Not implemented |
+| OI-AF | A PO-route PA can be submitted with line items that do not add up to its pre-tax amount (about a fifth of PO-route PAs created since 2026-07 in production); there is no lines-vs-subtotal check on submit | PA (§3.15.2) | Not implemented |
+| OI-AG | When an invoice was matched only against the PO total, PA lines are still ticked by hand at full PO quantity; lines already paid by another PA are not marked, so the same PO line can appear in full on several PAs | PA (§3.15.2) | Not implemented |

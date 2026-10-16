@@ -315,10 +315,17 @@ async def test_edit_without_line_items_leaves_a_lineless_pa_intact(test_engine):
         assert pa.payment_amount == Decimal("565.00")
 
     # The other half, so the test above cannot pass on a backend that simply
-    # ignores line_items: an array that IS sent still recomputes the header.
+    # ignores line_items: an array that IS sent still recomputes the header —
+    # once confirmed, because it changes what the PA pays (see
+    # test_dm_pa_line_edit_that_moves_the_subtotal_needs_confirmation).
+    async with factory() as db:
+        with pytest.raises(ValueError, match="pre-tax amount"):
+            await service.edit_record(db, "pa", pa_id, {"line_items": []},
+                                      actor_id=creator, actor_email="admin@x.com")
     async with factory() as db:
         await service.edit_record(db, "pa", pa_id, {"line_items": []},
-                                  actor_id=creator, actor_email="admin@x.com")
+                                  actor_id=creator, actor_email="admin@x.com",
+                                  accept_line_total=True)
         await db.commit()
 
     async with factory() as db:
@@ -402,6 +409,99 @@ async def test_edit_charge_without_line_edit_recomputes_pa_totals(test_engine):
     pa = await edit(pa_id, {**same, "title": "t2", "shipping_amount": "20.00"})
     assert pa.title == "t2"
     assert pa.payment_amount == Decimal("1.00")
+
+
+async def _seed_drifted_pa(factory, lines):
+    """A PA whose lines do not add up to its header — PA-20260924-0006 had every
+    PO line (981.98) on a 607.90 payment; a fifth of PO-route PAs look like this."""
+    from app.models.user import User
+    from app.models.pa import PaymentApplication, PaLineItem
+    from app.models.vendor import Vendor
+
+    creator = uuid.uuid4(); vid = uuid.uuid4(); pa_id = uuid.uuid4()
+    line_ids = [uuid.uuid4() for _ in lines]
+    async with factory() as db:
+        db.add(User(id=creator, email=f"dr-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C", role="requester"))
+        db.add(Vendor(id=vid, code=f"V-DR-{vid.hex[:4]}", name="V", category="supplier",
+                      contact_name="A", contact_email="a@x.com"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PaymentApplication(
+            id=pa_id, pa_number=f"PA-DRIFT-{pa_id.hex[:4]}x", title="t",
+            status="approved", pa_type="regular", currency="CAD",
+            subtotal=Decimal("607.90"), tax_rate=Decimal("0.13"), tax_amount=Decimal("79.02"),
+            shipping_amount=Decimal("0"), other_charges=Decimal("0"),
+            payment_amount=Decimal("686.92"),
+            vendor_id=vid, vendor_name="V", created_by=creator, invoice_ids=[], gr_ids=[]))
+        await db.flush()
+        for i, (lid, (desc, total)) in enumerate(zip(line_ids, lines)):
+            db.add(PaLineItem(id=lid, pa_id=pa_id, description=desc, qty=Decimal("1"), unit="ea",
+                              unit_price=Decimal(total), line_total=Decimal(total), sort_order=i))
+        await db.commit()
+    return creator, pa_id, line_ids
+
+
+@pytest.mark.asyncio
+async def test_dm_charge_edit_keeps_the_subtotal_of_a_pa_whose_lines_disagree(test_engine):
+    """A shipping fee added on a drifted PA used to rewrite subtotal to the line
+    total — 607.90 → 981.98, the PO's full value — as a side effect."""
+    from app.models.pa import PaymentApplication
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator, pa_id, _ = await _seed_drifted_pa(factory, [("all", "981.98")])
+    async with factory() as db:
+        await service.edit_record(db, "pa", pa_id, {"shipping_amount": "20.00"},
+                                  actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+    async with factory() as db:
+        pa = (await db.execute(select(PaymentApplication).where(PaymentApplication.id == pa_id))).scalar_one()
+    assert pa.subtotal == Decimal("607.90")
+    assert pa.tax_amount == Decimal("79.02")
+    assert pa.payment_amount == Decimal("706.92")
+
+
+@pytest.mark.asyncio
+async def test_dm_pa_line_edit_that_moves_the_subtotal_needs_confirmation(test_engine):
+    from app.models.pa import PaymentApplication
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator, pa_id, (l1, l2) = await _seed_drifted_pa(factory, [("a", "333.19"), ("b", "648.79")])
+
+    async def read():
+        async with factory() as db:
+            return (await db.execute(select(PaymentApplication).where(PaymentApplication.id == pa_id))).scalar_one()
+
+    # A description typo fix still sends the lines — and would have moved the
+    # payment by the whole drift. Refused, nothing written.
+    retitled = [{"id": str(l1), "description": "a fixed", "qty": "1", "unit": "ea", "unit_price": "333.19"},
+                {"id": str(l2), "description": "b", "qty": "1", "unit": "ea", "unit_price": "648.79"}]
+    async with factory() as db:
+        with pytest.raises(ValueError, match="981.98"):
+            await service.edit_record(db, "pa", pa_id, {"line_items": retitled},
+                                      actor_id=creator, actor_email="admin@x.com")
+    assert (await read()).subtotal == Decimal("607.90")
+
+    # Admission: lines brought to the amount actually paid save without asking.
+    repaired = [{"id": str(l1), "description": "a", "qty": "1", "unit": "ea", "unit_price": "333.19"},
+                {"id": str(l2), "description": "b", "qty": "1", "unit": "ea", "unit_price": "274.71"}]
+    async with factory() as db:
+        await service.edit_record(db, "pa", pa_id, {"line_items": repaired},
+                                  actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+    pa = await read()
+    assert pa.subtotal == Decimal("607.90")
+    assert pa.tax_amount == Decimal("79.03")   # lines × rate: 607.90 × 0.13 = 79.027
+    # ...and a deliberate change goes through once confirmed.
+    async with factory() as db:
+        await service.edit_record(db, "pa", pa_id, {"line_items": repaired[:1]},
+                                  actor_id=creator, actor_email="admin@x.com", accept_line_total=True)
+        await db.commit()
+    pa = await read()
+    assert pa.subtotal == Decimal("333.19")
+    assert pa.payment_amount == Decimal("376.50")
 
 
 @pytest.mark.asyncio

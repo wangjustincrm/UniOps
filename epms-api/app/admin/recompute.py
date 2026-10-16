@@ -58,6 +58,10 @@ def recompute_pa_header_only(row, *, rate_changed: bool) -> dict:
     return {"tax_amount": tax, "payment_amount": _pa_payment(subtotal, tax, row)}
 
 
+def pa_lines_total(lines: list[dict]) -> Decimal:
+    return _sum_lines(lines)
+
+
 _RECOMPUTE = {"pr": _pr, "po": _po, "pa": _pa}
 
 

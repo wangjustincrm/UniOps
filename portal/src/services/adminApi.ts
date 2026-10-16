@@ -174,9 +174,13 @@ export const adminApi = {
   lookup: (system: string, source: string, q: string) =>
     request<RefHit[]>(system, 'GET', `/admin/lookup/${source}${qs({ q, limit: 20 })}`),
   editWithOptions: (system: string, entity: string, id: string,
-                    patch: Record<string, unknown>, opts?: { regeneratePoNumber?: boolean }) =>
+                    patch: Record<string, unknown>,
+                    opts?: { regeneratePoNumber?: boolean; acceptLineTotal?: boolean }) =>
     request<Record<string, unknown>>(system, 'PATCH',
-      `/admin/${entity}/${id}${qs({ regenerate_po_number: opts?.regeneratePoNumber ? 1 : 0 })}`, patch),
+      `/admin/${entity}/${id}${qs({
+        regenerate_po_number: opts?.regeneratePoNumber ? 1 : 0,
+        accept_line_total: opts?.acceptLineTotal ? 1 : 0,
+      })}`, patch),
   editApprovalState: (system: string, entity: string, id: string, patch: Record<string, unknown>) =>
     request<ApprovalStateResult>(system, 'PATCH', `/admin/${entity}/${id}/approval-state`, patch),
   workflowSteps: (system: string, entity: string, id: string) =>

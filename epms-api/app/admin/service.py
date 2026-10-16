@@ -10,7 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.po_number import regenerate_and_cascade
-from app.admin.recompute import PA_CHARGE_FIELDS, recompute_header, recompute_pa_header_only
+from app.admin.recompute import PA_CHARGE_FIELDS, pa_lines_total, recompute_header, recompute_pa_header_only
 from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
 from app.crud.agreement_schedule import reassign_open_confirm_tasks
@@ -325,14 +325,19 @@ async def _apply_line_items(db, spec, row, items: list[dict]):
 async def _recompute_pa_from_stored_lines(db, spec, row, *, rate_changed: bool):
     """Header recompute for a PA edit that did not touch the lines.
 
-    With lines: the same full recompute a line edit gets — tax is lines × rate,
-    shipping and other charges untaxed. Without: the stored subtotal stands in
-    (an empty array would zero 91 production PAs); see recompute_pa_header_only."""
+    With lines that add up to the stored subtotal: the same full recompute a
+    line edit gets — tax is lines × rate, shipping and other charges untaxed.
+    Without lines, or with lines that do not add up: the stored subtotal stands
+    in (see recompute_pa_header_only). An empty array would zero 91 production
+    PAs; lines that disagree with the header — a fifth of PO-route PAs, most
+    often every PO line ticked on a partial payment — would silently replace
+    what the PA pays with the PO's full value when only a shipping fee changed."""
     Model = spec.schema.child.model
     lines = (await db.execute(
         select(Model).where(getattr(Model, spec.schema.child.fk_field) == row.id))).scalars().all()
-    if lines:
-        totals = recompute_header("pa", row, [{"line_total": l.line_total} for l in lines])
+    line_dicts = [{"line_total": l.line_total} for l in lines]
+    if lines and pa_lines_total(line_dicts) == Decimal(str(row.subtotal or 0)):
+        totals = recompute_header("pa", row, line_dicts)
     else:
         totals = recompute_pa_header_only(row, rate_changed=rate_changed)
     for hk, hv in totals.items():
@@ -362,6 +367,7 @@ async def _refresh_invoice_gr_value(db, gr) -> int:
 async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch: dict,
                       *, actor_id: uuid.UUID, actor_email: str,
                       regenerate_po_number: bool = False,
+                      accept_line_total: bool = False,
                       bearer_token: str | None = None) -> dict:
     spec = _spec(entity)
     if not spec.schema.allow_edit:
@@ -415,7 +421,20 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
             await _recompute_pa_from_stored_lines(db, spec, row, rate_changed="tax_rate" in changed)
     received_qty_resynced = 0
     if line_items is not None:
+        subtotal_before = getattr(row, "subtotal", None)
         await _apply_line_items(db, spec, row, line_items)
+        if entity == "pa" and row.subtotal != subtotal_before and not accept_line_total:
+            # subtotal is not editable here — the lines are its only input, so a
+            # line edit is a payment change. Make that explicit: fixing a typo
+            # in one description on a PA whose lines never matched its header
+            # would otherwise move the payment by the whole difference.
+            raise ValueError(
+                f"These lines total {row.subtotal}, but this PA's pre-tax amount is "
+                f"{subtotal_before}. Saving would change the pre-tax amount to {row.subtotal} "
+                f"and the payment to {row.payment_amount}. Adjust the lines to total "
+                f"{subtotal_before}, or confirm that the line total should become the "
+                "pre-tax amount."
+            )
         if entity == "po":
             # received_qty is hand-editable on PO lines; the PO's receipt status is
             # derived from it, so a corrected quantity has to drag the status with

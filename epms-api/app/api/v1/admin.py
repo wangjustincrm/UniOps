@@ -82,12 +82,14 @@ async def get_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: Ad
 async def edit_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: AdminUser,
                       token: BearerToken,
                       patch: dict = Body(...),
-                      regenerate_po_number: int = Query(0)):
+                      regenerate_po_number: int = Query(0),
+                      accept_line_total: int = Query(0)):
     actor_id, email = _actor(user)
     try:
         result = await service.edit_record(db, entity, record_id, patch, actor_id=actor_id,
                                             actor_email=email,
                                             regenerate_po_number=bool(regenerate_po_number),
+                                            accept_line_total=bool(accept_line_total),
                                             bearer_token=token)
         await db.commit()
     except ValueError as e:

@@ -27,6 +27,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
   const [linesDirty, setLinesDirty] = useState(false)
   const [regenPo, setRegenPo] = useState(true)
   const [vendorChanged, setVendorChanged] = useState(false)
+  const [acceptLineTotal, setAcceptLineTotal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -37,6 +38,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
       .map((f) => [f.name, f.ref_name_field ? String(full[f.ref_name_field] ?? '') : String(full[f.name] ?? '')])))
     setLines((full.line_items as LineRow[] | undefined) ?? [])
     setLinesDirty(false)
+    setAcceptLineTotal(false)
     // Labels are resolved server-side (service._ref_list_labels) — an id that
     // resolves to nothing still comes back, labelled, so a Save never silently
     // drops a link other services are still reading.
@@ -52,6 +54,17 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
     setRefLabels((p) => ({ ...p, [f.name]: hit.label }))
     if (f.name === 'vendor_id') setVendorChanged(true)
   }
+
+  // A PA's subtotal is not editable here: the lines are its only input, so an
+  // edited line set that no longer adds up to it changes what the PA pays. The
+  // backend refuses that unless confirmed (admin/service.py edit_record); say
+  // it up front with both numbers rather than after a failed save.
+  const cents = (v: unknown) => Math.round((Number(v) || 0) * 100)
+  const linesCents = lines.reduce((s, r) => s + cents((Number(r.qty) || 0) * (Number(r.unit_price) || 0)), 0)
+  const subtotalShift = schema.key === 'pa' && linesDirty && full != null
+    && linesCents !== cents(full.subtotal)
+    ? { from: (cents(full.subtotal) / 100).toFixed(2), to: (linesCents / 100).toFixed(2) }
+    : null
 
   const save = async () => {
     setError('')
@@ -82,7 +95,8 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
     setSaving(true)
     try {
       const res = await adminApi.editWithOptions(schema.system, schema.key, id, patch,
-        { regeneratePoNumber: schema.key === 'po' && vendorChanged && regenPo })
+        { regeneratePoNumber: schema.key === 'po' && vendorChanged && regenPo,
+          acceptLineTotal: subtotalShift != null && acceptLineTotal })
       // Changing an agreement's owner also moves its open confirm-period tasks
       // (epms-api admin/service.py). Say so: the whole point of that repair is
       // that the new owner can now act, and this dialog otherwise closes with
@@ -157,6 +171,21 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
           </section>
         )}
 
+        {subtotalShift && (
+          <div className="mb-5 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            <p>
+              These lines total <span className="font-mono font-semibold">{subtotalShift.to}</span>, but this PA's
+              pre-tax amount is <span className="font-mono font-semibold">{subtotalShift.from}</span>.
+              Saving will change the pre-tax amount, tax and payment amount to follow the lines.
+            </p>
+            <label className="mt-2 flex items-center gap-2">
+              <input type="checkbox" checked={acceptLineTotal}
+                onChange={(e) => setAcceptLineTotal(e.target.checked)} />
+              Change the pre-tax amount from {subtotalShift.from} to {subtotalShift.to}
+            </label>
+          </div>
+        )}
+
         {/* Keep in sync with service.APPROVAL_STATE_ENTITIES on the backend. */}
         {['pr', 'po', 'pa', 'agreement'].includes(schema.key) && (
           <section className="mb-5">
@@ -168,7 +197,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
         {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100">Cancel</button>
-          <button onClick={save} disabled={saving}
+          <button onClick={save} disabled={saving || (subtotalShift != null && !acceptLineTotal)}
             className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
             {saving ? 'Saving…' : 'Save'}
           </button>
