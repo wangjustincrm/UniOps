@@ -25,6 +25,7 @@ import { SignaturePad } from '@/components/SignaturePad'
 import { InjuryDetailFields, type VitalsReading } from '@/components/InjuryDetail'
 import { VocabularyMultiSelect, VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import { useMyProfile } from '@/hooks/useMyProfile'
+import { useEhsAuth } from '@/store/auth'
 import {
   CausesEditor, causesPayload, spendActionDrafts, type CauseDraft,
 } from '@/components/CausesEditor'
@@ -96,6 +97,7 @@ export default function InvestigationPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const profile = useMyProfile()
+  const me = useEhsAuth((st) => st.user)
 
   const incident = useQuery({
     queryKey: ['incident', id],
@@ -176,6 +178,13 @@ export default function InvestigationPage() {
       setPpe(inv.ppe_that_could_prevent ?? [])
       setSequence(inv.sequence_of_events ?? '')
       setNarrative(inv.root_cause_narrative ?? '')
+    } else if (me) {
+      // ★ Round 7: "when clicking on the start the investigation button, the
+      // lead investigator should default to who ever is logged in." Only when
+      // it is being started: a default is offered once, and whoever saved an
+      // investigation with another lead — or none — keeps what they saved.
+      setLead({ userId: me.id, name: me.full_name ?? '', externalCompany: null,
+                departmentId: null, departmentName: null })
     }
     const t = tree.data
     if (t) setCauses([...(t.immediate ?? []), ...(t.root ?? [])])
