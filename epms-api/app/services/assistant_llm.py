@@ -33,6 +33,8 @@ from app.services.controlled_query import _OPS_BY_KIND as cq_ops
 
 log = logging.getLogger(__name__)
 
+from app.services import guide_view, reply_language
+
 MODEL = "claude-haiku-4-5-20251001"
 
 # The plan call returns a small JSON object; 1024 is generous for it. Narration
@@ -173,6 +175,11 @@ Rules:
   the line — so answering that the system does not record it is wrong.
 - explain_process is about the APPROVAL CHAIN — who signs off, in what order.
   It is not about the data, and it is not about the form.
+- What happens to an over-budget purchase request — "现在超预算的审批模式是什么",
+  "my PR is over budget, which extra approvals does it need", "can I submit an
+  over-budget PR" — is explain_process with doc_type pr. The over-budget mode is
+  configuration the engine reports; it is not in the data, and a query for it
+  returns nothing.
 - "What PR types are there", "what is the difference between them", "what do I
   fill in for a type 5", "which type should I pick" are questions about the
   FORM: call explain_document_types. Answering these with the approval chain is
@@ -445,7 +452,11 @@ _PROCESS_TOOL = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "doc_type": {"type": "string", "enum": ["pr", "po", "pa", "vms_visit"]},
+            # Read from what is wired up rather than listed here, so the planner
+            # is never offered a chain it cannot get, nor denied one it can.
+            "doc_type": {"type": "string", "enum": list(guide_view.SUPPORTED_PROCESSES),
+                         "description": "; ".join(f"{k} = {v}" for k, v in
+                                                  guide_view.PROCESS_LABELS.items())},
         },
         "required": ["doc_type"],
     },
@@ -704,8 +715,31 @@ def _context_note(context: dict | None) -> str:
     if not context:
         return ""
     bits = [f"{k}={v}" for k, v in context.items() if v]
-    return ("\n\nThe person is currently looking at: " + ", ".join(bits) +
+    note = ("\n\nThe person is currently looking at: " + ", ".join(bits) +
             ". Resolve 'this'/'that' against it when it fits the question.") if bits else ""
+    if bits and context.get("doc_number"):
+        # Without this a question ABOUT the document on screen ("who is the
+        # vendor on this one?") went to explain_workflow, the only route that
+        # took the document implicitly (ISS-0004).
+        note += (f" A question about this document's own data — its vendor, "
+                 f"amount, lines, dates, status — is a query filtered on "
+                 f"{context.get('doc_number_field') or 'number'} = {context['doc_number']}. "
+                 f"explain_workflow is only for "
+                 f"who has approved it and who it is waiting on.")
+    return note
+
+
+def _language_note(message: str) -> str:
+    """The reply language, decided in code (see reply_language), and what to do
+    with a message that only asks for a different language."""
+    language = reply_language.detect(message)
+    note = ("\n\nAny text you write for the person (cannot_answer's explanation) "
+            f"must be in {language or 'the language of THIS message — not of earlier turns'}.")
+    if reply_language.is_language_only_request(message):
+        note += ("\nThis message only asks for the answer in another language. It "
+                 "is not a new question: plan the PREVIOUS question in the "
+                 "conversation again, exactly as before.")
+    return note
 
 
 async def plan(schema: list[dict], message: str, context: dict | None = None,
@@ -727,7 +761,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
     """
     import anthropic
 
-    user_text = message + _today_note() + _context_note(context)
+    user_text = message + _today_note() + _context_note(context) + _language_note(message)
     if retry_error:
         user_text += (
             f"\n\nYour previous query was rejected: {retry_error}\n"
@@ -823,11 +857,12 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         # not reach this call by itself — which is how the mapping got built,
         # threaded through, and still reported back as "type 2".
         payload["value_labels"] = result["value_labels"]
+    payload.update(reply_language.instructions(message))
     try:
         resp = await _client().messages.create(
             model=MODEL,
             max_tokens=_NARRATE_MAX_TOKENS,
-            system=_NARRATE_SYSTEM,
+            system=reply_language.LANGUAGE_RULES + _NARRATE_SYSTEM,
             messages=[{"role": "user",
                        "content": json.dumps(payload, ensure_ascii=False, default=str)}],
         )
@@ -876,12 +911,13 @@ async def narrate_preflight(message: str, doc_number: str | None,
         "allowed": preflight.get("allowed"),
         "complete": preflight.get("complete"),
         "checks": preflight.get("checks", []),
+        **reply_language.instructions(message),
     }
     try:
         resp = await _client().messages.create(
             model=MODEL,
             max_tokens=_NARRATE_MAX_TOKENS,
-            system=_PREFLIGHT_SYSTEM,
+            system=reply_language.LANGUAGE_RULES + _PREFLIGHT_SYSTEM,
             messages=[{"role": "user",
                        "content": json.dumps(payload, ensure_ascii=False, default=str)}],
         )
@@ -951,11 +987,12 @@ Rules:
 async def narrate_plan(question: str, explained: list[dict],
                        history=None) -> dict:
     """Turn one or more derivations into an explanation."""
-    payload = {"question": question, "lines": explained}
+    payload = {"question": question, "lines": explained,
+               **reply_language.instructions(question)}
     client = _client()
     resp = await client.messages.create(
         model=MODEL, max_tokens=1200,
-        system=[{"type": "text", "text": _NARRATE_PLAN_SYSTEM,
+        system=[{"type": "text", "text": reply_language.LANGUAGE_RULES + _NARRATE_PLAN_SYSTEM,
                  "cache_control": {"type": "ephemeral"}}],
         messages=(history or []) + [{
             "role": "user",
@@ -967,16 +1004,23 @@ async def narrate_plan(question: str, explained: list[dict],
 
 
 async def narrate_workflow(message: str, view: dict) -> dict:
-    """Explain an approval chain. Same no-new-facts rule as the other narrators."""
+    """Explain an approval chain. Same no-new-facts rule as the other narrators.
+
+    The question goes in with the chain. It used to be left out — only `view`
+    was sent — so every reply was the same English status recap whatever was
+    asked and in whatever language (ISS-0004): "这张单的供应商是谁？" and
+    "用中文回答" both came back as "PR-… is approved" plus its history.
+    """
     import anthropic
 
+    payload = {"question": message, **view, **reply_language.instructions(message)}
     try:
         resp = await _client().messages.create(
             model=MODEL,
             max_tokens=_NARRATE_MAX_TOKENS,
-            system=_WORKFLOW_SYSTEM,
+            system=reply_language.LANGUAGE_RULES + _WORKFLOW_SYSTEM,
             messages=[{"role": "user",
-                       "content": json.dumps(view, ensure_ascii=False, default=str)}],
+                       "content": json.dumps(payload, ensure_ascii=False, default=str)}],
         )
     except anthropic.APIConnectionError as exc:
         raise LlmUnavailable(f"Could not reach the model: {exc}") from exc
@@ -1009,6 +1053,13 @@ You are helping a colleague who may never have been trained on this system.
   `conditional` true does NOT always run — give its `condition` verbatim in your
   own words, because someone told a step is mandatory will wait for an approval
   that is never coming. A step without that flag always runs.
+- For a purchase request, `over_budget` is what happens when the PR is over
+  budget, as configured right now. Asked about over-budget, lead with it: name
+  `mode_label`, then the `added_steps` in order — they come BEFORE the normal
+  chain — or, when `blocks_submission` is true, that such a PR cannot be
+  submitted at all. Give `note`'s point that it only applies to over-budget PRs
+  and is fixed when the PR is submitted. Describe only those steps; never add
+  one, and never call the over-budget step by another role's name.
 - If steps_available is false the engine could not be reached; say the chain
   could not be read rather than describing one from memory. You do not know
   this process except from what you were given.
@@ -1102,11 +1153,12 @@ async def narrate_guide(message: str, payload: dict) -> dict:
     """Explain tasks or a process. Same no-new-facts rule as the others."""
     import anthropic
 
+    payload = {**payload, **reply_language.instructions(message)}
     try:
         resp = await _client().messages.create(
             model=MODEL,
             max_tokens=_NARRATE_MAX_TOKENS,
-            system=_GUIDE_SYSTEM,
+            system=reply_language.LANGUAGE_RULES + _GUIDE_SYSTEM,
             messages=[{"role": "user",
                        "content": json.dumps(payload, ensure_ascii=False, default=str)}],
         )
@@ -1119,6 +1171,47 @@ async def narrate_guide(message: str, payload: dict) -> dict:
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_guide", resp)
+    return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
+            "usage": _usage(resp)}
+
+
+_FIXED_REPLY_SYSTEM = """\
+You pass on a short message the system wrote, to a colleague who asked a
+question in another language.
+
+- Write the message in `reply_in`, keeping its meaning exactly. Do not add an
+  explanation, an apology, an offer or a suggestion that is not in it.
+- Document numbers, codes, product names and people's names are identifiers:
+  keep them exactly as written.
+- Reply with the message only.
+"""
+
+
+async def render_fixed_reply(text: str, question: str, language: str | None) -> dict:
+    """A code-written reply (a refusal, "which document do you mean") in the
+    asker's language. Only those replies come here — model-written ones already
+    follow reply_language."""
+    import anthropic
+
+    payload = {"message": text, "question": question,
+               **reply_language.instructions(question)}
+    try:
+        resp = await _client().messages.create(
+            model=MODEL,
+            max_tokens=400,
+            system=reply_language.LANGUAGE_RULES + _FIXED_REPLY_SYSTEM,
+            messages=[{"role": "user",
+                       "content": json.dumps(payload, ensure_ascii=False, default=str)}],
+        )
+    except anthropic.APIConnectionError as exc:
+        raise LlmUnavailable(f"Could not reach the model: {exc}") from exc
+    except anthropic.RateLimitError as exc:
+        raise LlmUnavailable("The shared API quota is exhausted right now") from exc
+    except anthropic.APIStatusError as exc:
+        log.error("fixed-reply rendering failed %s: %s", exc.status_code, exc.message)
+        raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
+
+    _log_usage("render_fixed_reply", resp)
     return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
             "usage": _usage(resp)}
 

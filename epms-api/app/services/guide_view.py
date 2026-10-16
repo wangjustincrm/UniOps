@@ -19,10 +19,21 @@ from app.crud.current_step import role_label
 from app.services import approval_client
 
 # doc_type -> how to say it to a person
+# Every chain approval-api's /workflows/{doc_type} read-out serves. Adding one
+# here is all it takes for the Assistant to explain it (the planner's tool enum
+# and the "I can describe…" reply both read this).
 PROCESS_LABELS = {
     "pr": "Purchase Request",
     "po": "Purchase Order",
+    "posign": "PO sign-off",
+    "agr": "Purchase Agreement",
     "pa": "Payment Application",
+    "pa_dir": "Direct Payment Application",
+    "exp": "Expense Claim",
+    "mil": "Mileage Claim",
+    "trv": "Travel Expense",
+    "tra": "Travel Application",
+    "budget_plan": "Budget Plan",
     "vms_visit": "Visitor Request",
 }
 SUPPORTED_PROCESSES = tuple(PROCESS_LABELS)
@@ -73,6 +84,7 @@ async def process_steps(doc_type: str, token: str) -> dict:
     promise about any one document.
     """
     steps: list[dict] = []
+    over_budget = None
     available = True
     try:
         status, body = await approval_client.forward(
@@ -81,6 +93,7 @@ async def process_steps(doc_type: str, token: str) -> dict:
             available = False
         else:
             steps = (body or {}).get("steps", []) if isinstance(body, dict) else []
+            over_budget = (body or {}).get("over_budget") if isinstance(body, dict) else None
     except Exception:  # noqa: BLE001
         # forward() lets httpx errors through rather than wrapping them, so a
         # narrower except let a ConnectError escape and turn "the engine is
@@ -102,4 +115,14 @@ async def process_steps(doc_type: str, token: str) -> dict:
             "condition": s.get("condition"),
         } for i, s in enumerate(steps)],
         "steps_available": available,
+        # PR only — the over-budget rule as Budget Config stands, from the
+        # engine. Without it "现在超预算的审批模式是什么？" had nothing to read
+        # and was answered from a 0-row query plus guesswork (ISS-0005).
+        **({"over_budget": {
+            "mode": over_budget.get("mode"),
+            "mode_label": over_budget.get("mode_label"),
+            "added_steps": [s.get("label") for s in over_budget.get("added_steps") or []],
+            "blocks_submission": over_budget.get("blocks_submission"),
+            "note": over_budget.get("note"),
+        }} if over_budget else {}),
     }
