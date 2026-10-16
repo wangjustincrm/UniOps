@@ -41,6 +41,7 @@ import PositionsPage from '@/pages/settings/PositionsPage'
 import MyTrainingPage from '@/pages/MyTrainingPage'
 import AreaOwnersPage from '@/pages/settings/AreaOwnersPage'
 import RulesPage from '@/pages/settings/RulesPage'
+import PermitChecksPage from '@/pages/settings/PermitChecksPage'
 import NotifyGroupsPage from '@/pages/settings/NotifyGroupsPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
 
@@ -294,5 +295,10 @@ export const ehsRoutes: RouteDef[] = [
     path: '/settings/rules',
     element: <RulesPage />,
     tab: { title: 'Rules', icon: 'Settings', keyStrategy: 'static' },
+  },
+  {
+    path: '/settings/permit-checks',
+    element: <PermitChecksPage />,
+    tab: { title: 'Permit checks', icon: 'ShieldCheck', keyStrategy: 'static' },
   },
 ]

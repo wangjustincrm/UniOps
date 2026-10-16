@@ -298,6 +298,18 @@ async def issue(db: AsyncSession, permit: Permit, *, user_id: uuid.UUID) -> Perm
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "This permit cannot be issued yet:\n• " + "\n• ".join(problems))
 
+    # ★ Round 7: the "before work starts" list is now HSE's to edit. A permit
+    # records the wording it was issued against — {key: label} where it held
+    # {key: true} — so changing the list later does not rewrite what an issued
+    # or closed permit says was confirmed.
+    permit_type = await get_type(db, permit.type_id) if permit.type_id else None
+    if permit_type:
+        confirmed = dict(permit.precautions_confirmed or {})
+        for item in permit_type.precautions or []:
+            if isinstance(item, dict) and confirmed.get(item.get("key")):
+                confirmed[item["key"]] = item.get("label") or item["key"]
+        permit.precautions_confirmed = confirmed
+
     permit.status = "issued"
     permit.suspended_reason = None
     permit.issued_at = datetime.now(timezone.utc)

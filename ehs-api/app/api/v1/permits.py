@@ -24,7 +24,7 @@ from app.api.v1.incidents import _user_id
 from app.core.deps import SessionDep
 from uniops_authz import has_permission
 
-from app.core.permissions import CanIssuePermit, CanRequestPermit
+from app.core.permissions import CanIssuePermit, CanManageSettings, CanRequestPermit
 from app.crud import permit as crud
 from app.services import permit as rules
 
@@ -168,6 +168,48 @@ async def _out(db, permit, *, with_blockers: bool = False) -> PermitOut:
     if with_blockers and item.status in ("draft", "suspended"):
         item.blockers = await crud.blockers(db, permit)
     return item
+
+
+class PrecautionIn(BaseModel):
+    # Kept for an item that already exists, so what permits ticked stays tied
+    # to it; left out for a new one, which is given a key.
+    key: str | None = Field(default=None, max_length=60)
+    label: str = Field(min_length=2, max_length=200)
+    help: str | None = Field(default=None, max_length=400)
+
+
+class PrecautionsIn(BaseModel):
+    precautions: list[PrecautionIn] = Field(min_length=1, max_length=40)
+
+
+@router.put("/permit-types/{type_id}/precautions", response_model=PermitTypeOut)
+async def set_precautions(
+    type_id: uuid.UUID, payload: PrecautionsIn, db: SessionDep, user: CanManageSettings,  # noqa: ARG001
+):
+    """What has to be confirmed before a permit of this type is issued.
+
+    Round 7 (answer box): "on permits, in the before work starts section,
+    create a list to select the items to be confirmed before the permit can be
+    raised. allow this list to be modified in the settings section." Applies to
+    permits not yet issued; one already issued keeps the wording it was issued
+    against (crud.issue).
+    """
+    import re
+    permit_type = await crud.get_type(db, type_id)
+    items, seen = [], set()
+    for p in payload.precautions:
+        key = p.key or re.sub(r"[^a-z0-9]+", "_", p.label.lower()).strip("_")[:40] or "item"
+        base, n = key, 2
+        while key in seen:
+            key, n = f"{base}_{n}", n + 1
+        seen.add(key)
+        item = {"key": key, "label": p.label.strip()}
+        if p.help and p.help.strip():
+            item["help"] = p.help.strip()
+        items.append(item)
+    permit_type.precautions = items
+    await db.flush()
+    return permit_type
 
 
 @router.get("/permit-types", response_model=list[PermitTypeOut])

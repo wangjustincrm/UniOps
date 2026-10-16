@@ -159,3 +159,46 @@ async def test_reading_the_register_is_not_the_right_to_change_it(
         got = await c.patch(f"/api/v1/permits/{pid}", json={
             "valid_to": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()})
     assert got.status_code == (200 if allowed else 403), got.text
+
+
+async def test_the_checklist_is_hses_to_edit_and_an_issued_permit_keeps_its_own(
+        worker, test_engine, db_session, hse_manager, permit_type):
+    """★ Round 7 (answer box): "create a list to select the items to be
+    confirmed before the permit can be raised. allow this list to be modified
+    in the settings section." Editing it must not rewrite what an issued
+    permit says was confirmed."""
+    from tests.conftest import authed_client, make_token
+    _, hse = hse_manager
+    me, client = worker
+    tid = str(permit_type.id)
+
+    # Only settings may change it.
+    assert (await client.put(f"/api/v1/permit-types/{tid}/precautions", json={
+        "precautions": [{"label": "Anything"}]})).status_code == 403
+
+    pid = (await _a_permit(client, permit_type))["id"]
+    await client.patch(f"/api/v1/permits/{pid}", json={"precautions_confirmed": {"extinguisher": True}})
+    for capacity in permit_type.required_signatures:
+        await hse.post(f"/api/v1/permits/{pid}/signatures", json={
+            "capacity": capacity, "user_id": str(me.id), "person_name": "Signer",
+            "signature": "data:image/png;base64,iVBORw0KGgo="})
+    issued = await hse.post(f"/api/v1/permits/{pid}/issue", json={})
+    assert issued.status_code == 200, issued.text
+    assert issued.json()["precautions_confirmed"] == {"extinguisher": "Extinguisher to hand"}
+
+    edited = await hse.put(f"/api/v1/permit-types/{tid}/precautions", json={"precautions": [
+        {"key": "extinguisher", "label": "Two extinguishers to hand"},
+        {"label": "Fire watch for 60 minutes after"}]})
+    assert edited.status_code == 200, edited.text
+    keys = [p["key"] for p in edited.json()["precautions"]]
+    assert keys[0] == "extinguisher" and keys[1] == "fire_watch_for_60_minutes_after"
+
+    # The issued permit still says what it was issued against.
+    after = (await client.get(f"/api/v1/permits/{pid}")).json()
+    assert after["precautions_confirmed"] == {"extinguisher": "Extinguisher to hand"}
+
+    # A new permit is held for the new item.
+    fresh = (await _a_permit(client, permit_type))["id"]
+    await client.patch(f"/api/v1/permits/{fresh}", json={"precautions_confirmed": {"extinguisher": True}})
+    blockers = (await client.get(f"/api/v1/permits/{fresh}")).json()["blockers"]
+    assert any("Fire watch for 60 minutes after" in b for b in blockers)

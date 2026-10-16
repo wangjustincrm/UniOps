@@ -50,7 +50,8 @@ interface Permit {
   department_name: string | null; contractor_company: string | null
   requested_by: string | null; requested_by_name: string | null
   valid_from: string | null; valid_to: string | null
-  precautions_confirmed: Record<string, boolean>
+  /** {key: true} while prepared; {key: wording} once issued (round 7). */
+  precautions_confirmed: Record<string, boolean | string>
   issued_at: string | null; issued_by_name: string | null
   suspended_reason: string | null
   closed_at: string | null; closed_by_name: string | null; closeout_note: string | null
@@ -429,7 +430,17 @@ function PrecautionList(
   { permit, type, editable, onSaved }:
   { permit: Permit; type: PermitType; editable: boolean; onSaved: () => void },
 ) {
-  const [draft, setDraft] = useState<Record<string, boolean>>(permit.precautions_confirmed ?? {})
+  const [draft, setDraft] = useState<Record<string, boolean | string>>(permit.precautions_confirmed ?? {})
+  // ★ Round 7: the list is HSE's to edit now. An issued or closed permit shows
+  // the wording it was issued against, which it recorded, not today's list.
+  const recorded = permit.status !== 'draft' && permit.status !== 'suspended'
+  const items: Precaution[] = recorded
+    ? Object.entries(permit.precautions_confirmed ?? {}).filter(([, v]) => v).map(([key, v]) => ({
+        key,
+        label: typeof v === 'string' ? v
+          : type.precautions.find((p) => p.key === key)?.label ?? key,
+      }))
+    : type.precautions
   const [dirty, setDirty] = useState(false)
 
   const save = useMutation({
@@ -442,7 +453,7 @@ function PrecautionList(
     <>
       <SectionTitle className="mb-1.5">Before work starts</SectionTitle>
       <ul className="flex flex-col gap-1">
-        {type.precautions.map((p) => (
+        {items.map((p) => (
           <li key={p.key}>
             <label className={
               'flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm ' +
