@@ -23,9 +23,10 @@ async def _published(client, db, *, title="Working at Heights Policy") -> str:
     return doc_id
 
 
-async def _quiz_on(client, doc_id) -> tuple[str, str]:
+async def _quiz_on(client, doc_id, *, max_attempts=None) -> tuple[str, str]:
     made = await client.post("/api/v1/quizzes", json={
-        "title": "Heights policy check", "document_id": doc_id, "pass_mark_percent": 100})
+        "title": "Heights policy check", "document_id": doc_id, "pass_mark_percent": 100,
+        "max_attempts": max_attempts})
     assert made.status_code in (200, 201), made.text
     qid = made.json()["id"]
     put = await client.put(f"/api/v1/quizzes/{qid}/questions", json={"questions": [{
@@ -168,4 +169,29 @@ async def test_a_new_version_asks_for_the_quiz_again(hse_manager, worker, db_ses
 
     await me.post(f"/api/v1/quizzes/{qid}/attempts", json={"answers": {question: ["t"]}})
     assert (await me.get(f"/api/v1/documents/{v2_id}")).json()["quiz_passed"] is True
+    assert (await me.post(f"/api/v1/documents/{v2_id}/acknowledge", json=SIG)).status_code in (200, 201)
+
+
+async def test_attempts_are_counted_per_version(hse_manager, worker, db_session):
+    """★ Raised in review by uniops-55: with a limit, somebody who used their
+    attempts passing v1 could never pass — and so never sign — v2."""
+    _, hse = hse_manager
+    _, me = worker
+    doc_id = await _published(hse, db_session, title="Lifting policy")
+    qid, question = await _quiz_on(hse, doc_id, max_attempts=2)
+    await me.post(f"/api/v1/quizzes/{qid}/attempts", json={"answers": {question: ["f"]}})
+    assert (await me.post(f"/api/v1/quizzes/{qid}/attempts",
+                          json={"answers": {question: ["t"]}})).json()["passed"]
+    # On v1 the limit holds.
+    assert (await me.post(f"/api/v1/quizzes/{qid}/attempts",
+                          json={"answers": {question: ["t"]}})).status_code == 409
+
+    v2_id = (await hse.post(f"/api/v1/documents/{doc_id}/new-version", json={"version": "2"})).json()["id"]
+    row = await db_session.get(SafetyDocument, uuid.UUID(v2_id))
+    row.file_id = uuid.uuid4()
+    await db_session.commit()
+    assert (await hse.post(f"/api/v1/documents/{v2_id}/publish", json={})).status_code == 200
+
+    again = await me.post(f"/api/v1/quizzes/{qid}/attempts", json={"answers": {question: ["t"]}})
+    assert again.status_code == 201 and again.json()["passed"], again.text
     assert (await me.post(f"/api/v1/documents/{v2_id}/acknowledge", json=SIG)).status_code in (200, 201)

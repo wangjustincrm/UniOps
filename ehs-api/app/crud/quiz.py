@@ -111,6 +111,16 @@ async def has_passed(db: AsyncSession, quiz_id: uuid.UUID, user_id: uuid.UUID,
     return (await db.execute(stmt.limit(1))).first() is not None
 
 
+async def _version_published_at(db: AsyncSession, quiz: Quiz) -> datetime | None:
+    """When the version a document's quiz now tests was published; None for a
+    course's quiz, whose attempts all count."""
+    if quiz.document_id is None:
+        return None
+    from app.models.document import SafetyDocument
+    doc = await db.get(SafetyDocument, quiz.document_id)
+    return doc.published_at if doc else None
+
+
 async def passed_for_document(db: AsyncSession, quiz_id: uuid.UUID, document,
                               user_id: uuid.UUID) -> bool:
     """A pass that counts for this version of the document.
@@ -267,6 +277,13 @@ async def score(
             delivery_id = None
 
     mine = await attempts_for(db, quiz.id, user_id=user_id)
+    # ★ A document's quiz is retaken for each version (passed_for_document), so
+    # its attempts are counted for this version too. Counted across versions,
+    # somebody who used their attempts passing v1 could never pass — and never
+    # sign — v2. Raised in review by uniops-55.
+    since = await _version_published_at(db, quiz)
+    if since is not None:
+        mine = [a for a in mine if a.submitted_at >= since]
     if quiz.max_attempts is not None and len(mine) >= quiz.max_attempts:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
