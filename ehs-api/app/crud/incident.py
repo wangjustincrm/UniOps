@@ -471,6 +471,17 @@ async def close(db: AsyncSession, incident: Incident) -> Incident:
     clocks = await open_clocks(db, incident.id)
     if clocks:
         raise _clocks_refusal(incident, clocks, "closed")
+    # ★ Round 7: "when a return to work plan is created in an incident, the
+    # incident can not be closed until the return to work form indicates they
+    # are back to full duties."
+    from app.models.rtw import RtwPlan
+    if (await db.execute(select(RtwPlan.id).where(
+            RtwPlan.incident_id == incident.id, RtwPlan.status == "active").limit(1))).first():
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"The return-to-work plan on {incident.incident_no} is still active. When the "
+            "worker is back on full duties, press \"Back on full duties\" on the plan, then "
+            "close the incident.")
     incident.status = "closed"
     incident.closed_at = datetime.now(timezone.utc)
     await db.flush()

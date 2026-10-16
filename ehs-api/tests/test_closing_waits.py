@@ -60,3 +60,27 @@ async def test_only_hse_says_a_clock_does_not_apply(test_engine, db_session, hse
     assert (await hse.post(f"/api/v1/deadlines/{clock['id']}/not-required",
                            json={"reason": "x"})).status_code == 422, "a reason is required"
 
+
+async def test_an_active_return_to_work_plan_holds_the_close(test_engine, db_session, hse_manager):
+    _, hse = hse_manager
+    worker = await make_user(test_engine, role="requester", full_name="Dana Worker")
+    async with authed_client(make_token(worker.id, worker.role), db_session) as c:
+        made = await c.post("/api/v1/incidents", json={
+            "form_kind": "medical", "title": "Strained back lifting",
+            "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),
+            "incident_type": "first_aid", "signature": SIGNATURE, "description": "Lifting.",
+            "persons": [{"role": "injured", "user_id": str(worker.id), "person_name": "Dana Worker"}]})
+        iid = made.json()["id"]
+        assert (await c.post(f"/api/v1/incidents/{iid}/submit")).status_code == 200
+    plan = await hse.post(f"/api/v1/incidents/{iid}/return-to-work", json={
+        "modified_duties": "Light packing only",
+        "start_date": date.today().isoformat()})
+    assert plan.status_code in (200, 201), plan.text
+    assert (await hse.post(f"/api/v1/incidents/{iid}/hse-review")).status_code == 200
+
+    held = await hse.post(f"/api/v1/incidents/{iid}/close")
+    assert held.status_code == 409 and "Back on full duties" in held.text
+
+    back = await hse.post(f"/api/v1/incidents/{iid}/return-to-work/{plan.json()['id']}/close", json={})
+    assert back.status_code == 200, back.text
+    assert (await hse.post(f"/api/v1/incidents/{iid}/close")).status_code == 200
