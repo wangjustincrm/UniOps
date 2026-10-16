@@ -168,7 +168,7 @@ async def get_document(document_id: uuid.UUID, db: SessionDep, user: CanReadDocu
     quiz = await quiz_crud.for_document(db, doc.id)
     if quiz is not None:
         out.quiz_id, out.quiz_title = quiz.id, quiz.title
-        out.quiz_passed = await quiz_crud.has_passed(db, quiz.id, _user_id(user))
+        out.quiz_passed = await quiz_crud.passed_for_document(db, quiz.id, doc, _user_id(user))
     # Only looked up for a retired one: on a current document there is nothing
     # to say, and it would be a query per read for every list.
     if doc.status == "retired":

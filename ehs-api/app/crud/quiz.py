@@ -101,11 +101,26 @@ async def retire(db: AsyncSession, quiz: Quiz) -> Quiz:
     return quiz
 
 
-async def has_passed(db: AsyncSession, quiz_id: uuid.UUID, user_id: uuid.UUID) -> bool:
-    return (await db.execute(
-        select(QuizAttempt.id).where(QuizAttempt.quiz_id == quiz_id,
-                                     QuizAttempt.user_id == user_id,
-                                     QuizAttempt.passed.is_(True)).limit(1))).first() is not None
+async def has_passed(db: AsyncSession, quiz_id: uuid.UUID, user_id: uuid.UUID,
+                     *, since: datetime | None = None) -> bool:
+    stmt = select(QuizAttempt.id).where(QuizAttempt.quiz_id == quiz_id,
+                                        QuizAttempt.user_id == user_id,
+                                        QuizAttempt.passed.is_(True))
+    if since is not None:
+        stmt = stmt.where(QuizAttempt.submitted_at >= since)
+    return (await db.execute(stmt.limit(1))).first() is not None
+
+
+async def passed_for_document(db: AsyncSession, quiz_id: uuid.UUID, document,
+                              user_id: uuid.UUID) -> bool:
+    """A pass that counts for this version of the document.
+
+    ★ Round 7, question 2, answered by HSE: "a revised document requires a quiz
+    to be answered again. a previous pass on a quiz does not automatically pass
+    a revised document." The quiz moves to the new version on publishing, so
+    only an attempt made since this version was published counts.
+    """
+    return await has_passed(db, quiz_id, user_id, since=document.published_at)
 
 
 async def by_qr_token(db: AsyncSession, token: str) -> Quiz | None:

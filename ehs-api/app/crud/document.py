@@ -286,7 +286,7 @@ async def acknowledge(
     # that it was understood, and the quiz is how that is checked.
     from app.crud import quiz as quiz_crud
     quiz = await quiz_crud.for_document(db, doc.id)
-    if quiz is not None and not await quiz_crud.has_passed(db, quiz.id, user_id):
+    if quiz is not None and not await quiz_crud.passed_for_document(db, quiz.id, doc, user_id):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"Pass the quiz on {doc.doc_no} first — it is on the document's page.")

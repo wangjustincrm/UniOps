@@ -114,7 +114,8 @@ async def resolve(token: str, db: SessionDep, user: CanReportIncident):  # noqa:
             quiz = await quiz_crud.for_document(db, document.id)
             if quiz is not None:
                 quiz_id = quiz.id
-                quiz_passed = await quiz_crud.has_passed(db, quiz.id, _user_id(user))
+                quiz_passed = await quiz_crud.passed_for_document(
+                    db, quiz.id, document, _user_id(user))
         return QrTarget(
             kind="document", id=document.id,
             label=f"{document.title} v{document.version}",

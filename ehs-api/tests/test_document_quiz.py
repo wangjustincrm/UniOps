@@ -141,3 +141,31 @@ async def test_a_document_with_no_quiz_says_so_on_its_code(hse_manager, worker, 
     token = (await hse.get(f"/api/v1/documents/{doc_id}")).json()["qr_token"]
     got = (await me.get(f"/api/v1/qr/{token}")).json()
     assert got["quiz_id"] is None and "acknowledge" in got["actions"]
+
+
+async def test_a_new_version_asks_for_the_quiz_again(hse_manager, worker, db_session):
+    """★ Round 7, question 2: "a revised document requires a quiz to be
+    answered again. a previous pass on a quiz does not automatically pass a
+    revised document." """
+    _, hse = hse_manager
+    _, me = worker
+    doc_id = await _published(hse, db_session, title="Respirator policy")
+    qid, question = await _quiz_on(hse, doc_id)
+    assert (await me.post(f"/api/v1/quizzes/{qid}/attempts",
+                          json={"answers": {question: ["t"]}})).json()["passed"]
+    assert (await me.get(f"/api/v1/documents/{doc_id}")).json()["quiz_passed"] is True
+
+    v2 = await hse.post(f"/api/v1/documents/{doc_id}/new-version", json={"version": "2"})
+    v2_id = v2.json()["id"]
+    row = await db_session.get(SafetyDocument, uuid.UUID(v2_id))
+    row.file_id = uuid.uuid4()
+    await db_session.commit()
+    assert (await hse.post(f"/api/v1/documents/{v2_id}/publish", json={})).status_code == 200
+
+    page = (await me.get(f"/api/v1/documents/{v2_id}")).json()
+    assert page["quiz_id"] == qid and page["quiz_passed"] is False
+    assert (await me.post(f"/api/v1/documents/{v2_id}/acknowledge", json=SIG)).status_code == 409
+
+    await me.post(f"/api/v1/quizzes/{qid}/attempts", json={"answers": {question: ["t"]}})
+    assert (await me.get(f"/api/v1/documents/{v2_id}")).json()["quiz_passed"] is True
+    assert (await me.post(f"/api/v1/documents/{v2_id}/acknowledge", json=SIG)).status_code in (200, 201)
