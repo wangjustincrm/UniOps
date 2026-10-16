@@ -32,6 +32,13 @@ interface LineItem {
   total_amount: number
   tax_amount: number
   net_amount: number
+  tax_code?: string | null
+  // TRV date-range line (null on single-day lines)
+  period_from?: string | null
+  period_to?: string | null
+  period_days?: number | null
+  daily_rate?: number | null
+  invoice_amount?: number | null
 }
 
 interface TripItem {
@@ -77,6 +84,7 @@ interface ExpenseClaim {
   travelers?: { id: string; user_name: string }[]
   transport_modes?: string[]
   travel_destination?: string | null
+  travel_country?: string | null
   travel_from_date?: string | null
   travel_to_date?: string | null
   leave_from_date?: string | null
@@ -458,7 +466,10 @@ export default function ExpenseDetailPage() {
     ?? (claim.claim_type.startsWith('CFM') ? `Custom Form (${claim.claim_type.replace(/^CFM_?/, '')})` : claim.claim_type)
 
   // EXP-007 / TRV-008: receipt-based claims require ≥1 attachment before submission.
-  const requiresAttachment = ['EXP', 'TRV'].includes(claim.claim_type)
+  // A TRV made only of date-range lines is exempt (same rule as the server).
+  const trvAllRange = claim.claim_type === 'TRV' && claim.line_items.length > 0
+    && claim.line_items.every((li) => li.period_from)
+  const requiresAttachment = ['EXP', 'TRV'].includes(claim.claim_type) && !trvAllRange
   // Draft and returned alike: a returned claim is resubmitted from here too.
   const missingAttachment = requiresAttachment && isEditable(claim.status) && attachments.length === 0
 
@@ -653,8 +664,11 @@ export default function ExpenseDetailPage() {
       {/* Line items (EXP / TRV / CFM — MIL uses the trip log below, TRA has no line items) */}
       {claim.claim_type !== 'MIL' && claim.claim_type !== 'TRA' && claim.line_items.length > 0 && (
         <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-          <div className="border-b border-neutral-100 px-5 py-3">
+          <div className="border-b border-neutral-100 px-5 py-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-neutral-700">Line Items</h2>
+            {claim.claim_type === 'TRV' && claim.travel_country && claim.travel_country !== 'CA' && (
+              <span className="text-xs text-neutral-500">Outside Canada ({claim.travel_country}) — no sales tax</span>
+            )}
           </div>
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 border-b border-neutral-100">
@@ -672,8 +686,23 @@ export default function ExpenseDetailPage() {
               {claim.line_items.map((li) => (
                 <tr key={li.id} className="border-b border-neutral-100">
                   <td className="px-4 py-2 text-xs text-neutral-400 font-mono">{li.line_number}</td>
-                  <td className="px-4 py-2 text-xs text-neutral-600">{formatDate(li.expense_date)}</td>
-                  <td className="px-4 py-2 text-xs text-neutral-800">{li.description}</td>
+                  <td className="px-4 py-2 text-xs text-neutral-600">
+                    {li.period_from
+                      ? <>{formatDate(li.period_from)} –<br />{formatDate(li.period_to!)}</>
+                      : formatDate(li.expense_date)}
+                  </td>
+                  <td className="px-4 py-2 text-xs text-neutral-800">
+                    {li.description}
+                    {li.period_from && (
+                      <div className="text-neutral-500">{li.period_days} days × {formatAmount(li.daily_rate ?? 0)}</div>
+                    )}
+                    {claim.claim_type === 'TRV' && li.tax_code && (
+                      <div className="text-neutral-500">Tax {li.tax_code}</div>
+                    )}
+                    {li.invoice_amount != null && (
+                      <div className="text-neutral-500">Invoice {formatAmount(li.invoice_amount)}</div>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-xs text-neutral-600">{li.budget_account_code} — {li.budget_account_name}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono">{formatAmount(li.total_amount)}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">{formatAmount(li.tax_amount)}</td>

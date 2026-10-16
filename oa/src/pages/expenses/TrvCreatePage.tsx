@@ -6,7 +6,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle, ChevronDown, ChevronRight, ArrowLeft, Paperclip, Upload, X } from 'lucide-react'
 import { cn, formatAmount, todayLocal } from '@/lib/utils'
 import { useEditableClaim, useSaveClaim, type EditableFormProps } from '@/lib/editableClaim'
-import { api, budgetApi } from '@/lib/api'
+import { api, budgetApi, mdmApi } from '@/lib/api'
 import { ReceiptScanButton } from '@/components/ReceiptScanButton'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
@@ -19,6 +19,13 @@ interface Policy {
   meal_incidental_limit: number
   hst_rate: number
 }
+
+// MDM tax code (Finance → Tax Settings) — the same list the General Expense form uses
+interface TaxCode { code: string; name: string; rate: string; recoverable: boolean }
+
+// Pre-selected on a new line in Canada: Ontario HST, what every TRV line was
+// taxed at before the picker existed (policy hst_rate 13%).
+const DEFAULT_TAX_CODE = 'HST_ON'
 
 interface BudgetAccount {
   id: string; code: string; name: string
@@ -45,6 +52,15 @@ interface TrvLineItem {
   total_amount: string    // gross
   tax_amount: string
   net_amount: string      // after tax
+  tax_code: string | null // MDM tax code; null = no tax (and always null abroad)
+  // Date-range line (long trips): net = period_days × daily_rate. Empty
+  // strings while the line is single-day.
+  mode: 'day' | 'range'
+  period_from: string
+  period_to: string
+  period_days: string
+  daily_rate: string
+  invoice_amount: string  // optional; required once an invoice file is attached
   _file?: File | null     // transient: receipt/invoice held until the draft is created, then uploaded
   _fileScanned?: boolean  // _file came from Scan (a re-scan may replace it) rather than Attach
 }
@@ -61,14 +77,53 @@ const TRV_CATEGORIES = [
   { key: 'Other',          label: 'Other',             mealKey: null },
 ]
 
+// Country of travel. Only Canada vs. abroad changes anything today: lines
+// abroad carry no Canadian sales tax. The list is for the record on the claim;
+// 'ZZ' (ISO user-assigned) stands for any country not listed.
+const COUNTRIES: { code: string; name: string }[] = [
+  { code: 'CA', name: 'Canada' },
+  { code: 'US', name: 'United States' },
+  { code: 'MX', name: 'Mexico' },
+  { code: 'CN', name: 'China' },
+  { code: 'HK', name: 'Hong Kong' },
+  { code: 'TW', name: 'Taiwan' },
+  { code: 'JP', name: 'Japan' },
+  { code: 'KR', name: 'South Korea' },
+  { code: 'SG', name: 'Singapore' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'NZ', name: 'New Zealand' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'FR', name: 'France' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'AE', name: 'United Arab Emirates' },
+  { code: 'ZZ', name: 'Other (outside Canada)' },
+]
+
 const today = todayLocal
 
-function emptyLine(n: number, category: string): TrvLineItem {
+// Inclusive day count between two YYYY-MM-DD strings. Parsed as UTC parts,
+// never through new Date('YYYY-MM-DD') + local getters (off by one west of UTC).
+function daysInRange(from: string, to: string): number {
+  const utc = (d: string) => { const [y, m, dd] = d.split('-').map(Number); return Date.UTC(y, m - 1, dd) }
+  if (!from || !to) return 0
+  return Math.round((utc(to) - utc(from)) / 86_400_000) + 1
+}
+
+// net / tax / total for a net amount at the given tax rate, as fixed strings.
+function amountsFromNet(net: number, taxRate: number) {
+  const tax = (net * taxRate).toFixed(2)
+  return { net_amount: net.toFixed(2), tax_amount: tax, total_amount: (net + parseFloat(tax)).toFixed(2) }
+}
+
+function emptyLine(n: number, category: string, taxCode: string | null): TrvLineItem {
   return {
     line_number: n, expense_date: today(), category,
     description: '', budget_account_id: '', budget_account_code: '',
     budget_account_name: '', cost_center_id: null, cost_center_name: null,
-    total_amount: '', tax_amount: '0.00', net_amount: '', _file: null,
+    total_amount: '', tax_amount: '0.00', net_amount: '', tax_code: taxCode,
+    mode: 'day', period_from: '', period_to: '', period_days: '', daily_rate: '', invoice_amount: '',
+    _file: null,
   }
 }
 
@@ -87,12 +142,16 @@ function OverLimitBadge({ amount, limit }: { amount: number; limit: number }) {
 // ── Category section ──────────────────────────────────────────────────────────
 
 function CategorySection({
-  category, label, lines, policy, accounts,
+  category, label, lines, policy, abroad, taxCodes, rateOf, tripFrom, tripTo, accounts,
   onAdd, onRemove, onUpdate,
 }: {
   category: string; label: string
   lines: TrvLineItem[]
   policy: Policy | undefined
+  abroad: boolean         // outside Canada: no tax, no picker
+  taxCodes: TaxCode[]
+  rateOf: (code: string | null) => number
+  tripFrom: string; tripTo: string
   accounts: BudgetAccount[]
   onAdd: () => void
   onRemove: (n: number) => void
@@ -131,8 +190,21 @@ function CategorySection({
       {open && (
         <div className="p-4 flex flex-col gap-3">
           {lines.map((li) => {
-            const net = parseFloat(li.net_amount) || 0
-            const isOver = limit !== null && net > limit
+            const isRange = li.mode === 'range'
+            const taxRate = rateOf(li.tax_code)
+            // The cap is per day: a range line is judged on its daily rate.
+            const perDay = parseFloat(isRange ? li.daily_rate : li.net_amount) || 0
+            const isOver = limit !== null && perDay > limit
+            const span = daysInRange(li.period_from, li.period_to)
+            // Recompute a range line's money from its days × rate.
+            const setRange = (patch: Partial<TrvLineItem>) => {
+              const next = { ...li, ...patch }
+              const net = (parseFloat(next.period_days) || 0) * (parseFloat(next.daily_rate) || 0)
+              onUpdate(li.line_number, {
+                ...patch, expense_date: next.period_from || li.expense_date,
+                ...amountsFromNet(net, taxRate),
+              })
+            }
 
             return (
               <div key={li.line_number}
@@ -142,7 +214,36 @@ function CategorySection({
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
-                  {isOver && <OverLimitBadge amount={net} limit={limit!} />}
+                  {/* Single day vs. date range (long trips: N days × a daily rate) */}
+                  <div className="inline-flex rounded border border-neutral-200 text-[11px] font-medium overflow-hidden">
+                    {(['day', 'range'] as const).map(m => (
+                      <button key={m} type="button"
+                        onClick={() => {
+                          if (m === li.mode) return
+                          if (m === 'range') {
+                            const from = tripFrom || li.expense_date
+                            const to = tripTo || from
+                            const days = String(Math.max(daysInRange(from, to), 1))
+                            const rate = li.net_amount
+                            onUpdate(li.line_number, {
+                              mode: 'range', period_from: from, period_to: to,
+                              period_days: days, daily_rate: rate, expense_date: from,
+                              ...amountsFromNet((parseFloat(rate) || 0) * Number(days), taxRate),
+                            })
+                          } else {
+                            onUpdate(li.line_number, {
+                              mode: 'day', period_from: '', period_to: '', period_days: '',
+                              daily_rate: '', invoice_amount: '',
+                            })
+                          }
+                        }}
+                        className={cn('px-2 py-1 transition-colors',
+                          li.mode === m ? 'bg-primary-600 text-white' : 'bg-white text-neutral-500 hover:bg-neutral-50')}>
+                        {m === 'day' ? 'Single day' : 'Date range'}
+                      </button>
+                    ))}
+                  </div>
+                  {isOver && <OverLimitBadge amount={perDay} limit={limit!} />}
                   <button type="button" onClick={() => onRemove(li.line_number)}
                     className="ml-auto text-neutral-300 hover:text-danger-500 transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
@@ -150,6 +251,7 @@ function CategorySection({
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {!isRange && (
                   <div>
                     <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Date</label>
                     <input type="date" value={li.expense_date}
@@ -157,7 +259,8 @@ function CategorySection({
                       className="mt-0.5 w-full rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
                     />
                   </div>
-                  <div className="col-span-2 sm:col-span-2">
+                  )}
+                  <div className={isRange ? 'col-span-2 sm:col-span-3' : 'col-span-2 sm:col-span-2'}>
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Description</label>
                       <ReceiptScanButton
@@ -170,7 +273,16 @@ function CategorySection({
                           }
                         }}
                         onScanned={(f) => {
-                          const hst = policy?.hst_rate ?? 0.13
+                          if (isRange) {
+                            // A range line's money is days × rate; a scanned
+                            // invoice supplies its amount as the cap instead.
+                            onUpdate(li.line_number, {
+                              description: f.description || li.description,
+                              ...(f.total_amount != null ? { invoice_amount: f.total_amount.toFixed(2) } : {}),
+                            })
+                            return
+                          }
+                          const hst = taxRate
                           const grossOrNet = f.total_amount
                           if (grossOrNet == null) {
                             onUpdate(li.line_number, {
@@ -198,12 +310,13 @@ function CategorySection({
                       className="mt-0.5 w-full rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
                     />
                   </div>
+                  {!isRange && (
                   <div>
                     <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Amount (net)</label>
                     <input type="number" min="0" step="0.01" value={li.net_amount}
                       onChange={e => {
                         const net = e.target.value
-                        const tax = (parseFloat(net || '0') * (policy?.hst_rate ?? 0.13)).toFixed(2)
+                        const tax = (parseFloat(net || '0') * taxRate).toFixed(2)
                         const total = (parseFloat(net || '0') + parseFloat(tax)).toFixed(2)
                         onUpdate(li.line_number, { net_amount: net, tax_amount: tax, total_amount: total })
                       }}
@@ -213,7 +326,59 @@ function CategorySection({
                       )}
                     />
                   </div>
+                  )}
                 </div>
+
+                {isRange && (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div>
+                      <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">From</label>
+                      <input type="date" value={li.period_from} min={tripFrom || undefined} max={li.period_to || tripTo || undefined}
+                        onChange={e => setRange({ period_from: e.target.value,
+                          period_days: String(Math.max(daysInRange(e.target.value, li.period_to), 0)) })}
+                        className="mt-0.5 w-full rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">To</label>
+                      <input type="date" value={li.period_to} min={li.period_from || tripFrom || undefined} max={tripTo || undefined}
+                        onChange={e => setRange({ period_to: e.target.value,
+                          period_days: String(Math.max(daysInRange(li.period_from, e.target.value), 0)) })}
+                        className="mt-0.5 w-full rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">
+                        Days claimed {span > 0 && <span className="normal-case text-neutral-400">(max {span})</span>}
+                      </label>
+                      <input type="number" min="1" max={span || undefined} step="1" value={li.period_days}
+                        onChange={e => setRange({ period_days: e.target.value })}
+                        className={cn(
+                          'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
+                          Number(li.period_days) > span ? 'border-danger-300 bg-danger-50' : 'border-neutral-200',
+                        )}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">
+                        Daily rate (net) {limit && <span className="normal-case text-neutral-400">(max {limit.toFixed(2)})</span>}
+                      </label>
+                      <input type="number" min="0" max={limit ?? undefined} step="0.01" value={li.daily_rate}
+                        onChange={e => setRange({ daily_rate: e.target.value })}
+                        className={cn(
+                          'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
+                          isOver ? 'border-danger-300 bg-danger-50' : 'border-neutral-200',
+                        )}
+                      />
+                    </div>
+                    <div className="col-span-2 sm:col-span-4 text-xs text-neutral-500">
+                      {li.period_days || 0} days × {formatAmount(parseFloat(li.daily_rate) || 0)} ={' '}
+                      <span className="font-mono text-neutral-700">{formatAmount(parseFloat(li.net_amount) || 0)}</span> net
+                      {taxRate > 0 && <> + tax <span className="font-mono">{formatAmount(parseFloat(li.tax_amount) || 0)}</span></>}
+                      {' '}= <span className="font-mono font-semibold text-neutral-800">{formatAmount(parseFloat(li.total_amount) || 0)}</span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Budget account */}
                 <div>
@@ -236,9 +401,39 @@ function CategorySection({
                   </select>
                 </div>
 
+                {/* Sales tax — Canada only; abroad lines carry none */}
+                {!abroad && (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Tax</label>
+                      <select value={li.tax_code ?? ''}
+                        onChange={e => {
+                          const code = e.target.value || null
+                          onUpdate(li.line_number, {
+                            tax_code: code, ...amountsFromNet(parseFloat(li.net_amount) || 0, rateOf(code)),
+                          })
+                        }}
+                        className="mt-0.5 w-full rounded border border-neutral-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                      >
+                        <option value="">No tax</option>
+                        {taxCodes.map(tc => (
+                          <option key={`${tc.code}-${tc.rate}`} value={tc.code}>{tc.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="col-span-2 self-end pb-1.5 text-right text-xs text-neutral-500">
+                      Tax <span className="font-mono">{formatAmount(parseFloat(li.tax_amount) || 0)}</span>
+                      {' · '}Total <span className="font-mono font-semibold text-neutral-800">{formatAmount(parseFloat(li.total_amount) || 0)}</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Receipt / invoice attachment for this row */}
+                <div className={cn(isRange && 'grid grid-cols-1 gap-2 sm:grid-cols-2')}>
                 <div>
-                  <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Receipt / Invoice</label>
+                  <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">
+                    Receipt / Invoice{isRange && <span className="normal-case text-neutral-400"> (optional)</span>}
+                  </label>
                   {li._file ? (
                     <div className="mt-0.5 flex items-center gap-2 rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-sm">
                       <Paperclip className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
@@ -260,6 +455,21 @@ function CategorySection({
                         }} />
                     </label>
                   )}
+                </div>
+                {isRange && (li._file || li.invoice_amount) && (
+                  <div>
+                    <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Invoice amount *</label>
+                    <input type="number" min="0" step="0.01" value={li.invoice_amount}
+                      onChange={e => onUpdate(li.line_number, { invoice_amount: e.target.value })}
+                      className={cn(
+                        'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
+                        li.invoice_amount && (parseFloat(li.total_amount) || 0) > parseFloat(li.invoice_amount)
+                          ? 'border-danger-300 bg-danger-50' : 'border-neutral-200',
+                      )}
+                    />
+                    <p className="mt-0.5 text-[10px] text-neutral-400">The line total may not exceed the invoice.</p>
+                  </div>
+                )}
                 </div>
               </div>
             )
@@ -283,9 +493,12 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
   const [fromDate, setFromDate] = useState(today())
   const [toDate, setToDate] = useState(today())
   const [destination, setDestination] = useState('')
+  const [country, setCountry] = useState('CA')
   const [purpose, setPurpose] = useState('')
   const [notes, setNotes] = useState('')
-  const [currency, setCurrency] = useState('CAD')
+  // TRV is claimed in CAD only (business rule 2026-10-16): foreign receipts
+  // are converted by the claimant, at their own rate, before entry.
+  const currency = 'CAD'
   const [lines, setLines] = useState<TrvLineItem[]>([])
   const [error, setError] = useState('')
   const [travelApplicationId, setTravelApplicationId] = useState('')
@@ -307,9 +520,9 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
     setFromDate(editing.travel_from_date ?? today())
     setToDate(editing.travel_to_date ?? today())
     setDestination(editing.travel_destination ?? '')
+    setCountry(editing.travel_country ?? 'CA')
     setPurpose(editing.purpose ?? '')
     setNotes(editing.notes ?? '')
-    setCurrency(editing.currency)
     setTravelApplicationId(editing.travel_application_id ?? '')
     setLines(editing.line_items.map((li, i) => {
       const m = /^\[([^\]]+)\]\s*(.*)$/.exec(li.description)
@@ -327,6 +540,15 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
         total_amount: String(li.total_amount),
         tax_amount: String(li.tax_amount),
         net_amount: String(li.net_amount),
+        // Lines saved before the picker carry no code but were taxed at the
+        // policy HST (Ontario 13%) — show that rather than "No tax".
+        tax_code: li.tax_code ?? (Number(li.tax_amount) !== 0 ? DEFAULT_TAX_CODE : null),
+        mode: li.period_from ? 'range' : 'day',
+        period_from: li.period_from ?? '',
+        period_to: li.period_to ?? '',
+        period_days: li.period_days != null ? String(li.period_days) : '',
+        daily_rate: li.daily_rate != null ? String(li.daily_rate) : '',
+        invoice_amount: li.invoice_amount != null ? String(li.invoice_amount) : '',
         _file: null,
       }
     }))
@@ -362,10 +584,17 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
   })
   const accounts = accountsData?.items ?? []
 
+  const { data: taxCodes = [] } = useQuery<TaxCode[]>({
+    queryKey: ['tax-codes'],
+    queryFn: () => mdmApi.get<TaxCode[]>('/tax/codes'),
+    staleTime: 10 * 60_000,
+  })
+  const defaultTaxCode = taxCodes.some(t => t.code === DEFAULT_TAX_CODE) ? DEFAULT_TAX_CODE : null
+
   const linesByCategory = (cat: string) => lines.filter(l => l.category === cat)
 
-  const addLine = (cat: string) => {
-    setLines(prev => [...prev, emptyLine(counter, cat)])
+  function addLine(cat: string) {
+    setLines(prev => [...prev, emptyLine(counter, cat, abroad ? null : defaultTaxCode)])
     setCounter(c => c + 1)
   }
 
@@ -374,13 +603,36 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
   const updateLine = (n: number, patch: Partial<TrvLineItem>) =>
     setLines(prev => prev.map(l => l.line_number === n ? { ...l, ...patch } : l))
 
+  // Abroad, lines carry no Canadian sales tax (business rule 2026-10-16).
+  const abroad = country !== 'CA'
+  // Rate of a line's tax code; no code → no tax.
+  const rateFor = (isAbroad: boolean) => (code: string | null): number => {
+    if (isAbroad || !code) return 0
+    const tc = taxCodes.find(t => t.code === code)
+    return tc ? Number(tc.rate) : 0
+  }
+  const rateOf = rateFor(abroad)
+
+  // Switching country re-taxes every line: abroad clears the codes; back in
+  // Canada a line without one gets the default.
+  const changeCountry = (code: string) => {
+    setCountry(code)
+    const isAbroad = code !== 'CA'
+    setLines(prev => prev.map(l => {
+      const tax_code = isAbroad ? null : (l.tax_code ?? defaultTaxCode)
+      return { ...l, tax_code, ...amountsFromNet(parseFloat(l.net_amount) || 0, rateFor(isAbroad)(tax_code)) }
+    }))
+  }
+
   const totalNet = lines.reduce((s, l) => s + (parseFloat(l.net_amount) || 0), 0)
   const totalTax = lines.reduce((s, l) => s + (parseFloat(l.tax_amount) || 0), 0)
   const totalGross = totalNet + totalTax
 
   const hasOverLimit = lines.some(l => {
+    // Single-day lines only: a range line's daily rate is a hard cap,
+    // refused on save rather than flagged.
     const mealKey = TRV_CATEGORIES.find(c => c.key === l.category)?.mealKey as keyof Policy | null
-    if (!mealKey || !policy) return false
+    if (l.mode === 'range' || !mealKey || !policy) return false
     return (parseFloat(l.net_amount) || 0) > (policy[mealKey] as number)
   })
 
@@ -407,6 +659,30 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
     if (!purpose.trim()) { setError('Travel purpose is required'); return }
     if (lines.length === 0) { setError('Add at least one expense line'); return }
     if (lines.some(l => !l.budget_account_id)) { setError('All lines must have a budget account'); return }
+    for (const l of lines) {
+      if (l.mode !== 'range') continue
+      const cat = TRV_CATEGORIES.find(c => c.key === l.category)
+      const name = `${cat?.label ?? l.category} line`
+      const span = daysInRange(l.period_from, l.period_to)
+      if (!l.period_from || !l.period_to || span < 1) { setError(`${name}: enter a valid date range`); return }
+      if ((fromDate && l.period_from < fromDate) || (toDate && l.period_to > toDate)) {
+        setError(`${name}: the date range must be within the trip dates`); return
+      }
+      const days = Number(l.period_days)
+      if (!Number.isInteger(days) || days < 1 || days > span) {
+        setError(`${name}: days claimed must be between 1 and ${span}`); return
+      }
+      const rate = parseFloat(l.daily_rate)
+      if (!(rate > 0)) { setError(`${name}: enter the daily rate`); return }
+      const limit = cat?.mealKey && policy ? Number(policy[cat.mealKey as keyof Policy]) : null
+      if (limit != null && rate > limit) {
+        setError(`${name}: the daily rate may not exceed the policy limit of ${limit.toFixed(2)}`); return
+      }
+      if (l._file && !l.invoice_amount) { setError(`${name}: enter the amount on the attached invoice`); return }
+      if (l.invoice_amount && (parseFloat(l.total_amount) || 0) > parseFloat(l.invoice_amount)) {
+        setError(`${name}: the total may not exceed the invoice amount`); return
+      }
+    }
 
     mutation.mutate({
       claim_type: 'TRV',
@@ -418,6 +694,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
       travel_from_date: fromDate,
       travel_to_date: toDate,
       travel_destination: destination,
+      travel_country: country,
       line_items: lines.map((l, i) => ({
         line_number: i + 1,
         expense_date: l.expense_date,
@@ -430,6 +707,14 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
         total_amount: parseFloat(l.total_amount) || 0,
         tax_amount: parseFloat(l.tax_amount) || 0,
         net_amount: parseFloat(l.net_amount) || 0,
+        tax_code: abroad ? null : l.tax_code,
+        ...(l.mode === 'range' ? {
+          period_from: l.period_from,
+          period_to: l.period_to,
+          period_days: Number(l.period_days),
+          daily_rate: parseFloat(l.daily_rate) || 0,
+          invoice_amount: l.invoice_amount ? parseFloat(l.invoice_amount) : null,
+        } : {}),
       })),
     })
   }
@@ -515,12 +800,17 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
               className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Currency</label>
-            <select value={currency} onChange={e => setCurrency(e.target.value)}
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Country *</label>
+            <select value={country} onChange={e => changeCountry(e.target.value)}
               className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
-              <option value="CAD">CAD</option>
-              <option value="USD">USD</option>
+              {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
             </select>
+            {abroad && <p className="mt-1 text-xs text-neutral-500">Outside Canada — no sales tax is added to the lines.</p>}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Currency</label>
+            <div className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-700">CAD</div>
+            <p className="mt-1 text-xs text-neutral-500">Travel claims are in CAD only. Convert foreign-currency receipts to CAD before entering them.</p>
           </div>
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-medium text-neutral-600">Business Purpose *</label>
@@ -538,6 +828,11 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
           category={key} label={label}
           lines={linesByCategory(key)}
           policy={policy}
+          abroad={abroad}
+          taxCodes={taxCodes}
+          rateOf={rateOf}
+          tripFrom={fromDate}
+          tripTo={toDate}
           accounts={accounts}
           onAdd={() => addLine(key)}
           onRemove={removeLine}
@@ -559,7 +854,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
           <span className="font-mono">{formatAmount(totalNet, currency)}</span>
         </div>
         <div className="flex justify-between text-neutral-500">
-          <span>Tax (HST {policy ? `${(policy.hst_rate * 100).toFixed(0)}%` : ''})</span>
+          <span>{abroad ? 'Tax (none outside Canada)' : 'Tax'}</span>
           <span className="font-mono">{formatAmount(totalTax, currency)}</span>
         </div>
         <div className="flex justify-between font-semibold border-t border-neutral-100 pt-2">

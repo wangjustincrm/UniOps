@@ -38,6 +38,9 @@ class ExpenseClaim(UUIDPrimaryKey, TimestampMixin, Base):
     travel_from_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     travel_to_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     travel_destination: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # ISO 3166 alpha-2. NULL or "CA" = travel within Canada (lines carry policy
+    # HST); anything else = abroad, where lines carry no Canadian sales tax.
+    travel_country: Mapped[str | None] = mapped_column(String(2), nullable=True)
 
     # TRA-specific (Travel Application)
     transport_modes: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
@@ -112,6 +115,17 @@ class ExpenseLineItem(UUIDPrimaryKey, Base):
     net_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)     # C = A - B
     # mdm tax_codes code string (Phase 0-B2 ITC groundwork); no cross-service FK
     tax_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # TRV period line (long trips): net = period_days x daily_rate, where
+    # period_days <= the days in period_from..period_to. All four are set or
+    # none is; expense_date then equals period_from. See schemas.LineItemCreate.
+    period_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    period_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    period_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    daily_rate: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+    # Amount on the invoice uploaded for this line; when present the line's
+    # total may not exceed it. Optional — a period line needs no invoice.
+    invoice_amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
 
     claim: Mapped["ExpenseClaim"] = relationship("ExpenseClaim", back_populates="line_items")
 

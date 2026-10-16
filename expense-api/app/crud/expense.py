@@ -78,17 +78,75 @@ async def _trv_over_meal_limit(db: AsyncSession, line_items) -> bool:
     WF-002). Accepts either the inbound schema objects or the persisted rows;
     both expose .description and .net_amount.
     """
+    limits = await _meal_limits(db)
+    for li in line_items:
+        meal = _meal_of(li, limits)
+        # A period line's net is days x rate; the cap is per day.
+        if meal and float(_per_day(li)) > limits[meal]:
+            return True
+    return False
+
+
+async def _meal_limits(db: AsyncSession) -> dict[str, float]:
     policy = await _get_policy(db)
-    limits = {
+    return {
         meal: float(getattr(policy, f"meal_{meal}_limit")) if policy else default
         for meal, default in _MEAL_FALLBACKS.items()
     }
+
+
+def _meal_of(li, limits: dict[str, float]) -> str | None:
+    desc = (li.description or "").lower()
+    return next((meal for meal in limits if meal in desc), None)
+
+
+def _per_day(li) -> Decimal:
+    return li.daily_rate if li.period_from is not None else li.net_amount
+
+
+def _is_abroad(country: str | None) -> bool:
+    return country is not None and country != "CA"
+
+
+async def _check_trv_lines(db: AsyncSession, from_date, to_date, country, currency,
+                           line_items) -> None:
+    """Rules for a TRV's lines that need the policy or the claim header.
+
+    Raises ValueError (the routes answer 409/422 with the message). Run on
+    the inbound values before anything is written, on create and on every
+    edit — an edit that only moves the trip dates must re-check the periods.
+
+    - A period line's daily rate is HARD-capped at the meal/incidental limit
+      (business rule 2026-10-16). Single-day lines keep the soft rule: flagged
+      over-limit, not refused (_trv_over_meal_limit).
+    - A period must sit inside the trip's From/To dates.
+    - Abroad (travel_country other than CA) lines carry no Canadian sales tax
+      and no tax code. In Canada the claimant picks the code per line.
+    - TRV is claimed in CAD only; the claimant converts foreign receipts
+      (business rule 2026-10-16).
+    """
+    if currency != "CAD":
+        raise ValueError(
+            f"travel expense claims are in CAD only (got {currency}); "
+            "convert foreign-currency amounts to CAD")
+    if country is not None and (len(country) != 2 or not country.isalpha() or not country.isupper()):
+        raise ValueError(f"travel_country must be a two-letter upper-case country code, got {country!r}")
+    limits = await _meal_limits(db)
     for li in line_items:
-        desc = (li.description or "").lower()
-        for meal, limit in limits.items():
-            if meal in desc and float(li.net_amount) > limit:
-                return True
-    return False
+        if li.period_from is not None:
+            meal = _meal_of(li, limits)
+            if meal and float(li.daily_rate) > limits[meal]:
+                raise ValueError(
+                    f"line {li.line_number}: daily rate {li.daily_rate} exceeds the "
+                    f"{meal} limit {limits[meal]:.2f}")
+            if (from_date and li.period_from < from_date) or (to_date and li.period_to > to_date):
+                raise ValueError(
+                    f"line {li.line_number}: period {li.period_from} – {li.period_to} "
+                    f"is outside the trip dates {from_date} – {to_date}")
+        if _is_abroad(country) and (li.tax_amount != 0 or li.tax_code):
+            raise ValueError(
+                f"line {li.line_number}: travel outside Canada carries no sales tax "
+                f"(tax_amount {li.tax_amount}, tax_code {li.tax_code})")
 
 
 async def create_claim(
@@ -99,6 +157,9 @@ async def create_claim(
     department_id: uuid.UUID | None,
     department_name: str,
 ) -> ExpenseClaim:
+    if data.claim_type == "TRV":
+        await _check_trv_lines(db, data.travel_from_date, data.travel_to_date,
+                               data.travel_country, data.currency, data.line_items)
     claim_number = await _next_number(db, data.claim_type)
     claim = ExpenseClaim(
         claim_number=claim_number,
@@ -117,6 +178,7 @@ async def create_claim(
         travel_from_date=data.travel_from_date,
         travel_to_date=data.travel_to_date,
         travel_destination=data.travel_destination,
+        travel_country=data.travel_country,
         transport_modes=data.transport_modes,
         leave_from_date=data.leave_from_date,
         leave_to_date=data.leave_to_date,
@@ -190,6 +252,15 @@ async def update_claim(
     if claim.status not in ("draft", "returned"):
         raise ValueError("Only draft or returned claims can be edited")
 
+    if claim.claim_type == "TRV":
+        def eff(field):
+            val = getattr(data, field, None)
+            return val if val is not None else getattr(claim, field)
+        await _check_trv_lines(
+            db, eff("travel_from_date"), eff("travel_to_date"), eff("travel_country"),
+            eff("currency"),
+            data.line_items if data.line_items is not None else claim.line_items)
+
     # Every scalar field ExpenseClaimUpdate accepts is applied here. The list
     # used to stop after vehicle_owned_by, so the travel fields — which the
     # schema takes and the client sends — were parsed, validated, and silently
@@ -198,7 +269,7 @@ async def update_claim(
     for field in ("submission_date", "currency", "project_id", "notes", "purpose",
                   "vehicle_description", "vehicle_owned_by",
                   "travel_from_date", "travel_to_date", "travel_destination",
-                  "transport_modes", "leave_from_date", "leave_to_date",
+                  "travel_country", "transport_modes", "leave_from_date", "leave_to_date",
                   "travel_application_id"):
         val = getattr(data, field, None)
         if val is not None:

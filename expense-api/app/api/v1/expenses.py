@@ -476,14 +476,17 @@ async def create_expense(
             raise HTTPException(status_code=403,
                 detail="You are not listed as a traveler on this Travel Application")
 
-    claim = await expense_crud.create_claim(
-        db,
-        data=body,
-        user_id=user_id,
-        user_name=user_name,
-        department_id=dept_id,
-        department_name=dept_name,
-    )
+    try:
+        claim = await expense_crud.create_claim(
+            db,
+            data=body,
+            user_id=user_id,
+            user_name=user_name,
+            department_id=dept_id,
+            department_name=dept_name,
+        )
+    except ValueError as exc:  # TRV line rules (_check_trv_lines)
+        raise HTTPException(status_code=422, detail=str(exc))
     return ExpenseClaimResponse.model_validate(claim)
 
 
@@ -970,7 +973,11 @@ async def expense_action(
             )
 
     # EXP-007 / TRV-008: receipt-based claims require ≥1 attachment before submission.
-    if action == "submit" and claim.claim_type in ("EXP", "TRV"):
+    # A TRV made only of date-range lines is exempt: those are claimed at a
+    # daily rate and an invoice is optional (business rule 2026-10-16).
+    trv_all_period = claim.claim_type == "TRV" and bool(claim.line_items) and all(
+        li.period_from is not None for li in claim.line_items)
+    if action == "submit" and claim.claim_type in ("EXP", "TRV") and not trv_all_period:
         from sqlalchemy import func, select
         from app.models.expense import ExpenseAttachment
         att_count = (await db.execute(

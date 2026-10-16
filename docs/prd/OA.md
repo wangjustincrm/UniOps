@@ -179,7 +179,11 @@ Pre-approval for business travel, modelled on the paper travel approval form (co
 
 ### 4.2 Header
 
-Travel Application (required), From / To dates (required), Destination (required), Currency (CAD / USD), Business Purpose (required).
+Travel Application (required), From / To dates (required), Destination (required), Country (required, default Canada), Currency (fixed **CAD**), Business Purpose (required).
+
+**CAD only.** A Travel Expense claim is always in CAD. Foreign-currency receipts are converted to CAD by the claimant before entry; the system holds no exchange rate. The server refuses a TRV in any other currency, on create and on edit.
+
+**Country decides tax.** In Canada each line has a **Tax** picker listing the active MDM tax codes (Finance → Tax Settings — GST, provincial HST, PST, QST…) plus "No tax"; a new line starts on Ontario HST (`HST_ON`), and tax = net × the picked code's rate. Lines saved before the picker existed show `HST_ON` when they carry tax. Outside Canada there is no picker and lines carry no tax: the server refuses a line with tax or a tax code on a claim abroad. Changing the country re-taxes every line. The country list is a short set of common countries plus "Other (outside Canada)"; only Canada vs. abroad changes behaviour today.
 
 ### 4.3 Lines by Category
 
@@ -195,11 +199,16 @@ Lines are entered in collapsible sections per category:
 | Incidental | Incidental limit (default $17.30) |
 | Other | — |
 
-Each line: Date, Description, Amount (net), Tax (net × policy HST rate, overridable), Total, Budget Account (list of active accounts — no balance shown), Receipt (attach or Scan). The category is stored as a prefix of the line description and is restored when the claim is edited. Receipt files attached on a line are filed on the claim with the category in the file name.
+Each line is either **Single day** or **Date range** (toggle on the line).
+
+- **Single day:** Date, Description, Amount (net), Tax code (Canada only, §4.2), Tax, Total, Budget Account (list of active accounts — no balance shown), Receipt (attach or Scan).
+- **Date range** (long trips, e.g. a 2–3 month overseas posting): From / To (must lie inside the trip dates), **Days claimed** (defaults to the number of days in the range; may be lowered, never above it), **Daily rate** (net), Description, Budget Account. Net = days × daily rate; tax and total follow as above. For meal and incidental categories the daily rate **may not exceed** the policy limit — refused, not flagged. Hotel, Transportation and Other have no cap. An invoice is **optional**; when one is attached its **Invoice amount** must be entered and the line total may not exceed it (one invoice may cover the whole stay, e.g. 20 nights, $2,000). Scanning on a range line fills the description and invoice amount, not the line amount.
+
+The category is stored as a prefix of the line description and is restored when the claim is edited. Receipt files attached on a line are filed on the claim with the category in the file name. Detail page and claim PDF show a range line's dates, "N days × rate" and invoice amount.
 
 ### 4.4 Over-limit
 
-A meal or incidental line whose net amount exceeds its cap shows an "Over limit" badge and a banner. The server sets the claim's **Over Budget** flag when any line exceeds its cap, on create and again on every edit; the flag is shown on the claim. The flag does **not** currently add an approval step (OI-01).
+A single-day meal or incidental line whose net amount exceeds its cap shows an "Over limit" badge and a banner (a date-range line cannot exceed its cap — §4.3). The server sets the claim's **Over Budget** flag when any line exceeds its cap, on create and again on every edit; the flag is shown on the claim. The flag does **not** currently add an approval step (OI-01).
 
 ### 4.5 FR IDs
 
@@ -210,9 +219,13 @@ A meal or incidental line whose net amount exceeds its cap shows an "Over limit"
 | TRV-003 | Default budget account per category, configurable — **Not implemented** (OI-02). |
 | TRV-004 | Meal and incidental caps are configurable (Expense Config); defaults pre-loaded. Caps apply per line — per-day totals are **Not implemented** (OI-04). |
 | TRV-005 | Over-cap lines are flagged, not blocked. Finance Manager step for them — **Not implemented** (OI-01). |
-| TRV-006 | Foreign-currency lines with exchange rate and CAD equivalent — **Not implemented**; the claim has one currency (OI-03). |
+| TRV-006 | CAD only; the claimant converts foreign receipts to CAD (business rule 2026-10-16). No exchange-rate handling in the system. |
 | TRV-007 | Totals per category and a claim total are shown. |
-| TRV-008 | At least one attachment is required before submission. |
+| TRV-008 | At least one attachment is required before submission — unless every line is a date-range line. |
+| TRV-009 | A line may cover a date range: days claimed (default = days in the range, never more) × daily rate; the range must lie inside the trip dates. Checked by the server on create and on every edit, including an edit that only moves the trip dates. |
+| TRV-010 | A date-range meal / incidental line's daily rate may not exceed the policy cap (hard). |
+| TRV-011 | Invoice optional on a date-range line; when an invoice amount is given, line total ≤ invoice amount (strict). |
+| TRV-012 | Trip country: Canada → each line picks its tax code (default `HST_ON`, or No tax); elsewhere → no tax and no tax code (server refuses either abroad). |
 
 ---
 
@@ -327,7 +340,7 @@ draft / returned ──cancel──► cancelled
 | Action | Allowed from | Who | OA UI |
 |--------|-------------|-----|-------|
 | Save / Edit | draft, returned | Claimant; also System Admin or Finance Manager (primary role) | Save as Draft / Edit → Save Changes |
-| Submit | draft, returned | Claimant (employee or creator); System Admin | Submit (disabled with a hint until an attachment exists for EXP/TRV) |
+| Submit | draft, returned | Claimant (employee or creator); System Admin | Submit (disabled with a hint until an attachment exists for EXP/TRV; not for a TRV of only date-range lines) |
 | Approve / Return / Reject | submitted, in_review | Holder of the current step (task-based), delegate, System Admin; never the claimant | Approve / Return / Reject with comment dialog |
 | Recall | submitted, in_review | Creator or System Admin | **Not exposed** (OI-08) |
 | Cancel | draft, returned | Creator, System Admin, or current step holder | **Not exposed** (OI-08) |
@@ -393,7 +406,7 @@ The comment typed on Submit appears in the timeline.
 | ATT-OA-001 | Files are stored on the File Server; the database keeps metadata only. Maximum 25 MB per file; any file type. |
 | ATT-OA-002 | Files can be added and deleted only while the claim is draft or returned; deleting requires the claimant or System Admin. The upload itself must also be limited to people who may edit the claim — **Defect** (OI-13). |
 | ATT-OA-003 | Listing and downloading follow the claim's visibility rule (§1.4); downloads are proxied through the expense service with the user's token. |
-| ATT-OA-004 | EXP and TRV require at least one attachment to submit; MIL, CFM and TRA do not. |
+| ATT-OA-004 | EXP and TRV require at least one attachment to submit; MIL, CFM and TRA do not. A TRV whose lines are all date-range lines is exempt (TRV-008). |
 | ATT-OA-005 | A receipt picked with **Scan** on a line is kept as that line's receipt and attached to the claim automatically when the claim is saved (also if reading fails). Rescanning replaces the previously scanned file, not a manually attached one. Uploads run inside the save, which stays disabled until they finish; each failed upload is reported by name. |
 | ATT-OA-006 | Generated PDFs are attachments named after the claim and replaced on regeneration. |
 
@@ -509,8 +522,8 @@ Approval chains (Portal → Admin → Approval Workflows, includes `exp`, `mil`,
 
 | Table | Purpose |
 |-------|---------|
-| `expense_claims` | One row per EXP / MIL / TRV / TRA / CFM document: number, type, employee and department (recorded at creation), submission date, currency, notes, purpose, vehicle fields and total km (MIL), travel dates and destination, transport modes, leave dates (TRA), reference to the TRA (TRV), totals (total, tax, net), status, current step, over-budget flag, submitted / approved / paid timestamps, creator |
-| `expense_line_items` | EXP / TRV lines: number, date, description, budget account (id, code, name), cost centre (unused), total, tax, net, tax code |
+| `expense_claims` | One row per EXP / MIL / TRV / TRA / CFM document: number, type, employee and department (recorded at creation), submission date, currency, notes, purpose, vehicle fields and total km (MIL), travel dates, destination and country (TRV; empty = Canada), transport modes, leave dates (TRA), reference to the TRA (TRV), totals (total, tax, net), status, current step, over-budget flag, submitted / approved / paid timestamps, creator |
+| `expense_line_items` | EXP / TRV lines: number, date, description, budget account (id, code, name), cost centre (unused), total, tax, net, tax code; TRV date-range lines also period from / to, days claimed, daily rate, and optional invoice amount |
 | `expense_trip_items` | MIL trips: date, from, to, purpose, round trip, distance, rate, amount, budget account |
 | `expense_travelers` | TRA traveller roster (user, name, order) |
 | `expense_attachments` | File metadata and File Server reference |
@@ -611,6 +624,7 @@ Payroll integration; per-diem auto-calculation; corporate-card reconciliation; m
 | 2026-09-10 → 13 | Pre-launch hardening: edit page for returned claims, return/cancel authorisation, line total check, edit-time meal re-check, deactivated roles ignored, task inbox on the task table, narrowed visibility, Direct PA and OA Invoices retired |
 | 2026-09-29 | NC actuals in the EXP account picker; scanned receipts attached on save; real approval timeline; two-column detail |
 | 2026-10-08 → 14 | Send reminder; claim PDF on approval + Regenerate; returned claims resubmittable; resume at returning step; non-MIL edits no longer zero totals |
+| 2026-10-16 | TRV date-range lines (days × daily rate, hard meal cap, optional invoice with cap), trip country (no tax abroad), per-line tax code picker in Canada, CAD only, attachment not required for an all-range TRV |
 
 ---
 
@@ -620,7 +634,7 @@ Payroll integration; per-diem auto-calculation; corporate-card reconciliation; m
 |----|------|--------|
 | OI-01 | Conditional Finance Manager step for over-budget (EXP) and over-limit (TRV, max km) claims. Forms tell the user "Finance Manager approval will be required", but the engine adds no step for claims and EXP never sets the over-budget flag | Defect |
 | OI-02 | Default budget account per TRV category (TRV-003) | Not implemented |
-| OI-03 | Foreign-currency lines with exchange rate and CAD equivalent on TRV (TRV-006); FX source decision | Not implemented |
+| OI-03 | Foreign-currency lines on TRV — closed 2026-10-16: TRV is CAD only, the claimant converts (TRV-006) | Closed |
 | OI-04 | Per-day meal totals (caps are checked per line) | Not implemented |
 | OI-05 | Receipt reading: confidence highlighting and storing the raw result with the attachment | Not implemented |
 | OI-06 | Custom forms: Budget Account / Cost Centre / Attachment / Calculated fields, amounts and over-budget rules; approved CFM claims (amount 0) still reach the payment queue | Not implemented |

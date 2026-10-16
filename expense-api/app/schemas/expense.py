@@ -27,6 +27,60 @@ class LineItemCreate(BaseModel):
     tax_amount: Decimal
     net_amount: Decimal
     tax_code: Optional[str] = None  # mdm tax_codes code (Phase 0-B2, ITC groundwork)
+    # TRV period line — all four or none (see _period_line_is_whole)
+    period_from: Optional[date] = None
+    period_to: Optional[date] = None
+    period_days: Optional[int] = None
+    daily_rate: Optional[Decimal] = None
+    # Amount on the uploaded invoice; caps total_amount when given
+    invoice_amount: Optional[Decimal] = None
+
+    @property
+    def is_period(self) -> bool:
+        return self.period_from is not None
+
+    @model_validator(mode="after")
+    def _period_line_is_whole(self):
+        """A period line claims N days at a daily rate across a date range.
+
+        Checked here because none of it needs the database: the four fields
+        come together, N cannot exceed the days in the range, and the net is
+        N x rate — recomputed, not trusted, for the same reason the totals are
+        (see _amounts_must_reconcile). The cap on the rate itself depends on
+        the expense policy and is applied in crud (_check_trv_lines).
+        """
+        fields = (self.period_from, self.period_to, self.period_days, self.daily_rate)
+        if any(f is not None for f in fields) and any(f is None for f in fields):
+            raise ValueError(
+                f"line {self.line_number}: a date-range line needs from, to, days and daily rate")
+        if self.is_period:
+            if self.period_to < self.period_from:
+                raise ValueError(f"line {self.line_number}: period ends before it starts")
+            span = (self.period_to - self.period_from).days + 1
+            if not 1 <= self.period_days <= span:
+                raise ValueError(
+                    f"line {self.line_number}: days claimed must be between 1 and "
+                    f"{span} (the days from {self.period_from} to {self.period_to})")
+            if self.daily_rate < 0:
+                raise ValueError(f"line {self.line_number}: daily rate cannot be negative")
+            expected = self.daily_rate * self.period_days
+            if abs(self.net_amount - expected) > _TOTALS_TOLERANCE:
+                raise ValueError(
+                    f"line {self.line_number}: net_amount {self.net_amount} does not equal "
+                    f"{self.period_days} days x {self.daily_rate} ({expected})")
+            if self.expense_date != self.period_from:
+                raise ValueError(
+                    f"line {self.line_number}: expense_date must be the first day of the period")
+        if self.invoice_amount is not None:
+            if self.invoice_amount <= 0:
+                raise ValueError(f"line {self.line_number}: invoice amount must be positive")
+            # Strict: the total is computed (days x rate + tax), not read off
+            # a receipt, so there is no rounding to allow for.
+            if self.total_amount > self.invoice_amount:
+                raise ValueError(
+                    f"line {self.line_number}: total {self.total_amount} exceeds the invoice "
+                    f"amount {self.invoice_amount}")
+        return self
 
     @model_validator(mode="after")
     def _amounts_must_reconcile(self):
@@ -140,6 +194,7 @@ class ExpenseClaimCreate(BaseModel):
     travel_from_date: Optional[date] = None
     travel_to_date: Optional[date] = None
     travel_destination: Optional[str] = None
+    travel_country: Optional[str] = None  # ISO alpha-2; NULL/"CA" = Canada
     # TRA only
     transport_modes: list[str] = []
     leave_from_date: Optional[date] = None
@@ -163,6 +218,7 @@ class ExpenseClaimUpdate(BaseModel):
     travel_from_date: Optional[date] = None
     travel_to_date: Optional[date] = None
     travel_destination: Optional[str] = None
+    travel_country: Optional[str] = None
     transport_modes: Optional[list[str]] = None
     leave_from_date: Optional[date] = None
     leave_to_date: Optional[date] = None
@@ -214,6 +270,7 @@ class ExpenseClaimResponse(BaseModel):
     travel_from_date: Optional[date]
     travel_to_date: Optional[date]
     travel_destination: Optional[str]
+    travel_country: Optional[str] = None
     transport_modes: list[str] = []
     leave_from_date: Optional[date] = None
     leave_to_date: Optional[date] = None
