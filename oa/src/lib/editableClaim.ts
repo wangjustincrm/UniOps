@@ -28,6 +28,12 @@ export interface EditableLineItem {
   tax_amount: string
   net_amount: string
   tax_code: string | null
+  // TRV date-range line; all null on a single-day line
+  period_from: string | null
+  period_to: string | null
+  period_days: number | null
+  daily_rate: string | null
+  invoice_amount: string | null
 }
 
 export interface EditableTripItem {
@@ -65,6 +71,7 @@ export interface EditableClaim {
   travel_from_date: string | null
   travel_to_date: string | null
   travel_destination: string | null
+  travel_country: string | null
   transport_modes: string[]
   leave_from_date: string | null
   leave_to_date: string | null
