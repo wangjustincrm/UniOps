@@ -194,3 +194,27 @@ async def test_the_manufacturer_and_their_contact_reach_the_label(hse_manager):
                                json={"supplier_contact": "1-800-555-0199"})
     assert fixed.status_code == 200, fixed.text
     assert fixed.json()["supplier_contact"] == "1-800-555-0199"
+
+
+async def test_the_label_code_resolves_to_the_sheet_in_force_today(hse_manager, worker, db_session):
+    """★ Round 7, TC-07: the code on a label opens the data sheet, and the one
+    current when it is scanned — not the revision current when it was printed."""
+    import uuid as _uuid
+    from app.models.chemical import SafetyDataSheet
+    _, client = hse_manager
+    _, me = worker
+    chem = (await client.post("/api/v1/chemicals", json={"name": "Peracetic acid 15%"})).json()
+    url = f"/api/v1/chemicals/{chem['id']}/sds/current"
+
+    none = (await me.get(url)).json()
+    assert none["sds_id"] is None and none["has_file"] is False
+
+    first = (await client.post(f"/api/v1/chemicals/{chem['id']}/sds", json={"revision": "1"})).json()
+    row = await db_session.get(SafetyDataSheet, _uuid.UUID(first["id"]))
+    row.file_id = _uuid.uuid4()
+    await db_session.commit()
+    got = (await me.get(url)).json()
+    assert got["sds_id"] == first["id"] and got["has_file"] is True
+
+    second = (await client.post(f"/api/v1/chemicals/{chem['id']}/sds", json={"revision": "2"})).json()
+    assert (await me.get(url)).json()["sds_id"] == second["id"], "the revision in force, not the first"
