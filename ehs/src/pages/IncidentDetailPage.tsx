@@ -219,6 +219,8 @@ export default function IncidentDetailPage() {
     enabled: Boolean(id),
   })
 
+  const showStatutory = Boolean(incident.data) &&
+    (incident.data!.form_kind === 'medical' || incident.data!.deadlines.length > 0)
   const canClose = can('ehs.incident.close')
   const [editing, setEditing] = useState(false)
 
@@ -552,6 +554,10 @@ export default function IncidentDetailPage() {
             </ul>
           )}
 
+          {/* ★ Round 7: "only make the statutory, and return to work sections
+              visible on the medical incident form." Kept on any incident that
+              has a legal clock all the same — a running clock is never hidden. */}
+          {showStatutory && (<>
           <SectionTitle className="mb-2.5">Statutory</SectionTitle>
           {inc.deadlines.length === 0 ? (
             <p className="text-sm text-neutral-500">
@@ -616,6 +622,7 @@ export default function IncidentDetailPage() {
               ))}
             </ul>
           )}
+          </>)}
 
           {form7.data && (
             <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-3">
@@ -676,7 +683,7 @@ export default function IncidentDetailPage() {
               key, and the panel hides itself rather than showing an empty
               state — "no plan" and "you cannot see the plan" must not look
               the same to a supervisor. */}
-          <ReturnToWorkPanel incidentId={id} />
+          <ReturnToWorkPanel incidentId={id} medical={inc.form_kind === 'medical'} />
 
           {/* Everything the system said about this incident, and to whom.
               Sits with the statutory panel rather than in the narrative: it

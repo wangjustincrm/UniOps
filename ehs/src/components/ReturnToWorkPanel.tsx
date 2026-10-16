@@ -45,7 +45,11 @@ function payBool(v: string): boolean | null {
   return v === 'yes' ? true : v === 'no' ? false : null
 }
 
-export function ReturnToWorkPanel({ incidentId }: { incidentId: string }) {
+export function ReturnToWorkPanel({ incidentId, medical = true }: {
+  incidentId: string
+  /** A medical incident always shows the panel; another only when it has a plan. */
+  medical?: boolean
+}) {
   const { can } = usePermissions()
   const maySee = can('ehs.incident.medical.read')
   const [creating, setCreating] = useState(false)
@@ -63,6 +67,10 @@ export function ReturnToWorkPanel({ incidentId }: { incidentId: string }) {
   if (!maySee) return null
 
   const rows = plans.data ?? []
+  // ★ Round 7: shown on medical incidents. Elsewhere only when a plan exists —
+  // closing waits for an active plan, so one that cannot be seen could not be
+  // ended either (raised in review by uniops-55).
+  if (!medical && !plans.isError && !plans.isLoading && rows.length === 0) return null
 
   return (
     <section className="mt-6">
