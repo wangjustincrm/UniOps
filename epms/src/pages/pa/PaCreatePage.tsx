@@ -19,6 +19,8 @@ import type { ApiPo } from '@/services/po'
 import type { ApiInvoice } from '@/services/invoices'
 import type { DocumentStatus } from '@/types'
 import { DueWindowNotice } from './DueWindowNotice'
+import { DerivedPaLinesTable } from './DerivedPaLinesTable'
+import { derivePaLines, derivedLinesTotal } from '@/lib/paLinesFromInvoices'
 import { dueWindowViolation, earliestDueGroup, PA_INVOICE_DUE_WINDOW_DAYS } from './invoiceDueWindow'
 
 // Invoice multi-select list — shared by the PO route (the PO's invoices) and
@@ -366,6 +368,13 @@ export default function PaCreatePage() {
   const hasLinkedInvoices = selectedInvoices.length > 0
   const invoiceSubtotal   = selectedInvoices.reduce((s, inv) => s + Number(inv.amount), 0)
   const invoiceTax        = selectedInvoices.reduce((s, inv) => s + Number(inv.tax_amount), 0)
+  // Invoices matched line by line decide the PA's lines (and, for an invoice
+  // split across POs, this PA's share of it); the PO line picker only remains
+  // for invoices matched against the PO total. The server re-derives on save.
+  const derivedLines = isAgreementMode ? null : derivePaLines(
+    selectedInvoices, selectedPos.map((p) => p.id),
+    new Map(selectedPos.flatMap((p) => p.line_items.map((l) => [l.id, l] as const))),
+  )
 
   // Per-line received qty (sum across all GRs for this PO)
   const receivedQtyByPoLineId: Record<string, number> = {}
@@ -553,11 +562,12 @@ export default function PaCreatePage() {
   // Auto-fill pre-tax: prefer the linked invoices' real pre-tax; fall back to the
   // selected PO lines when the PA links no invoice (GR-only / manual payment).
   useEffect(() => {
-    const auto = hasLinkedInvoices ? invoiceSubtotal : autoSubtotal
+    const auto = !hasLinkedInvoices ? autoSubtotal
+      : derivedLines ? derivedLinesTotal(derivedLines) : invoiceSubtotal
     if (auto > 0) {
       setSubtotal(String(Number(auto.toFixed(2))))
     }
-  }, [hasLinkedInvoices, invoiceSubtotal, autoSubtotal]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasLinkedInvoices, invoiceSubtotal, autoSubtotal, derivedLines ? derivedLinesTotal(derivedLines) : null]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill tax. When invoices are linked, use their real tax — authoritative
   // and survives a PO whose snapshotted tax_rate is 0/null. Otherwise fall back
@@ -756,7 +766,9 @@ ${submitError}
     try {
       // Lines from every PO on the payment, each still carrying its own
       // po_line_id so the PA's lines stay traceable to the order they came from.
-      const paLineItems = selectedPos.flatMap((p) =>
+      const paLineItems = derivedLines
+        ? derivedLines.map(({ line_total: _lt, ...l }) => l)
+        : selectedPos.flatMap((p) =>
         p.line_items
           .filter((l) => selectedLineIds.has(l.id))
           .map((l) => ({
@@ -1124,6 +1136,9 @@ ${submitError}
                 )}
               </div>
 
+              {derivedLines ? (
+                <DerivedPaLinesTable lines={derivedLines} currency={selectedPo.currency} />
+              ) : (<>
               {/* PO Line Items */}
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
@@ -1212,6 +1227,7 @@ ${submitError}
                   )}
                 </div>
               </div>
+              </>)}
 
               {/* PA Type — the choices follow the PO's prepayment flag: a prepaid
                   PO can only be paid via prepayment/settlement, a standard PO only

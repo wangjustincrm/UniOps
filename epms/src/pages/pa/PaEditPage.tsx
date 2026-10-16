@@ -18,6 +18,8 @@ import { useInvoices, useInvoicesForPos } from '@/hooks/useInvoices'
 import { useGrsForPos } from '@/hooks/useGrs'
 import type { ApiPo } from '@/services/po'
 import { DueWindowNotice } from './DueWindowNotice'
+import { DerivedPaLinesTable } from './DerivedPaLinesTable'
+import { derivePaLines } from '@/lib/paLinesFromInvoices'
 import { dueWindowViolation } from './invoiceDueWindow'
 
 export default function PaEditPage() {
@@ -96,7 +98,7 @@ export default function PaEditPage() {
     if (!pa || initialized) return
     setEditPoIds(pa.po_ids?.length ? [...pa.po_ids] : (pa.po_id ? [pa.po_id] : []))
     setSelectedInvoiceIds(new Set(pa.invoice_ids))
-    setSelectedLineIds(new Set(pa.line_items.map((l) => l.po_line_id)))
+    setSelectedLineIds(new Set(pa.line_items.flatMap((l) => (l.po_line_id ? [l.po_line_id] : []))))
     setPrepaymentPct(pa.prepayment_pct?.toString() ?? '50')
     setExpectedSettlement(pa.expected_settlement_date ?? '')
     setTitle(pa.title)
@@ -120,6 +122,11 @@ export default function PaEditPage() {
   const isMultiPo = poIds.length > 1
   const selectedPoLines = pos.flatMap((p) => p.line_items.filter((l) => selectedLineIds.has(l.id)))
   const autoSubtotal    = selectedPoLines.reduce((s, l) => s + l.line_total, 0)
+  // Same rule as PaCreatePage: line-matched invoices decide the lines.
+  const derivedLines = isAgreementMode ? null : derivePaLines(
+    poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id)), pos.map((p) => p.id),
+    new Map(pos.flatMap((p) => p.line_items.map((l) => [l.id, l] as const))),
+  )
 
   // Same rules the backend enforces (epms-api pa.py::_assert_pos_coherent), said
   // on the row rather than as a 422 after Save.
@@ -244,7 +251,9 @@ export default function PaEditPage() {
 
     try {
       // Lines from every PO still on the payment.
-      const paLineItems = pos.flatMap((p) =>
+      const paLineItems = derivedLines
+        ? derivedLines.map(({ line_total: _lt, ...l }) => l)
+        : pos.flatMap((p) =>
         p.line_items
           .filter((l) => selectedLineIds.has(l.id))
           .map((l) => ({
@@ -551,7 +560,10 @@ export default function PaEditPage() {
             )}
 
             {/* PO Line Items — nothing to select without a PO */}
-            {!isAgreementMode && po && (
+            {!isAgreementMode && po && derivedLines && (
+              <DerivedPaLinesTable lines={derivedLines} currency={po.currency} />
+            )}
+            {!isAgreementMode && po && !derivedLines && (
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
                   <CircleDot className="h-3.5 w-3.5" /> PO Line Items

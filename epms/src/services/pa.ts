@@ -30,7 +30,7 @@ export type SettlementStatus = 'pending' | 'settled' | 'disputed'
 
 export interface ApiPaLineItem {
   id: string
-  po_line_id: string
+  po_line_id: string | null   // null on a non-PO fee line (see crud/pa_lines.py)
   description: string
   qty: number
   unit: string
