@@ -168,7 +168,9 @@ function LibraryTab({ statuses, mayManage }: { statuses: string[]; mayManage: bo
                     </span>
                     {d.status === 'retired' && (
                       <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
-                        Superseded
+                        {/* Superseded or archived (round 7) — the list does not
+                            look up which; the document's own page says. */}
+                        Not in force
                       </span>
                     )}
                     {d.status === 'draft' && (

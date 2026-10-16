@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.incidents import _user_id
+from app.models.mirrors import User
 from app.core.deps import BearerToken, SessionDep
 from app.core.permissions import (
     CanManageDocument, CanReadDocument, CanReadWorker,
@@ -208,8 +209,17 @@ async def new_version(
 
 
 @router.post("/{document_id}/retire", response_model=DocumentOut)
-async def retire(document_id: uuid.UUID, db: SessionDep, user: CanManageDocument):  # noqa: ARG001
-    return await crud.retire(db, await crud.get_document(db, document_id))
+async def retire(document_id: uuid.UUID, db: SessionDep, user: CanManageDocument):
+    """Archive a document: it stops being in force and asks nobody to sign it.
+
+    Round 7, TC-11: "add an archive option on all documents." A draft or a
+    published version; one already retired is left as it is.
+    """
+    doc = await crud.get_document(db, document_id)
+    if doc.status == "retired":
+        return doc
+    me = await db.get(User, _user_id(user))
+    return await crud.retire(db, doc, user_id=_user_id(user), user_name=me.full_name if me else None)
 
 
 @router.post("/{document_id}/acknowledge", response_model=AckOut,

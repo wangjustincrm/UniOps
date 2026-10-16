@@ -101,7 +101,8 @@ export default function DocumentDetailPage() {
         <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
           <Detail label="Status">
             {d.status === 'published' ? 'Published' :
-             d.status === 'retired' ? 'Superseded by a later version' : 'Draft'}
+             d.status === 'retired'
+               ? (d.superseded_by_id ? 'Superseded by a later version' : 'Archived') : 'Draft'}
             {d.published_at && ` · ${formatDate(d.published_at)}`}
           </Detail>
           <Detail label="Effective">{d.effective_on ? formatDate(d.effective_on) : '—'}</Detail>
@@ -170,6 +171,7 @@ export default function DocumentDetailPage() {
       {maySeeWhoSigned && d.requires_ack && d.status !== 'draft' && <SigningPanel doc={d} />}
 
       {mayManage && d.status === 'published' && <PublishedControls doc={d} onChanged={invalidate} />}
+      {mayManage && d.status !== 'retired' && <ArchiveControl doc={d} onChanged={invalidate} />}
 
       <ChangeHistory table="ehs_documents" rowId={id} />
     </div>
@@ -245,6 +247,46 @@ function SignPanel({ doc, onSigned }: { doc: SafetyDoc; onSigned: () => void }) 
         </button>
       </div>
     </section>
+  )
+}
+
+/**
+ * Taking a document out of use.
+ *
+ * Round 7, TC-11: "add an archive option on all documents." The server could
+ * retire a version all along; nothing on screen offered it except publishing a
+ * replacement. Pressed twice, because it stops everybody being asked to sign.
+ */
+function ArchiveControl({ doc, onChanged }: { doc: SafetyDoc; onChanged: () => void }) {
+  const [asking, setAsking] = useState(false)
+  const archive = useMutation({
+    mutationFn: () => api.post(`/api/v1/documents/${doc.id}/retire`, {}),
+    onSuccess: () => { setAsking(false); onChanged() },
+  })
+  return (
+    <div className="mb-4 rounded-xl border border-neutral-200 bg-white p-3.5">
+      {asking ? (
+        <>
+          <p className="text-sm text-neutral-700">
+            Archiving takes {doc.doc_no} out of use: nobody is asked to sign it any more, and its
+            review date is closed. Signatures already given are kept.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button type="button" className={secondaryButton} disabled={archive.isPending}
+                    onClick={() => setAsking(false)}>Keep it</button>
+            <button type="button" className={primaryButton} disabled={archive.isPending}
+                    onClick={() => { if (!archive.isPending) archive.mutate() }}>
+              {archive.isPending ? 'Archiving…' : 'Archive it'}
+            </button>
+          </div>
+          <ErrorNote error={archive.error} />
+        </>
+      ) : (
+        <button type="button" className={secondaryButton} onClick={() => setAsking(true)}>
+          Archive this document
+        </button>
+      )}
+    </div>
   )
 }
 
