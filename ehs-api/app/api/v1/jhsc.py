@@ -213,15 +213,22 @@ async def print_minutes(meeting_id: uuid.UUID, db: SessionDep, user: CanReadJhsc
     Round 6, TC-04: "there is no means to print the meeting minutes including
     the attendance, agenda, minutes, and recommendations."
     """
+    from app.models.statutory import StatutoryDeadline
     meeting = await crud.get_meeting(db, meeting_id)
     printer = await db.get(User, _user_id(user))
+    recs = await crud.list_recommendations(db, meeting_id=meeting.id, outstanding_only=False)
+    reply_due = {d.source_id: d for d in (await db.execute(
+        select(StatutoryDeadline).where(
+            StatutoryDeadline.source_type == "jhsc_rec",
+            StatutoryDeadline.source_id.in_([r.id for r in recs]),
+        ))).scalars()} if recs else {}
     pdf = minutes_service.render(
         meeting=meeting,
         attendance=await crud.attendance_for(db, meeting.id),
-        recommendations=await crud.list_recommendations(
-            db, meeting_id=meeting.id, outstanding_only=False),
+        recommendations=recs,
         rows=await minutes_service.rows_for(db, meeting.minutes_submission_id),
         printed_by=printer.full_name if printer else None,
+        reply_due=reply_due,
     )
     return Response(content=pdf, media_type="application/pdf", headers={
         "Content-Disposition": content_disposition(f"minutes-{meeting.meeting_no}")})

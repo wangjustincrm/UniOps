@@ -161,3 +161,27 @@ async def test_the_minutes_print_as_one_document(hse_manager, minutes_template):
                      "Who was there", "Everyone on days", "Recommendations",
                      "Replace the cracked step ladder in 104"):
         assert expected in text, expected
+
+
+async def test_the_printed_minutes_number_their_pages_and_say_who_owes_a_reply(
+        hse_manager, minutes_template, test_engine):
+    """★ Round 7, TC-01: "add the page number to the bottom, page 1 of 2. The
+    recommendations section should also include who it is assigned to and the
+    due date." """
+    from tests.conftest import make_user
+    from tests.test_label_revision import _pdf_text
+
+    _, client = hse_manager
+    meeting = await _a_meeting(client)
+    owner = await make_user(test_engine, role="ehs_manager", full_name="Pat Plantmanager")
+    sent = (await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations",
+                              json={"recommendation": "Guard the conveyor nip point"})).json()
+    await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations",
+                      json={"recommendation": "Repaint the forklift lanes"})
+    assert (await client.post(f"/api/v1/jhsc/recommendations/{sent['id']}/send",
+                              json={"user_ids": [str(owner.id)]})).status_code == 200
+
+    text = _pdf_text((await client.get(f"/api/v1/jhsc/meetings/{meeting['id']}/print")).content)
+    assert "Page 1 of 1" in text
+    assert "Sent to Pat Plantmanager on" in text and "Reply due" in text
+    assert "Not yet sent, so not yet assigned" in text

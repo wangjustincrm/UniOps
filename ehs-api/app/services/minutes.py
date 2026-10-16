@@ -26,6 +26,7 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -115,8 +116,42 @@ def _p(text: str | None, style: ParagraphStyle) -> Paragraph:
     return Paragraph(body, style)
 
 
+class _NumberedCanvas(pdfcanvas.Canvas):
+    """Draws "Page 1 of 2" at the foot of every page.
+
+    Round 7, TC-01: "add the page number to the bottom, page 1 of 2." The total
+    is known only once the last page is laid out, so pages are kept and drawn
+    at the end.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._pages: list[dict] = []
+
+    def showPage(self):  # noqa: N802 — ReportLab's name
+        self._pages.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        total = len(self._pages)
+        for state in self._pages:
+            self.__dict__.update(state)
+            self.setFont("Helvetica", 8)
+            self.setFillColor(MUTED)
+            self.drawRightString(LETTER[0] - 18 * mm, 9 * mm,
+                                 f"Page {self._pageNumber} of {total}")
+            super().showPage()
+        super().save()
+
+
+def _due(d) -> str:
+    return d.astimezone(statutory.ONTARIO).strftime("%-d %b %Y")
+
+
 def render(*, meeting, attendance, recommendations, rows: list[Row],
-           printed_by: str | None) -> bytes:
+           printed_by: str | None, reply_due: dict | None = None) -> bytes:
+    """`reply_due`: recommendation id → its 21-day reply deadline, if any."""
+    reply_due = reply_due or {}
     """Attendance, agenda, minutes and recommendations, in that order."""
     h1, h2 = _style(15, bold=True, after=4), _style(11, bold=True, after=3)
     body, small = _style(9.5), _style(8, colour=MUTED)
@@ -174,10 +209,19 @@ def render(*, meeting, attendance, recommendations, rows: list[Row],
     if recommendations:
         for rec in recommendations:
             story.append(_p(f"{rec.seq}. {rec.recommendation}", body))
+            # ★ Round 7, TC-01: "the recommendations section should also
+            # include who it is assigned to and the due date." A recommendation
+            # is answered by whoever it was sent to, within the OHSA 21 days
+            # whose clock started when it was sent — the reply deadline.
+            to = ", ".join(str(x.get("name") or "") for x in (rec.sent_to or []) if x.get("name"))
+            deadline = reply_due.get(rec.id)
             bits = [f"Raised by {rec.raised_by_name}" if rec.raised_by_name else None,
-                    f"Sent {rec.sent_at.astimezone(statutory.ONTARIO).strftime('%-d %b %Y')}"
-                    if rec.sent_at else "Not yet sent",
-                    f"Response: {rec.response}" if rec.response else "No response yet"]
+                    (f"Sent to {to or 'the employer'} on {_due(rec.sent_at)}"
+                     if rec.sent_at else "Not yet sent, so not yet assigned"),
+                    (f"Reply due {_due(deadline.due_at)}" if deadline and not rec.response
+                     else None),
+                    f"Response: {rec.response}" if rec.response else
+                    ("No response yet" if rec.sent_at else None)]
             story.append(_p(" · ".join(b for b in bits if b), small))
     else:
         story.append(_p("None.", body))
@@ -185,5 +229,5 @@ def render(*, meeting, attendance, recommendations, rows: list[Row],
     printed = datetime.now(statutory.ONTARIO).strftime("%-d %b %Y %H:%M")
     story.append(Spacer(1, 6 * mm))
     story.append(_p(f"Printed {printed}" + (f" by {printed_by}" if printed_by else ""), small))
-    doc.build(story)
+    doc.build(story, canvasmaker=_NumberedCanvas)
     return buf.getvalue()
