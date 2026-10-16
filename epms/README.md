@@ -4,7 +4,7 @@ A web-based procure-to-pay platform for food/dairy manufacturing environments.
 
 ## Documentation
 
-- [PRD — Product Requirements](docs/PRD.md)
+- [PRD — Product Requirements](../docs/prd/EPMS.md)
 - [System Design](docs/SYSTEM_DESIGN.md)
 
 ## Tech Stack

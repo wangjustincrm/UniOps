@@ -25,5 +25,5 @@ alembic revision -m "description" --autogenerate
 
 ## Docs
 
-- [PRD](./docs/PRD.md)
+- [PRD](../docs/prd/BUDGET.md)
 - [DESIGN](./docs/DESIGN.md)

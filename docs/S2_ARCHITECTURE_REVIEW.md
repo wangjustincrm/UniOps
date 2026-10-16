@@ -13,7 +13,7 @@
 - `epms-api/app/crud/task.py` (`get_for_role` aggregation)
 - `portal/src/pages/PortalHome.tsx` (task inbox + DOC_PATH / STATUS_LABEL)
 - `vms-api/app/models/visit.py` (current state — VisitStatus enum we picked in W3)
-- [VMS_PRD_Visitor_Management_System.md](../VMS_PRD_Visitor_Management_System.md) §6.2.1
+- [VMS PRD](prd/VMS.md) §6.2.1
 - [VMS_SPRINT.md](../VMS_SPRINT.md) S2-A / S2-B / S2-C / S2-D / S2-E
 
 ---

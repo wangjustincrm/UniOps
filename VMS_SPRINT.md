@@ -3,7 +3,7 @@
 **Version:** 1.1
 **Date:** 2026-05-30 (W8 ship)
 **Scope:** Build VMS (Visitor Management System) as a native UniOps module — Sprints S1–S3, total 14 weeks.
-**Reference Docs:** [VMS_PRD_Visitor_Management_System.md](VMS_PRD_Visitor_Management_System.md) V2.3 · [SPRINT.md](SPRINT.md) · PRD-PORTAL · approval-api engine doc
+**Reference Docs:** [docs/prd/VMS.md](docs/prd/VMS.md) (was VMS_PRD_Visitor_Management_System.md) V2.3 · [SPRINT.md](SPRINT.md) · PRD-PORTAL · approval-api engine doc
 **Codebase root:** `c:/Project/uniops/`
 
 ---

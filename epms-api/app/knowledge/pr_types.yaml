@@ -24,7 +24,7 @@
 # Parts Catalog picker, and type 1 being unselectable).
 #
 # ── Why not read the PRD directly ────────────────────────────────────────────
-# Because it drifts, and silently. At the time of writing, epms/docs/PRD.md §2
+# Because it drifts, and silently. At the time of writing, the EPMS PRD §2 (now docs/prd/EPMS.md)
 # says type 5 "Requires fixed asset ID" — true as intent, and false as
 # behaviour until the commit that added this file: the form asked for the value
 # and dropped it on the floor. Answering from the PRD would have told a

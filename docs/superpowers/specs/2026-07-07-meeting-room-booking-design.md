@@ -2,7 +2,7 @@
 
 - Date: 2026-07-07
 - Status: Approved (user confirmed design 2026-07-07)
-- Source PRD: `MeetingRoomAppointPRD.md` (repo root)
+- Source PRD: `MeetingRoomAppointPRD.md` (repo root; now docs/prd/BOOKING.md)
 - Scope: V1 = PRD Phase-1 MVP + basic recurring meetings
 
 ## 1. 背景与目标
