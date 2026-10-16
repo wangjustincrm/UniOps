@@ -329,11 +329,46 @@ def needs_hse_review(incident: Incident) -> bool:
     return bool(incident.injury_class or incident.mol_reportable)
 
 
+CLOCK_NAMES = {"mol_48h": "the MOL 48-hour report", "wsib_form7": "the WSIB Form 7"}
+
+
+async def open_clocks(db: AsyncSession, incident_id: uuid.UUID) -> list[str]:
+    """The Ministry and WSIB clocks on this incident not yet discharged."""
+    from app.models.statutory import StatutoryDeadline
+    rows = (await db.execute(select(StatutoryDeadline.kind, StatutoryDeadline.due_at).where(
+        StatutoryDeadline.source_type == "incident",
+        StatutoryDeadline.source_id == incident_id,
+        StatutoryDeadline.kind.in_(tuple(CLOCK_NAMES)),
+        StatutoryDeadline.satisfied_at.is_(None)))).all()
+    from app.services import statutory
+    return [f"{CLOCK_NAMES[k]} (due {due.astimezone(statutory.ONTARIO):%-d %b %Y %H:%M})"
+            for k, due in rows]
+
+
+def _clocks_refusal(incident: Incident, clocks: list[str], doing: str) -> HTTPException:
+    # ★ Round 7: "if a mol or wsib clock is started but not ended, the incident
+    # should not be allowed to close or the HSE review signed off as completed."
+    # Said with the way out: a clock that turned out not to apply (the injury
+    # was reclassified) is marked not required, with the reason, on the
+    # incident — otherwise this would hold the incident open for ever.
+    what = " and ".join(clocks)
+    one = len(clocks) == 1
+    return HTTPException(
+        status.HTTP_409_CONFLICT,
+        f"{what[:1].upper()}{what[1:]} on {incident.incident_no} "
+        f"{'is' if one else 'are'} still running, so it cannot be {doing}. "
+        f"Record {'it' if one else 'each'} as filed under Statutory on the incident, or "
+        f"mark {'it' if one else 'any that does not apply'} not required there with the reason.")
+
+
 async def hse_review(db: AsyncSession, incident: Incident, reviewer_id: uuid.UUID) -> Incident:
     """Record that HSE has looked at this one."""
     if incident.status == "draft":
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Submit the incident before reviewing it")
+    clocks = await open_clocks(db, incident.id)
+    if clocks:
+        raise _clocks_refusal(incident, clocks, "signed off as reviewed")
     incident.hse_reviewed_at = datetime.now(timezone.utc)
     incident.hse_reviewed_by = reviewer_id
     incident.hse_reviewed_by_name = await _resolve_name(db, reviewer_id)
@@ -433,6 +468,9 @@ async def close(db: AsyncSession, incident: Incident) -> Incident:
             f"{len(open_actions)} corrective action{'s are' if len(open_actions) != 1 else ' is'} "
             f"still open on {incident.incident_no}: {', '.join(open_actions)}. "
             "Close or cancel them first.")
+    clocks = await open_clocks(db, incident.id)
+    if clocks:
+        raise _clocks_refusal(incident, clocks, "closed")
     incident.status = "closed"
     incident.closed_at = datetime.now(timezone.utc)
     await db.flush()

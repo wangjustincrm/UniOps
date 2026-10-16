@@ -173,6 +173,8 @@ class DeadlineOut(BaseModel):
     due_at: datetime
     satisfied_at: datetime | None
     escalation_level: int
+    # "Not required: <reason>" when HSE stopped a clock that did not apply.
+    evidence_note: str | None = None
 
 
 class MolReportFiledIn(BaseModel):

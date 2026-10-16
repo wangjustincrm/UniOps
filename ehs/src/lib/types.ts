@@ -7,6 +7,7 @@ export interface Deadline {
   due_at: string
   satisfied_at: string | null
   escalation_level: number
+  evidence_note?: string | null
 }
 
 export interface IncidentListItem {

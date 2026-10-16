@@ -599,10 +599,18 @@ export default function IncidentDetailPage() {
                       )}
                     </div>
                   )}
-                  {d.kind === 'mol_48h' && d.satisfied_at && (
+                  {d.kind === 'mol_48h' && d.satisfied_at && !d.evidence_note?.startsWith('Not required') && (
                     <p className="mt-1.5 text-xs text-success-700">
                       Reported to the Ministry {formatDateTime(d.satisfied_at)}
                     </p>
+                  )}
+                  {d.satisfied_at && d.evidence_note?.startsWith('Not required') && (
+                    <p className="mt-1.5 text-xs text-neutral-600">
+                      {d.evidence_note} · {formatDateTime(d.satisfied_at)}
+                    </p>
+                  )}
+                  {!d.satisfied_at && can('ehs.statutory.manage') && (
+                    <NotRequired deadlineId={d.id} onDone={touched} />
                   )}
                 </li>
               ))}
@@ -876,6 +884,52 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Stopping a legal clock that does not apply, with the reason.
+ *
+ * ★ Round 7: closing an incident and signing off its review wait for its
+ * Ministry and WSIB clocks. A clock started on the first report can stop
+ * applying — the injury reclassified as first aid — and without this the
+ * incident could never close.
+ */
+function NotRequired({ deadlineId, onDone }: { deadlineId: string; onDone: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const save = useMutation({
+    mutationFn: () => api.post(`/api/v1/deadlines/${deadlineId}/not-required`, { reason: reason.trim() }),
+    onSuccess: () => { setOpen(false); setReason(''); onDone() },
+  })
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+              className="mt-2 text-xs font-semibold text-neutral-600 hover:underline">
+        Not required…
+      </button>
+    )
+  }
+  return (
+    <div className="mt-2.5">
+      <p className="text-xs text-neutral-500">
+        Say why this obligation does not apply. It is kept on the record with the reason.
+      </p>
+      <div className="mt-2 flex gap-2">
+        <input className="min-h-[40px] flex-1 rounded-lg border border-neutral-300 px-2.5 text-sm"
+               placeholder="e.g. reclassified as first aid — no lost time"
+               value={reason} onChange={(e) => setReason(e.target.value)} />
+        <button type="button"
+                disabled={reason.trim().length < 5 || save.isPending}
+                onClick={() => { if (!save.isPending) save.mutate() }}
+                className="min-h-[40px] rounded-lg border border-neutral-300 px-3 text-sm font-semibold text-neutral-700 disabled:opacity-50">
+          {save.isPending ? 'Saving…' : 'Mark not required'}
+        </button>
+      </div>
+      {save.isError && (
+        <p className="mt-1.5 text-xs text-danger-700">{(save.error as ApiError).message}</p>
+      )}
     </div>
   )
 }

@@ -9,12 +9,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Query
-from pydantic import BaseModel, ConfigDict
+from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.core.deps import SessionDep
-from app.core.permissions import CanReadIncident
+from app.core.permissions import CanManageStatutory, CanReadIncident
 from app.models.statutory import StatutoryDeadline
 from app.services import tasks as task_service
 from app.services.deadlines import DEADLINE_DOC_TYPE
@@ -77,3 +77,39 @@ async def list_deadlines(
         row.path = template.format(id=r.source_id) if template and r.source_id else ""
         out.append(row)
     return out
+
+
+class NotRequiredIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=480)
+
+
+@router.post("/{deadline_id}/not-required", response_model=DeadlineRow)
+async def not_required(
+    deadline_id: uuid.UUID, payload: NotRequiredIn, db: SessionDep, user: CanManageStatutory,
+):
+    """Stop a clock that turned out not to apply, saying why.
+
+    ★ Round 7. Closing an incident and signing off its review now wait for its
+    Ministry and WSIB clocks — and a clock started on a first report can stop
+    applying: the injury is reclassified as first aid, or the Ministry says it
+    is not reportable. Without this the incident could never close. Recorded
+    as discharged, with "Not required:" and the reason as its evidence, by the
+    person who said so; its reminder task closes with it.
+    """
+    from app.api.v1.incidents import _user_id
+    from app.models.mirrors import User
+    from app.services import deadlines as deadline_service
+
+    deadline = await db.get(StatutoryDeadline, deadline_id)
+    if deadline is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such deadline")
+    if deadline.satisfied_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This deadline is already closed")
+    me = await db.get(User, _user_id(user))
+    await deadline_service.satisfy(
+        db, deadline, user_id=_user_id(user), user_name=me.full_name if me else None,
+        evidence_note=f"Not required: {payload.reason.strip()}",
+        when=datetime.now(timezone.utc))
+    await db.flush()
+    row = DeadlineRow.model_validate(deadline)
+    return row
