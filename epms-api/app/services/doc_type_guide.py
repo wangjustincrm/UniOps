@@ -201,7 +201,16 @@ def build(doc_type: str) -> dict:
             "not no requirements."
         ),
         "how_types_are_set": (doc.get("how_types_are_set") or "").strip() or None,
+        # How the system behaves where people keep asking — each with where in
+        # the code it is enforced. The narrator answers these from here rather
+        # than from a guess or a data query (ISS-0008, ISS-0010).
+        "rules": rules_of(doc),
     }
+
+
+def rules_of(doc: dict) -> list[dict]:
+    return [{"id": r["id"], "answer": " ".join((r.get("answer") or "").split())}
+            for r in doc.get("rules") or []]
 
 
 # ── Modules ──────────────────────────────────────────────────────────────────

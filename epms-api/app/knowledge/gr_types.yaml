@@ -50,3 +50,13 @@ values:
         it passes you are nudged to confirm.
       - A purchase order whose PR never carried a completion date is outside
         that sweep entirely and will never be chased.
+
+# ── Rules people ask about ───────────────────────────────────────────────────
+rules:
+  - id: gr_numbering
+    asked_as:
+      - how are GR numbers generated
+    answer: >
+      GR-YYYYMMDD-NNNN: the date it was recorded, then a 4-digit sequence that
+      restarts each day. The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
+    enforced_in: "epms-api app/crud/gr.py _next_number"

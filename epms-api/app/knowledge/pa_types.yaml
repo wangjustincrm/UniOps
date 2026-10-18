@@ -77,3 +77,27 @@ values:
     when: >
       When a deposit covered only part of the order and the rest falls due. Like
       a settlement it must reference the original prepayment PA.
+
+# ── Rules people ask about ───────────────────────────────────────────────────
+# "被拒绝的付款申请是什么状态？" searched status = rejected, found nothing and
+# answered that there were no rejected PAs — nine existed (ISS-0008).
+rules:
+  - id: rejected_pa_is_cancelled
+    asked_as:
+      - what status does a rejected payment application have
+      - 被拒绝的付款申请是什么状态
+      - are there rejected PAs
+    answer: >
+      A rejected payment application gets status Cancelled, not Rejected — the
+      approval engine sets cancelled for every PA rejection. So filtering PAs by
+      Rejected finds nothing; to find rejected ones, look for Cancelled PAs whose
+      history has a Reject. (Purchase requests and orders, by contrast, do get
+      status Rejected.)
+    enforced_in: "approval-api app/crud/engine.py execute_action reject: cancelled for pa / pa_dir (pinned by approval-api tests/test_engine_multiholder_approve.py)"
+  - id: pa_numbering
+    asked_as:
+      - how are PA numbers generated
+    answer: >
+      PA-YYYYMMDD-NNNN: the date it was created, then a 4-digit sequence that
+      restarts each day. The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
+    enforced_in: "epms-api app/crud/pa.py _next_number"

@@ -24,6 +24,7 @@ invitation to raise it "just for this one case", and one such case is enough to
 exhaust the shared quota and take invoice OCR down with it.
 """
 import json
+import re
 import logging
 from datetime import date, datetime, timezone
 from typing import Any
@@ -175,6 +176,17 @@ Rules:
   the line — so answering that the system does not record it is wrong.
 - explain_process is about the APPROVAL CHAIN — who signs off, in what order.
   It is not about the data, and it is not about the form.
+- A question about how the system BEHAVES — what status a rejected PA gets,
+  why a type cannot be chosen, how document numbers are made, whether
+  matching checks received quantities, whether an agreement still in status
+  active is in force — is explain_document_types for that document, which
+  carries these as `rules`. Never answer one by querying: "被拒绝的付款申请是什么
+  状态？" queried status = rejected, found none, and told the person there were
+  no rejected PAs while nine existed as cancelled. "What types are there" is
+  explain_document_types too, even if counts would also be interesting.
+- How an approval is GIVEN — in Teams, by replying to an email, on a phone —
+  is explain_process (doc_type of the document they mean, pr if none), which
+  carries `how_approvals_are_given`.
 - What happens to an over-budget purchase request — "现在超预算的审批模式是什么",
   "my PR is over budget, which extra approvals does it need", "can I submit an
   over-budget PR" — is explain_process with doc_type pr. The over-budget mode is
@@ -519,6 +531,9 @@ _DOC_TYPES_TOOL = {
         "'what is the difference between a prepayment and a settlement', "
         "'what do the invoice statuses mean', 'what is a house account', "
         "'what is the difference between a physical and a service receipt'. "
+        "Also carries the RULES people ask about for each document — what "
+        "status a rejected one gets, how its number is made, whether invoice "
+        "matching checks received quantities, which type cannot be chosen. "
         "Answers with what each kind is for and what the system actually makes "
         "you supply, read off the create schema and the submit gates rather "
         "than from any description of them. This is a question about the FORM "
@@ -826,7 +841,10 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
         if block.name == "check_document":
             return {"kind": "check", **dict(block.input), "usage": _usage(resp)}
         if block.name == "cannot_answer":
-            return {"kind": "cannot", **dict(block.input), "usage": _usage(resp)}
+            out = {"kind": "cannot", **dict(block.input), "usage": _usage(resp)}
+            if isinstance(out.get("explanation"), str):
+                out["explanation"] = strip_markup(out["explanation"])
+            return out
 
     # tool_choice=any should make this unreachable; treat it as "no answer"
     # rather than inventing one.
@@ -875,7 +893,7 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate", resp)
-    text = "".join(b.text for b in resp.content if b.type == "text").strip()
+    text = _reply_text(resp)
     return {"text": text, "usage": _usage(resp)}
 
 
@@ -930,7 +948,7 @@ async def narrate_preflight(message: str, doc_number: str | None,
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_preflight", resp)
-    return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
+    return {"text": _reply_text(resp),
             "usage": _usage(resp)}
 
 
@@ -999,7 +1017,7 @@ async def narrate_plan(question: str, explained: list[dict],
             "content": json.dumps(payload, ensure_ascii=False, default=str),
         }],
     )
-    return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
+    return {"text": _reply_text(resp),
             "usage": _usage(resp)}
 
 
@@ -1031,7 +1049,7 @@ async def narrate_workflow(message: str, view: dict) -> dict:
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_workflow", resp)
-    return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
+    return {"text": _reply_text(resp),
             "usage": _usage(resp)}
 
 
@@ -1044,9 +1062,18 @@ You are helping a colleague who may never have been trained on this system.
   a broken system even when every number in it is right.
 - Write for someone who does not know the jargon. Say "the person who approves
   for your department", not "the dept_manager node".
-- For a task list: lead with how many things are waiting and what the most
-  urgent one is. Group by what they have to DO, not by document type. Mention
-  the document number so they can find it.
+- For a task list: every number is in the payload and was counted for you.
+  `open_task_count` is the total, `urgent_count` / `normal_count` split it, and
+  `groups` is the count per kind of task with the SAME label the Task Inbox
+  shows as its group header. Report those numbers exactly — never estimate,
+  never write "~", "about" or "40+", never re-group them, never add them up
+  yourself, and never count `examples`: it is only the first few tasks (urgent
+  first, then the oldest), `examples_left_out` were not sent to you at all.
+  Lead with the total and the urgent one(s), then the groups as a table, then
+  name a few `examples` by document number so they can find them. How many
+  reached them personally and how many through a role they hold is
+  `assigned_to_me_personally_count` / `reached_me_through_a_role_count` — never
+  generalise that, or anything else, from the examples.
 - A task marked assigned_to_me_personally false reached them through a role they
   hold — worth saying, because "why is this mine?" is the next question.
 - For a process: walk the steps in order, in plain sentences. A step with
@@ -1060,6 +1087,12 @@ You are helping a colleague who may never have been trained on this system.
   were given. Never name the last approver as the one who pays: tested on
   "AP Clerk 能执行付款吗？", the reply said the Finance Manager executes the
   payment because that step is last — invented, and wrong.
+- `rules` (document types) and `how_approvals_are_given` (processes) state how
+  the system behaves, each one verified against the code. When the question is
+  one of them, the rule IS the answer: give it plainly and the same way every
+  time, never hedge it, never contradict it, and never answer the opposite
+  from general knowledge of how such systems usually work. If no rule covers
+  what was asked, say that the guide does not cover it — do not reason one out.
 - For a purchase request, `over_budget` is what happens when the PR is over
   budget, as configured right now. Asked about over-budget, lead with it: name
   `mode_label`, then the `added_steps` in order — they come BEFORE the normal
@@ -1178,7 +1211,7 @@ async def narrate_guide(message: str, payload: dict) -> dict:
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_guide", resp)
-    return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
+    return {"text": _reply_text(resp),
             "usage": _usage(resp)}
 
 
@@ -1219,8 +1252,26 @@ async def render_fixed_reply(text: str, question: str, language: str | None) -> 
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("render_fixed_reply", resp)
-    return {"text": "".join(b.text for b in resp.content if b.type == "text").strip(),
+    return {"text": _reply_text(resp),
             "usage": _usage(resp)}
+
+
+# Tool-call markup the model sometimes writes INTO a text field: one refusal
+# ended "…不在我能查询的数据范围内。\n</explanation>\n</invoke>" and was shown to
+# the person like that (ISS-0009). Only these tag names are removed — the
+# reply's own text, which may legitimately contain "<" and ">", is kept.
+_MARKUP = re.compile(
+    r"</?(?:explanation|invoke|parameter|function_calls|function_results|"
+    r"antml:[a-z_]+|tool_use|tool_result|reason)(?:\s[^>]*)?>",
+    re.IGNORECASE)
+
+
+def strip_markup(text: str) -> str:
+    return _MARKUP.sub("", text or "").strip()
+
+
+def _reply_text(resp: Any) -> str:
+    return strip_markup("".join(b.text for b in resp.content if b.type == "text"))
 
 
 def _usage(resp: Any) -> dict:

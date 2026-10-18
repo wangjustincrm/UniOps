@@ -120,3 +120,26 @@ values:
       - >-
         Carries a Project Owner as well, the same way — whoever will confirm the
         work is done, defaulting to you.
+
+# ── Rules people ask about ───────────────────────────────────────────────────
+rules:
+  - id: type_1_not_selectable
+    asked_as:
+      - what procurement types are there
+      - 系统里有哪几种采购类型
+      - why can't I pick type 1
+    answer: >
+      There are six procurement types. Type 1 (Raw Materials / Packaging) cannot
+      be chosen when creating a PR in EPMS — its tile is disabled — because raw
+      material and packaging purchasing runs in NC and those orders arrive in
+      EPMS mirrored from it. The other five are chosen on the Create PR form.
+    enforced_in: "epms/src/components/pr/procurementTypes.ts (pinned by procurementTypes.test.ts)"
+  - id: pr_numbering
+    asked_as:
+      - how are PR numbers generated
+      - 请购单编号是怎么生成的
+    answer: >
+      PR-YYYYMMDD-NNNN: the date it was created, then a 4-digit sequence that
+      restarts each day — PR-20261015-0003 is the third PR of 15 Oct 2026.
+      The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
+    enforced_in: "epms-api app/crud/pr.py _next_number"

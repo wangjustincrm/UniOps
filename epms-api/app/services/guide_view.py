@@ -12,7 +12,11 @@ any document. The PRDs describing these flows are two to four months behind
 production; a workflow generated from the live config cannot drift, because it
 IS what runs.
 """
+import functools
 import uuid
+from pathlib import Path
+
+import yaml
 
 from app.crud import task as task_crud
 from app.crud.current_step import role_label
@@ -37,6 +41,92 @@ PROCESS_LABELS = {
     "vms_visit": "Visitor Request",
 }
 SUPPORTED_PROCESSES = tuple(PROCESS_LABELS)
+
+
+# The Task Inbox's group headers, copied from epms/src/lib/taskTypes.ts
+# TASK_TYPE_LABELS (the inbox groups by type and labels with
+# `TASK_TYPE_LABELS[k] ?? k`). tests/test_assistant_iss_round2.py fails when the
+# two drift, so "Confirm Goods Receipt" here is the header the person sees.
+TASK_TYPE_LABELS: dict[str, str] = {
+    "create_pr": "Create Purchase Request",
+    "create_po": "Create Purchase Order",
+    "create_pa": "Create Payment Application",
+    "create_prepayment_pa": "Create Prepayment PA",
+    "approve_pr": "Approve Purchase Request",
+    "approve_po": "Approve Purchase Order",
+    "approve_pa": "Approve Payment Application",
+    "place_order": "Place Order",
+    "confirm_settlement": "Confirm Settlement",
+    "review_match": "Confirm Invoice Match",
+    "match_invoice": "Match Invoice to PO",
+    "resolve_exception": "Resolve Match Exception",
+    "process_pa": "Process Payment Application",
+    "approve_agr": "Approve Agreement",
+    "revise_agr": "Revise Agreement",
+    "confirm_period": "Confirm Service Period",
+    "chase_agreement_invoice": "Chase Missing Invoice",
+    "confirm_receipt": "Confirm Goods Receipt",
+    "check_out_visitor": "Check Out Visitor",
+    "prepare_ppe": "Prepare PPE",
+    "revise_pr": "Revise Purchase Request",
+    "revise_po": "Revise Purchase Order",
+    "revise_pa": "Revise Payment Application",
+    "acknowledge_gr": "Acknowledge Goods Receipt",
+    "collect_goods": "Collect Goods",
+    "confirm_service_gr": "Confirm Service Receipt",
+    "gr_damage_report": "Report Goods Damage",
+    "approve_budget_plan": "Approve Budget Plan",
+    "revise_budget_plan": "Revise Budget Plan",
+    "sign_po": "Sign Purchase Order",
+    "revise_po_signoff": "Revise PO Sign-off",
+    "import_erp_vendor": "Import ERP Vendor",
+    "resolve_nc_sync_error": "Resolve NC Sync Error",
+    "resolve_jv_validation": "Resolve JV Validation Findings",
+    "resolve_ap_duplicate_invoice": "Resolve Duplicate NC Invoices",
+}
+
+# How many tasks go to the narrator as examples. The COUNTS cover every task;
+# the narrator never counts (ISS-0011: given 365 tasks it produced group counts
+# that changed on every answer and added up to 237).
+_TASK_EXAMPLES = 12
+
+
+def task_summary(tasks: list[dict]) -> dict:
+    """Counts the narrator reports verbatim, plus the few tasks worth naming.
+
+    Grouped exactly as the Task Inbox groups them, so every number in the
+    reply can be checked against a header on that page.
+    """
+    by_type: dict[str, int] = {}
+    for t in tasks:
+        by_type[t["type"]] = by_type.get(t["type"], 0) + 1
+    groups = sorted(
+        ({"type": k, "label": TASK_TYPE_LABELS.get(k, k), "count": n}
+         for k, n in by_type.items()),
+        key=lambda g: (-g["count"], g["label"]))
+    urgent = [t for t in tasks if t.get("priority") == "urgent"]
+    # Urgent first, then the oldest — the ones most likely to be overdue.
+    ordered = sorted(tasks, key=lambda t: (t.get("priority") != "urgent",
+                                           str(t.get("due_date") or "9999"),
+                                           str(t.get("created_at") or "")))
+    examples = ordered[:_TASK_EXAMPLES]
+    return {
+        "open_task_count": len(tasks),
+        "urgent_count": len(urgent),
+        "normal_count": len(tasks) - len(urgent),
+        "groups": groups,
+        "groups_add_up_to": sum(g["count"] for g in groups),
+        # "Why is this mine?" for the whole list, counted rather than read off
+        # the examples — a live check generalised 12 examples into "these are
+        # all assigned to you personally" when half came through a role.
+        "assigned_to_me_personally_count": sum(
+            1 for t in tasks if t.get("assigned_to_me_personally")),
+        "reached_me_through_a_role_count": sum(
+            1 for t in tasks if not t.get("assigned_to_me_personally")),
+        "examples": examples,
+        "examples_shown": len(examples),
+        "examples_left_out": len(tasks) - len(examples),
+    }
 
 
 async def my_tasks(role: str, user_id: uuid.UUID) -> list[dict]:
@@ -73,6 +163,15 @@ async def my_tasks(role: str, user_id: uuid.UUID) -> list[dict]:
             "assigned_role": role_label(t.assigned_role) if t.assigned_role else None,
             "created_at": t.created_at,
         } for t in tasks]
+
+
+@functools.lru_cache(maxsize=None)
+def approval_rules() -> list[dict]:
+    """How approvals are given (knowledge/approvals.yaml) — true of every chain."""
+    with (Path(__file__).resolve().parent.parent / "knowledge" / "approvals.yaml").open(
+            encoding="utf-8") as fh:
+        doc = yaml.safe_load(fh)
+    return [{"id": r["id"], "answer": " ".join(r["answer"].split())} for r in doc["rules"]]
 
 
 async def process_steps(doc_type: str, token: str) -> dict:
@@ -115,6 +214,7 @@ async def process_steps(doc_type: str, token: str) -> dict:
             "condition": s.get("condition"),
         } for i, s in enumerate(steps)],
         "steps_available": available,
+        "how_approvals_are_given": approval_rules(),
         # PR only — the over-budget rule as Budget Config stands, from the
         # engine. Without it "现在超预算的审批模式是什么？" had nothing to read
         # and was answered from a 0-row query plus guesswork (ISS-0005).

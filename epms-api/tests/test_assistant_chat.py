@@ -586,7 +586,10 @@ async def test_whats_next_returns_this_persons_own_tasks(
     body = r.json()
     assert body["kind"] == "tasks"
     payload = calls["guide"][0]["payload"]
-    mine = [t for t in payload["tasks"] if t["document_number"] == number]
+    # Counts cover every task; only the first few are sent, urgent first
+    # (guide_view.task_summary, ISS-0011) — this one is urgent.
+    assert payload["open_task_count"] >= 1
+    mine = [t for t in payload["examples"] if t["document_number"] == number]
     assert mine, "a task assigned to this user must appear"
     assert mine[0]["assigned_to_me_personally"] is True
 
@@ -609,7 +612,7 @@ async def test_a_task_reaching_someone_by_role_says_so(
     calls = _stub(monkeypatch, plans=[{"kind": "next"}])
     await admin_client.post(CHAT, json={"message": "anything for me?"})
 
-    tasks = calls["guide"][0]["payload"]["tasks"]
+    tasks = calls["guide"][0]["payload"]["examples"]
     found = [t for t in tasks if t["document_number"] == number]
     if found:  # system_admin sees all tasks; the flag is what matters
         assert found[0]["assigned_to_me_personally"] is False
