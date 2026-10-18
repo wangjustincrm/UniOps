@@ -18,7 +18,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Download, Send, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { deriveTabMeta, useOptionalTabStoreApi } from '@uniops/shell'
+import { Download, Receipt, Send, X } from 'lucide-react'
+import { financeRoutes } from '@/app/routes'
 import { financeApi, financeDownload, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
@@ -420,6 +423,7 @@ export default function PaymentsPage() {
       subtitle="Every payment made, single or batched — send remittance advice for the ones a batch never covered"
     >
       <div className="mx-auto max-w-6xl">
+        <AwaitingClaimsBanner />
         <div className="mb-4 flex flex-wrap gap-4">
           {summary.map((s) => (
             <div key={s.currency} className="rounded-lg border border-neutral-200 bg-white px-5 py-4">
@@ -693,5 +697,71 @@ function PaymentDetailModal({ row, onClose }: { row: PaymentRow; onClose: () => 
         </div>
       }
     />
+  )
+}
+
+
+interface DueRow { doc_kind: string; amount: string; currency: string }
+
+/**
+ * This page lists money already paid, so an approved expense claim is
+ * invisible here until someone pays it — and on Payment Batches it sits among
+ * hundreds of PAs. Surface approved-but-unpaid claims (per currency) with a
+ * link straight to the claims-only due list. Same read authority as the page
+ * (`/payments/due` uses `_authorize_read`); Travel Applications are excluded
+ * server-side.
+ */
+function AwaitingClaimsBanner() {
+  const tabs = useOptionalTabStoreApi()
+  const { data: due = [] } = useQuery({
+    queryKey: ['payments-due', 'all-currencies'],
+    queryFn: () => financeApi.get<DueRow[]>('/payments/due'),
+  })
+  const byCurrency = useMemo(() => {
+    const m = new Map<string, { count: number; total: number }>()
+    for (const d of due) {
+      if (d.doc_kind !== 'expense_claim') continue
+      const cur = m.get(d.currency) ?? { count: 0, total: 0 }
+      cur.count += 1
+      cur.total += Number(d.amount)
+      m.set(d.currency, cur)
+    }
+    return [...m.entries()]
+  }, [due])
+  if (byCurrency.length === 0) return null
+
+  // Payment Batches is a static-key tab: if it is already open, the shell only
+  // focuses it and keeps its old ?query — point it at this link first.
+  const retarget = (href: string) => {
+    if (!tabs) return
+    const q = href.indexOf('?')
+    const meta = deriveTabMeta(financeRoutes, href.slice(0, q), href.slice(q))
+    if (meta && tabs.getState().tabs.some((t) => t.key === meta.key)) {
+      tabs.getState().setTabPath(meta.key, meta.path!)
+    }
+  }
+
+  return (
+    <div className="mb-4 flex flex-col gap-2">
+      {byCurrency.map(([ccy, { count, total }]) => {
+        const href = `/finance/payment-batches?type=claim&currency=${ccy}`
+        return (
+          <div key={ccy} className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <Receipt className="h-4 w-4 shrink-0" />
+            <span>
+              <span className="font-semibold">{count} expense claim{count === 1 ? '' : 's'}</span> approved and awaiting payment
+              {' · '}
+              <span className="font-mono">
+                {total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {ccy}
+              </span>
+            </span>
+            <Link to={href} onClick={() => retarget(href)}
+                  className="ml-auto whitespace-nowrap font-medium text-[#085E5E] underline hover:text-[#064A4A]">
+              View in Payment Batches →
+            </Link>
+          </div>
+        )
+      })}
+    </div>
   )
 }

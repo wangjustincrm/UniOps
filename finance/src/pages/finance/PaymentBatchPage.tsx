@@ -2,7 +2,10 @@
  * Payment Batch workbench (Phase a A4 UI)
  *
  * CRM pays most invoices in batches ("攒一起一起付"). Flow:
- *   1. Due list — approved PAs awaiting payment (single currency per run)
+ *   1. Due list — approved PAs and expense claims awaiting payment (single
+ *      currency per run), filterable by type via ?type= (all | pa | pa_dir |
+ *      claim) so claims are not lost among hundreds of PAs; the Payments page
+ *      banner deep-links here with ?type=claim&currency=…
  *   2. Select rows → create a draft batch (snapshot)
  *   3. Execute — each line runs through the unified payment executor with
  *      per-line failure isolation; see paid / failed per line
@@ -11,11 +14,12 @@
  * zebra rows, status pills, #085E5E primary.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Loader2, Play, Wallet, X } from 'lucide-react'
+import { useOptionalTabStoreApi } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
-import { financeApi } from '@/lib/api'
+import { financeApi, OA_URL, encodeSession } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
@@ -31,7 +35,21 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
 interface Due {
   doc_kind: string; doc_id: string; doc_number: string | null
   payee: string; vendor_inv_no?: string; amount: string; currency: string
+  claim_type: string | null; submitted_at: string | null
 }
+
+export const DUE_CURRENCIES = ['CAD', 'USD', 'CNY', 'EUR']
+
+// Type filter for the due list. `claim` covers every payable claim type
+// (EXP / MIL / TRV / CFM); the API already leaves Travel Applications out.
+type DueType = 'all' | 'pa' | 'pa_dir' | 'claim'
+const DUE_TYPES: { key: DueType; label: string }[] = [
+  { key: 'all', label: 'All' }, { key: 'pa', label: 'PA' },
+  { key: 'pa_dir', label: 'Direct PA' }, { key: 'claim', label: 'Expense Claim' },
+]
+const dueTypeOf = (d: Due): DueType =>
+  d.doc_kind === 'expense_claim' ? 'claim' : d.doc_kind === 'pa_dir' ? 'pa_dir' : 'pa'
+
 interface Batch {
   id: string; batch_number: string; batch_date: string; status: string
   currency: string; total: string; payment_method: string
@@ -59,9 +77,21 @@ function StatusPill({ status }: { status: string }) {
 }
 
 export default function PaymentBatchPage() {
-  const { user } = useAuthStore()
+  const { user, token, refreshToken } = useAuthStore()
   const qc = useQueryClient()
-  const [currency, setCurrency] = useState('CAD')
+  const tabs = useOptionalTabStoreApi()
+  // Currency and type live in the URL so the Payments-page banner can land on
+  // "claims only" — and so a tab already open here is retargeted by that link.
+  const [params, setParams] = useSearchParams()
+  const currency = DUE_CURRENCIES.includes(params.get('currency') ?? '') ? params.get('currency')! : 'CAD'
+  const typeParam = params.get('type') as DueType | null
+  const dueType: DueType = DUE_TYPES.some((t) => t.key === typeParam) ? typeParam! : 'all'
+  const setFilter = (key: 'currency' | 'type', value: string) => {
+    const next = new URLSearchParams(params)
+    next.set(key, value)
+    setParams(next, { replace: true })
+    setSelected(new Set())
+  }
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [openBatch, setOpenBatch] = useState<string | null>(null)
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
@@ -77,10 +107,30 @@ export default function PaymentBatchPage() {
   })
   const canPay = payPerm?.can_pay ?? false
 
-  const { data: due = [] } = useQuery({
+  const { data: dueAll = [] } = useQuery({
     queryKey: ['payments-due', currency],
     queryFn: () => financeApi.get<Due[]>(`/payments/due?currency=${currency}`),
   })
+  const typeCounts = useMemo(() => {
+    const c: Record<DueType, number> = { all: dueAll.length, pa: 0, pa_dir: 0, claim: 0 }
+    for (const d of dueAll) c[dueTypeOf(d)] += 1
+    return c
+  }, [dueAll])
+  const due = useMemo(
+    () => (dueType === 'all' ? dueAll : dueAll.filter((d) => dueTypeOf(d) === dueType)),
+    [dueAll, dueType])
+
+  // Open the claim in OA as an iframe tab inside Finance (the same handoff the
+  // AP list uses for OA invoices); OA's expense detail is embed-safe.
+  const openClaim = (d: Due) => {
+    const session = token && user ? encodeSession(token, refreshToken ?? '', user) : ''
+    const src = `${OA_URL}/expenses/${d.doc_id}${session ? `#__session=${session}` : ''}`
+    if (!tabs) { window.open(src, '_blank', 'noopener'); return }
+    tabs.getState().openTab({
+      key: `ext:expense:${d.doc_id}`, title: d.doc_number ?? 'Expense Claim',
+      kind: 'iframe', src, icon: 'Receipt', closable: true,
+    })
+  }
   const { data: batches = [] } = useQuery({
     queryKey: ['payment-batches'],
     queryFn: () => financeApi.get<Batch[]>('/payments/batches'),
@@ -91,13 +141,13 @@ export default function PaymentBatchPage() {
   }
 
   const selectedTotal = useMemo(
-    () => due.filter((d) => selected.has(d.doc_id)).reduce((s, d) => s + Number(d.amount), 0),
-    [due, selected])
+    () => dueAll.filter((d) => selected.has(d.doc_id)).reduce((s, d) => s + Number(d.amount), 0),
+    [dueAll, selected])
 
   const createBatch = useMutation({
     mutationFn: () => financeApi.post<Batch>('/payments/batches',
       { docs: [...selected].map((id) => {
-        const d = due.find((x) => x.doc_id === id)!
+        const d = dueAll.find((x) => x.doc_id === id)!
         return { doc_kind: d.doc_kind, doc_id: id }
       }), payment_method: 'bank_transfer' }),
     onSuccess: (b) => {
@@ -137,10 +187,21 @@ export default function PaymentBatchPage() {
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <Wallet className="h-5 w-5 text-neutral-400" />
           <span className="text-sm font-semibold text-neutral-700">Due for payment</span>
-          <select value={currency} onChange={(e) => { setCurrency(e.target.value); setSelected(new Set()) }}
+          <select value={currency} onChange={(e) => setFilter('currency', e.target.value)}
                   className={cn(inputCls, 'w-28')}>
-            {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
+            {DUE_CURRENCIES.map((c) => <option key={c}>{c}</option>)}
           </select>
+          <div className="flex flex-wrap gap-1.5">
+            {DUE_TYPES.map((t) => (
+              <button key={t.key} onClick={() => setFilter('type', t.key)}
+                      className={cn('rounded-full border px-3 py-1 text-xs font-medium',
+                        dueType === t.key
+                          ? 'border-[#085E5E] bg-[#085E5E] text-white'
+                          : 'border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50')}>
+                {t.label} <span className={dueType === t.key ? 'text-white/80' : 'text-neutral-400'}>{typeCounts[t.key]}</span>
+              </button>
+            ))}
+          </div>
           <div className="ml-auto flex items-center gap-3">
             {selected.size > 0 && (
               <span className="text-sm text-neutral-600">
@@ -166,6 +227,7 @@ export default function PaymentBatchPage() {
                          onChange={(e) => setSelected(e.target.checked ? new Set(due.map((d) => d.doc_id)) : new Set())} />
                 </th>
                 <th className="px-3 py-2 w-40">Document</th>
+                <th className="px-3 py-2 w-28">Submitted</th>
                 <th className="px-3 py-2">Payee</th>
                 <th className="px-3 py-2 w-44">Vendor Inv No</th>
                 <th className="px-3 py-2 w-24">Type</th>
@@ -174,18 +236,29 @@ export default function PaymentBatchPage() {
             </thead>
             <tbody>
               {due.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
-                  No approved {currency} payments awaiting a run.</td></tr>
+                <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-400">
+                  {dueType === 'claim'
+                    ? `No approved ${currency} expense claims awaiting payment.`
+                    : `No approved ${currency} payments awaiting a run.`}</td></tr>
               )}
               {due.map((d, i) => (
                 <tr key={d.doc_id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
                   <td className="px-3 py-2">
                     <input type="checkbox" checked={selected.has(d.doc_id)} onChange={() => toggle(d.doc_id)} />
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs">{d.doc_number || d.doc_id.slice(0, 8)}</td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {d.doc_kind === 'expense_claim' ? (
+                      <button onClick={() => openClaim(d)} className="text-[#085E5E] underline hover:text-[#064A4A]">
+                        {d.doc_number || d.doc_id.slice(0, 8)}
+                      </button>
+                    ) : (d.doc_number || d.doc_id.slice(0, 8))}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-neutral-600">
+                    {d.submitted_at ? new Date(d.submitted_at).toLocaleDateString() : <span className="text-neutral-300">—</span>}
+                  </td>
                   <td className="px-3 py-2">{d.payee}</td>
                   <td className="px-3 py-2 font-mono text-xs text-neutral-600">{d.vendor_inv_no || <span className="text-neutral-300">—</span>}</td>
-                  <td className="px-3 py-2 text-xs text-neutral-500">{d.doc_kind === 'expense_claim' ? 'Claim' : d.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'}</td>
+                  <td className="px-3 py-2 text-xs text-neutral-500">{d.doc_kind === 'expense_claim' ? `Claim · ${d.claim_type ?? ''}` : d.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'}</td>
                   <td className="px-3 py-2 text-right font-mono">{fmtMoney(d.amount, d.currency)}</td>
                 </tr>
               ))}
