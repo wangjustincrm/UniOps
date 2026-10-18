@@ -1,11 +1,16 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.0
+**Version:** 2.1
 **Date:** 2026-10-16
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
 
-**What changed in this version**
+**What changed in version 2.1** (2026-10-16)
+
+- Approved expense claims are now visible on the Finance side before they are paid: a banner on the Payments hub and an "Expense Claim" filter on the Payment Batches due list (FIN-PAY-06, FIN-PAY-07).
+- Travel Applications can no longer enter the payment path through Payment Batches (FIN-PAY-04, FIN-PAY-06).
+
+**What changed in version 2.0**
 
 - Merged the two Chinese v1.0 documents into one English PRD and translated them: the review PRD (2026-07-13) and the full-module PRD (last edited 2026-09-21). The full-module PRD is the backbone.
 - **Positioning rewritten.** NC65 is the book of record. UniOps Finance is a finance assurance and analysis layer built on top of NC (decided 2026-09-20, for at least one year). The v1.0 statement that UniOps Finance would be a self-built finance hub that replaces NC is withdrawn.
@@ -334,10 +339,10 @@ Executing PA payments from EPMS is specified in EPMS.md §3.18. This section cov
 | FIN-PAY-01 | A **single executor** handles all money going out: EPMS PA "process", OA Direct PA and expense-claim payments all forward to it. Under one transaction it checks authority, segregation of duties and the period gate, sets the status, writes the payment record, writes the internal posting, and writes back the invoice / AP status. |
 | FIN-PAY-02 | Authority: Payment Officer, Finance Manager, Finance BP (primary or additional role); System Admin as primary role only. AP Clerk is excluded. |
 | FIN-PAY-03 | SoD *self_payment* (configurable): the creator of a PA, or the claimant of an expense claim, cannot execute its payment. |
-| FIN-PAY-04 | Refused when: the payment date falls in a soft- or hard-closed period; the PA is not `approved`; the funding account's currency differs from the payment's; or a PO-route non-prepayment PA links no invoice while its PO still has a payable invoice no live PA claims. |
+| FIN-PAY-04 | Refused when: the payment date falls in a soft- or hard-closed period; the PA is not `approved`; the claim is a Travel Application (TRA — it carries no money, OA.md §5); the funding account's currency differs from the payment's; or a PO-route non-prepayment PA links no invoice while its PO still has a payable invoice no live PA claims. |
 | FIN-PAY-05 | Payment record: document reference, payment date, method, amount, currency, **funding bank account or credit card**, batch, credit applied. The legacy direct-create payment endpoint is retired. |
-| FIN-PAY-06 | **Payment Batches:** pick approved PAs and claims from the due list (vendor invoice number shown) and execute them together. Each line goes through the same executor. For vendor PAs the dialog shows a vendor-credit netting preview per line, where credits can be unticked. The remittance dialog opens after execution when remittance is enabled. |
-| FIN-PAY-07 | **Payments hub:** list with filters (vendor, date range, document kind, currency, method, status, funding account, batch, source batch/single, remittance sent/not sent, free text), summary, CSV export, and multi-select remittance. The Method column shows the funding account. Reads need a finance role. |
+| FIN-PAY-06 | **Payment Batches:** pick approved PAs and claims from the due list (vendor invoice number shown) and execute them together. Each line goes through the same executor. For vendor PAs the dialog shows a vendor-credit netting preview per line, where credits can be unticked. The remittance dialog opens after execution when remittance is enabled. The due list has a **type filter** — All / PA / Direct PA / Expense Claim, each with its count for the selected currency — and a Submitted date column; currency and type are kept in the URL (`?currency=…&type=claim`). A claim's number opens the OA claim detail as a tab inside Finance. Approved Travel Applications are **not** in the due list, and a batch that names one is refused. |
+| FIN-PAY-07 | **Payments hub:** list with filters (vendor, date range, document kind, currency, method, status, funding account, batch, source batch/single, remittance sent/not sent, free text), summary, CSV export, and multi-select remittance. The Method column shows the funding account. Reads need a finance role. The hub lists money already paid, so above it a **banner per currency** shows approved expense claims still awaiting payment (count and total) and links to the Payment Batches due list filtered to expense claims in that currency. No banner when there are none. |
 | FIN-PAY-08 | Paying closes the matching *process_pa* / *process_expense* tasks. |
 
 ---

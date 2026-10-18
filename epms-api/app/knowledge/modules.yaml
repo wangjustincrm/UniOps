@@ -177,6 +177,14 @@ modules:
       - Get a suggested standard cost for a product — usage from actual consumption against the BOM, settled prices, conversion per unit — and see what 2026 would have looked like under it (AI Financial Analysis → Standard Cost; a suggestion only, nothing is written to NC, and the conversion basis is Finance's decision)
     notes:
       - >-
+        Approved expense claims waiting to be paid show on Finance → Payments
+        as a banner per currency (how many, and the total), since that page
+        otherwise lists only payments already made. The banner links to
+        Payment Batches, whose due list can be narrowed to Expense Claim (or
+        PA / Direct PA) with a count on each; clicking a claim number opens the
+        claim. Travel Applications are not listed there and cannot be paid —
+        they carry no money.
+      - >-
         Bank reconciliation counts unposted vouchers (ones NC has not tallied
         yet) on the ledger side by default — "Include unposted vouchers" at the
         top of the period is ticked. The choice is saved on that period, so the
