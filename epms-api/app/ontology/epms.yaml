@@ -483,3 +483,66 @@ entities:
         local: po_id
         remote: id
         label: "The order being paid (its primary one — a PA can settle several)"
+      agreement:
+        target: purchase_agreement
+        cardinality: many_to_one
+        local: agreement_id
+        remote: id
+        label: "The purchase agreement this PA pays against, for agreement payments"
+
+  # Added 2026-10-16 (ISS-0002): the Agreement detail page showed validity, NTE
+  # and consumed, and the Assistant said none of it existed — one answer even
+  # claimed the system does not store agreement terms.
+  purchase_agreement:
+    model: PurchaseAgreement
+    label: "Purchase Agreement (AGR) — a standing arrangement with a vendor that
+      purchases or payments are made against: its validity window, its spending
+      ceiling (Not to Exceed, NTE) and how much of it has been used"
+    perm_key: epms.agreement.read
+    scope: agreement
+    date_field: created_at
+    fields:
+      number: {kind: text, label: "Agreement number, e.g. AGR-202608-0007"}
+      title: {kind: text, label: "Title"}
+      agreement_type:
+        kind: enum
+        label: "Kind of agreement"
+        values: [house_account, recurring, milestone]
+        value_labels:
+          house_account: "House account — open account the department buys against as needed"
+          recurring: "Recurring — a service billed on a schedule"
+          milestone: "Milestone — paid in agreed stages"
+      vendor_name: {kind: text, label: "Vendor name"}
+      contract_no: {kind: text, label: "Vendor's contract number"}
+      # Nothing in the system ever moves an agreement to `expired` or `closed`
+      # (crud/agreement.py): one past its end date still reads `active`.
+      status:
+        kind: enum
+        label: "Status. `active` means approved, NOT that it is still in force —
+          an agreement past valid_to keeps status active. Whether it is in force
+          is valid_from/valid_to (or days_until_expiry)"
+        values: [draft, submitted, in_review, returned, rejected, active,
+                 expired, closed, cancelled]
+      valid_from: {kind: date, label: "Valid from (first day of the agreement)"}
+      valid_to: {kind: date, label: "Valid to (last day of the agreement)"}
+      days_until_expiry:
+        kind: int
+        label: "Days from today until valid_to; negative once it has passed.
+          \"Expires within 30 days\" is days_until_expiry between 0 and 30.
+          Grace days are not included"
+      grace_days: {kind: int, label: "Grace days after valid_to during which invoices are still accepted"}
+      not_to_exceed:
+        kind: money
+        label: "Spending ceiling (Not to Exceed, NTE). EMPTY means the agreement
+          has no ceiling — say \"no ceiling\", never \"0\""
+      consumed_amount: {kind: money, label: "Amount consumed against the agreement so far"}
+      remaining_amount:
+        kind: money
+        label: "NTE still available (not_to_exceed - consumed_amount). Empty
+          when there is no ceiling, which means unlimited, not none left"
+      currency: {kind: text, label: "Currency", enumerate: true}
+      budget_code: {kind: text, label: "Budget account the agreement is charged to"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of agreements"}
+      consumed: {fn: sum, field: consumed_amount, label: "Total consumed"}

@@ -28,6 +28,7 @@ from sqlalchemy.sql import Select
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
+from app.models.agreement import PurchaseAgreement
 from app.models.pa import PaymentApplication
 from app.models.user import User
 from app.models.department import Department
@@ -88,6 +89,7 @@ _MODELS: dict[str, type] = {
     "GoodsReceipt": GoodsReceipt,
     "Invoice": Invoice,
     "PaymentApplication": PaymentApplication,
+    "PurchaseAgreement": PurchaseAgreement,
     "User": User,
     "Department": Department,
     "CostCenter": CostCenter,
@@ -282,6 +284,14 @@ async def scope_pa(q: Select, scope: dict, db: AsyncSession) -> Select:
     return q.where(or_(*pa_scope_conditions(po_subq, agr_subq, created_by)))
 
 
+async def scope_agreement(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """The agreements this caller sees on the Agreements page — the same
+    visible_agreement_subquery build_scope already computed. None means
+    unrestricted."""
+    agr_subq = scope.get("agr_subq")
+    return q if agr_subq is None else q.where(PurchaseAgreement.id.in_(agr_subq))
+
+
 # ── Scopes for tables this service reads but does not own ─────────────────────
 
 
@@ -448,6 +458,7 @@ _SCOPES: dict[str, Callable] = {
     "pr_line": scope_pr_line,
     "invoice": scope_invoice,
     "pa": scope_pa,
+    "agreement": scope_agreement,
     "permission_only": scope_permission_only,
     "mps_in_force": scope_mps_in_force,
     "forecast_current": scope_forecast_current,

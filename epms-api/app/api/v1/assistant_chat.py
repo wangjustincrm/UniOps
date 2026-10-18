@@ -32,6 +32,7 @@ from app.core.access_scope import build_scope, is_pr_visible
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
+from app.services import reply_language
 from app.services import doc_type_guide, guide_view, plan_view
 from app.services import producible_view
 from app.services import budget_variance
@@ -89,18 +90,43 @@ _MAX_HISTORY_TURNS = 6
 @router.post("/chat")
 async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
                token: BearerToken) -> dict:
+    """Answer, then make sure a reply written by this code — a refusal, a
+    "which document do you mean" — reaches the person in their language.
+
+    Those replies are English constants. Every model-written reply already
+    follows reply_language; these did not, so "采购协议的审批流程是怎样的？",
+    "用中文回答" and a Spanish question all got the same English sentence back
+    (ISS-0001). They are marked `_fixed_text` where they are written.
+    """
+    out = await _chat(body, db, user, token)
+    if out.pop("_fixed_text", False) and out.get("answer"):
+        language = reply_language.detect(body.message)
+        plainly_english = language == "English" or (
+            language is None and body.message.isascii())
+        if not plainly_english:
+            try:
+                said = await assistant_llm.render_fixed_reply(
+                    out["answer"], body.message, language)
+                out["answer"] = said["text"] or out["answer"]
+            except assistant_llm.LlmUnavailable:
+                pass  # the English sentence is still a correct answer
+    return out
+
+
+async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
     schema = (await assistant_schema(db, user))["entities"]
     if not schema:
         # No visible entities at all. Say so rather than letting the planner
         # hallucinate against an empty schema.
         return {
-            "answer": "You do not currently have access to any purchasing data "
+            "_fixed_text": True, "answer": "You do not currently have access to any purchasing data "
                       "I can query.",
             "kind": "denied", "query": None, "sources": None,
         }
 
     context = body.context.model_dump(exclude_none=True) if body.context else None
     scope = await build_scope(db, user)
+    context = await _with_document_number(db, scope, context)
     actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
     history = [
         {"role": t.role, "content": _turn_content(t)}
@@ -182,7 +208,7 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
         except cq.QueryRejected as exc2:
             log.warning("assistant | plan rejected twice | %s", exc2)
             return {
-                "answer": "I could not build a valid query for that. "
+                "_fixed_text": True, "answer": "I could not build a valid query for that. "
                           "Try naming the document type or the field explicitly.",
                 "kind": "cannot_answer", "reason": "invalid_plan",
                 "query": None, "sources": None,
@@ -192,7 +218,7 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
         # Permission gate fired between planning and execution — possible if the
         # matrix changed, and the honest answer is the gate's, not a guess.
         return {
-            "answer": "You do not have permission to view that kind of document.",
+            "_fixed_text": True, "answer": "You do not have permission to view that kind of document.",
             "kind": "denied", "query": query, "sources": None,
         }
 
@@ -213,6 +239,29 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
             "truncated": result.get("truncated"),
         },
     }
+
+
+async def _with_document_number(db, scope, context: dict | None) -> dict | None:
+    """Add the on-screen document's NUMBER to the context.
+
+    The panel sends the document's id, and the schema the planner queries by is
+    keyed on numbers — so on PR-20261015-0003 "这张单的供应商是谁？金额多少？"
+    could not be written as a query at all, and the planner fell back to the one
+    route that accepts "the document on screen" without a number: its approval
+    history (ISS-0004). Resolved with the same visibility rule as everything
+    else, so a document this person cannot see adds nothing.
+    """
+    if not context or context.get("doc_number"):
+        return context
+    doc_type, doc_id = context.get("doc_type"), context.get("doc_id")
+    if doc_type not in workflow_view.SUPPORTED or not doc_id:
+        return context
+    doc = await workflow_view.resolve(db, scope, doc_type, None, doc_id)
+    if doc is None:
+        return context
+    field = workflow_view.number_attr(doc_type)
+    number = getattr(doc, field, None)
+    return {**context, "doc_number": number, "doc_number_field": field} if number else context
 
 
 async def _resolve_pr(db, scope, number: str | None, context: dict | None):
@@ -247,7 +296,7 @@ async def _answer_gate_question(db, user, token, scope, body, planned) -> dict:
 
     if doc_type != "pr":
         return {
-            "answer": f"I can only check purchase requests so far, not {doc_type.upper()}s.",
+            "_fixed_text": True, "answer": f"I can only check purchase requests so far, not {doc_type.upper()}s.",
             "kind": "cannot_answer", "reason": "not_supported",
             "query": None, "sources": None,
         }
@@ -256,7 +305,7 @@ async def _answer_gate_question(db, user, token, scope, body, planned) -> dict:
     if pr is None:
         asked = planned.get("doc_number")
         return {
-            "answer": (f"I could not find {asked}." if asked else
+            "_fixed_text": True, "answer": (f"I could not find {asked}." if asked else
                        "Tell me which document you mean — a PR number works best."),
             "kind": "cannot_answer", "reason": "document_not_found",
             "query": None, "sources": None,
@@ -292,7 +341,7 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
 
     if doc_type not in workflow_view.SUPPORTED:
         return {
-            "answer": f"I can only trace approvals for "
+            "_fixed_text": True, "answer": f"I can only trace approvals for "
                       f"{', '.join(t.upper() for t in workflow_view.SUPPORTED)}.",
             "kind": "cannot_answer", "reason": "not_supported",
             "query": None, "sources": None,
@@ -305,7 +354,7 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
     if doc is None:
         asked = planned.get("doc_number")
         return {
-            "answer": (f"I could not find {asked}." if asked else
+            "_fixed_text": True, "answer": (f"I could not find {asked}." if asked else
                        "Tell me which document you mean — its number works best."),
             "kind": "cannot_answer", "reason": "document_not_found",
             "query": None, "sources": None,
@@ -363,7 +412,7 @@ async def _answer_plan_question(db, scope, body, planned, actor) -> dict:
     """
     if not (scope.get("perms") or {}).get("mrp.report.view", False):
         return {
-            "answer": "I cannot see the production plan.",
+            "_fixed_text": True, "answer": "I cannot see the production plan.",
             "kind": "denied", "reason": "no_permission",
             "query": None, "sources": None,
         }
@@ -376,7 +425,7 @@ async def _answer_plan_question(db, scope, body, planned, actor) -> dict:
     )
     if not lines:
         return {
-            "answer": "There is no line in the plan currently in force for "
+            "_fixed_text": True, "answer": "There is no line in the plan currently in force for "
                       "that. Note that only the plan in force is readable — a "
                       "superseded run is not.",
             "kind": "cannot_answer", "reason": "no_such_line",
@@ -409,7 +458,7 @@ async def _answer_producible(db, scope, body, planned, actor) -> dict:
     """
     if not (scope.get("perms") or {}).get("mrp.report.view", False):
         return {
-            "answer": "I cannot see recipes or warehouse stock.",
+            "_fixed_text": True, "answer": "I cannot see recipes or warehouse stock.",
             "kind": "denied", "reason": "no_permission",
             "query": None, "sources": None,
         }
@@ -417,7 +466,7 @@ async def _answer_producible(db, scope, body, planned, actor) -> dict:
     product = (planned.get("product") or "").strip()
     if not product:
         return {
-            "answer": "Tell me which product — its material code works best.",
+            "_fixed_text": True, "answer": "Tell me which product — its material code works best.",
             "kind": "cannot_answer", "reason": "no_product",
             "query": None, "sources": None,
         }
@@ -428,7 +477,7 @@ async def _answer_producible(db, scope, body, planned, actor) -> dict:
     except producible_view.AmbiguousRecipe as exc:
         # Refused rather than resolved — see the exception's own docstring.
         return {
-            "answer": (f"{exc.product} has {len(exc.options)} recipes marked as "
+            "_fixed_text": True, "answer": (f"{exc.product} has {len(exc.options)} recipes marked as "
                        f"the default ({', '.join(exc.options)}). I cannot tell "
                        f"which one applies, and picking one would give you a "
                        f"confident answer about the wrong recipe."),
@@ -438,7 +487,7 @@ async def _answer_producible(db, scope, body, planned, actor) -> dict:
 
     if result is None:
         return {
-            "answer": (f"There is no default recipe for {product}, so there is "
+            "_fixed_text": True, "answer": (f"There is no default recipe for {product}, so there is "
                        f"nothing to explode. If it is a raw material rather "
                        f"than something we make, ask about its stock instead."),
             "kind": "cannot_answer", "reason": "no_recipe",
@@ -494,7 +543,7 @@ async def _answer_doc_types(db, body, planned, actor) -> dict:
     doc_type = (planned.get("doc_type") or "").lower()
     if doc_type not in doc_type_guide.SUPPORTED:
         return {
-            "answer": ("I can explain purchase requests, purchase orders, goods "
+            "_fixed_text": True, "answer": ("I can explain purchase requests, purchase orders, goods "
                        "receipts, payment applications, invoices and purchase "
                        "agreements — not that."),
             "kind": "cannot_answer", "reason": "not_supported",
@@ -529,7 +578,7 @@ async def _answer_budget_variance(db, scope, token, body, planned, actor) -> dic
         db, scope, fiscal_year=int(year), through_month=int(through), token=token)
     if not result.get("allowed"):
         return {
-            "answer": result.get("why") or "You cannot see budget figures.",
+            "_fixed_text": True, "answer": result.get("why") or "You cannot see budget figures.",
             "kind": "denied", "query": None, "sources": None,
         }
 
@@ -564,7 +613,7 @@ async def _answer_report_lineage(db, scope, token, body, planned, actor) -> dict
     report = (planned.get("report") or "").lower()
     if report not in report_lineage.SUPPORTED:
         return {
-            "answer": ("I can explain how the Budget Dashboard's Plan vs Actual "
+            "_fixed_text": True, "answer": ("I can explain how the Budget Dashboard's Plan vs Actual "
                        "figures are arrived at. I do not have the workings of "
                        "any other report."),
             "kind": "cannot_answer", "reason": "not_supported",
@@ -599,8 +648,11 @@ async def _answer_process(db, user, token, body, planned, actor) -> dict:
     doc_type = (planned.get("doc_type") or "").lower()
     if doc_type not in guide_view.SUPPORTED_PROCESSES:
         return {
-            "answer": "I can describe the purchase request, purchase order, "
-                      "payment application and visitor request processes.",
+            # Derived from what is wired up, so it cannot omit one (it left out
+            # PO sign-off) or name one that is not.
+            "_fixed_text": True,
+            "answer": "I can describe these approval processes: "
+                      + ", ".join(guide_view.PROCESS_LABELS.values()) + ".",
             "kind": "cannot_answer", "reason": "not_supported",
             "query": None, "sources": None,
         }

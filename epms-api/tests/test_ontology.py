@@ -199,6 +199,10 @@ def test_every_entity_gates_on_a_permission_that_exists_in_the_matrix():
         "view_pr", "view_po", "view_gr", "view_invoice", "view_pa",
         "view_finance", "mrp.report.view", "view_system_settings",
         "finance.budget.view_dept", "finance.budget.view_all",
+        # purchase_agreement (2026-10-16). identity's phase-2 key, the same one
+        # the Agreements page gates on (AgrReadDep). Checked on production that
+        # day: granted to 16 roles including requester and system_admin.
+        "epms.agreement.read",
     }
     for entity in REGISTRY.values():
         for key in entity.perm_key:

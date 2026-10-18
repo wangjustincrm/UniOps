@@ -42,6 +42,11 @@ _SPEC: dict[str, dict[str, Any]] = {
 }
 
 
+def number_attr(doc_type: str) -> str:
+    """The column holding the document's human-facing number."""
+    return _SPEC[doc_type]["number"]
+
+
 async def resolve(db, scope: dict, doc_type: str, number: str | None,
                   doc_id: str | None):
     """Find the document, honouring visibility.
