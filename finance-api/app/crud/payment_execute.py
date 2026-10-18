@@ -20,6 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 _ZERO = Decimal("0")
 
+# Claim types that reach `approved` but never owe money: a Travel Application
+# (TRA) is a pre-trip approval with total 0. expense-api's /pay already refused
+# it; this guards the batch path, which reached the executor without that check.
+NON_PAYABLE_CLAIM_TYPES = ("TRA",)
+
 from app.models.coa import AccountMapping
 from app.models.fiscal_period import OPEN, FiscalPeriod
 from app.models.mirrors import (
@@ -542,6 +547,8 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
     if claim is None:
         raise LookupError("Expense claim not found")
     await _check_self_payment(db, recorded_by, claim.employee_id, "claimant")
+    if claim.claim_type in NON_PAYABLE_CLAIM_TYPES:
+        raise ValueError("Travel Applications are not payable")
     if claim.status != "approved":
         raise ValueError(f"Cannot pay claim in status '{claim.status}'")
     claim.status = "paid"

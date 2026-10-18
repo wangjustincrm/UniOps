@@ -48,9 +48,11 @@ def _pa(amount="100.00", status="approved", currency="CAD", po_id=None,
     )
 
 
-def _claim(amount="100.00", status="approved", currency="CAD") -> ExpenseClaim:
+def _claim(amount="100.00", status="approved", currency="CAD", claim_type="EXP",
+           submitted_at=None) -> ExpenseClaim:
     return ExpenseClaim(
-        claim_number=f"EXP-{uuid.uuid4().hex[:8]}", claim_type="EXP", status=status,
+        claim_number=f"{claim_type}-{uuid.uuid4().hex[:8]}", claim_type=claim_type, status=status,
+        submitted_at=submitted_at,
         employee_id=uuid.uuid4(), employee_name="Jane Doe", currency=currency,
         total_amount=Decimal(amount), tax_amount=Decimal("0"), net_amount=Decimal(amount),
     )
@@ -252,6 +254,40 @@ async def test_due_includes_approved_claims(client, db_session):
     assert len(claim_rows) == 1
     assert claim_rows[0]["payee"] == "Jane Doe"
     assert all("payee" in x for x in rows)
+
+
+async def test_due_claim_row_carries_type_and_submitted_at(client, db_session):
+    when = datetime(2026, 10, 9, 15, 0, tzinfo=timezone.utc)
+    db_session.add(_claim("2824.99", submitted_at=when))
+    await db_session.flush()
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    claim_rows = [x for x in rows if x["doc_kind"] == "expense_claim"]
+    assert len(claim_rows) == 1
+    assert claim_rows[0]["claim_type"] == "EXP"
+    assert claim_rows[0]["submitted_at"].startswith("2026-10-09")
+
+
+async def test_due_excludes_approved_travel_application(client, db_session):
+    """An approved TRA (total 0) is a pre-trip approval, not money owed."""
+    tra, exp = _claim("0.00", claim_type="TRA"), _claim("50.00")
+    db_session.add_all([tra, exp])
+    await db_session.flush()
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    ids = {x["doc_id"] for x in rows}
+    assert str(tra.id) not in ids
+    assert str(exp.id) in ids
+
+
+async def test_create_batch_rejects_travel_application(client, db_session):
+    tra = _claim("0.00", claim_type="TRA")
+    db_session.add(tra)
+    await db_session.flush()
+    r = await client.post("/finance/v1/payments/batches", headers=_h(),
+                          json={"docs": [{"doc_kind": "expense_claim", "doc_id": str(tra.id)}]})
+    assert r.status_code == 409, r.text
+    assert "Travel Applications are not payable" in r.json()["detail"]
+    await db_session.refresh(tra)
+    assert tra.status == "approved"
 
 
 async def test_batch_with_claim_executes_and_flips_status(client, db_session):

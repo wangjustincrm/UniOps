@@ -111,7 +111,11 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
         pq = pq.where(PaymentApplication.currency == currency)
     pas = (await db.execute(pq.order_by(PaymentApplication.submitted_at))).scalars().all()
 
-    cq = select(ExpenseClaim).where(ExpenseClaim.status == "approved")
+    # A Travel Application is approved like a claim but pays nothing (total 0)
+    # — leaving it in made it a pickable $0 "Claim" row in every run.
+    cq = select(ExpenseClaim).where(
+        ExpenseClaim.status == "approved",
+        ExpenseClaim.claim_type.notin_(payment_execute.NON_PAYABLE_CLAIM_TYPES))
     if currency:
         cq = cq.where(ExpenseClaim.currency == currency)
     claims = (await db.execute(cq.order_by(ExpenseClaim.created_at))).scalars().all()
@@ -121,13 +125,17 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
         {"doc_kind": "pa_dir" if r.is_direct else "pa",
          "doc_id": str(r.id), "doc_number": r.pa_number,
          "payee": r.vendor_name, "vendor_inv_no": inv_no.get(r.id, ""),
-         "amount": str(r.payment_amount), "currency": r.currency}
+         "amount": str(r.payment_amount), "currency": r.currency,
+         "claim_type": None,
+         "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None}
         for r in pas
     ]
     rows += [
         {"doc_kind": "expense_claim", "doc_id": str(c.id), "doc_number": c.claim_number,
          "payee": c.employee_name, "vendor_inv_no": "",
-         "amount": str(c.total_amount), "currency": c.currency}
+         "amount": str(c.total_amount), "currency": c.currency,
+         "claim_type": c.claim_type,
+         "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None}
         for c in claims
     ]
     return rows
@@ -160,6 +168,10 @@ async def create_batch(db: AsyncSession, *, docs: list[tuple[str, uuid.UUID]],
                     + [c.claim_number for c in claims if c.status != "approved"])
     if not_approved:
         raise ValueError(f"Not in approved status: {not_approved}")
+    not_payable = [c.claim_number for c in claims
+                   if c.claim_type in payment_execute.NON_PAYABLE_CLAIM_TYPES]
+    if not_payable:
+        raise ValueError(f"Travel Applications are not payable: {not_payable}")
     currencies = {p.currency for p in pas} | {c.currency for c in claims}
     if len(currencies) > 1:
         raise ValueError(f"A batch must be single-currency; got {sorted(currencies)}")
