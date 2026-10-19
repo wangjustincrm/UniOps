@@ -19,8 +19,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Loader2, Play, Wallet, X } from 'lucide-react'
 import { useOptionalTabStoreApi } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
-import { financeApi, OA_URL, encodeSession } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
+import { cn, toLocalDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
@@ -36,6 +36,9 @@ interface Due {
   doc_kind: string; doc_id: string; doc_number: string | null
   payee: string; vendor_inv_no?: string; amount: string; currency: string
   claim_type: string | null; submitted_at: string | null
+  // EPMS invoices the PA settles (empty for claims and OA Direct PAs) and the
+  // earliest of their due dates — a date-only string.
+  invoices?: { id: string; number: string }[]; due_date?: string | null
 }
 
 export const DUE_CURRENCIES = ['CAD', 'USD', 'CNY', 'EUR']
@@ -131,6 +134,18 @@ export default function PaymentBatchPage() {
       kind: 'iframe', src, icon: 'Receipt', closable: true,
     })
   }
+  // Open an EPMS invoice the same way the AP list does — iframe tab, keyed
+  // per invoice so it focuses an already-open one.
+  const openInvoice = (inv: { id: string; number: string }) => {
+    const session = token && user ? encodeSession(token, refreshToken ?? '', user) : ''
+    const src = `${EPMS_URL}/invoices/${inv.id}${session ? `#__session=${session}` : ''}`
+    if (!tabs) { window.open(src, '_blank', 'noopener'); return }
+    tabs.getState().openTab({
+      key: `ext:invoice:epms:${inv.id}`, title: inv.number || 'Invoice',
+      kind: 'iframe', src, icon: 'FileText', closable: true,
+    })
+  }
+  const today = new Date().toLocaleDateString('en-CA')  // local YYYY-MM-DD
   const { data: batches = [] } = useQuery({
     queryKey: ['payment-batches'],
     queryFn: () => financeApi.get<Batch[]>('/payments/batches'),
@@ -230,13 +245,14 @@ export default function PaymentBatchPage() {
                 <th className="px-3 py-2 w-28">Submitted</th>
                 <th className="px-3 py-2">Payee</th>
                 <th className="px-3 py-2 w-44">Vendor Inv No</th>
+                <th className="px-3 py-2 w-28">Due Date</th>
                 <th className="px-3 py-2 w-24">Type</th>
                 <th className="px-3 py-2 w-40 text-right">Amount</th>
               </tr>
             </thead>
             <tbody>
               {due.length === 0 && (
-                <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-400">
+                <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">
                   {dueType === 'claim'
                     ? `No approved ${currency} expense claims awaiting payment.`
                     : `No approved ${currency} payments awaiting a run.`}</td></tr>
@@ -257,7 +273,19 @@ export default function PaymentBatchPage() {
                     {d.submitted_at ? new Date(d.submitted_at).toLocaleDateString() : <span className="text-neutral-300">—</span>}
                   </td>
                   <td className="px-3 py-2">{d.payee}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-neutral-600">{d.vendor_inv_no || <span className="text-neutral-300">—</span>}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-neutral-600">
+                    {d.invoices?.length ? d.invoices.map((inv, k) => (
+                      <span key={inv.id}>
+                        {k > 0 && ', '}
+                        <button onClick={() => openInvoice(inv)} className="text-[#085E5E] underline hover:text-[#064A4A]">
+                          {inv.number || 'Invoice'}
+                        </button>
+                      </span>
+                    )) : (d.vendor_inv_no || <span className="text-neutral-300">—</span>)}
+                  </td>
+                  <td className={cn('px-3 py-2 text-xs', d.due_date && d.due_date < today ? 'font-medium text-red-600' : 'text-neutral-600')}>
+                    {d.due_date ? toLocalDate(d.due_date).toLocaleDateString() : <span className="text-neutral-300">—</span>}
+                  </td>
                   <td className="px-3 py-2 text-xs text-neutral-500">{d.doc_kind === 'expense_claim' ? `Claim · ${d.claim_type ?? ''}` : d.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'}</td>
                   <td className="px-3 py-2 text-right font-mono">{fmtMoney(d.amount, d.currency)}</td>
                 </tr>

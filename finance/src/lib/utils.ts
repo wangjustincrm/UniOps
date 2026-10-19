@@ -25,7 +25,7 @@ export function formatAmount(amount: number | string, currency = 'CAD'): string 
 // showing them in the reader's own zone is correct.
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
-function toLocalDate(value: Date | string): Date {
+export function toLocalDate(value: Date | string): Date {
   if (typeof value !== 'string') return value
   if (!DATE_ONLY.test(value)) return new Date(value)
   const [y, m, d] = value.split('-').map(Number)
