@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.27
+**Version:** 2.28
 **Date:** 2026-10-19
 **Status:** In Production
+
+> **v2.28 (2026-10-19)** — Freight pages folded into the Invoice and PA pages (§3.21, FRT-009, FRT-014, FRT-015): courier invoices are uploaded, listed and matched on the Invoices page (Freight badge, Route filter), Freight PAs are raised from the PA page (New Freight PA); the Freight page keeps Shipments and Carriers. A PO-restricted `epms.freight.manage` holder sees courier invoices; other invoice readers see the matching panel read-only. Design: `docs/superpowers/specs/2026-10-19-freight-into-invoice-pa-design.md`.
 
 > **v2.27 (2026-10-19)** — New §3.21 Courier Freight Payment (Freight): register courier tracking numbers, match carrier invoices by tracking number, and pay them with a Freight PA that has no PO, split by cost center, approved through its own chain (`pa_frt`). PA gains a `source` (§3.15.1); navigation (§6); open items OI-AH–OI-AK.
 
@@ -1971,7 +1973,7 @@ AP staff (holders of *Match Invoice*) and admins can reverse a match from Invoic
 
 **PA linkage:** Settlement and Balance PAs carry a `prepayment_pa_id` referencing the original Prepayment PA. The backend validates this linkage at creation time — the referenced PA must be of type `prepayment` and belong to the same PO. Prepayment, Settlement and Balance PAs are always raised against exactly one PO; a regular PA may cover several POs. A PA with an agreement and no PO is an **agreement PA** (§3.15.7) and is always `regular`.
 
-**PA source.** Every PA records the flow that raised it: `po`, `agreement`, `freight` (a **Freight PA**, raised from matched courier invoices on the Freight page — no PO and no agreement, §3.21) or `direct` (OA's retired Direct PA). EPMS lists, opens and acts on `po`, `agreement` and `freight` PAs; `direct` PAs are not EPMS documents. A Freight PA is always `regular`; its amounts, invoices and cost split come from the Freight page and only its title and notes can be edited on the PA.
+**PA source.** Every PA records the flow that raised it: `po`, `agreement`, `freight` (a **Freight PA**, raised from matched courier invoices with New Freight PA on the PA page — no PO and no agreement, §3.21) or `direct` (OA's retired Direct PA). EPMS lists, opens and acts on `po`, `agreement` and `freight` PAs; `direct` PAs are not EPMS documents. A Freight PA is always `regular`; its amounts, invoices and cost split come from its courier invoices and only its title and notes can be edited on the PA.
 
 #### 3.15.2 Standard PA
 
@@ -2433,14 +2435,16 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 
 ### 3.21 Courier Freight Payment (Freight)
 
-Courier charges (UPS, FedEx, Purolator…) are paid without PR or PO. Buyers register the tracking number of each pickup with the cost center that bears it; when the carrier's invoice arrives, its per-shipment detail is read by AI, matched to the registered tracking numbers, and paid by a **Freight PA** split by cost center. All freight is charged to budget account **CRM0150102**. Design: `docs/superpowers/specs/2026-10-19-freight-payment-design.md`.
+Courier charges (UPS, FedEx, Purolator…) are paid without PR or PO. Buyers register the tracking number of each pickup with the cost center that bears it; when the carrier's invoice arrives, its per-shipment detail is read by AI, matched to the registered tracking numbers, and paid by a **Freight PA** split by cost center. All freight is charged to budget account **CRM0150102**. Design: `docs/superpowers/specs/2026-10-19-freight-payment-design.md`; page layout: `docs/superpowers/specs/2026-10-19-freight-into-invoice-pa-design.md`.
+
+**Where it happens.** The Freight page holds only what is Freight's own — **Shipments** and **Carriers**. Courier invoices arrive and are matched on the **Invoices** page like every other invoice, and Freight PAs are raised on the **PA** page (FRT-014).
 
 #### 3.21.1 Access
 
 | Permission | Allows | Seeded |
 |---|---|---|
 | `epms.freight.register` | Register, edit and void one's own shipments; see one's own shipments | System Admin, Procurement Officer, Procurement Manager |
-| `epms.freight.manage` | See every shipment; upload, match, finalise, reopen and delete carrier invoices; raise Freight PAs | System Admin (the supply-chain person is granted it in Access Control) |
+| `epms.freight.manage` | See every shipment; upload, match, finalise, reopen and delete carrier invoices; raise Freight PAs; see courier invoices on the Invoices page when otherwise PO-restricted | System Admin (the supply-chain person is granted it in Access Control) |
 | `epms.freight.admin` | Maintain the carrier list | System Admin |
 
 #### 3.21.2 Requirements
@@ -2455,10 +2459,12 @@ Courier charges (UPS, FedEx, Purolator…) are paid without PR or PO. Buyers reg
 | **FRT-006** | **Auto-match** (on save and on demand; never changes a line set by hand): a shipment line matches the carrier's pending shipment whose tracking number is any of the line's package numbers → its cost center. A shipment already billed on another invoice is flagged **Billed before** and needs a decision. A line with no registered shipment is **Not registered** and needs a cost center. An adjustment follows its shipment wherever it was billed. A pickup on (or one day either side of) a matched shipment's date follows that shipment; other pickups and fees take the carrier's default cost center. |
 | **FRT-007** | On an unfinalised invoice each line's cost center, amount, tax, tracking numbers and the shipment a pickup follows can be changed; a change marks the line as set by hand. |
 | **FRT-008** | **Finalise** requires: lines before tax = invoice amount, line taxes = invoice tax, every line has a cost center, no undecided **Billed before** line. Finalising records unregistered shipments (source *from invoice*), marks matched shipments billed and the invoice `matched`. **Reopen** returns it to unfinalised (and its shipments to pending) only while no Freight PA holds it. An unfinalised invoice can be deleted. |
-| **FRT-009** | Courier invoices are handled only on the Freight page: the general invoice actions (match to PO or agreement, unmatch, edit, delete, exceptions) refuse them. They remain readable on the Invoices pages. |
+| **FRT-009** | A courier invoice is matched against shipments, never a PO or agreement: the general invoice actions (match to PO or agreement, assign, unmatch, edit, delete, exceptions) refuse it, and the lists offer **Match shipments** (to its invoice page) instead. Its invoice page shows the charges and their matching in place of the three-way match. |
 | **FRT-010** | **Freight PA.** One or more finalised invoices of the same carrier and currency, none held by another non-cancelled PA, are locked and turned into one PA: `source = freight`, no PO, no agreement, subtotal and tax = the invoices' amounts, one line item per invoice, and a cost allocation per invoice × cost center (department, CRM0150102, amount, tax) snapshotted at creation. PA detail and PDF show the cost allocation instead of PO numbers. |
 | **FRT-011** | **Approval.** A Freight PA is a `pa` document (same tasks, inbox, events and payment) that walks the `pa_frt` chain — default OPM → GM → Finance Manager → Finance BP, edited in Portal → Admin → Approval Workflows, where only company-level roles are offered. No department manager is involved or notified. |
 | **FRT-012** | **Visibility.** Besides unrestricted roles, a Freight PA is visible to its creator, `epms.freight.manage` holders and anyone holding a role that is a step of the `pa_frt` chain (GM and OPM are restricted roles whose approval tasks are not personally assigned). It appears in the PA list; the Department filter matches any of its allocations. |
+| **FRT-014** | **Pages.** *Invoices → Upload Invoice* offers *Vendor invoice or credit note* and *Courier invoice (Freight)* (the latter to `epms.freight.manage` holders, who see the Upload button even without the upload permission). The invoice lists mark courier invoices **Freight** and *All Invoices* filters by Route (PO / Agreement / Freight; PO includes invoices with no recorded route). *Payment Applications* offers **New Freight PA** to `epms.freight.manage` holders (`/pa/new?source=freight`; *Create PA* on a matched courier invoice opens it with that invoice ticked). The Freight page has the Shipments and Carriers tabs only; an old `/freight/invoices/<id>` link opens the invoice page. |
+| **FRT-015** | **Courier invoice visibility.** Unrestricted roles see every invoice. A PO-restricted caller sees courier invoices (list, detail, document chain) when holding `epms.freight.manage`; no role code is hard-wired — anyone else (e.g. the `pa_frt` approvers) is granted through the Access Control Matrix. Every invoice reader sees the matching panel; only `epms.freight.manage` changes it. |
 | **FRT-013** | **Payment and NC.** A Freight PA is paid through the standard payment executor as an EPMS PA (its invoices are marked paid); the due list labels it Freight PA. In the NC AP export a courier invoice is **one body row per cost center** with revexp CRM0150102 (all other invoices stay one summary row); a row with no tax is sent with tax rate 0. |
 
 ---

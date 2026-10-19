@@ -51,9 +51,9 @@ where every PA is raised.** Freight keeps only what is genuinely its own — shi
 1. `/pa/new?source=freight` renders Freight PA creation (today's `CreatePaTab` body: pick matched courier
    invoices, cost-centre split, create draft), the same way `?agreement_id=` renders the agreement route.
    `&invoice=<id>` pre-ticks one invoice.
-2. **New PA** on the PA list becomes a two-item menu for `epms.freight.manage` holders: *PO payment* /
-   *Freight payment*. Everyone else keeps the plain button. (Agreement PAs are still started from the
-   agreement, as today.)
+2. The PA list gets a **New Freight PA** button beside **New PA** for `epms.freight.manage` holders (two
+   buttons rather than a menu). Both open the one static `/pa/new` tab, so each re-points it first. (Agreement
+   PAs are still started from the agreement, as today.)
 3. Freight PA detail: the cost-allocation table links each invoice to `/invoices/:id`.
 
 ## C. Freight page
@@ -69,9 +69,11 @@ page, and paid from the PA page."
    every invoice. Nothing is keyed on role codes: who else may open them (e.g. the Freight PA approvers) is
    granted in the Access Control Matrix (user decision, 2026-10-19). **Tests:** an admission test for a
    restricted manager, and a denial test for a restricted user without the key.
-2. Exceptions list query excludes `match_route='freight'`.
-3. `_refuse_freight` message: "This is a courier invoice — it is matched to shipments on its invoice page".
-4. No endpoint is removed; the new places call the existing `/freight/*` endpoints. **No migration.**
+2. ~~Exceptions list excludes courier invoices~~ — not needed: a courier invoice is never in `exception`.
+3. `GET /freight/invoices/{id}` admits every invoice reader read-only (the panel now sits on the invoice
+   page, which AP and finance open without the freight key); every write stays on `epms.freight.manage`.
+4. `_refuse_freight` message: "This is a courier invoice — it is matched to shipments on its invoice page".
+5. No endpoint is removed; the new places call the existing `/freight/*` endpoints. **No migration.**
 
 ## E. Unchanged
 
