@@ -184,7 +184,10 @@ modules:
         PA / Direct PA) with a count on each; clicking a claim number opens the
         claim, and clicking a PA's vendor invoice number opens that invoice.
         The Due Date column is the earliest due date among the PA's invoices,
-        shown in red once it has passed; claims have none. Travel Applications
+        shown in red once it has passed; claims have none. Every column header
+        sorts the list — click once for ascending, again to reverse — so the
+        oldest due date or the largest amount can be brought to the top; rows
+        with no value in that column stay at the bottom. Travel Applications
         are not listed there and cannot be paid — they carry no money.
       - >-
         Bank reconciliation counts unposted vouchers (ones NC has not tallied
