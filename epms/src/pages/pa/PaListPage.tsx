@@ -227,6 +227,9 @@ export default function PaListPage() {
                     {/* A payment may settle several POs — list them all rather
                         than the header's primary one, which on its own reads as
                         though the other orders were not being paid. */}
+                    {pa.source === 'freight' && (
+                      <span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">Freight</span>
+                    )}
                     {(pa.po_numbers?.length ? pa.po_numbers : (pa.po_number ? [pa.po_number] : [])).map((n) => (
                       <div key={n} className="font-mono text-xs text-neutral-600">{n}</div>
                     ))}

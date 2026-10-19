@@ -114,7 +114,9 @@ export interface ApiInvoice {
   // "agreement" by the backend (epms-api/app/crud/invoice.py) — null before
   // any match. Not the same as `status`; a PO-route invoice keeps match_route
   // "po" even after review/exception handling.
-  match_route?: 'po' | 'agreement' | null
+  // 'freight' = a courier invoice, matched against shipments on the Freight
+  // page (/freight/invoices/:id); epms-api refuses PO/agreement matching on it.
+  match_route?: 'po' | 'agreement' | 'freight' | null
   // 1A has no receipt evidence at all: every agreement match is flagged and
   // must carry a reason. This is the escape-hatch health metric Finance watches.
   legacy_settlement?: boolean

@@ -39,6 +39,21 @@ export interface ApiPaLineItem {
   notes?: string
 }
 
+/** One (invoice × cost center) slice of a Freight PA — PaCostAllocationResponse. */
+export interface ApiPaCostAllocation {
+  invoice_id: string
+  invoice_number: string | null
+  cost_center_id: string
+  cost_center_code: string | null
+  cost_center_name: string | null
+  department_id: string
+  department_name: string | null
+  budget_code: string
+  // Decimals arrive as strings — Number() at use sites.
+  amount: number | string
+  tax_amount: number | string
+}
+
 export interface ApiPa {
   id: string
   pa_number: string
@@ -80,6 +95,12 @@ export interface ApiPa {
   // the po_id/po_number pair, which the backend leaves null on this route.
   agreement_id?: string | null
   agreement_number?: string | null
+  // po | agreement | freight. A Freight PA (courier invoices, raised from the
+  // Freight page) has neither PO nor agreement — its cost split is
+  // cost_allocations instead. Optional: a response cached from before Freight.
+  source?: 'po' | 'agreement' | 'freight' | string
+  // Freight PA only, on the detail endpoint (null/absent otherwise).
+  cost_allocations?: ApiPaCostAllocation[] | null
   invoice_ids: string[]
   prepayment_pct?: number
   expected_settlement_date?: string
