@@ -26,7 +26,7 @@ interface WorkflowNodeDef {
   sig_slot?: 'initials' | 'signature' | null
 }
 
-type ActionKey = 'pr' | 'po' | 'posign' | 'agr' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
+type ActionKey = 'pr' | 'po' | 'posign' | 'agr' | 'pa' | 'pa_frt' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
 
 interface CompanyConfig {
   name: string
@@ -1376,7 +1376,7 @@ function RemittanceSettings() {
 // so a key missing from this list is not merely uneditable, it is DELETED by
 // the next workflow save. approval-api reseeds it on its next boot (main.py
 // only fills gaps), but until then `workflow_defs->'agr'` reads NULL.
-const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'posign', 'agr', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
+const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'posign', 'agr', 'pa', 'pa_frt', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
 
 const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   pr:          'Purchase Request',
@@ -1384,6 +1384,7 @@ const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   posign:      'PO Sign-off (NC imports)',
   agr:         'Purchase Agreement',
   pa:          'PA (PO-Linked)',
+  pa_frt:      'PA (Courier Freight)',
   pa_dir:      'PA (Direct)',
   exp:         'General Expense',
   mil:         'Mileage Claim',
@@ -1401,6 +1402,15 @@ const ACTION_KEY_LABELS: Record<ActionKey, string> = {
 const SIGNOFF_ROLE_VALUES = new Set([
   'gm', 'opm', 'procurement_manager', 'finance_manager', 'vendor_manager',
   'finance_director',
+])
+
+// A Freight PA pays one courier invoice split over several departments, so no
+// step can resolve by department: a department-scoped role would resolve
+// against whoever raised the PA, and gm_or_opm would always land on the GM.
+// Only company-level posts are offered (approval-api engine.workflow_key).
+const FREIGHT_ROLE_VALUES = new Set([
+  'opm', 'gm', 'procurement_manager', 'finance_manager', 'finance_director',
+  'finance_bp', 'ap_clerk',
 ])
 
 const SIG_SLOTS: { value: '' | 'initials' | 'signature'; label: string }[] = [
@@ -1439,6 +1449,13 @@ const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   // Mirrors approval-api crud/engine.py::_WORKFLOW_DEFAULTS['agr'].
   agr:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'procurement_manager', role: 'procurement_manager', label: 'Procurement Manager' }, { id: 'finance_manager', role: 'finance_manager', label: 'Finance Manager' }],
   pa:     [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
+  // Mirrors approval-api crud/engine.py::_WORKFLOW_DEFAULTS['pa_frt'].
+  pa_frt: [
+    { id: 'opm', role: 'opm', label: 'Operations Manager' },
+    { id: 'gm', role: 'gm', label: 'General Manager' },
+    { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' },
+    { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' },
+  ],
   pa_dir: [{ id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
   exp:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],
   mil:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],
@@ -1491,15 +1508,18 @@ function ApprovalWorkflows() {
     setSteps(steps.filter((_, idx) => idx !== i))
 
   const isSignoff = activeKey === 'posign'
+  const isFreight = activeKey === 'pa_frt'
   const roleOptions = isSignoff
     ? WORKFLOW_ROLES.filter(r => SIGNOFF_ROLE_VALUES.has(r.value))
-    : WORKFLOW_ROLES
+    : isFreight
+      ? WORKFLOW_ROLES.filter(r => FREIGHT_ROLE_VALUES.has(r.value))
+      : WORKFLOW_ROLES
 
   const addStep = () =>
     setSteps([...steps, {
       id: crypto.randomUUID(), label: 'New Step',
       // dept_manager cannot route a sign-off — see SIGNOFF_ROLE_VALUES.
-      role: isSignoff ? 'procurement_manager' : 'dept_manager',
+      role: isSignoff ? 'procurement_manager' : isFreight ? 'finance_manager' : 'dept_manager',
       ...(isSignoff ? { sig_slot: null } : {}),
     }])
 
@@ -1552,6 +1572,7 @@ function ApprovalWorkflows() {
             )}
           >
             {key === 'pa_dir'      ? 'PA-DIR'
+              : key === 'pa_frt'    ? 'Freight PA'
               : key === 'vms_visit' ? 'VMS Visit'
               : key === 'posign'    ? 'PO Sign-off'
               : key.toUpperCase()}
@@ -1564,6 +1585,12 @@ function ApprovalWorkflows() {
         <p className="text-xs text-neutral-400 font-medium uppercase tracking-wide">
           {ACTION_KEY_LABELS[activeKey]} — approval chain
         </p>
+        {isFreight && (
+          <p className="text-xs text-neutral-500">
+            Courier invoices (EPMS → Freight) cover several departments at once, so only
+            company-level roles can approve them. Department-based roles are not offered.
+          </p>
+        )}
 
         {steps.length === 0 && (
           <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-sm text-neutral-400">
