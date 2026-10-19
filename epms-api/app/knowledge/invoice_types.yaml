@@ -22,9 +22,10 @@ doc_type: invoice
 field: status
 
 what_it_is: >
-  What the vendor billed. An invoice is matched against the purchase order it
-  belongs to and the receipt proving the goods arrived — the three-way match —
-  and only a matched invoice can be paid.
+  What the vendor billed. An invoice is matched against the purchase order (or
+  agreement) it belongs to, by AMOUNT, and only a matched invoice can be paid.
+  Goods receipts that already exist are linked to it for reference, but received
+  quantities do not decide whether it matches — see `rules`.
 
 how_types_are_set: >
   Not chosen. The state follows from matching: EPMS moves an invoice through
@@ -43,8 +44,8 @@ values:
     label: Unmatched
     covers: Uploaded, not yet tied to a purchase order.
     when: >
-      Where every invoice starts. It stays here until someone matches it, or
-      until it is auto-attached to a PO whose receipts line up.
+      Where every invoice starts. It stays here until it is matched to a
+      purchase order or an agreement.
     notes:
       - An invoice can be split across several purchase orders. If it is, each
         allocation line carries its own share, and the split is what gets paid
@@ -92,10 +93,14 @@ values:
 
   - value: exception
     label: Exception
-    covers: Something does not line up — quantity, price, or missing receipt.
+    covers: The amount billed is over what the order (or agreement) allows.
     when: >
-      Raised when the three-way match fails. It carries a task to whoever has
-      to resolve it, and it cannot be paid until that is cleared.
+      Raised when the total invoiced against a PO line — across every invoice
+      matched to it, before tax — exceeds the line's value by more than the
+      configured tolerance (or, for an agreement, falls outside its tolerance or
+      schedule). A missing receipt or a quantity difference does not cause it.
+      It carries a task to whoever has to resolve it, and it cannot be paid
+      until that is cleared.
 
   - value: approved
     label: Approved
@@ -115,3 +120,42 @@ values:
     when: >
       Also written by Finance on execution, when a payment covers only part of
       what was billed.
+
+# ── Rules people ask about ───────────────────────────────────────────────────
+# Each states what the code does, with where. The narrator answers these from
+# here, word for word in meaning — without them "三单匹配会比较收货数量吗？" got
+# yes / no / yes on three tries (ISS-0010), and the `what_it_is` above used to
+# say the receipt was part of the match, which it is not.
+rules:
+  - id: matching_compares_amounts_not_received_quantity
+    asked_as:
+      - does three-way match compare received quantities
+      - 三单匹配会比较收货数量吗
+      - can an invoice be matched before the goods are received
+    answer: >
+      No. Matching compares AMOUNTS, not received quantities. For each PO line
+      the system adds up what every matched invoice has billed for it (before
+      tax) and compares that with the line's value. Billing less is allowed —
+      a line can be invoiced in several parts. Only billing MORE than the line's
+      value by more than the configured tolerance puts the invoice in
+      exception. Goods receipts are not compared at all, so an invoice can be
+      Matched while nothing has been received yet. Receipts that exist are
+      linked to the invoice for reference.
+      Receiving matters at the NEXT step, payment: a payment application for a
+      PO (other than a prepayment) can only be created once that PO has a
+      matched invoice AND some evidence of receipt — a goods receipt, or a
+      received quantity on its lines. That checks that something was received,
+      still not that the quantities agree. Without it the PA is refused unless a
+      user with the "Override Receipt on PA" permission overrides it with a
+      reason. A matched invoice with no receipt yet is why a "Confirm Goods
+      Receipt" task appears. Agreement payments have no receipt check.
+    enforced_in: "epms-api app/crud/invoice.py match() (amount variance vs PoLineItem.line_total); app/api/v1/pa.py receipt gate + crud/po.py po_has_three_way_matched_invoice; PRD EPMS INV-3WM-006, PA-013"
+  - id: invoice_internal_number
+    asked_as:
+      - how are invoice numbers generated
+    answer: >
+      The vendor's own invoice number is kept as typed. EPMS also gives every
+      invoice an internal reference INV-YYYY-NNNN: the year it was entered, then
+      the next free number in that year.
+    enforced_in: "epms-api app/crud/invoice.py _next_ref"
+

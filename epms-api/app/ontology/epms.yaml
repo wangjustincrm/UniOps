@@ -44,7 +44,9 @@ entities:
       # copy and the one the assistant answers from.
       type:
         kind: int
-        label: "Procurement type"
+        label: "Procurement type. Type 1 (Raw Materials / Packaging) cannot be
+          chosen when creating a PR in EPMS — those orders come from NC; say so
+          whenever the types are listed"
         value_labels:
           1: "Raw Materials / Packaging"
           2: "Consumables"
@@ -67,6 +69,15 @@ entities:
       budget_code: {kind: text, label: "Budget account code"}
       project_code: {kind: text, label: "Project code"}
       required_by: {kind: date, label: "Date the requester needs it by"}
+      # Added 2026-10-18 (ISS-0004): shown on the PR page, asked about, and not
+      # reachable — "服务完成日期是哪天？负责人是谁？" had no field to read.
+      service_completion_date: {kind: date, label: "Service/Project expected completion date (service and project PRs)"}
+      service_owner_name:
+        kind: text
+        label: "Service/Project Owner — who confirms the work is done. For a
+          service or project PR with an owner set, that person; otherwise the
+          requester"
+      requester_full_name: {kind: text, label: "Requester — who raised the PR"}
       is_prepaid: {kind: bool, label: "Prepaid purchase"}
       over_budget: {kind: bool, label: "Exceeds its budget account"}
       submitted_at: {kind: datetime, label: "Submitted at"}
@@ -457,7 +468,9 @@ entities:
       # found values in the data the planner had never been told about.
       status:
         kind: enum
-        label: "Status"
+        label: "Status. A REJECTED payment application has status cancelled —
+          the approval engine never writes rejected for a PA. To find rejected
+          PAs, look for cancelled ones; filtering on rejected finds none"
         values: [draft, submitted, in_review, approved, rejected, returned,
                  processed, cancelled, paid]
       pa_type:

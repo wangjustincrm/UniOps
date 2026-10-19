@@ -75,3 +75,23 @@ values:
     notes:
       - Milestones can only be attached to this type; supplying them on any
         other kind is rejected.
+
+# ── Rules people ask about ───────────────────────────────────────────────────
+rules:
+  - id: agreement_numbering
+    asked_as:
+      - how are agreement numbers generated
+    answer: >
+      AGR-YYYYMM-NNNN: the year and month it was created (UTC), then a 4-digit
+      sequence that restarts each month.
+    enforced_in: "epms-api app/crud/agreement.py _next_number"
+  - id: active_is_not_in_force
+    asked_as:
+      - which agreements are still valid
+      - has this agreement expired
+    answer: >
+      Status Active means the agreement was approved; it does not mean it is
+      still in force. Nothing moves an agreement to Expired when its Valid To
+      date passes, so whether it is in force is read from Valid From / Valid To
+      (plus its grace days for invoices).
+    enforced_in: "epms-api app/crud/agreement.py (no write of expired/closed anywhere)"

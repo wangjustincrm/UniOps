@@ -99,6 +99,8 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
     (ISS-0001). They are marked `_fixed_text` where they are written.
     """
     out = await _chat(body, db, user, token)
+    if isinstance(out.get("answer"), str):
+        out["answer"] = assistant_llm.strip_markup(out["answer"])
     if out.pop("_fixed_text", False) and out.get("answer"):
         language = reply_language.detect(body.message)
         plainly_english = language == "English" or (
@@ -387,8 +389,8 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
 async def _answer_whats_next(db, user, body, actor) -> dict:
     """Their own inbox, explained. No arguments — it is always about the asker."""
     tasks = await guide_view.my_tasks(user.get("role", ""), actor) if actor else []
-    payload = {"question": body.message, "kind": "tasks",
-               "open_task_count": len(tasks), "tasks": tasks}
+    # Counted here, not by the model — see guide_view.task_summary (ISS-0011).
+    payload = {"question": body.message, "kind": "tasks", **guide_view.task_summary(tasks)}
     try:
         told = await assistant_llm.narrate_guide(body.message, payload)
     except assistant_llm.LlmUnavailable as exc:
