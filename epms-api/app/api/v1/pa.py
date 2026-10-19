@@ -671,10 +671,18 @@ async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
 
 
 @router.patch("/{pa_id}", response_model=PaResponse)
-async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWriteDep):
+async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: CurrentUserPayload):
     pa = await pa_crud.get_by_id(db, pa_id)
     if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
+    # epms.pa.write, or — for a Freight PA — the freight manager who raised it
+    # from the Freight page and may not hold the general PA key.
+    from uniops_authz import has_permission
+    uid, role = uuid.UUID(user["sub"]), user.get("role") or ""
+    if not (await has_permission(db, uid, role, "epms.pa.write") or (
+            pa.source == "freight"
+            and await has_permission(db, uid, role, "epms.freight.manage"))):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
     if pa.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail=f"Cannot edit PA in status '{pa.status}'")
     if pa.source == "freight":

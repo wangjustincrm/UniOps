@@ -46,6 +46,16 @@ values:
         it was matched to, and non-PO fees on the invoice (freight, for example)
         become lines of their own. You only pick PO lines yourself when an
         invoice was matched against the PO total alone.
+      - >-
+        Courier charges (UPS, FedEx, Purolator…) are not paid this way. Buyers
+        register each tracking number on EPMS → Freight with the cost center
+        that bears it; the supply-chain person uploads the carrier's invoice
+        there, it is matched by tracking number, and a Freight PA is raised from
+        the matched invoices — no PO, no agreement, split by cost center and
+        charged to budget account CRM0150102. A Freight PA is a regular PA
+        approved by OPM → GM → Finance Manager → Finance BP (configurable as
+        "Freight PA" in Portal → Admin → Approval Workflows); only its title and
+        notes can be edited, its amounts come from the invoices.
 
   - value: prepayment
     label: Prepayment
