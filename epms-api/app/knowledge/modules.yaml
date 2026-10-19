@@ -86,6 +86,16 @@ modules:
         goes straight back to the approver who returned it, and the approvals
         given before that stand. The same holds for every kind of document in
         UniOps.
+      - >-
+        Any list in UniOps can be sorted by clicking a column header: once for
+        ascending, again to reverse. On a list that runs over several pages the
+        whole list is sorted, not just the page on screen, and sorting goes
+        back to page 1. Rows with nothing in that column stay at the bottom
+        either way. On requisitions, orders and payment applications, sorting
+        by Status also groups the ones waiting for approval by how far along
+        the approval chain they are, then by approver. Requisitions open newest
+        submitted first, agreements by number and goods receipts by received
+        date, newest first.
 
   - key: oa
     label: OA — Office Automation

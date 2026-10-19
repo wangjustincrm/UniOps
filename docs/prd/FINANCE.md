@@ -1,9 +1,15 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.3
+**Version:** 2.4
 **Date:** 2026-10-19
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.4** (2026-10-19)
+
+- Every Finance list sorts by clicking a column header, ascending then descending (column sorting rule in EPMS.md §3.20 (UI-SORT-001…007)). AP invoices, the AP reconciliation drill-down, JV validation lines, Payments, the QBO mirror and Journal Vouchers sort on the server across all pages; on Journal Vouchers empty values now sort last and a newly clicked column starts ascending.
+- AR invoices, the Payment Batches history, the AP cash-flow drill-down, AP ledger health, duplicate invoices and unallocated lines now page on the server instead of showing only the newest N rows, so sorting covers every matching row.
+- The AP reconciliation, JV validation and AP ledger health CSV exports follow the on-screen sort. AP and AR aging tables are sortable. Reports with total rows or order-dependent columns (trial balance, account ledger, cash-flow buckets, bank reconciliation workspace) are not.
 
 **What changed in version 2.3** (2026-10-19)
 

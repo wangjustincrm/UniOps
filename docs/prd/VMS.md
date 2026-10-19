@@ -1,9 +1,14 @@
 # VMS (Visitor Management System) — Product Requirements Document
 
-**Version**: V2.9
-**Date**: 2026-10-16
+**Version**: V2.10
+**Date**: 2026-10-19
 **Status**: As-built. Describes the system on the main line as of 2026-10-16. Everything marked **Implemented** is in production; wanted-but-not-built items are marked **Not implemented** and collected in §13 Open Items.
 **Scope**: Visitor appointments, approval, health and safety checks, badge printing (= check-in), QR check-out, overdue alerts and the compliance audit trail for Canada Royal Milk ULC's plant and offices.
+
+**What changed in V2.10** (2026-10-19)
+
+- Visit lists, the audit log, health declarations and active visits sort by clicking a column header, ascending then descending (column sorting rule in EPMS.md §3.20 (UI-SORT-001…007)); paged lists sort on the server.
+- All Visits and Today now page on the server; they used to show only the first 50 / 100 visits.
 
 **What changed in this version (V2.8 → V2.9)**
 

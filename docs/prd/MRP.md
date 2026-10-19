@@ -1,9 +1,14 @@
 # MRP — Product Requirements Document
 
-**Version:** 2.0
-**Date:** 2026-10-16
+**Version:** 2.1
+**Date:** 2026-10-19
 **Status:** Current. Describes the MRP module as built on main. Requirements from the original plan that were never built are marked **Not implemented** and listed under Open Items.
 **Scope:** Single-plant milk-powder MRP: sales forecast, master production schedule (MPS), multi-level BOM explosion and purchase suggestions, using read-only WMS and NC65 data.
+
+**What changed in version 2.1** (2026-10-19)
+
+- Every list sorts by clicking a column header, ascending then descending (column sorting rule in EPMS.md §3.20 (UI-SORT-001…007)): purchase suggestions, supply parameters, capacity rules, week exceptions, forecast outlooks and consignment stock. Purchase suggestions still open sorted by order date (FR-PUR-08).
+- Consignment stock pages on the server; it used to show only the first 100 entries.
 
 **What changed in this version**
 
@@ -342,7 +347,7 @@ V1.0 parameters that were **not built**: safety stock, reorder point, fixed/max 
 | FR-PUR-05 | Order date = need week − supplier lead time. The quantity is raised to the MOQ first, then rounded up to the order multiple (this order keeps the result at or above the MOQ). Weeks with no net requirement produce no line. The primary supplier is used; a material with no primary takes its first supplier. | Built |
 | FR-PUR-06 | Unknowns are flagged, never assumed. Each line carries separate flags for supplier missing, lead time missing (calculated as 0 days) and order date already passed (with how many days ago). The run summary counts each flag. | Built |
 | FR-PUR-07 | Each run is stored and replayed exactly as calculated. Loss rates are snapshotted on the run. Numbering starts with `PUR-`. | Built |
-| FR-PUR-08 | The screen sorts lines by order date, shows the flag counts at the top, has a legend, explains MOQ increases in a tooltip, and can hide completed lines. When both loss rates were 0, it notes that in-transit stock is not counted yet. | Built |
+| FR-PUR-08 | The screen opens with lines sorted by order date and can be re-sorted by any column header (EPMS.md UI-SORT-001), shows the flag counts at the top, has a legend, explains MOQ increases in a tooltip, and can hide completed lines. When both loss rates were 0, it notes that in-transit stock is not counted yet. | Built |
 | FR-PUR-09 | Each line has a status: pending / ordered / ignored. This is in place for a future requisition link. | Built |
 | FR-PUR-10 | Excel export sorted by order date. Flags are written as text columns, not colours. | Built |
 | FR-PUR-11 | Convert suggestions into EPMS purchase requisitions and write back the requisition number and status (see EPMS.md). | Not implemented |
