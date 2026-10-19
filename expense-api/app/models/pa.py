@@ -32,6 +32,10 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
         UUID(as_uuid=True), nullable=True
     )
 
+    # po | agreement | freight | direct (epms-api fr01_freight). Read only to
+    # tell a Freight PA apart from a Direct PA — see is_direct.
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="po",
+                                        server_default="po")
     vendor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, index=True
     )
@@ -86,4 +90,8 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
         source of truth for every doc_kind derivation in this service — do not
         re-derive po_id-is-None inline at a new call site.
         """
-        return self.po_id is None and self.agreement_id is None
+        # A Freight PA (epms-api fr01_freight) has both NULL too but is EPMS
+        # spend paid as `pa`. Test `source` only to exclude it: rows written
+        # before fr01, or by code that never sets source, keep their meaning.
+        return (self.po_id is None and self.agreement_id is None
+                and self.source != "freight")
