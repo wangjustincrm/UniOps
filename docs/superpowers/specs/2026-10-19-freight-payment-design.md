@@ -173,7 +173,7 @@
 
 `payment_applications` 新增 `source` 列：`po` / `agreement` / `freight` / `direct`。迁移时按现有数据回填，规则是：有 po_id 填 `po`，有 agreement_id 填 `agreement`，其余填 `direct`。
 
-- `is_direct` 改成 `source = 'direct'`，在 epms / approval / expense / finance 四个服务的模型里一起改。
+- `is_direct` 改成「两个外键都为空 **且** `source != 'freight'`」(实施时修订：只看 `source = 'direct'` 的话，OA 已下线路径的旧代码和测试插入的行不写 `source`，会被误判成普通 PA)。
 - EPMS 的归属过滤改为 `source IN ('po','agreement','freight')`，`core/ontology.py` 的 `scope_pa` 和 `pa_scope_conditions` 同步改。
 - 只加一个 `freight_batch_id` 外键也能区分，但每个判断都要写成三个外键的组合，容易漏改；用一个 `source` 列更直接。
 
@@ -257,17 +257,12 @@ PA 表头：`subtotal` = 各发票 `amount` 之和，`tax_amount` = 各发票税
 
 ### 8.1 审批
 
-- 新单据类型 **`pa_frt`**，默认流程 `opm → gm → finance_manager → finance_bp`(`engine.py` 的 `_WORKFLOW_DEFAULTS`)。用户可以在 Portal 里改。
-- 必须用**单独的 `opm` 和 `gm` 两个角色**，不能用 `gm_or_opm`。`gm_or_opm` 按单据部门解析，Freight PA 没有单一部门，会一直落到 GM，OPM 那一步就被跳过了。
-- 流程里如果加了 `dept_manager` / `director` 这类按部门解析的步骤，会按建单人的部门解析(引擎现有的兜底)。在 Portal 配置界面提示「Freight PA 跨部门，不建议使用按部门解析的角色」。
-- 驳回 → `cancelled`(和 `pa` 一致)。批准后 → 生成 `process_pa` 付款任务(和 `pa` 一致)。
-- 新单据类型要登记的地方(调研列出的清单)：
-  - approval-api：`_DOC_META`、`_WORKFLOW_DEFAULTS`、`_POST_APPROVE`、驳回规则、`_READ_OUT_TYPES`
-  - epms-api：`crud/task.py` 的 `TASK_LIVENESS` 和相关表、`tests/test_task_liveness_registry.py`
-  - 前端：Portal `ACTION_KEYS`、`PortalHome.tsx` 的 `DOC_PATH`、`epms/src/lib/taskTypes.ts` 的 `HREF_MAP`、`useTasks.ts`
-  - expense-api：`PA_DOC_TYPES`
-  - 助理知识库：`epms-api/app/knowledge/pa_types.yaml`
-  - **向导层**(硬规则：每次需求变更都要同步)
+> **实施时修订(2026-10-19)**：最初设计是新增单据类型 `pa_frt`。调研发现 epms-api 里有二十多处把 PA 的单据类型写死为 `pa`(待办、审批记录、签字、看板、邮件链接、任务存活表等)，漏一处就会出现「待办看得到、单据打不开」。所以改为：**单据类型仍是 `pa`，只是流程换一条**。
+
+- 运费 PA 的单据类型仍是 `pa`，审批引擎按 `source = 'freight'` 改读 `workflow_defs['pa_frt']` 这条流程(`approval-api` 的 `engine.workflow_key`)。待办、审批记录、签字、邮件、付款任务全都沿用 `pa` 的那一套，不用改。
+- `pa_frt` 默认流程 `opm → gm → finance_manager → finance_bp`(`_WORKFLOW_DEFAULTS`)，Portal 的审批流程配置里可以改(`ACTION_KEYS` 已加，否则下次保存会被删)。
+- 必须用**单独的 `opm` 和 `gm` 两个角色**，不能用 `gm_or_opm`。`gm_or_opm` 按单据部门解析，Freight PA 没有单一部门，会一直落到 GM，OPM 那一步就被跳过了。Portal 在这条流程上只提供公司级角色。
+- 驳回 → `cancelled`；批准后 → `process_pa` 付款任务(都和 `pa` 一致，因为本来就是 `pa`)。
 
 ### 8.2 权限(新增权限键)
 
