@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, XCircle, Trash2, Paperclip } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
-import { StatusBadge } from '@/components/ui/badge'
+import { StatusBadge, statusLabel } from '@/components/ui/badge'
 import { formatAmount, formatDate, cn } from '@/lib/utils'
 import { useVoidReceipt, useApReviewReceipt } from '@/hooks/useAgreementReceipts'
 import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
@@ -104,6 +105,16 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
 
   const agedCount = receipts.filter(isAged).length
 
+  // The agreement's receipts arrive whole, so sorting them here is exact.
+  // Attachments are not sortable: each row loads its own list on demand.
+  const { rows: sortedReceipts, sort, onSort } = useSortableRows(receipts, {
+    receipt_date: (r) => r.receipt_date,
+    receipt_ref: (r) => r.receipt_ref,
+    total: (r) => receiptTotal(r),
+    received_by: (r) => resolveUserName(users, r.received_by),
+    status: (r) => statusLabel(r.status),
+  })
+
   const handleVoid = (receiptId: string, receiptRef: string | null) => {
     // Voiding is terminal — 'voided' isn't in crud/agreement_receipt.py's
     // VOIDABLE set, so there is no undo. Same confirm() convention as the
@@ -140,21 +151,22 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Date</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Reference #</th>
+                <SortTh label="Date" sortKey="receipt_date" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Reference #" sortKey="receipt_ref" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
                 {/* Renders total_amount (tax-inclusive) — ReceiptEntryForm labels the
                     tax-exclusive field "Amount (before tax)", so this column must say
                     "Total", not "Amount", or the same word means two different things
                     on the two halves of this feature. */}
-                <th className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500">Total</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Picked up by</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Status</th>
+                <SortTh label="Total" sortKey="total" sort={sort} onSort={onSort} align="right"
+                  className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500" />
+                <SortTh label="Picked up by" sortKey="received_by" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Attachments</th>
                 {!readOnly && <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {receipts.map((receipt) => {
+              {sortedReceipts.map((receipt) => {
                 const receivedByName = resolveUserName(users, receipt.received_by)
                 const aged = isAged(receipt)
                 const canVoid = !readOnly && canWrite && VOIDABLE_STATUSES.has(receipt.status)

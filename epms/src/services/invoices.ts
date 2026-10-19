@@ -219,9 +219,11 @@ export interface InvoiceFilters {
   po_id?: string
   agreement_id?: string
   search?: string
-  // 'due_date' | '-due_date'. Omit for the server default (newest uploaded
-  // first) — every other caller of this endpoint relies on that order.
+  // Column key of epms-api crud/invoice.py INVOICE_SORTABLE, with `dir`
+  // (the legacy '-due_date' still means descending). Omit for the server
+  // default (newest uploaded first) — every other caller relies on that order.
   sort?: string
+  dir?: 'asc' | 'desc'
   // Past the due date and not yet paid, evaluated against the PLANT's calendar
   // day on the server (the API container runs in UTC).
   overdue?: boolean

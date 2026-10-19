@@ -1,7 +1,7 @@
 """Goods Receipt endpoints."""
 import uuid
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
@@ -12,6 +12,7 @@ from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.access_scope import build_scope
 from app.crud import gr as gr_crud
+from app.crud._list_order import sort_clauses
 from app.crud import gr_report as gr_report_crud
 from app.crud import po as po_crud
 from app.crud.pr_owner import get_pr_owner_id
@@ -39,7 +40,10 @@ async def list_grs(
     gr_type: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
+    sort_clauses(sort, dir, gr_crud.SORTABLE, ())   # unknown key → 422, before any work
     scope = await build_scope(db, user)
     # Access Control Matrix gate — return empty when view_gr is disabled.
     if not scope["perms"].get("view_gr", False):
@@ -48,7 +52,7 @@ async def list_grs(
         db, status=status, po_id=po_id, vendor_id=vendor_id,
         search=search, gr_type=gr_type,
         po_ids_subq=scope["po_subq"],
-        page=page, page_size=page_size,
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
     return GrListResponse(items=items, total=total)
 
@@ -122,7 +126,7 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
 
 
 async def _receiving_rows(db, user, *, date_from, date_to, department_id, vendor_id,
-                          search, page=None, page_size=None):
+                          search, page=None, page_size=None, sort=None, dir="asc"):
     """Shared body of the JSON and xlsx endpoints — same rows, same gate.
 
     Visibility is the GR list's, not a looser one: a report is a different
@@ -137,7 +141,7 @@ async def _receiving_rows(db, user, *, date_from, date_to, department_id, vendor
         date_from=date_from, date_to=date_to,
         department_id=department_id, vendor_id=vendor_id, search=search,
         po_ids_subq=scope["po_subq"],
-        page=page, page_size=page_size,
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
 
 
@@ -152,12 +156,15 @@ async def receiving_report(
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
     """One page of the window's received lines, with the window's own totals."""
+    sort_clauses(sort, dir, gr_report_crud.SORTABLE, ())   # unknown key → 422
     rows, total, summary, truncated = await _receiving_rows(
         db, user, date_from=date_from, date_to=date_to,
         department_id=department_id, vendor_id=vendor_id, search=search,
-        page=page, page_size=page_size,
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
     return ReceivingReportResponse(
         items=[ReceivingReportRow.model_validate(r) for r in rows],
@@ -176,11 +183,16 @@ async def export_receiving_report(
     department_id: uuid.UUID | None = Query(default=None),
     vendor_id: uuid.UUID | None = Query(default=None),
     search: str | None = Query(default=None),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
-    """The whole window as an xlsx download — never just the page on screen."""
+    """The whole window as an xlsx download — never just the page on screen,
+    in the order the screen is sorted by."""
+    sort_clauses(sort, dir, gr_report_crud.SORTABLE, ())   # unknown key → 422
     rows, _total, _summary, _truncated = await _receiving_rows(
         db, user, date_from=date_from, date_to=date_to,
         department_id=department_id, vendor_id=vendor_id, search=search,
+        sort=sort, dir=dir,
     )
     content = build_receiving_workbook(rows, date_from=date_from, date_to=date_to)
     filename = f"receiving-report-{date.today()}.xlsx"

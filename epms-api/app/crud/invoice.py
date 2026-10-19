@@ -6,11 +6,12 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.delegation import local_today
+from app.crud._list_order import lower_text, sort_clauses
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import agreement_schedule as agreement_schedule_crud
@@ -183,6 +184,37 @@ async def _next_ref(db: AsyncSession) -> str:
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
 
+# Sortable columns of the invoice list (sort=<key>&dir=asc|desc). Each key sorts
+# what its column SHOWS: the "Invoice #" of the Unmatched/Exceptions tabs is the
+# internal ref, "Upload Date" is created_at (uploaded_at is derived from it),
+# "Status" is the badge label, not the code.
+_INVOICE_STATUS_LABEL = case(
+    (Invoice.status == "unmatched", "Unmatched"),
+    (Invoice.status == "matched", "Matched"),
+    (Invoice.status == "exception", "Exception"),
+    (Invoice.status == "match_review", "Pending Review"),
+    (Invoice.status == "approved", "Approved"),
+    (Invoice.status == "paid", "Paid"),
+    else_=Invoice.status,
+)
+INVOICE_SORTABLE = {
+    "internal_ref": lower_text(Invoice.internal_ref),
+    "vendor_name": lower_text(Invoice.vendor_name),
+    "vendor_invoice_number": lower_text(Invoice.vendor_invoice_number),
+    "total_amount": Invoice.total_amount,
+    "invoice_date": Invoice.invoice_date,
+    "due_date": Invoice.due_date,
+    "uploaded_at": Invoice.created_at,
+    # SLA badge = days since upload, so "least elapsed first" is newest upload.
+    "sla": func.now() - Invoice.created_at,
+    "status": func.lower(_INVOICE_STATUS_LABEL),
+    "po_number": lower_text(Invoice.po_number),
+    "po_total": Invoice.po_total,
+    "variance": Invoice.variance,
+    "variance_pct": Invoice.variance_pct,
+}
+
+
 async def get_all(
     db: AsyncSession,
     *,
@@ -192,6 +224,7 @@ async def get_all(
     agreement_id: uuid.UUID | None = None,
     search: str | None = None,
     sort: str | None = None,
+    dir: str = "asc",
     overdue: bool = False,
     po_ids_subq=None,
     own_uploads_user_id: uuid.UUID | None = None,
@@ -255,11 +288,12 @@ async def get_all(
     # created_at desc stays the default AND the tiebreaker: several invoices
     # routinely share a due date, and without a stable second key the same row
     # can appear on two pages or on none.
-    if sort == "due_date":
-        ordering = [Invoice.due_date.asc(), Invoice.created_at.desc()]
-    elif sort == "-due_date":
-        ordering = [Invoice.due_date.desc(), Invoice.created_at.desc()]
-    else:
+    # Legacy form `sort=-due_date` (descending) is still accepted.
+    if sort is not None and sort.startswith("-"):
+        sort, dir = sort[1:], "desc"
+    ordering = sort_clauses(sort, dir, INVOICE_SORTABLE,
+                            tiebreak=[Invoice.created_at.desc(), Invoice.id])
+    if ordering is None:
         ordering = [Invoice.created_at.desc()]
     items = list((await db.execute(
         q.order_by(*ordering).offset(offset).limit(page_size)

@@ -4,8 +4,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Upload, Search, AlertTriangle, CheckCircle2, Clock,
   X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2, UserPlus,
-  ArrowDown, ArrowUp, ArrowUpDown,
 } from 'lucide-react'
+import { SortTh, useSort, sortParams } from '@uniops/shell'
 import { parseInvoiceFile, type ParseFailureKind, type ParsedTotalCheck } from '@/lib/invoice-parser'
 import { EXPENSE_BASE } from '@/lib/api'
 import { createPortal } from 'react-dom'
@@ -1299,10 +1299,22 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
 // ─── Tab content components ───────────────────────────────────────────────────
 
+// Header-cell classes shared by the four list tabs. Every tab is paged by the
+// API, so sorting is server-side (epms-api crud/invoice.py INVOICE_SORTABLE)
+// and a sort change goes back to page 1.
+const TH = 'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap'
+type InvoiceSortKey =
+  | 'internal_ref' | 'vendor_name' | 'vendor_invoice_number' | 'total_amount'
+  | 'invoice_date' | 'due_date' | 'uploaded_at' | 'sla' | 'status'
+  | 'po_number' | 'po_total' | 'variance' | 'variance_pct'
+
 function UnmatchedTab() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  const { data } = useInvoices({ status: 'unmatched', page, page_size: pageSize })
+  // Oldest upload first by default — the SLA queue. This used to be a sort of
+  // the current page only; it is now the server's order across all pages.
+  const [sort, onSort] = useSort<InvoiceSortKey>({ key: 'uploaded_at', dir: 'asc' }, () => setPage(1))
+  const { data } = useInvoices({ status: 'unmatched', ...sortParams(sort), page, page_size: pageSize })
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [assigningInv, setAssigningInv] = useState<ApiInvoice | null>(null)
@@ -1317,9 +1329,7 @@ function UnmatchedTab() {
     isAp || inv.uploaded_by === user?.id ||
     (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)
 
-  const unmatched = [...(data?.items ?? [])].sort(
-    (a, b) => new Date(a.uploaded_at).getTime() - new Date(b.uploaded_at).getTime()
-  )
+  const unmatched = data?.items ?? []
   const total = data?.total ?? 0
 
   if (unmatched.length === 0) {
@@ -1346,9 +1356,13 @@ function UnmatchedTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-neutral-200 bg-neutral-50">
-              {['Vendor', 'Invoice #', 'Amount', 'Invoice Date', 'Upload Date', 'SLA', 'Action'].map((h) => (
-                <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap ${h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>
-              ))}
+              <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="Invoice #" sortKey="internal_ref" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className={TH} />
+              <SortTh label="Invoice Date" sortKey="invoice_date" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="Upload Date" sortKey="uploaded_at" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="SLA" sortKey="sla" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <th className={`${TH} text-left`}>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -1466,7 +1480,8 @@ function UnmatchedTab() {
 function ExceptionsTab() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  const { data } = useInvoices({ status: 'exception', page, page_size: pageSize })
+  const [sort, onSort] = useSort<InvoiceSortKey>(null, () => setPage(1))
+  const { data } = useInvoices({ status: 'exception', ...sortParams(sort), page, page_size: pageSize })
   const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
@@ -1497,9 +1512,14 @@ function ExceptionsTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-neutral-200 bg-neutral-50">
-              {['Vendor', 'Invoice #', 'Invoice Amount', 'PO Total', 'Variance', 'Variance %', 'PO', 'Action'].map((h) => (
-                <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap ${['Invoice Amount','PO Total','Variance','Variance %'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>
-              ))}
+              <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="Invoice #" sortKey="internal_ref" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="Invoice Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className={TH} />
+              <SortTh label="PO Total" sortKey="po_total" sort={sort} onSort={onSort} align="right" className={TH} />
+              <SortTh label="Variance" sortKey="variance" sort={sort} onSort={onSort} align="right" className={TH} />
+              <SortTh label="Variance %" sortKey="variance_pct" sort={sort} onSort={onSort} align="right" className={TH} />
+              <SortTh label="PO" sortKey="po_number" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <th className={`${TH} text-left`}>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -1593,13 +1613,13 @@ function DueDateCell({ invoice, onOpen }: { invoice: ApiInvoice; onOpen: () => v
 function AllInvoicesTab() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all')
-  // null = the server's default order (newest uploaded first).
-  const [dueSort, setDueSort] = useState<'due_date' | '-due_date' | null>(null)
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [route, setRoute] = useState<'' | 'po' | 'agreement' | 'freight'>('')
   const [chainInvoiceId, setChainInvoiceId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  // null = the server's default order (newest uploaded first).
+  const [sort, onSort] = useSort<InvoiceSortKey>(null, () => setPage(1))
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const deleteInvoice = useDeleteInvoice()
   const { user } = useAuthStore()
@@ -1609,7 +1629,7 @@ function AllInvoicesTab() {
   const { data } = useInvoices({
     search: search || undefined,
     status: statusFilter !== 'all' ? statusFilter : undefined,
-    sort: dueSort ?? undefined,
+    ...sortParams(sort),
     overdue: overdueOnly || undefined,
     route: route || undefined,
     page,
@@ -1667,27 +1687,16 @@ function AllInvoicesTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                {['Ref', 'Vendor', 'Invoice #', 'Amount', 'Invoice Date'].map((h) => (
-                  <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap ${h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>
-                ))}
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap">
-                  {/* Cycles unsorted -> soonest first -> latest first. Sorting
-                      is server-side, so it orders the whole list, not the page. */}
-                  <button type="button"
-                    onClick={() => {
-                      setDueSort((c) => (c === null ? 'due_date' : c === 'due_date' ? '-due_date' : null))
-                      setPage(1)
-                    }}
-                    className="flex items-center gap-1 uppercase tracking-wide hover:text-neutral-700">
-                    Due Date
-                    {dueSort === 'due_date' ? <ArrowUp className="h-3 w-3" />
-                      : dueSort === '-due_date' ? <ArrowDown className="h-3 w-3" />
-                      : <ArrowUpDown className="h-3 w-3 text-neutral-300" />}
-                  </button>
-                </th>
-                {['Upload Date', 'Status', 'PO', ''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap">{h}</th>
-                ))}
+                <SortTh label="Ref" sortKey="internal_ref" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Invoice #" sortKey="vendor_invoice_number" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className={TH} />
+                <SortTh label="Invoice Date" sortKey="invoice_date" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Due Date" sortKey="due_date" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Upload Date" sortKey="uploaded_at" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="PO" sortKey="po_number" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <th className={`${TH} text-left`} />
               </tr>
             </thead>
             <tbody>
@@ -1773,16 +1782,24 @@ interface OaInvoiceItem {
   created_at: string; pa_number: string | null; attachment_count: number
 }
 
+type OaInvoiceSortKey =
+  | 'invoice_number' | 'vendor_name' | 'total_amount' | 'status'
+  | 'pa_number' | 'attachment_count' | 'created_at'
+const OA_TH = 'px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500'
+
 function OaInvoicesTab() {
   const { token } = useAuthStore()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  // Paged by expense-api, which sorts the whole list before cutting the page.
+  const [sort, onSort] = useSort<OaInvoiceSortKey>(null, () => setPage(1))
   const { data, isLoading } = useQuery<{ items: OaInvoiceItem[]; total: number }>({
-    queryKey: ['oa-invoices', search, page, pageSize],
+    queryKey: ['oa-invoices', search, page, pageSize, sort],
     queryFn: async () => {
       const qs = new URLSearchParams({ source: 'oa', page: String(page), page_size: String(pageSize) })
       if (search) qs.set('search', search)
+      if (sort) { qs.set('sort', sort.key); qs.set('dir', sort.dir) }
       const res = await fetch(`${EXPENSE_BASE}/api/v1/invoices/all?${qs}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -1815,9 +1832,13 @@ function OaInvoicesTab() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Invoice #', 'Vendor', 'Amount', 'Status', 'PA', 'Attachments', 'Date'].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
+                <SortTh label="Invoice #" sortKey="invoice_number" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="Amount" sortKey="total_amount" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="PA" sortKey="pa_number" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="Attachments" sortKey="attachment_count" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="Date" sortKey="created_at" sort={sort} onSort={onSort} className={OA_TH} />
               </tr>
             </thead>
             <tbody>

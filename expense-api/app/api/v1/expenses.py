@@ -1,7 +1,7 @@
 """Expense claim endpoints — EXP / MIL / TRV / CFM (OA module)."""
 import logging
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Query, status
@@ -311,6 +311,35 @@ def can_delete_claim(claim, user_id: uuid.UUID, role: str) -> bool:
     return role == "system_admin" or claim.employee_id == user_id
 
 
+def _expense_sortable():
+    """Sortable columns of the Expense Claims / Travel Applications lists
+    (sort=<key>&dir=asc|desc). "Date" on the Expense Claims list shows
+    submitted_at, falling back to created_at for drafts; the Travel list's
+    "Date" is submission_date. Status codes sort like their labels
+    ("in_review" / "In Review"), so the code is used as is."""
+    from sqlalchemy import func
+    from app.core.list_sort import lower_text
+    from app.models.expense import ExpenseClaim as EC
+    return {
+        "claim_number": lower_text(EC.claim_number),
+        "claim_type": lower_text(EC.claim_type),
+        "employee_name": lower_text(EC.employee_name),
+        "department_name": lower_text(EC.department_name),
+        "travel_destination": lower_text(EC.travel_destination),
+        "net_amount": EC.net_amount,
+        "status": lower_text(EC.status),
+        "submission_date": EC.submission_date,
+        "date": func.coalesce(EC.submitted_at, EC.created_at),
+    }
+
+
+def _expense_ordering(sort: str | None, dir: str):
+    """ORDER BY for the expense list; None keeps the default newest-first."""
+    from app.core.list_sort import sort_clauses
+    from app.models.expense import ExpenseClaim as EC
+    return sort_clauses(sort, dir, _expense_sortable(), tiebreak=[EC.created_at.desc(), EC.id])
+
+
 def _list_item(claim, user_id: uuid.UUID, role: str) -> ExpenseClaimListItem:
     """Serialize one list row, stamping the server-computed delete permission."""
     item = ExpenseClaimListItem.model_validate(claim)
@@ -326,6 +355,8 @@ async def list_expenses(
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     exclude_type: Annotated[str | None, Query(alias="exclude_type")] = None,
     my_claims: bool = False,
+    sort: Annotated[str | None, Query(description="Column key; unknown -> 422")] = None,
+    dir: Annotated[Literal["asc", "desc"], Query()] = "asc",
     page: int = 1,
     page_size: Annotated[int, Query(le=100)] = 20,
 ):
@@ -347,6 +378,7 @@ async def list_expenses(
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
     excluded = [t.strip() for t in exclude_type.split(",") if t.strip()] if exclude_type else []
+    ordering = _expense_ordering(sort, dir)
 
     # Full visibility: system_admin (config) and ap_clerk (processes payments across all
     # claims — must keep seeing a claim after it is marked paid, not just while approved).
@@ -355,7 +387,7 @@ async def list_expenses(
         items, total = await expense_crud.list_claims(
             db, claim_type=claim_type, status=status_filter,
             employee_id=employee_id, exclude_types=excluded,
-            page=page, page_size=page_size,
+            order_by=ordering, page=page, page_size=page_size,
         )
         return ExpenseClaimListResponse(
             items=[_list_item(c, user_id, role) for c in items],
@@ -407,7 +439,8 @@ async def list_expenses(
         sa_select(func.count()).select_from(q.subquery())
     )).scalar_one()
     paged = list((await db.execute(
-        q.order_by(EC.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+        q.order_by(*(ordering or [EC.created_at.desc()]))
+        .offset((page - 1) * page_size).limit(page_size)
     )).scalars().all())
 
     return ExpenseClaimListResponse(

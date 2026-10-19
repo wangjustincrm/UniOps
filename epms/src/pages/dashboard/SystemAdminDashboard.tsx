@@ -3,6 +3,7 @@ import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { ROLE_LABELS } from '@/stores/user.store'
 import type { UserRole } from '@/types'
+import { SortTh, useSortableRows } from '@uniops/shell'
 
 const QUICK_LINKS: { label: string; href: string; description: string }[] = [
   { label: 'User Management',       href: '/admin',    description: 'Manage users, roles and access' },
@@ -17,7 +18,10 @@ export default function SystemAdminDashboard() {
   const { data } = useDashboard()
 
   const kpi = (title: string) => data?.kpis.find((k) => k.title === title)
-  const roleRows = data?.users_by_role ?? []
+  const { rows: roleRows, sort, onSort } = useSortableRows(data?.users_by_role, {
+    role: (r) => ROLE_LABELS[r.role as UserRole] ?? r.role,
+    count: (r) => Number(r.count),
+  })
 
   return (
     <div className="flex flex-col gap-6">
@@ -47,8 +51,8 @@ export default function SystemAdminDashboard() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-neutral-100 text-left">
-                      <th className="pb-2 font-medium text-neutral-500">Role</th>
-                      <th className="pb-2 text-right font-medium text-neutral-500">Users</th>
+                      <SortTh label="Role" sortKey="role" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                      <SortTh label="Users" sortKey="count" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-50">

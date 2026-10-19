@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Search, Plus, ChevronUp, ChevronDown, ExternalLink, RefreshCw } from 'lucide-react'
+import { Search, Plus, ExternalLink, RefreshCw } from 'lucide-react'
+import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,7 +10,6 @@ import { StatusBadge } from '@/components/ui/badge'
 import { CurrentStepHint } from '@/components/ui/CurrentStepHint'
 import { Pagination } from '@/components/ui/Pagination'
 import { formatCAD, formatDate, cn } from '@/lib/utils'
-import { compareByStatusThenStep } from '@/lib/currentStepSort'
 import { SkeletonRow } from '@/components/ui/skeleton'
 import { usePos } from '@/hooks/usePos'
 import { useDepartments } from '@/hooks/useDepartments'
@@ -43,8 +43,11 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
-type SortField = 'number' | 'title' | 'total' | 'status' | 'created_at'
-type SortDir = 'asc' | 'desc'
+// GET /po sort keys (epms-api crud/po.py SORTABLE). Status sorts status →
+// current approval step (chain order) → approver, across all pages.
+type SortField =
+  | 'number' | 'pr_number' | 'title' | 'type' | 'total' | 'status' | 'created_at'
+  | 'is_prepaid' | 'expected_delivery'
 
 export default function PoListPage() {
   const { user } = useAuthStore()
@@ -53,9 +56,10 @@ export default function PoListPage() {
   const [deptFilter, setDeptFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
   const [prepaidFilter, setPrepaidFilter] = useState('all')
-  const [sortField, setSortField] = useState<SortField>('created_at')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [page, setPage] = useState(1)
+  // Paged by the API, so the API sorts; a new order starts again at page 1.
+  // Starts on Created ↓ — the API's own default order.
+  const [sort, onSort] = useSort<SortField>({ key: 'created_at', dir: 'desc' }, () => setPage(1))
   const [pageSize, setPageSize] = useState(20)
 
   const { data: deptData } = useDepartments()
@@ -67,6 +71,7 @@ export default function PoListPage() {
     department_id: deptFilter !== 'all' ? deptFilter : undefined,
     pr_type: typeFilter !== 'all' ? Number(typeFilter) : undefined,
     is_prepaid: prepaidFilter === 'all' ? undefined : prepaidFilter === 'yes',
+    ...sortParams(sort),
     page,
     page_size: pageSize,
   })
@@ -107,27 +112,6 @@ export default function PoListPage() {
     } finally {
       setNcSyncing(false)
     }
-  }
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortField(field); setSortDir('desc') }
-  }
-
-  const filtered = [...pos].sort((a, b) => {
-    let cmp = 0
-    if (sortField === 'total') cmp = a.total - b.total
-    else if (sortField === 'created_at') cmp = a.created_at.localeCompare(b.created_at)
-    else if (sortField === 'status') cmp = compareByStatusThenStep(a, b)
-    else cmp = String(a[sortField as keyof typeof a]).localeCompare(String(b[sortField as keyof typeof b]))
-    return sortDir === 'asc' ? cmp : -cmp
-  })
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <ChevronUp className="h-3 w-3 text-neutral-300" />
-    return sortDir === 'asc'
-      ? <ChevronUp className="h-3 w-3 text-primary-600" />
-      : <ChevronDown className="h-3 w-3 text-primary-600" />
   }
 
   return (
@@ -214,46 +198,22 @@ export default function PoListPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                <th
-                  className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 cursor-pointer hover:text-neutral-700 select-none"
-                  onClick={() => handleSort('number')}
-                >
-                  <span className="flex items-center gap-1">PO Number <SortIcon field="number" /></span>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500">PR Ref.</th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 cursor-pointer hover:text-neutral-700 select-none"
-                  onClick={() => handleSort('title')}
-                >
-                  <span className="flex items-center gap-1">Title / Vendor <SortIcon field="title" /></span>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500">Type</th>
-                <th
-                  className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 cursor-pointer hover:text-neutral-700 select-none"
-                  onClick={() => handleSort('total')}
-                >
-                  <span className="flex items-center justify-end gap-1">Total (CAD) <SortIcon field="total" /></span>
-                </th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 cursor-pointer hover:text-neutral-700 select-none"
-                  onClick={() => handleSort('status')}
-                >
-                  <span className="flex items-center gap-1">Status <SortIcon field="status" /></span>
-                </th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 cursor-pointer hover:text-neutral-700 select-none"
-                  onClick={() => handleSort('created_at')}
-                >
-                  <span className="flex items-center gap-1">Created <SortIcon field="created_at" /></span>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500">Prepaid</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500">Exp. Delivery</th>
+                <SortTh label="PO Number" sortKey="number" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="PR Ref." sortKey="pr_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Title / Vendor" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Total (CAD)" sortKey="total" sort={sort} onSort={onSort} align="right"
+                  className="px-4 py-3 text-right text-xs font-semibold text-neutral-500" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Prepaid" sortKey="is_prepaid" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Exp. Delivery" sortKey="expected_delivery" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {isLoading && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={10} />)}
-              {!isLoading && filtered.length === 0 && (
+              {!isLoading && pos.length === 0 && (
                 <tr>
                   <td colSpan={10} className="px-4 py-16 text-center">
                     <div className="flex flex-col items-center gap-2 text-neutral-400">
@@ -264,7 +224,7 @@ export default function PoListPage() {
                   </td>
                 </tr>
               )}
-              {filtered.map((po) => (
+              {pos.map((po) => (
                 <tr
                   key={po.id}
                   className="border-b border-neutral-100 last:border-0 bg-white hover:bg-primary-50/60 transition-colors"

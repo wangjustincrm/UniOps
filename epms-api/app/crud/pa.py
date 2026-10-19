@@ -6,7 +6,9 @@ from decimal import Decimal
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._list_order import blank_as_null, lower_text, sort_clauses
 from app.crud._numbering import next_number
+from app.crud.current_step import status_step_sort_keys
 from app.models.agreement import PurchaseAgreement
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
@@ -126,6 +128,35 @@ def _compute_payment(payload) -> Decimal:
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
 
+# The "Linked PO / Invoice" cell's first line: the PA's first linked PO by
+# sort_order, else the header PO (attach_po_links' fallback); NULL for an
+# agreement PA, which shows no PO.
+_FIRST_LINKED_PO = (
+    select(PaPoLink.po_number)
+    .where(PaPoLink.pa_id == PaymentApplication.id)
+    .order_by(PaPoLink.sort_order.asc(), PaPoLink.id.asc())
+    .limit(1)
+    .correlate_except(PaPoLink)
+    .scalar_subquery()
+)
+
+# GET /pa ?sort= keys → what the PA list's column shows (whitelist = the
+# SQL-injection boundary; unknown key → 422).
+SORTABLE = {
+    "pa_number": PaymentApplication.pa_number,
+    "vendor_name": lower_text(PaymentApplication.vendor_name),
+    # Labels Balance / Prepayment / Regular / Settlement sort the same as the codes.
+    "pa_type": PaymentApplication.pa_type,
+    "po_number": blank_as_null(func.coalesce(_FIRST_LINKED_PO, PaymentApplication.po_number)),
+    # The Amount cell prints payment_amount in the PA's own currency.
+    "payment_amount": PaymentApplication.payment_amount,
+    "created_at": PaymentApplication.created_at,
+    # status → current approval step in chain order → approver name.
+    "status": status_step_sort_keys(PaymentApplication.status, PaymentApplication.id, "pa"),
+}
+SORT_TIEBREAK = (PaymentApplication.id.asc(),)
+
+
 async def get_all(
     db: AsyncSession,
     *,
@@ -141,7 +172,10 @@ async def get_all(
     viewer_id: uuid.UUID | None = None,
     page: int = 1,
     page_size: int = 20,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[PaymentApplication], int]:
+    order = sort_clauses(sort, dir, SORTABLE, SORT_TIEBREAK) or [PaymentApplication.created_at.desc()]
     # EPMS owns PO-based AND agreement-based PAs; OA's Direct PAs have BOTH
     # columns NULL, which is what keeps them out of this list. This is an
     # ownership filter (is this row EPMS's at all), not a visibility filter —
@@ -209,7 +243,7 @@ async def get_all(
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(
-        q.order_by(PaymentApplication.created_at.desc()).offset(offset).limit(page_size)
+        q.order_by(*order).offset(offset).limit(page_size)
     )).scalars().all())
     return items, total
 
