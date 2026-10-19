@@ -341,6 +341,19 @@ def _ob_step_waived(node: dict, cfg_mode: str) -> str | None:
             f"mode changed to {_OB_MODE_LABELS.get(cfg_mode, cfg_mode)})")
 
 
+def workflow_key(doc_type: str, doc: Any) -> str:
+    """Which workflow_defs chain a document walks.
+
+    The chain key is the document type, except for a Freight PA: it stays a
+    `pa` document — its tasks, events, signatories, inbox links and task
+    liveness are all `pa`'s — but walks the `pa_frt` chain (OPM → GM →
+    Finance Manager → Finance BP by default; admins edit it in Portal).
+    """
+    if doc_type == "pa" and getattr(doc, "source", None) == "freight":
+        return "pa_frt"
+    return doc_type
+
+
 async def build_effective_workflow(
     db: AsyncSession, doc_type: str, doc: Any, cfg: CompanyConfig | None,
     *, ob_mode: str | None = None,
@@ -350,7 +363,7 @@ async def build_effective_workflow(
     (`ob_mode` overrides it — the submit path passes the mode being frozen).
     Optional supervisor/director nodes stay in the list (skip is decided per-step
     at execution/render time)."""
-    workflow = await _get_workflow(db, doc_type)
+    workflow = await _get_workflow(db, workflow_key(doc_type, doc))
     if doc_type != "pr":
         return workflow
     mode = ob_mode
@@ -395,6 +408,17 @@ _WORKFLOW_DEFAULTS: dict[str, list[dict]] = {
         {"id": "gm_or_opm",    "role": "gm_or_opm",      "label": "GM / OPM"},
         {"id": "finance_bp",   "role": "finance_bp",     "label": "Finance BP"},
         {"id": "finance_mgr",  "role": "finance_manager", "label": "Finance Manager"},
+    ],
+    # Courier freight PA (epms-api Freight): a document of type `pa`, walked
+    # through this chain instead of `pa`'s (workflow_key). The invoice spans
+    # several departments, so no step may resolve by department: OPM and GM are
+    # separate plain roles here, never gm_or_opm (which would always land on
+    # the GM for a document without a single department).
+    "pa_frt": [
+        {"id": "opm",         "role": "opm",             "label": "Operations Manager"},
+        {"id": "gm",          "role": "gm",              "label": "General Manager"},
+        {"id": "finance_mgr", "role": "finance_manager", "label": "Finance Manager"},
+        {"id": "finance_bp",  "role": "finance_bp",      "label": "Finance BP"},
     ],
     "pa_dir": [
         {"id": "finance_bp",  "role": "finance_bp",      "label": "Finance BP"},
