@@ -413,11 +413,19 @@ async def test_restricted_freight_manager_sees_courier_invoices(test_engine, adm
     async with await _authenticated_client(test_engine, "requester") as c:
         assert await _sees(c) == (False, 404, 404)
     await _grant(test_engine, "requester", "epms.freight.manage")
-    async with await _authenticated_client(test_engine, "requester") as c:
-        assert await _sees(c) == (True, 200, 200)
-        # The widening is courier invoices only, not every invoice.
-        others = (await c.get("/api/v1/invoices", params={"page_size": 200})).json()["items"]
-        assert {i["match_route"] for i in others} <= {"freight"}
+    try:
+        async with await _authenticated_client(test_engine, "requester") as c:
+            assert await _sees(c) == (True, 200, 200)
+            # The widening is courier invoices only, not every invoice.
+            others = (await c.get("/api/v1/invoices", params={"page_size": 200})).json()["items"]
+            assert {i["match_route"] for i in others} <= {"freight"}
+    finally:
+        # role_permissions outlives the test; leave requester as the matrix had it.
+        factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as db:
+            await db.execute(text("DELETE FROM role_permissions WHERE role_code='requester' "
+                                  "AND permission_key='epms.freight.manage'"))
+            await db.commit()
 
 
 async def test_invoice_list_route_filter(test_engine, admin_client, world):
@@ -428,3 +436,21 @@ async def test_invoice_list_route_filter(test_engine, admin_client, world):
     assert inv["id"] not in ids(await admin_client.get("/api/v1/invoices", params={"route": "agreement"}))
     assert (await admin_client.get("/api/v1/invoices", params={"route": "bogus"})).status_code == 422
 
+
+
+async def test_invoice_reader_gets_the_courier_panel_read_only(test_engine, admin_client, world):
+    """The Invoices page shows a courier invoice's matching panel to everyone who
+    may read the invoice; only epms.freight.manage may change it."""
+    from tests.conftest import _authenticated_client
+    inv = (await admin_client.post("/api/v1/freight/invoices", json=_ups_invoice(world))).json()
+    line = inv["lines"][0]
+    async with await _authenticated_client(test_engine, "finance_manager") as fm:
+        assert (await fm.get("/api/v1/freight/me")).json()["manage"] is False
+        r = await fm.get(f"/api/v1/freight/invoices/{inv['id']}")
+        assert r.status_code == 200 and len(r.json()["lines"]) == len(inv["lines"])
+        assert (await fm.patch(f"/api/v1/freight/invoices/{inv['id']}/lines/{line['id']}",
+                               json={"cost_center_id": str(world["sc_sell"])})).status_code == 403
+        assert (await fm.post(f"/api/v1/freight/invoices/{inv['id']}/finalize")).status_code == 403
+    # Denial control: a restricted caller who cannot read the invoice gets nothing.
+    async with await _authenticated_client(test_engine, "requester") as c:
+        assert (await c.get(f"/api/v1/freight/invoices/{inv['id']}")).status_code == 404

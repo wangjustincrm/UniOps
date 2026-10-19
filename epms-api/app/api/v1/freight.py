@@ -11,6 +11,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from uniops_authz import has_permission
 
+from app.core.access_scope import build_scope
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud import freight as crud
 from app.crud.freight import FreightError
@@ -200,8 +201,15 @@ async def create_invoice(body: FreightInvoiceCreate, db: SessionDep, user: Curre
 
 @router.get("/invoices/{invoice_id}", response_model=FreightInvoiceResponse)
 async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
-    await _need(db, user, "manage")
-    return await crud.invoice_detail(db, await _freight_invoice(db, invoice_id))
+    """Managers work the invoice; anyone else who may read it on the Invoices
+    page (AP, finance — the invoice read gate) sees the same panel read-only.
+    Every write below stays on epms.freight.manage."""
+    inv = await _freight_invoice(db, invoice_id)
+    if not (await _perms(db, user))["manage"]:
+        from app.api.v1.invoices import _can_read_invoice
+        if not await _can_read_invoice(db, user, inv, await build_scope(db, user)):
+            raise HTTPException(status_code=404, detail="Freight invoice not found")
+    return await crud.invoice_detail(db, inv)
 
 
 @router.post("/invoices/{invoice_id}/auto-match", response_model=FreightInvoiceResponse)
