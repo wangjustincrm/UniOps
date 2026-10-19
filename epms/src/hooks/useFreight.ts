@@ -1,5 +1,6 @@
 import { useQueries, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
+  type CarrierBody,
   freightService,
   freightAttachmentService,
   type ShipmentFilters,
@@ -29,6 +30,22 @@ export function useFreightAccess() {
 
 export function useFreightCarriers(enabled = true) {
   return useQuery({ queryKey: K.carriers, queryFn: () => freightService.carriers(), enabled })
+}
+
+export function useFreightCarriersAll(enabled = true) {
+  return useQuery({ queryKey: [...K.carriers, 'all'], queryFn: () => freightService.carriersAll(), enabled })
+}
+
+export function useSaveCarrier() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id?: string; body: CarrierBody & { is_active?: boolean } }) =>
+      id ? freightService.updateCarrier(id, {
+        name: body.name, tracking_pattern: body.tracking_pattern,
+        default_cost_center_id: body.default_cost_center_id, is_active: body.is_active,
+      }) : freightService.createCarrier(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: K.carriers }),
+  })
 }
 
 export function useFreightShipments(filters: ShipmentFilters, enabled = true) {
