@@ -201,7 +201,8 @@ async def scope_pr_line(q: Select, scope: dict, db: AsyncSession) -> Select:
 
 async def invoice_scope_conditions(db: AsyncSession, po_ids_subq,
                                    own_uploads_user_id: uuid.UUID | None,
-                                   task_user_id: uuid.UUID | None) -> list:
+                                   task_user_id: uuid.UUID | None,
+                                   freight_visible: bool = False) -> list:
     """The OR-ed reasons a restricted caller may see an invoice.
 
     Five of them, and the breadth is the point: an invoice reaches people
@@ -230,6 +231,10 @@ async def invoice_scope_conditions(db: AsyncSession, po_ids_subq,
             await _open_task_doc_ids(db, task_user_id, task_user_ids, "invoice")))
         # Matcher retention: invoices this user matched stay visible.
         conds.append(Invoice.matched_by == task_user_id)
+    if freight_visible:
+        # Courier invoices hang off no PO, so no PO scope reaches them; whoever
+        # holds epms.freight.manage works them (the caller decides that).
+        conds.append(Invoice.match_route == "freight")
     return conds
 
 
@@ -243,8 +248,19 @@ async def scope_invoice(q: Select, scope: dict, db: AsyncSession) -> Select:
     task_uid = scope.get("user_id") if restricted else None
     if po_subq is None and own_uploads is None and task_uid is None:
         return q  # unrestricted
-    conds = await invoice_scope_conditions(db, po_subq, own_uploads, task_uid)
+    conds = await invoice_scope_conditions(
+        db, po_subq, own_uploads, task_uid,
+        freight_visible=restricted and await sees_freight_invoices(db, scope))
     return q.where(or_(*conds)) if conds else q
+
+
+async def sees_freight_invoices(db: AsyncSession, scope: dict) -> bool:
+    """Does this caller hold epms.freight.manage? Restricted callers see courier
+    invoices only through it — who else may is granted in the Access Control
+    Matrix, never keyed on role codes here."""
+    from uniops_authz import has_permission
+    return await has_permission(db, scope.get("user_id"), scope.get("role") or "",
+                                "epms.freight.manage")
 
 
 def pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by,

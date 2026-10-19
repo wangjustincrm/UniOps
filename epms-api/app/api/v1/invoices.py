@@ -9,6 +9,8 @@ from sqlalchemy import select
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
 from app.core.access_scope import build_scope, is_agreement_visible
 from uniops_authz import has_permission
+
+from app.core.ontology import sees_freight_invoices
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import invoice as invoice_crud
@@ -54,11 +56,11 @@ InvoiceUploadDep = Annotated[dict, Depends(require_permission("invoice_upload"))
 
 def _refuse_freight(inv) -> None:
     """Courier invoices (match_route='freight') are matched, finalised and
-    deleted on the Freight page, against shipments — never against a PO or
+    deleted against shipments (the freight panel of its invoice page) — never against a PO or
     agreement here, which would leave its freight lines and shipments behind."""
     if inv is not None and inv.match_route == "freight":
         raise HTTPException(status_code=409,
-                            detail="This is a courier invoice — handle it on the Freight page")
+                            detail="This is a courier invoice — it is matched to shipments on its invoice page")
 
 
 async def _is_ap(db, user: dict) -> bool:
@@ -167,6 +169,9 @@ async def _can_read_invoice(db, user: dict, inv, scope: dict) -> bool:
     if inv.agreement_id is not None and await has_permission(
         db, scope["user_id"], scope["role"], "epms.agreement.read"
     ) and await is_agreement_visible(db, inv.agreement_id, scope):
+        return True
+    # Same widening as the list: a courier invoice is worked by the freight manager.
+    if inv.match_route == "freight" and await sees_freight_invoices(db, scope):
         return True
     return await invoice_crud.is_visible(db, inv, scope)
 
@@ -432,6 +437,11 @@ async def list_invoices(
         default=False,
         description="Only invoices past their due date and not yet paid.",
     ),
+    route: str | None = Query(
+        default=None,
+        pattern="^(po|agreement|freight)$",
+        description="po | agreement | freight. 'po' includes legacy rows with no route.",
+    ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
 ):
@@ -481,10 +491,13 @@ async def list_invoices(
         po_subq = own_uploads = task_uid = None
     items, total = await invoice_crud.get_all(
         db, status=status, vendor_id=vendor_id, po_id=po_id, agreement_id=agreement_id, search=search,
-        sort=sort, overdue=overdue,
+        sort=sort, overdue=overdue, route=route,
         po_ids_subq=po_subq,
         own_uploads_user_id=own_uploads,
         task_user_id=task_uid,
+        # Courier invoices are uploaded and matched on the Invoices page by
+        # epms.freight.manage holders, who are often PO-restricted.
+        freight_visible=task_uid is not None and await sees_freight_invoices(db, scope),
         page=page, page_size=page_size,
     )
     await _attach_match_assignees(db, items)

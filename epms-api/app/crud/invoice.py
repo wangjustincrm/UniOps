@@ -196,6 +196,8 @@ async def get_all(
     po_ids_subq=None,
     own_uploads_user_id: uuid.UUID | None = None,
     task_user_id: uuid.UUID | None = None,
+    freight_visible: bool = False,
+    route: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[Invoice], int]:
@@ -207,7 +209,8 @@ async def get_all(
         # and the assistant's controlled query admit exactly the same rows.
         from app.core.ontology import invoice_scope_conditions
         scope_conds = await invoice_scope_conditions(
-            db, po_ids_subq, own_uploads_user_id, task_user_id)
+            db, po_ids_subq, own_uploads_user_id, task_user_id,
+            freight_visible=freight_visible)
         q = q.where(or_(*scope_conds))
 
     if status:
@@ -221,6 +224,12 @@ async def get_all(
         q = q.where(or_(Invoice.po_id == po_id, Invoice.id.in_(alloc_by_po)))
     if agreement_id:
         q = q.where(Invoice.agreement_id == agreement_id)
+    if route in ("agreement", "freight"):
+        q = q.where(Invoice.match_route == route)
+    elif route == "po":
+        # Legacy rows carry NULL; everything that is not one of the two
+        # non-PO routes is a PO invoice.
+        q = q.where(func.coalesce(Invoice.match_route, "po").notin_(("agreement", "freight")))
     if search and search.strip():
         term = f"%{search.strip()}%"
         q = q.where(or_(

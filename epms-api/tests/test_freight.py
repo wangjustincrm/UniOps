@@ -287,7 +287,7 @@ async def test_second_billing_of_a_shipment_needs_a_decision(admin_client, world
 async def test_generic_invoice_endpoints_refuse_freight_invoices(admin_client, world):
     inv = (await admin_client.post("/api/v1/freight/invoices", json=_ups_invoice(world))).json()
     r = await admin_client.post(f"/api/v1/invoices/{inv['id']}/match", json={"po_id": str(uuid.uuid4())})
-    assert r.status_code == 409 and "Freight page" in r.json()["detail"]
+    assert r.status_code == 409 and "its invoice page" in r.json()["detail"]
     assert (await admin_client.delete(f"/api/v1/invoices/{inv['id']}")).status_code == 409
     # Read stays open: the invoice is still an EPMS invoice.
     assert (await admin_client.get(f"/api/v1/invoices/{inv['id']}")).status_code == 200
@@ -393,3 +393,38 @@ async def test_freight_manager_without_pa_write_can_edit_title(test_engine, admi
         await db.commit()
     async with await _authenticated_client(test_engine, "warehouse_staff") as c:
         assert (await c.patch(f"/api/v1/pa/{pa_id}", json={"title": "x"})).status_code == 403
+
+
+# ── Courier invoices on the Invoices page ─────────────────────────────────────
+
+async def test_restricted_freight_manager_sees_courier_invoices(test_engine, admin_client, world):
+    """Courier invoices hang off no PO, so a PO-restricted caller reaches them only
+    through epms.freight.manage — on the list, the detail page and its chain."""
+    from tests.conftest import _authenticated_client
+    inv = (await admin_client.post("/api/v1/freight/invoices", json=_ups_invoice(world))).json()
+
+    async def _sees(c) -> tuple[bool, int, int]:
+        listed = inv["id"] in [i["id"] for i in (await c.get(
+            "/api/v1/invoices", params={"route": "freight", "page_size": 200})).json()["items"]]
+        return (listed, (await c.get(f"/api/v1/invoices/{inv['id']}")).status_code,
+                (await c.get(f"/api/v1/invoices/{inv['id']}/chain")).status_code)
+
+    # Denial control: a restricted requester without the key sees none of it.
+    async with await _authenticated_client(test_engine, "requester") as c:
+        assert await _sees(c) == (False, 404, 404)
+    await _grant(test_engine, "requester", "epms.freight.manage")
+    async with await _authenticated_client(test_engine, "requester") as c:
+        assert await _sees(c) == (True, 200, 200)
+        # The widening is courier invoices only, not every invoice.
+        others = (await c.get("/api/v1/invoices", params={"page_size": 200})).json()["items"]
+        assert {i["match_route"] for i in others} <= {"freight"}
+
+
+async def test_invoice_list_route_filter(test_engine, admin_client, world):
+    inv = (await admin_client.post("/api/v1/freight/invoices", json=_ups_invoice(world))).json()
+    ids = lambda r: {i["id"] for i in r.json()["items"]}  # noqa: E731
+    assert inv["id"] in ids(await admin_client.get("/api/v1/invoices", params={"route": "freight"}))
+    assert inv["id"] not in ids(await admin_client.get("/api/v1/invoices", params={"route": "po"}))
+    assert inv["id"] not in ids(await admin_client.get("/api/v1/invoices", params={"route": "agreement"}))
+    assert (await admin_client.get("/api/v1/invoices", params={"route": "bogus"})).status_code == 422
+
