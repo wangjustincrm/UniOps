@@ -13,7 +13,7 @@ router = APIRouter(prefix="/workflows", tags=["workflows"])
 _DOC_TYPES = ("pr", "po", "pa", "vms_visit", "posign")
 # What the per-type read-out can describe: every document type the engine runs
 # a chain for. Wider than _DOC_TYPES, which the single-step lookup below keeps.
-_READ_OUT_TYPES = ("pr", "po", "posign", "agr", "pa", "pa_dir", "exp", "mil",
+_READ_OUT_TYPES = ("pr", "po", "posign", "agr", "pa", "pa_frt", "pa_dir", "exp", "mil",
                    "trv", "tra", "budget_plan", "vms_visit")
 
 

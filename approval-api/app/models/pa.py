@@ -30,6 +30,10 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     # (epms alembic ag02_agreement_links) — no migration comes with this mirror.
     agreement_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     invoice_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # po | agreement | freight | direct (epms-api fr01_freight). A Freight PA runs
+    # the `pa` document type but the `pa_frt` chain — see engine.workflow_key.
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="po",
+                                        server_default="po")
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Stamped by the engine's hasattr(doc,"approved_at") hook on approval.
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
