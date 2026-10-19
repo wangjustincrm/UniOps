@@ -11,6 +11,7 @@ from app.models.agreement import PurchaseAgreement
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
+from app.models.freight import PaCostAllocation
 from app.models.invoice import Invoice
 from app.models.pa import PaLineItem, PaymentApplication
 from app.models.pa_po_link import PaPoLink
@@ -136,6 +137,8 @@ async def get_all(
     search: str | None = None,
     po_ids_subq=None,
     agr_ids_subq=None,
+    freight_all: bool = False,
+    viewer_id: uuid.UUID | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[PaymentApplication], int]:
@@ -144,10 +147,8 @@ async def get_all(
     # ownership filter (is this row EPMS's at all), not a visibility filter —
     # the po_ids_subq/agr_ids_subq block below is what scopes a restricted
     # caller down further.
-    q = select(PaymentApplication).where(or_(
-        PaymentApplication.po_id.is_not(None),
-        PaymentApplication.agreement_id.is_not(None),
-    ))
+    from app.core.ontology import epms_owned_pa, pa_scope_conditions
+    q = select(PaymentApplication).where(epms_owned_pa())
     if po_ids_subq is not None or agr_ids_subq is not None:
         # A restricted (non-admin) caller: admit a PA if its PO falls inside
         # their PO scope, OR its agreement falls inside their agreement scope,
@@ -156,8 +157,8 @@ async def get_all(
         # keyed off the same "any unrestricted role" check) or both set — but
         # each branch below is written to stand on its own rather than lean on
         # that coupling, in case the two ever diverge.
-        from app.core.ontology import pa_scope_conditions
-        q = q.where(or_(*pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by)))
+        q = q.where(or_(*pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by,
+                                             freight_all, viewer_id)))
     elif created_by:
         q = q.where(PaymentApplication.created_by == created_by)
     if status:
@@ -199,6 +200,10 @@ async def get_all(
             )),
             PaymentApplication.agreement_id.in_(
                 select(PurchaseAgreement.id).where(PurchaseAgreement.department_id == department_id)
+            ),
+            # Freight PA: any of its cost-centre allocations in the department.
+            PaymentApplication.id.in_(
+                select(PaCostAllocation.pa_id).where(PaCostAllocation.department_id == department_id)
             ),
         ))
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
@@ -491,6 +496,9 @@ async def _attach_pa_pdf(db: AsyncSession, pa: PaymentApplication, company_name:
     # The PDF lists every PO on the payment; make sure the transient list is
     # there even when the caller loaded the PA without it.
     await attach_po_links(db, [pa])
+    if getattr(pa, "source", None) == "freight":
+        from app.crud.freight import cost_allocations as _cost_allocations
+        pa.cost_allocations = await _cost_allocations(db, pa.id)
     loop = asyncio.get_running_loop()
     pdf_bytes = await loop.run_in_executor(None, generate_pa_pdf, pa, company_name)
     db.add(PaAttachment(

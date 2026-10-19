@@ -153,6 +153,20 @@ class PaSettleRequest(BaseModel):
     resolution: str = Field(default="settled", max_length=20)  # settled | disputed
 
 
+class PaCostAllocationResponse(BaseModel):
+    """One (invoice × cost centre) slice of a Freight PA."""
+    invoice_id: uuid.UUID
+    invoice_number: str | None = None
+    cost_center_id: uuid.UUID
+    cost_center_code: str | None = None
+    cost_center_name: str | None = None
+    department_id: uuid.UUID
+    department_name: str | None = None
+    budget_code: str
+    amount: Decimal
+    tax_amount: Decimal
+
+
 class PaResponse(BaseModel):
     id: uuid.UUID
     pa_number: str
@@ -203,6 +217,10 @@ class PaResponse(BaseModel):
     current_step: CurrentStep | None = None
     agreement_id: uuid.UUID | None = None
     agreement_number: str | None = None
+    # po | agreement | freight (direct never reaches EPMS's endpoints)
+    source: str = "po"
+    # Freight PA only, on the detail endpoint: the cost-centre split.
+    cost_allocations: list[PaCostAllocationResponse] | None = None
 
     model_config = {"from_attributes": True}
 

@@ -21,7 +21,7 @@ import sqlalchemy as sa
 import yaml
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import column_property, declarative_base
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
@@ -247,7 +247,8 @@ async def scope_invoice(q: Select, scope: dict, db: AsyncSession) -> Select:
     return q.where(or_(*conds)) if conds else q
 
 
-def pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by) -> list:
+def pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by,
+                        freight_all: bool = False, viewer_id=None) -> list:
     """The OR-ed reasons a restricted caller may see a payment application.
 
     Each branch stands on its own rather than leaning on po/agr subqueries being
@@ -266,22 +267,39 @@ def pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by) -> list:
     ]
     if created_by:
         conds.append(PaymentApplication.created_by == created_by)
+    # Freight PAs have no PO/agreement to scope by (access_scope.sees_all_freight_pas).
+    if freight_all:
+        conds.append(PaymentApplication.source == "freight")
+    elif viewer_id is not None:
+        conds.append(and_(PaymentApplication.source == "freight",
+                          PaymentApplication.created_by == viewer_id))
     return conds
+
+
+def epms_owned_pa():
+    """EPMS's rows of the shared payment_applications table: PO, agreement and
+    Freight PAs. OA's retired Direct PAs (no PO, no agreement, not freight)
+    are not EPMS's at all. An ownership filter, not a visibility one."""
+    return or_(PaymentApplication.po_id.is_not(None),
+               PaymentApplication.agreement_id.is_not(None),
+               PaymentApplication.source == "freight")
 
 
 async def scope_pa(q: Select, scope: dict, db: AsyncSession) -> Select:
     # Ownership filter first: OA's Direct PAs have both columns NULL and are not
     # EPMS's rows at all. This is separate from visibility and applies to
     # everyone, unrestricted callers included.
-    q = q.where(or_(PaymentApplication.po_id.is_not(None),
-                    PaymentApplication.agreement_id.is_not(None)))
+    q = q.where(epms_owned_pa())
 
     po_subq, agr_subq = scope.get("po_subq"), scope.get("agr_subq")
     restricted = bool(scope.get("restrict"))
     created_by = scope.get("user_id") if (restricted and scope.get("role") == "requester") else None
     if po_subq is None and agr_subq is None:
         return q.where(PaymentApplication.created_by == created_by) if created_by else q
-    return q.where(or_(*pa_scope_conditions(po_subq, agr_subq, created_by)))
+    from app.core.access_scope import sees_all_freight_pas
+    freight_all = await sees_all_freight_pas(db, scope)
+    return q.where(or_(*pa_scope_conditions(po_subq, agr_subq, created_by,
+                                            freight_all, scope.get("user_id"))))
 
 
 async def scope_agreement(q: Select, scope: dict, db: AsyncSession) -> Select:

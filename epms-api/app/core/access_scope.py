@@ -776,6 +776,34 @@ async def is_gr_visible(db: AsyncSession, gr, scope: dict) -> bool:
     return row is not None
 
 
+# Default Freight PA chain roles — mirrors approval-api _WORKFLOW_DEFAULTS["pa_frt"].
+_FREIGHT_CHAIN_DEFAULT = {"opm", "gm", "finance_manager", "finance_bp"}
+
+
+async def sees_all_freight_pas(db: AsyncSession, scope: dict) -> bool:
+    """May this caller see every Freight PA (source='freight')?
+
+    A Freight PA has no PO and no agreement, so none of the department scopes
+    apply to it. Its approvers are role pools — the default chain's OPM and GM
+    are RESTRICTED roles here, and their approve_pa tasks are broadcast
+    (assigned_user_id NULL), so the open-task shortcut never admits them.
+    Without this they would get the task and 404 on the document. Admitted:
+    unrestricted callers, epms.freight.manage holders, and anyone holding a
+    role that is a step of the Freight PA chain as currently configured.
+    """
+    if not scope["restrict"]:
+        return True
+    from uniops_authz import has_permission, user_role_codes
+    from app.models.config import CompanyConfig
+    uid, role = scope["user_id"], scope["role"] or ""
+    if await has_permission(db, uid, role, "epms.freight.manage"):
+        return True
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+    nodes = ((cfg.workflow_defs or {}).get("pa_frt") if cfg else None) or []
+    chain = {n.get("role") for n in nodes if n.get("role")} or _FREIGHT_CHAIN_DEFAULT
+    return bool(await user_role_codes(db, uid, role) & chain)
+
+
 async def is_pa_visible(db: AsyncSession, pa, scope: dict) -> bool:
     """True if PA is in chain (po_subq/agr_subq) OR — for requester — was
     created by them, OR the caller holds an open approval task for it."""
@@ -797,6 +825,9 @@ async def is_pa_visible(db: AsyncSession, pa, scope: dict) -> bool:
     )).scalar_one_or_none()
     if has_task is not None:
         return True
+
+    if getattr(pa, "source", None) == "freight":
+        return pa.created_by == scope["user_id"] or await sees_all_freight_pas(db, scope)
 
     # Agreement-sourced PA: scoped off the agreement's own department/owner —
     # there is no PO/PR chain to walk. OA's Direct PAs (both po_id AND
