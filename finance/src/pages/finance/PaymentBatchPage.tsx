@@ -16,11 +16,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Loader2, Play, Wallet, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Loader2, Play, Wallet, X } from 'lucide-react'
 import { useOptionalTabStoreApi } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn, toLocalDate } from '@/lib/utils'
+import { dueTypeLabel, nextSort, sortDue, type DueSort, type DueSortKey } from '@/lib/dueSort'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
@@ -67,6 +68,27 @@ interface BatchLine {
 function fmtMoney(v: string, ccy?: string): string {
   const s = Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return ccy ? `${s} ${ccy}` : s
+}
+
+// A due-list header that sorts on click: ↕ when inactive, ↑ / ↓ when active.
+function SortTh({ label, sortKey, sort, onSort, className, right }: {
+  label: string; sortKey: DueSortKey; sort: DueSort | null
+  onSort: (k: DueSortKey) => void; className?: string; right?: boolean
+}) {
+  const active = sort?.key === sortKey
+  const Icon = !active ? ArrowUpDown : sort!.dir === 'asc' ? ArrowUp : ArrowDown
+  return (
+    <th className={cn('px-3 py-2', className)}
+        aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" onClick={() => onSort(sortKey)}
+              title={`Sort by ${label}`}
+              className={cn('inline-flex items-center gap-1 select-none whitespace-nowrap hover:text-neutral-800',
+                right && 'flex-row-reverse', active && 'font-semibold text-neutral-800')}>
+        {label}
+        <Icon className={cn('h-3.5 w-3.5', active ? 'text-[#085E5E]' : 'text-neutral-300')} />
+      </button>
+    </th>
+  )
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -119,9 +141,12 @@ export default function PaymentBatchPage() {
     for (const d of dueAll) c[dueTypeOf(d)] += 1
     return c
   }, [dueAll])
+  // Column sort (client-side; the list is loaded whole). null = API order.
+  const [sort, setSort] = useState<DueSort | null>(null)
+  const onSort = (k: DueSortKey) => setSort((s) => nextSort(s, k))
   const due = useMemo(
-    () => (dueType === 'all' ? dueAll : dueAll.filter((d) => dueTypeOf(d) === dueType)),
-    [dueAll, dueType])
+    () => sortDue(dueType === 'all' ? dueAll : dueAll.filter((d) => dueTypeOf(d) === dueType), sort),
+    [dueAll, dueType, sort])
 
   // Open the claim in OA as an iframe tab inside Finance (the same handoff the
   // AP list uses for OA invoices); OA's expense detail is embed-safe.
@@ -241,13 +266,13 @@ export default function PaymentBatchPage() {
                   <input type="checkbox" checked={allChecked}
                          onChange={(e) => setSelected(e.target.checked ? new Set(due.map((d) => d.doc_id)) : new Set())} />
                 </th>
-                <th className="px-3 py-2 w-40">Document</th>
-                <th className="px-3 py-2 w-28">Submitted</th>
-                <th className="px-3 py-2">Payee</th>
-                <th className="px-3 py-2 w-44">Vendor Inv No</th>
-                <th className="px-3 py-2 w-28">Due Date</th>
-                <th className="px-3 py-2 w-24">Type</th>
-                <th className="px-3 py-2 w-40 text-right">Amount</th>
+                <SortTh label="Document" sortKey="document" sort={sort} onSort={onSort} className="w-40" />
+                <SortTh label="Submitted" sortKey="submitted" sort={sort} onSort={onSort} className="w-28" />
+                <SortTh label="Payee" sortKey="payee" sort={sort} onSort={onSort} />
+                <SortTh label="Vendor Inv No" sortKey="invoice" sort={sort} onSort={onSort} className="w-44" />
+                <SortTh label="Due Date" sortKey="due" sort={sort} onSort={onSort} className="w-28" />
+                <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="w-24" />
+                <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} className="w-40 text-right" right />
               </tr>
             </thead>
             <tbody>
@@ -286,7 +311,7 @@ export default function PaymentBatchPage() {
                   <td className={cn('px-3 py-2 text-xs', d.due_date && d.due_date < today ? 'font-medium text-red-600' : 'text-neutral-600')}>
                     {d.due_date ? toLocalDate(d.due_date).toLocaleDateString() : <span className="text-neutral-300">—</span>}
                   </td>
-                  <td className="px-3 py-2 text-xs text-neutral-500">{d.doc_kind === 'expense_claim' ? `Claim · ${d.claim_type ?? ''}` : d.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'}</td>
+                  <td className="px-3 py-2 text-xs text-neutral-500">{dueTypeLabel(d)}</td>
                   <td className="px-3 py-2 text-right font-mono">{fmtMoney(d.amount, d.currency)}</td>
                 </tr>
               ))}
