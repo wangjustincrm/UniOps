@@ -46,8 +46,19 @@ modules:
       - Match a vendor invoice against the order and the receipt
       - Raise a payment application once it is all lined up
       - Record a vendor credit so it is deducted from the next payment to that vendor
+      - Register a courier tracking number and pay the courier's invoice (Freight)
     documents: [pr, po, gr, invoice, pa, agreement]
     notes:
+      - >-
+        Courier freight (UPS, FedEx, Purolator…) has its own page, EPMS →
+        Freight, instead of PR → PO. A buyer registers the tracking number of
+        each pickup with the department / cost center that bears it (Register
+        Courier Shipments permission). The supply-chain person (Match Courier
+        Invoices permission) uploads the carrier's invoice; the AI reads every
+        shipment line, the lines are matched to the registered tracking numbers,
+        unregistered ones and pickup / late fees are assigned by hand, and the
+        matched invoices become a Freight PA split by cost center. All freight
+        is charged to budget account CRM0150102.
       - >-
         A vendor credit (money the vendor owes back — a credit note, or an
         overpayment or duplicate payment they acknowledge) is not an invoice.

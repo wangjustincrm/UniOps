@@ -32,6 +32,7 @@ PROCESS_LABELS = {
     "posign": "PO sign-off",
     "agr": "Purchase Agreement",
     "pa": "Payment Application",
+    "pa_frt": "Freight Payment Application",
     "pa_dir": "Direct Payment Application",
     "exp": "Expense Claim",
     "mil": "Mileage Claim",

@@ -118,6 +118,7 @@ TERMS_ZH: dict[str, str] = {
     "Invoice": "发票",
     "Payment Application": "付款申请",
     "Direct Payment Application": "直接付款申请",
+    "Freight Payment Application": "运费付款申请",
     "PA": "付款申请",
     "Purchase Agreement": "采购协议",
     "Agreement": "采购协议",

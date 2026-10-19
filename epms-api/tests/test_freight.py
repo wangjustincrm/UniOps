@@ -375,3 +375,21 @@ async def test_direct_pa_still_hidden(test_engine, admin_client, world):
         await db.commit()
         pid = pa.id
     assert (await admin_client.get(f"/api/v1/pa/{pid}")).status_code == 404
+
+
+async def test_freight_manager_without_pa_write_can_edit_title(test_engine, admin_client, world):
+    from tests.conftest import _authenticated_client
+    inv = await _matched_invoice(admin_client, world)
+    pa_id = (await admin_client.post("/api/v1/freight/pa", json={"invoice_ids": [inv["id"]]})).json()["id"]
+    await _grant(test_engine, "warehouse_staff", "epms.freight.manage")
+    async with await _authenticated_client(test_engine, "warehouse_staff") as c:
+        r = await c.patch(f"/api/v1/pa/{pa_id}", json={"title": "Edited by freight manager"})
+        assert r.status_code == 200, r.text
+    # Denial control: same role without the freight key, on the same PA.
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await db.execute(text("DELETE FROM role_permissions WHERE role_code='warehouse_staff' "
+                              "AND permission_key='epms.freight.manage'"))
+        await db.commit()
+    async with await _authenticated_client(test_engine, "warehouse_staff") as c:
+        assert (await c.patch(f"/api/v1/pa/{pa_id}", json={"title": "x"})).status_code == 403
