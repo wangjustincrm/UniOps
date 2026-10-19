@@ -13,9 +13,29 @@ from fastapi import APIRouter, HTTPException, Query
 from app.api.v1.nc_inventory import _s
 from app.api.v1.perms import ViewDep, can_view_cost
 from app.core.deps import SessionDep
+from app.core.list_sort import SortDir, resolve, sort_rows
 from app.services import asof, params, recon
 
 router = APIRouter(prefix="/recon", tags=["reconciliation"])
+
+# The difference columns (and the Sort menu's "largest unexplained" presets)
+# sort by the size of the UNEXPLAINED remainder, sign ignored (PRD INV-056) —
+# largest first unless `dir` says so. `gl_ia` is the amount for callers who
+# see amounts and the quantity for everyone else; `gl_ia_qty` is always the
+# quantity (the GL−IA qty column when amounts are shown too).
+_UNEXPLAINED_KEYS = ("ic_wms", "ia_ic", "gl_ia", "gl_ia_qty")
+_LEGACY_DIR: dict[str, SortDir] = {k: "desc" for k in _UNEXPLAINED_KEYS}
+
+_STATUS_LABEL = {"ok": "OK", "explained": "Explained", "unexplained": "Unexplained"}
+
+# The other column sorts: each key sorts what its column shows (the status by
+# its label). Amount keys are only honoured with inventory.cost.view —
+# ordering by a withheld amount leaks it.
+_COLUMN_KEYS = (
+    "material", "wms", "ic_wms_qty", "ic_elsewhere", "ic_total", "ia_qty", "gl_qty",
+    "ia_amount", "gl_amount", "status",
+)
+_AMOUNT_KEYS = {"ia_amount", "gl_amount"}
 
 
 @router.get("")
@@ -29,10 +49,12 @@ async def reconciliation(
     class_code: Annotated[str | None, Query(max_length=40)] = None,
     search: Annotated[str | None, Query(max_length=100)] = None,
     include_unposted: bool = True,
-    sort: Literal["material", "ic_wms", "ia_ic", "gl_ia"] = "material",
+    sort: str | None = Query(None),
+    dir_: Annotated[SortDir | None, Query(alias="dir")] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> dict:
+    srt = resolve(sort, dir_, _UNEXPLAINED_KEYS + _COLUMN_KEYS, _LEGACY_DIR)
     tz = await params.get_param(db, params.NC_TIME_ZONE_KEY)
     d = date_ or asof.today_local()
     if d > asof.today_local():
@@ -96,17 +118,13 @@ async def reconciliation(
         s = search.strip().lower()
         sel = [r for r in sel if s in r.code.lower() or s in (r.name or "").lower()]
 
-    def key(r):
-        res = r.residual
-        if sort == "ic_wms":
-            return (-abs(res["ic_wms"] or 0), r.code)
-        if sort == "ia_ic":
-            return (-abs(res["ia_ic"]), r.code)
-        if sort == "gl_ia":
-            return (-(abs(res["gl_ia_amount"]) if show_amt else abs(res["gl_ia_qty"])), r.code)
-        return (r.code,)
-
-    sel.sort(key=key)
+    if srt and srt[0] in _AMOUNT_KEYS and not show_amt:
+        srt = None
+    if srt is None or srt[0] == "material" and srt[1] == "asc":
+        sel.sort(key=lambda r: r.code)          # the default order, unchanged
+    else:
+        sel = sort_rows(sel, _recon_getter(srt[0], show_amt, statuses), srt[1],
+                        tiebreak=lambda r: r.code)
     total = len(sel)
     page_rows = sel[(page - 1) * page_size: page * page_size]
 
@@ -173,3 +191,27 @@ async def reconciliation(
         "gl_impairment": [gl_extra(r) for r in extra["impairment"]],
         "gl_no_material": [gl_extra(r) for r in extra["no_material"]],
     }
+
+
+def _recon_getter(key: str, show_amt: bool, statuses: dict):
+    """Sort value for one material row (None = empty, sorts last)."""
+    if key == "gl_ia_qty":
+        return lambda r: abs(r.residual["gl_ia_qty"])
+    if key == "ic_wms":
+        return lambda r: abs(r.residual["ic_wms"] or 0)
+    if key == "ia_ic":
+        return lambda r: abs(r.residual["ia_ic"])
+    if key == "gl_ia":
+        return lambda r: abs(r.residual["gl_ia_amount"]) if show_amt else abs(r.residual["gl_ia_qty"])
+    return {
+        "material": lambda r: r.code.lower(),
+        "wms": lambda r: r.wms,
+        "ic_wms_qty": lambda r: r.ic_wms,
+        "ic_elsewhere": lambda r: (r.ic_external or 0) + (r.ic_production or 0),
+        "ic_total": lambda r: r.ic_total,
+        "ia_qty": lambda r: r.ia_qty,
+        "gl_qty": lambda r: r.gl_qty,
+        "ia_amount": lambda r: r.ia_amt,
+        "gl_amount": lambda r: r.gl_amt,
+        "status": lambda r: _STATUS_LABEL[statuses[r.code]],
+    }[key]

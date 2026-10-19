@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input } from '@uniops/shell'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, SortTh, useSortableRows } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import { formatNumber } from '@/lib/time'
 import type { useToasts } from '@/hooks/useToasts'
@@ -105,6 +105,16 @@ export function WarehouseClassesCard({ canAdmin, toasts }: {
 }) {
   const q = useQuery({ queryKey: ['inv-warehouse-classes'], queryFn: settingsApi.warehouseClasses })
   const data = q.data
+  // Sorted on the SAVED values, so a row being edited does not jump away.
+  const { rows, sort, onSort } = useSortableRows(data?.items, {
+    code: (r) => r.code,
+    name: (r) => r.name,
+    qty: (r) => (r.on_hand_qty == null ? null : Number(r.on_hand_qty)),
+    cls: (r) => (r.warehouse_class === 'unclassified'
+      ? 'Unclassified' : CLASS_LABELS[r.warehouse_class as WarehouseClass] ?? r.warehouse_class),
+    note: (r) => r.note,
+  })
+  const th = 'px-3 py-2 font-medium'
 
   return (
     <Card>
@@ -139,16 +149,16 @@ export function WarehouseClassesCard({ canAdmin, toasts }: {
             <table className="w-full text-sm">
               <thead className="bg-neutral-50">
                 <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500">
-                  <th className="px-3 py-2 font-medium">Code</th>
-                  <th className="px-3 py-2 font-medium">Name</th>
-                  <th className="px-3 py-2 text-right font-medium">On-hand qty</th>
-                  <th className="px-3 py-2 font-medium">Class</th>
-                  <th className="px-3 py-2 font-medium">Note</th>
+                  <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className={th} />
+                  <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={th} />
+                  <SortTh label="On-hand qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className={th} />
+                  <SortTh label="Class" sortKey="cls" sort={sort} onSort={onSort} className={th} />
+                  <SortTh label="Note" sortKey="note" sort={sort} onSort={onSort} className={th} />
                   {canAdmin && <th className="px-3 py-2" />}
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((row) => (
+                {rows.map((row) => (
                   // Keyed on the saved state too, so a refetch after save
                   // re-seeds the row's local edit state from the server.
                   <Row

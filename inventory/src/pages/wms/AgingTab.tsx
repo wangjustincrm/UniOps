@@ -14,11 +14,12 @@
 import { useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, Info } from 'lucide-react'
+import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
   AGING_BUCKET_ORDER, formatDateOnly, inventoryApi, qty,
-  type AgingBucketKey,
+  type AgingBucketKey, type BatchSortKey,
 } from './inventoryApi'
 import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
@@ -66,10 +67,12 @@ export function AgingTab({
 }) {
   const [selected, setSelected] = useState<AgingBucketKey>('expired')
   const [page, setPage] = useState(1)
+  // Earliest expiry first is the default order; shown as the active sort.
+  const [sort, onSort] = useSort<BatchSortKey>({ key: 'expiry_date', dir: 'asc' })
 
   // Back to page 1 when the filters change — adjusted during render (React's
   // "storing information from previous renders"), not in an effect.
-  const resetKey = JSON.stringify([selected, erpClassCode, includeByproducts])
+  const resetKey = JSON.stringify([selected, erpClassCode, includeByproducts, sort])
   const [prevResetKey, setPrevResetKey] = useState(resetKey)
   if (prevResetKey !== resetKey) {
     setPrevResetKey(resetKey)
@@ -94,8 +97,8 @@ export function AgingTab({
     erp_class_code: erpClassCode || undefined,
     include_byproducts: includeByproducts,
     aging_bucket: selected,
-    sort: 'expiry_date' as const,
-  }), [erpClassCode, selected, includeByproducts])
+    ...sortParams(sort),
+  }), [erpClassCode, selected, includeByproducts, sort])
 
   const lotsQuery = useQuery({
     queryKey: ['inventory-aging-batches', page, lotFilters],
@@ -178,14 +181,14 @@ export function AgingTab({
         <table className="min-w-full text-sm">
           <thead className={stickyHeadCls}>
             <tr>
-              <th className="px-3 py-2 text-left">Material</th>
-              <th className="px-3 py-2 text-left">Supplier batch</th>
-              <th className="px-3 py-2 text-right">Qty</th>
-              <th className="px-3 py-2 text-right">Lots</th>
-              <th className="px-3 py-2 text-left">Produced</th>
-              <th className="px-3 py-2 text-left">Expiry</th>
-              <th className="px-3 py-2 text-right">Days</th>
-              <th className="px-3 py-2 text-left">Quality</th>
+              <SortTh label="Material" sortKey="material_code" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+              <SortTh label="Supplier batch" sortKey="supplier_batch" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+              <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Lots" sortKey="lots" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Produced" sortKey="production_date" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+              <SortTh label="Expiry" sortKey="expiry_date" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+              <SortTh label="Days" sortKey="days_to_expiry" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Quality" sortKey="quality_status" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
             </tr>
           </thead>
           <tbody>

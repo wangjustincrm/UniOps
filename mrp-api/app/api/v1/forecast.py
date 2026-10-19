@@ -41,6 +41,7 @@ from sqlalchemy import func, or_, select
 
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
+from app.core.list_sort import SortDir, order_by, resolve
 from app.models.forecast import ForecastLine, ForecastVersion
 from app.models.mps import MrpMpsRun
 from app.services import forecast_io
@@ -143,6 +144,15 @@ async def _load_lines_by_material(
 # ── Endpoints ────────────────────────────────────────────────────────────
 
 
+#: Sort keys for `GET /forecast/versions` — the Outlooks table's columns.
+_VERSION_SORT = {
+    "version_no": func.lower(ForecastVersion.version_no),
+    "source_anchor_month": ForecastVersion.source_anchor_month,
+    "horizon_months": ForecastVersion.horizon_months,
+    "created_at": ForecastVersion.created_at,
+}
+
+
 @router.get("/versions", response_model=ForecastVersionListResponse)
 async def list_versions(
     db: SessionDep,
@@ -151,6 +161,8 @@ async def list_versions(
     page_size: int = Query(default=50, ge=1, le=500),
     search: str | None = Query(default=None, description="Case-insensitive substring of version number, anchor month or note"),
     status_: str | None = Query(default=None, alias="status", description="Filter to one status, e.g. confirmed"),
+    sort: str | None = Query(default=None, description="Column key; absent = newest first"),
+    dir_: SortDir = Query(default="asc", alias="dir"),
 ):
     """Newest first, with optional filtering.
 
@@ -164,6 +176,7 @@ async def list_versions(
     differently: the version number carries `202608` and the anchor column
     carries `2026-08`, and a planner types whichever they are looking at.
     """
+    srt = resolve(sort, dir_, _VERSION_SORT)
     filters = []
     if status_:
         filters.append(ForecastVersion.status == status_)
@@ -176,7 +189,9 @@ async def list_versions(
         ))
 
     count_stmt = select(func.count()).select_from(ForecastVersion)
-    stmt = select(ForecastVersion).order_by(ForecastVersion.created_at.desc())
+    stmt = select(ForecastVersion).order_by(
+        *(order_by(_VERSION_SORT, *srt, ForecastVersion.id) if srt
+          else [ForecastVersion.created_at.desc()]))
     for condition in filters:
         count_stmt = count_stmt.where(condition)
         stmt = stmt.where(condition)
