@@ -16,13 +16,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Loader2, Play, Wallet, X } from 'lucide-react'
-import { useOptionalTabStoreApi } from '@uniops/shell'
+import { CheckCircle2, Loader2, Play, Wallet, X } from 'lucide-react'
+import { SortTh, sortParams, useOptionalTabStoreApi, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn, toLocalDate } from '@/lib/utils'
-import { dueTypeLabel, nextSort, sortDue, type DueSort, type DueSortKey } from '@/lib/dueSort'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+import { ListPager } from '@/components/ListPager'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
 import { fetchPreview, scopeKey } from '@/services/remittance'
@@ -45,6 +45,9 @@ interface Due {
 }
 
 export const DUE_CURRENCIES = ['CAD', 'USD', 'CNY', 'EUR']
+
+const BATCH_PAGE_SIZE = 20
+type BatchSortKey = 'batch_number' | 'batch_date' | 'status' | 'payment_method' | 'total'
 
 // Type filter for the due list. `claim` covers every payable claim type
 // (EXP / MIL / TRV / CFM); the API already leaves Travel Applications out.
@@ -73,25 +76,10 @@ function fmtMoney(v: string, ccy?: string): string {
   return ccy ? `${s} ${ccy}` : s
 }
 
-// A due-list header that sorts on click: ↕ when inactive, ↑ / ↓ when active.
-function SortTh({ label, sortKey, sort, onSort, className, right }: {
-  label: string; sortKey: DueSortKey; sort: DueSort | null
-  onSort: (k: DueSortKey) => void; className?: string; right?: boolean
-}) {
-  const active = sort?.key === sortKey
-  const Icon = !active ? ArrowUpDown : sort!.dir === 'asc' ? ArrowUp : ArrowDown
-  return (
-    <th className={cn('px-3 py-2', className)}
-        aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <button type="button" onClick={() => onSort(sortKey)}
-              title={`Sort by ${label}`}
-              className={cn('inline-flex items-center gap-1 select-none whitespace-nowrap hover:text-neutral-800',
-                right && 'flex-row-reverse', active && 'font-semibold text-neutral-800')}>
-        {label}
-        <Icon className={cn('h-3.5 w-3.5', active ? 'text-[#085E5E]' : 'text-neutral-300')} />
-      </button>
-    </th>
-  )
+/** The label the Type column shows — sorting by it must follow what is on screen. */
+function dueTypeLabel(d: Due): string {
+  return d.doc_kind === 'expense_claim' ? `Claim · ${d.claim_type ?? ''}`
+    : d.doc_kind === 'pa_dir' ? 'Direct PA' : d.pa_source === 'freight' ? 'Freight PA' : 'PA'
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -144,12 +132,21 @@ export default function PaymentBatchPage() {
     for (const d of dueAll) c[dueTypeOf(d)] += 1
     return c
   }, [dueAll])
-  // Column sort (client-side; the list is loaded whole). null = API order.
-  const [sort, setSort] = useState<DueSort | null>(null)
-  const onSort = (k: DueSortKey) => setSort((s) => nextSort(s, k))
-  const due = useMemo(
-    () => sortDue(dueType === 'all' ? dueAll : dueAll.filter((d) => dueTypeOf(d) === dueType), sort),
-    [dueAll, dueType, sort])
+  // Column sort (client-side; the list is loaded whole for one currency).
+  // null = API order. Empties (no due date / no invoice) sit last either way.
+  const dueOfType = useMemo(
+    () => (dueType === 'all' ? dueAll : dueAll.filter((d) => dueTypeOf(d) === dueType)),
+    [dueAll, dueType])
+  const { rows: due, sort, onSort } = useSortableRows(dueOfType, {
+    document: (d) => d.doc_number,
+    submitted: (d) => d.submitted_at,
+    payee: (d) => d.payee,
+    // The first invoice shown in the cell, else the plain vendor number.
+    invoice: (d) => d.invoices?.[0]?.number || d.vendor_inv_no,
+    due: (d) => d.due_date,                      // YYYY-MM-DD sorts as text
+    type: (d) => dueTypeLabel(d),
+    amount: (d) => Number(d.amount),
+  })
 
   // Open the claim in OA as an iframe tab inside Finance (the same handoff the
   // AP list uses for OA invoices); OA's expense detail is embed-safe.
@@ -174,10 +171,21 @@ export default function PaymentBatchPage() {
     })
   }
   const today = new Date().toLocaleDateString('en-CA')  // local YYYY-MM-DD
-  const { data: batches = [] } = useQuery({
-    queryKey: ['payment-batches'],
-    queryFn: () => financeApi.get<Batch[]>('/payments/batches'),
+  // Batches are paged and sorted by the API (payments._BATCH_SORT); the due
+  // list above stays whole per currency because batch selection needs it all.
+  const [batchPage, setBatchPage] = useState(1)
+  const [batchSort, onBatchSort] = useSort<BatchSortKey>(null, () => setBatchPage(1))
+  const { data: batchResp } = useQuery({
+    queryKey: ['payment-batches', batchPage, batchSort],
+    queryFn: () => {
+      const qs = new URLSearchParams({ limit: String(BATCH_PAGE_SIZE),
+                                       offset: String((batchPage - 1) * BATCH_PAGE_SIZE) })
+      const { sort: key, dir } = sortParams(batchSort)
+      if (key && dir) { qs.set('sort', key); qs.set('dir', dir) }
+      return financeApi.get<{ total: number; items: Batch[] }>(`/payments/batches?${qs}`)
+    },
   })
+  const batches = batchResp?.items ?? []
 
   const flash = (kind: 'ok' | 'err', text: string) => {
     setBanner({ kind, text }); setTimeout(() => setBanner(null), 6000)
@@ -269,13 +277,13 @@ export default function PaymentBatchPage() {
                   <input type="checkbox" checked={allChecked}
                          onChange={(e) => setSelected(e.target.checked ? new Set(due.map((d) => d.doc_id)) : new Set())} />
                 </th>
-                <SortTh label="Document" sortKey="document" sort={sort} onSort={onSort} className="w-40" />
-                <SortTh label="Submitted" sortKey="submitted" sort={sort} onSort={onSort} className="w-28" />
-                <SortTh label="Payee" sortKey="payee" sort={sort} onSort={onSort} />
-                <SortTh label="Vendor Inv No" sortKey="invoice" sort={sort} onSort={onSort} className="w-44" />
-                <SortTh label="Due Date" sortKey="due" sort={sort} onSort={onSort} className="w-28" />
-                <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="w-24" />
-                <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} className="w-40 text-right" right />
+                <SortTh label="Document" sortKey="document" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
+                <SortTh label="Submitted" sortKey="submitted" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
+                <SortTh label="Payee" sortKey="payee" sort={sort} onSort={onSort} className="px-3 py-2" />
+                <SortTh label="Vendor Inv No" sortKey="invoice" sort={sort} onSort={onSort} className="px-3 py-2 w-44" />
+                <SortTh label="Due Date" sortKey="due" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
+                <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
+                <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-40" />
               </tr>
             </thead>
             <tbody>
@@ -328,11 +336,11 @@ export default function PaymentBatchPage() {
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
               <tr>
-                <th className="px-3 py-2 w-44">Batch</th>
-                <th className="px-3 py-2 w-28">Date</th>
-                <th className="px-3 py-2 w-24">Status</th>
-                <th className="px-3 py-2">Method</th>
-                <th className="px-3 py-2 w-40 text-right">Total</th>
+                <SortTh label="Batch" sortKey="batch_number" sort={batchSort} onSort={onBatchSort} className="px-3 py-2 w-44" />
+                <SortTh label="Date" sortKey="batch_date" sort={batchSort} onSort={onBatchSort} className="px-3 py-2 w-28" />
+                <SortTh label="Status" sortKey="status" sort={batchSort} onSort={onBatchSort} className="px-3 py-2 w-24" />
+                <SortTh label="Method" sortKey="payment_method" sort={batchSort} onSort={onBatchSort} className="px-3 py-2" />
+                <SortTh label="Total" sortKey="total" sort={batchSort} onSort={onBatchSort} align="right" className="px-3 py-2 w-40" />
                 <th className="px-3 py-2 w-24" />
               </tr>
             </thead>
@@ -355,6 +363,8 @@ export default function PaymentBatchPage() {
             </tbody>
           </table>
         </div>
+        <ListPager page={batchPage} pageSize={BATCH_PAGE_SIZE} total={batchResp?.total ?? 0}
+                   noun="batches" onPage={setBatchPage} />
       </div>
 
       {openBatch && (

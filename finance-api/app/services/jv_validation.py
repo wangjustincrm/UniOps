@@ -243,6 +243,8 @@ select rule,
  group by rule
 """
 
+_ROWS_DEFAULT_ORDER = "fiscal_period, jv_number, line_no, rule"
+
 _ROWS_SQL = _SQL + """
 select rule, jv_id, jv_number, fiscal_period, voucher_date, voucher_summary,
        line_id, line_no, account_code, category, line_summary,
@@ -251,9 +253,36 @@ select rule, jv_id, jv_number, fiscal_period, voucher_date, voucher_summary,
        ba_code, io_text
   from flagged
  where (cast(%(rule)s as text) is null or rule = cast(%(rule)s as text))
- order by fiscal_period, jv_number, line_no, rule
+ order by {order}
  limit %(limit)s offset %(offset)s
 """
+
+
+def _sql_str(v: str) -> str:
+    return "'" + v.replace("'", "''") + "'"
+
+
+# Click-to-sort whitelist for rows(): key -> SQL over the `flagged` CTE. These
+# are fragments written here (the request key is only looked up), each sorting
+# what that column of JvValidationPage shows. "finding" sorts the label the
+# page prints, not the rule code; "nc_dept" is the "NC cc · dept" cell.
+ROW_SORT: dict[str, str] = {
+    "jv_number": "jv_number",
+    "account_code": "account_code",
+    "debit": "local_debit",
+    "cost_center": "nullif(cc_code, '')",
+    "nc_dept": "nullif(concat_ws(' · ', coalesce(nc_cc_code, '—'), "
+               "coalesce(dept_code, '—')), '— · —')",
+    "income_expense": "nullif(coalesce(ba_code, io_text), '')",
+    "finding": "case rule " + " ".join(
+        f"when {_sql_str(k)} then {_sql_str(v)}" for k, v in RULE_LABELS.items())
+        + " else rule end",
+}
+ROW_TIEBREAK = "jv_number, line_no, rule, line_id"
+# The labels are inlined into text() SQL: a ':' would read as a bind parameter
+# and a '%' as a psycopg2 placeholder. Fail at import, not on a user's click.
+assert not any(c in v for v in RULE_LABELS.values() for c in ":%"), \
+    "RULE_LABELS must not contain ':' or '%' (inlined into ROW_SORT['finding'])"
 
 _ROWS_COUNT_SQL = _SQL + """
 select count(*) from flagged where (cast(%(rule)s as text) is null or rule = cast(%(rule)s as text))
@@ -302,12 +331,15 @@ async def summary(db, period_from: str, period_to: str) -> list[dict[str, Any]]:
 
 
 async def rows(db, period_from: str, period_to: str, *, rule: str | None = None,
-               limit: int = 200, offset: int = 0) -> dict[str, Any]:
-    """One page of flagged lines (a line appears once per rule it breaks)."""
+               limit: int = 200, offset: int = 0, order: str | None = None) -> dict[str, Any]:
+    """One page of flagged lines (a line appears once per rule it breaks).
+    `order` is an ORDER BY body from app.core.list_sort.order_sql over
+    ROW_SORT; None keeps the period / voucher / line order."""
     from sqlalchemy import text
     p = _params(period_from, period_to, rule=rule, limit=limit, offset=offset)
     total = (await db.execute(text(_to_named(_ROWS_COUNT_SQL)), p)).scalar_one()
-    res = (await db.execute(text(_to_named(_ROWS_SQL)), p)).mappings().all()
+    sql = _ROWS_SQL.replace("{order}", order or _ROWS_DEFAULT_ORDER)
+    res = (await db.execute(text(_to_named(sql)), p)).mappings().all()
     return {
         "total": int(total),
         "limit": limit,

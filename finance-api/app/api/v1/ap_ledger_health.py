@@ -13,6 +13,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
+from app.core.list_sort import SortDir, order_sql
 from app.core.read_authz import authorize_finance_read
 from app.db.base import get_db
 from app.models.nc_ap import DISMISS_REASONS
@@ -48,10 +49,17 @@ async def summary(user: CurrentUser, db: AsyncSession = Depends(get_db)):
 async def abandoned(user: CurrentUser,
                     currency: str | None = Query(None),
                     limit: int = Query(500, ge=1, le=2000),
+                    offset: int = Query(0, ge=0),
+                    q: str | None = Query(None),
+                    sort: str | None = Query(None),
+                    dir: SortDir = Query("asc"),
                     db: AsyncSession = Depends(get_db)):
     """Payable documents NC never approved that still carry a balance — the
-    bulk of what looked like an open balance before status was accounted for."""
-    return await svc.abandoned_items(db, currency=currency, limit=limit)
+    bulk of what looked like an open balance before status was accounted for.
+    Paged; `q` matches supplier name or code."""
+    order = order_sql(sort, dir, svc.ABANDONED_SORT, tiebreak=svc.ABANDONED_TIEBREAK)
+    return await svc.abandoned_items(db, currency=currency, limit=limit, offset=offset,
+                                     q=q, order=order)
 
 
 @router.get("/gl-clearing")
@@ -83,11 +91,17 @@ async def items(user: CurrentUser,
                 health: str | None = Query(None),
                 currency: str | None = Query(None),
                 limit: int = Query(200, ge=1, le=1000),
+                offset: int = Query(0, ge=0),
+                q: str | None = Query(None),
+                sort: str | None = Query(None),
+                dir: SortDir = Query("asc"),
                 db: AsyncSession = Depends(get_db)):
     if health is not None and health not in (svc.CONSISTENT, svc.INCONSISTENT):
         raise HTTPException(status_code=422,
                             detail=f"health must be {svc.CONSISTENT} or {svc.INCONSISTENT}")
-    return await svc.items(db, health=health, currency=currency, limit=limit)
+    order = order_sql(sort, dir, svc.SUPPLIER_SORT, tiebreak=svc.SUPPLIER_TIEBREAK)
+    return await svc.items(db, health=health, currency=currency, limit=limit,
+                           offset=offset, q=q, order=order)
 
 
 @router.get("/dismiss-reasons")
@@ -170,13 +184,17 @@ async def bills(user: CurrentUser,
                 min_amount: float | None = Query(None),
                 limit: int = Query(500, ge=1, le=1000),
                 offset: int = Query(0, ge=0),
+                sort: str | None = Query(None),
+                dir: SortDir = Query("asc"),
                 db: AsyncSession = Depends(get_db)):
     """Open approved bills across every supplier, filterable — the population
     a bulk judgement acts on."""
+    order = order_sql(sort, dir, svc.BILL_SORT, tiebreak=svc.BILL_TIEBREAK)
     return await svc.open_bills(db, currency=currency, date_from=date_from,
                                 date_to=date_to, supplier_code=supplier_code,
                                 include_dismissed=include_dismissed,
-                                min_amount=min_amount, limit=limit, offset=offset)
+                                min_amount=min_amount, limit=limit, offset=offset,
+                                order=order)
 
 
 @router.post("/dismiss-matching")

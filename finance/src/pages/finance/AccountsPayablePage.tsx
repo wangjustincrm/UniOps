@@ -14,7 +14,7 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, FileDown } from 'lucide-react'
-import { useTabStoreApi } from '@uniops/shell'
+import { SortTh, sortParams, useSort, useSortableRows, useTabStoreApi } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financePostDownload, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -41,6 +41,10 @@ interface AgingRow {
   vendor_id: string | null; vendor_name: string; currency: string
   current: string; d1_30: string; d31_60: string; d61_90: string; d90_plus: string; total: string
 }
+
+/** GET /ap/invoices sort keys (finance-api ap_invoices._INVOICE_SORT). */
+type ApSortKey = 'ap_invoice_number' | 'source' | 'vendor_name' | 'vendor_invoice_number'
+  | 'invoice_date' | 'due_date' | 'total_amount' | 'outstanding' | 'status' | 'nc_exported_at'
 
 const STATUSES = ['draft', 'posted', 'partially_paid', 'paid', 'void'] as const
 const SOURCES = ['epms', 'oa'] as const
@@ -74,6 +78,8 @@ export default function AccountsPayablePage() {
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
   const resetPage = () => { setPage(0); setSelected(new Set()) }
+  // Server-sorted: the API pages this list, so it must also order it.
+  const [sort, onSort] = useSort<ApSortKey>(null, resetPage)
   const gotoPage = (n: number) => { setPage(n); setSelected(new Set()) }
 
   const exportable = (inv: ApInvoice) => inv.status !== 'draft' && inv.status !== 'void'
@@ -97,9 +103,10 @@ export default function AccountsPayablePage() {
   }
 
   const { data, isFetching } = useQuery({
-    queryKey: ['ap-invoices', source, statusFilter, q, hideExported, page],
+    queryKey: ['ap-invoices', source, statusFilter, q, hideExported, page, sort],
     queryFn: () => {
-      const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) })
+      const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE),
+                                       ...sortParams(sort) })
       if (source) qs.set('source', source)
       if (statusFilter) qs.set('status', statusFilter)
       if (q) qs.set('q', q)
@@ -115,6 +122,13 @@ export default function AccountsPayablePage() {
     queryKey: ['ap-aging'],
     queryFn: () => financeApi.get<AgingRow[]>('/ap/aging'),
     enabled: tab === 'aging',
+  })
+  // Aging is one plain row per vendor x currency (no subtotal rows), loaded whole.
+  const agingSort = useSortableRows(aging, {
+    vendor: (r) => r.vendor_name, currency: (r) => r.currency,
+    current: (r) => Number(r.current), d1_30: (r) => Number(r.d1_30),
+    d31_60: (r) => Number(r.d31_60), d61_90: (r) => Number(r.d61_90),
+    d90_plus: (r) => Number(r.d90_plus), total: (r) => Number(r.total),
   })
 
   // Deep-link a row to the source system's invoice detail (with session handoff).
@@ -203,16 +217,16 @@ export default function AccountsPayablePage() {
                 <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                   <tr>
                     <th className="w-9 px-3 py-2" />
-                    <th className="px-3 py-2 w-40">AP No.</th>
-                    <th className="px-3 py-2 w-16">Source</th>
-                    <th className="px-3 py-2">Vendor</th>
-                    <th className="px-3 py-2 w-32">Vendor Inv #</th>
-                    <th className="px-3 py-2 w-24">Issue</th>
-                    <th className="px-3 py-2 w-24">Due</th>
-                    <th className="px-3 py-2 w-32 text-right">Total</th>
-                    <th className="px-3 py-2 w-32 text-right">Outstanding</th>
-                    <th className="px-3 py-2 w-28">Status</th>
-                    <th className="px-3 py-2 w-24">NC Export</th>
+                    <SortTh label="AP No." sortKey="ap_invoice_number" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
+                    <SortTh label="Source" sortKey="source" sort={sort} onSort={onSort} className="px-3 py-2 w-16" />
+                    <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="px-3 py-2" />
+                    <SortTh label="Vendor Inv #" sortKey="vendor_invoice_number" sort={sort} onSort={onSort} className="px-3 py-2 w-32" />
+                    <SortTh label="Issue" sortKey="invoice_date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
+                    <SortTh label="Due" sortKey="due_date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
+                    <SortTh label="Total" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
+                    <SortTh label="Outstanding" sortKey="outstanding" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
+                    <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
+                    <SortTh label="NC Export" sortKey="nc_exported_at" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
                   </tr>
                 </thead>
                 <tbody>
@@ -273,21 +287,21 @@ export default function AccountsPayablePage() {
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                 <tr>
-                  <th className="px-3 py-2">Vendor</th>
-                  <th className="px-3 py-2 w-16">Ccy</th>
-                  <th className="px-3 py-2 text-right">Current</th>
-                  <th className="px-3 py-2 text-right">1-30</th>
-                  <th className="px-3 py-2 text-right">31-60</th>
-                  <th className="px-3 py-2 text-right">61-90</th>
-                  <th className="px-3 py-2 text-right">90+</th>
-                  <th className="px-3 py-2 text-right font-semibold">Total</th>
+                  <SortTh label="Vendor" sortKey="vendor" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2" />
+                  <SortTh label="Ccy" sortKey="currency" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2 w-16" />
+                  <SortTh label="Current" sortKey="current" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
+                  <SortTh label="1-30" sortKey="d1_30" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
+                  <SortTh label="31-60" sortKey="d31_60" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
+                  <SortTh label="61-90" sortKey="d61_90" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
+                  <SortTh label="90+" sortKey="d90_plus" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
+                  <SortTh label="Total" sortKey="total" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2 font-semibold" />
                 </tr>
               </thead>
               <tbody>
                 {aging.length === 0 && (
                   <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">No open payables.</td></tr>
                 )}
-                {aging.map((r, i) => (
+                {agingSort.rows.map((r, i) => (
                   <tr key={`${r.vendor_id ?? 'none'}-${r.currency}-${i}`} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
                     <td className="px-3 py-2">{r.vendor_name || '—'}</td>
                     <td className="px-3 py-2 text-xs text-neutral-500">{r.currency}</td>

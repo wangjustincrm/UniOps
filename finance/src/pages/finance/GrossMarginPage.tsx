@@ -11,6 +11,7 @@ import { Fragment, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
+import { SortTh, useSortableRows, type SortValue } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -56,6 +57,15 @@ export default function GrossMarginPage() {
     queryFn: () => financeApi.get<Resp>(`/cost-analysis/margin?from=${from}&to=${to}`),
     enabled: from <= to,
   })
+  // One plain row per product (no subtotal rows); each month column sorts by
+  // the margin % it shows. A cell's open detail is keyed by product|month.
+  const monthGetters: Record<string, (r: Row) => SortValue> = Object.fromEntries(
+    (data?.periods ?? []).map((p) => [`m:${p}`, (r: Row) => r.months[p]?.margin_pct]))
+  const { rows, sort, onSort } = useSortableRows<Row, string>(data?.rows, {
+    ...monthGetters,
+    product: (r) => r.material_code,
+    revenue: (r) => r.total.revenue, margin: (r) => r.total.margin, pct: (r) => r.total.margin_pct,
+  })
   if (!user) return <Navigate to="/login" replace />
 
   const flagged = new Set((data?.summary.findings ?? []).map((f) => `${f.material_code}|${f.period}`))
@@ -98,15 +108,18 @@ export default function GrossMarginPage() {
               <table className="w-full text-xs">
                 <thead className="bg-neutral-50 text-neutral-500">
                   <tr>
-                    <th className="px-2 py-1.5 text-left font-medium">Product</th>
-                    {data.periods.map((p) => <th key={p} className="px-2 py-1.5 text-right font-mono font-medium">{p.slice(2)}</th>)}
-                    <th className="px-2 py-1.5 text-right font-medium">Revenue</th>
-                    <th className="px-2 py-1.5 text-right font-medium">Margin</th>
-                    <th className="px-2 py-1.5 text-right font-medium">%</th>
+                    <SortTh label="Product" sortKey="product" sort={sort} onSort={onSort} className="px-2 py-1.5 text-left font-medium" />
+                    {data.periods.map((p) => (
+                      <SortTh key={p} label={p.slice(2)} sortKey={`m:${p}`} sort={sort} onSort={onSort} align="right"
+                              title={`Sort by ${p} margin %`} className="px-2 py-1.5 font-mono font-medium" />
+                    ))}
+                    <SortTh label="Revenue" sortKey="revenue" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
+                    <SortTh label="Margin" sortKey="margin" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
+                    <SortTh label="%" sortKey="pct" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
                   </tr>
                 </thead>
                 <tbody>
-                  {data.rows.map((r) => (
+                  {rows.map((r) => (
                     <Fragment key={r.material_code}>
                       <tr className="border-t border-neutral-100">
                         <td className="px-2 py-1.5">

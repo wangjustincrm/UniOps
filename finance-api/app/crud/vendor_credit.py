@@ -224,8 +224,33 @@ async def get_for_update(db: AsyncSession,
     )).scalars().first()
 
 
+def _text(col):
+    """Case-insensitive text sort key; '' counts as empty (sorts last)."""
+    return func.lower(func.nullif(func.trim(col), ""))
+
+
+# Sortable columns of the Vendor Credits list (sort=<key>&dir=asc|desc). The key
+# goes into ORDER BY, so only these are accepted (unknown -> ValueError, which
+# the router turns into a 422).
+VENDOR_CREDIT_SORTABLE = {
+    "credit_number": _text(VendorCredit.credit_number),
+    "vendor_name": _text(VendorCredit.vendor_name),
+    "vendor_credit_number": _text(VendorCredit.vendor_credit_number),
+    "credit_date": VendorCredit.credit_date,
+    "total_amount": VendorCredit.total_amount,
+    "applied_amount": VendorCredit.applied_amount,
+    "remaining_amount": VendorCredit.remaining_amount,
+    "po_number": _text(VendorCredit.po_number),
+}
+
+
+class UnknownSortKey(ValueError):
+    pass
+
+
 async def get_all(db: AsyncSession, *, status: str | None = None,
                   vendor_id: uuid.UUID | None = None,
+                  sort: str | None = None, dir: str = "asc",
                   limit: int = 100, offset: int = 0) -> tuple[list[VendorCredit], int]:
     q = select(VendorCredit)
     c = select(func.count()).select_from(VendorCredit)
@@ -235,9 +260,19 @@ async def get_all(db: AsyncSession, *, status: str | None = None,
     if vendor_id:
         q = q.where(VendorCredit.vendor_id == vendor_id)
         c = c.where(VendorCredit.vendor_id == vendor_id)
+    if sort is None:
+        ordering = [VendorCredit.created_at.desc()]          # unchanged default
+    elif sort not in VENDOR_CREDIT_SORTABLE:
+        raise UnknownSortKey(f"unknown sort column {sort!r}")
+    else:
+        col = VENDOR_CREDIT_SORTABLE[sort]
+        # nulls_last both ways (Postgres DESC puts NULLs first); created_at,
+        # id keep the order stable so offset paging never repeats or skips.
+        ordering = [(col.desc() if dir == "desc" else col.asc()).nulls_last(),
+                    VendorCredit.created_at.desc(), VendorCredit.id]
     total = (await db.execute(c)).scalar_one()
     rows = (await db.execute(
-        q.order_by(VendorCredit.created_at.desc()).limit(limit).offset(offset)
+        q.order_by(*ordering).limit(limit).offset(offset)
     )).scalars().all()
     return list(rows), total
 

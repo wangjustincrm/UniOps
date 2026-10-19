@@ -6,12 +6,14 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import LargeBinary, String, Text, func, or_, select, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
+from app.core.list_sort import SortDir, lower, order_by
 from app.db.base import get_db
 from app.models.mirrors import BusinessPartner
 from app.models.qbo import (
@@ -244,17 +246,44 @@ async def export_entity(entity: str, user: CurrentUser, db: AsyncSession = Depen
     )
 
 
+def _sort_whitelist(model) -> dict:
+    """Click-to-sort keys for one mirror table = the columns the browse table
+    shows (every column of the row except `raw`, see _row_dict and
+    QboMirrorPage.tsx). Built from the model's own column list, so the key is
+    looked up, never interpolated. Text sorts case-insensitively; qbo_id is a
+    numeric string, so it is zero-padded to sort 9 before 10."""
+    out = {}
+    for col in model.__table__.columns:
+        if col.name == "raw" or isinstance(col.type, (JSONB, LargeBinary)):
+            continue
+        if col.name == "qbo_id":
+            out[col.name] = func.lpad(col, 20, "0")
+        elif isinstance(col.type, (String, Text)) and col.name not in _DATE_TEXT_COLS:
+            out[col.name] = lower(col)
+        else:
+            out[col.name] = col
+    return out
+
+
+# txn_date / due_date are 'YYYY-MM-DD' strings: lower() is a no-op there and
+# would only cost the index.
+_DATE_TEXT_COLS = {"txn_date", "due_date"}
+
+
 @router.get("/{entity}")
 async def browse(entity: str, user: CurrentUser, db: AsyncSession = Depends(get_db),
                  page: int = 1, page_size: int = 50,
-                 date_from: str | None = None, date_to: str | None = None, q: str | None = None):
+                 date_from: str | None = None, date_to: str | None = None, q: str | None = None,
+                 sort: str | None = Query(None), dir: SortDir = Query("asc")):
     model, _ = _resolve(entity)
     page = max(page, 1)
     page_size = min(max(page_size, 1), 200)
     conds = _filters(model, date_from, date_to, q)
+    order = order_by(sort, dir, _sort_whitelist(model), tiebreak=(model.qbo_id,))
     total = (await db.execute(select(func.count()).select_from(model).where(*conds))).scalar()
-    order = model.txn_date.desc() if hasattr(model, "txn_date") else model.qbo_id
-    rows = (await db.execute(select(model).where(*conds).order_by(order)
+    if order is None:
+        order = [model.txn_date.desc() if hasattr(model, "txn_date") else model.qbo_id]
+    rows = (await db.execute(select(model).where(*conds).order_by(*order)
             .offset((page - 1) * page_size).limit(page_size))).scalars().all()
     return {"items": [_row_dict(r) for r in rows], "total": total, "page": page, "page_size": page_size}
 

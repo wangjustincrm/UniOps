@@ -197,9 +197,25 @@ async def summary(db: AsyncSession, currency: str | None = None) -> dict:
     return {"currencies": out, "as_of": date.today().isoformat()}
 
 
+# Click-to-sort whitelist for items(): key -> SQL over the `bucketed` CTE.
+# Fragments written here (the request key is only looked up), each sorting what
+# that column of ApCashFlowPage shows.
+ITEM_SORT = {
+    "bill_no": "bill_no",
+    "supplier": "lower(coalesce(nullif(supplier_name, ''), supplier_code))",
+    "invoice_no": "lower(nullif(invoice_no, ''))",
+    "purchase_order": "lower(nullif(purchase_order, ''))",
+    "bill_date": "bill_date",
+    "payment_terms": "lower(nullif(payment_terms, ''))",
+    "due_date": "due_date",
+    "open_bal": "open_bal",
+}
+ITEM_TIEBREAK = "bill_no"
+
+
 async def items(db: AsyncSession, currency: str, bucket: str | None = None,
                 supplier_code: str | None = None,
-                limit: int = 500, offset: int = 0) -> dict:
+                limit: int = 500, offset: int = 0, order: str | None = None) -> dict:
     """The documents behind a bucket, soonest due first — which is also the
     order they have to be paid in.
 
@@ -225,7 +241,7 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
           from bucketed {clause}
          -- Undated rows sort last within a bucket: they have no date to sort
          -- by, and biggest-first is the useful order for them.
-         order by due_date nulls last, open_bal desc
+         order by {order or "due_date nulls last, open_bal desc, bill_no"}
          limit :limit offset :offset
     """), params)).mappings().all()
     total = (await db.execute(text(

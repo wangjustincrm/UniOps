@@ -7,6 +7,7 @@ import {
   Calendar, Plus, X, Search, Pencil, Trash2, Building2,
   Wallet, Upload, Download,
 } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, mdmApi, budgetApi, budgetUpload, EPMS_URL, encodeSession } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -764,6 +765,13 @@ function CostCentersSection() {
     const matchDept = !filterDeptId || cc.department_id === filterDeptId
     return matchSearch && matchDept
   })
+  // Loaded whole; rows keep cc.id keys and edit/delete state is by id, so
+  // re-ordering never moves an open action onto another row.
+  const ccSort = useSortableRows(filtered, {
+    name: (cc) => cc.name, code: (cc) => cc.code,
+    department: (cc) => deptMap[cc.department_id]?.name || cc.department_name,
+    status: (cc) => (cc.is_active ? 'Active' : 'Inactive'),
+  })
   const editingCc = typeof mode === 'object' ? ccs.find((c) => c.id === mode.edit) : null
   const usedCodes = (excludeId?: string) =>
     ccs.filter((c) => c.id !== excludeId).map((c) => c.code.toUpperCase())
@@ -870,19 +878,15 @@ function CostCentersSection() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                {['Cost Center', 'Code', 'Department', 'Status', ''].map((h, i) => (
-                  <th
-                    key={i}
-                    className={cn(
-                      'px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500',
-                      i === 3 && 'w-24', i === 4 && 'w-24',
-                    )}
-                  >{h}</th>
-                ))}
+                <SortTh label="Cost Center" sortKey="name" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Code" sortKey="code" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Department" sortKey="department" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Status" sortKey="status" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
+                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
               </tr>
             </thead>
             <tbody>
-              {filtered.map((cc, i) => {
+              {ccSort.rows.map((cc, i) => {
                 const dept = deptMap[cc.department_id]
                 return (
                   <tr key={cc.id} className={cn('border-b border-neutral-100 last:border-b-0', i % 2 === 1 ? 'bg-neutral-50' : 'bg-white')}>

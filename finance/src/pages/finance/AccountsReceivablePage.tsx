@@ -15,10 +15,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Check, FileText, HandCoins, Loader2, Plus, Send, Trash2, X,
 } from 'lucide-react'
+import { SortTh, sortParams, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+import { ListPager } from '@/components/ListPager'
+
+const PAGE_SIZE = 50
+/** GET /ar/invoices sort keys (finance-api ar._INVOICE_SORT). */
+type ArSortKey = 'invoice_number' | 'customer_name' | 'invoice_date' | 'due_date'
+  | 'total_amount' | 'outstanding' | 'status'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
@@ -67,14 +74,32 @@ export default function AccountsReceivablePage() {
   })
   const canManage = perms?.can_manage ?? false
 
-  const { data: invoices = [], isFetching } = useQuery({
-    queryKey: ['ar-invoices', statusFilter],
-    queryFn: () => financeApi.get<Invoice[]>(`/ar/invoices${statusFilter ? `?status=${statusFilter}` : ''}`),
+  // Paged and sorted by the API; any filter or sort change goes back to page 1.
+  const [page, setPage] = useState(1)
+  const [sort, onSort] = useSort<ArSortKey>(null, () => setPage(1))
+  const { data: invPage, isFetching } = useQuery({
+    queryKey: ['ar-invoices', statusFilter, page, sort],
+    queryFn: () => {
+      const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE) })
+      if (statusFilter) qs.set('status', statusFilter)
+      const { sort: key, dir } = sortParams(sort)
+      if (key && dir) { qs.set('sort', key); qs.set('dir', dir) }
+      return financeApi.get<{ total: number; items: Invoice[] }>(`/ar/invoices?${qs}`)
+    },
   })
+  const invoices = invPage?.items ?? []
+  const invTotal = invPage?.total ?? 0
   const { data: aging = [] } = useQuery({
     queryKey: ['ar-aging'],
     queryFn: () => financeApi.get<AgingRow[]>('/ar/aging'),
     enabled: tab === 'aging',
+  })
+  // Aging is one plain row per customer x currency, loaded whole.
+  const agingSort = useSortableRows(aging, {
+    customer: (r) => r.customer_name, currency: (r) => r.currency,
+    current: (r) => Number(r.current), d1_30: (r) => Number(r.d1_30),
+    d31_60: (r) => Number(r.d31_60), d61_90: (r) => Number(r.d61_90),
+    d90_plus: (r) => Number(r.d90_plus), total: (r) => Number(r.total),
   })
 
   const flash = (kind: 'ok' | 'err', text: string) => { setBanner({ kind, text }); setTimeout(() => setBanner(null), 5000) }
@@ -124,7 +149,7 @@ export default function AccountsReceivablePage() {
         {tab === 'invoices' ? (
           <>
             <div className="mb-3 flex flex-wrap items-center gap-3">
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+              <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
                       className={cn(inputCls, 'w-44')}>
                 <option value="">All statuses</option>
                 {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
@@ -140,13 +165,13 @@ export default function AccountsReceivablePage() {
               <table className="w-full text-sm">
                 <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                   <tr>
-                    <th className="px-3 py-2 w-40">Invoice</th>
-                    <th className="px-3 py-2">Customer</th>
-                    <th className="px-3 py-2 w-24">Date</th>
-                    <th className="px-3 py-2 w-24">Due</th>
-                    <th className="px-3 py-2 w-32 text-right">Total</th>
-                    <th className="px-3 py-2 w-32 text-right">Outstanding</th>
-                    <th className="px-3 py-2 w-28">Status</th>
+                    <SortTh label="Invoice" sortKey="invoice_number" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
+                    <SortTh label="Customer" sortKey="customer_name" sort={sort} onSort={onSort} className="px-3 py-2" />
+                    <SortTh label="Date" sortKey="invoice_date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
+                    <SortTh label="Due" sortKey="due_date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
+                    <SortTh label="Total" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
+                    <SortTh label="Outstanding" sortKey="outstanding" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
+                    <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
                     <th className="px-3 py-2 w-32" />
                   </tr>
                 </thead>
@@ -197,27 +222,28 @@ export default function AccountsReceivablePage() {
                 </tbody>
               </table>
             </div>
+            <ListPager page={page} pageSize={PAGE_SIZE} total={invTotal} noun="invoices" onPage={setPage} />
           </>
         ) : (
           <div className="overflow-hidden rounded-lg border border-neutral-200">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                 <tr>
-                  <th className="px-3 py-2">Customer</th>
-                  <th className="px-3 py-2 w-16">Ccy</th>
-                  <th className="px-3 py-2 text-right">Current</th>
-                  <th className="px-3 py-2 text-right">1-30</th>
-                  <th className="px-3 py-2 text-right">31-60</th>
-                  <th className="px-3 py-2 text-right">61-90</th>
-                  <th className="px-3 py-2 text-right">90+</th>
-                  <th className="px-3 py-2 text-right font-semibold">Total</th>
+                  <SortTh label="Customer" sortKey="customer" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2" />
+                  <SortTh label="Ccy" sortKey="currency" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2 w-16" />
+                  <SortTh label="Current" sortKey="current" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
+                  <SortTh label="1-30" sortKey="d1_30" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
+                  <SortTh label="31-60" sortKey="d31_60" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
+                  <SortTh label="61-90" sortKey="d61_90" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
+                  <SortTh label="90+" sortKey="d90_plus" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
+                  <SortTh label="Total" sortKey="total" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2 font-semibold" />
                 </tr>
               </thead>
               <tbody>
                 {aging.length === 0 && (
                   <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">No open receivables.</td></tr>
                 )}
-                {aging.map((r, i) => (
+                {agingSort.rows.map((r, i) => (
                   <tr key={`${r.customer_id}-${r.currency}`} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
                     <td className="px-3 py-2">{r.customer_name}</td>
                     <td className="px-3 py-2 text-xs text-neutral-500">{r.currency}</td>

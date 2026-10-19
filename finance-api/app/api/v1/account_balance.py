@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.budget_scope import resolve_budget_scope, scoped_cc_ids
 from app.core.deps import CurrentUser
+from app.core.list_sort import SortDir, order_sql
 from app.crud import account_balance as crud
 from app.db.base import get_db
 
@@ -245,7 +246,9 @@ async def budget_actual_unallocated_lines(
         bucket: str = Query(...),
         limit: int = Query(default=200, ge=1, le=1000),
         offset: int = Query(default=0, ge=0),
-        include_unposted: bool = Query(default=False)):
+        include_unposted: bool = Query(default=False),
+        sort: str | None = Query(default=None),
+        dir: SortDir = Query(default="asc")):
     """The voucher lines behind one bucket of the roll-up's unallocated row.
 
     `bucket` is an excluded income-expense prefix (CRM004 / CRM007 / CRM09912)
@@ -263,9 +266,12 @@ async def budget_actual_unallocated_lines(
         month_to = today.month if fiscal_year == today.year else 12
     if month_from > month_to:
         raise HTTPException(status_code=422, detail="month_from is after month_to")
+    order = order_sql(sort, dir, budget_rollup.UNALLOCATED_SORT,
+                      tiebreak=budget_rollup.UNALLOCATED_TIEBREAK)
     return await budget_rollup.unallocated_lines(
         db, fiscal_year=fiscal_year, month_from=month_from, month_to=month_to,
-        bucket=bucket, limit=limit, offset=offset, include_unposted=include_unposted)
+        bucket=bucket, limit=limit, offset=offset, include_unposted=include_unposted,
+        order=order)
 
 
 @router.get("/nc-actuals-monthly")

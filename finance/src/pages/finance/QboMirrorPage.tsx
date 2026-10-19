@@ -9,6 +9,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Loader2, Mail, RefreshCw, X } from 'lucide-react'
+import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { qboApi, ENTITY_TABS, type QboBackfillResult, type QboDetail } from '@/services/qboApi'
 import { financeDownload } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -160,10 +161,13 @@ function QboTabs() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  // Columns are the mirror table's own (every one but `raw`); the API takes
+  // any of them as a sort key and pages the result, so it must sort.
+  const [sort, onSort, setSort] = useSort<string>(null, () => setPage(1))
 
   const { data, isFetching } = useQuery({
-    queryKey: ['qbo-browse', tab, q, page],
-    queryFn: () => qboApi.browse(tab, { q, page, page_size: PAGE_SIZE }),
+    queryKey: ['qbo-browse', tab, q, page, sort],
+    queryFn: () => qboApi.browse(tab, { q, page, page_size: PAGE_SIZE, ...sortParams(sort) }),
   })
   const items = data?.items ?? []
   const cols = items[0] ? Object.keys(items[0]).filter((c) => c !== 'raw') : []
@@ -172,6 +176,7 @@ function QboTabs() {
 
   const switchTab = (slug: string) => {
     setTab(slug); setQ(''); setQInput(''); setPage(1); setOpenId(null); setExportError(null)
+    setSort(null)   // each entity has its own columns
   }
 
   return (
@@ -246,7 +251,11 @@ function QboTabs() {
         <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 text-left text-xs text-neutral-500">
               <tr>
-                {cols.map((c) => <th key={c} className="whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium">{c}</th>)}
+                {cols.map((c) => (
+                  <SortTh key={c} label={c} sortKey={c} sort={sort} onSort={onSort}
+                          align={isAmountCol(c) ? 'right' : 'left'}
+                          className="whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
+                ))}
               </tr>
             </thead>
             <tbody>

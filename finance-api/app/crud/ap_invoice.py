@@ -89,9 +89,11 @@ async def upsert(db: AsyncSession, *, source: str, source_invoice_id: uuid.UUID,
 async def list_invoices(db: AsyncSession, *, source: str | None = None,
                         vendor_id: uuid.UUID | None = None, status: str | None = None,
                         q: str | None = None, exported: bool | None = None,
-                        limit: int = 50, offset: int = 0) -> tuple[int, list[ApInvoice]]:
+                        limit: int = 50, offset: int = 0,
+                        order: list | None = None) -> tuple[int, list[ApInvoice]]:
     """Paginated envelope (total, page). `q` matches vendor_invoice_number /
-    vendor_name; `exported` filters on nc_exported_at presence."""
+    vendor_name; `exported` filters on nc_exported_at presence. `order` is the
+    caller's whitelisted ORDER BY (app.core.list_sort); None = newest first."""
     base = select(ApInvoice)
     if source:
         base = base.where(ApInvoice.source == source)
@@ -110,7 +112,8 @@ async def list_invoices(db: AsyncSession, *, source: str | None = None,
     total = (await db.execute(
         select(func.count()).select_from(base.subquery()))).scalar_one()
     rows = list((await db.execute(
-        base.order_by(ApInvoice.invoice_date.desc(), ApInvoice.ap_invoice_number.desc())
+        base.order_by(*(order or (ApInvoice.invoice_date.desc(),
+                                  ApInvoice.ap_invoice_number.desc())))
         .offset(offset).limit(limit))).scalars().all())
     return total, rows
 

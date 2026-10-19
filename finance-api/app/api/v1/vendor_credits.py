@@ -15,6 +15,7 @@ role, could read payment amounts through this router.
 """
 import uuid
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -84,11 +85,20 @@ async def create_vendor_credit(payload: VendorCreditCreate, user: CurrentUser,
 async def list_vendor_credits(user: CurrentUser,
                               status: str | None = Query(default=None),
                               vendor_id: uuid.UUID | None = Query(default=None),
+                              sort: str | None = Query(
+                                  default=None,
+                                  description="Key of crud.vendor_credit.VENDOR_CREDIT_SORTABLE; "
+                                              "unknown -> 422. Omit for newest first."),
+                              dir: Literal["asc", "desc"] = Query(default="asc"),
                               limit: int = Query(default=100, ge=1, le=500),
                               offset: int = Query(default=0, ge=0),
                               db: AsyncSession = Depends(get_db)):
-    items, total = await crud.get_all(db, status=status, vendor_id=vendor_id,
-                                      limit=limit, offset=offset)
+    """Paged with limit/offset; `total` is the full count for the pager."""
+    try:
+        items, total = await crud.get_all(db, status=status, vendor_id=vendor_id,
+                                          sort=sort, dir=dir, limit=limit, offset=offset)
+    except crud.UnknownSortKey as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return VendorCreditListResponse(items=items, total=total)
 
 

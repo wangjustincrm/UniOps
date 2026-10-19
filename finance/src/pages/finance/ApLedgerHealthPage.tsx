@@ -22,15 +22,30 @@
  * Currencies are never summed together. This company transacts in CAD, USD, CNY
  * and EUR, and one combined figure would mean nothing.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Download, EyeOff, Loader2, Search, Undo2, X } from 'lucide-react'
+import { SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { invalidateApJudgement } from '@/lib/apJudgement'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+import { ListPager } from '@/components/ListPager'
+
+const PAGE_SIZE = 100
+/** Bulk "Ignore all matching" refuses more than this many (ap_ledger_health.dismiss_matching). */
+const MAX_PER_ACTION = 1000
+type SupplierSortKey = 'supplier' | 'billed' | 'paid' | 'subledger_open' | 'billed_minus_paid' | 'gap'
+type AbandonedSortKey = 'bill_no' | 'bill_date' | 'supplier' | 'invoice_no' | 'money_cr' | 'money_bal' | 'status'
+type BillSortKey = 'bill_no' | 'bill_date' | 'supplier' | 'invoice_no' | 'purchase_order' | 'money_cr' | 'money_bal'
+
+/** `&sort=…&dir=…` for a list URL, or '' for the API's default order. */
+function sortQs<K extends string>(sort: Sort<K> | null): string {
+  const { sort: key, dir } = sortParams(sort)
+  return key && dir ? `&sort=${key}&dir=${dir}` : ''
+}
 
 // Shared by the three subtotal rows in the supplier view.
 const footCell = 'px-2.5 py-2 text-right font-mono tabular-nums font-semibold text-neutral-800'
@@ -157,13 +172,6 @@ function csvEscape(v: unknown) {
 }
 /** Already YYYY-MM-DD from the API — never re-parse a date-only string. */
 function day(v: string | null) { return v ? v.slice(0, 10) : '—' }
-/** Vendor search: name or code, case-insensitive, on the rows already loaded. */
-function matchesVendor(q: string, r: { supplier_name: string | null; supplier_code: string | null }) {
-  const needle = q.trim().toLowerCase()
-  if (!needle) return true
-  return (r.supplier_name ?? '').toLowerCase().includes(needle)
-    || (r.supplier_code ?? '').toLowerCase().includes(needle)
-}
 
 /**
  * Recording why a payable is being set aside.
@@ -173,8 +181,9 @@ function matchesVendor(q: string, r: { supplier_name: string | null; supplier_co
  * exist on screen and 422 on submit. A free-text note is optional except under
  * "Other", where a dismissal with no explanation would be unreviewable.
  */
-function DismissDialog({ billNos, total, currency, onCancel, onDone }: {
-  billNos: string[]; total: number; currency: string
+function DismissDialog({ billNos, count, total, currency, onCancel, onDone }: {
+  /** The bills, or null for "every bill matching the filter" (too many to list). */
+  billNos: string[] | null; count: number; total: number; currency: string
   onCancel: () => void; onDone: (reason: string, note: string) => void
 }) {
   const [reason, setReason] = useState('legacy')
@@ -191,7 +200,7 @@ function DismissDialog({ billNos, total, currency, onCancel, onDone }: {
       <div className="w-full max-w-lg rounded-lg bg-white shadow-xl">
         <div className="border-b border-neutral-200 px-5 py-4">
           <h3 className="text-sm font-semibold text-neutral-900">
-            Ignore {billNos.length} {billNos.length === 1 ? 'bill' : 'bills'}
+            Ignore {count} {count === 1 ? 'bill' : 'bills'}
           </h3>
           <p className="mt-0.5 text-xs text-neutral-500">
             {money(String(total))} {currency} comes off the working list. NC is not
@@ -218,7 +227,7 @@ function DismissDialog({ billNos, total, currency, onCancel, onDone }: {
                       className="w-full rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm" />
           </div>
           <div className="max-h-24 overflow-auto rounded border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 font-mono text-[11px] text-neutral-500">
-            {billNos.join(', ')}
+            {billNos ? billNos.join(', ') : `Every bill matching the current filter (${count}).`}
           </div>
         </div>
         <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-3">
@@ -228,7 +237,7 @@ function DismissDialog({ billNos, total, currency, onCancel, onDone }: {
           </button>
           <button onClick={() => onDone(reason, note.trim())} disabled={needsNote}
                   className="rounded-lg bg-[#085E5E] px-3 py-1.5 text-sm text-white hover:bg-[#064a4a] disabled:opacity-40">
-            Ignore {billNos.length}
+            Ignore {count}
           </button>
         </div>
       </div>
@@ -574,7 +583,7 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
         )}
 
         {confirming && (
-          <DismissDialog billNos={picked} total={pickedTotal} currency={currency}
+          <DismissDialog billNos={picked} count={picked.length} total={pickedTotal} currency={currency}
                          onCancel={() => setConfirming(false)}
                          onDone={(reason, note) =>
                            dismiss.mutate({ bill_nos: picked, reason, note })} />
@@ -716,12 +725,20 @@ function BillsByDate({ currency }: { currency: string }) {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [showIgnored, setShowIgnored] = useState(false)
-  const [picked, setPicked] = useState<string[]>([])
+  // Ticked bills, by bill_no -> open balance. Kept across pages (the total of
+  // the selection must not depend on which page is on screen); cleared when
+  // the filter changes, as before.
+  const [picked, setPicked] = useState<Record<string, string>>({})
   const [confirming, setConfirming] = useState<'picked' | 'all' | null>(null)
   const qc = useQueryClient()
 
   const qs = `currency=${currency}&include_dismissed=${showIgnored}` +
     `${from ? `&date_from=${from}` : ''}${to ? `&date_to=${to}` : ''}`
+  // Paged and sorted by the API; a new filter or sort goes back to page 1.
+  const [pageAt, setPageAt] = useState({ key: qs, page: 1 })
+  const page = pageAt.key === qs ? pageAt.page : 1
+  const setPage = (p: number) => setPageAt({ key: qs, page: p })
+  const [sort, onSort] = useSort<BillSortKey>(null, () => setPage(1))
 
   const { data: clusters } = useQuery({
     queryKey: ['ap-ledger-clusters', currency],
@@ -729,12 +746,13 @@ function BillsByDate({ currency }: { currency: string }) {
       `/ap-ledger-health/date-clusters?currency=${currency}&limit=10`),
   })
   const { data, isFetching, error } = useQuery({
-    queryKey: ['ap-ledger-bills', currency, from, to, showIgnored],
-    queryFn: () => financeApi.get<BillsResp>(`/ap-ledger-health/bills?${qs}&limit=1000`),
+    queryKey: ['ap-ledger-bills', currency, from, to, showIgnored, page, sort],
+    queryFn: () => financeApi.get<BillsResp>(
+      `/ap-ledger-health/bills?${qs}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}${sortQs(sort)}`),
   })
 
   const refresh = () => {
-    setPicked([])
+    setPicked({})
     setConfirming(null)
     invalidateApJudgement(qc)
   }
@@ -749,7 +767,8 @@ function BillsByDate({ currency }: { currency: string }) {
     mutationFn: (v: { reason: string; note: string }) =>
       financeApi.post('/ap-ledger-health/dismiss-matching', {
         ...v, currency, date_from: from || null, date_to: to || null,
-        expected_bills: rows.filter((b) => !b.dismissed).length,
+        // The server-side count the screen showed, not the rows on this page.
+        expected_bills: live,
       }),
     onSuccess: refresh,
   })
@@ -758,19 +777,28 @@ function BillsByDate({ currency }: { currency: string }) {
     onSuccess: refresh,
   })
 
-  const rows = data?.items ?? []
+  const rows = data?.items ?? []                       // this page only
   const selectable = rows.filter((b) => !b.dismissed)
   const ignoredRows = rows.filter((b) => b.dismissed)
-  const pickedRows = rows.filter((b) => picked.includes(b.bill_no))
-  const pickedTotal = pickedRows.reduce((t, b) => t + Number(b.money_bal), 0)
+  const pickedNos = Object.keys(picked)
+  const pickedTotal = Object.values(picked).reduce((t, v) => t + Number(v), 0)
+  // Live = matching and not already ignored, over the WHOLE filter (server totals).
+  const live = (data?.total ?? 0) - (data?.dismissed_bills ?? 0)
   const liveTotal = Number(data?.money_bal ?? 0) - Number(data?.dismissed_bal ?? 0)
   const narrowed = !!(from || to)
-  // A filter matching more than one page cannot be judged from this screen —
-  // the server refuses it, and saying so here beats a 409 nobody expected.
-  const capped = (data?.total ?? 0) > rows.length
+  // The server refuses a filter-wide judgement over MAX_PER_ACTION bills, and
+  // /dismiss takes at most 500 at a time — say so here rather than 409/422.
+  const capped = live > MAX_PER_ACTION
+  const tooManyPicked = pickedNos.length > 500
   const err = dismissSome.error || dismissAll.error || restore.error
+  const togglePick = (b: FlatBill, on: boolean) => setPicked((p) => {
+    const n = { ...p }
+    if (on) n[b.bill_no] = b.money_bal; else delete n[b.bill_no]
+    return n
+  })
+  const pageAllPicked = selectable.length > 0 && selectable.every((b) => b.bill_no in picked)
 
-  const pick = (d: ClusterRow) => { setFrom(d.bill_date); setTo(d.bill_date); setPicked([]) }
+  const pick = (d: ClusterRow) => { setFrom(d.bill_date); setTo(d.bill_date); setPicked({}) }
 
   return (
     <>
@@ -801,21 +829,21 @@ function BillsByDate({ currency }: { currency: string }) {
       <div className="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5">
         <label className="text-xs text-neutral-600">
           <span className="mb-1 block font-medium">Bill date from</span>
-          <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPicked([]) }}
+          <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPicked({}) }}
                  className="rounded-lg border border-neutral-300 px-2 py-1 text-sm" />
         </label>
         <label className="text-xs text-neutral-600">
           <span className="mb-1 block font-medium">to</span>
-          <input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPicked([]) }}
+          <input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPicked({}) }}
                  className="rounded-lg border border-neutral-300 px-2 py-1 text-sm" />
         </label>
         {narrowed && (
-          <button onClick={() => { setFrom(''); setTo(''); setPicked([]) }}
+          <button onClick={() => { setFrom(''); setTo(''); setPicked({}) }}
                   className="pb-1 text-xs text-neutral-500 hover:text-neutral-700">clear dates</button>
         )}
         <label className="flex items-center gap-1.5 pb-1 text-xs text-neutral-600">
           <input type="checkbox" checked={showIgnored}
-                 onChange={(e) => { setShowIgnored(e.target.checked); setPicked([]) }} />
+                 onChange={(e) => { setShowIgnored(e.target.checked); setPicked({}) }} />
           Show bills already ignored
         </label>
         <div className="ml-auto pb-0.5 text-right text-xs">
@@ -832,25 +860,28 @@ function BillsByDate({ currency }: { currency: string }) {
       </div>
 
       <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
-        {picked.length > 0 ? (
+        {pickedNos.length > 0 ? (
           <>
             <span className="font-medium text-neutral-700">
-              {picked.length} selected · {money(String(pickedTotal))} {currency}
+              {pickedNos.length} selected · {money(String(pickedTotal))} {currency}
             </span>
-            <button onClick={() => setConfirming('picked')}
+            <button onClick={() => setConfirming('picked')} disabled={tooManyPicked}
                     className="inline-flex items-center gap-1 rounded border border-[#085E5E] px-1.5 py-0.5 font-medium text-[#085E5E] hover:bg-primary-50">
               <EyeOff className="h-3 w-3" /> Ignore selected
             </button>
-            <button onClick={() => setPicked([])} className="text-neutral-400 hover:text-neutral-600">clear</button>
+            <button onClick={() => setPicked({})} className="text-neutral-400 hover:text-neutral-600">clear</button>
+            {tooManyPicked && (
+              <span className="text-amber-700">At most 500 bills at a time — clear some, or ignore the whole filter.</span>
+            )}
           </>
-        ) : narrowed && selectable.length > 0 ? (
+        ) : narrowed && live > 0 ? (
           <>
             <span className="text-neutral-500">
               Tick the bills that are not real debt, or judge the whole filter at once.
             </span>
-            <button onClick={() => setConfirming('all')}
+            <button onClick={() => setConfirming('all')} disabled={capped}
                     className="inline-flex items-center gap-1 rounded border border-amber-600 px-1.5 py-0.5 font-medium text-amber-700 hover:bg-amber-50">
-              <EyeOff className="h-3 w-3" /> Ignore all {selectable.length} matching
+              <EyeOff className="h-3 w-3" /> Ignore all {live} matching
             </button>
           </>
         ) : (
@@ -861,15 +892,15 @@ function BillsByDate({ currency }: { currency: string }) {
         {/* A bulk action with no bulk undo is a trap: 88 bills judged in one
             click would otherwise take 88 clicks to take back. Only offered
             while the ignored rows are actually on screen. */}
-        {showIgnored && ignoredRows.length > 0 && picked.length === 0 && (
+        {showIgnored && ignoredRows.length > 0 && pickedNos.length === 0 && (
           <button onClick={() => restore.mutate(ignoredRows.map((b) => b.bill_no))}
                   className="inline-flex items-center gap-1 rounded border border-neutral-300 px-1.5 py-0.5 font-medium text-neutral-600 hover:bg-neutral-50">
-            <Undo2 className="h-3 w-3" /> Restore all {ignoredRows.length} ignored
+            <Undo2 className="h-3 w-3" /> Restore the {ignoredRows.length} ignored on this page
           </button>
         )}
         {capped && (
           <span className="text-amber-700">
-            Only the first {rows.length} of {data!.total} are shown — narrow the dates before
+            {live} bills match — more than {MAX_PER_ACTION} cannot be ignored in one go; narrow the dates before
             judging the whole filter.
           </span>
         )}
@@ -886,17 +917,16 @@ function BillsByDate({ currency }: { currency: string }) {
             <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
               <th className="w-8 px-2 py-2 text-left font-medium">
                 <input type="checkbox" aria-label="Select all shown"
-                       checked={selectable.length > 0 && picked.length === selectable.length}
-                       onChange={(e) => setPicked(
-                         e.target.checked ? selectable.map((b) => b.bill_no) : [])} />
+                       checked={pageAllPicked}
+                       onChange={(e) => selectable.forEach((b) => togglePick(b, e.target.checked))} />
               </th>
-              <th className="px-3 py-2 text-left font-medium">Bill</th>
-              <th className="px-3 py-2 text-left font-medium">Date</th>
-              <th className="px-3 py-2 text-left font-medium">Supplier</th>
-              <th className="px-3 py-2 text-left font-medium">Invoice</th>
-              <th className="px-3 py-2 text-left font-medium">PO</th>
-              <th className="px-3 py-2 text-right font-medium">Billed</th>
-              <th className="px-3 py-2 text-right font-medium">Still open</th>
+              <SortTh label="Bill" sortKey="bill_no" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
+              <SortTh label="Date" sortKey="bill_date" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
+              <SortTh label="Supplier" sortKey="supplier" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
+              <SortTh label="Invoice" sortKey="invoice_no" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
+              <SortTh label="PO" sortKey="purchase_order" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
+              <SortTh label="Billed" sortKey="money_cr" sort={sort} onSort={onSort} align="right" className="px-3 py-2 font-medium" />
+              <SortTh label="Still open" sortKey="money_bal" sort={sort} onSort={onSort} align="right" className="px-3 py-2 font-medium" />
             </tr>
           </thead>
           <tbody>
@@ -933,10 +963,8 @@ function BillsByDate({ currency }: { currency: string }) {
                       </button>
                     ) : (
                       <input type="checkbox" aria-label={`Select ${b.bill_no}`}
-                             checked={picked.includes(b.bill_no)}
-                             onChange={(e) => setPicked(
-                               e.target.checked ? [...picked, b.bill_no]
-                                                : picked.filter((x) => x !== b.bill_no))} />
+                             checked={b.bill_no in picked}
+                             onChange={(e) => togglePick(b, e.target.checked)} />
                     )}
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">
@@ -968,18 +996,21 @@ function BillsByDate({ currency }: { currency: string }) {
             })}
           </tbody>
         </table>
+        {/* `total` counts ignored bills too; the rows leave them out unless shown. */}
+        <ListPager page={page} pageSize={PAGE_SIZE} total={showIgnored ? (data?.total ?? 0) : live} noun="bills"
+                   onPage={setPage}
+                   className="flex items-center justify-between border-t border-neutral-100 px-3 py-2 text-sm text-neutral-500" />
       </div>
 
       {confirming && (
         <DismissDialog
-          billNos={confirming === 'picked' ? picked : selectable.map((b) => b.bill_no)}
-          total={confirming === 'picked'
-            ? pickedTotal
-            : selectable.reduce((t, b) => t + Number(b.money_bal), 0)}
+          billNos={confirming === 'picked' ? pickedNos : null}
+          count={confirming === 'picked' ? pickedNos.length : live}
+          total={confirming === 'picked' ? pickedTotal : liveTotal}
           currency={currency}
           onCancel={() => setConfirming(null)}
           onDone={(reason, note) => confirming === 'picked'
-            ? dismissSome.mutate({ bill_nos: picked, reason, note })
+            ? dismissSome.mutate({ bill_nos: pickedNos, reason, note })
             : dismissAll.mutate({ reason, note })} />
       )}
     </>
@@ -999,28 +1030,66 @@ export default function ApLedgerHealthPage() {
     queryKey: ['ap-ledger-health-summary'],
     queryFn: () => financeApi.get<SummaryResp>('/ap-ledger-health/summary'),
   })
+  // Vendor search runs on the server now that both lists are paged; debounced
+  // so a fast typist does not fire a query per keystroke.
+  const [debouncedQ, setDebouncedQ] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(vendorQ.trim()), 300)
+    return () => clearTimeout(t)
+  }, [vendorQ])
+  const qParam = debouncedQ ? `&q=${encodeURIComponent(debouncedQ)}` : ''
+  // A page number belongs to the currency + search it was turned on; a new
+  // currency, a new search or a new sort starts again at page 1.
+  const listKey = `${currency}|${debouncedQ}`
+  const [supPageAt, setSupPageAt] = useState({ key: listKey, page: 1 })
+  const [abPageAt, setAbPageAt] = useState({ key: listKey, page: 1 })
+  const supPage = supPageAt.key === listKey ? supPageAt.page : 1
+  const abPage = abPageAt.key === listKey ? abPageAt.page : 1
+  const setSupPage = (page: number) => setSupPageAt({ key: listKey, page })
+  const setAbPage = (page: number) => setAbPageAt({ key: listKey, page })
+  const [supSort, onSupSort] = useSort<SupplierSortKey>(null, () => setSupPage(1))
+  const [abSort, onAbSort] = useSort<AbandonedSortKey>(null, () => setAbPage(1))
+
   const { data: items, isFetching: loadingItems } = useQuery({
-    queryKey: ['ap-ledger-health-items', currency],
+    queryKey: ['ap-ledger-health-items', currency, debouncedQ, supPage, supSort],
     queryFn: () => financeApi.get<ItemsResp>(
-      `/ap-ledger-health/items?currency=${currency}&limit=500`),
+      `/ap-ledger-health/items?currency=${currency}&limit=${PAGE_SIZE}` +
+      `&offset=${(supPage - 1) * PAGE_SIZE}${qParam}${sortQs(supSort)}`),
     enabled: view === 'suppliers',
   })
   const { data: abandoned, isFetching: loadingAbandoned } = useQuery({
-    queryKey: ['ap-ledger-abandoned', currency],
+    queryKey: ['ap-ledger-abandoned', currency, debouncedQ, abPage, abSort],
     queryFn: () => financeApi.get<AbandonedResp>(
-      `/ap-ledger-health/abandoned?currency=${currency}&limit=500`),
+      `/ap-ledger-health/abandoned?currency=${currency}&limit=${PAGE_SIZE}` +
+      `&offset=${(abPage - 1) * PAGE_SIZE}${qParam}${sortQs(abSort)}`),
     enabled: view === 'abandoned',
   })
 
   const ccyRows = summary?.currencies ?? []
-  // Filtered in the browser: both lists arrive whole (limit=500). Not offered on
-  // 'Bills by date' — there "Ignore all N matching" acts on the server-side
-  // filter, and a search the server never saw would make N lie.
-  const searching = vendorQ.trim() !== ''
-  const supplierRows = (items?.items ?? []).filter((r) => matchesVendor(vendorQ, r))
-  const abandonedRows = (abandoned?.items ?? []).filter((r) => matchesVendor(vendorQ, r))
+  // Not offered on 'Bills by date' — there "Ignore all N matching" acts on the
+  // date filter, and a vendor search alongside it would make N ambiguous.
+  const searching = debouncedQ !== ''
+  const supplierRows = items?.items ?? []
+  const abandonedRows = abandoned?.items ?? []
 
-  const exportCsv = () => {
+  // Every matching row (not just the page), in the on-screen sort and search.
+  const fetchAll = async <T,>(path: string): Promise<T[]> => {
+    const all: T[] = []
+    for (let off = 0; ; off += 1000) {
+      const page = await financeApi.get<{ total: number; items: T[] }>(
+        `${path}&limit=1000&offset=${off}`)
+      all.push(...page.items)
+      if (all.length >= page.total || page.items.length === 0) return all
+    }
+  }
+
+  const exportCsv = async () => {
+    const allAbandoned = view === 'abandoned'
+      ? await fetchAll<AbandonedRow>(
+          `/ap-ledger-health/abandoned?currency=${currency}${qParam}${sortQs(abSort)}`)
+      : []
+    const allSuppliers = view === 'abandoned' ? [] : await fetchAll<SupplierRow>(
+      `/ap-ledger-health/items?currency=${currency}${qParam}${sortQs(supSort)}`)
     const head = view === 'abandoned'
       ? ['Bill', 'Date', 'Supplier code', 'Supplier', 'Invoice no', 'Currency',
          'Billed', 'Balance carried', 'Bill status', 'Approve status', 'Duplicate of an approved bill']
@@ -1028,11 +1097,11 @@ export default function ApLedgerHealthPage() {
          'Subledger open', 'Billed minus paid', 'Gap',
          'Ignored bills', 'Ignored balance', 'Open after ignored']
     const body = view === 'abandoned'
-      ? abandonedRows.map((r) => [
+      ? allAbandoned.map((r) => [
           r.bill_no, r.bill_date, r.supplier_code, r.supplier_name, r.invoice_no,
           r.currency, r.money_cr, r.money_bal, r.bill_status, r.approve_status,
           r.superseded ? 'yes' : 'no'])
-      : supplierRows.map((r) => [
+      : allSuppliers.map((r) => [
           r.supplier_code, r.supplier_name, r.currency, r.health,
           r.billed, r.paid, r.subledger_open, r.billed_minus_paid, r.gap,
           r.ignored_bills, r.ignored_bal, r.open_after_ignored])
@@ -1156,9 +1225,9 @@ export default function ApLedgerHealthPage() {
           <span className="text-sm text-neutral-500">
             {currency}
             {view === 'abandoned'
-              ? ` · ${searching ? `${abandonedRows.length} of ` : ''}${abandoned?.total ?? 0} documents`
+              ? ` · ${abandoned?.total ?? 0} documents${searching ? ' matching' : ''}`
               : view === 'suppliers'
-                ? ` · ${searching ? `${supplierRows.length} of ` : ''}${items?.total ?? 0} suppliers` : ''}
+                ? ` · ${items?.total ?? 0} suppliers${searching ? ' matching' : ''}` : ''}
           </span>
           {view !== 'bills' && (
             <div className="ml-auto flex items-center gap-2">
@@ -1183,13 +1252,13 @@ export default function ApLedgerHealthPage() {
             <table className="w-full min-w-[880px] text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
-                  <th className="px-3 py-2 text-left font-medium">Bill</th>
-                  <th className="px-3 py-2 text-left font-medium">Date</th>
-                  <th className="px-3 py-2 text-left font-medium">Supplier</th>
-                  <th className="px-3 py-2 text-left font-medium">Invoice no.</th>
-                  <th className="px-3 py-2 text-right font-medium">Billed</th>
-                  <th className="px-3 py-2 text-right font-medium">Balance carried</th>
-                  <th className="px-3 py-2 text-left font-medium">Status</th>
+                  <SortTh label="Bill" sortKey="bill_no" sort={abSort} onSort={onAbSort} className="px-3 py-2 font-medium text-left" />
+                  <SortTh label="Date" sortKey="bill_date" sort={abSort} onSort={onAbSort} className="px-3 py-2 font-medium text-left" />
+                  <SortTh label="Supplier" sortKey="supplier" sort={abSort} onSort={onAbSort} className="px-3 py-2 font-medium text-left" />
+                  <SortTh label="Invoice no." sortKey="invoice_no" sort={abSort} onSort={onAbSort} className="px-3 py-2 font-medium text-left" />
+                  <SortTh label="Billed" sortKey="money_cr" sort={abSort} onSort={onAbSort} align="right" className="px-3 py-2 font-medium" />
+                  <SortTh label="Balance carried" sortKey="money_bal" sort={abSort} onSort={onAbSort} align="right" className="px-3 py-2 font-medium" />
+                  <SortTh label="Status" sortKey="status" sort={abSort} onSort={onAbSort} className="px-3 py-2 font-medium text-left" />
                 </tr>
               </thead>
               <tbody>
@@ -1198,7 +1267,7 @@ export default function ApLedgerHealthPage() {
                     <Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></td></tr>
                 ) : abandonedRows.length === 0 ? (
                   <tr><td colSpan={7} className="px-3 py-8 text-center text-neutral-400">
-                    {searching && (abandoned?.items.length ?? 0) > 0
+                    {searching
                       ? <>No vendor matching &ldquo;{vendorQ.trim()}&rdquo; in {currency}.</>
                       : <>No abandoned documents carrying a balance in {currency}.</>}</td></tr>
                 ) : abandonedRows.map((r) => (
@@ -1226,18 +1295,21 @@ export default function ApLedgerHealthPage() {
                 ))}
               </tbody>
             </table>
+            <ListPager page={abPage} pageSize={PAGE_SIZE} total={abandoned?.total ?? 0}
+                       noun="documents" onPage={setAbPage}
+                       className="flex items-center justify-between border-t border-neutral-100 px-3 py-2 text-sm text-neutral-500" />
           </div>
         ) : (
         <div className="overflow-x-auto rounded-lg border border-neutral-200">
           <table className="w-full min-w-[820px] text-sm">
             <thead>
               <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
-                <th className="px-3 py-2 text-left font-medium">Supplier</th>
-                <th className="px-3 py-2 text-right font-medium">Billed</th>
-                <th className="px-3 py-2 text-right font-medium">Paid</th>
-                <th className="px-3 py-2 text-right font-medium">Subledger open</th>
-                <th className="px-3 py-2 text-right font-medium">Billed &minus; paid</th>
-                <th className="px-3 py-2 text-right font-medium">Gap</th>
+                <SortTh label="Supplier" sortKey="supplier" sort={supSort} onSort={onSupSort} className="px-3 py-2 font-medium text-left" />
+                <SortTh label="Billed" sortKey="billed" sort={supSort} onSort={onSupSort} align="right" className="px-3 py-2 font-medium" />
+                <SortTh label="Paid" sortKey="paid" sort={supSort} onSort={onSupSort} align="right" className="px-3 py-2 font-medium" />
+                <SortTh label="Subledger open" sortKey="subledger_open" sort={supSort} onSort={onSupSort} align="right" className="px-3 py-2 font-medium" />
+                <SortTh label={'Billed \u2212 paid'} sortKey="billed_minus_paid" sort={supSort} onSort={onSupSort} align="right" className="px-3 py-2 font-medium" />
+                <SortTh label="Gap" sortKey="gap" sort={supSort} onSort={onSupSort} align="right" className="px-3 py-2 font-medium" />
                 <th className="px-3 py-2 text-left font-medium"></th>
               </tr>
             </thead>
@@ -1247,7 +1319,7 @@ export default function ApLedgerHealthPage() {
                   <Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></td></tr>
               ) : supplierRows.length === 0 ? (
                 <tr><td colSpan={7} className="px-3 py-8 text-center text-neutral-400">
-                  {searching && (items?.items.length ?? 0) > 0
+                  {searching
                     ? <>No vendor matching &ldquo;{vendorQ.trim()}&rdquo; in {currency}.</>
                     : <>No suppliers in this state for {currency}.</>}</td></tr>
               ) : supplierRows.map((r) => {
@@ -1299,6 +1371,9 @@ export default function ApLedgerHealthPage() {
               })}
             </tbody>
           </table>
+          <ListPager page={supPage} pageSize={PAGE_SIZE} total={items?.total ?? 0}
+                     noun="suppliers" onPage={setSupPage}
+                     className="flex items-center justify-between border-t border-neutral-100 px-3 py-2 text-sm text-neutral-500" />
         </div>
         )}
       </div>

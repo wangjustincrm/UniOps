@@ -156,27 +156,86 @@ async def abandoned_summary(db: AsyncSession) -> dict:
     } for r in rows}
 
 
+# Click-to-sort whitelists (SQL fragments written here; the request key is only
+# looked up). Each sorts what that column of ApLedgerHealthPage shows.
+ABANDONED_SORT = {
+    "bill_no": "bill_no",
+    "bill_date": "bill_date",
+    "supplier": "lower(coalesce(nullif(max(supplier_name), ''), supplier_code))",
+    "invoice_no": "lower(nullif(max(invoice_no), ''))",
+    "money_cr": "sum(money_cr)",
+    "money_bal": "sum(money_bal)",
+    "status": "bill_status || '/' || approve_status",
+}
+ABANDONED_TIEBREAK = "bill_no, currency"
+
+SUPPLIER_SORT = {
+    "supplier": "lower(coalesce(nullif(supplier_name, ''), supplier_code))",
+    "billed": "billed",
+    "paid": "paid",
+    "subledger_open": "subledger_open",
+    "billed_minus_paid": "billed_minus_paid",
+    "gap": "gap",
+}
+SUPPLIER_TIEBREAK = "supplier_code, currency"
+_SUPPLIER_DEFAULT_ORDER = ("(open_after_ignored = 0 and ignored_bills > 0), "
+                           "abs(gap) desc, open_after_ignored desc, subledger_open desc, "
+                           "supplier_code, currency")
+
+BILL_SORT = {
+    "bill_no": "l.bill_no",
+    "bill_date": "min(l.bill_date)",
+    "supplier": "lower(coalesce(nullif(min(l.supplier_name), ''), min(l.supplier_code)))",
+    "invoice_no": "lower(nullif(min(l.invoice_no), ''))",
+    "purchase_order": "lower(nullif(min(l.purchase_order), ''))",
+    "money_cr": "sum(l.money_cr)",
+    "money_bal": "sum(l.money_bal)",
+}
+BILL_TIEBREAK = "l.bill_no"
+
+
+def _vendor_like(q: str | None, params: dict, name_col: str, code_col: str) -> str | None:
+    """The vendor search box (name or code, case-insensitive), as a WHERE
+    predicate. It used to run in the browser over the rows already loaded,
+    which stops working once the list is paged."""
+    if not q or not q.strip():
+        return None
+    params["vendor_q"] = f"%{q.strip()}%"
+    return f"({name_col} ilike :vendor_q or {code_col} ilike :vendor_q)"
+
+
 async def abandoned_items(db: AsyncSession, currency: str | None = None,
-                          limit: int = 500) -> dict:
-    """Payable documents NC never approved, biggest balance first."""
-    params: dict = {"limit": max(1, min(limit, 2000))}
-    clause = ""
+                          limit: int = 500, offset: int = 0, q: str | None = None,
+                          order: str | None = None) -> dict:
+    """Payable documents NC never approved, biggest balance first (or `order`,
+    an ORDER BY body from list_sort.order_sql over ABANDONED_SORT). `total`
+    counts every matching document, not the page."""
+    params: dict = {"limit": max(1, min(limit, 2000)), "offset": max(0, offset)}
+    where = []
     if currency:
-        clause = " where currency = :ccy"
+        where.append("currency = :ccy")
         params["ccy"] = currency
+    vendor = _vendor_like(q, params, "supplier_name", "supplier_code")
+    if vendor:
+        where.append(vendor)
+    clause = (" where " + " and ".join(where)) if where else ""
+    grouped = f"""
+          from flagged {clause}
+         group by bill_no, currency, bill_date, bill_year, bill_status,
+                  approve_status, supplier_code"""
     rows = (await db.execute(text(_ABANDONED + f"""
         select bill_no, currency, bill_date, bill_year, bill_status, approve_status,
                supplier_code, max(supplier_name) as supplier_name,
                max(invoice_no) as invoice_no,
                sum(money_cr) as money_cr, sum(money_bal) as money_bal,
                bool_or(superseded) as superseded
-          from flagged {clause}
-         group by bill_no, currency, bill_date, bill_year, bill_status,
-                  approve_status, supplier_code
-         order by abs(sum(money_bal)) desc
-         limit :limit
+        {grouped}
+         order by {order or "abs(sum(money_bal)) desc, bill_no, currency"}
+         limit :limit offset :offset
     """), params)).mappings().all()
-    return {"total": len(rows), "items": [{
+    total = (await db.execute(text(_ABANDONED + f"""
+        select count(*) from (select 1 {grouped}) x"""), params)).scalar_one()
+    return {"total": int(total), "items": [{
         "bill_no": r["bill_no"], "currency": r["currency"],
         "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
         "bill_year": r["bill_year"], "bill_status": r["bill_status"],
@@ -240,16 +299,22 @@ async def summary(db: AsyncSession) -> dict:
 
 
 async def items(db: AsyncSession, health: str | None = None,
-                currency: str | None = None, limit: int = 200) -> dict:
+                currency: str | None = None, limit: int = 200, offset: int = 0,
+                q: str | None = None, order: str | None = None) -> dict:
     """Supplier-level detail, worst gap first — that is the order it gets
-    worked in, and the biggest gaps are the ones distorting the forecast."""
-    where, params = [], {"limit": max(1, min(limit, 1000))}
+    worked in, and the biggest gaps are the ones distorting the forecast.
+    `order` (from list_sort.order_sql over SUPPLIER_SORT) replaces that order
+    when the user sorts a column. `total` counts every matching supplier."""
+    where, params = [], {"limit": max(1, min(limit, 1000)), "offset": max(0, offset)}
     if health:
         where.append("health = :health")
         params["health"] = health
     if currency:
         where.append("currency = :currency")
         params["currency"] = currency
+    vendor = _vendor_like(q, params, "supplier_name", "supplier_code")
+    if vendor:
+        where.append(vendor)
     clause = (" where " + " and ".join(where)) if where else ""
     sql = _BASE + f"""
     select supplier_code, supplier_name, currency, health,
@@ -260,12 +325,13 @@ async def items(db: AsyncSession, health: str | None = None,
      -- Suppliers whose whole balance has been set aside sink to the bottom:
      -- that is the point of setting it aside. They are not dropped — the row
      -- still states what was ignored and who ignored it.
-     order by (open_after_ignored = 0 and ignored_bills > 0),
-              abs(gap) desc, open_after_ignored desc, subledger_open desc
-     limit :limit
+     order by {order or _SUPPLIER_DEFAULT_ORDER}
+     limit :limit offset :offset
     """
     rows = (await db.execute(text(sql), params)).mappings().all()
-    return {"total": len(rows), "items": [{
+    total = (await db.execute(text(_BASE + f" select count(*) from classified {clause}"),
+                              params)).scalar_one()
+    return {"total": int(total), "items": [{
         "supplier_code": r["supplier_code"],
         "supplier_name": r["supplier_name"],
         "currency": r["currency"],
@@ -876,7 +942,7 @@ async def date_clusters(db: AsyncSession, currency: str | None = None,
 async def open_bills(db: AsyncSession, currency: str | None = None,
                      date_from=None, date_to=None, supplier_code: str | None = None,
                      include_dismissed: bool = False, min_amount=None,
-                     limit: int = 500, offset: int = 0) -> dict:
+                     limit: int = 500, offset: int = 0, order: str | None = None) -> dict:
     """Every open approved bill matching the filter, biggest first.
 
     Returns the totals for the WHOLE match, not for the page — a bulk action
@@ -913,7 +979,7 @@ async def open_bills(db: AsyncSession, currency: str | None = None,
                d.reason as dismiss_reason, d.note as dismiss_note,
                d.dismissed_by_name, d.dismissed_at
         {body(not include_dismissed)}
-         order by abs(sum(l.money_bal)) desc, l.bill_no
+         order by {order or "abs(sum(l.money_bal)) desc, l.bill_no"}
          limit :limit offset :offset
     """), page)).mappings().all()
 

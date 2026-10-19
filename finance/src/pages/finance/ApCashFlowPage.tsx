@@ -27,10 +27,17 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Download, HelpCircle, Loader2 } from 'lucide-react'
+import { SortTh, sortParams, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+import { ListPager } from '@/components/ListPager'
+
+const BILL_PAGE_SIZE = 100
+/** GET /ap-cash-flow/items sort keys (finance-api ap_cash_flow.ITEM_SORT). */
+type BillSortKey = 'bill_no' | 'supplier' | 'invoice_no' | 'purchase_order' | 'bill_date'
+  | 'payment_terms' | 'due_date' | 'open_bal'
 
 interface Bucket {
   key: string; label: string; overdue: boolean
@@ -110,17 +117,37 @@ export default function ApCashFlowPage() {
     queryKey: ['ap-cash-flow-summary'],
     queryFn: () => financeApi.get<SummaryResp>('/ap-cash-flow/summary'),
   })
+  // The bill drill-down is paged and sorted by the API. The page belongs to
+  // the selection it was turned on: picking another bucket or supplier (or
+  // currency) starts again at page 1, and so does a new sort.
+  const selKey = `${currency}|${bucket ?? ''}|${supplier?.code ?? ''}`
+  const [billPageAt, setBillPageAt] = useState({ key: selKey, page: 1 })
+  const billPage = billPageAt.key === selKey ? billPageAt.page : 1
+  const setBillPage = (page: number) => setBillPageAt({ key: selKey, page })
+  const [billSort, onBillSort] = useSort<BillSortKey>(null, () => setBillPage(1))
+  const { sort: billSortKey, dir: billSortDir } = sortParams(billSort)
   const { data: items, isFetching: loadingItems, error: itemsError } = useQuery({
-    queryKey: ['ap-cash-flow-items', currency, bucket, supplier?.code],
+    queryKey: ['ap-cash-flow-items', currency, bucket, supplier?.code, billPage, billSort],
     queryFn: () => financeApi.get<ItemsResp>(
       `/ap-cash-flow/items?currency=${currency}` +
       `${bucket ? `&bucket=${bucket}` : ''}` +
-      `${supplier ? `&supplier_code=${encodeURIComponent(supplier.code)}` : ''}&limit=1000`),
+      `${supplier ? `&supplier_code=${encodeURIComponent(supplier.code)}` : ''}` +
+      `&limit=${BILL_PAGE_SIZE}&offset=${(billPage - 1) * BILL_PAGE_SIZE}` +
+      `${billSortKey ? `&sort=${billSortKey}&dir=${billSortDir}` : ''}`),
     enabled: !!bucket || !!supplier,
   })
   const { data: missing } = useQuery({
     queryKey: ['ap-cash-flow-missing', currency],
     queryFn: () => financeApi.get<MissingResp>(`/ap-cash-flow/missing-terms?currency=${currency}`),
+  })
+
+  // The missing-terms list comes back whole (one row per supplier); it sorts
+  // on the page.
+  const missingSort = useSortableRows(missing?.items, {
+    supplier: (r) => r.supplier_name || r.supplier_code,
+    reason: (r) => (r.reason === 'no_vendor_record' ? 'no vendor record'
+      : `term "${r.payment_terms}" not recognised`),
+    bills: (r) => r.bills, amount: (r) => Number(r.amount), dated: (r) => r.oldest_bill,
   })
 
   const selected = bucket || supplier
@@ -146,7 +173,9 @@ export default function ApCashFlowPage() {
     const all: BillRow[] = []
     for (let off = 0; ; off += 1000) {
       const page = await financeApi.get<ItemsResp>(
-        `/ap-cash-flow/items?currency=${currency}&limit=1000&offset=${off}`)
+        `/ap-cash-flow/items?currency=${currency}&limit=1000&offset=${off}` +
+        // every bill of the currency, in the column order the drill-down uses
+        `${billSortKey ? `&sort=${billSortKey}&dir=${billSortDir}` : ''}`)
       all.push(...page.items)
       if (all.length >= page.total || page.items.length === 0) break
     }
@@ -359,14 +388,14 @@ export default function ApCashFlowPage() {
               <table className="w-full min-w-[900px] text-sm">
                 <thead>
                   <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
-                    <th className="px-3 py-2 text-left font-medium">Bill</th>
-                    <th className="px-3 py-2 text-left font-medium">Supplier</th>
-                    <th className="px-3 py-2 text-left font-medium">Invoice no.</th>
-                    <th className="px-3 py-2 text-left font-medium">PO</th>
-                    <th className="px-3 py-2 text-left font-medium">Bill date</th>
-                    <th className="px-3 py-2 text-left font-medium">Term</th>
-                    <th className="px-3 py-2 text-left font-medium">Due</th>
-                    <th className="px-3 py-2 text-right font-medium">Open</th>
+                    <SortTh label="Bill" sortKey="bill_no" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="Supplier" sortKey="supplier" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="Invoice no." sortKey="invoice_no" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="PO" sortKey="purchase_order" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="Bill date" sortKey="bill_date" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="Term" sortKey="payment_terms" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="Due" sortKey="due_date" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="Open" sortKey="open_bal" sort={billSort} onSort={onBillSort} align="right" className="px-3 py-2 font-medium" />
                   </tr>
                 </thead>
                 <tbody>
@@ -410,6 +439,8 @@ export default function ApCashFlowPage() {
                 </tbody>
               </table>
             </div>
+            <ListPager page={billPage} pageSize={BILL_PAGE_SIZE} total={items?.total ?? 0}
+                       noun="bills" onPage={setBillPage} />
           </div>
         )}
 
@@ -453,11 +484,11 @@ export default function ApCashFlowPage() {
               <table className="w-full min-w-[720px] text-sm">
                 <thead>
                   <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
-                    <th className="px-3 py-2 text-left font-medium">Supplier</th>
-                    <th className="px-3 py-2 text-left font-medium">What is missing</th>
-                    <th className="px-3 py-2 text-right font-medium">Bills</th>
-                    <th className="px-3 py-2 text-right font-medium">Open balance</th>
-                    <th className="px-3 py-2 text-left font-medium">Bills dated</th>
+                    <SortTh label="Supplier" sortKey="supplier" sort={missingSort.sort} onSort={missingSort.onSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="What is missing" sortKey="reason" sort={missingSort.sort} onSort={missingSort.onSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="Bills" sortKey="bills" sort={missingSort.sort} onSort={missingSort.onSort} align="right" className="px-3 py-2 font-medium" />
+                    <SortTh label="Open balance" sortKey="amount" sort={missingSort.sort} onSort={missingSort.onSort} align="right" className="px-3 py-2 font-medium" />
+                    <SortTh label="Bills dated" sortKey="dated" sort={missingSort.sort} onSort={missingSort.onSort} className="px-3 py-2 font-medium text-left" />
                     <th className="px-3 py-2 text-left font-medium"></th>
                   </tr>
                 </thead>
@@ -466,7 +497,7 @@ export default function ApCashFlowPage() {
                     <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
                       Loading…
                     </td></tr>
-                  ) : missing!.items.map((r) => (
+                  ) : missingSort.rows.map((r) => (
                     <tr key={(r.supplier_code ?? '') + r.currency}
                         onClick={() => {
                           if (!r.supplier_code) return

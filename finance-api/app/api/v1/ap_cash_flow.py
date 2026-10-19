@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
+from app.core.list_sort import SortDir, order_sql
 from app.db.base import get_db
 from app.models.nc_ap import NcApSyncRun
 from app.services import ap_cash_flow as svc
@@ -41,6 +42,8 @@ async def items(user: CurrentUser,
                 supplier_code: str | None = Query(None),
                 limit: int = Query(500, ge=1, le=2000),
                 offset: int = Query(0, ge=0),
+                sort: str | None = Query(None),
+                dir: SortDir = Query("asc"),
                 db: AsyncSession = Depends(get_db)):
     # Derived from the bucket ladder, never hand-listed: a bucket the summary
     # can report but this check rejects would be counted on screen and 422 on
@@ -48,8 +51,9 @@ async def items(user: CurrentUser,
     if bucket is not None and bucket not in svc.BUCKET_KEYS:
         raise HTTPException(status_code=422,
                             detail=f"bucket must be one of {sorted(svc.BUCKET_KEYS)}")
+    order = order_sql(sort, dir, svc.ITEM_SORT, tiebreak=svc.ITEM_TIEBREAK)
     return await svc.items(db, currency, bucket=bucket, supplier_code=supplier_code,
-                           limit=limit, offset=offset)
+                           limit=limit, offset=offset, order=order)
 
 
 @router.get("/missing-terms")

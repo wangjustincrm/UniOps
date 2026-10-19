@@ -8,6 +8,7 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronLeft, ChevronRight, DatabaseZap, Loader2, Search, Send, SlidersHorizontal, X } from 'lucide-react'
+import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -34,6 +35,10 @@ const SUBSYSTEMS = [
   ['FA', 'Fixed Assets'], ['CM', 'Cash Management'], ['IA', 'Inventory Accounting'],
   ['EGL', 'Exchange Gain/Loss'], ['PLCF', 'Gain/Loss Carry-Forward'], ['OT', 'OT'],
 ] as const
+
+/** GET /journal-vouchers sort keys (finance-api journal_voucher._SORTABLE). */
+type JvSortKey = 'voucher_date' | 'jv_number' | 'summary' | 'source_doc_number'
+  | 'nc_prepared_name' | 'source_subsystem' | 'total_debit' | 'status'
 
 interface JvList { total: number; items: JvHeader[] }
 
@@ -91,8 +96,11 @@ export default function JournalVouchersPage() {
   const [q, setQ] = useState('')
   const [qInput, setQInput] = useState('')
   const [page, setPage] = useState(0)
-  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'voucher_date', dir: 'desc' })
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const resetPage = () => { setPage(0); setSelected(new Set()) }
+  // Server-sorted (journal_voucher._SORTABLE); the API's own default is
+  // voucher_date desc, shown as the active arrow from the start.
+  const [sort, onSort] = useSort<JvSortKey>({ key: 'voucher_date', dir: 'desc' }, resetPage)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState<'review' | 'post' | null>(null)
@@ -139,7 +147,8 @@ export default function JournalVouchersPage() {
       if (k === 'aux_value' && !adv.aux_code) continue
       p.set(k, v)
     }
-    p.set('sort', sort.col); p.set('dir', sort.dir)
+    const { sort: sortKey, dir } = sortParams(sort)
+    if (sortKey && dir) { p.set('sort', sortKey); p.set('dir', dir) }
     return p.toString()
   }, [periodFrom, periodTo, status, subsystem, q, page, sort, adv])
 
@@ -158,12 +167,7 @@ export default function JournalVouchersPage() {
     qc.invalidateQueries({ queryKey: ['jv-list'] })
     setSelected(new Set())
   }
-  const resetPage = () => { setPage(0); setSelected(new Set()) }
   const gotoPage = (n: number) => { setPage(n); setSelected(new Set()) }
-  const toggleSort = (col: string) => {
-    setPage(0)
-    setSort((s) => s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' })
-  }
 
   const toggle = (id: string) => setSelected((p) => {
     const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n
@@ -374,30 +378,18 @@ export default function JournalVouchersPage() {
                         <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                       </th>
                     )}
-                    <th className="px-3 py-2 w-44 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('jv_number')}>
-                      Voucher No.{sort.col === 'jv_number' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
-                    </th>
-                    <th className="px-3 py-2 w-28 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('voucher_date')}>
-                      Date{sort.col === 'voucher_date' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
-                    </th>
-                    <th className="px-3 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('summary')}>
-                      Summary{sort.col === 'summary' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
-                    </th>
-                    <th className="px-3 py-2 w-48 whitespace-nowrap">Source</th>
+                    <SortTh label="Voucher No." sortKey="jv_number" sort={sort} onSort={onSort} className="px-3 py-2 w-44 whitespace-nowrap" />
+                    <SortTh label="Date" sortKey="voucher_date" sort={sort} onSort={onSort} className="px-3 py-2 w-28 whitespace-nowrap" />
+                    <SortTh label="Summary" sortKey="summary" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" />
+                    <SortTh label="Source" sortKey="source_doc_number" sort={sort} onSort={onSort} className="px-3 py-2 w-48 whitespace-nowrap" />
                     {/* NC's 制单 / 审核 / 记账, stacked rather than three columns:
                         three more w-28 columns cost 21rem of a row whose useful
                         content is Summary, and the checker and poster are the
                         same person on most of this book's vouchers. */}
-                    <th className="px-3 py-2 w-40 whitespace-nowrap">Prepared / Checked</th>
-                    <th className="px-3 py-2 w-20 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('source_subsystem')}>
-                      System{sort.col === 'source_subsystem' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
-                    </th>
-                    <th className="px-3 py-2 w-32 text-right cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('total_debit')}>
-                      Debit (CAD){sort.col === 'total_debit' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
-                    </th>
-                    <th className="px-3 py-2 w-28 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('status')}>
-                      Status{sort.col === 'status' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
-                    </th>
+                    <SortTh label="Prepared / Checked" sortKey="nc_prepared_name" sort={sort} onSort={onSort} className="px-3 py-2 w-40 whitespace-nowrap" />
+                    <SortTh label="System" sortKey="source_subsystem" sort={sort} onSort={onSort} className="px-3 py-2 w-20 whitespace-nowrap" />
+                    <SortTh label="Debit (CAD)" sortKey="total_debit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32 whitespace-nowrap" />
+                    <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2 w-28 whitespace-nowrap" />
                   </tr>
                 </thead>
                 <tbody>
