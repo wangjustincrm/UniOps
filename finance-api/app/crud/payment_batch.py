@@ -91,6 +91,49 @@ async def vendor_inv_no_map(db: AsyncSession,
     return out
 
 
+async def epms_invoice_refs(db: AsyncSession,
+                            pas: list[PaymentApplication]) -> dict[uuid.UUID, dict]:
+    """{pa.id: {"invoices": [{"id", "number"}], "due_date": iso | None}} for the
+    due list: the epms invoices a PA settles, so each vendor invoice number can
+    open its EPMS detail page, and the earliest of their due dates (invoices on
+    one PA fall due within 7 days of each other, so the earliest is the one
+    that matters for the run). OA Direct PAs' invoice_ids are expense_invoices
+    ids (see vendor_inv_no_map) and OA no longer has an invoice detail page, so
+    they get no links — the row falls back to the plain vendor_inv_no text."""
+    per_pa: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for r in pas:
+        ids: list[uuid.UUID] = []
+        for iid in r.invoice_ids or []:
+            try:
+                ids.append(uuid.UUID(str(iid)))
+            except (ValueError, TypeError):
+                continue
+        per_pa[r.id] = ids
+    all_ids = {u for ids in per_pa.values() for u in ids}
+    by_id: dict[uuid.UUID, tuple[str | None, date]] = {}
+    if all_ids:
+        rows = (await db.execute(
+            select(Invoice.id, Invoice.vendor_invoice_number, Invoice.due_date)
+            .where(Invoice.id.in_(all_ids))
+        )).all()
+        by_id = {iid: (no, due) for iid, no, due in rows}
+
+    out: dict[uuid.UUID, dict] = {}
+    for pid, ids in per_pa.items():
+        invoices: list[dict] = []
+        dues: list[date] = []
+        for u in dict.fromkeys(ids):
+            if u not in by_id:
+                continue
+            no, due = by_id[u]
+            invoices.append({"id": str(u), "number": no or ""})
+            if due:
+                dues.append(due)
+        out[pid] = {"invoices": invoices,
+                    "due_date": min(dues).isoformat() if dues else None}
+    return out
+
+
 async def vendor_inv_no_for_lines(db: AsyncSession,
                                   lines: list["PaymentBatchLine"]) -> dict[uuid.UUID, str]:
     """{line.doc_id: vendor invoice number(s)} for PA / Direct-PA batch lines.
@@ -121,10 +164,12 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
     claims = (await db.execute(cq.order_by(ExpenseClaim.created_at))).scalars().all()
 
     inv_no = await vendor_inv_no_map(db, pas)
+    refs = await epms_invoice_refs(db, pas)
     rows = [
         {"doc_kind": "pa_dir" if r.is_direct else "pa",
          "doc_id": str(r.id), "doc_number": r.pa_number,
          "payee": r.vendor_name, "vendor_inv_no": inv_no.get(r.id, ""),
+         "invoices": refs[r.id]["invoices"], "due_date": refs[r.id]["due_date"],
          "amount": str(r.payment_amount), "currency": r.currency,
          "claim_type": None,
          "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None}
@@ -133,6 +178,7 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
     rows += [
         {"doc_kind": "expense_claim", "doc_id": str(c.id), "doc_number": c.claim_number,
          "payee": c.employee_name, "vendor_inv_no": "",
+         "invoices": [], "due_date": None,
          "amount": str(c.total_amount), "currency": c.currency,
          "claim_type": c.claim_type,
          "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None}

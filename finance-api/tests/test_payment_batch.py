@@ -107,6 +107,37 @@ async def test_due_surfaces_vendor_invoice_number(client, db_session):
     assert by_num[bare.pa_number]["vendor_inv_no"] == ""
 
 
+async def test_due_carries_invoice_links_and_earliest_due_date(client, db_session):
+    """Each PA row lists its epms invoices (id + number, for the detail link)
+    and the earliest of their due dates; PAs without invoices and claims get
+    no links and no due date."""
+    def _inv(no, due):
+        return Invoice(
+            internal_ref=f"INV-{uuid.uuid4().hex[:8]}", vendor_invoice_number=no,
+            vendor_id=uuid.uuid4(), vendor_name="ACME", amount=Decimal("100"),
+            tax_amount=Decimal("0"), total_amount=Decimal("100"), currency="CAD",
+            invoice_date=date(2026, 6, 1), due_date=due, status="matched")
+    late, early = _inv("VINV-L", date(2026, 7, 8)), _inv("VINV-E", date(2026, 7, 3))
+    db_session.add_all([late, early])
+    await db_session.flush()
+    pa = _pa("200.00", po_id=uuid.uuid4(), invoice_ids=[str(late.id), str(early.id)])
+    bare = _pa("50.00")
+    claim = _claim("30.00")
+    db_session.add_all([pa, bare, claim])
+    await db_session.flush()
+
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    by_num = {r["doc_number"]: r for r in rows}
+    row = by_num[pa.pa_number]
+    assert row["invoices"] == [{"id": str(late.id), "number": "VINV-L"},
+                               {"id": str(early.id), "number": "VINV-E"}]
+    assert row["due_date"] == "2026-07-03"
+    assert by_num[bare.pa_number]["invoices"] == []
+    assert by_num[bare.pa_number]["due_date"] is None
+    assert by_num[claim.claim_number]["invoices"] == []
+    assert by_num[claim.claim_number]["due_date"] is None
+
+
 async def test_batch_detail_surfaces_vendor_invoice_number(client, db_session):
     """Batch detail lines resolve each PA line's vendor invoice number(s)."""
     inv = Invoice(
