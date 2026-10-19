@@ -120,7 +120,17 @@ termed as (
                 then o.bill_date + ({_TERM_CASE}) end as due_date,
            v.id is null as no_vendor_record
       from open_bills o
-      left join vendors v on v.erp_id = o.supplier_code
+      -- erp_id is not unique in the vendor master (the same NC supplier has
+      -- been created twice more than once), and a plain join repeats every
+      -- bill once per copy — inflating the totals, not just the list. Take
+      -- one record per supplier: an active one first, then the latest edited.
+      left join lateral (
+          select vv.id, vv.payment_terms
+            from vendors vv
+           where vv.erp_id = o.supplier_code
+           order by vv.is_active desc nulls last, vv.updated_at desc nulls last, vv.id
+           limit 1
+      ) v on true
 ),
 bucketed as (
     select t.*,
