@@ -1,6 +1,6 @@
 """ERP MDM endpoints: trigger sync, browse mirrors, by-code lookups."""
 from datetime import timedelta, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -81,13 +81,18 @@ async def list_materials(
     item_mes_type: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = None,
 ):
-    items, total = await erp_crud.list_materials(
-        db, search=search, part_status=part_status, item_mes_type=item_mes_type,
-        page=page, page_size=page_size,
-    )
+    try:
+        items, total = await erp_crud.list_materials(
+            db, search=search, part_status=part_status, item_mes_type=item_mes_type,
+            page=page, page_size=page_size, sort=sort, dir=dir,
+        )
+    except erp_crud.UnknownSortKey as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return {"items": items, "total": total}
 
 
@@ -105,13 +110,19 @@ async def list_suppliers(
     exclude_codes: str | None = Query(default=None, description="comma-separated codes to exclude"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
     db: AsyncSession = Depends(get_db),
     _user: SupplierReadDep = None,
 ):
     excludes = [c.strip() for c in exclude_codes.split(",")] if exclude_codes else None
-    items, total = await erp_crud.list_suppliers(
-        db, search=search, exclude_codes=excludes, page=page, page_size=page_size,
-    )
+    try:
+        items, total = await erp_crud.list_suppliers(
+            db, search=search, exclude_codes=excludes, page=page, page_size=page_size,
+            sort=sort, dir=dir,
+        )
+    except erp_crud.UnknownSortKey as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return {"items": items, "total": total}
 
 
@@ -130,14 +141,20 @@ async def list_persons(
     exclude_codes: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = None,
 ):
     _require_admin(user)
     excludes = [c.strip() for c in exclude_codes.split(",")] if exclude_codes else None
-    items, total = await erp_crud.list_persons(
-        db, search=search, exclude_codes=excludes, page=page, page_size=page_size,
-    )
+    try:
+        items, total = await erp_crud.list_persons(
+            db, search=search, exclude_codes=excludes, page=page, page_size=page_size,
+            sort=sort, dir=dir,
+        )
+    except erp_crud.UnknownSortKey as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return {"items": items, "total": total}
 
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Lock, Loader2, Search, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -470,6 +471,13 @@ function UserRolesTab() {
     if (!q) return all
     return all.filter((u) => u.full_name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
   }, [usersQ.data, filter])
+  // Whole list (useAllUsers pages to the end) → sorted here. Primary Role sorts
+  // by the SAVED role's label, so a row does not jump while its dropdown is edited.
+  const roleLabel = (code: string) => defsQ.data?.roles.find((r) => r.code === code)?.label ?? code
+  const sorted = useSortableRows(filtered, {
+    name: (u) => u.full_name,
+    primary: (u) => roleLabel(u.role),
+  })
 
   if (defsQ.isLoading || usersQ.isLoading || userRolesQ.isLoading) return <LoadingBlock />
   if (defsQ.isError || usersQ.isError || userRolesQ.isError) {
@@ -495,13 +503,15 @@ function UserRolesTab() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Name / Email', 'Primary Role', 'Additional Roles', ''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
+                <SortTh label="Name / Email" sortKey="name" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Primary Role" sortKey="primary" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                {/* Additional Roles is a row of toggle chips (an editor), not a value — not sortable. */}
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">Additional Roles</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
               </tr>
             </thead>
             <tbody>
-              {filtered.map((u, i) => {
+              {sorted.rows.map((u, i) => {
                 const row = rowFor(u)
                 const msg = rowMsg[u.id]
                 const isSaving = !!saving[u.id]
@@ -516,7 +526,7 @@ function UserRolesTab() {
                 const additionalOptions = activeRoles.filter((r) => r.code !== row.primary)
 
                 return (
-                  <tr key={u.id} className={cn('border-b border-neutral-100 align-top', i === filtered.length - 1 && 'border-b-0')}>
+                  <tr key={u.id} className={cn('border-b border-neutral-100 align-top', i === sorted.rows.length - 1 && 'border-b-0')}>
                     <td className="px-4 py-3">
                       <p className="font-medium text-neutral-800">{u.full_name}</p>
                       <p className="text-[11px] text-neutral-400">{u.email}</p>

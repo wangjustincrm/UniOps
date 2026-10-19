@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { createPortal } from 'react-dom'
 import { AlertCircle, ChevronDown, Loader2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, FormField, Input } from '@uniops/shell'
+import { Badge, Button, FormField, Input, SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { adminApi, type DelegationCreate, type DelegationOut, type DelegationUpdate } from '@/services/adminApi'
@@ -251,6 +251,22 @@ function ApprovalDelegationBody() {
     return m
   }, [usersQ.data])
 
+  // Whole list, sorted here; opens newest start date first, as before.
+  const today = todayIso()
+  const delegatorNameOf = (row: DelegationOut) =>
+    row.delegator_name ?? usersById.get(row.delegator_user_id)?.full_name ?? null
+  const delegateNameOf = (row: DelegationOut) =>
+    row.delegate_name ?? usersById.get(row.delegate_user_id)?.full_name ?? null
+  const sorted = useSortableRows<DelegationOut, 'delegator' | 'delegate' | 'start_date' | 'end_date' | 'note' | 'status'>(
+    delegationsQ.data, {
+    delegator: delegatorNameOf,
+    delegate: delegateNameOf,
+    start_date: (r) => r.start_date,
+    end_date: (r) => r.end_date,
+    note: (r) => r.note,
+    status: (r) => deriveStatus(r, today),
+  }, { key: 'start_date', dir: 'desc' })
+
   const invalidate = () => qc.invalidateQueries({ queryKey: ['approval-delegations'] })
 
   const closeForm = () => { setMode({ kind: 'closed' }); setForm(EMPTY_FORM); setFormError('') }
@@ -333,8 +349,7 @@ function ApprovalDelegationBody() {
     return <ErrorBlock message="Failed to load approval delegations. Please refresh and try again." />
   }
 
-  const today = todayIso()
-  const rows = [...(delegationsQ.data ?? [])].sort((a, b) => (a.start_date < b.start_date ? 1 : -1))
+  const rows = sorted.rows
   const isSubmitting = create.isPending || update.isPending
 
   return (
@@ -361,11 +376,13 @@ function ApprovalDelegationBody() {
         <table className="w-full min-w-max text-sm">
           <thead className="border-b border-neutral-100 bg-neutral-50">
             <tr>
-              {['Delegator', 'Delegate', 'From', 'To', 'Note', 'Status', ''].map((h) => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">
-                  {h}
-                </th>
-              ))}
+              <SortTh label="Delegator" sortKey="delegator" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+              <SortTh label="Delegate" sortKey="delegate" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+              <SortTh label="From" sortKey="start_date" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+              <SortTh label="To" sortKey="end_date" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+              <SortTh label="Note" sortKey="note" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+              <SortTh label="Status" sortKey="status" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
             </tr>
           </thead>
           <tbody>
@@ -378,8 +395,8 @@ function ApprovalDelegationBody() {
             ) : (
               rows.map((row, i) => {
                 const status = deriveStatus(row, today)
-                const delegatorName = row.delegator_name ?? usersById.get(row.delegator_user_id)?.full_name ?? '—'
-                const delegateName = row.delegate_name ?? usersById.get(row.delegate_user_id)?.full_name ?? '—'
+                const delegatorName = delegatorNameOf(row) ?? '—'
+                const delegateName = delegateNameOf(row) ?? '—'
                 const isRevoked = status === 'Revoked'
                 return (
                   <tr

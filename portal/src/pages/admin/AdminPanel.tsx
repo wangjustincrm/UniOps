@@ -8,6 +8,7 @@ import {
   Download, Upload, ChevronLeft, ChevronRight, FileText,
   Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse,
 } from 'lucide-react'
+import { SortTh, useSort, useSortableRows, sortParams, type Sort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -108,6 +109,15 @@ const ROLE_LABELS: Record<string,string> = {
 }
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
+
+/** Header-cell classes shared by the admin list tables below. */
+const ADMIN_TH = 'px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500'
+
+/** Copy `{ sort, dir }` (or nothing) onto a list's query string. */
+function setSortQs<K extends string>(qs: URLSearchParams, sort: Sort<K> | null) {
+  const p = sortParams(sort)
+  if (p.sort) { qs.set('sort', p.sort); qs.set('dir', p.dir ?? 'asc') }
+}
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -376,6 +386,9 @@ function DepartmentManagement() {
     queryKey: ['portal-departments'],
     queryFn: () => mdmApi.get<{ items: ApiDepartment[]; total: number }>('/departments'),
   })
+  const depts = useSortableRows(data?.items, {
+    code: (d) => d.code, name: (d) => d.name, status: (d) => (d.is_active ? 'Active' : 'Inactive'),
+  })
   const [modal, setModal] = useState<{ mode: 'create' | 'edit'; dept?: ApiDepartment } | null>(null)
   const [form, setForm] = useState({ name: '', code: '', is_active: true })
   const [saving, setSaving] = useState(false)
@@ -425,14 +438,15 @@ function DepartmentManagement() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Code','Name','Status',''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
+                <SortTh label="Code" sortKey="code" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
+                <SortTh label="Name" sortKey="name" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
+                <SortTh label="Status" sortKey="status" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
+                <th className={ADMIN_TH} />
               </tr>
             </thead>
             <tbody>
-              {data.items.map((d, i) => (
-                <tr key={d.id} className={cn('border-b border-neutral-100', i === data.items.length - 1 && 'border-b-0')}>
+              {depts.rows.map((d, i) => (
+                <tr key={d.id} className={cn('border-b border-neutral-100', i === depts.rows.length - 1 && 'border-b-0')}>
                   <td className="px-4 py-3 font-mono text-xs text-neutral-600">{d.code}</td>
                   <td className="px-4 py-3 font-medium text-neutral-800">{d.name}</td>
                   <td className="px-4 py-3">
@@ -493,15 +507,19 @@ function UserManagement() {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [page, setPage] = useState(1)
+  // Server-sorted: /users pages, so the API sorts (no sort = by name, as before).
+  const [userSort, onUserSort] = useSort<'full_name' | 'role' | 'department' | 'erp_person_code' | 'status'>(
+    null, () => setPage(1))
 
   const qs = new URLSearchParams()
   qs.set('page', String(page))
   qs.set('page_size', String(PAGE_SIZE))
   if (search) qs.set('search', search)
   if (roleFilter) qs.set('role', roleFilter)
+  setSortQs(qs, userSort)
 
   const { data, isLoading } = useQuery<{ items: ApiUser[]; total: number }>({
-    queryKey: ['portal-users', page, search, roleFilter],
+    queryKey: ['portal-users', page, search, roleFilter, userSort],
     queryFn: () => epmsApi.get<{ items: ApiUser[]; total: number }>(`/users?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -683,9 +701,12 @@ function UserManagement() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Name / Email', 'Role', 'Department', 'ERP Code', 'Status', ''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
+                <SortTh label="Name / Email" sortKey="full_name" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="Role" sortKey="role" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="Department" sortKey="department" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="ERP Code" sortKey="erp_person_code" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="Status" sortKey="status" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <th className={ADMIN_TH} />
               </tr>
             </thead>
             <tbody>
@@ -1821,11 +1842,14 @@ function ErpMaterialsTab() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'A' | 'B' | ''>('A')
   const [page, setPage] = useState(1)
+  const [sort, onSort] = useSort<'erp_part_no' | 'description' | 'unit_meas' | 'dim_quality' | 'item_mes_type' | 'part_status' | 'erp_rowversion'>(
+    null, () => setPage(1))
   const qs = new URLSearchParams({ page: String(page), page_size: '20' })
   if (search) qs.set('search', search)
   if (statusFilter) qs.set('part_status', statusFilter)
+  setSortQs(qs, sort)
   const { data, isLoading } = useQuery<{ items: ErpMaterial[]; total: number }>({
-    queryKey: ['erp', 'material', page, search, statusFilter],
+    queryKey: ['erp', 'material', page, search, statusFilter, sort],
     queryFn: () => mdmApi.get(`/erp/materials?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -1856,9 +1880,13 @@ function ErpMaterialsTab() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Part No', 'Description', 'Unit', 'Spec', 'MES Type', 'Status', 'ERP rowversion'].map(h =>
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                )}
+                <SortTh label="Part No" sortKey="erp_part_no" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Description" sortKey="description" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Unit" sortKey="unit_meas" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Spec" sortKey="dim_quality" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="MES Type" sortKey="item_mes_type" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Status" sortKey="part_status" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="ERP rowversion" sortKey="erp_rowversion" sort={sort} onSort={onSort} className={ADMIN_TH} />
               </tr>
             </thead>
             <tbody>
@@ -1915,10 +1943,13 @@ interface ErpSupplierRow {
 function ErpSuppliersTab() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [sort, onSort] = useSort<'erp_supplier_code' | 'supplier_name' | 'supplier_type' | 'supplier_tel' | 'supplier_address'>(
+    null, () => setPage(1))
   const qs = new URLSearchParams({ page: String(page), page_size: '20' })
   if (search) qs.set('search', search)
+  setSortQs(qs, sort)
   const { data, isLoading } = useQuery<{ items: ErpSupplierRow[]; total: number }>({
-    queryKey: ['erp', 'supplier', page, search],
+    queryKey: ['erp', 'supplier', page, search, sort],
     queryFn: () => mdmApi.get(`/erp/suppliers?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -1933,8 +1964,12 @@ function ErpSuppliersTab() {
           : !data?.items.length ? <div className="py-10 text-center text-sm text-neutral-400">No suppliers. Click Sync.</div>
           : <table className="w-full text-sm">
               <thead className="border-b border-neutral-100 bg-neutral-50">
-                <tr>{['Code', 'Name', 'Type', 'Tel', 'Address'].map(h =>
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>)}
+                <tr>
+                  <SortTh label="Code" sortKey="erp_supplier_code" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Name" sortKey="supplier_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Type" sortKey="supplier_type" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Tel" sortKey="supplier_tel" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Address" sortKey="supplier_address" sort={sort} onSort={onSort} className={ADMIN_TH} />
                 </tr>
               </thead>
               <tbody>
@@ -1977,13 +2012,18 @@ interface ErpPersonRow {
   erp_rowversion: string | null; synced_at: string
 }
 
+/** mdm-api /erp/persons ?sort= keys (app/crud/erp.py PERSON_SORTABLE). */
+type ErpPersonSortKey = 'erp_person_code' | 'person_name' | 'company_name' | 'department_name' | 'is_valid'
+
 function ErpPersonsTab() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [sort, onSort] = useSort<ErpPersonSortKey>(null, () => setPage(1))
   const qs = new URLSearchParams({ page: String(page), page_size: '20' })
   if (search) qs.set('search', search)
+  setSortQs(qs, sort)
   const { data, isLoading } = useQuery<{ items: ErpPersonRow[]; total: number }>({
-    queryKey: ['erp', 'person', page, search],
+    queryKey: ['erp', 'person', page, search, sort],
     queryFn: () => mdmApi.get(`/erp/persons?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -1998,8 +2038,12 @@ function ErpPersonsTab() {
           : !data?.items.length ? <div className="py-10 text-center text-sm text-neutral-400">No persons. Click Sync.</div>
           : <table className="w-full text-sm">
               <thead className="border-b border-neutral-100 bg-neutral-50">
-                <tr>{['Code', 'Name', 'Company', 'Department', 'Valid'].map(h =>
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>)}
+                <tr>
+                  <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Company" sortKey="company_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Department" sortKey="department_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Valid" sortKey="is_valid" sort={sort} onSort={onSort} className={ADMIN_TH} />
                 </tr>
               </thead>
               <tbody>
@@ -2049,6 +2093,7 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [excludeImported, setExcludeImported] = useState(true)
+  const [sort, onSort] = useSort<ErpPersonSortKey>(null, () => setPage(1))
   const [selected, setSelected] = useState<Record<string, { email: string }>>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -2078,9 +2123,10 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
   const qs = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) })
   if (search) qs.set('search', search)
   if (excludeImported && importedCodes.length) qs.set('exclude_codes', importedCodes.join(','))
+  setSortQs(qs, sort)
 
   const { data, isLoading } = useQuery<{ items: ErpPersonRow[]; total: number }>({
-    queryKey: ['erp-import-persons', page, search, excludeImported, importedCodes.join(',')],
+    queryKey: ['erp-import-persons', page, search, excludeImported, importedCodes.join(','), sort],
     queryFn: () => mdmApi.get(`/erp/persons?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -2177,9 +2223,9 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
                     <thead className="border-b border-neutral-200">
                       <tr>
                         <th className="px-2 py-2"></th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Code</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Name</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Dept</th>
+                        <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
+                        <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
+                        <SortTh label="Dept" sortKey="department_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
                         <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Email *</th>
                       </tr>
                     </thead>

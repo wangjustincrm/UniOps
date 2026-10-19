@@ -35,6 +35,9 @@ export interface EntitySchema {
   list_columns: string[]
   search_fields: string[]
   order_by: string
+  /** list_columns the API's ?sort= accepts (real columns only). Missing on an
+   *  older service → no column sorts. */
+  sortable_columns?: string[]
   allow_edit?: boolean   // false = delete-only (no edit). Missing → editable.
   allow_delete?: boolean // false = edit-only (VMS compliance records). Missing → deletable.
   fields: FieldSpec[]
@@ -165,7 +168,8 @@ export const adminApi = {
     )
     return results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
   },
-  list: (system: string, entity: string, params: { page: number; page_size: number; search?: string }) =>
+  list: (system: string, entity: string,
+         params: { page: number; page_size: number; search?: string; sort?: string; dir?: 'asc' | 'desc' }) =>
     request<ListResult>(system, 'GET', `/admin/${entity}${qs(params)}`),
   get: (system: string, entity: string, id: string) =>
     request<Record<string, unknown>>(system, 'GET', `/admin/${entity}/${id}`),
