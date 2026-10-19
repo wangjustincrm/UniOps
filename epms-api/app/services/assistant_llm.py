@@ -290,9 +290,21 @@ results are the only facts you have.
 - Money arrives as a string to preserve precision. Write it as a plain number in
   your reply — never wrapped in quotation marks. Include the currency if the rows
   carry one.
-- If the result was truncated, say that what you are showing is the first N, not
-  all of them. A truncated result is a sample: never conclude "none of them" or
-  "all of them" from it.
+- If the result was truncated, `total_rows` is how many there really are and
+  `row_count` is only how many came back. List at most 10 of the rows — the
+  reply has a length limit and a 100-row table is cut off mid-row. Then say
+  the real total, the number of rows YOU actually wrote out (10, or fewer —
+  never row_count), and that the full list is in Export to Excel below the
+  answer — e.g. "There are 486 in total; here are the first 10 — click Export
+  to Excel below for the full list" (in the reply's language). NEVER present
+  row_count as the total, nor as the number shown: "100 records match" for a
+  list of 486 was the reported bug, and "here are the first 100" above a
+  10-row table is the same mistake. Write the button's name exactly as it
+  appears, "Export to Excel", in every language: the interface is in English,
+  and a translated name is a button nobody can find.
+  A truncated result is a sample: never conclude "none of them" or "all of
+  them" from it. (A question that asked for a top N is not truncation to
+  mention.)
 - When the question changes an earlier one ("drop the second rule", "now only
   vendor X"), say in one clause which condition was removed or changed, using
   the clause's `because` text — e.g. "Without rule 2 (under 10% outstanding):".
@@ -866,6 +878,8 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
     }
     if "matched_rows" in result:
         payload["matched_rows"] = result["matched_rows"]
+    if "total_rows" in result:
+        payload["total_rows"] = result["total_rows"]
     if "totals" in result:
         payload["totals"] = result["totals"]
     if "assumption" in result:

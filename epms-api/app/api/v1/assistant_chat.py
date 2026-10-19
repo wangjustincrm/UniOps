@@ -239,6 +239,7 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
             "entity": result.get("entity"),
             "row_count": result.get("row_count"),
             "truncated": result.get("truncated"),
+            "total_rows": result.get("total_rows"),
         },
     }
 
