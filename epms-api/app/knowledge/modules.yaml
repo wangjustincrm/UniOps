@@ -182,8 +182,10 @@ modules:
         otherwise lists only payments already made. The banner links to
         Payment Batches, whose due list can be narrowed to Expense Claim (or
         PA / Direct PA) with a count on each; clicking a claim number opens the
-        claim. Travel Applications are not listed there and cannot be paid —
-        they carry no money.
+        claim, and clicking a PA's vendor invoice number opens that invoice.
+        The Due Date column is the earliest due date among the PA's invoices,
+        shown in red once it has passed; claims have none. Travel Applications
+        are not listed there and cannot be paid — they carry no money.
       - >-
         Bank reconciliation counts unposted vouchers (ones NC has not tallied
         yet) on the ledger side by default — "Include unposted vouchers" at the
