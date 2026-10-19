@@ -33,6 +33,13 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     )
     agreement_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
+    # Which flow raised this PA: po | agreement | freight | direct. `direct` is
+    # OA's retired Direct PA (both po_id and agreement_id NULL). Before
+    # fr01_freight "both NULL" WAS the Direct-PA test everywhere; a Freight PA
+    # also has both NULL, so every such test now reads this column instead.
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="po",
+                                        server_default="po", index=True)
+
     vendor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("business_partners.id", ondelete="RESTRICT"),
         nullable=False, index=True

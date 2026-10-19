@@ -83,7 +83,11 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     # 凭证合计与发票金额的差额说明。**与 legacy_settlement_reason 分开存**:
     # "对上了但差几块"与"根本没有凭证"是两件事,混存会让 legacy 计数失去意义。
     receipt_variance_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # "po" | "agreement" — which candidate pool this invoice was matched against.
+    # Carrier of a courier invoice (match_route='freight'); NULL otherwise.
+    freight_carrier_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("freight_carriers.id", ondelete="RESTRICT"),
+        nullable=True, index=True)
+    # "po" | "agreement" | "freight" — which candidate pool this invoice was matched against.
     match_route: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # True only when the system resolved the route itself (1B). A human override
     # sets it False, which doubles as a health signal: a vendor whose route is
