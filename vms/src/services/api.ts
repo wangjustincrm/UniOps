@@ -214,6 +214,9 @@ export interface VisitListFilters {
   date_to?: string
   page?: number
   page_size?: number
+  /** Server sort (vms-api ?sort=&dir=). */
+  sort?: string
+  dir?: 'asc' | 'desc'
 }
 
 export function useVisits(filters: VisitListFilters = {}) {
@@ -716,6 +719,9 @@ export interface BrowseDeclarationsParams {
   q?: string
   page?: number
   page_size?: number
+  /** Server sort (vms-api ?sort=&dir=). */
+  sort?: string
+  dir?: 'asc' | 'desc'
 }
 
 export function useBrowseHealthDeclarations(params: BrowseDeclarationsParams) {
@@ -725,6 +731,7 @@ export function useBrowseHealthDeclarations(params: BrowseDeclarationsParams) {
   if (params.q) qs.set('q', params.q)
   qs.set('page', String(params.page ?? 1))
   qs.set('page_size', String(params.page_size ?? 25))
+  if (params.sort) { qs.set('sort', params.sort); qs.set('dir', params.dir ?? 'asc') }
   return useQuery<HealthDeclarationListResponse>({
     queryKey: ['vms-health-decls-browse', params],
     queryFn: () =>
@@ -759,6 +766,9 @@ export interface AuditLogFilters {
   /** ISO timestamp */ to?: string
   page?: number
   page_size?: number
+  /** Server sort (vms-api ?sort=&dir=). */
+  sort?: string
+  dir?: 'asc' | 'desc'
 }
 
 function buildAuditQs(filters: AuditLogFilters): string {

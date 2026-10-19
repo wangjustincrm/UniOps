@@ -4,7 +4,7 @@ import io
 import json
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -33,12 +33,14 @@ async def list_audit_logs(
     date_to: datetime | None = Query(default=None, alias="to"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    sort: str | None = Query(None),
+    dir: Literal["asc", "desc"] = Query("asc"),
 ):
     rows, total = await audit_crud.list_audit_logs(
         db,
         user_id=user_id, action_type=action_type, entity_type=entity_type,
         entity_id=entity_id, date_from=date_from, date_to=date_to,
-        page=page, page_size=page_size,
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
     return AuditLogListResponse(
         items=[AuditLogResponse.model_validate(r) for r in rows],

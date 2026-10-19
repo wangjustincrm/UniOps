@@ -9,6 +9,7 @@
  * Banner warns that resend duplicates emails for already-sent logs.
  */
 import { useState } from 'react'
+import { SortTh, useSort, sortParams } from '@uniops/shell'
 import {
   Loader2,
   AlertCircle,
@@ -115,6 +116,9 @@ export default function NotificationsPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [offset, setOffset] = useState(0)
+  // Server-sorted: paged by limit/offset (no sort = newest first).
+  const [sort, onSort] = useSort<'created_at' | 'notif_type' | 'recipients' | 'status' | 'retry_count' | 'error' | 'sent_at'>(
+    null, () => setOffset(0))
   const [resendingId, setResendingId] = useState<string | null>(null)
   const [resendError, setResendError] = useState<string | null>(null)
   const [resendSuccess, setResendSuccess] = useState<string | null>(null)
@@ -125,6 +129,7 @@ export default function NotificationsPage() {
     notif_type: typeFilter || undefined,
     limit: PAGE_SIZE,
     offset,
+    ...sortParams(sort),
   }
 
   const { data, isLoading, error, refetch } = useAdminNotifications(filters)
@@ -227,13 +232,13 @@ export default function NotificationsPage() {
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-neutral-200 bg-neutral-50">
                   <tr>
-                    <th className={thCls}>Created</th>
-                    <th className={thCls}>Type</th>
-                    <th className={thCls}>Recipients</th>
-                    <th className={thCls}>Status</th>
-                    <th className={cn(thCls, 'text-center')}>Retries</th>
-                    <th className={thCls}>Error</th>
-                    <th className={thCls}>Sent At</th>
+                    <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className={thCls} />
+                    <SortTh label="Type" sortKey="notif_type" sort={sort} onSort={onSort} className={thCls} />
+                    <SortTh label="Recipients" sortKey="recipients" sort={sort} onSort={onSort} className={thCls} />
+                    <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={thCls} />
+                    <SortTh label="Retries" sortKey="retry_count" sort={sort} onSort={onSort} align="center" className={cn(thCls, 'text-center')} />
+                    <SortTh label="Error" sortKey="error" sort={sort} onSort={onSort} className={thCls} />
+                    <SortTh label="Sent At" sortKey="sent_at" sort={sort} onSort={onSort} className={thCls} />
                     <th className={thCls}>Actions</th>
                   </tr>
                 </thead>

@@ -24,6 +24,7 @@ import {
   X as XIcon,
   CheckCircle2,
 } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import {
   useAdminRoomList,
@@ -207,6 +208,15 @@ export default function RoomsAdminPage() {
   }
 
   const { data: rooms, isLoading, error, refetch } = useAdminRoomList(activeFilters)
+  // Whole list (/admin/rooms is not paged) → sorted here, by what each cell shows.
+  const sorted = useSortableRows(rooms, {
+    code: (r) => r.code,
+    name: (r) => r.name,
+    location: (r) => locationStr(r),
+    capacity: (r) => r.capacity,
+    type: (r) => ROOM_TYPE_LABELS[r.room_type as RoomType] ?? r.room_type,
+    status: (r) => r.status,
+  })
 
   function handleSaved(room: RoomOut) {
     setFormTarget(undefined)
@@ -311,12 +321,12 @@ export default function RoomsAdminPage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b border-neutral-200 bg-neutral-50">
                 <tr>
-                  <th className={thCls}>Code</th>
-                  <th className={thCls}>Name</th>
-                  <th className={thCls}>Location</th>
-                  <th className={thCls}>Cap.</th>
-                  <th className={thCls}>Type</th>
-                  <th className={thCls}>Status</th>
+                  <SortTh label="Code" sortKey="code" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
+                  <SortTh label="Name" sortKey="name" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
+                  <SortTh label="Location" sortKey="location" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
+                  <SortTh label="Cap." sortKey="capacity" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
+                  <SortTh label="Type" sortKey="type" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
+                  <SortTh label="Status" sortKey="status" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
                   <th className={thCls}>Actions</th>
                 </tr>
               </thead>
@@ -328,7 +338,7 @@ export default function RoomsAdminPage() {
                     </td>
                   </tr>
                 ) : (
-                  (rooms ?? []).map((room) => (
+                  sorted.rows.map((room) => (
                     <tr
                       key={room.id}
                       className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50 transition-colors"

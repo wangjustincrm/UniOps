@@ -8,6 +8,7 @@ approval-api `vms_visit` doc_type is added in S2-B).
 """
 import uuid
 from datetime import date, datetime, timezone
+from typing import Literal
 
 from urllib.parse import quote
 
@@ -98,6 +99,8 @@ async def list_visits(
     date_to: date | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort: str | None = Query(None),
+    dir: Literal["asc", "desc"] = Query("asc"),
 ):
     meta = await load_request_meta(db, user, request)
     rows, total = await visit_crud.list_visits(
@@ -111,6 +114,8 @@ async def list_visits(
         date_to=date_to,
         page=page,
         page_size=page_size,
+        sort=sort,
+        dir=dir,
     )
     return VisitListResponse(items=await _attach_visitors(db, rows), total=total)
 

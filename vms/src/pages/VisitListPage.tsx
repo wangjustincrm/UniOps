@@ -1,17 +1,31 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, AlertCircle } from 'lucide-react'
+import { Pagination, SortTh, useSort, sortParams } from '@uniops/shell'
 import { useVisits, type Visit } from '@/services/api'
 import { StatusBadge, AccessAreaBadge, OverdueBadge, isVisitOverdue } from '@/components/StatusBadge'
 import { formatDateTime, localToday } from '@/lib/utils'
 
+/** vms-api /visits ?sort= keys (app/crud/visit.py VISIT_SORTABLE). */
+export type VisitSortKey = 'visitor' | 'company' | 'planned_arrival' | 'access_area' | 'status'
+
 export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
   const today = localToday()
+  // Server-paged and server-sorted (/visits caps page_size at 100). The two
+  // routes reuse this component, so the page resets when the scope changes.
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(scope === 'today' ? 100 : 50)
+  const [sort, onSort, setSort] = useSort<VisitSortKey>(null, () => setPage(1))
+  useEffect(() => {
+    setPage(1); setSort(null); setPageSize(scope === 'today' ? 100 : 50)
+  }, [scope, setSort])
   const filters = scope === 'today'
-    ? { date_from: today, date_to: today, page_size: 100 }
-    : { page_size: 50 }
+    ? { date_from: today, date_to: today }
+    : {}
 
-  const { data, isLoading, error } = useVisits(filters)
+  const { data, isLoading, error } = useVisits({ ...filters, page, page_size: pageSize, ...sortParams(sort) })
   const items = data?.items ?? []
+  const total = data?.total ?? 0
 
   const title = scope === 'today' ? 'Today’s Visits' : 'All Visits'
   const subtitle = scope === 'today'
@@ -45,11 +59,11 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
         <table className="min-w-full divide-y divide-neutral-200">
           <thead className="bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">
             <tr>
-              <th className="px-4 py-2.5">Visitor</th>
-              <th className="px-4 py-2.5 hidden md:table-cell">Company</th>
-              <th className="px-4 py-2.5 hidden md:table-cell">Planned Arrival</th>
-              <th className="px-4 py-2.5">Area</th>
-              <th className="px-4 py-2.5">Status</th>
+              <SortTh label="Visitor" sortKey="visitor" sort={sort} onSort={onSort} className="px-4 py-2.5" />
+              <SortTh label="Company" sortKey="company" sort={sort} onSort={onSort} className="px-4 py-2.5 hidden md:table-cell" />
+              <SortTh label="Planned Arrival" sortKey="planned_arrival" sort={sort} onSort={onSort} className="px-4 py-2.5 hidden md:table-cell" />
+              <SortTh label="Area" sortKey="access_area" sort={sort} onSort={onSort} className="px-4 py-2.5" />
+              <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5" />
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 bg-white text-sm">
@@ -91,6 +105,13 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
             ))}
           </tbody>
         </table>
+        {total > 0 && (
+          <Pagination
+            page={page} pageSize={pageSize} total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
+          />
+        )}
       </div>
     </div>
   )

@@ -12,7 +12,7 @@
  *   - Edit: disabled for series members (tooltip); else navigate /my/:id/edit
  *   - Cancel: confirm dialog; series members → ?series=true
  */
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   CalendarDays,
@@ -23,8 +23,9 @@ import {
   Pencil,
   X as XIcon,
 } from 'lucide-react'
+import { Pagination, SortTh, useSort, sortParams, type Sort } from '@uniops/shell'
 import { cn } from '@/lib/utils'
-import { useMyBookings, useCancelBooking } from '@/services/api'
+import { useMyBookingsPaged, useCancelBooking } from '@/services/api'
 import type { BookingOut } from '@/lib/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -248,6 +249,15 @@ function EmptyState({ message }: { message: string }) {
 
 type Tab = 'upcoming' | 'past'
 
+/** /bookings/mine/paged ?sort= keys (booking-api MY_BOOKING_SORTABLE). */
+type MySortKey = 'title' | 'room' | 'starts_at' | 'attendees' | 'status'
+
+/** Each tab opens on its natural order, shown as the active arrow: Upcoming
+ *  soonest first, Past most recent first. */
+function tabDefault(tab: Tab): Sort<MySortKey> {
+  return { key: 'starts_at', dir: tab === 'upcoming' ? 'asc' : 'desc' }
+}
+
 export default function MyBookingsPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -269,32 +279,25 @@ export default function MyBookingsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const { data: bookings, isLoading, error } = useMyBookings()
+  // Server-paged and server-sorted, one tab at a time (/bookings/mine/paged).
+  // The split is the same as before — Upcoming = confirmed and not yet ended,
+  // Past = everything else — but done by the API, so a long recurring series
+  // can no longer push near-term or past bookings out of a 200-row window.
+  // The API's 60-second refetch keeps "not yet ended" current.
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [sort, onSort, setSort] = useSort<MySortKey>(tabDefault(activeTab), () => setPage(1))
+  useEffect(() => { setPage(1); setSort(tabDefault(activeTab)) }, [activeTab, setSort])
+  const { data, isLoading, error } = useMyBookingsPaged({
+    scope: activeTab, limit: pageSize, offset: (page - 1) * pageSize, ...sortParams(sort),
+  })
+  // Upcoming count for the tab badge (the total, not just this page).
+  const { data: upcomingCount } = useMyBookingsPaged({ scope: 'upcoming', limit: 1 })
   const cancel = useCancelBooking()
 
-  // Tick counter so `now` re-evaluates every 60 s even without a data refresh
-  const [tick, setTick] = useState(0)
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 60_000)
-    return () => clearInterval(id)
-  }, [])
-
-  // Re-compute `now` whenever bookings refresh OR the 60 s tick fires
-  const now = useMemo(
-    () => new Date().toISOString(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bookings, tick],
-  )
-
-  const upcoming = (bookings ?? []).filter(
-    (b) => b.ends_at >= now && b.status === 'confirmed',
-  )
-
-  const past = (bookings ?? []).filter(
-    (b) => b.ends_at < now || b.status !== 'confirmed',
-  )
-
-  const displayed = activeTab === 'upcoming' ? upcoming : past
+  const displayed = data?.items ?? []
+  const total = data?.total ?? 0
+  const upcomingTotal = upcomingCount?.total ?? 0
 
   function handleEdit(b: BookingOut) {
     navigate(`/my/${b.id}/edit`, { state: { booking: b } })
@@ -367,9 +370,9 @@ export default function MyBookingsPage() {
         <div className="flex border-b border-neutral-200">
           <button type="button" className={tabCls('upcoming')} onClick={() => setActiveTab('upcoming')}>
             Upcoming
-            {upcoming.length > 0 && (
+            {upcomingTotal > 0 && (
               <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-[#085E5E]/10 px-1.5 py-0.5 text-xs font-semibold text-[#085E5E]">
-                {upcoming.length}
+                {upcomingTotal}
               </span>
             )}
           </button>
@@ -398,11 +401,11 @@ export default function MyBookingsPage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b border-neutral-200 bg-neutral-50">
                 <tr>
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">Title</th>
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">Room</th>
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">Date / Time</th>
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">Attendees</th>
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">Status</th>
+                  <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500" />
+                  <SortTh label="Room" sortKey="room" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500" />
+                  <SortTh label="Date / Time" sortKey="starts_at" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500" />
+                  <SortTh label="Attendees" sortKey="attendees" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500" />
+                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500" />
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">Actions</th>
                 </tr>
               </thead>
@@ -428,6 +431,13 @@ export default function MyBookingsPage() {
                 )}
               </tbody>
             </table>
+            {total > 0 && (
+              <Pagination
+                page={page} pageSize={pageSize} total={total}
+                onPageChange={setPage}
+                onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
+              />
+            )}
           </div>
         )}
       </div>
