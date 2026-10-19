@@ -439,9 +439,10 @@ entities:
       # Added 2026-10-19 (ISS-0013).
       billed_against:
         kind: enum
-        label: "What the invoice is billed against: purchase_order or agreement
-          (none = not matched to either yet)"
-        values: [purchase_order, agreement, none]
+        label: "What the invoice is billed against: purchase_order, agreement, or
+          freight (a courier invoice, matched to shipments — never to a PO or
+          agreement); none = not matched to a PO or agreement yet"
+        values: [purchase_order, agreement, freight, none]
       po_receipt_recorded:
         kind: bool
         label: "PO-route invoices only: whether the PO has any receipt evidence

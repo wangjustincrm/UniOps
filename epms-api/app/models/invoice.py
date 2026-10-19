@@ -142,13 +142,17 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     # Query-side only; the instance side is not used.
     @hybrid_property
     def billed_against(self) -> str:
-        return ("agreement" if self.agreement_id else
+        return ("freight" if self.match_route == "freight" else
+                "agreement" if self.agreement_id else
                 "purchase_order" if self.po_id else "none")
 
     @billed_against.inplace.expression
     @classmethod
     def _billed_against_expression(cls):
-        return case((cls.agreement_id.is_not(None), "agreement"),
+        # A courier invoice has neither id, matched or not — without its own
+        # value it would read as "not matched to either yet".
+        return case((cls.match_route == "freight", "freight"),
+                    (cls.agreement_id.is_not(None), "agreement"),
                     (cls.po_id.is_not(None), "purchase_order"), else_="none")
 
     @hybrid_property

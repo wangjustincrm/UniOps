@@ -454,3 +454,17 @@ async def test_invoice_reader_gets_the_courier_panel_read_only(test_engine, admi
     # Denial control: a restricted caller who cannot read the invoice gets nothing.
     async with await _authenticated_client(test_engine, "requester") as c:
         assert (await c.get(f"/api/v1/freight/invoices/{inv['id']}")).status_code == 404
+
+
+async def test_assistant_reads_a_courier_invoice_as_freight(test_engine, admin_client, world):
+    """billed_against (ISS-0013) predates Freight: a matched courier invoice has
+    neither a PO nor an agreement and must not read as "not matched yet"; nor is
+    it ever "matched but not received"."""
+    from app.models.invoice import Invoice
+    inv = await _matched_invoice(admin_client, world)
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        row = (await db.execute(select(Invoice.billed_against, Invoice.po_receipt_recorded)
+                                .where(Invoice.id == uuid.UUID(inv["id"])))).one()
+        assert tuple(row) == ("freight", None)
+        assert (await db.get(Invoice, uuid.UUID(inv["id"]))).billed_against == "freight"
