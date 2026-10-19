@@ -1,7 +1,7 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.0
-**Date:** 2026-10-16
+**Version:** 2.1
+**Date:** 2026-10-19
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
 
@@ -451,6 +451,7 @@ This is the central configuration of approval chains for every module. Changes a
 | `posign` | PO sign-off (NC-imported POs) | procurement_manager (initials) → opm (signature) |
 | `agr` | Purchase Agreement | dept_manager → procurement_manager → finance_manager |
 | `pa` | Payment Application (PO-linked) | dept_manager → director → gm_or_opm → finance_bp → finance_manager (a finance_director step may be added as payment sign-off) |
+| `pa_frt` | Freight PA chain — a Payment Application raised from EPMS → Freight (courier invoices, no PO) stays a `pa` document but walks this chain. Only company-level roles are offered here, since one courier invoice covers several departments | opm → gm → finance_manager → finance_bp |
 | `pa_dir` | Direct Payment Application | finance_bp → finance_manager |
 | `exp`, `mil`, `trv` | Expense, mileage and travel claims | dept_manager → finance_bp |
 | `tra` | Travel Application | dept_manager → finance_manager → gm |

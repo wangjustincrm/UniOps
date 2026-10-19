@@ -25,13 +25,15 @@ export interface SortableDue {
   due_date?: string | null
   submitted_at: string | null
   claim_type: string | null
+  // po | agreement | freight | direct — a Freight PA (EPMS → Freight) is a `pa`
+  pa_source?: string | null
   amount: string
 }
 
 /** The label the Type column shows — sorting by it must follow what is on screen. */
 export function dueTypeLabel(d: SortableDue): string {
   return d.doc_kind === 'expense_claim' ? `Claim · ${d.claim_type ?? ''}`
-    : d.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'
+    : d.doc_kind === 'pa_dir' ? 'Direct PA' : d.pa_source === 'freight' ? 'Freight PA' : 'PA'
 }
 
 function valueOf(d: SortableDue, key: DueSortKey): string | number | null {

@@ -3,8 +3,8 @@
  *
  * CRM pays most invoices in batches ("攒一起一起付"). Flow:
  *   1. Due list — approved PAs and expense claims awaiting payment (single
- *      currency per run), filterable by type via ?type= (all | pa | pa_dir |
- *      claim) so claims are not lost among hundreds of PAs; the Payments page
+ *      currency per run), filterable by type via ?type= (all | pa | freight |
+ *      pa_dir | claim) so claims are not lost among hundreds of PAs; the Payments page
  *      banner deep-links here with ?type=claim&currency=…
  *   2. Select rows → create a draft batch (snapshot)
  *   3. Execute — each line runs through the unified payment executor with
@@ -37,6 +37,8 @@ interface Due {
   doc_kind: string; doc_id: string; doc_number: string | null
   payee: string; vendor_inv_no?: string; amount: string; currency: string
   claim_type: string | null; submitted_at: string | null
+  // po | agreement | freight | direct — a Freight PA (EPMS → Freight) is a `pa`
+  pa_source?: string | null
   // EPMS invoices the PA settles (empty for claims and OA Direct PAs) and the
   // earliest of their due dates — a date-only string.
   invoices?: { id: string; number: string }[]; due_date?: string | null
@@ -46,13 +48,14 @@ export const DUE_CURRENCIES = ['CAD', 'USD', 'CNY', 'EUR']
 
 // Type filter for the due list. `claim` covers every payable claim type
 // (EXP / MIL / TRV / CFM); the API already leaves Travel Applications out.
-type DueType = 'all' | 'pa' | 'pa_dir' | 'claim'
+type DueType = 'all' | 'pa' | 'freight' | 'pa_dir' | 'claim'
 const DUE_TYPES: { key: DueType; label: string }[] = [
-  { key: 'all', label: 'All' }, { key: 'pa', label: 'PA' },
+  { key: 'all', label: 'All' }, { key: 'pa', label: 'PA' }, { key: 'freight', label: 'Freight PA' },
   { key: 'pa_dir', label: 'Direct PA' }, { key: 'claim', label: 'Expense Claim' },
 ]
 const dueTypeOf = (d: Due): DueType =>
-  d.doc_kind === 'expense_claim' ? 'claim' : d.doc_kind === 'pa_dir' ? 'pa_dir' : 'pa'
+  d.doc_kind === 'expense_claim' ? 'claim' : d.doc_kind === 'pa_dir' ? 'pa_dir'
+    : d.pa_source === 'freight' ? 'freight' : 'pa'
 
 interface Batch {
   id: string; batch_number: string; batch_date: string; status: string
@@ -137,7 +140,7 @@ export default function PaymentBatchPage() {
     queryFn: () => financeApi.get<Due[]>(`/payments/due?currency=${currency}`),
   })
   const typeCounts = useMemo(() => {
-    const c: Record<DueType, number> = { all: dueAll.length, pa: 0, pa_dir: 0, claim: 0 }
+    const c: Record<DueType, number> = { all: dueAll.length, pa: 0, freight: 0, pa_dir: 0, claim: 0 }
     for (const d of dueAll) c[dueTypeOf(d)] += 1
     return c
   }, [dueAll])
