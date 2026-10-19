@@ -172,6 +172,9 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
          "invoices": refs[r.id]["invoices"], "due_date": refs[r.id]["due_date"],
          "amount": str(r.payment_amount), "currency": r.currency,
          "claim_type": None,
+         # po | agreement | freight | direct — lets the UI tell a Freight PA
+         # (doc_kind 'pa', EPMS-owned) apart from a PO/agreement PA.
+         "pa_source": r.source,
          "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None}
         for r in pas
     ]
@@ -181,6 +184,7 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
          "invoices": [], "due_date": None,
          "amount": str(c.total_amount), "currency": c.currency,
          "claim_type": c.claim_type,
+         "pa_source": None,
          "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None}
         for c in claims
     ]

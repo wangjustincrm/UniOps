@@ -81,6 +81,24 @@ async def test_due_classifies_agreement_pa_as_pa_not_pa_dir(client, db_session):
     assert row["doc_kind"] == "pa"
 
 
+async def test_due_classifies_freight_pa_as_pa_with_source(client, db_session):
+    """A Freight PA has no PO and no agreement either — it must still be paid as
+    an EPMS `pa` (so the executor writes the EPMS invoice back to paid), and the
+    row says it is freight so the batch page can label it."""
+    freight = _pa("86.82", po_id=None)
+    freight.source = "freight"
+    direct = _pa("10.00", po_id=None)          # OA Direct PA: source left at its default
+    db_session.add_all([freight, direct])
+    await db_session.flush()
+    assert freight.is_direct is False and direct.is_direct is True
+
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    f = next(r for r in rows if r["doc_id"] == str(freight.id))
+    d = next(r for r in rows if r["doc_id"] == str(direct.id))
+    assert (f["doc_kind"], f["pa_source"]) == ("pa", "freight")
+    assert d["doc_kind"] == "pa_dir"
+
+
 async def test_due_surfaces_vendor_invoice_number(client, db_session):
     """A PA's linked invoice(s) surface as vendor_inv_no in the due list;
     multiple invoices join, and PAs/claims without invoices show blank."""

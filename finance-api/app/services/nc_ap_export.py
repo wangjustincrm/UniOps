@@ -11,6 +11,11 @@ billno = UniOps AP number (the JV cross-check anchor). Dimension chains:
   department keyword (classify_expense_account); buysell is per-row (CAD→2, else→4).
 2026-08-05 change: ONE summary body row per invoice (was one row per PO
   allocation) — money = AP head total, dims from the largest allocation.
+2026-10-19 exception: a courier invoice (invoices.match_route='freight') keeps
+  ONE BODY ROW PER COST CENTRE, revexp = the freight budget account. One UPS
+  bill routinely carries several departments' shipments, and NC journal lines
+  are where Budget vs Actual reads its actuals — collapsing them would book the
+  whole bill to one department (freight design D12).
 """
 import uuid
 from decimal import Decimal
@@ -21,11 +26,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ap_invoice import ApInvoice, ApInvoiceTaxLine
 from app.models.coa import ChartOfAccount  # noqa: F401 — kept for COA queries elsewhere
 from app.models.mirrors import (BudgetAccount, CostCenter, Department, ExpenseInvoice,
-                                Invoice, InvoicePoAllocation, PurchaseRequest, User)
+                                FreightInvoiceLine, Invoice, InvoicePoAllocation,
+                                PurchaseRequest, User)
 from app.models.pa import PaymentApplication
 from app.models.posting import PostingEvent, PostingLine
 
 _ZERO = Decimal("0")
+# Every freight cost lands on this budget account (freight design D6); mirrors
+# epms-api app/models/freight.py FREIGHT_BUDGET_CODE.
+FREIGHT_REVEXP = "CRM0150102"
 
 # Fixed enumeration defaults — all values are NC CODES (2026-07-14 trial feedback).
 NC_EXPORT_DEFAULTS = {
@@ -174,7 +183,31 @@ async def build_export_rows(db: AsyncSession, ap_ids: list) -> tuple[list, list,
         # per-source dimension rows:
         # [(notax, tax, cc_code_uniops, dept_code_nc, revexp_code, employee)]
         rows: list[tuple] = []
+        freight = False
         if ap.source == "epms":
+            route = (await db.execute(select(Invoice.match_route).where(
+                Invoice.id == ap.source_invoice_id))).scalar_one_or_none()
+            freight = route == "freight"
+        if freight:
+            split: dict = {}
+            for cc_id, amt, tx in (await db.execute(
+                    select(FreightInvoiceLine.cost_center_id, FreightInvoiceLine.amount,
+                           FreightInvoiceLine.tax_amount)
+                    .where(FreightInvoiceLine.invoice_id == ap.source_invoice_id))).all():
+                t = split.setdefault(cc_id, [_ZERO, _ZERO])
+                t[0] += amt
+                t[1] += tx
+            if not split or None in split:
+                errors.append({"ap_id": str(ap.id), "ap_number": ap.ap_invoice_number,
+                               "reason": "courier invoice not matched to cost centres yet"})
+                continue
+            for cc_id, (amt, tx) in sorted(split.items(), key=lambda kv: -kv[1][0]):
+                cc = ccs.get(cc_id)
+                dept = depts_by_id.get(cc.department_id) if cc is not None else None
+                rows.append((amt, tx, NC_CC_BY_UNIOPS.get(cc.code, "") if cc else "",
+                             _dept_code_from_cc(cc, None), FREIGHT_REVEXP, "",
+                             cc.code if cc else None, dept.name if dept else None))
+        elif ap.source == "epms":
             allocs = (await db.execute(select(InvoicePoAllocation).where(
                 InvoicePoAllocation.invoice_id == ap.source_invoice_id))).scalars().all()
             po_ids = [a.po_id for a in allocs]
@@ -254,8 +287,9 @@ async def build_export_rows(db: AsyncSession, ap_ids: list) -> tuple[list, list,
         # AP head (allocations may under-cover the head or carry no tax);
         # dimensions come from the largest-amount source row so the dominant
         # PO's department/budget/account win.
-        top = max(rows, key=lambda r: r[0] or _ZERO)
-        rows = [(ap.amount, ap.tax_amount, *top[2:])]
+        if not freight:
+            top = max(rows, key=lambda r: r[0] or _ZERO)
+            rows = [(ap.amount, ap.tax_amount, *top[2:])]
 
         first = rows[0]
         # first row tuple: (notax, tax, cc_nc, dept_code, revexp_code, emp, cc_uniops, dept_name)
@@ -273,6 +307,12 @@ async def build_export_rows(db: AsyncSession, ap_ids: list) -> tuple[list, list,
             notax_d, tax_d = Decimal(notax), Decimal(tax)
             rate = (_s(tax_d / notax_d * 100) if notax_d > _ZERO and tax_d > _ZERO
                     else d["tax_rate"])
+            if freight and tax_d == _ZERO:
+                # Courier bills mix zero-rated cross-border shipments with
+                # HST-taxed domestic charges. NC derives tax from money and
+                # tax_rate, so the 13% default would invent tax on an untaxed
+                # cost centre row.
+                rate = "0.00"
             acct_code = classify_expense_account(cc_uniops, dept_name)
             bodies.append({
                 "seq": seq, "account_path": acct_code,

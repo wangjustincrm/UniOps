@@ -107,6 +107,20 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     # PO link (physical column exists; mirror reads it for ap_invoices backfill)
     po_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     po_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # "po" | "agreement" | "freight" — a courier invoice (epms-api fr01_freight)
+    # is split by cost centre in its FreightInvoiceLine rows.
+    match_route: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+class FreightInvoiceLine(UUIDPrimaryKey, TimestampMixin, Base):
+    """epms-api owns schema (fr01_freight): one charge of a courier invoice,
+    carrying the cost centre it is charged to. Read by the NC AP export."""
+    __tablename__ = "freight_invoice_lines"
+
+    invoice_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    tax_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
 
 
 class InvoiceTaxLine(UUIDPrimaryKey, TimestampMixin, Base):
