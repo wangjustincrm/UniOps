@@ -201,7 +201,7 @@ Lines are entered in collapsible sections per category:
 
 Each line is either **Single day** or **Date range** (toggle on the line).
 
-- **Single day:** Date, Description, Amount (net), Tax code (Canada only, §4.2), Tax, Total, Budget Account (list of active accounts — no balance shown), Receipt (attach or Scan).
+- **Single day:** Date, Description, Amount (net), Tax code (Canada only, §4.2), Tax, Total, Budget Account (the same two-level picker as EXP — L1 category → L2 account, with available balance and % used, §9), Receipt (attach or Scan).
 - **Date range** (long trips, e.g. a 2–3 month overseas posting): From / To (must lie inside the trip dates), **Days claimed** (defaults to the number of days in the range; may be lowered, never above it), **Daily rate** (net), Description, Budget Account. Net = days × daily rate; tax and total follow as above. For meal and incidental categories the daily rate **may not exceed** the policy limit — refused, not flagged. Hotel, Transportation and Other have no cap. An invoice is **optional**; when one is attached its **Invoice amount** must be entered and the line total may not exceed it (one invoice may cover the whole stay, e.g. 20 nights, $2,000). Scanning on a range line fills the description and invoice amount, not the line amount.
 
 The category is stored as a prefix of the line description and is restored when the claim is edited. Receipt files attached on a line are filed on the claim with the category in the file name. Detail page and claim PDF show a range line's dates, "N days × rate" and invoice amount.
