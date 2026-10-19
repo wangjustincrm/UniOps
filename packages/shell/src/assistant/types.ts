@@ -44,6 +44,8 @@ export interface AssistantSources {
   levels_deep?: number
   row_count?: number
   truncated?: boolean
+  /** When truncated: how many rows the query really matched. */
+  total_rows?: number | null
   document?: string
   allowed?: boolean
   complete?: boolean

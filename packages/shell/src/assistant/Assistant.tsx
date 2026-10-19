@@ -28,6 +28,7 @@ import {
   AlertTriangle, Check, ChevronDown, Download, Loader2, MessageSquare, Send, Star, X,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
+import { Markdown } from './markdown'
 import type {
   AssistantCheck, AssistantContext, AssistantMessage, AssistantReply,
   AssistantSavedApi, AssistantSavedList, AssistantTurn,
@@ -359,13 +360,15 @@ function MessageRow({
     <div className="space-y-2">
       <div
         className={cn(
-          'max-w-[92%] whitespace-pre-wrap rounded-lg rounded-bl-sm px-3 py-2 text-sm',
+          'max-w-[92%] rounded-lg rounded-bl-sm px-3 py-2 text-sm',
           message.error
-            ? 'bg-danger-50 text-danger-700'
+            ? 'whitespace-pre-wrap bg-danger-50 text-danger-700'
             : 'bg-neutral-100 text-neutral-800'
         )}
       >
-        {message.text}
+        {/* Replies are Markdown (ISS-0012: "**Issued**" and raw "| … |" tables
+            were shown as typed). Errors are our own text and stay plain. */}
+        {message.error ? message.text : <Markdown text={message.text} />}
       </div>
       {reply?.preflight && <GateList preflight={reply.preflight} />}
       {reply?.workflow && <Chain workflow={reply.workflow} />}
@@ -594,8 +597,11 @@ function Evidence({ reply }: { reply: AssistantReply }) {
               ? plural(s?.modules ?? 0, 'module')
               : reply.kind === 'producible'
                 ? `recipe — ${plural(s?.levels_deep ?? 0, 'level')} deep`
-                : `${s?.entity ?? 'query'} — ${plural(s?.row_count ?? 0, 'row')}${
-                    s?.truncated ? ' (first page)' : ''
+                : `${s?.entity ?? 'query'} — ${
+                    // "100 of 486 rows" — 100 alone read as the total (ISS-0013).
+                    s?.truncated && s?.total_rows != null
+                      ? `${s.row_count ?? 0} of ${plural(s.total_rows, 'row')}`
+                      : `${plural(s?.row_count ?? 0, 'row')}${s?.truncated ? ' (first page)' : ''}`
                   }`
 
   return (
