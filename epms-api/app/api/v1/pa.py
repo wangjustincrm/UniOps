@@ -288,6 +288,14 @@ async def _assert_pos_coherent(pos: list[PurchaseOrder], pa_type: str) -> None:
     # picked. See engine.py::_should_skip_step / _resolve_gm_or_opm.
 
 
+def _not_epms_pa(pa) -> bool:
+    """Missing, or OA's retired Direct PA (no PO, no agreement, not freight) —
+    a row of the shared table that is not EPMS's. Agreement PAs (agreement_id
+    set) and Freight PAs (source='freight') have no PO and ARE EPMS's."""
+    return pa is None or (pa.po_id is None and pa.agreement_id is None
+                          and pa.source != "freight")
+
+
 @router.get("", response_model=PaListResponse)
 async def list_pas(
     db: SessionDep,
@@ -308,12 +316,15 @@ async def list_pas(
     created_by = scope["user_id"] if scope["restrict"] and scope["role"] == "requester" else (
         uuid.UUID(user["sub"]) if mine else None
     )
+    from app.core.access_scope import sees_all_freight_pas
     items, total = await pa_crud.get_all(
         db, status=status, po_id=po_id, vendor_id=vendor_id,
         department_id=department_id, search=search,
         created_by=created_by,
         po_ids_subq=scope["po_subq"],
         agr_ids_subq=scope["agr_subq"],
+        freight_all=await sees_all_freight_pas(db, scope),
+        viewer_id=scope["user_id"],
         page=page, page_size=page_size,
     )
     await enrich_current_step(db, "pa", items)
@@ -648,21 +659,34 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
 async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     from app.core.access_scope import is_pa_visible
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
+    if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
     scope = await build_scope(db, user)
     if not await is_pa_visible(db, pa, scope):
         raise HTTPException(status_code=404, detail="PA not found")
+    if pa.source == "freight":
+        from app.crud.freight import cost_allocations
+        pa.cost_allocations = await cost_allocations(db, pa.id)
     return pa
 
 
 @router.patch("/{pa_id}", response_model=PaResponse)
 async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWriteDep):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
+    if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
     if pa.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail=f"Cannot edit PA in status '{pa.status}'")
+    if pa.source == "freight":
+        # Amounts, invoices and the cost split all come from the matched
+        # carrier invoices (crud.freight.create_pa); editing them here would
+        # break the tie to pa_cost_allocations. Only the wording may change.
+        changed = body.model_fields_set - {"title", "notes"}
+        if changed:
+            raise HTTPException(
+                status_code=422,
+                detail="A Freight PA takes its amounts and invoices from the Freight page; "
+                       "only the title and notes can be edited here.")
     # Whole-branch review finding: pa_crud.update() assigns invoice_ids
     # unconditionally, with none of create_pa's agreement gates re-run — a
     # PATCH could swap in an invoice that is unconfirmed, unlinked to a
@@ -764,6 +788,10 @@ def _assert_invoice_link_on_submit(pa) -> None:
       * prepayment PAs — paid before the vendor has invoiced anything;
       * agreement PAs (po_id NULL) — gated by _validate_agreement_pa_invoices.
     """
+    if pa.source == "freight":
+        if pa.invoice_ids:
+            return
+        raise HTTPException(status_code=409, detail="This Freight PA links no invoice.")
     if pa.po_id is None or pa.pa_type == "prepayment" or pa.invoice_ids:
         return
     raise HTTPException(
@@ -785,7 +813,7 @@ async def pa_action(
     token: BearerToken,
 ):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
+    if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
     if body.action == "submit":
         _assert_invoice_link_on_submit(pa)
@@ -835,6 +863,9 @@ async def pa_action(
         requester_name, approvals = await approval_signatories(
             db, "pa", pa_id, pa.created_by
         )
+        if getattr(pa, "source", None) == "freight":
+            from app.crud.freight import cost_allocations as _cost_allocations
+            pa.cost_allocations = await _cost_allocations(db, pa.id)
         loop = asyncio.get_event_loop()
         pdf_bytes = await loop.run_in_executor(
             None, generate_pa_pdf, pa, company_name,
@@ -873,7 +904,7 @@ async def confirm_settlement(
     """Finance sign-off for a zero-cash settlement that has a variance (overpaid).
     No payment is made — it reconciles the prepayment and closes the invoice."""
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
+    if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
     if pa.pa_type != "settlement" or pa.payment_amount != 0:
         raise HTTPException(
@@ -891,7 +922,7 @@ async def confirm_settlement(
 @router.get("/{pa_id}/events", response_model=list[ApprovalEventResponse])
 async def pa_approval_events(pa_id: uuid.UUID, db: SessionDep, _: CurrentUserPayload):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
+    if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
     return await pa_crud.get_approval_events(db, pa_id)
 

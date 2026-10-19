@@ -99,6 +99,10 @@ def generate_pa_pdf(
         po_numbers = [pa.po_number]
     po_label = "PO Numbers" if len(po_numbers) > 1 else "PO Number"
     po_value = ", ".join(po_numbers)
+    allocations = list(getattr(pa, "cost_allocations", None) or [])
+    if getattr(pa, "source", None) == "freight":
+        # No PO: say what the payment is instead of printing an empty cell.
+        po_label, po_value = "Payment For", "Courier freight (cost split below)"
 
     meta = Table(
         [
@@ -159,6 +163,36 @@ def generate_pa_pdf(
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
     ]))
     elements.append(items_tbl)
+
+    # ── Freight cost split ───────────────────────────────────────────────────
+    if allocations:
+        elements.append(Spacer(1, 4 * mm))
+        elements.append(Paragraph("Cost Allocation", sec_style))
+        a_rows: list = [[Paragraph(h, th_style) for h in
+                         ("Invoice", "Department", "Cost Center", "Budget", "Amount", "Tax")]]
+        for a in allocations:
+            cc = " ".join(x for x in (a.get("cost_center_code"), a.get("cost_center_name")) if x)
+            a_rows.append([
+                Paragraph(a.get("invoice_number") or "—", td_style),
+                Paragraph(a.get("department_name") or "—", td_style),
+                Paragraph(cc or "—", td_style),
+                Paragraph(a.get("budget_code") or "—", td_style),
+                Paragraph(f"{a['amount']:,.2f}", td_style),
+                Paragraph(f"{a['tax_amount']:,.2f}", td_style),
+            ])
+        a_tbl = Table(a_rows, colWidths=[W * 0.16, W * 0.18, W * 0.28, W * 0.14, W * 0.12, W * 0.12],
+                      repeatRows=1)
+        a_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0), _PRIMARY),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, _LIGHT]),
+            ("TOPPADDING",    (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+            ("ALIGN",         (4, 0), (-1, -1), "RIGHT"),
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ]))
+        elements.append(a_tbl)
 
     # ── Payment summary ──────────────────────────────────────────────────────
     elements.append(Spacer(1, 4 * mm))

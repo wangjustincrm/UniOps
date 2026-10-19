@@ -52,6 +52,15 @@ ApDep = Annotated[dict, Depends(require_permission("epms.invoice.match"))]
 InvoiceUploadDep = Annotated[dict, Depends(require_permission("invoice_upload"))]
 
 
+def _refuse_freight(inv) -> None:
+    """Courier invoices (match_route='freight') are matched, finalised and
+    deleted on the Freight page, against shipments — never against a PO or
+    agreement here, which would leave its freight lines and shipments behind."""
+    if inv is not None and inv.match_route == "freight":
+        raise HTTPException(status_code=409,
+                            detail="This is a courier invoice — handle it on the Freight page")
+
+
 async def _is_ap(db, user: dict) -> bool:
     """Is this caller AP staff, regardless of an open task assignment?
 
@@ -649,6 +658,7 @@ async def unmatch_invoice_po(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     await _guard_unmatch(db, inv)
     if inv.po_id is None:
         raise HTTPException(status_code=422, detail="This invoice is not matched to a PO")
@@ -679,6 +689,7 @@ async def unmatch_invoice_gr(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     await _guard_unmatch(db, inv)
     if inv.gr_id is None and not inv.gr_ids:
         raise HTTPException(status_code=422, detail="No goods receipt is linked to this invoice")
@@ -705,6 +716,7 @@ async def update_invoice(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     if inv.status not in ("unmatched", "exception", "matched"):
         raise HTTPException(
             status_code=409,
@@ -780,6 +792,7 @@ async def match_invoice(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     is_uploader = inv.uploaded_by == caller_id
     if not is_ap and not is_uploader and not await _has_open_match_task(db, caller_id, invoice_id):
         raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
@@ -1111,6 +1124,7 @@ async def set_invoice_receipts(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     await _require_invoice_match_access(db, user, inv)
 
     try:
@@ -1141,6 +1155,7 @@ async def assign_invoice_billing_period(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     if not await _is_agreement_owner(db, user, inv):
         await _require_invoice_match_access(db, user, inv)
     try:
@@ -1161,6 +1176,7 @@ async def settle_invoice_without_receipt(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     await _require_invoice_match_access(db, user, inv)
 
     try:
@@ -1181,6 +1197,7 @@ async def decline_match(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     if not body.note.strip():
         raise HTTPException(status_code=422, detail="A note is required when declining")
     caller_id = uuid.UUID(user["sub"])
@@ -1232,6 +1249,7 @@ async def assign_match(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     if inv.status not in ("unmatched", "exception"):
         raise HTTPException(status_code=409, detail=f"Invoice already in status '{inv.status}'")
 
@@ -1327,6 +1345,7 @@ async def match_review(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     if body.action == "reject" and not (body.note or "").strip():
         raise HTTPException(status_code=422, detail="A note is required when rejecting")
     reviewer_id = uuid.UUID(user["sub"])
@@ -1395,6 +1414,7 @@ async def delete_invoice(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     try:
         await finance_sync.sync_ap_invoice(db, inv, token, void=True)
         # Complete all open match_invoice / review_match / resolve_exception tasks
@@ -1428,6 +1448,7 @@ async def resolve_exception(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     caller_id = uuid.UUID(user["sub"])
     try:
         result = await invoice_crud.resolve_exception(db, inv, body, resolved_by=caller_id)
