@@ -28,6 +28,7 @@ import {
 } from '@/services/vendorCredits'
 import { InvoiceMatchVariancePanel } from '@/components/invoices/InvoiceMatchVariancePanel'
 import { useConfig } from '@/hooks/useConfig'
+import type { ApiPa } from '@/services/pa'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -446,6 +447,18 @@ export default function PaDetailPage() {
 
   const wfNodes = workflowSteps ?? []
   const stepIdx = pa.approval_step_idx ?? 0
+  // Freight PA: no PO, no agreement — courier invoices split over cost centers
+  // (pa.cost_allocations). Every PO/agreement-shaped block below is swapped
+  // for the allocation table rather than left to render empty.
+  const isFreight = pa.source === 'freight'
+  const canSubmitFreight = isFreight && (['draft', 'returned'] as PaStatus[]).includes(pa.status)
+  const handleSubmitFreight = () => {
+    if (paAction.isPending) return
+    paAction.mutate(
+      { action: 'submit' },
+      { onError: (e) => alert(e instanceof Error ? e.message : 'Could not submit the PA') },
+    )
+  }
 
   // Approval gating is driven solely by the approval engine's task routing — no
   // client-side workflow/role fallback. The engine assigns each step to exactly the
@@ -555,7 +568,10 @@ export default function PaDetailPage() {
             <p className="text-sm text-neutral-500 mt-0.5">
               {pa.title}
               <span className="ml-2 text-neutral-400">·</span>
-              <span className="ml-2 text-neutral-400">{linkedInvoices.length} invoice{linkedInvoices.length !== 1 ? 's' : ''}</span>
+              {(() => {
+                const n = isFreight ? pa.invoice_ids.length : linkedInvoices.length
+                return <span className="ml-2 text-neutral-400">{n} invoice{n !== 1 ? 's' : ''}</span>
+              })()}
             </p>
           </div>
         </div>
@@ -565,6 +581,12 @@ export default function PaDetailPage() {
             <Button variant="secondary" onClick={() => navigate(`/pa/${pa.id}/edit`)} className="gap-2">
               <Pencil className="h-4 w-4" />
               Edit
+            </Button>
+          )}
+          {canSubmitFreight && (
+            <Button onClick={handleSubmitFreight} disabled={paAction.isPending} className="gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              {paAction.isPending ? 'Submitting…' : 'Submit for Approval'}
             </Button>
           )}
           {/* Approval actions moved to fixed bottom bar */}
@@ -627,7 +649,7 @@ export default function PaDetailPage() {
                   {[
                     { label: 'PA Number',    value: pa.pa_number },
                     { label: 'Vendor',       value: pa.vendor_name },
-                    { label: 'PA Type',      value: PA_TYPE_LABEL[pa.pa_type] ?? 'Regular Payment' },
+                    { label: 'PA Type',      value: isFreight ? 'Freight (courier invoices)' : (PA_TYPE_LABEL[pa.pa_type] ?? 'Regular Payment') },
                     { label: 'Created',      value: formatDate(pa.created_at) },
                     ...(pa.pa_type === 'prepayment' && pa.prepayment_pct ? [
                       { label: 'Prepayment %', value: `${pa.prepayment_pct}%` },
@@ -793,7 +815,11 @@ export default function PaDetailPage() {
                 )}
               </div>
 
+              {/* Freight PA: the cost split replaces the PO / invoice links. */}
+              {isFreight && <FreightCostAllocation pa={pa} />}
+
               {/* Linked documents */}
+              {!isFreight && (
               <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
                 <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Linked Documents</h3>
                 <div className="flex flex-col gap-2">
@@ -833,6 +859,7 @@ export default function PaDetailPage() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* Invoice-to-PO / invoice-to-receipts variance — per-invoice,
                   collapsed to a total, expandable to line/receipt detail. AP
@@ -935,7 +962,9 @@ export default function PaDetailPage() {
             {steps.map((step, i) => (
               <TimelineStep key={i} {...step} />
             ))}
-            <DocumentChainTree currentType="pa" id={pa.id} />
+            {/* The chain is PO/agreement-pivoted and would render empty for a
+                Freight PA; its documents are in the Cost Allocation table. */}
+            {!isFreight && <DocumentChainTree currentType="pa" id={pa.id} />}
           </div>
         </div>
       </div>
@@ -1004,6 +1033,64 @@ export default function PaDetailPage() {
           onConfirm={handleProcessConfirm}
           onClose={() => { paAction.reset(); setProcessOpen(false) }}
         />
+      )}
+    </div>
+  )
+}
+
+// ─── Freight PA cost allocation ───────────────────────────────────────────────
+
+function FreightCostAllocation({ pa }: { pa: ApiPa }) {
+  const rows = pa.cost_allocations ?? []
+  const amount = rows.reduce((t, r) => t + Number(r.amount), 0)
+  const tax = rows.reduce((t, r) => t + Number(r.tax_amount), 0)
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="px-5 py-3 border-b border-neutral-200 bg-neutral-50">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+          Cost Allocation ({pa.invoice_ids.length} courier invoice{pa.invoice_ids.length !== 1 ? 's' : ''})
+        </h3>
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-5 py-6 text-center text-xs text-neutral-400 italic">No cost allocation recorded for this PA</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-neutral-200 bg-neutral-50">
+                {['Invoice', 'Department', 'Cost Center', 'Budget Code', 'Amount', 'Tax'].map((h) => (
+                  <th key={h} className={cn('px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500', ['Amount', 'Tax'].includes(h) ? 'text-right' : 'text-left')}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={`${r.invoice_id}-${r.cost_center_id}`} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 && 'bg-neutral-50/50')}>
+                  <td className="px-4 py-2.5">
+                    <Link to={`/freight/invoices/${r.invoice_id}`} className="flex items-center gap-1 font-mono text-xs text-primary-700 hover:underline">
+                      {r.invoice_number ?? r.invoice_id.slice(0, 8)} <ExternalLink className="h-3 w-3" />
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-neutral-700">{r.department_name ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-xs text-neutral-700">
+                    <span className="font-mono">{r.cost_center_code ?? '—'}</span>
+                    {r.cost_center_name && <span className="text-neutral-500"> — {r.cost_center_name}</span>}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{r.budget_code}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-900">{formatAmount(Number(r.amount), pa.currency)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-700">{formatAmount(Number(r.tax_amount), pa.currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
+                <td colSpan={4} className="px-4 py-2.5 text-right text-xs text-neutral-600">Total</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-900">{formatAmount(Math.round(amount * 100) / 100, pa.currency)}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-900">{formatAmount(Math.round(tax * 100) / 100, pa.currency)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       )}
     </div>
   )

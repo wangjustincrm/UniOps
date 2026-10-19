@@ -40,6 +40,8 @@ import PartsListPage from '@/pages/parts/PartsListPage'
 import ProfilePage from '@/pages/profile/ProfilePage'
 import AdminPanel from '@/pages/admin/AdminPanel'
 import { VendorCreditsPage } from '@/pages/vendorcredits/VendorCreditsPage'
+import FreightPage from '@/pages/freight/FreightPage'
+import FreightInvoicePage from '@/pages/freight/FreightInvoicePage'
 
 // Short, distinguishable title for an id-keyed detail/edit tab (UUIDs too long).
 const short = (id: string) => (id.length > 8 ? id.slice(0, 8) : id)
@@ -88,6 +90,11 @@ export const epmsRoutes: RouteDef[] = [
   { path: '/pa/create', element: <PaCreatePage />, tab: { title: 'New PA', icon: 'Plus', keyStrategy: 'static' } },
   { path: '/pa/:id/edit', element: <PaEditPage />, tab: { title: (p) => `Edit PA ${short(p.id)}`, icon: 'CreditCard', keyStrategy: 'param', paramName: 'id' } },
   { path: '/pa/:id', element: <PaDetailPage />, tab: { title: (p) => `PA ${short(p.id)}`, icon: 'CreditCard', keyStrategy: 'param', paramName: 'id' } },
+
+  // ?tab= picks Shipments / Invoices / Create PA inside the one static tab;
+  // links from other tabs re-point it first (pages/freight/useFreightNav.ts).
+  { path: '/freight', element: <FreightPage />, tab: { title: 'Freight', icon: 'Truck', keyStrategy: 'static' } },
+  { path: '/freight/invoices/:id', element: <FreightInvoicePage />, tab: { title: (p) => `Freight Invoice ${short(p.id)}`, icon: 'Truck', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/budget', element: <BudgetDashboard />, tab: { title: 'Budget Dashboard', icon: 'PiggyBank', keyStrategy: 'static' } },
   { path: '/budget/catalog', element: <BudgetCatalogPage />, tab: { title: 'Account Catalog', icon: 'FolderTree', keyStrategy: 'static' } },

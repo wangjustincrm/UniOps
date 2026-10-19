@@ -19,10 +19,31 @@ import { useGrsForPos } from '@/hooks/useGrs'
 import type { ApiPo } from '@/services/po'
 import { DueWindowNotice } from './DueWindowNotice'
 import { DerivedPaLinesTable } from './DerivedPaLinesTable'
+import { FreightPaEditForm } from './FreightPaEditForm'
 import { derivePaLines } from '@/lib/paLinesFromInvoices'
 import { dueWindowViolation } from './invoiceDueWindow'
 
+/**
+ * A Freight PA takes its amounts, invoices and cost split from the Freight page
+ * (epms-api rejects any other field on PATCH), so it gets a title/notes-only
+ * form instead of the PO/agreement editor below, which would try to rebuild
+ * lines and amounts from a PO it does not have.
+ */
 export default function PaEditPage() {
+  const { id } = useParams<{ id: string }>()
+  const { data: pa, isLoading } = usePa(id ?? '')
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <p className="text-neutral-400 text-sm">Loading…</p>
+      </div>
+    )
+  }
+  if (pa?.source === 'freight') return <FreightPaEditForm pa={pa} />
+  return <PoPaEditPage />
+}
+
+function PoPaEditPage() {
   const { id } = useParams<{ id: string }>()
   const replaceTab = useReplaceTab(epmsRoutes)
   const queryClient = useQueryClient()
