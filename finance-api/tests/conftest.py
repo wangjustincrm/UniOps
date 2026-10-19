@@ -57,8 +57,8 @@ def _migrate():
     from app.models.admin_audit_log import AdminAuditLog  # shared table, no finance migration owns it
     from app.models.mirrors import (  # noqa: F401
         BudgetAccount, BusinessPartner, CompanyConfig, CostCenter, Department, ErpSupplier, ExpenseApprovalEvent,
-        ExpenseClaim, ExpenseInvoice, ExpenseLineItem, ExpenseTripItem, Invoice, InvoicePoAllocation,
-        InvoiceTaxLine, PurchaseRequest, SodRule, Task, User,
+        ExpenseClaim, ExpenseInvoice, ExpenseLineItem, ExpenseTripItem, FreightInvoiceLine, Invoice,
+        InvoicePoAllocation, InvoiceTaxLine, PurchaseRequest, SodRule, Task, User,
     )
     from app.models.pa import PaymentApplication
     from app.models.pa_po_link import PaPoLink
@@ -72,7 +72,7 @@ def _migrate():
         AdminAuditLog.__table__, CostCenter.__table__,
         Department.__table__, BudgetAccount.__table__, ErpSupplier.__table__,
         ExpenseInvoice.__table__, InvoicePoAllocation.__table__, PurchaseRequest.__table__,
-        BusinessPartner.__table__,
+        BusinessPartner.__table__, FreightInvoiceLine.__table__,
     ])
     # company_config is epms-owned; its physical table carries the shared
     # smtp_*/po_smtp_* columns (epms-api migrations e5f6a7b8c9d0 /

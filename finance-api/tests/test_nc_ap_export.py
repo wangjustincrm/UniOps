@@ -457,3 +457,90 @@ async def test_vendor_invoice_number_unique(client, db_session):
     ok = await _mk_ap(db_session, number="AP-2026-0403", src_id=uuid.uuid4())
     ok.vendor_id = vid; ok.vendor_invoice_number = "DUP-2"
     await db_session.flush()          # must NOT raise
+
+
+async def test_freight_invoice_one_row_per_cost_centre(db_session):
+    """Courier invoice (match_route='freight'): one body row per cost centre,
+    revexp = the freight account, never collapsed to the largest allocation."""
+    from app.models.mirrors import CostCenter, Department, FreightInvoiceLine, Invoice
+    from app.services.nc_ap_export import build_export_rows
+    src = uuid.uuid4()
+    qa, sc = uuid.uuid4(), uuid.uuid4()
+    lab, sell = uuid.uuid4(), uuid.uuid4()
+    db_session.add_all([
+        Department(id=qa, code="0105", name="Quality Assurance", is_active=True),
+        Department(id=sc, code="0107", name="Supply Chain", is_active=True),
+        CostCenter(id=lab, code="MOH-0105-LAB", name="QA Lab", department_id=qa),
+        CostCenter(id=sell, code="SELL-0107-S03", name="SC Selling", department_id=sc),
+        Invoice(id=src, internal_ref="INV-2026-9001", vendor_invoice_number="00004E4F77416",
+                vendor_id=uuid.uuid4(), vendor_name="UPS Canada Ltd.", amount=Decimal("85.14"),
+                tax_amount=Decimal("1.68"), total_amount=Decimal("86.82"), currency="CAD",
+                invoice_date=date(2026, 10, 10), due_date=date(2026, 10, 26), status="matched",
+                match_route="freight"),
+    ])
+    for cc, amt, tx in ((lab, "51.28", "0"), (lab, "6.48", "0.84"),
+                        (sell, "6.48", "0.84"), (sell, "20.90", "0")):
+        db_session.add(FreightInvoiceLine(id=uuid.uuid4(), invoice_id=src, cost_center_id=cc,
+                                          amount=Decimal(amt), tax_amount=Decimal(tx)))
+    await db_session.flush()
+    ap = await _mk_ap(db_session, src_id=src, amount="85.14", tax="1.68", number="AP-2026-0900",
+                      vendor="UPS Canada Ltd.")
+    await _mk_accrual(db_session, ap)
+
+    heads, bodies, errors = await build_export_rows(db_session, [ap.id])
+    assert errors == []
+    assert len(heads) == 1 and len(bodies) == 2
+    by_dept = {b["department"]: b for b in bodies}
+    assert by_dept["0105"]["money"] == "58.60"          # 57.76 + 0.84
+    assert by_dept["0107"]["money"] == "28.22"          # 27.38 + 0.84
+    assert sum(Decimal(b["money"]) for b in bodies) == Decimal("86.82")
+    assert {b["revexp"] for b in bodies} == {"CRM0150102"}
+    assert by_dept["0105"]["account_path"] == "510101"  # MOH
+    assert by_dept["0107"]["account_path"] == "660101"  # SELL
+    assert heads[0]["department"] == "0105"             # largest cost centre leads the head
+    assert heads[0]["revexp"] == "CRM0150102"
+
+
+async def test_freight_zero_tax_row_is_not_given_the_default_rate(db_session):
+    from app.models.mirrors import CostCenter, Department, FreightInvoiceLine, Invoice
+    from app.services.nc_ap_export import build_export_rows
+    src, dept, cc = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    db_session.add_all([
+        Department(id=dept, code="0107", name="Supply Chain", is_active=True),
+        CostCenter(id=cc, code="GA-0107", name="SC G&A", department_id=dept),
+        Invoice(id=src, internal_ref="INV-2026-9002", vendor_invoice_number="2-749-42565",
+                vendor_id=uuid.uuid4(), vendor_name="FedEx", amount=Decimal("1126.47"),
+                tax_amount=Decimal("0"), total_amount=Decimal("1126.47"), currency="CAD",
+                invoice_date=date(2026, 9, 28), due_date=date(2026, 10, 28), status="matched",
+                match_route="freight"),
+        FreightInvoiceLine(id=uuid.uuid4(), invoice_id=src, cost_center_id=cc,
+                           amount=Decimal("1126.47"), tax_amount=Decimal("0")),
+    ])
+    await db_session.flush()
+    ap = await _mk_ap(db_session, src_id=src, amount="1126.47", tax="0", number="AP-2026-0901",
+                      vendor="FedEx")
+    await _mk_accrual(db_session, ap)
+    _, bodies, errors = await build_export_rows(db_session, [ap.id])
+    assert errors == [] and bodies[0]["tax_rate"] == "0.00"
+    # Control: a non-freight zero-tax invoice keeps today's behaviour.
+
+
+async def test_unmatched_freight_invoice_is_reported_not_exported(db_session):
+    from app.models.mirrors import FreightInvoiceLine, Invoice
+    from app.services.nc_ap_export import build_export_rows
+    src = uuid.uuid4()
+    db_session.add_all([
+        Invoice(id=src, internal_ref="INV-2026-9003", vendor_invoice_number="550316833",
+                vendor_id=uuid.uuid4(), vendor_name="Purolator", amount=Decimal("121.83"),
+                tax_amount=Decimal("11.94"), total_amount=Decimal("133.77"), currency="CAD",
+                invoice_date=date(2026, 9, 26), due_date=date(2026, 10, 10), status="unmatched",
+                match_route="freight"),
+        FreightInvoiceLine(id=uuid.uuid4(), invoice_id=src, cost_center_id=None,
+                           amount=Decimal("121.83"), tax_amount=Decimal("11.94")),
+    ])
+    await db_session.flush()
+    ap = await _mk_ap(db_session, src_id=src, amount="121.83", tax="11.94", number="AP-2026-0902")
+    await _mk_accrual(db_session, ap)
+    heads, bodies, errors = await build_export_rows(db_session, [ap.id])
+    assert heads == [] and bodies == []
+    assert errors[0]["reason"].startswith("courier invoice not matched")
