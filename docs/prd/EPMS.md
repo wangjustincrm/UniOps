@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.26
-**Date:** 2026-10-16
+**Version:** 2.27
+**Date:** 2026-10-19
 **Status:** In Production
+
+> **v2.27 (2026-10-19)** — New §3.21 Courier Freight Payment (Freight): register courier tracking numbers, match carrier invoices by tracking number, and pay them with a Freight PA that has no PO, split by cost center, approved through its own chain (`pa_frt`). PA gains a `source` (§3.15.1); navigation (§6); open items OI-AH–OI-AK.
 
 > **v2.26 (2026-10-16)** — PA line items follow line-matched invoices (PA-018); Data Maintenance no longer rewrites a PA's pre-tax amount from lines that disagree with it, and asks before a line edit changes it (DM-007). OI-AF / OI-AG added.
 >
@@ -524,6 +526,7 @@ Every submittable document or form type has a unique action key. Each action key
 | `posign` | PO sign-off (NC-imported POs, §3.12.8) | EPMS |
 | `agr` | Purchase Agreement (§3.17) | EPMS |
 | `pa` | Payment Application (PO-linked) | EPMS / OA |
+| `pa_frt` | Freight PA chain — a `pa` document whose `source` is `freight` walks this chain instead of `pa`'s (§3.21) | EPMS |
 | `pa_dir` | Direct Payment Application (no PO) | OA |
 | `exp` | General Expense Claim | OA |
 | `trv` | Travel Expense | OA |
@@ -1968,6 +1971,8 @@ AP staff (holders of *Match Invoice*) and admins can reverse a match from Invoic
 
 **PA linkage:** Settlement and Balance PAs carry a `prepayment_pa_id` referencing the original Prepayment PA. The backend validates this linkage at creation time — the referenced PA must be of type `prepayment` and belong to the same PO. Prepayment, Settlement and Balance PAs are always raised against exactly one PO; a regular PA may cover several POs. A PA with an agreement and no PO is an **agreement PA** (§3.15.7) and is always `regular`.
 
+**PA source.** Every PA records the flow that raised it: `po`, `agreement`, `freight` (a **Freight PA**, raised from matched courier invoices on the Freight page — no PO and no agreement, §3.21) or `direct` (OA's retired Direct PA). EPMS lists, opens and acts on `po`, `agreement` and `freight` PAs; `direct` PAs are not EPMS documents. A Freight PA is always `regular`; its amounts, invoices and cost split come from the Freight page and only its title and notes can be edited on the PA.
+
 #### 3.15.2 Standard PA
 
 **Who can create:** any user with *Create/Edit PA* (`epms.pa.write`); the New PA button is shown only to them. A user whose primary role is Requester may only include POs raised from their own PRs, except when they also hold: **Procurement Officer** (any PO), **ERP PA Officer** (NC-imported POs that have no PR), or **Dept Admin** (POs whose PR belongs to their own department). The same check runs when the PO set is edited. Approval routing is unaffected by who created the PA. The PA is typically created in response to a `create_pa` task (§3.14.2).
@@ -2426,6 +2431,38 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 
 ---
 
+### 3.21 Courier Freight Payment (Freight)
+
+Courier charges (UPS, FedEx, Purolator…) are paid without PR or PO. Buyers register the tracking number of each pickup with the cost center that bears it; when the carrier's invoice arrives, its per-shipment detail is read by AI, matched to the registered tracking numbers, and paid by a **Freight PA** split by cost center. All freight is charged to budget account **CRM0150102**. Design: `docs/superpowers/specs/2026-10-19-freight-payment-design.md`.
+
+#### 3.21.1 Access
+
+| Permission | Allows | Seeded |
+|---|---|---|
+| `epms.freight.register` | Register, edit and void one's own shipments; see one's own shipments | System Admin, Procurement Officer, Procurement Manager |
+| `epms.freight.manage` | See every shipment; upload, match, finalise, reopen and delete carrier invoices; raise Freight PAs | System Admin (the supply-chain person is granted it in Access Control) |
+| `epms.freight.admin` | Maintain the carrier list | System Admin |
+
+#### 3.21.2 Requirements
+
+| FR ID | Requirement |
+|---|---|
+| **FRT-001** | **Carriers.** A carrier links one vendor (unique) and has a code, a name, an optional tracking-number pattern (regular expression) and an optional default cost center for charges that have no tracking number. Only vendors set up as carriers can be paid by a Freight PA. |
+| **FRT-002** | **Register a shipment.** Carrier, tracking number, cost center (required), direction (outbound / inbound), note, optional waybill photo. The tracking number is stored without spaces, hyphens or dots, upper case; it must match the carrier's pattern when one is set; a carrier + tracking number can be registered once (the refusal names who registered it). A waybill photo can be read by AI to fill the tracking number. |
+| **FRT-003** | **Default cost center.** After a department is chosen: its only active cost center; otherwise the cost center whose current-year approved budget plan carries CRM0150102 (largest annual amount); otherwise none and the user picks. Choosing a cost center with no freight budget asks for confirmation; it is not blocked. |
+| **FRT-004** | A shipment is `pending` until an invoice bills it, then `billed`. Only a pending shipment can be edited or voided (`void`). |
+| **FRT-005** | **Upload a carrier invoice.** The PDF is read by AI (Haiku): header (invoice number, dates, currency, amount before tax for this invoice only, tax) and one line per shipment / pickup / fee / adjustment with every package tracking number, reference, date, amount before tax and the tax attributed to it. Tax printed per category is spread over that category's lines; any tax still unattributed is spread over the positive lines by amount. The reviewer corrects the result before saving; the form shows whether the lines add up to the header. Saving is refused when the same vendor invoice number already exists in EPMS or OA. The invoice is stored as an EPMS invoice (`match_route = freight`) and synced to Finance AP like any other. |
+| **FRT-006** | **Auto-match** (on save and on demand; never changes a line set by hand): a shipment line matches the carrier's pending shipment whose tracking number is any of the line's package numbers → its cost center. A shipment already billed on another invoice is flagged **Billed before** and needs a decision. A line with no registered shipment is **Not registered** and needs a cost center. An adjustment follows its shipment wherever it was billed. A pickup on (or one day either side of) a matched shipment's date follows that shipment; other pickups and fees take the carrier's default cost center. |
+| **FRT-007** | On an unfinalised invoice each line's cost center, amount, tax, tracking numbers and the shipment a pickup follows can be changed; a change marks the line as set by hand. |
+| **FRT-008** | **Finalise** requires: lines before tax = invoice amount, line taxes = invoice tax, every line has a cost center, no undecided **Billed before** line. Finalising records unregistered shipments (source *from invoice*), marks matched shipments billed and the invoice `matched`. **Reopen** returns it to unfinalised (and its shipments to pending) only while no Freight PA holds it. An unfinalised invoice can be deleted. |
+| **FRT-009** | Courier invoices are handled only on the Freight page: the general invoice actions (match to PO or agreement, unmatch, edit, delete, exceptions) refuse them. They remain readable on the Invoices pages. |
+| **FRT-010** | **Freight PA.** One or more finalised invoices of the same carrier and currency, none held by another non-cancelled PA, are locked and turned into one PA: `source = freight`, no PO, no agreement, subtotal and tax = the invoices' amounts, one line item per invoice, and a cost allocation per invoice × cost center (department, CRM0150102, amount, tax) snapshotted at creation. PA detail and PDF show the cost allocation instead of PO numbers. |
+| **FRT-011** | **Approval.** A Freight PA is a `pa` document (same tasks, inbox, events and payment) that walks the `pa_frt` chain — default OPM → GM → Finance Manager → Finance BP, edited in Portal → Admin → Approval Workflows, where only company-level roles are offered. No department manager is involved or notified. |
+| **FRT-012** | **Visibility.** Besides unrestricted roles, a Freight PA is visible to its creator, `epms.freight.manage` holders and anyone holding a role that is a step of the `pa_frt` chain (GM and OPM are restricted roles whose approval tasks are not personally assigned). It appears in the PA list; the Department filter matches any of its allocations. |
+| **FRT-013** | **Payment and NC.** A Freight PA is paid through the standard payment executor as an EPMS PA (its invoices are marked paid); the due list labels it Freight PA. In the NC AP export a courier invoice is **one body row per cost center** with revexp CRM0150102 (all other invoices stay one summary row); a row with no tax is sent with tax rate 0. |
+
+---
+
 ## 4. Non-Functional Requirements
 
 ### 4.1 Accessibility
@@ -2513,6 +2550,7 @@ PROCUREMENT
   Invoices                          view_invoice
   Vendor Credits                    view_invoice
   Payment Applications              view_pa
+  Freight                           epms.freight.register or epms.freight.manage
   Agreements                        epms.agreement.read
   Agreement Receipts                epms.agreement.read
 
@@ -2776,3 +2814,7 @@ Status values: **Open** (decision or data needed), **Not implemented** (requirem
 | OI-AE | WCAG 2.1 AA accessibility pass | UI (§4.1) | Not implemented |
 | OI-AF | A PO-route PA can be submitted with line items that do not add up to its pre-tax amount (about a fifth of PO-route PAs created since 2026-07 in production); there is no lines-vs-subtotal check on submit | PA (§3.15.2) | Not implemented |
 | OI-AG | When an invoice was matched only against the PO total, PA lines are still ticked by hand at full PO quantity; lines already paid by another PA are not marked, so the same PO line can appear in full on several PAs | PA (§3.15.2) | Not implemented |
+| OI-AH | Freight carriers (UPS / FedEx / Purolator vendors, tracking patterns, default cost center) and the supply-chain person holding `epms.freight.manage` must be set up before first use | Freight (§3.21) | Open (data) |
+| OI-AI | Freight: NC import of a courier invoice exported as several body rows (one per cost center, zero-tax rows at rate 0) to be tried by AP before the first live export | Freight (§3.21) | Open |
+| OI-AJ | Freight phase 2: import the carriers' per-shipment CSV instead of reading the PDF; suggest the cost center from a PO number in the shipment reference; read invoices over ~10 pages page by page; monthly freight report by cost center | Freight (§3.21) | Not implemented |
+| OI-AK | Freight: the waybill-photo reading has not yet been tried on a real label | Freight (§3.21) | Open |
