@@ -3,8 +3,9 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text, case
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -127,3 +128,33 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+    # ── For the Assistant's ontology (ISS-0013) ───────────────────────────────
+    # "Which invoices are matched but not received?" was answered with every
+    # invoice lacking a GR number — agreement invoices included, which never
+    # have one and are backed by agreement receipts instead. These two say
+    # which route an invoice is on and, for the PO route only, whether the PO
+    # has receipt evidence under the SAME rule as the PA receipt gate.
+    # Query-side only; the instance side is not used.
+    @hybrid_property
+    def billed_against(self) -> str:
+        return ("agreement" if self.agreement_id else
+                "purchase_order" if self.po_id else "none")
+
+    @billed_against.inplace.expression
+    @classmethod
+    def _billed_against_expression(cls):
+        return case((cls.agreement_id.is_not(None), "agreement"),
+                    (cls.po_id.is_not(None), "purchase_order"), else_="none")
+
+    @hybrid_property
+    def po_receipt_recorded(self) -> bool | None:
+        return None
+
+    @po_receipt_recorded.inplace.expression
+    @classmethod
+    def _po_receipt_recorded_expression(cls):
+        from app.core.receipt_evidence import receipt_evidence
+        # NULL off the PO route: "not applicable", never "not received".
+        return case((cls.agreement_id.is_(None) & cls.po_id.is_not(None),
+                     receipt_evidence(cls.po_id)), else_=None)

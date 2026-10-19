@@ -593,6 +593,12 @@ async def test_every_enum_value_in_the_database_is_declared():
                 for fname, field in entity.fields.items():
                     if field.kind != "enum" or not field.values:
                         continue
+                    if fname not in entity.model.__table__.columns:
+                        # A derived field (hybrid, e.g. invoice.billed_against):
+                        # its values are the CASE branches in code, not data —
+                        # nothing can appear in a table that the code did not
+                        # write, and there is no column to SELECT.
+                        continue
                     found = {v for (v,) in (await conn.execute(sa.text(
                         f"SELECT DISTINCT {fname} FROM {table} "
                         f"WHERE {fname} IS NOT NULL"))).all()}

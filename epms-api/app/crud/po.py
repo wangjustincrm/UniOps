@@ -791,19 +791,8 @@ async def po_has_receipt_evidence(db: AsyncSession, po_id: uuid.UUID) -> bool:
     the invoice on it could never reach 3-way — no create_pa either, the goods
     silently going unpaid until someone raised the PA by hand.
     """
-    gr = (await db.execute(
-        select(GoodsReceipt.id).where(
-            GoodsReceipt.po_id == po_id,
-            GoodsReceipt.status.not_in(DEAD_GR_STATUSES),
-        ).limit(1)
-    )).scalar_one_or_none()
-    if gr is not None:
-        return True
-    return (await db.execute(
-        select(PoLineItem.id).where(
-            PoLineItem.po_id == po_id, PoLineItem.received_qty > 0
-        ).limit(1)
-    )).scalar_one_or_none() is not None
+    from app.core.receipt_evidence import receipt_evidence
+    return bool((await db.execute(select(receipt_evidence(po_id)))).scalar())
 
 
 async def pr_department_id(db: AsyncSession, pr_id: uuid.UUID | None) -> uuid.UUID | None:

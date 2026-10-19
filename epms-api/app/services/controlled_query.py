@@ -563,6 +563,16 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
     truncated = len(raw) > limit
     rows = [dict(zip(labels, (_serialise(v) for v in row))) for row in raw[:limit]]
 
+    # When the cap bit, how many there really are — counted over the same
+    # statement (filters, joins, scope, grouping) without order or limit.
+    # Without it a list cut at 100 was reported as "100 records match"
+    # while the PO list showed 486 (ISS-0013).
+    total_rows = None
+    if truncated and not for_export:
+        total_rows = (await db.execute(
+            sa.select(sa.func.count()).select_from(
+                stmt.order_by(None).limit(None).subquery()))).scalar_one()
+
     matched = None
     if grouped and not group_by:
         matched = rows[0].pop(_MATCHED, None) if rows else 0
@@ -592,6 +602,8 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
         out["value_labels"] = coded
     if matched is not None:
         out["matched_rows"] = matched
+    if total_rows is not None:
+        out["total_rows"] = total_rows
     if totals is not None:
         out["totals"] = totals
 

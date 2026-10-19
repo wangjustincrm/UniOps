@@ -430,8 +430,26 @@ entities:
       invoice_date: {kind: date, label: "Invoice date"}
       due_date: {kind: date, label: "Payment due date"}
       po_number: {kind: text, label: "PO number this invoice bills against"}
-      gr_number: {kind: text, label: "Goods receipt number"}
+      gr_number:
+        kind: text
+        label: "Goods receipt number linked to the invoice. Empty does NOT mean
+          not received — agreement invoices never have one. For received or not,
+          use po_receipt_recorded"
       agreement_number: {kind: text, label: "Agreement number, for agreement billing"}
+      # Added 2026-10-19 (ISS-0013).
+      billed_against:
+        kind: enum
+        label: "What the invoice is billed against: purchase_order or agreement
+          (none = not matched to either yet)"
+        values: [purchase_order, agreement, none]
+      po_receipt_recorded:
+        kind: bool
+        label: "PO-route invoices only: whether the PO has any receipt evidence
+          (a goods receipt, or a received quantity on its lines) — the same rule
+          the payment receipt check uses. Empty for agreement invoices, which are
+          backed by agreement receipts and are never 'not received'. \"Matched but
+          not received\" is status = matched AND billed_against = purchase_order
+          AND po_receipt_recorded = false"
       uploaded_by_name: {kind: text, label: "Who uploaded it"}
       created_at: {kind: datetime, label: "Created at"}
     metrics:
