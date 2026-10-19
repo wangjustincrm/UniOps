@@ -5,13 +5,15 @@ import { useFreightAccess } from '@/hooks/useFreight'
 import { ShipmentsTab } from './ShipmentsTab'
 import { InvoicesTab } from './InvoicesTab'
 import { CreatePaTab } from './CreatePaTab'
+import { CarriersTab } from './CarriersTab'
 
-type TabKey = 'shipments' | 'invoices' | 'create-pa'
+type TabKey = 'shipments' | 'invoices' | 'create-pa' | 'carriers'
 
 const TAB_LABEL: Record<TabKey, string> = {
   shipments: 'Shipments',
   invoices: 'Invoices',
   'create-pa': 'Create PA',
+  carriers: 'Carriers',
 }
 
 export default function FreightPage() {
@@ -20,9 +22,14 @@ export default function FreightPage() {
 
   const canManage = !!access?.manage
   const canRegister = !!access?.register || canManage
-  const tabs: TabKey[] = canManage ? ['shipments', 'invoices', 'create-pa'] : ['shipments']
+  const canAdmin = !!access?.admin
+  const tabs: TabKey[] = [
+    ...(canRegister ? ['shipments'] as TabKey[] : []),
+    ...(canManage ? ['invoices', 'create-pa'] as TabKey[] : []),
+    ...(canAdmin ? ['carriers'] as TabKey[] : []),
+  ]
   const requested = searchParams.get('tab') as TabKey | null
-  const active: TabKey = requested && tabs.includes(requested) ? requested : 'shipments'
+  const active: TabKey = requested && tabs.includes(requested) ? requested : (tabs[0] ?? 'shipments')
 
   const selectTab = (t: TabKey) => {
     // Only ?tab= survives a tab switch; ?invoice= is a one-shot pre-selection
@@ -38,7 +45,7 @@ export default function FreightPage() {
     )
   }
 
-  if (isError || !canRegister) {
+  if (isError || tabs.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <Truck className="h-10 w-10 text-neutral-200 mb-3" />
@@ -76,7 +83,8 @@ export default function FreightPage() {
         </div>
       )}
 
-      {active === 'shipments' && <ShipmentsTab canManage={canManage} />}
+      {active === 'shipments' && canRegister && <ShipmentsTab canManage={canManage} />}
+      {active === 'carriers' && canAdmin && <CarriersTab />}
       {active === 'invoices' && canManage && <InvoicesTab />}
       {active === 'create-pa' && canManage && <CreatePaTab preselectInvoiceId={searchParams.get('invoice')} />}
     </div>

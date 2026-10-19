@@ -124,8 +124,8 @@ export default function FreightInvoicePage() {
         <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-2.5 text-sm text-danger-600">{actionError}</div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
-        <div className="xl:col-span-3 flex flex-col gap-5">
+      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-4">
+        <div className="2xl:col-span-3 min-w-0 flex flex-col gap-5">
           {/* Header card */}
           <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm md:grid-cols-4">
@@ -201,7 +201,7 @@ export default function FreightInvoicePage() {
         </div>
 
         {/* Side panel */}
-        <div className="flex flex-col gap-4">
+        <div className="order-first grid items-start gap-4 md:grid-cols-3 2xl:order-none 2xl:flex 2xl:flex-col">
           <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-2">
             {editable && (
               <>

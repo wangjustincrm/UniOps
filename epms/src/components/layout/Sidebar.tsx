@@ -62,7 +62,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Payment Applications', href: '/pa', icon: <CreditCard className="h-4 w-4" />, permission: 'view_pa' },
       // Freight: registrars (buyers who ship parcels) and the supply-chain
       // people who match carrier invoices. Same keys freight.py's /freight/me checks.
-      { label: 'Freight', href: '/freight', icon: <Truck className="h-4 w-4" />, anyPermission: ['epms.freight.register', 'epms.freight.manage'] },
+      { label: 'Freight', href: '/freight', icon: <Truck className="h-4 w-4" />, anyPermission: ['epms.freight.register', 'epms.freight.manage', 'epms.freight.admin'] },
       { label: 'Agreements', href: '/agreements', icon: <FileSignature className="h-4 w-4" />, permission: 'epms.agreement.read' },
       // epms.agreement.read (read), NOT epms.agreement.receipt.write — anyone
       // who can see an agreement should be able to see its receipts too,

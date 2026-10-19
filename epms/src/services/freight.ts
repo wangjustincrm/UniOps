@@ -34,6 +34,14 @@ export interface FreightCarrier {
   is_active: boolean
 }
 
+export interface CarrierBody {
+  vendor_id: string
+  code: string
+  name: string
+  tracking_pattern: string | null
+  default_cost_center_id: string | null
+}
+
 export interface FreightShipment {
   id: string
   carrier_id: string
@@ -226,6 +234,13 @@ export const freightService = {
 
   carriers: (includeInactive = false) =>
     api.get<FreightCarrier[]>('/freight/carriers', includeInactive ? { include_inactive: true } : undefined),
+
+  carriersAll: () => api.get<FreightCarrier[]>('/freight/carriers', { include_inactive: true }),
+
+  createCarrier: (body: CarrierBody) => api.post<FreightCarrier>('/freight/carriers', body),
+
+  updateCarrier: (id: string, body: Partial<Omit<CarrierBody, 'vendor_id' | 'code'>> & { is_active?: boolean }) =>
+    api.patch<FreightCarrier>(`/freight/carriers/${id}`, body),
 
   defaultCostCenter: (departmentId: string) =>
     api.get<DefaultCostCenter>('/freight/default-cost-center', { department_id: departmentId }),
