@@ -27,6 +27,7 @@ import { useRolePermissions, useConfig } from '@/hooks/useConfig'
 import { getTaxLines } from '@/services/invoiceTax'
 import { AssignMatchDialog } from './AssignMatchDialog'
 import { MatchPanel } from './MatchPanel'
+import { CourierInvoiceView } from './CourierInvoiceView'
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -300,17 +301,10 @@ export default function InvoiceDetailPage() {
     )
   }
 
-  // Courier invoices live on the Freight page; every match / edit action here
-  // would be refused (409), so send the reader there instead.
-  if (inv.match_route === 'freight') {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
-        <p className="text-lg font-semibold text-neutral-700">{inv.vendor_name} · {inv.vendor_invoice_number}</p>
-        <p className="text-sm text-neutral-500">This is a courier invoice. It is matched to shipments and cost centers on the Freight page.</p>
-        <Link to={`/freight/invoices/${inv.id}`} className="text-sm font-medium text-primary-600 hover:underline">Open it in Freight →</Link>
-      </div>
-    )
-  }
+  // Courier invoices are matched against shipments, not a PO: the freight
+  // panel takes the place of the three-way match (read-only without
+  // epms.freight.manage).
+  if (inv.match_route === 'freight') return <CourierInvoiceView id={inv.id} />
 
   const sla = inv.status === 'unmatched' ? computeSla(inv.uploaded_at) : null
 

@@ -1,16 +1,48 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Loader2, CreditCard, AlertTriangle } from 'lucide-react'
+import { Loader2, CreditCard, AlertTriangle, ArrowLeft } from 'lucide-react'
+import { BackLink } from '@/components/BackLink'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { dueInfo } from '@/lib/dueDate'
 import {
-  useCreateFreightPa, useFreightCarriers, useFreightInvoice, useFreightInvoiceDetails, useFreightInvoices,
+  useCreateFreightPa, useFreightAccess, useFreightCarriers, useFreightInvoice, useFreightInvoiceDetails,
+  useFreightInvoices,
 } from '@/hooks/useFreight'
-import { SELECT_CLS, TH_CLS, cents, errorMessage, num } from './freightUi'
+import { SELECT_CLS, TH_CLS, cents, errorMessage, num } from '@/pages/freight/freightUi'
 
-export function CreatePaTab({ preselectInvoiceId }: { preselectInvoiceId: string | null }) {
+/** New PA → Freight payment (/pa/new?source=freight[&invoice=<id>]): matched
+ *  courier invoices of one carrier, split over cost centres, become one draft
+ *  Freight PA. Gated like the API on epms.freight.manage. */
+export function FreightPaCreate({ preselectInvoiceId }: { preselectInvoiceId: string | null }) {
+  const { data: access, isLoading } = useFreightAccess()
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center gap-3">
+        <BackLink to="/pa" className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500" aria-label="Back to Payment Applications">
+          <ArrowLeft className="h-5 w-5" />
+        </BackLink>
+        <div>
+          <h1 className="text-2xl font-bold text-neutral-900">New Freight PA</h1>
+          <p className="text-sm text-neutral-500 mt-0.5">Pay matched courier invoices of one carrier, split over the cost centers they were matched to</p>
+        </div>
+      </div>
+      {isLoading ? (
+        <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-neutral-300" /></div>
+      ) : access?.manage ? (
+        <FreightPaForm preselectInvoiceId={preselectInvoiceId} />
+      ) : (
+        <div className="rounded-xl border border-neutral-200 bg-white py-16 text-center">
+          <p className="text-sm font-medium text-neutral-500">You do not have access to Freight payments</p>
+          <p className="text-xs text-neutral-400 mt-1">Raising a Freight PA needs the Freight manage permission.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | null }) {
   const navigate = useNavigate()
   const { data: carriers = [] } = useFreightCarriers()
   const [carrierId, setCarrierId] = useState('')
@@ -98,7 +130,7 @@ export function CreatePaTab({ preselectInvoiceId }: { preselectInvoiceId: string
         ) : ready.length === 0 ? (
           <div className="py-16 text-center">
             <p className="text-sm font-medium text-neutral-500">Nothing ready to pay</p>
-            <p className="text-xs text-neutral-400 mt-1">Finalise the matching on an invoice first (Invoices tab)</p>
+            <p className="text-xs text-neutral-400 mt-1">Finalise the matching on a courier invoice first (Invoices page)</p>
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -122,7 +154,7 @@ export function CreatePaTab({ preselectInvoiceId }: { preselectInvoiceId: string
                   <tr key={inv.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" onClick={() => toggle(inv.id)}>
                     <td className="px-3 py-2.5"><input type="checkbox" checked={selected.has(inv.id)} onChange={() => toggle(inv.id)} onClick={(e) => e.stopPropagation()} /></td>
                     <td className="px-3 py-2.5">
-                      <Link to={`/freight/invoices/${inv.id}`} onClick={(e) => e.stopPropagation()} className="font-mono text-xs font-semibold text-primary-700 hover:underline">
+                      <Link to={`/invoices/${inv.id}`} onClick={(e) => e.stopPropagation()} className="font-mono text-xs font-semibold text-primary-700 hover:underline">
                         {inv.vendor_invoice_number}
                       </Link>
                     </td>

@@ -3,16 +3,12 @@ import { Loader2, Truck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useFreightAccess } from '@/hooks/useFreight'
 import { ShipmentsTab } from './ShipmentsTab'
-import { InvoicesTab } from './InvoicesTab'
-import { CreatePaTab } from './CreatePaTab'
 import { CarriersTab } from './CarriersTab'
 
-type TabKey = 'shipments' | 'invoices' | 'create-pa' | 'carriers'
+type TabKey = 'shipments' | 'carriers'
 
 const TAB_LABEL: Record<TabKey, string> = {
   shipments: 'Shipments',
-  invoices: 'Invoices',
-  'create-pa': 'Create PA',
   carriers: 'Carriers',
 }
 
@@ -25,17 +21,12 @@ export default function FreightPage() {
   const canAdmin = !!access?.admin
   const tabs: TabKey[] = [
     ...(canRegister ? ['shipments'] as TabKey[] : []),
-    ...(canManage ? ['invoices', 'create-pa'] as TabKey[] : []),
     ...(canAdmin ? ['carriers'] as TabKey[] : []),
   ]
   const requested = searchParams.get('tab') as TabKey | null
   const active: TabKey = requested && tabs.includes(requested) ? requested : (tabs[0] ?? 'shipments')
 
-  const selectTab = (t: TabKey) => {
-    // Only ?tab= survives a tab switch; ?invoice= is a one-shot pre-selection
-    // for Create PA and must not stick to the URL once the user moves on.
-    setSearchParams({ tab: t }, { replace: true })
-  }
+  const selectTab = (t: TabKey) => setSearchParams({ tab: t }, { replace: true })
 
   if (isLoading) {
     return (
@@ -60,7 +51,7 @@ export default function FreightPage() {
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">Freight</h1>
         <p className="text-sm text-neutral-500 mt-0.5">
-          Register courier shipments, match carrier invoices to cost centers and raise the payment
+          Register courier shipments and maintain carriers — courier invoices are uploaded and matched on the Invoices page, and paid from the PA page
         </p>
       </div>
 
@@ -85,8 +76,6 @@ export default function FreightPage() {
 
       {active === 'shipments' && canRegister && <ShipmentsTab canManage={canManage} />}
       {active === 'carriers' && canAdmin && <CarriersTab />}
-      {active === 'invoices' && canManage && <InvoicesTab />}
-      {active === 'create-pa' && canManage && <CreatePaTab preselectInvoiceId={searchParams.get('invoice')} />}
     </div>
   )
 }

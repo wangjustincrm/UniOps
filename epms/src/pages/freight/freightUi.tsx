@@ -45,6 +45,15 @@ export function FreightInvoiceStatusBadge({ status }: { status: string }) {
   return <Badge variant={c.variant}><Dot cls={c.dot} />{c.label}</Badge>
 }
 
+/** Marks a courier invoice (match_route='freight') in the general invoice lists. */
+export function FreightRouteBadge({ className }: { className?: string }) {
+  return (
+    <span className={cn('inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700', className)}>
+      Freight
+    </span>
+  )
+}
+
 export function MatchBadge({ status, previouslyBilledOn }: { status: MatchStatus | string; previouslyBilledOn?: string | null }) {
   switch (status) {
     case 'auto':

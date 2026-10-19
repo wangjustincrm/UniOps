@@ -134,7 +134,7 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                       <td className="px-3 py-2.5"><ShipmentStatusBadge status={s.status} /></td>
                       <td className="px-3 py-2.5 text-xs">
                         {s.invoice_id ? (
-                          <Link to={`/freight/invoices/${s.invoice_id}`} className="font-mono text-primary-700 hover:underline">
+                          <Link to={`/invoices/${s.invoice_id}`} className="font-mono text-primary-700 hover:underline">
                             {s.invoice_number ?? 'Invoice'}
                           </Link>
                         ) : <span className="text-neutral-300">—</span>}

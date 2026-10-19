@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { FreightPaCreate } from './FreightPaCreate'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
@@ -125,7 +126,19 @@ function InvoiceSelectList({
   )
 }
 
+/** /pa/new: a Freight payment (?source=freight) is its own form; everything
+ *  else — PO, settlement, agreement — is the PO-family form below. Two component
+ *  types, so switching the query on a kept-alive tab remounts cleanly instead of
+ *  changing the hook order. */
 export default function PaCreatePage() {
+  const [searchParams] = useSearchParams()
+  if (searchParams.get('source') === 'freight') {
+    return <FreightPaCreate preselectInvoiceId={searchParams.get('invoice')} />
+  }
+  return <PoPaCreate />
+}
+
+function PoPaCreate() {
   const replaceTab = useReplaceTab(epmsRoutes)
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()

@@ -11,7 +11,7 @@ import {
 import {
   CHARGE_TYPE_LABEL, INPUT_SM_CLS, Modal, SELECT_CLS, SELECT_SM_CLS, TH_CLS,
   addDaysISO, cents, errorMessage, isDateOnly, num,
-} from './freightUi'
+} from '@/pages/freight/freightUi'
 
 interface LineDraft {
   key: number
@@ -35,7 +35,7 @@ const splitPackages = (s: string) => s.split(/[,;\s]+/).map((x) => x.trim()).fil
 
 type Step = 'pick' | 'reading' | 'review'
 
-export function UploadInvoiceDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+export function CourierUploadDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
   const { data: carriers = [] } = useFreightCarriers()
   const activeCarriers = carriers.filter((c) => c.is_active)
 

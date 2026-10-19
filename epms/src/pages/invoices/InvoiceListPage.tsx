@@ -32,6 +32,9 @@ import { FilePreviewPanel } from './FilePreviewPanel'
 import { PdfSplitPanel } from './PdfSplitPanel'
 import { readPageCount, splitPdf, type PageGroup } from '@/lib/pdf-split'
 import { AssignMatchDialog } from './AssignMatchDialog'
+import { CourierUploadDialog } from './CourierUploadDialog'
+import { FreightRouteBadge, Modal } from '@/pages/freight/freightUi'
+import { useFreightAccess } from '@/hooks/useFreight'
 import { InvoiceChainDrawer } from './InvoiceChainDrawer'
 
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
@@ -1352,7 +1355,10 @@ function UnmatchedTab() {
             {unmatched.map((inv, idx) => (
               <Fragment key={inv.id}>
                 <tr className="border-b border-neutral-100 bg-white hover:bg-primary-50/60 transition-colors">
-                  <td className="px-4 py-3 font-medium text-neutral-900">{inv.vendor_name}</td>
+                  <td className="px-4 py-3 font-medium text-neutral-900">
+                    {inv.vendor_name}
+                    {inv.match_route === 'freight' && <FreightRouteBadge className="ml-2" />}
+                  </td>
                   <td className="px-4 py-3">
                     <Link to={`/invoices/${inv.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                       {inv.internal_ref}
@@ -1367,7 +1373,14 @@ function UnmatchedTab() {
                   <td className="px-4 py-3"><SlaBadge uploadedAt={inv.uploaded_at} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      {deletingId === inv.id ? (
+                      {inv.match_route === 'freight' ? (
+                        // Courier invoices are matched to shipments on their own
+                        // page; PO matching, assignment and delete here refuse them.
+                        <Link to={`/invoices/${inv.id}`}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors">
+                          Match shipments
+                        </Link>
+                      ) : deletingId === inv.id ? (
                         <>
                           <span className="text-xs text-danger-600 font-medium">Delete?</span>
                           <button
@@ -1583,6 +1596,7 @@ function AllInvoicesTab() {
   // null = the server's default order (newest uploaded first).
   const [dueSort, setDueSort] = useState<'due_date' | '-due_date' | null>(null)
   const [overdueOnly, setOverdueOnly] = useState(false)
+  const [route, setRoute] = useState<'' | 'po' | 'agreement' | 'freight'>('')
   const [chainInvoiceId, setChainInvoiceId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
@@ -1597,6 +1611,7 @@ function AllInvoicesTab() {
     status: statusFilter !== 'all' ? statusFilter : undefined,
     sort: dueSort ?? undefined,
     overdue: overdueOnly || undefined,
+    route: route || undefined,
     page,
     page_size: pageSize,
   })
@@ -1616,6 +1631,14 @@ function AllInvoicesTab() {
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             className="w-full h-9 pl-9 pr-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
         </div>
+        <select value={route} aria-label="Route"
+          onChange={(e) => { setRoute(e.target.value as typeof route); setPage(1) }}
+          className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+          <option value="">All routes</option>
+          <option value="po">PO</option>
+          <option value="agreement">Agreement</option>
+          <option value="freight">Freight</option>
+        </select>
         <div className="flex flex-wrap gap-1.5">
           {(['all', 'unmatched', 'matched', 'match_review', 'exception', 'approved', 'paid'] as const).map((s) => (
             <button key={s} onClick={() => { setStatusFilter(s); setPage(1) }}
@@ -1675,7 +1698,10 @@ function AllInvoicesTab() {
                       {inv.internal_ref}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-neutral-700">{inv.vendor_name}</td>
+                  <td className="px-4 py-3 text-neutral-700">
+                    {inv.vendor_name}
+                    {inv.match_route === 'freight' && <FreightRouteBadge className="ml-2" />}
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs text-neutral-500">{inv.vendor_invoice_number}</td>
                   <td className="px-4 py-3 font-mono text-xs font-semibold text-neutral-900">
                     {formatAmount(inv.total_amount, inv.currency)}
@@ -1693,7 +1719,7 @@ function AllInvoicesTab() {
                     }
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {canDelete && (inv.status === 'unmatched' || inv.status === 'exception') && (
+                    {canDelete && inv.match_route !== 'freight' && (inv.status === 'unmatched' || inv.status === 'exception') && (
                       deletingId === inv.id ? (
                         <div className="flex items-center justify-end gap-2">
                           <span className="text-xs text-danger-600 font-medium">Delete?</span>
@@ -1840,9 +1866,14 @@ export default function InvoiceListPage() {
   const navigate = useNavigate()
 
   const [activeTab, setActiveTab] = useState<Tab>('all')
-  const [showUpload, setShowUpload] = useState(false)
+  // null = closed; 'choose' only when both kinds are open to this user.
+  const [upload, setUpload] = useState<null | 'choose' | 'vendor' | 'courier'>(null)
 
   const canUpload = user?.role === 'system_admin' || !!perms?.invoice_upload
+  // Courier invoices are created through the Freight API, gated on
+  // epms.freight.manage alone — a freight manager need not hold invoice_upload.
+  const canCourier = !!useFreightAccess().data?.manage
+  const openUpload = () => setUpload(canUpload && canCourier ? 'choose' : canCourier ? 'courier' : 'vendor')
 
   const unmatchedCount  = invoices.filter((i) => i.status === 'unmatched').length
   const exceptionCount  = invoices.filter((i) => i.status === 'exception').length
@@ -1867,8 +1898,8 @@ export default function InvoiceListPage() {
             {exceptionCount > 0 && ` · ${exceptionCount} exception${exceptionCount > 1 ? 's' : ''} require attention`}
           </p>
         </div>
-        {canUpload && (
-          <Button onClick={() => setShowUpload(true)} className="gap-2">
+        {(canUpload || canCourier) && (
+          <Button onClick={openUpload} className="gap-2">
             <Upload className="h-4 w-4" />
             Upload Invoice
           </Button>
@@ -1921,16 +1952,46 @@ export default function InvoiceListPage() {
       {activeTab === 'all'        && <AllInvoicesTab />}
       {activeTab === 'from_oa'    && <OaInvoicesTab />}
 
-      {/* Upload modal */}
-      {showUpload && (
+      {/* Upload */}
+      {upload === 'choose' && (
+        <Modal title="Upload Invoice" subtitle="What are you uploading?" onClose={() => setUpload(null)}>
+          <div className="flex flex-col gap-3">
+            <UploadKindButton
+              title="Vendor invoice or credit note"
+              hint="Matched to a PO or an agreement"
+              onClick={() => setUpload('vendor')} />
+            <UploadKindButton
+              title="Courier invoice (Freight)"
+              hint="UPS, FedEx, Purolator… — matched to registered shipments and cost centers"
+              onClick={() => setUpload('courier')} />
+          </div>
+        </Modal>
+      )}
+      {upload === 'vendor' && (
         <UploadModal
-          onClose={() => setShowUpload(false)}
+          onClose={() => setUpload(null)}
           onUploaded={(id, kind) => {
-            setShowUpload(false)
+            setUpload(null)
             navigate(kind === 'credit' ? '/vendor-credits' : `/invoices/${id}`)
           }}
         />
       )}
+      {upload === 'courier' && (
+        <CourierUploadDialog
+          onClose={() => setUpload(null)}
+          onCreated={(id) => { setUpload(null); navigate(`/invoices/${id}`) }}
+        />
+      )}
     </div>
+  )
+}
+
+function UploadKindButton({ title, hint, onClick }: { title: string; hint: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick}
+      className="flex flex-col items-start rounded-xl border border-neutral-200 px-4 py-3 text-left hover:border-primary-300 hover:bg-primary-50/60 transition-colors">
+      <span className="text-sm font-medium text-neutral-900">{title}</span>
+      <span className="text-xs text-neutral-500 mt-0.5">{hint}</span>
+    </button>
   )
 }

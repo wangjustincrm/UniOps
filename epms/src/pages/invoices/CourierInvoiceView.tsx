@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   ArrowLeft, Loader2, RefreshCw, CheckCircle2, RotateCcw, Trash2, CreditCard, AlertTriangle,
   FileText, ExternalLink, Upload, Link2,
 } from 'lucide-react'
-import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { BackLink } from '@/components/BackLink'
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
 import { dueInfo } from '@/lib/dueDate'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import {
-  useAutoMatch, useDeleteFreightInvoice, useFinalizeFreightInvoice, useFreightInvoice,
+  useAutoMatch, useDeleteFreightInvoice, useFinalizeFreightInvoice, useFreightAccess, useFreightInvoice,
   useFreightInvoiceAttachments, useFreightShipments, useReopenFreightInvoice, useUpdateFreightLine,
   useUploadFreightAttachment,
 } from '@/hooks/useFreight'
@@ -21,14 +21,20 @@ import {
 import {
   CHARGE_TYPE_LABEL, CostCenterSelect, FreightInvoiceStatusBadge, INPUT_SM_CLS, MatchBadge, SELECT_SM_CLS,
   TH_CLS, cents, errorMessage, num,
-} from './freightUi'
-import { useFreightNav } from './useFreightNav'
+} from '@/pages/freight/freightUi'
+import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 
-export default function FreightInvoicePage() {
-  const { id = '' } = useParams<{ id: string }>()
+/**
+ * A courier invoice (match_route='freight') on its invoice page: the charges,
+ * their shipment / cost-centre matching, finalize and Create PA. Rendered by
+ * InvoiceDetailPage in place of the PO three-way match. Holders of
+ * epms.freight.manage work it; every other invoice reader sees it read-only.
+ */
+export function CourierInvoiceView({ id }: { id: string }) {
   const { data: inv, isLoading, error: loadError } = useFreightInvoice(id)
-  useDocTabTitle(inv ? `Freight ${inv.vendor_invoice_number}` : undefined)
-  const { openFreight, replaceWithFreight } = useFreightNav()
+  const { openTab, replaceWithTab } = useStaticTabNav()
+  const { data: access } = useFreightAccess()
+  const canManage = !!access?.manage
 
   const { data: deptData } = useDepartments()
   const departments = deptData?.items ?? []
@@ -44,7 +50,7 @@ export default function FreightInvoicePage() {
   const busy = updateLine.isPending || autoMatch.isPending || finalize.isPending || reopen.isPending || del.isPending
 
   // Pending shipments of this carrier — registered but not on this invoice.
-  const editable = inv?.status === 'unmatched'
+  const editable = inv?.status === 'unmatched' && canManage
   const { data: pendingData } = useFreightShipments(
     { status: 'pending', carrier_id: inv?.carrier_id, page_size: 200 }, !!inv?.carrier_id && editable,
   )
@@ -57,7 +63,7 @@ export default function FreightInvoicePage() {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <p className="text-neutral-500">{loadError ? errorMessage(loadError, 'Freight invoice not found.') : 'Freight invoice not found.'}</p>
-        <BackLink to="/freight?tab=invoices" className="mt-4"><Button variant="secondary">Back to Freight</Button></BackLink>
+        <BackLink to="/invoices" className="mt-4"><Button variant="secondary">Back to Invoices</Button></BackLink>
       </div>
     )
   }
@@ -84,25 +90,25 @@ export default function FreightInvoicePage() {
     if (!window.confirm(`Delete invoice ${inv.vendor_invoice_number}? Its lines are removed; registered shipments stay pending.`)) return
     setActionError(null)
     del.mutateAsync()
-      .then(() => replaceWithFreight('tab=invoices'))
+      .then(() => replaceWithTab('/invoices'))
       .catch((e) => setActionError(errorMessage(e, 'Could not delete the invoice')))
   }
 
   const ccy = inv.currency
   const due = dueInfo(inv.due_date, inv.status)
   const dueUrgent = due.tone === 'overdue' || due.tone === 'soon'
-  const canCreatePa = inv.status === 'matched' && !inv.pa_id
+  const canCreatePa = canManage && inv.status === 'matched' && !inv.pa_id
   const lineNo = new Map(inv.lines.map((l, i) => [l.id, i + 1]))
   const anchors = inv.lines.filter((l) => l.charge_type === 'shipment')
   const amountGap = cents(num(inv.amount) - num(inv.lines_amount_total))
   const taxGap = cents(num(inv.tax_amount) - num(inv.lines_tax_total))
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <BackLink to="/freight?tab=invoices" className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500" aria-label="Back to Freight">
+          <BackLink to="/invoices" className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500" aria-label="Back to Invoices">
             <ArrowLeft className="h-5 w-5" />
           </BackLink>
           <div>
@@ -152,7 +158,9 @@ export default function FreightInvoicePage() {
               <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Charges</h3>
               {editable
                 ? <span className="text-xs text-neutral-500">Every change saves at once{updateLine.isPending && ' — saving…'}</span>
-                : <span className="text-xs text-neutral-400">Reopen the invoice to change the matching</span>}
+                : canManage
+                  ? <span className="text-xs text-neutral-400">Reopen the invoice to change the matching</span>
+                  : <span className="text-xs text-neutral-400">Read-only — courier invoices are matched by the freight manager</span>}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -203,6 +211,9 @@ export default function FreightInvoicePage() {
         {/* Side panel */}
         <div className="order-first grid items-start gap-4 md:grid-cols-3 2xl:order-none 2xl:flex 2xl:flex-col">
           <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-2">
+            {!canManage && !inv.pa_id && (
+              <p className="text-xs text-neutral-500">Courier invoice — matched to shipments and paid by the freight manager (Freight manage permission).</p>
+            )}
             {editable && (
               <>
                 <Button onClick={handleFinalize} disabled={busy || inv.finalize_blockers.length > 0} className="gap-2">
@@ -214,11 +225,11 @@ export default function FreightInvoicePage() {
               </>
             )}
             {canCreatePa && (
-              <Button onClick={() => openFreight(`tab=create-pa&invoice=${inv.id}`)} className="gap-2">
+              <Button onClick={() => openTab('/pa/new', `source=freight&invoice=${inv.id}`)} className="gap-2">
                 <CreditCard className="h-4 w-4" /> Create PA
               </Button>
             )}
-            {inv.status === 'matched' && !inv.pa_id && (
+            {canManage && inv.status === 'matched' && !inv.pa_id && (
               <Button variant="secondary" onClick={handleReopen} disabled={busy} className="gap-2">
                 <RotateCcw className="h-4 w-4" /> {reopen.isPending ? 'Reopening…' : 'Reopen'}
               </Button>

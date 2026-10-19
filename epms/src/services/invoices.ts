@@ -225,6 +225,8 @@ export interface InvoiceFilters {
   // Past the due date and not yet paid, evaluated against the PLANT's calendar
   // day on the server (the API container runs in UTC).
   overdue?: boolean
+  // po | agreement | freight. 'po' includes legacy rows with no route.
+  route?: 'po' | 'agreement' | 'freight'
   page?: number
   page_size?: number
 }

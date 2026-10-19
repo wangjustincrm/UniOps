@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, FileText, CreditCard, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
+import { Plus, Search, FileText, CreditCard, Loader2, ChevronUp, ChevronDown, Truck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +12,8 @@ import { usePas } from '@/hooks/usePas'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions } from '@/hooks/useConfig'
+import { useFreightAccess } from '@/hooks/useFreight'
+import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import type { PaStatus, ApiPa } from '@/services/pa'
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -122,6 +124,9 @@ export default function PaListPage() {
   // cannot see.
   const perms = useRolePermissions().data?.permissions
   const canCreate = user?.role === 'system_admin' || !!perms?.['epms.pa.write']
+  // A Freight PA is gated on epms.freight.manage alone (api/v1/freight.py).
+  const canFreight = !!useFreightAccess().data?.manage
+  const { openTab } = useStaticTabNav()
 
   const handleFilterChange = (value: string) => {
     setStatusFilter(value)
@@ -136,12 +141,22 @@ export default function PaListPage() {
           <h1 className="text-2xl font-bold text-neutral-900">Payment Applications</h1>
           <p className="text-sm text-neutral-500 mt-0.5">Manage payment requests and prepayment settlements</p>
         </div>
-        {canCreate && (
-          <Button onClick={() => navigate('/pa/new')} className="gap-2">
-            <Plus className="h-4 w-4" />
-            New PA
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Both open the one static /pa/new tab, so each re-points it —
+              otherwise New PA would just refocus a Freight form left open. */}
+          {canFreight && (
+            <Button variant={canCreate ? 'secondary' : 'primary'} onClick={() => openTab('/pa/new', 'source=freight')} className="gap-2">
+              <Truck className="h-4 w-4" />
+              New Freight PA
+            </Button>
+          )}
+          {canCreate && (
+            <Button onClick={() => openTab('/pa/new')} className="gap-2">
+              <Plus className="h-4 w-4" />
+              New PA
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}

@@ -1067,7 +1067,7 @@ function FreightCostAllocation({ pa }: { pa: ApiPa }) {
               {rows.map((r, i) => (
                 <tr key={`${r.invoice_id}-${r.cost_center_id}`} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 && 'bg-neutral-50/50')}>
                   <td className="px-4 py-2.5">
-                    <Link to={`/freight/invoices/${r.invoice_id}`} className="flex items-center gap-1 font-mono text-xs text-primary-700 hover:underline">
+                    <Link to={`/invoices/${r.invoice_id}`} className="flex items-center gap-1 font-mono text-xs text-primary-700 hover:underline">
                       {r.invoice_number ?? r.invoice_id.slice(0, 8)} <ExternalLink className="h-3 w-3" />
                     </Link>
                   </td>
