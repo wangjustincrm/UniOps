@@ -202,10 +202,12 @@ async def scope_pr_line(q: Select, scope: dict, db: AsyncSession) -> Select:
 async def invoice_scope_conditions(db: AsyncSession, po_ids_subq,
                                    own_uploads_user_id: uuid.UUID | None,
                                    task_user_id: uuid.UUID | None,
-                                   freight_visible: bool = False) -> list:
+                                   freight_visible: bool = False,
+                                   agreement_visible: bool = False,
+                                   agr_ids_subq=None) -> list:
     """The OR-ed reasons a restricted caller may see an invoice.
 
-    Five of them, and the breadth is the point: an invoice reaches people
+    Six of them, and the breadth is the point: an invoice reaches people
     through more routes than the PO it hangs off. Shared with
     crud/invoice.get_all so the list endpoint and the assistant admit exactly
     the same rows.
@@ -235,6 +237,15 @@ async def invoice_scope_conditions(db: AsyncSession, po_ids_subq,
         # Courier invoices hang off no PO, so no PO scope reaches them; whoever
         # holds epms.freight.manage works them (the caller decides that).
         conds.append(Invoice.match_route == "freight")
+    if agreement_visible:
+        # An agreement invoice has po_id NULL, so no PO scope reaches it. It is
+        # part of the agreement's record: whoever may open the agreement (its
+        # owner, its department, ...) may find it here too — the same rule the
+        # invoice detail gate (api/v1/invoices._can_read_invoice) already
+        # applies. Without it the owner opens the invoice from the agreement
+        # page but cannot find it by searching the Invoices list.
+        conds.append(Invoice.agreement_id.in_(agr_ids_subq) if agr_ids_subq is not None
+                     else Invoice.agreement_id.is_not(None))
     return conds
 
 
@@ -250,7 +261,9 @@ async def scope_invoice(q: Select, scope: dict, db: AsyncSession) -> Select:
         return q  # unrestricted
     conds = await invoice_scope_conditions(
         db, po_subq, own_uploads, task_uid,
-        freight_visible=restricted and await sees_freight_invoices(db, scope))
+        freight_visible=restricted and await sees_freight_invoices(db, scope),
+        agreement_visible=restricted and await sees_agreement_invoices(db, scope),
+        agr_ids_subq=scope.get("agr_subq"))
     return q.where(or_(*conds)) if conds else q
 
 
@@ -261,6 +274,16 @@ async def sees_freight_invoices(db: AsyncSession, scope: dict) -> bool:
     from uniops_authz import has_permission
     return await has_permission(db, scope.get("user_id"), scope.get("role") or "",
                                 "epms.freight.manage")
+
+
+async def sees_agreement_invoices(db: AsyncSession, scope: dict) -> bool:
+    """Does this caller hold epms.agreement.read? WHETHER they work with
+    agreements at all; WHICH agreements is scope["agr_subq"]. Both halves are
+    required — the permission alone would hand every agreement's invoices to
+    any requester (the default matrix grants them epms.agreement.read)."""
+    from uniops_authz import has_permission
+    return await has_permission(db, scope.get("user_id"), scope.get("role") or "",
+                                "epms.agreement.read")
 
 
 def pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by,

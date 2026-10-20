@@ -230,6 +230,8 @@ async def get_all(
     own_uploads_user_id: uuid.UUID | None = None,
     task_user_id: uuid.UUID | None = None,
     freight_visible: bool = False,
+    agreement_visible: bool = False,
+    agr_ids_subq=None,
     route: str | None = None,
     page: int = 1,
     page_size: int = 20,
@@ -243,7 +245,8 @@ async def get_all(
         from app.core.ontology import invoice_scope_conditions
         scope_conds = await invoice_scope_conditions(
             db, po_ids_subq, own_uploads_user_id, task_user_id,
-            freight_visible=freight_visible)
+            freight_visible=freight_visible,
+            agreement_visible=agreement_visible, agr_ids_subq=agr_ids_subq)
         q = q.where(or_(*scope_conds))
 
     if status:
