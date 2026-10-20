@@ -1,12 +1,16 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.6
-**Date**: 2026-10-16
+**Version**: 0.7
+**Date**: 2026-10-20
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.5 → 0.6)**
+**What changed in this version (0.6 → 0.7)**
+- UAT round 8 (2026-10-20, 11 pass / 4 fail) answers recorded in §1.6 under "Round 8": label type size (b), the risk assessment form, notification content, investigation status left as built.
+- §10: SF-13 resolved; SF-09 risk assessment built; SF-15 added for round 8's new requests.
+
+**What changed in version 0.6 (0.5 → 0.6)**
 - Records what UAT rounds 6 and 7 settled and what was built from them (§1.6): training passes, quizzes on sessions and documents, anonymous reports, legal clocks and closing, reclassification, documents, permits, labels.
 - §9 Implementation status brought up to the current branch; round 7's defects and the first step of its free-text requirements are built.
 - §10: SF-08 done; SF-09 split into what was built and what goes to HSE in round 8; new SF-13 (label type size) and SF-14 (task email duplication after merge).
@@ -116,7 +120,13 @@ Incidents and anonymity
 Committee, permits, chemicals
 - Printed minutes are numbered "Page N of M" and say, for each recommendation, who it was sent to and when the reply is due.
 - HSE maintains each permit type's "before work starts" checks in Settings. An issued permit keeps the wording it was issued against. A prepared permit's start and end can be corrected; only whoever raised it or an issuer may change it.
-- The chemical label's code opens the data sheet in force when it is scanned. Label body text is 10 pt on every size and the code is 25% larger — see SF-13 for what that costs.
+- The chemical label's code opens the data sheet in force when it is scanned. The code is 25% larger than before.
+
+Round 8 (answers of 2026-10-19/20)
+- Label type: the small 4 × 6 label's body is 10 pt and does not shrink; the standard and large labels are 8.5 pt times their scale and shrink to a readable floor when needed (HSE chose option (b)). Filing a data sheet revision shows the superseded label at once, with the way to refresh it.
+- Risk assessment, as HSE confirmed it: Existing Hazard from the hazard list; Judged on, a list HSE keeps under Settings → Lists with Equipment added, each entry carrying what every level of "how bad" means (an entry with none is not offered); how likely and how bad before controls; the hierarchy of controls and the hazard controls, any number of each; the hazard remaining after controls; how likely and how bad after controls — the final assessment, acceptable or still too high. On an incident the assessments form a table: Completed by, Date & time, Hazard, Judged on, How likely, How bad, Risk level, Hazard controls, How likely, How bad, Final assessment. List entries are kept as named when picked.
+- The incident register holds every incident, and each figure above it opens the incidents behind it. A refused HSE review says why, as a refused close does. Changing the kind of incident is an orange button; the change is emailed to the "Kind of incident changed" list under Who is told and filed with the incident.
+- Left as built by HSE's answer: no "investigation completed" status; the new-incident email keeps its content (no health information in it). "A stopped clock" meant one that no longer applies — marked not required.
 
 ---
 
@@ -318,8 +328,9 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | SF-06 | Inbound email (Phase 1.5) needs a dedicated mailbox and credentials from IT; auto-reply filtering is required. | Open — not started |
 | SF-07 | Contractor management via VMS (E43–E45) not designed or built. | Open |
 | SF-08 | UAT round 7 answers (2026-10-15): passing the document quiz stays mandatory; a new document version requires the quiz again. | Done (§1.6) |
-| SF-09 | UAT round 7 free-text requirements. **Built**: return-to-work and legal clocks hold the close, statutory/return-to-work sections on medical incidents, reclassification, default lead investigator, injury questions after a name, editable permit checks; the permit end-time defect is fixed. **For HSE in round 8**: "investigation completed" as a status (3); removing a stopped clock from My Actions and the calendar (4 — completed clocks already leave both; the request may mean a clock that no longer applies, now covered by "not required"); notification content with injury detail (9 — health information would go to the whole notification list, PHIPA); and the risk-assessment redesign (10 items, wording to confirm on a mock-up first). | Open — partly built |
-| SF-13 | Label body text at 10 pt on every size (round 7) no longer fits most labels on the standard size: of 10 approved labels on dev, standard prints 2 (was 9) and "fit automatically" falls to a full page for 8. HSE to choose: accept full pages; 10 pt on the small label only, the other sizes shrinking to a readable floor as before; or the small label below 10 pt. | Open — decision needed |
+| SF-09 | UAT round 7 free-text requirements. **Built**: return-to-work and legal clocks hold the close, statutory/return-to-work sections on medical incidents, reclassification, default lead investigator, injury questions after a name, editable permit checks; the permit end-time defect is fixed. **For HSE in round 8**: "investigation completed" as a status (3); removing a stopped clock from My Actions and the calendar (4 — completed clocks already leave both; the request may mean a clock that no longer applies, now covered by "not required"); notification content with injury detail (9 — health information would go to the whole notification list, PHIPA); and the risk-assessment redesign. Round 8 answers: no new status (3), "not required" was meant (4), email content unchanged (9); the risk assessment is built as confirmed. | Done (§1.6) |
+| SF-15 | UAT round 8 free-text requests, not yet built: training (course name only, no code; HSE closing everything outstanding at once; no "everyone must take it" box; attachments and a default expiry of three years less a day on training taken elsewhere; a rule emailing certificates about to expire to an address, N days ahead); committee (location on a recommendation and its email; larger, bold inspection fields; "Committee" renamed "JHSC"); returning to the document after its quiz; lost-time and cost-per-incident figures with an editable hourly-wage rule (needs HSE's formula); an HSE-only read-only summary of the injury and medical detail on the incident. | Open |
+| SF-13 | Label body text size. HSE chose 10 pt on the small label only (round 8); of 10 approved labels on dev, the standard size prints 9 again and "fit automatically" picks standard for 7. | Done (§1.6) |
 | SF-14 | After merging with main, the Task Inbox email sender may also email corrective-action tasks, depending on its per-type setting; Safety already emails the owner of an action raised on an incident. Check the setting for the corrective-action task type at release, or owners receive two emails. | Open — release check |
 | SF-10 | Before go-live: HSE must configure area owners (Settings → Area responsibility) and load the reference lists; the label and certificate PDF fonts need CJK-capable embedding checked in the production image. | Open |
 | SF-11 | Release: merge to main, single alembic head per service, and build ehs-api, identity, mdm, epms and file-api images together with their migrations (the branch carries non-ehs migrations). Push the branch: the remote copy is two months stale. | Open |
