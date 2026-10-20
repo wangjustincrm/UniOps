@@ -11,6 +11,7 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.registry import REGISTRY, EntitySpec
+from app.core.plant_time import plant_tz
 from app.models.admin_audit_log import AdminAuditLog
 
 
@@ -60,7 +61,10 @@ def _serialize(spec: EntitySpec, row) -> dict:
     out: dict = {"id": str(getattr(row, "id"))}
     for f in spec.schema.fields:
         v = getattr(row, f.name, None)
-        if isinstance(v, (datetime, date)):
+        if isinstance(v, datetime) and v.tzinfo is not None:
+            # Shown in the plant's zone so the edit box reads 08:00, not 12:00 UTC.
+            v = v.astimezone(plant_tz()).isoformat()
+        elif isinstance(v, (datetime, date)):
             v = v.isoformat()
         elif isinstance(v, Decimal):
             v = str(v)
@@ -84,7 +88,12 @@ def _coerce(field_type: str, value):
     if field_type == "date":
         return date.fromisoformat(value) if isinstance(value, str) else value
     if field_type == "datetime":
-        return datetime.fromisoformat(value) if isinstance(value, str) else value
+        dt = datetime.fromisoformat(value) if isinstance(value, str) else value
+        # A typed "2026-10-21T08:00" means plant time; stored naive it would be
+        # read as UTC and land four or five hours early.
+        if isinstance(dt, datetime) and dt.tzinfo is None:
+            dt = dt.replace(tzinfo=plant_tz())
+        return dt
     return value
 
 
@@ -139,14 +148,18 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
         if key not in editable:
             raise ValueError(f"Field '{key}' is not editable")
         setattr(row, key, _coerce(spec.schema.field_type(key), value))
+    if spec.after_edit is not None:
+        spec.after_edit(row)
     await db.flush()
     after = _serialize(spec, row)
+    # Patched fields plus any the after_edit hook re-derived.
+    logged = [k for k in after if k in patch or before.get(k) != after[k]]
     db.add(AdminAuditLog(
         actor_id=actor_id, actor_email=actor_email, action="edit", system=spec.system,
         entity=entity, record_id=record_id,
         record_number=str(getattr(row, spec.schema.number_field, None)),
-        before={k: before[k] for k in patch if k in before},
-        after={k: after[k] for k in patch if k in after},
+        before={k: before[k] for k in logged if k in before},
+        after={k: after[k] for k in logged},
     ))
     await db.flush()
     return after
