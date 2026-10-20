@@ -46,10 +46,20 @@ class SeverityOut(BaseModel):
     asset_damage: str | None
 
 
+class ConsequenceOut(BaseModel):
+    code: str
+    label: str
+    # Level → the matrix's wording for this consequence. A level with none
+    # cannot be scored, and a consequence with none is not offered.
+    severity: dict[str, str]
+
+
 class MatrixOut(BaseModel):
     likelihood: list[LikelihoodOut]
     severity: list[SeverityOut]
     consequence_types: list[str]
+    # Round 8: "Judged on" is HSE's list under Settings → Lists.
+    consequences: list[ConsequenceOut] = Field(default_factory=list)
 
 
 class AssessmentIn(BaseModel):
@@ -64,6 +74,10 @@ class AssessmentIn(BaseModel):
     controls: str | None = None
     residual_likelihood_code: str | None = Field(default=None, max_length=4)
     residual_severity_level: int | None = Field(default=None, ge=0, le=5)
+    # Round 8: the hazard from the hazard list, and the controls picked.
+    hazard_item_id: uuid.UUID | None = None
+    hierarchy_control_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
+    hazard_control_ids: list[uuid.UUID] = Field(default_factory=list, max_length=60)
 
 
 class AssessmentOut(BaseModel):
@@ -84,10 +98,56 @@ class AssessmentOut(BaseModel):
     residual_likelihood_code: str | None
     residual_severity_level: int | None
     residual_rating: str | None
+    hazard_item_id: uuid.UUID | None = None
+    hierarchy_controls: list = Field(default_factory=list)
+    hazard_controls: list = Field(default_factory=list)
     assessed_by_name: str | None
     assessed_at: datetime
     # The name is withheld: the anonymous reporter made this assessment.
     by_anonymous_reporter: bool = False
+
+
+_BUILT_IN_LABELS = {
+    "people": "People", "downtime": "Unplanned downtime", "reputation": "Reputation",
+    "environmental": "Environmental", "asset_damage": "Asset damage",
+}
+
+
+async def _consequences(db) -> list[ConsequenceOut]:
+    """What an assessment can be judged on, with the wording for each level.
+
+    ★ Round 8: HSE's list under Settings → Lists ("Judged on"), Equipment
+    added. The wording lives on each entry (attrs.severity). Where the list has
+    not been set up — a database built before migration 0069 ran — the five
+    the matrix has columns for are used, with its wording.
+    """
+    from app.models.vocabulary import VocabularyItem
+    items = (await db.execute(select(VocabularyItem).where(
+        VocabularyItem.vocabulary_code == "consequence_type",
+        VocabularyItem.is_active.is_(True)).order_by(VocabularyItem.sort_order))).scalars().all()
+    if items:
+        return [ConsequenceOut(
+            code=i.code, label=i.label,
+            severity={str(k): str(v) for k, v in ((i.attrs or {}).get("severity") or {}).items() if v})
+            for i in items]
+    bands = (await db.execute(select(RiskSeverity).order_by(RiskSeverity.level))).scalars().all()
+    return [ConsequenceOut(code=c, label=_BUILT_IN_LABELS.get(c, c),
+                           severity={str(b.level): getattr(b, c) for b in bands if getattr(b, c, None)})
+            for c in CONSEQUENCE_TYPES]
+
+
+async def _snapshot(db, vocabulary: str, ids: list[uuid.UUID]) -> list[dict]:
+    """Entries from a list, as {id, label}, refusing any not on it."""
+    from app.models.vocabulary import VocabularyItem
+    if not ids:
+        return []
+    rows = {r.id: r for r in (await db.execute(select(VocabularyItem).where(
+        VocabularyItem.vocabulary_code == vocabulary, VocabularyItem.id.in_(ids)))).scalars()}
+    missing = [i for i in ids if i not in rows]
+    if missing:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"Not on the {vocabulary.replace('_', ' ')} list: {missing[0]}")
+    return [{"id": str(i), "label": rows[i].label} for i in dict.fromkeys(ids)]
 
 
 @router.get("/matrix", response_model=MatrixOut)
@@ -97,8 +157,10 @@ async def get_matrix(db: SessionDep, user: CanReportIncident):  # noqa: ARG001
         select(RiskLikelihood).order_by(RiskLikelihood.sort_order))).scalars().all())
     severity = list((await db.execute(
         select(RiskSeverity).order_by(RiskSeverity.level))).scalars().all())
+    consequences = await _consequences(db)
     return MatrixOut(likelihood=likelihood, severity=severity,
-                     consequence_types=list(CONSEQUENCE_TYPES))
+                     consequence_types=[c.code for c in consequences],
+                     consequences=consequences)
 
 
 async def _rate(db: SessionDep, likelihood_code: str, severity_level: int) -> tuple[str, str]:
@@ -124,17 +186,26 @@ async def create_assessment(
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "You can only assess incidents you reported or were involved in")
-    if payload.consequence_type not in CONSEQUENCE_TYPES:
+    consequences = {c.code: c for c in await _consequences(db)}
+    judged = consequences.get(payload.consequence_type)
+    if judged is None:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"Unknown consequence type. One of: {', '.join(CONSEQUENCE_TYPES)}")
+            f"Unknown consequence type. One of: {', '.join(consequences)}")
 
     rating, likelihood_label = await _rate(db, payload.likelihood_code, payload.severity_level)
 
-    sev = await db.get(RiskSeverity, payload.severity_level)
     # Snapshot the wording for the consequence type actually used, not just the
     # number — the matrix gets revised.
-    severity_label = getattr(sev, payload.consequence_type, None) if sev else None
+    severity_label = judged.severity.get(str(payload.severity_level))
+
+    # Round 8: the hazard from the hazard list names it; the controls are kept
+    # as they were called when picked.
+    hazard_label = payload.hazard_label
+    if payload.hazard_item_id is not None:
+        hazard_label = (await _snapshot(db, "hazard", [payload.hazard_item_id]))[0]["label"]
+    hierarchy_controls = await _snapshot(db, "hierarchy_of_control", payload.hierarchy_control_ids)
+    hazard_controls = await _snapshot(db, "hazard_control", payload.hazard_control_ids)
 
     residual_rating = None
     if payload.residual_likelihood_code and payload.residual_severity_level is not None:
@@ -144,7 +215,9 @@ async def create_assessment(
     row = RiskAssessment(
         id=uuid.uuid4(),
         source_type=payload.source_type, source_id=payload.source_id,
-        hazard_id=payload.hazard_id, hazard_label=payload.hazard_label,
+        hazard_id=payload.hazard_id, hazard_label=hazard_label,
+        hazard_item_id=payload.hazard_item_id,
+        hierarchy_controls=hierarchy_controls, hazard_controls=hazard_controls,
         description=payload.description,
         consequence_type=payload.consequence_type,
         likelihood_code=payload.likelihood_code, severity_level=payload.severity_level,

@@ -58,7 +58,15 @@ class RiskAssessment(UUIDPrimaryKey, TimestampMixin, Base):
     residual_likelihood_code: Mapped[str | None] = mapped_column(String(4), nullable=True)
     residual_severity_level: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     residual_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # "Hazard after controls are implemented" on the round-8 form.
     controls: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Round 8: the hazard list entry, and the controls picked — snapshots
+    # [{id, label}], so renaming a list entry does not rewrite an assessment.
+    hazard_item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    hierarchy_controls: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]")
+    hazard_controls: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]")
 
     assessed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
