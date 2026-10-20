@@ -2,7 +2,7 @@
 #
 # gr_type is set in crud/gr.py from the PO's procurement type, never chosen:
 #   physical  types 1, 2, 3, 5   the warehouse receives goods
-#   service   types 4, 6         the requester confirms the work is done
+#   service   types 4, 6         the PR's Service/Project Owner confirms the work
 # That mapping is schemas/gr.PHYSICAL_TYPES / SERVICE_TYPES, which every branch
 # in the codebase asking "is this a service?" already reads.
 topic: gr_types
@@ -34,6 +34,14 @@ values:
       per line against what was ordered, so a partial delivery is a partial
       receipt and the balance stays outstanding.
     notes:
+      - >-
+        After the warehouse records it, the PR's requester gets an acknowledge
+        task, then a collect task for picking the goods up. An order with no PR
+        (imported from NC or PMS) skips both steps and is completed at once.
+      - >-
+        Any line received in a condition other than Good raises an urgent
+        damage-report task for the Procurement Officers, to arrange a return or
+        credit note with the vendor.
       - A short delivery is recorded as a discrepancy rather than being forced
         to match the order.
       - Cancelled and rejected receipts do not count as goods received — they
@@ -43,8 +51,10 @@ values:
     label: Service confirmation (procurement types 4, 6)
     covers: Work completed, where there is nothing for the warehouse to receive.
     when: >
-      Raised by the requester — you are the one who knows the work is done.
-      There is no delivery for the warehouse to check in.
+      Confirmed by the PR's Service/Project Owner, the person who knows the
+      work is done. The owner is the requester unless the PR names someone
+      else, and the requester can always confirm too. There is no delivery for
+      the warehouse to check in.
     notes:
       - The PR's expected completion date is what triggers the reminder; once
         it passes you are nudged to confirm.

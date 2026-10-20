@@ -156,12 +156,32 @@ def requirements_for(doc_type: str, value) -> list[dict]:
     ]
 
 
+# Who acts on a receipt, per kind. The tasks are routed by crud.pr_owner (the
+# owner of a service/project PR, else its requester) and the service GR gate in
+# api/v1/gr.py admits the owner OR the requester; test_doc_type_guide.py pins
+# both texts to those two places. This used to say "the requester confirms the
+# work", which ignored the Service/Project Owner (ISS-0029, ISS-0055).
+RECEIPT_SERVICE = (
+    "The PR's Service/Project Owner confirms the work is complete — the "
+    "requester unless the PR names someone else. The requester can also "
+    "confirm. Once recorded, the confirmation goes through acknowledge and "
+    "confirm tasks, both sent to the owner."
+)
+RECEIPT_PHYSICAL = (
+    "The warehouse records the goods receipt. The PR's requester then gets an "
+    "acknowledge task and, after acknowledging, a collect task for picking the "
+    "goods up. An order with no PR (imported from NC or PMS) skips both and is "
+    "completed at once, and System Admins are alerted. A line received in any "
+    "condition other than Good raises an urgent damage-report task for the "
+    "Procurement Officers."
+)
+
+
 def _receipt(doc_type: str, value) -> str | None:
     """Who confirms receipt — only meaningful where a procurement type drives it."""
     if doc_type not in ("pr", "po") or not isinstance(value, int):
         return None
-    return ("The requester confirms the work is complete" if is_service(value)
-            else "The warehouse receives the goods")
+    return RECEIPT_SERVICE if is_service(value) else RECEIPT_PHYSICAL
 
 
 def build(doc_type: str) -> dict:

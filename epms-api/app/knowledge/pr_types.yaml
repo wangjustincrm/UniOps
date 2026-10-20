@@ -89,8 +89,8 @@ values:
     covers: Contracted work — maintenance, consulting, installation, labour.
     when: >
       When you are buying someone's time or work rather than a thing. There is
-      nothing for the warehouse to receive, so you confirm the work is done
-      yourself.
+      nothing for the warehouse to receive; the Service Owner confirms the work
+      is done (you, unless you name someone else).
     notes:
       - The expected completion date is what the system watches; once it
         passes, you are reminded to confirm the work was done.
@@ -105,16 +105,16 @@ values:
     covers: Capitalisable equipment and assets that go on the asset register.
     when: >
       When the purchase becomes an asset rather than an expense. You need the
-      Fixed Asset ID before you can submit — get it from Finance if the asset
-      has not been raised yet.
+      Fixed Asset ID before you can submit.
 
   - value: 6
     label: Project-Related
     covers: Purchases charged to a project rather than to routine operations.
     when: >
       When the cost belongs to a project and has to be traceable to it. Like a
-      service PR you confirm completion yourself, and you also carry the
-      Project No. so the spend lands against the project.
+      service PR, completion is confirmed by the owner (the Project Owner, you
+      unless you name someone else), and you also carry the Project No. so the
+      spend lands against the project.
     notes:
       - Same completion-date reminder as a service PR.
       - >-

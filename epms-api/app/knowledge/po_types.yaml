@@ -51,9 +51,10 @@ values:
     covers: Contracted work — maintenance, consulting, installation, labour.
     when: Follows from a type 4 PR being approved.
     notes:
-      - Receipt is a service confirmation by the requester, not a warehouse GR.
-      - Once the PR's expected completion date passes, the requester is
-        reminded to confirm the work was done.
+      - Receipt is a service confirmation by the PR's Service Owner (the
+        requester unless the PR names someone else), not a warehouse GR.
+      - Once the PR's expected completion date passes, the owner is reminded
+        to confirm the work was done.
 
   - value: 5
     label: Fixed Asset
@@ -65,7 +66,8 @@ values:
     covers: Purchases charged to a project.
     when: Follows from a type 6 PR being approved.
     notes:
-      - Confirmed by the requester, like a service PO.
+      - Confirmed by the PR's Project Owner (the requester unless the PR names
+        someone else), like a service PO.
 
 # ── Rules people ask about ───────────────────────────────────────────────────
 rules:
