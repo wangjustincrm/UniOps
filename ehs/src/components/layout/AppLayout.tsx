@@ -151,7 +151,8 @@ const NAV: NavGroup[] = [
       // opened cannot be acknowledged, which is what Read & Sign asks people
       // to do.
       { label: 'Documents',          href: '/documents',     icon: FileText,        permission: 'ehs.document.read' },
-      { label: 'Committee',          href: '/jhsc',          icon: Users,           permission: 'ehs.jhsc.read' },
+      // Round 8 (open box): "change the name from committee to be JHSC".
+      { label: 'JHSC',               href: '/jhsc',          icon: Users,           permission: 'ehs.jhsc.read' },
       { label: 'Reports',            href: '/reports',       icon: BarChart3,       permission: 'ehs.incident.read' },
       // The built-in auditor role already holds ehs.incident.read along with
       // read access to everything this counts, which is what that role is for.

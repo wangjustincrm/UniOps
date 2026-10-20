@@ -141,7 +141,7 @@ export const ehsRoutes: RouteDef[] = [
   {
     path: '/jhsc',
     element: <JhscPage />,
-    tab: { title: 'Committee', icon: 'Users', keyStrategy: 'static' },
+    tab: { title: 'JHSC', icon: 'Users', keyStrategy: 'static' },
   },
   {
     path: '/jhsc/meetings/:id',

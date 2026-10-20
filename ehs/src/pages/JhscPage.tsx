@@ -50,7 +50,7 @@ export interface Recommendation {
 
 const TABS = [
   { key: 'meetings', label: 'Meetings' },
-  { key: 'roster', label: 'Committee' },
+  { key: 'roster', label: 'Members' },
   { key: 'recommendations', label: 'Recommendations' },
 ] as const
 type TabKey = (typeof TABS)[number]['key']
@@ -88,7 +88,7 @@ export default function JhscPage() {
 
   return (
     <div className="p-4">
-      <PageHeader title="Health and safety committee"
+      <PageHeader title="JHSC — Joint Health and Safety Committee"
                   subtitle="Joint Health and Safety Committee — OHSA s.9" />
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
       {tab === 'meetings' && <MeetingsTab mayManage={mayManage} />}
