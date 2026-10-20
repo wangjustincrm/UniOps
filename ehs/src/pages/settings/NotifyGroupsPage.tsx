@@ -67,6 +67,8 @@ const STATUS_ROWS: { key: string; label: string; hint: string }[] = [
     hint: 'Each time HSE records its review — the step before an injury or damage incident can close.' },
   { key: 'closed', label: 'Closed', hint: 'When the incident is closed.' },
   { key: 'reopened', label: 'Reopened', hint: 'When a closed incident is put back into investigation.' },
+  { key: 'kind_changed', label: 'Kind of incident changed',
+    hint: 'When the investigator changes what kind of incident it was — first aid to lost time, say.' },
 ]
 
 interface Directory {

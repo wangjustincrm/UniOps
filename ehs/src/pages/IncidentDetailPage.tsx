@@ -978,8 +978,10 @@ function ChangeKind({ incident, onDone }: { incident: Incident; onDone: () => vo
   })
   if (!open) {
     return (
+      // ★ Round 8, TC-13: "the change the kind of incident is not obvious where
+      // to do that, make it an orange button."
       <button type="button" onClick={() => { setCode(incident.incident_type_code ?? ''); setOpen(true) }}
-              className="-mt-1 mb-1 text-xs font-semibold text-primary-700 hover:underline">
+              className="mb-2 min-h-[36px] rounded-lg bg-orange-500 px-3 text-xs font-semibold text-white hover:bg-orange-600">
         Change the kind of incident
       </button>
     )

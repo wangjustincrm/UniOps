@@ -413,9 +413,23 @@ async def reclassify_incident(
 ):
     """Change what kind of incident it was, before it closes — round 7. Held to
     the investigate key, like editing the report. See crud.reclassify."""
+    from app.services import incident_type as types
+    incident = await crud.get(db, incident_id)
+    before = (incident.extra or {}).get("incident_type")
     incident = await crud.reclassify(
-        db, await crud.get(db, incident_id), payload.incident_type, payload.injury_class,
-        user_id=_user_id(user))
+        db, incident, payload.incident_type, payload.injury_class, user_id=_user_id(user))
+    after = (incident.extra or {}).get("incident_type")
+    # ★ Round 8, TC-13: emailed to the list for this change under Settings → Who
+    # is told, and filed with the incident under Notifications sent. Only when
+    # the kind really changed.
+    if after != before:
+        def name(code):
+            t = types.BY_CODE.get(code) if isinstance(code, str) else None
+            return t.label.split(" — ")[0] if t else "not recorded"
+        me = await db.get(User, _user_id(user))
+        await notify.incident_status_changed(
+            db, incident, "kind_changed", by_name=me.full_name if me else None,
+            detail=f"From {name(before)} to {name(after)}.")
     return await _to_out(db, incident, user)
 
 

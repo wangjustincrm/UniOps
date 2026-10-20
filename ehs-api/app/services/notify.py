@@ -252,11 +252,15 @@ STATUS_EVENTS: dict[str, str] = {
     "hse_reviewed": "Reviewed by HSE",
     "closed": "Closed",
     "reopened": "Reopened",
+    # Round 8, TC-13: "add a notification that the incident class has changed
+    # and email it. log the communication on the form."
+    "kind_changed": "Kind of incident changed",
 }
 
 
 async def incident_status_changed(
     db: AsyncSession, incident, event: str, *, by_name: str | None,
+    detail: str | None = None,
 ) -> None:
     """Tell the people HSE named for this change that it happened.
 
@@ -285,6 +289,8 @@ async def incident_status_changed(
 
     lines = [f"{incident.incident_no} — {label.lower()}"
              + (f" by {by_name}." if by_name else "."), ""]
+    if detail:
+        lines += [detail, ""]
     if incident.title:
         lines.append(incident.title)
     if incident.location_path:

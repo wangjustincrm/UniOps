@@ -78,3 +78,40 @@ async def test_who_and_when(test_engine, db_session, hse_manager):
     assert (await hse.post(f"/api/v1/incidents/{iid}/close")).status_code == 200
     closed = await hse.post(f"/api/v1/incidents/{iid}/reclassify", json={"incident_type": "lost_time"})
     assert closed.status_code == 409 and "Reopen it first" in closed.text
+
+
+async def test_a_change_of_kind_is_told_and_filed_on_the_incident(test_engine, db_session, hse_manager):
+    """★ Round 8, TC-13: "add a notification that the incident class has changed
+    and email it. log the communication on the form." """
+    import uuid as _uuid
+    from sqlalchemy import select
+    from app.models.communication import Communication
+    from app.models.config import EhsConfig
+
+    cfg = await db_session.get(EhsConfig, 1)
+    if cfg is None:
+        cfg = EhsConfig(id=1)
+        db_session.add(cfg)
+    cfg.incident_status_notify = {}
+    cfg.incident_notify_include = {"status:kind_changed": {"reporter": True, "supervisor": False}}
+    await db_session.commit()
+
+    _, hse = hse_manager
+    reporter, iid = await _reported(test_engine, db_session, "first_aid")
+
+    async def told():
+        db_session.expire_all()
+        return list((await db_session.execute(select(Communication).where(
+            Communication.doc_id == _uuid.UUID(iid),
+            Communication.template_key == "incident_kind_changed"))).scalars())
+
+    assert (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
+                           json={"incident_type": "lost_time"})).status_code == 200
+    sent = await told()
+    assert len(sent) == 1 and sent[0].to_addrs == [reporter.email]
+    assert "From First Aid Injury to Lost Time" in sent[0].body_text
+
+    # The same kind again changes nothing and tells nobody.
+    assert (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
+                           json={"incident_type": "lost_time"})).status_code == 200
+    assert len(await told()) == 1
