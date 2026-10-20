@@ -118,6 +118,12 @@ function InvoiceReceiptsPanelBody({
   // reach for "Settle without receipt evidence", quietly bypassing the
   // evidence chain Tasks 1-7 built.
   const receiptsErrored = receiptsQuery.isError
+  // 403 is not a load failure: this caller may read the invoice but not
+  // reconcile it. Rendering it as "Couldn't load" (with Retry, and the settle
+  // form still live) sent the agreement owner round in circles — see
+  // _require_invoice_receipt_access in epms-api.
+  const receiptsForbidden =
+    (receiptsQuery.error as (Error & { status?: number }) | null)?.status === 403
   const hasReceiptList = relevantReceipts.length > 0
   const sortedReceipts = useMemo(
     () => [...relevantReceipts].sort((a, b) => new Date(b.receipt_date).getTime() - new Date(a.receipt_date).getTime()),
@@ -333,6 +339,19 @@ function InvoiceReceiptsPanelBody({
   }
 
   const activeError = setReceiptsMutation.error ?? settleMutation.error
+
+  if (receiptsForbidden) {
+    return (
+      <div className="rounded-lg border border-neutral-200 bg-white p-4 flex flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Receipt Evidence</p>
+        <p className="text-xs text-neutral-600">
+          You can view this invoice but not attach receipts to it. Receipts are attached by AP,
+          the invoice's uploader, the agreement's owner, or whoever holds this invoice's
+          Match Invoice / Attach Invoice Receipts task.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4 flex flex-col gap-3">

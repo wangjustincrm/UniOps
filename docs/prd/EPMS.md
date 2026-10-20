@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.29
+**Version:** 2.30
 **Date:** 2026-10-20
 **Status:** In Production
+
+> **v2.30 (2026-10-20)** — House-account receipt hand-off (AGR-032, AGR-034, task table): an invoice matched to a house account with no receipt evidence raises an `attach_receipts` task for the agreement's owner; the owner (and that task's holder) may now list and attach the agreement's receipts on the invoice. A caller without that right sees a "cannot attach" notice instead of a load error.
 
 > **v2.29 (2026-10-20)** — One Upload Invoice form (FRT-005, FRT-014, FRT-016): no invoice-type choice and no carrier picker. A carrier's invoice is recognised by its vendor and always becomes a courier invoice; it is uploaded with the ordinary invoice-upload permission (matching and Freight PAs stay on `epms.freight.manage`), and the PO invoice upload refuses a carrier's vendor. AP can assign a courier invoice for matching like any invoice (FRT-017).
 
@@ -1118,6 +1120,7 @@ The Task Inbox lists every open task the current user can act on. Tasks live in 
 | `match_invoice` | Match Invoice to PO | Named AP user | Invoice assigned for matching | Invoice leaves unmatched/exception |
 | `review_match` | Confirm Invoice Match | AP Clerk pool | Delegate matched an invoice | Invoice leaves match_review |
 | `resolve_exception` | Resolve Match Exception | AP Clerk pool | Match outside tolerance | Invoice leaves exception |
+| `attach_receipts` | Attach Invoice Receipts | Agreement owner (else an active Department Manager of the agreement's department; else AP Clerk pool) | Invoice matched to a house-account agreement with no receipts attached and no settlement declared (AGR-034) | Receipts attached or settled without receipt evidence; invoice unmatched, deleted or listed on a live PA |
 | `create_pa` | Create Payment Application | PR requester; **ERP PA Officer pool** for NC-imported POs | Invoice matched (3-way) on a received PO | PA exists, or matched invoice removed |
 | `confirm_settlement` | Confirm Settlement | Finance BP pool | Zero-cash settlement PA with a variance (prepayment exceeded final value) | Settlement confirmed |
 | `process_pa` | Process Payment Application | Payment Officer pool | PA fully approved | PA processed (paid) or leaves approved |
@@ -2336,8 +2339,9 @@ A Purchase Agreement is a standing authorisation with one vendor for spend that 
 |---|---|
 | **AGR-030** | A receipt (type: counter slip, delivery note, service sign-off) records date, reference, merchant (picked from Vendor Master; flagged when it differs from the agreement's vendor), amounts, received-by (user picker) and photos. It is recorded by Finance on the employee's behalf — never presented as the recipient's own confirmation. Recording needs *Record Agreement Receipts* (`epms.agreement.receipt.write`; seeded System Admin, AP Clerk, Dept Admin). Any agreement type may carry receipts. |
 | **AGR-031** | A receipt entered with a "missing receipt" reason goes to `pending_ap_review`; AP approves (→ `open`) or rejects. Receipt statuses: `open`, `pending_ap_review`, `reconciled` (attached to an invoice), `rejected`, `voided` (shown as *Remove*). Receipt reference is unique per agreement among live receipts. |
-| **AGR-032** | On Invoice Detail, the matcher attaches the receipts the invoice covers (with a reason if amounts differ), or declares *Settle without receipt evidence* with a mandatory reason. Neither can be changed once a non-cancelled PA lists the invoice. |
+| **AGR-032** | On Invoice Detail (3-Way Match tab), the receipts the invoice covers are attached (with a reason if amounts differ), or *Settle without receipt evidence* is declared with a mandatory reason. Allowed for: AP (`epms.invoice.match`), the invoice's uploader, the holder of its open `match_invoice` or `attach_receipts` task, and the **agreement's owner**. Anyone else who can open the invoice sees a notice that they cannot attach receipts. The invoice's own agreement always lists its receipts, even after it leaves the admission window. Neither can be changed once a non-cancelled PA lists the invoice. |
 | **AGR-033** | Receipts have their own menu entry (*Agreement Receipts*), list across agreements, create page and detail page. |
+| **AGR-034** | **Receipt hand-off.** When an invoice ends up `matched`/`approved` against a house-account agreement with no receipts attached and no settlement declared, an `attach_receipts` task goes to the agreement owner (fallback: an active Department Manager of the agreement's department; if neither, the AP Clerk pool). It is checked on every match, match review, invoice edit, exception resolution, receipt change and settlement, and again whenever the Task Inbox is read, so invoices that were already waiting get a task too. It closes by itself once the invoice no longer needs evidence. Changing the agreement's owner moves its open tasks. A task the user dismisses is not raised again. |
 
 #### 3.17.6 Period Confirmation and Missing-Invoice Chase
 

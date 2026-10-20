@@ -61,6 +61,7 @@ TASK_TYPE_LABELS: dict[str, str] = {
     "review_match": "Confirm Invoice Match",
     "match_invoice": "Match Invoice",
     "resolve_exception": "Resolve Match Exception",
+    "attach_receipts": "Attach Invoice Receipts",
     "process_pa": "Process Payment Application",
     "approve_agr": "Approve Agreement",
     "revise_agr": "Revise Agreement",

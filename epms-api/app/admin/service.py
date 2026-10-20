@@ -482,6 +482,9 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
         # Confirm button and the old assignee would keep the to-do.
         await db.flush()
         confirm_tasks_reassigned = await reassign_open_confirm_tasks(db, row)
+        # Same reason for the house-account receipt hand-off.
+        from app.crud import attach_receipts_task
+        await attach_receipts_task.reassign_for_agreement(db, row)
 
     cascade = None
     if entity == "po" and regenerate_po_number:

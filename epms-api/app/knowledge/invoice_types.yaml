@@ -148,7 +148,9 @@ rules:
       still not that the quantities agree. Without it the PA is refused unless a
       user with the "Override Receipt on PA" permission overrides it with a
       reason. A matched invoice with no receipt yet is why a "Confirm Goods
-      Receipt" task appears. Agreement payments have no receipt check.
+      Receipt" task appears. Agreement payments have no goods-receipt check; a
+      house account invoice needs its agreement receipts attached (or an
+      explicit settlement without receipt evidence) instead.
     enforced_in: "epms-api app/crud/invoice.py match() (amount variance vs PoLineItem.line_total); app/api/v1/pa.py receipt gate + crud/po.py po_has_three_way_matched_invoice; PRD EPMS INV-3WM-006, PA-013"
   - id: courier_invoices_are_matched_to_shipments
     asked_as:

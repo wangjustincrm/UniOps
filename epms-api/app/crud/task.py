@@ -287,6 +287,9 @@ _TASK_DEDICATED_HANDLING: dict[str, str] = {
                        "误判过 8 条。",
     "confirm_period": "接受期次时关(crud.agreement_schedule),释放协议证据时也关"
                       "(crud.invoice._release_agreement_evidence),两侧都有。",
+    "attach_receipts": "crud.attach_receipts_task:不变量是「house_account 发票还欠签收凭证」"
+                       "(没挂凭证、没声明无凭证结算、没有活 PA),不是比状态。改动端点当场"
+                       "sync_for_invoice,读端 sweep 补建存量并关掉被绕开的。",
     "chase_agreement_invoice": "tasks/agreement_overdue.py 的 _close_settled_chase_tasks:"
                                "协议不再有 overdue 期次即收口。★跑在定时循环里,"
                                "agreement_overdue_enabled 关掉时只出不进。",
@@ -664,6 +667,8 @@ async def get_for_role(
     await _backfill_place_order_tasks(db)
     await _backfill_create_pa_tasks(db)
     await _backfill_prepayment_pa_tasks(db)
+    from app.crud import attach_receipts_task
+    await attach_receipts_task.sweep(db)
 
     q = select(Task)
     if role != "system_admin":

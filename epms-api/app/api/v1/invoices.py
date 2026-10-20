@@ -14,6 +14,7 @@ from app.core.ontology import sees_freight_invoices
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import invoice as invoice_crud
+from app.crud import attach_receipts_task
 from app.crud import vendor as vendor_crud
 from app.crud.pr_owner import owner_id_of
 from app.models.agreement import PurchaseAgreement
@@ -142,6 +143,38 @@ async def _is_agreement_owner(db, user: dict, inv) -> bool:
     return owner_id is not None and owner_id == uuid.UUID(user["sub"])
 
 
+async def _has_open_attach_receipts_task(db, user_id: uuid.UUID, invoice_id: uuid.UUID) -> bool:
+    return (await db.execute(select(Task.id).where(
+        Task.type == "attach_receipts", Task.document_type == "invoice",
+        Task.document_id == invoice_id, Task.assigned_user_id == user_id,
+        Task.is_completed.is_(False),
+    ).limit(1))).first() is not None
+
+
+async def _require_invoice_receipt_access(db, user: dict, inv) -> None:
+    """Who may list / attach receipts on an agreement invoice, or settle it
+    without evidence: everyone _require_invoice_match_access admits, plus the
+    agreement's owner and whoever holds the invoice's open attach_receipts task
+    (the owner's fallback, a department manager).
+
+    The owner records the delivery notes on the agreement and is the one who
+    knows which of them a statement covers. Before this, an invoice AP had
+    matched straight to the agreement could not be handed to them at all —
+    assign-match only runs on unmatched/exception — and the owner opening it
+    got a 403 the page showed as "Couldn't load this agreement's receipts"
+    (user report 2026-10-20, AGR-202608-0008)."""
+    caller_id = uuid.UUID(user["sub"])
+    if await _is_agreement_owner(db, user, inv):
+        return
+    if await _has_open_attach_receipts_task(db, caller_id, inv.id):
+        return
+    try:
+        await _require_invoice_match_access(db, user, inv)
+    except HTTPException:
+        raise HTTPException(status_code=403,
+                            detail="Not allowed to attach receipts to this invoice")
+
+
 async def _can_read_invoice(db, user: dict, inv, scope: dict) -> bool:
     """The invoice detail read gate, shared by GET /{id} and GET /{id}/chain.
 
@@ -160,6 +193,11 @@ async def _can_read_invoice(db, user: dict, inv, scope: dict) -> bool:
     if not scope["perms"].get("view_invoice", False):
         return False
     if not scope["restrict"]:
+        return True
+    # The receipt hand-off: an attach_receipts task can land on a department
+    # manager whose scope does not otherwise reach this invoice. (The open
+    # match task is checked above, before the matrix view gate.)
+    if await _has_open_attach_receipts_task(db, caller_id, inv.id):
         return True
     # Matcher retention: the person who performed the match retains detail visibility
     # even after their task is completed (you can see what you acted on).
@@ -799,6 +837,7 @@ async def update_invoice(
     # with nobody told is the worst of the three outcomes. Also closes a stale
     # exception task when the edit takes the invoice back OUT of exception.
     await _sync_exception_task(db, result, result, caller_id)
+    await attach_receipts_task.sync_for_invoice(db, result)
 
     # Sync the (possibly rematched) invoice to finance once: draft if still
     # unmatched/exception, posted if matched. Fail-open.
@@ -1006,6 +1045,10 @@ async def match_invoice(
             if has_alloc:
                 await _on_invoice_matched(db, result)
 
+        # A house_account match with no receipts yet hands the receipt
+        # reconciliation to the agreement owner (attach_receipts).
+        await attach_receipts_task.sync_for_invoice(db, result)
+
         # Sync to finance: posted if matched, draft otherwise. Fail-open.
         await finance_sync.sync_ap_invoice(db, result, token)
 
@@ -1127,11 +1170,15 @@ async def list_invoice_agreement_receipts(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    await _require_invoice_match_access(db, user, inv)
+    await _require_invoice_receipt_access(db, user, inv)
 
-    candidates = await agreement_crud.candidates_for_vendor(db, inv.vendor_id)
-    if not any(agr.id == agreement_id for agr in candidates):
-        raise HTTPException(status_code=404, detail="Agreement not found")
+    # The agreement the invoice is ALREADY matched to always qualifies — it can
+    # have aged out of the admission window since, and its receipts are exactly
+    # what the matched invoice still has to reconcile against.
+    if agreement_id != inv.agreement_id:
+        candidates = await agreement_crud.candidates_for_vendor(db, inv.vendor_id)
+        if not any(agr.id == agreement_id for agr in candidates):
+            raise HTTPException(status_code=404, detail="Agreement not found")
 
     items = await agreement_receipt_crud.list_for_agreement(db, agreement_id, status=status_filter)
     return {"items": items, "total": len(items)}
@@ -1153,13 +1200,17 @@ async def set_invoice_receipts(
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
     _refuse_freight(inv)
-    await _require_invoice_match_access(db, user, inv)
+    await _require_invoice_receipt_access(db, user, inv)
 
     try:
-        return await invoice_crud.set_receipts(
+        result = await invoice_crud.set_receipts(
             db, inv, body.receipt_ids, body.variance_reason)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    # Attaching closes the attach_receipts task; clearing every receipt
+    # (an empty PUT) re-opens one.
+    await attach_receipts_task.sync_for_invoice(db, result)
+    return result
 
 
 @router.post("/{invoice_id}/billing-period", response_model=InvoiceResponse)
@@ -1205,12 +1256,14 @@ async def settle_invoice_without_receipt(
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
     _refuse_freight(inv)
-    await _require_invoice_match_access(db, user, inv)
+    await _require_invoice_receipt_access(db, user, inv)
 
     try:
-        return await invoice_crud.settle_without_receipt(db, inv, body.reason)
+        result = await invoice_crud.settle_without_receipt(db, inv, body.reason)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    await attach_receipts_task.sync_for_invoice(db, result)
+    return result
 
 
 @router.post("/{invoice_id}/decline-match", response_model=InvoiceResponse)
@@ -1435,6 +1488,7 @@ async def match_review(
 
     if result.status == "matched":
         await _on_invoice_matched(db, result)
+    await attach_receipts_task.sync_for_invoice(db, result)
     await finance_sync.sync_ap_invoice(db, result, token)
     await _attach_match_assignees(db, [result])
     await invoice_crud.attach_claimed_receipts(db, [result])
@@ -1459,7 +1513,8 @@ async def delete_invoice(
         caller_id = uuid.UUID(user["sub"])
         now_ts = datetime.now(timezone.utc)
         open_tasks = (await db.execute(select(Task).where(
-            Task.type.in_(["match_invoice", "review_match", "resolve_exception"]),
+            Task.type.in_(["match_invoice", "review_match", "resolve_exception",
+                           "attach_receipts"]),
             Task.document_type == "invoice",
             Task.document_id == invoice_id,
             Task.is_completed.is_(False),
@@ -1522,6 +1577,7 @@ async def resolve_exception(
         if result.status == "matched":
             await _close_open_match_tasks(db, result.id, caller_id)
             await _on_invoice_matched(db, result)
+        await attach_receipts_task.sync_for_invoice(db, result)
         # Sync to finance: posted if matched, draft otherwise. Fail-open.
         await finance_sync.sync_ap_invoice(db, result, token)
         return result
