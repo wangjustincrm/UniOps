@@ -40,6 +40,9 @@ function RecommendationComposer({
   const [chosen, setChosen] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [text, setText] = useState(recommendationText ?? '')
+  // Round 8: where it happened, picked as on an incident. Only asked while
+  // writing one; an existing recommendation carries its own.
+  const [locationId, setLocationId] = useState<string | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
   // The body once somebody has edited it. Null means "as the server composed it".
   //
@@ -81,6 +84,7 @@ function RecommendationComposer({
         // Which recommendation this is about, when it is one that exists. The
         // preview numbered everything as the next one otherwise.
         recommendation_id: recId ?? null,
+        location_id: writing ? locationId : null,
         message: vars.message,
       }),
     // Judged on what was sent, not on what the state happens to say now.
@@ -93,7 +97,7 @@ function RecommendationComposer({
   const submit = useMutation({
     mutationFn: () => (writing
       ? api.post(`/api/v1/jhsc/meetings/${meetingId}/recommendations`,
-                 { recommendation: text, send_to: chosen,
+                 { recommendation: text, send_to: chosen, location_id: locationId,
                    message: touched ? edited : null })
       : api.post(`/api/v1/jhsc/recommendations/${recId}/send`,
                  { user_ids: chosen, message: touched ? edited : null })),
@@ -104,7 +108,7 @@ function RecommendationComposer({
   // recording, so a committee that has not decided who answers can still start it.
   const recordOnly = useMutation({
     mutationFn: () => api.post(`/api/v1/jhsc/meetings/${meetingId}/recommendations`,
-                               { recommendation: text }),
+                               { recommendation: text, location_id: locationId }),
     onSuccess: onDone,
   })
 
@@ -187,6 +191,13 @@ function RecommendationComposer({
                     placeholder="What the committee recommends the employer do" />
         </Field>
       )}
+      {writing && (
+        <div className="mt-2">
+          <Field label="Where it happened" hint="Optional. Included in the email">
+            <LocationSelect value={locationId} onChange={(id) => setLocationId(id)} />
+          </Field>
+        </div>
+      )}
       <p className="mb-1.5 mt-2 text-xs font-medium text-neutral-700">
         Who is this being put in front of?
       </p>
@@ -259,6 +270,7 @@ import {
 } from '@/components/ui'
 import { anyFailed } from '@/lib/anyFailed'
 import { ReplyBadge, type Recommendation } from '@/pages/JhscPage'
+import { LocationSelect } from '@/components/LocationSelect'
 
 interface Meeting {
   id: string; meeting_no: string; title: string | null; held_on: string
@@ -483,7 +495,11 @@ function RecommendationList({
             <Card>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span className="font-mono text-xs text-neutral-400">#{r.seq}</span>
-                <span className="min-w-0 flex-1 text-sm text-neutral-900">{r.recommendation}</span>
+                <span className="min-w-0 flex-1 text-sm text-neutral-900">{r.recommendation}{r.location_path && (
+                  <span className="block text-xs text-neutral-500">
+                    Where: {r.location_path.split('/').join(' › ')}
+                  </span>
+                )}</span>
                 <ReplyBadge rec={r} />
               </div>
               {r.sent_at ? (

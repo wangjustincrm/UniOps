@@ -42,6 +42,7 @@ interface Meeting {
 export interface Recommendation {
   id: string; meeting_id: string; seq: number; recommendation: string
   raised_by_name: string | null; response: string | null; outcome: string | null
+  location_path?: string | null
   responded_at: string | null; responded_by_name: string | null
   sent_at: string | null; sent_by_name: string | null
   sent_to: { id: string; name: string }[]
@@ -464,7 +465,11 @@ function RecommendationsTab({ mayManage, highlight }: {
                       className="font-mono text-xs text-primary-700 hover:underline">
                 {meetingNo(r.meeting_id)} #{r.seq}
               </button>
-              <span className="min-w-0 flex-1 text-sm text-neutral-900">{r.recommendation}</span>
+              <span className="min-w-0 flex-1 text-sm text-neutral-900">{r.recommendation}{r.location_path && (
+                <span className="block text-xs text-neutral-500">
+                  Where: {r.location_path.split('/').join(' › ')}
+                </span>
+              )}</span>
               <ReplyBadge rec={r} />
             </div>
             {r.response && (

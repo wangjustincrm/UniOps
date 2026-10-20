@@ -577,7 +577,7 @@ async def jhsc_recommendation(db: AsyncSession, meeting, recommendation) -> None
         db,
         to=[u.email for u in people],
         subject=f"JHSC recommendation {meeting.meeting_no} #{recommendation.seq}",
-        body=(f"{recommendation.recommendation}\n\n"
+        body=(f"{_where(recommendation)}{recommendation.recommendation}\n\n"
               "OHSA s.9(20) requires a written response within twenty-one days "
               "of the recommendation."),
         doc_type=task_service.DOC_JHSC,
@@ -586,6 +586,12 @@ async def jhsc_recommendation(db: AsyncSession, meeting, recommendation) -> None
         link=mail.module_link(f"/jhsc/meetings/{meeting.id}"),
         link_label="Open the meeting",
     )
+
+
+def _where(recommendation) -> str:
+    """Round 8: "include this info on the email" — where it happened, first."""
+    path = getattr(recommendation, "location_path", None)
+    return f"Where: {' › '.join(path.split('/'))}\n\n" if path else ""
 
 
 def jhsc_recommendation_message(meeting, recommendation) -> tuple[str, str]:
@@ -598,7 +604,7 @@ def jhsc_recommendation_message(meeting, recommendation) -> tuple[str, str]:
     """
     subject = (f"JHSC recommendation {meeting.meeting_no} #{recommendation.seq} "
                "— a written response is owed")
-    body = (f"{recommendation.recommendation}\n\n"
+    body = (f"{_where(recommendation)}{recommendation.recommendation}\n\n"
             "OHSA s.9(20) requires a written response within twenty-one days "
             "of the recommendation being made.")
     return subject, body

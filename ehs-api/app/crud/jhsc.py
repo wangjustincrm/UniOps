@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.form import FormSubmission
 from app.models.jhsc import JhscAttendance, JhscMeeting, JhscMember, JhscRecommendation
-from app.models.mirrors import Department, User
+from app.models.mirrors import Department, Location, User
 from app.services import deadlines as deadline_service
 from app.services import notify
 from app.services import tasks as task_service
@@ -275,8 +275,20 @@ async def next_recommendation_seq(db: AsyncSession, meeting_id: uuid.UUID) -> in
     return highest + 1
 
 
+async def location_path_of(db: AsyncSession, location_id: uuid.UUID | None) -> str | None:
+    """The area's path as it reads today, kept on the recommendation."""
+    if location_id is None:
+        return None
+    path = (await db.execute(
+        select(Location.path).where(Location.id == location_id))).scalar()
+    if path is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No such plant area")
+    return path
+
+
 async def add_recommendation(
     db: AsyncSession, meeting: JhscMeeting, *, text: str, raised_by_name: str | None,
+    location_id: uuid.UUID | None = None,
 ) -> JhscRecommendation:
     """Record a recommendation and start the twenty-one days running."""
     seq = await next_recommendation_seq(db, meeting.id)
@@ -284,6 +296,7 @@ async def add_recommendation(
     rec = JhscRecommendation(
         id=uuid.uuid4(), meeting_id=meeting.id, seq=seq,
         recommendation=text, raised_by_name=raised_by_name,
+        location_id=location_id, location_path=await location_path_of(db, location_id),
     )
     db.add(rec)
     await db.flush()

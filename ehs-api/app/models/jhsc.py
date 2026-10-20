@@ -137,6 +137,11 @@ class JhscRecommendation(UUIDPrimaryKey, TimestampMixin, Base):
     seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     recommendation: Mapped[str] = mapped_column(Text, nullable=False)
     raised_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Round 8 (open box): "when making a recommendation, include the 'where it
+    # happened' field picker and include this info on the email." The path is
+    # a snapshot, as on an incident; no FK, as locations belong to mdm-api.
+    location_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    location_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Who it was put in front of, and when. The committee could see that
     # nobody had answered and not who had failed to.

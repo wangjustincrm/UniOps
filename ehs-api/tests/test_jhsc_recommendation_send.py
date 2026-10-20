@@ -417,3 +417,72 @@ class TestOneMeetingTwoRecommendations:
             assert still, "answering one recommendation cleared another one's task"
             assert "#2" in still[0]["title"], still[0]["title"]
         assert second["seq"] == 2
+
+
+# ── Round 8: where it happened ──────────────────────────────────────────────
+
+
+async def _area(db_session, path: str):
+    from sqlalchemy import text as sql_text
+    loc_id = uuid.uuid4()
+    await db_session.execute(sql_text(
+        "insert into locations (id, code, name, level, path, depth, is_active)"
+        " values (:id, :code, :name, 'department', :path, 1, true)"),
+        {"id": loc_id, "code": f"T{loc_id.hex[:8]}", "name": path.split('/')[-1], "path": path})
+    await db_session.flush()
+    return loc_id
+
+
+async def test_where_it_happened_is_kept_and_put_in_the_email(
+        hse_manager, manager_with_email, db_session):
+    """"When making a recommendation, include the 'where it happened' field
+    picker and include this info on the email." """
+    _, client = hse_manager
+    meeting = await _a_meeting(client)
+    dryer = await _area(db_session, "Production/103 – Dryer")
+
+    preview = await client.post("/api/v1/jhsc/recommendations/preview", json={
+        "meeting_id": meeting["id"], "recommendation": "Guard the auger",
+        "location_id": str(dryer), "user_ids": [str(manager_with_email.id)]})
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["body"].startswith("Where: Production › 103 – Dryer\n\nGuard the auger")
+
+    made = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations", json={
+        "recommendation": "Guard the auger", "location_id": str(dryer),
+        "send_to": [str(manager_with_email.id)]})
+    assert made.status_code == 201, made.text
+    assert made.json()["location_path"] == "Production/103 – Dryer"
+
+    mails = (await db_session.execute(select(Communication).where(
+        Communication.doc_id == uuid.UUID(meeting["id"]),
+        Communication.template_key.in_(["jhsc_recommendation", "jhsc_recommendation_sent"])
+    ))).scalars().all()
+    assert {m.template_key for m in mails} == {"jhsc_recommendation", "jhsc_recommendation_sent"}
+    assert all("Where: Production › 103 – Dryer" in m.body_text for m in mails)
+
+    # Re-sending an existing one carries its own place, without being told again.
+    again = await client.post("/api/v1/jhsc/recommendations/preview", json={
+        "meeting_id": meeting["id"], "recommendation": "Guard the auger",
+        "recommendation_id": made.json()["id"], "user_ids": [str(manager_with_email.id)]})
+    assert again.json()["body"].startswith("Where: Production › 103 – Dryer")
+
+
+async def test_a_recommendation_without_a_place_says_nothing_about_one(hse_manager, db_session):
+    _, client = hse_manager
+    meeting = await _a_meeting(client)
+    made = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations",
+                             json={"recommendation": "Review the PPE budget"})
+    assert made.status_code == 201, made.text
+    assert made.json()["location_path"] is None
+    [mail] = (await db_session.execute(select(Communication).where(
+        Communication.doc_id == uuid.UUID(meeting["id"]),
+        Communication.template_key == "jhsc_recommendation"))).scalars().all()
+    assert "Where:" not in mail.body_text
+
+
+async def test_an_unknown_place_is_refused(hse_manager):
+    _, client = hse_manager
+    meeting = await _a_meeting(client)
+    made = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations",
+                             json={"recommendation": "x", "location_id": str(uuid.uuid4())})
+    assert made.status_code == 422, made.text

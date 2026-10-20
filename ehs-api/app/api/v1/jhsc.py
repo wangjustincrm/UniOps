@@ -261,6 +261,8 @@ async def publish_meeting(meeting_id: uuid.UUID, db: SessionDep, user: CanManage
 class RecommendationIn(BaseModel):
     recommendation: str = Field(min_length=1)
     raised_by_name: str | None = Field(default=None, max_length=255)
+    # Round 8: where it happened. Optional — not every recommendation is about a place.
+    location_id: uuid.UUID | None = None
     # ★ Recorded and sent in one step, which is what the committee asked for:
     # naming who has to answer was a second screen they had to remember to go
     # back to, and an unsent recommendation is one nobody owes a reply to.
@@ -286,6 +288,8 @@ class RecommendationOut(BaseModel):
     seq: int
     recommendation: str
     raised_by_name: str | None
+    location_id: uuid.UUID | None = None
+    location_path: str | None = None
     response: str | None
     outcome: str | None
     # Who it was put in front of, and when. Without it the committee could see
@@ -414,7 +418,8 @@ async def add_recommendation(
     """
     meeting = await crud.get_meeting(db, meeting_id)
     rec = await crud.add_recommendation(
-        db, meeting, text=payload.recommendation, raised_by_name=payload.raised_by_name)
+        db, meeting, text=payload.recommendation, raised_by_name=payload.raised_by_name,
+        location_id=payload.location_id)
     if payload.send_to:
         rec = await crud.send_recommendation(
             db, rec, user_ids=payload.send_to, sender_id=_user_id(user),
@@ -462,6 +467,8 @@ class PreviewIn(BaseModel):
     # and sent as #1. The send was right and the preview was not, which is the
     # one thing this screen exists to prevent. Found in review by uniops-9a.
     recommendation_id: uuid.UUID | None = None
+    # Where it happened, for one not yet recorded; an existing one has its own.
+    location_id: uuid.UUID | None = None
     user_ids: list[uuid.UUID] = Field(default_factory=list)
     # A draft the sender has already edited, so a second look shows their words.
     message: str | None = None
@@ -517,13 +524,15 @@ async def preview_recommendation(
                 "That recommendation belongs to a different meeting.")
         seq = existing.seq
         wording = payload.recommendation or existing.recommendation
+        where = existing.location_path
     else:
         seq = await crud.next_recommendation_seq(db, meeting.id)
         wording = payload.recommendation
+        where = await crud.location_path_of(db, payload.location_id)
 
     # A stand-in with the fields the message needs, so that no half-built row
     # reaches the database on the way to a preview.
-    draft = SimpleNamespace(seq=seq, recommendation=wording)
+    draft = SimpleNamespace(seq=seq, recommendation=wording, location_path=where)
     subject, default_body = notify.jhsc_recommendation_message(meeting, draft)
 
     people = list((await db.execute(
