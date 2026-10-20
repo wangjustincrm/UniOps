@@ -592,6 +592,13 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
             },
         } for r in bills]
     await nc_ap_bill_evidence.attach(db, open_bills, currency_of=lambda b: currency)
+    name = next((b["supplier_name"] for b in open_bills if b["supplier_name"]), None)
+    if name is None:
+        name = (await db.execute(text(
+            "select max(supplier_name) from nc_ap_bill_lines where supplier_code = :code"),
+            {"code": supplier_code})).scalar()
+    unattributed = await nc_ap_bill_evidence.unattributed_clearings(
+        db, supplier_code, name, currency)
 
     return {
         "supplier_code": supplier_code,
@@ -609,6 +616,9 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
             "lines": int(pay_tot["lines"]),
             "money_de": str(pay_tot["money_de"]),
         },
+        # Payable clearings that name no invoice — see
+        # nc_ap_bill_evidence.unattributed_clearings.
+        "unattributed_clearings": unattributed,
         "open_bills": open_bills,
         "payments": [{
             "bill_no": r["bill_no"], "pay_date": d(r["pay_date"]),
@@ -668,7 +678,7 @@ async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency:
                l.orig_debit, l.orig_credit, l.currency
           from journal_voucher_lines l
           join journal_vouchers v on v.id = l.jv_id
-         where l.partner_name = :name
+         where trim(l.partner_name) = trim(:name)
            and l.account_code like '{_AP_ACCOUNT_PREFIX}%'
            and v.source_subsystem is distinct from 'AP'
            and (coalesce(l.orig_debit, 0) <> 0 or coalesce(l.orig_credit, 0) <> 0)
@@ -694,7 +704,7 @@ async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency:
                coalesce(sum(l.orig_credit), 0) as credit
           from journal_voucher_lines l
           join journal_vouchers v on v.id = l.jv_id
-         where l.partner_name = :name
+         where trim(l.partner_name) = trim(:name)
            and l.account_code like '{_AP_ACCOUNT_PREFIX}%'
            and v.source_subsystem is distinct from 'AP'
            and (coalesce(l.orig_debit, 0) <> 0 or coalesce(l.orig_credit, 0) <> 0)

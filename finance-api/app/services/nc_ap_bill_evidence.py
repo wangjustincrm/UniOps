@@ -91,18 +91,22 @@ async def attach(db: AsyncSession, bills: list[dict], currency_of=lambda b: b["c
     tokens = {b["bill_no"]: [t for i in b["invoices"] for t in invoice_tokens(i["invoice_no"])]
               for b in bills}
     codes = sorted({b["supplier_code"] for b in bills if b.get("supplier_code")})
-    names = sorted({b["supplier_name"] for b in bills
+    # Trimmed on both sides: NC's voucher lines carry the partner name with a
+    # trailing space on some lines ("CCIC Agri-Food Testing (North America)
+    # Inc "), 1,506 of 50,129 payable-account lines at measurement.
+    names = sorted({b["supplier_name"].strip() for b in bills
                     if b.get("supplier_name") and b.get("payment_lines", 0) == 0})
 
     if names:
         rows = (await db.execute(text(f"""
-            select v.jv_number, v.voucher_date, v.source_subsystem, l.partner_name,
+            select v.jv_number, v.voucher_date, v.source_subsystem,
+                   trim(l.partner_name) as partner_name,
                    l.currency, l.orig_debit, l.orig_credit,
                    upper(concat_ws(' | ', l.summary, v.summary)) as summary,
                    coalesce(l.summary, v.summary) as summary_raw
               from journal_voucher_lines l
               join journal_vouchers v on v.id = l.jv_id
-             where l.partner_name = any(:names)
+             where trim(l.partner_name) = any(:names)
                and l.account_code like '{AP_ACCOUNT_PREFIX}%'
                and (coalesce(l.orig_debit, 0) <> 0 or coalesce(l.orig_credit, 0) <> 0)
              order by v.voucher_date, v.jv_number
@@ -116,7 +120,7 @@ async def attach(db: AsyncSession, bills: list[dict], currency_of=lambda b: b["c
             bal = Decimal(b["money_bal"] or 0)
             if bal == 0:
                 continue
-            for r in by_partner.get(b.get("supplier_name"), []):
+            for r in by_partner.get((b.get("supplier_name") or "").strip(), []):
                 eff = _effect(r["orig_debit"], r["orig_credit"])
                 # Must move the payable the way that clears THIS bill. The
                 # bill's own booking (a credit on a bill) is the other way.
@@ -174,3 +178,111 @@ async def attach(db: AsyncSession, bills: list[dict], currency_of=lambda b: b["c
                                     "money_bal": str(totals[o]["money_bal"]),
                                     "invoice_nos": twins[o]}
                                    for o in sorted(twins)]
+
+
+async def unattributed_clearings(db: AsyncSession, supplier_code: str,
+                                 supplier_name: str | None, currency: str,
+                                 limit: int = 20) -> dict:
+    """Payable-account clearings for this supplier that name NO invoice.
+
+    The case that prompted it: CCIC Agri-Food Testing, 15 bills of 2025 with no
+    payment document, all still open, and one GL voucher on 2025-12-30 —
+    debit payable 292,798.92 / credit receivable, "Record CCIC AR & AP
+    deducted" — that netted what CCIC owed us (rent, utilities) against what
+    we owed CCIC. No invoice number in it, so nothing per bill can find it.
+
+    Shown per supplier, beside the bills, for finance to compare — never
+    applied to any bill. Kept narrow on purpose (measured 2026-10-20: 4
+    suppliers, 11 lines, CCIC's voucher among them) by these rules:
+
+    * only when the supplier has open, approved bills with no approved
+      payment that finance has not set aside; nothing before the oldest of
+      them (a clearing cannot settle a bill raised after it);
+    * 2202* lines, same supplier (partner name, trimmed), same currency, not
+      raised by the AP subsystem (payment documents have their own link);
+    * moving the payable down (debit, or a negative credit);
+    * pairs that cancel each other out across the supplier's whole history
+      (an accrual and its reversal) are dropped;
+    * a summary naming ANY invoice number on this supplier's bills, settled
+      or not, is attributed already and is left out.
+    """
+    empty = {"since": None, "unpaid_bills": 0, "unpaid_open": "0",
+             "lines": [], "total": "0"}
+    if not supplier_name:
+        return empty
+    unpaid = (await db.execute(text("""
+        select count(*) as bills, coalesce(sum(bal), 0) as open, min(bill_date) as since
+          from (
+            select b.bill_no, min(b.bill_date)::date as bill_date, sum(l.money_bal) as bal
+              from nc_ap_bill_lines l
+              join nc_ap_bills b on b.id = l.bill_id
+             where l.supplier_code = :code and b.currency = :ccy
+               and b.bill_status = 1 and b.approve_status = 1 and l.money_bal <> 0
+               and not exists (select 1 from nc_ap_bill_dismissals d
+                                where d.bill_no = b.bill_no and d.restored_at is null)
+               and not exists (select 1 from nc_ap_payment_lines p
+                                 join nc_ap_payments ph on ph.id = p.payment_id
+                                where p.top_bill_id = b.nc_pk
+                                  and ph.bill_status = 1 and ph.approve_status = 1)
+             group by b.bill_no
+            having sum(l.money_bal) > 0
+          ) x
+    """), {"code": supplier_code, "ccy": currency})).mappings().one()
+    if not unpaid["bills"]:
+        return empty
+
+    known: set[str] = set()
+    for (inv,) in (await db.execute(text("""
+        select distinct invoice_no from nc_ap_bill_lines
+         where supplier_code = :code and invoice_no is not null
+    """), {"code": supplier_code})).all():
+        known.update(invoice_tokens(inv))
+
+    rows = (await db.execute(text(f"""
+        select v.jv_number, v.voucher_date, v.source_subsystem,
+               coalesce(l.orig_debit, 0) as debit, coalesce(l.orig_credit, 0) as credit,
+               upper(concat_ws(' | ', l.summary, v.summary)) as summary,
+               coalesce(l.summary, v.summary) as summary_raw
+          from journal_voucher_lines l
+          join journal_vouchers v on v.id = l.jv_id
+         where trim(l.partner_name) = :name
+           and l.account_code like '{AP_ACCOUNT_PREFIX}%'
+           and l.currency = :ccy
+           and (coalesce(l.orig_debit, 0) <> 0 or coalesce(l.orig_credit, 0) <> 0)
+         order by v.voucher_date, v.jv_number
+    """), {"name": supplier_name.strip(), "ccy": currency})).mappings().all()
+
+    # Drop self-cancelling pairs: equal and opposite effect, matched greedily
+    # in date order.
+    effects = [_effect(r["debit"], r["credit"]) for r in rows]
+    waiting: dict[Decimal, list[int]] = defaultdict(list)
+    cancelled: set[int] = set()
+    for i, e in enumerate(effects):
+        if waiting.get(-e):
+            cancelled.update((i, waiting[-e].pop(0)))
+        else:
+            waiting[e].append(i)
+
+    since = unpaid["since"]
+    lines = []
+    for i, r in enumerate(rows):
+        e = effects[i]
+        if (i in cancelled or e <= 0 or r["source_subsystem"] == "AP"
+                or r["voucher_date"] is None or r["voucher_date"] < since):
+            continue
+        if any(_mentions(r["summary"], t) for t in known):
+            continue
+        lines.append({
+            "jv_number": r["jv_number"],
+            "voucher_date": r["voucher_date"].isoformat(),
+            "subsystem": r["source_subsystem"],
+            "amount": str(e),
+            "summary": r["summary_raw"],
+        })
+    return {
+        "since": since.isoformat() if since else None,
+        "unpaid_bills": int(unpaid["bills"]),
+        "unpaid_open": str(unpaid["open"]),
+        "lines": lines[-limit:],
+        "total": str(sum((Decimal(x["amount"]) for x in lines), Decimal(0))),
+    }
