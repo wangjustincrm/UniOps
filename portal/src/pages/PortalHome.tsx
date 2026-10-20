@@ -249,7 +249,7 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
   place_order: 'Place Order',
   confirm_settlement: 'Confirm Settlement',
   review_match: 'Review Invoice Match',
-  match_invoice: 'Match Invoice to PO',
+  match_invoice: 'Match Invoice',
   process_pa: 'Process Payment Application',
   approve_agr: 'Approve Agreement',
   revise_agr: 'Revise Agreement',

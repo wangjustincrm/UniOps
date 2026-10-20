@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button'
 import { useAssignMatch } from '@/hooks/useInvoices'
 import { userService } from '@/services/users'
 
-export function AssignMatchDialog({ invoiceId, currentAssigneeName, onClose, onAssigned }: {
+export function AssignMatchDialog({ invoiceId, currentAssigneeName, courier = false, onClose, onAssigned }: {
   invoiceId: string
   currentAssigneeName?: string | null
+  /** A courier invoice: the work is matching its shipments, not a PO. */
+  courier?: boolean
   onClose: () => void
   onAssigned?: () => void
 }) {
@@ -41,7 +43,7 @@ export function AssignMatchDialog({ invoiceId, currentAssigneeName, onClose, onA
           <div className="flex items-center gap-2">
             <UserPlus className="h-4 w-4 text-primary-600" />
             <h2 className="text-sm font-semibold text-neutral-900">
-              {currentAssigneeName ? 'Reassign PO Matching' : 'Assign PO Matching'}
+              {`${currentAssigneeName ? 'Reassign' : 'Assign'} ${courier ? 'Shipment' : 'PO'} Matching`}
             </h2>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">

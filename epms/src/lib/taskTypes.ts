@@ -42,7 +42,7 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   place_order: 'Place Order',
   confirm_settlement: 'Confirm Settlement',
   review_match: 'Confirm Invoice Match',
-  match_invoice: 'Match Invoice to PO',
+  match_invoice: 'Match Invoice',
   resolve_exception: 'Resolve Match Exception',
   process_pa: 'Process Payment Application',
   approve_agr: 'Approve Agreement',

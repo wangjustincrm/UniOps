@@ -1423,11 +1423,30 @@ function UnmatchedTab() {
                     <div className="flex items-center gap-2">
                       {inv.match_route === 'freight' ? (
                         // Courier invoices are matched to shipments on their own
-                        // page; PO matching, assignment and delete here refuse them.
-                        <Link to={`/invoices/${inv.id}`}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors">
-                          Match shipments
-                        </Link>
+                        // page (PO matching and delete here refuse them); AP can
+                        // still assign the matching to someone, like any invoice.
+                        <>
+                          {inv.match_assignee_name && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 border border-primary-200 px-2 py-0.5 text-[11px] font-medium text-primary-700">
+                              <UserPlus className="h-3 w-3" />
+                              {inv.match_assignee_name}
+                            </span>
+                          )}
+                          <Link to={`/invoices/${inv.id}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors">
+                            Match shipments
+                          </Link>
+                          {isAp && (
+                            <button
+                              onClick={() => { setExpandedId(null); setDeletingId(null); setAssigningInv(inv) }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 transition-colors"
+                              title="Assign to someone"
+                            >
+                              <UserPlus className="h-3.5 w-3.5" />
+                              {inv.match_assignee_name ? 'Reassign' : 'Assign'}
+                            </button>
+                          )}
+                        </>
                       ) : deletingId === inv.id ? (
                         <>
                           <span className="text-xs text-danger-600 font-medium">Delete?</span>
@@ -1503,6 +1522,7 @@ function UnmatchedTab() {
         <AssignMatchDialog
           invoiceId={assigningInv.id}
           currentAssigneeName={assigningInv.match_assignee_name}
+          courier={assigningInv.match_route === 'freight'}
           onClose={() => setAssigningInv(null)}
           onAssigned={() => setAssigningInv(null)}
         />

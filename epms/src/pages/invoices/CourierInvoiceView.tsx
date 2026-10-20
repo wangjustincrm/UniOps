@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowLeft, Loader2, RefreshCw, CheckCircle2, RotateCcw, Trash2, CreditCard, AlertTriangle,
+  ArrowLeft, Loader2, RefreshCw, CheckCircle2, RotateCcw, Trash2, CreditCard, AlertTriangle, UserPlus,
   FileText, ExternalLink, Upload, Link2,
 } from 'lucide-react'
 import { BackLink } from '@/components/BackLink'
@@ -50,7 +50,9 @@ export function CourierInvoiceView({ id }: { id: string }) {
   const busy = updateLine.isPending || autoMatch.isPending || finalize.isPending || reopen.isPending || del.isPending
 
   // Pending shipments of this carrier — registered but not on this invoice.
-  const editable = inv?.status === 'unmatched' && canManage
+  // Matching: Freight manage, or the person AP assigned it to (server says).
+  const canMatch = !!inv?.can_match
+  const editable = inv?.status === 'unmatched' && canMatch
   const { data: pendingData } = useFreightShipments(
     { status: 'pending', carrier_id: inv?.carrier_id, page_size: 200 }, !!inv?.carrier_id && editable,
   )
@@ -160,7 +162,9 @@ export function CourierInvoiceView({ id }: { id: string }) {
                 ? <span className="text-xs text-neutral-500">Every change saves at once{updateLine.isPending && ' — saving…'}</span>
                 : canManage
                   ? <span className="text-xs text-neutral-400">Reopen the invoice to change the matching</span>
-                  : <span className="text-xs text-neutral-400">Read-only — courier invoices are matched by the freight manager</span>}
+                  : inv.status !== 'unmatched'
+                    ? <span className="text-xs text-neutral-400">Matched — the freight manager raises the Freight PA</span>
+                    : <span className="text-xs text-neutral-400">Read-only — courier invoices are matched by the freight manager or the person AP assigns</span>}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -211,8 +215,18 @@ export function CourierInvoiceView({ id }: { id: string }) {
         {/* Side panel */}
         <div className="order-first grid items-start gap-4 md:grid-cols-3 2xl:order-none 2xl:flex 2xl:flex-col">
           <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-2">
-            {!canManage && !inv.pa_id && (
-              <p className="text-xs text-neutral-500">Courier invoice — matched to shipments and paid by the freight manager (Freight manage permission).</p>
+            {inv.match_assignee_name && inv.status === 'unmatched' && (
+              <p className="flex items-center gap-1.5 text-xs text-neutral-600">
+                <UserPlus className="h-3.5 w-3.5 text-primary-600" /> Assigned to <span className="font-medium">{inv.match_assignee_name}</span>
+              </p>
+            )}
+            {!canMatch && inv.status === 'unmatched' && (
+              <p className="text-xs text-neutral-500">Courier invoice — matched to shipments by the freight manager or the person AP assigns, and paid by the freight manager.</p>
+            )}
+            {/* By status, not by who may match: finalising closes the
+                assignee's task, and with it their right to match. */}
+            {!canManage && inv.status === 'matched' && !inv.pa_id && (
+              <p className="text-xs text-neutral-500">Matched. The freight manager raises the Freight PA.</p>
             )}
             {editable && (
               <>
@@ -237,7 +251,7 @@ export function CourierInvoiceView({ id }: { id: string }) {
             {inv.status === 'matched' && inv.pa_id && (
               <p className="text-xs text-neutral-500">This invoice is on <Link to={`/pa/${inv.pa_id}`} className="font-mono text-primary-700 hover:underline">{inv.pa_number}</Link>. Cancel or return that PA to change the matching.</p>
             )}
-            {editable && (
+            {editable && canManage && (
               <button onClick={handleDelete} disabled={busy}
                 className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-danger-600 hover:bg-danger-50 disabled:opacity-40">
                 <Trash2 className="h-3.5 w-3.5" /> {del.isPending ? 'Deleting…' : 'Delete invoice'}

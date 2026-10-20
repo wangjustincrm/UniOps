@@ -152,6 +152,10 @@ export interface FreightInvoice {
   pa_id: string | null
   pa_number: string | null
   finalize_blockers: string[]
+  /** The caller may match it: Freight manage, or the person AP assigned it to. */
+  can_match: boolean
+  match_assignee_id: string | null
+  match_assignee_name: string | null
 }
 
 export interface FreightInvoiceListItem {
