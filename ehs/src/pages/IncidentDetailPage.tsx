@@ -505,10 +505,15 @@ export default function IncidentDetailPage() {
                   {closeIncident.isPending ? 'Closing…' : 'Close incident'}
                 </button>
               </div>
+              {/* ★ Round 8, TC-11: "when trying to record a HSE review, place a
+                  warning reminding the user why the incident can not be reviewed
+                  just like trying to close." The review refused in silence —
+                  its refusal was never shown. Both now say why, the same way. */}
+              {review.isError && (
+                <Refusal title="It cannot be reviewed yet" error={review.error} />
+              )}
               {closeIncident.isError && (
-                <p className="mt-2 text-xs text-danger-700">
-                  {(closeIncident.error as ApiError).message}
-                </p>
+                <Refusal title="It cannot be closed yet" error={closeIncident.error} />
               )}
             </div>
           )}
@@ -1000,6 +1005,22 @@ function ChangeKind({ incident, onDone }: { incident: Incident; onDone: () => vo
                 onClick={() => { if (!save.isPending) save.mutate() }}>
           {save.isPending ? 'Saving…' : 'Change it'}
         </button>
+      </div>
+    </div>
+  )
+}
+
+
+/** Why the server would not do it, said where the button was pressed. */
+function Refusal({ title, error }: { title: string; error: unknown }) {
+  return (
+    <div role="alert" className="mt-2 flex items-start gap-2 rounded-lg border border-warning-300 bg-warning-50 px-3 py-2">
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning-700" aria-hidden />
+      <div className="text-xs text-warning-800">
+        <p className="font-semibold">{title}</p>
+        <p className="mt-0.5 whitespace-pre-line">
+          {error instanceof ApiError ? error.message : 'Something went wrong. Try again.'}
+        </p>
       </div>
     </div>
   )
