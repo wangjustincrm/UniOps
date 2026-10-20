@@ -203,10 +203,23 @@ async def list_(
     limit: int = 50,
     offset: int = 0,
     order: str = "newest",
+    has_root_causes: bool = False,
+    has_actions: bool = False,
 ) -> list[Incident]:
     stmt = select(Incident)
     if reported_by:
         stmt = stmt.where(Incident.reported_by == reported_by)
+    # ★ Round 8, TC-08: the register's figures open the incidents behind them.
+    # Matched to how register_summary counts: root causes marked root, and
+    # corrective actions raised on the incident and not cancelled.
+    if has_root_causes:
+        from app.models.incident import Cause
+        stmt = stmt.where(select(Cause.id).where(
+            Cause.incident_id == Incident.id, Cause.cause_type == "root").exists())
+    if has_actions:
+        from app.models.action import Action
+        stmt = stmt.where(select(Action.id).where(
+            Action.source_id == Incident.id, Action.status != "cancelled").exists())
     # ★ These four exist so a figure on the dashboard can be opened and show
     # the records it was counted from. A drill-down that lands on a list
     # filtered by something *near* the figure is worse than none: the reader

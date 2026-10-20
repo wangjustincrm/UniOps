@@ -58,3 +58,22 @@ async def test_without_the_register_only_your_own(test_engine, db_session, hse_m
     assert mine["open"] == 1
     _, hse = hse_manager
     assert (await hse.get("/api/v1/incidents/summary")).json()["open"] >= 2
+
+
+async def test_each_figure_opens_the_incidents_behind_it(test_engine, db_session, hse_manager):
+    """★ Round 8, TC-08: "make the number in the boxes clickable so that the
+    user … is shown the incidents that make up that number." """
+    _, hse = hse_manager
+    _, with_both = await _report(test_engine, db_session, anonymous=False, kind="near_miss")
+    _, plain = await _report(test_engine, db_session, anonymous=False, kind="near_miss")
+    assert (await hse.put(f"/api/v1/incidents/{with_both}/causes", json=CAUSES)).status_code == 200
+    owner = await make_user(test_engine, role="area_supervisor")
+    assert (await hse.post("/api/v1/actions", json={
+        "source_type": "incident", "source_id": with_both, "title": "Fit a drain",
+        "hierarchy_of_control": "engineering", "owner_id": str(owner.id),
+        "due_date": (date.today() + timedelta(days=7)).isoformat()})).status_code == 201
+
+    for flag in ("has_root_causes", "has_actions"):
+        ids = {i["id"] for i in (await hse.get(
+            "/api/v1/incidents", params={flag: "true", "limit": 200})).json()}
+        assert with_both in ids and plain not in ids, flag

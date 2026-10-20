@@ -210,6 +210,8 @@ async def list_incidents(
     # On the server, so it orders the whole register rather than the fifty rows
     # that happened to arrive.
     order: str = Query(default="newest", pattern="^(newest|oldest|status)$"),
+    has_root_causes: bool = Query(default=False, description="Only those with a root cause identified"),
+    has_actions: bool = Query(default=False, description="Only those with a corrective action not cancelled"),
 ):
     # Without ehs.incident.read the register is not browsable, but a person's
     # own reports are: the list narrows rather than refusing outright.
@@ -223,6 +225,7 @@ async def list_incidents(
         no_department=no_department, body_part_label=body_part_label,
         injured_only=injured_only, recordable_only=recordable_only,
         reported_by=_user_id(user) if mine_only else None, order=order,
+        has_root_causes=has_root_causes, has_actions=has_actions,
     )
     return [IncidentListItem.model_validate(r) for r in rows]
 
