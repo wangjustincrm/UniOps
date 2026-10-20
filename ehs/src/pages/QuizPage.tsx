@@ -15,7 +15,9 @@
  */
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { deriveTabMeta, useOptionalTabStoreApi } from '@uniops/shell'
+import { ehsRoutes } from '@/app/routes'
 import { Check, ClipboardList, Plus, QrCode, Trash2, UserCheck, X } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { Pagination, SearchBox, useListView } from '@/components/ListView'
@@ -281,6 +283,9 @@ function NewQuizForm({ onClose }: { onClose: () => void }) {
  */
 export function TakeQuizPage() {
   const { id = '' } = useParams()
+  const takeNavigate = useNavigate()
+  const takeLocation = useLocation()
+  const tabs = useOptionalTabStoreApi()
   const [index, setIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<string, string[]>>({})
   const [result, setResult] = useState<Attempt | null>(null)
@@ -324,6 +329,16 @@ export function TakeQuizPage() {
       // still say "pass the quiz first" when the person goes back to sign.
       const docId = quiz.data?.document_id
       if (docId) takeClient.invalidateQueries({ queryKey: ['document', docId] })
+      // ★ Round 8 (open box): "when a worker opens and completes the quiz, close
+      // the quiz window when the worker clicks on the quiz finish button. return
+      // to the document screen so the worker just needs to sign the document."
+      // Only on a pass: a fail stays here, with what was wrong and a retake.
+      if (docId && r.passed) {
+        // The tab's key is derived from the route, not the path.
+        const here = deriveTabMeta(ehsRoutes, takeLocation.pathname)?.key
+        takeNavigate(`/documents/${docId}`)
+        if (here) setTimeout(() => tabs?.getState().closeTab(here), 0)
+      }
     },
   })
 
