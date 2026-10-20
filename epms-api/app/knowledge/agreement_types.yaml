@@ -33,6 +33,18 @@ values:
     notes:
       - Purchases are charged against an open purchase order rather than a new
         one per transaction.
+      - >-
+        Each purchase is backed by an agreement receipt (a delivery note or
+        slip) recorded on the agreement. When the vendor's invoice is matched to
+        the agreement, the receipts it covers are attached to it on the
+        invoice's 3-Way Match tab — or, if there are none, it is settled
+        without receipt evidence with a reason. A payment application cannot be
+        raised until one of the two is done.
+      - >-
+        Matching an invoice to a house account with nothing attached gives the
+        agreement's owner an "Attach Invoice Receipts" task (no owner: a
+        manager of the agreement's department; neither: the AP pool). AP, the
+        invoice's uploader and the agreement's owner can all attach receipts.
 
   - value: recurring
     label: Recurring
@@ -95,3 +107,18 @@ rules:
       date passes, so whether it is in force is read from Valid From / Valid To
       (plus its grace days for invoices).
     enforced_in: "epms-api app/crud/agreement.py (no write of expired/closed anywhere)"
+  - id: who_attaches_house_account_receipts
+    asked_as:
+      - who can attach receipts to an agreement invoice
+      - why can the agreement owner not see the receipts on the invoice
+      - 谁可以给协议发票挂收货凭证
+    answer: >
+      AP, the person who uploaded the invoice, whoever holds the invoice's
+      Match Invoice or Attach Invoice Receipts task, and the agreement's owner.
+      When an invoice is matched to a house account agreement without any
+      receipt attached, an "Attach Invoice Receipts" task goes to the
+      agreement's owner (no owner: a manager of the agreement's department;
+      neither: the AP pool). It closes on its own once receipts are attached or
+      the invoice is settled without receipt evidence, and it moves with the
+      agreement if the owner changes.
+    enforced_in: "epms-api app/api/v1/invoices.py _require_invoice_receipt_access; app/crud/attach_receipts_task.py; PRD EPMS AGR-032"

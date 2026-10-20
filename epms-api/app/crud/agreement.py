@@ -165,6 +165,8 @@ async def update(
     # Wired here too so the two write paths cannot drift apart.
     if agr.owner_id != previous_owner_id:
         await agreement_schedule.reassign_open_confirm_tasks(db, agr)
+        from app.crud import attach_receipts_task
+        await attach_receipts_task.reassign_for_agreement(db, agr)
     await db.commit()
     await db.refresh(agr)
     return agr

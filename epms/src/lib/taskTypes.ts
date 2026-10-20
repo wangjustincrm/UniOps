@@ -44,6 +44,8 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   review_match: 'Confirm Invoice Match',
   match_invoice: 'Match Invoice to PO',
   resolve_exception: 'Resolve Match Exception',
+  // house_account 发票 match 后还没挂凭证,派给协议 owner(epms-api crud/attach_receipts_task.py)
+  attach_receipts: 'Attach Invoice Receipts',
   process_pa: 'Process Payment Application',
   approve_agr: 'Approve Agreement',
   revise_agr: 'Revise Agreement',

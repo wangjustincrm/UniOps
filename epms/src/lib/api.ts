@@ -176,7 +176,11 @@ async function request<T>(
         detail = err.message
       }
     } catch { /* ignore parse error */ }
-    throw new Error(detail)
+    // The HTTP status rides along so a caller can tell "you may not" (403)
+    // from "it failed" — the same shape the finance-api client below uses.
+    const error = new Error(detail) as Error & { status?: number }
+    error.status = res.status
+    throw error
   }
 
   return res.json() as Promise<T>
