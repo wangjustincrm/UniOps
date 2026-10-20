@@ -76,3 +76,78 @@ async def test_vms_records_cannot_be_deleted(test_engine):
     async with factory() as db:
         assert (await db.execute(select(Visitor).where(Visitor.id == visitor_id))).scalar_one_or_none()
         assert (await db.execute(select(Visit).where(Visit.id == visit_id))).scalar_one_or_none()
+
+
+@pytest.mark.asyncio
+async def test_visit_edit_reschedules_planned_times(test_engine):
+    """Data Maintenance reschedules a visit through planned_arrival /
+    planned_departure — the fields the Visit List, the detail page and the
+    no-show job read. visit_date is read-only and follows planned_arrival's
+    plant-local day; a time typed without an offset is plant time."""
+    from app.models.admin_audit_log import AdminAuditLog
+    from app.models.visit import Visit, VisitPurpose, AccessArea, VisitStatus
+    from app.models.visitor import Visitor, VisitorType
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    host = await make_user(test_engine, role="requester")
+    admin = await make_user(test_engine, role="system_admin")
+    visitor_id, visit_id = uuid.uuid4(), uuid.uuid4()
+    async with factory() as db:
+        db.add(Visitor(id=visitor_id, first_name="Mike", last_name="Reschedule",
+                       company_name="Acme Corp", visitor_type=VisitorType.contractor))
+        await db.commit()
+    async with factory() as db:
+        db.add(Visit(id=visit_id, visitor_id=visitor_id, additional_visitor_ids=[],
+                     host_id=host.id, created_by=host.id, visit_date=date(2026, 10, 20),
+                     planned_arrival=datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc),
+                     planned_departure=datetime(2026, 10, 20, 21, 0, tzinfo=timezone.utc),
+                     visit_purpose=VisitPurpose.maintenance,
+                     access_area=AccessArea.warehouse, status=VisitStatus.confirmed,
+                     visit_title="Visit with Mike Reschedule (Acme Corp)"))
+        await db.commit()
+
+    async with authed_client(make_token(admin.id, "system_admin")) as client:
+        entities = {e["key"]: e for e in (await client.get("/api/v1/admin/entities")).json()}
+        fields = {f["name"]: f for f in entities["visit"]["fields"]}
+        assert fields["planned_arrival"]["editable"] is True
+        assert fields["planned_departure"]["editable"] is True
+        assert fields["visit_date"]["editable"] is False
+
+        rec = (await client.get(f"/api/v1/admin/visit/{visit_id}")).json()
+        assert rec["planned_arrival"] == "2026-10-20T08:00:00-04:00"   # plant time, not UTC
+
+        # visit_date alone can no longer be edited.
+        r = await client.patch(f"/api/v1/admin/visit/{visit_id}", json={"visit_date": "2026-10-21"})
+        assert r.status_code == 400
+
+        # Departure before arrival is refused, nothing written.
+        r = await client.patch(f"/api/v1/admin/visit/{visit_id}", json={
+            "planned_arrival": "2026-10-21T08:00", "planned_departure": "2026-10-21T07:00"})
+        assert r.status_code == 400
+
+        r = await client.patch(f"/api/v1/admin/visit/{visit_id}", json={
+            "planned_arrival": "2026-10-21T08:00", "planned_departure": "2026-10-21T17:00-04:00"})
+        assert r.status_code == 200, r.text
+        assert r.json()["visit_date"] == "2026-10-21"
+
+        # A late-evening plant time is still that plant day, not the UTC next day.
+        r = await client.patch(f"/api/v1/admin/visit/{visit_id}", json={
+            "planned_arrival": "2026-10-21T21:30", "planned_departure": None})
+        assert r.status_code == 200, r.text
+        assert r.json()["visit_date"] == "2026-10-21"
+
+        r = await client.patch(f"/api/v1/admin/visit/{visit_id}", json={
+            "planned_arrival": "2026-10-21T08:00", "planned_departure": "2026-10-21T17:00"})
+        assert r.status_code == 200, r.text
+
+    async with factory() as db:
+        v = (await db.execute(select(Visit).where(Visit.id == visit_id))).scalar_one()
+        assert v.planned_arrival == datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)
+        assert v.planned_departure == datetime(2026, 10, 21, 21, 0, tzinfo=timezone.utc)
+        assert v.visit_date == date(2026, 10, 21)
+        logs = (await db.execute(
+            select(AdminAuditLog).where(AdminAuditLog.record_id == visit_id)
+        )).scalars().all()
+        # The re-derived visit_date is recorded even though it was not in the patch.
+        assert any(l.before.get("visit_date") == "2026-10-20" and l.after.get("visit_date") == "2026-10-21"
+                   for l in logs)

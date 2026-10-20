@@ -1,9 +1,14 @@
 # VMS (Visitor Management System) — Product Requirements Document
 
-**Version**: V2.10
-**Date**: 2026-10-19
+**Version**: V2.11
+**Date**: 2026-10-20
 **Status**: As-built. Describes the system on the main line as of 2026-10-16. Everything marked **Implemented** is in production; wanted-but-not-built items are marked **Not implemented** and collected in §13 Open Items.
 **Scope**: Visitor appointments, approval, health and safety checks, badge printing (= check-in), QR check-out, overdue alerts and the compliance audit trail for Canada Royal Milk ULC's plant and offices.
+
+**What changed in V2.11** (2026-10-20)
+
+- Data Maintenance reschedules a visit through **Planned arrival / Planned departure** (shown and typed in plant time). **Visit date** is read-only there and follows the planned arrival's plant-local day. Before, only Visit date was editable: the Visit List, the visit page and the no-show job kept the old day (§2.5.5, D-24).
+- New finding: a visit created with a planned arrival more than 2 hours in the past is marked No Show by the next scheduler run, minutes after it is created (OI-35).
 
 **What changed in V2.10** (2026-10-19)
 
@@ -699,7 +704,7 @@ Without a session the app redirects to Portal sign-in; an expired session return
 - **Launcher**: Portal sidebar → Modules → "VMS" and the home-page card "VMS — Visitor appointments, badge printing, on-site tracking"; visible to every user.
 - **Task Inbox**: VMS tasks appear in Portal "My Task Inbox" under **Visitor**; a click opens the visit or the visitor compliance page in VMS. Portal has no approve buttons for VMS — approval happens on the VMS visit page.
 - **Approval chain**: Portal → Admin → Approval Workflows → VMS Visit. The Quality Manager roster itself lives in VMS Admin.
-- **Data Maintenance**: VMS visits and visitors can be edited (not deleted) by System Admin.
+- **Data Maintenance**: VMS visits and visitors can be edited (not deleted) by System Admin. A visit is rescheduled through Planned arrival / Planned departure, shown in plant time; a time typed without a UTC offset is taken as plant time. Departure must be after arrival. Visit date is read-only and is reset to the planned arrival's plant-local day on save, and the audit entry records it. Changing the schedule does not change the status: a visit already marked No Show stays No Show.
 - **Branding**: company name, logo and tagline come from Portal company settings.
 
 See PORTAL.md.
@@ -957,6 +962,7 @@ The September 2026 code audit (V2.7) listed defects D-00 to D-22. All except two
 | D-21 | Gap | Primary role only; no VMS permission keys | Deferred (§13) |
 | D-22 | Gap | Visitor search matched one column at a time | Fixed |
 | D-23 | High | Approval submission failed when the visit title exceeded 40 characters (long visitor name + company) | Fixed 2026-10-15 — title shortened to 40 characters |
+| D-24 | Medium | Data Maintenance could edit only Visit date, not the planned arrival / departure. The list and visit page kept the old day, and the no-show job fired on it | Fixed 2026-10-20 — planned times editable, Visit date derived |
 
 ---
 
@@ -998,6 +1004,7 @@ The September 2026 code audit (V2.7) listed defects D-00 to D-22. All except two
 | OI-32 | Access-card system integration; self-service kiosk | Not implemented |
 | OI-33 | QA sign-off of the health-declaration questions | Open |
 | OI-34 | Paper visitor-register template and historical data migration; printer model confirmation | Open |
+| OI-35 | A visit created (or rescheduled) with a planned arrival already more than 2 hours past is marked No Show by the next scheduler run, and a pending approval is cancelled with it. Seen 2026-10-20: created 16:30 for 08:00 the same day, No Show 3 minutes later | Open |
 
 ---
 
@@ -1016,3 +1023,5 @@ The September 2026 code audit (V2.7) listed defects D-00 to D-22. All except two
 | V2.7 | Sep 2026 | Full as-built audit: status on every requirement, as-built rules, permission matrix, defects D-01..D-22 |
 | V2.8 | Oct 2026 | Fixes for the V2.7 defects (released 1 Oct 2026); D-00 found and fixed |
 | V2.9 | 16 Oct 2026 | V2.8 folded into the body; 40-character approval title; resubmission resumes at the returning step; platform notification outbox; new findings (delegation visibility, visitor edit rights); Open Items consolidated; self-registration cross-referenced as not built; implementation detail removed |
+| V2.10 | 19 Oct 2026 | Column-header sorting on visit lists, audit log, health declarations and active visits; All Visits and Today page on the server |
+| V2.11 | 20 Oct 2026 | Data Maintenance reschedules visits through planned arrival / departure; Visit date derived (D-24); new open item OI-35 (past planned arrival is no-showed at once) |
