@@ -105,3 +105,14 @@ def test_budget_unreachable_is_treated_as_within_budget():
 
     assert "return False, None" in inspect.getsource(pr_crud.compute_budget_check)
     assert "treated as within budget" in _rules("pr")["budget_not_reserved"]
+
+
+# ── ISS-0065: the retired Direct PA is not a process to describe ─────────────
+
+def test_direct_pa_is_not_offered_as_a_process():
+    from app.services import assistant_llm, guide_view
+
+    assert "pa_dir" not in guide_view.SUPPORTED_PROCESSES
+    enum = assistant_llm._PROCESS_TOOL["input_schema"]["properties"]["doc_type"]["enum"]
+    assert "pa_dir" not in enum
+    assert "discontinued" in _rules("pa")["direct_pa_retired"]

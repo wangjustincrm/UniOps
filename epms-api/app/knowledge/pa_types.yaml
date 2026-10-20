@@ -114,3 +114,14 @@ rules:
       PA-YYYYMMDD-NNNN: the date it was created, then a 4-digit sequence that
       restarts each day. The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
     enforced_in: "epms-api app/crud/pa.py _next_number"
+  - id: direct_pa_retired
+    asked_as:
+      - what is a direct payment application
+      - can I raise a direct PA
+      - 直接付款申请怎么走
+    answer: >
+      Direct Payment Applications (OA's PA-DIR, a payment with no purchase
+      order) have been discontinued and can no longer be created; the system
+      refuses a new one and says to raise the payment against a purchase order
+      instead. Ones that already exist can still be opened, approved and paid.
+    enforced_in: "expense-api app/api/v1/pa.py DIRECT_PA_RETIRED (create returns 410 Gone)"
