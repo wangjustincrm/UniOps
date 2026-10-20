@@ -32,9 +32,9 @@ import { FilePreviewPanel } from './FilePreviewPanel'
 import { PdfSplitPanel } from './PdfSplitPanel'
 import { readPageCount, splitPdf, type PageGroup } from '@/lib/pdf-split'
 import { AssignMatchDialog } from './AssignMatchDialog'
-import { CourierUploadDialog } from './CourierUploadDialog'
-import { FreightRouteBadge, Modal } from '@/pages/freight/freightUi'
-import { useFreightAccess } from '@/hooks/useFreight'
+import { CourierInvoiceReview } from './CourierInvoiceReview'
+import { FreightRouteBadge } from '@/pages/freight/freightUi'
+import { useFreightAccess, useFreightCarriers } from '@/hooks/useFreight'
 import { InvoiceChainDrawer } from './InvoiceChainDrawer'
 
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
@@ -131,6 +131,20 @@ const vendorNamesLookAlike = (a: string, b: string): boolean => {
   return x.length > 2 && y.length > 2 && (x.includes(y) || y.includes(x))
 }
 
+/** Stricter than vendorNamesLookAlike, because this one DOES pick: the name the
+ *  AI read off the invoice is taken to be a carrier's vendor only when the two
+ *  agree once suffixes and punctuation are dropped, or one is the other's start
+ *  of at least 4 characters ("UPS Canada" ↔ "UPS Canada Ltd."), so "Upstate
+ *  Supplies" is never taken for "UPS". A miss only leaves the vendor to pick. */
+const carrierNameMatches = (carrierVendor: string, read: string): boolean => {
+  const norm = (v: string) => v.toLowerCase()
+    .replace(/\b(inc|ltd|llc|corp|co|company|limited|incorporated)\b/g, '')
+    .replace(/[^a-z0-9]/g, '')
+  const x = norm(carrierVendor), y = norm(read)
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x]
+  return x === y ? x.length >= 2 : short.length >= 4 && long.startsWith(short)
+}
+
 function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const { data: invoicesData } = useInvoices()
   const invoices = invoicesData?.items ?? []
@@ -151,6 +165,8 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
   const { data: vendorsData } = useVendors({ search: vendorQuery || undefined, active_only: true, page_size: 50 })
   const vendorOptions = vendorsData?.items ?? []
+  // A carrier's invoice is always a courier invoice (Freight → Carriers).
+  const { data: carriers = [] } = useFreightCarriers()
   const [vendorInvoiceNumber, setVendorInvoiceNumber] = useState('')
   const [poNumber, setPoNumber] = useState('')
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10))
@@ -262,10 +278,18 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       setDocType(detected ? 'credit_note' : 'invoice')
       setDocTypeAutoDetected(detected)
 
+      const carrierHit = fields.vendorName
+        ? carriers.find((c) => c.is_active && !!c.vendor_name && carrierNameMatches(c.vendor_name, fields.vendorName!))
+        : undefined
       if (fields.vendorName) {
         if (keepVendor && vendorNamesLookAlike(keepVendor.name, fields.vendorName)) {
           // Same company as the invoice before it — leave the pick alone rather
           // than dropping the user back into the picker for every slice.
+        } else if (carrierHit) {
+          // A carrier's own name: pick it, which hands the form to the courier
+          // review below (it reads the shipment detail itself).
+          setSelectedVendor({ id: carrierHit.vendor_id, name: carrierHit.vendor_name!, code: '' })
+          filled.add('vendorName')
         } else {
           setSelectedVendor(null)
           setVendorQuery(fields.vendorName)
@@ -633,6 +657,27 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   }
 
   const fieldErr = (val: string) => submitted && !val.trim() ? 'border-danger-400' : 'border-neutral-300'
+
+  // ── Courier invoice: the vendor is a carrier's ─────────────────────────────
+  // Rule (2026-10-20): a carrier's invoice is always a courier invoice. Its
+  // review replaces the rest of this form; the same PDF is read again for the
+  // per-shipment detail. Credit notes keep the ordinary credit path.
+  const courierCarrier = docType === 'invoice' && selectedVendor && !createdInv
+    ? carriers.find((c) => c.is_active && c.vendor_id === selectedVendor.id)
+    : undefined
+  if (courierCarrier) {
+    return (
+      <CourierInvoiceReview
+        key={`${queueIndex}-${file?.name ?? 'manual'}`}
+        carrier={courierCarrier}
+        file={file?.raw ?? null}
+        queueLabel={queueTotal > 1 ? `Invoice ${queueIndex + 1} of ${queueTotal}` : undefined}
+        onBack={() => { setSelectedVendor(null); setVendorOpen(true) }}
+        onClose={onClose}
+        onCreated={(id) => finishOne(id)}
+      />
+    )
+  }
 
   // ── Step 2: line-level allocation (invoice created, PO recognized) ──────────
   if (createdInv) {
@@ -1866,14 +1911,12 @@ export default function InvoiceListPage() {
   const navigate = useNavigate()
 
   const [activeTab, setActiveTab] = useState<Tab>('all')
-  // null = closed; 'choose' only when both kinds are open to this user.
-  const [upload, setUpload] = useState<null | 'choose' | 'vendor' | 'courier'>(null)
+  const [showUpload, setShowUpload] = useState(false)
 
   const canUpload = user?.role === 'system_admin' || !!perms?.invoice_upload
-  // Courier invoices are created through the Freight API, gated on
-  // epms.freight.manage alone — a freight manager need not hold invoice_upload.
+  // One upload form for every invoice; a carrier's is recognised by its vendor.
+  // The freight manager may upload courier invoices without invoice_upload.
   const canCourier = !!useFreightAccess().data?.manage
-  const openUpload = () => setUpload(canUpload && canCourier ? 'choose' : canCourier ? 'courier' : 'vendor')
 
   const unmatchedCount  = invoices.filter((i) => i.status === 'unmatched').length
   const exceptionCount  = invoices.filter((i) => i.status === 'exception').length
@@ -1899,7 +1942,7 @@ export default function InvoiceListPage() {
           </p>
         </div>
         {(canUpload || canCourier) && (
-          <Button onClick={openUpload} className="gap-2">
+          <Button onClick={() => setShowUpload(true)} className="gap-2">
             <Upload className="h-4 w-4" />
             Upload Invoice
           </Button>
@@ -1952,46 +1995,16 @@ export default function InvoiceListPage() {
       {activeTab === 'all'        && <AllInvoicesTab />}
       {activeTab === 'from_oa'    && <OaInvoicesTab />}
 
-      {/* Upload */}
-      {upload === 'choose' && (
-        <Modal title="Upload Invoice" subtitle="What are you uploading?" onClose={() => setUpload(null)}>
-          <div className="flex flex-col gap-3">
-            <UploadKindButton
-              title="Vendor invoice or credit note"
-              hint="Matched to a PO or an agreement"
-              onClick={() => setUpload('vendor')} />
-            <UploadKindButton
-              title="Courier invoice (Freight)"
-              hint="UPS, FedEx, Purolator… — matched to registered shipments and cost centers"
-              onClick={() => setUpload('courier')} />
-          </div>
-        </Modal>
-      )}
-      {upload === 'vendor' && (
+      {/* Upload modal */}
+      {showUpload && (
         <UploadModal
-          onClose={() => setUpload(null)}
+          onClose={() => setShowUpload(false)}
           onUploaded={(id, kind) => {
-            setUpload(null)
+            setShowUpload(false)
             navigate(kind === 'credit' ? '/vendor-credits' : `/invoices/${id}`)
           }}
         />
       )}
-      {upload === 'courier' && (
-        <CourierUploadDialog
-          onClose={() => setUpload(null)}
-          onCreated={(id) => { setUpload(null); navigate(`/invoices/${id}`) }}
-        />
-      )}
     </div>
-  )
-}
-
-function UploadKindButton({ title, hint, onClick }: { title: string; hint: string; onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick}
-      className="flex flex-col items-start rounded-xl border border-neutral-200 px-4 py-3 text-left hover:border-primary-300 hover:bg-primary-50/60 transition-colors">
-      <span className="text-sm font-medium text-neutral-900">{title}</span>
-      <span className="text-xs text-neutral-500 mt-0.5">{hint}</span>
-    </button>
   )
 }

@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Loader2, Upload, Plus, Trash2, AlertTriangle, CheckCircle2, FileText } from 'lucide-react'
+import { Loader2, Plus, Trash2, AlertTriangle, CheckCircle2, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, formatAmount, formatBytes } from '@/lib/utils'
-import { useFreightCarriers, useCreateFreightInvoice, useUploadFreightAttachment } from '@/hooks/useFreight'
+import { useCreateFreightInvoice, useUploadFreightAttachment } from '@/hooks/useFreight'
 import {
   freightService, readFreightInvoice,
-  type ChargeType, type FreightOcrResult,
+  type ChargeType, type FreightCarrier, type FreightOcrResult,
 } from '@/services/freight'
 import {
-  CHARGE_TYPE_LABEL, INPUT_SM_CLS, Modal, SELECT_CLS, SELECT_SM_CLS, TH_CLS,
+  CHARGE_TYPE_LABEL, INPUT_SM_CLS, Modal, SELECT_SM_CLS, TH_CLS,
   addDaysISO, cents, errorMessage, isDateOnly, num,
 } from '@/pages/freight/freightUi'
 
@@ -33,18 +33,29 @@ const emptyLine = (): LineDraft => ({
 
 const splitPackages = (s: string) => s.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean)
 
-type Step = 'pick' | 'reading' | 'review'
+type Step = 'reading' | 'review'
 
-export function CourierUploadDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
-  const { data: carriers = [] } = useFreightCarriers()
-  const activeCarriers = carriers.filter((c) => c.is_active)
-
-  const [step, setStep] = useState<Step>('pick')
-  const [carrierId, setCarrierId] = useState('')
-  const [file, setFile] = useState<File | null>(null)
+/**
+ * The courier half of Invoices → Upload Invoice. The upload form hands over
+ * once the invoice's vendor turns out to be a carrier's (Freight → Carriers):
+ * a carrier's invoice is always a courier invoice. The same PDF is read again
+ * for its per-shipment detail, and the reviewer checks the lines here.
+ */
+export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClose, onCreated }: {
+  carrier: FreightCarrier
+  /** The PDF the upload form was given; null = entered by hand. */
+  file: File | null
+  /** "Invoice 2 of 5" when stepping through a split PDF. */
+  queueLabel?: string
+  /** Back to the upload form to pick another vendor (not a courier invoice after all). */
+  onBack: () => void
+  onClose: () => void
+  onCreated: (id: string) => void
+}) {
+  const carrierId = carrier.id
+  const [step, setStep] = useState<Step>(file ? 'reading' : 'review')
   const [ocrError, setOcrError] = useState<{ msg: string; kind: 'file' | 'service' } | null>(null)
   const [ocr, setOcr] = useState<FreightOcrResult | null>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
 
   // Review form
   const [invoiceNo, setInvoiceNo] = useState('')
@@ -61,8 +72,6 @@ export function CourierUploadDialog({ onClose, onCreated }: { onClose: () => voi
   const createInvoice = useCreateFreightInvoice()
   const uploadAttachment = useUploadFreightAttachment()
   const saving = createInvoice.isPending || uploadAttachment.isPending
-
-  const carrier = carriers.find((c) => c.id === carrierId)
 
   // ── Duplicate check (carrier + invoice number) ────────────────────────────
   const [dup, setDup] = useState<{ checking: boolean; duplicate: boolean; detail: string | null }>({
@@ -111,32 +120,30 @@ export function CourierUploadDialog({ onClose, onCreated }: { onClose: () => voi
       : [emptyLine()])
   }
 
-  const read = async () => {
-    if (!carrierId || !file || step === 'reading') return
-    setOcrError(null)
-    setStep('reading')
-    const res = await readFreightInvoice(file)
-    if (!res.ok) {
-      setOcrError({
-        kind: res.kind,
-        msg: res.kind === 'service'
-          ? 'The AI reading service is unavailable right now. This is not a problem with your file — enter the invoice by hand, and let IT know.'
-          : `The invoice could not be read: ${res.error}`,
-      })
-      setStep('pick')
-      return
-    }
-    setOcr(res.data)
-    fillFrom(res.data)
-    setStep('review')
-  }
-
-  const enterManually = () => {
-    setOcr(null)
-    setOcrError(null)
-    setLines([emptyLine()])
-    setStep('review')
-  }
+  // Read once, on arrival. The ref keeps React's dev double-mount from paying
+  // for a second model call.
+  const readStarted = useRef(false)
+  useEffect(() => {
+    if (!file || readStarted.current) return
+    readStarted.current = true
+    let live = true
+    readFreightInvoice(file).then((res) => {
+      if (!live) return
+      if (!res.ok) {
+        setOcrError({
+          kind: res.kind,
+          msg: res.kind === 'service'
+            ? 'The AI reading service is unavailable right now. This is not a problem with your file — enter the shipment lines by hand, and let IT know.'
+            : `The shipment detail could not be read: ${res.error}. Enter the lines by hand.`,
+        })
+      } else {
+        setOcr(res.data)
+        fillFrom(res.data)
+      }
+      setStep('review')
+    })
+    return () => { live = false }
+  }, [file]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const changeInvoiceDate = (v: string) => {
     setInvoiceDate(v)
@@ -159,7 +166,6 @@ export function CourierUploadDialog({ onClose, onCreated }: { onClose: () => voi
   const save = async () => {
     if (saving) return
     setSaveError(null)
-    if (!carrierId) return setSaveError('Choose the carrier.')
     if (!invoiceNo.trim()) return setSaveError('Enter the invoice number.')
     if (!isDateOnly(invoiceDate)) return setSaveError('Enter the invoice date.')
     if (!isDateOnly(dueDate)) return setSaveError('Enter the due date.')
@@ -212,66 +218,38 @@ export function CourierUploadDialog({ onClose, onCreated }: { onClose: () => voi
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  if (step !== 'review') {
+  if (step === 'reading') {
     return (
-      <Modal title="Upload Courier Invoice" subtitle="Choose the carrier and the invoice PDF" onClose={onClose}>
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Carrier *</label>
-            <select value={carrierId} onChange={(e) => setCarrierId(e.target.value)} className={SELECT_CLS} disabled={step === 'reading'}>
-              <option value="">Select carrier…</option>
-              {activeCarriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Invoice PDF *</label>
-            <input ref={fileInput} type="file" accept="application/pdf,image/*" className="sr-only"
-              onChange={(e: ChangeEvent<HTMLInputElement>) => { setFile(e.target.files?.[0] ?? null); setOcrError(null) }} />
-            <button type="button" onClick={() => fileInput.current?.click()} disabled={step === 'reading'}
-              className="flex items-center gap-3 rounded-lg border-2 border-dashed border-neutral-200 px-4 py-5 text-left hover:border-primary-300 hover:bg-primary-50/40 disabled:opacity-50">
-              {file ? <FileText className="h-6 w-6 text-primary-600" /> : <Upload className="h-6 w-6 text-neutral-400" />}
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-neutral-700">{file ? file.name : 'Click to choose the invoice'}</p>
-                <p className="text-xs text-neutral-400">{file ? formatBytes(file.size) : 'PDF, every page is read'}</p>
-              </div>
-            </button>
-          </div>
-
-          {step === 'reading' && (
-            <div className="flex items-center gap-2 rounded-lg border border-primary-100 bg-primary-50 px-3 py-2.5 text-sm text-primary-700">
-              <Loader2 className="h-4 w-4 animate-spin" /> Reading the invoice — this can take up to a minute for a long bill…
-            </div>
-          )}
-
-          {ocrError && (
-            <div className={cn('rounded-lg border px-3 py-2.5 text-xs',
-              ocrError.kind === 'service' ? 'border-warning-200 bg-warning-50 text-warning-700' : 'border-danger-200 bg-danger-50 text-danger-600')}>
-              <p>{ocrError.msg}</p>
-              <button onClick={enterManually} className="mt-1.5 font-semibold underline">Enter the invoice manually</button>
-            </div>
-          )}
-
-          <div className="flex justify-between gap-2">
-            <button type="button" onClick={enterManually} disabled={!carrierId || step === 'reading'}
-              className="text-xs text-neutral-500 hover:text-neutral-700 hover:underline disabled:opacity-40">
-              Skip reading — enter manually
-            </button>
-            <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-              <Button size="sm" onClick={read} disabled={!carrierId || !file || step === 'reading'}>
-                {step === 'reading' ? 'Reading…' : 'Read invoice'}
-              </Button>
-            </div>
-          </div>
+      <Modal title="Courier invoice" subtitle={`${carrier.name}${file ? ` · ${file.name}` : ''}`} onClose={onClose}>
+        <div className="flex items-center gap-2 rounded-lg border border-primary-100 bg-primary-50 px-3 py-2.5 text-sm text-primary-700">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {carrier.vendor_name ?? carrier.name} is a courier — reading the invoice shipment by shipment. A long bill can take up to a minute…
         </div>
       </Modal>
     )
   }
 
   return (
-    <Modal wide title="Check the Invoice" subtitle={`${carrier?.name ?? ''}${file ? ` · ${file.name}` : ' · entered by hand'}`} onClose={onClose}>
+    <Modal wide title={queueLabel ? `Check the Courier Invoice — ${queueLabel}` : 'Check the Courier Invoice'}
+      subtitle={`${carrier.name}${file ? ` · ${file.name}` : ' · entered by hand'}`} onClose={onClose}>
       <div className="flex flex-col gap-5">
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-primary-100 bg-primary-50 px-3 py-2.5 text-xs text-primary-800">
+          <p>
+            <span className="font-semibold">{carrier.vendor_name ?? carrier.name}</span> is a courier (Freight → Carriers), so this is a
+            courier invoice: check one line per shipment, pickup or fee below. After saving, each line is matched to a
+            registered tracking number and cost center.
+          </p>
+          <button type="button" onClick={onBack} disabled={saving}
+            className="inline-flex shrink-0 items-center gap-1 font-medium text-primary-700 hover:underline disabled:opacity-40">
+            <ArrowLeft className="h-3.5 w-3.5" /> Different vendor
+          </button>
+        </div>
+        {ocrError && (
+          <div className={cn('rounded-lg border px-3 py-2.5 text-xs',
+            ocrError.kind === 'service' ? 'border-warning-200 bg-warning-50 text-warning-700' : 'border-danger-200 bg-danger-50 text-danger-600')}>
+            {ocrError.msg}
+          </div>
+        )}
         {(ocr?.warnings.length ?? 0) > 0 && (
           <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-700">
             <p className="font-semibold mb-1 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> Check these before saving</p>
@@ -282,17 +260,17 @@ export function CourierUploadDialog({ onClose, onCreated }: { onClose: () => voi
         )}
         {ocrCarrierMismatch && (
           <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700">
-            This looks like a {ocr!.carrier} invoice, but you chose {carrier!.name}. Check the carrier.
+            This reads like a {ocr!.carrier} invoice, but the vendor is {carrier.vendor_name ?? carrier.name}'s ({carrier.name}). Check the vendor.
           </div>
         )}
 
         {/* Header */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Carrier *</label>
-            <select value={carrierId} onChange={(e) => setCarrierId(e.target.value)} className={SELECT_CLS}>
-              {activeCarriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <label className="text-xs font-medium text-neutral-700">Carrier</label>
+            <div className="flex h-10 items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm font-medium text-neutral-800">
+              {carrier.name}
+            </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-neutral-700">Invoice number *</label>
@@ -329,7 +307,7 @@ export function CourierUploadDialog({ onClose, onCreated }: { onClose: () => voi
         </div>
         {dup.duplicate && (
           <p className="-mt-3 text-xs font-medium text-danger-600">
-            Invoice {invoiceNo.trim()} from {carrier?.name} is already recorded{dup.detail ? ` (${dup.detail})` : ''}. It cannot be saved twice.
+            Invoice {invoiceNo.trim()} from {carrier.name} is already recorded{dup.detail ? ` (${dup.detail})` : ''}. It cannot be saved twice.
           </p>
         )}
 
