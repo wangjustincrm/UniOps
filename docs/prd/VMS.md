@@ -1,9 +1,13 @@
 # VMS (Visitor Management System) — Product Requirements Document
 
-**Version**: V2.11
+**Version**: V2.12
 **Date**: 2026-10-20
 **Status**: As-built. Describes the system on the main line as of 2026-10-16. Everything marked **Implemented** is in production; wanted-but-not-built items are marked **Not implemented** and collected in §13 Open Items.
 **Scope**: Visitor appointments, approval, health and safety checks, badge printing (= check-in), QR check-out, overdue alerts and the compliance audit trail for Canada Royal Milk ULC's plant and offices.
+
+**What changed in V2.12** (2026-10-20)
+
+- Rescheduling a No Show visit in Data Maintenance undoes the No Show: the visit returns to Confirmed or Pending Approval, and a pending visit's approval and approval task are reopened (§2.5.5, VMS-PR-019).
 
 **What changed in V2.11** (2026-10-20)
 
@@ -184,7 +188,7 @@ All area-dependent behaviour (approval routing, health-declaration gate, complia
 | VMS-PR-016a | A visit whose approval hand-off failed can be sent again | P0 | **Implemented** — the visit stays Pending Approval with a banner "Not sent for approval yet" and a **Submit for approval** button; it cannot be badged until submission succeeds |
 | VMS-PR-017 | Host sees own visits; manager sees department visits | P0 | **Implemented** — see visibility rules in §3.2. Lists: Today's Visits, All Visits (**latest 50 only, no paging**), On-Site Now |
 | VMS-PR-018 | Search by visitor name, company, Host, date range | P1 | **Not implemented** — the visit lists have no search or filter |
-| VMS-PR-019 | Auto-mark No Show 2 hours after planned arrival | P2 | **Implemented** — applies to Confirmed and Pending Approval visits; for a pending visit the approval is cancelled and its tasks closed |
+| VMS-PR-019 | Auto-mark No Show 2 hours after planned arrival | P2 | **Implemented** — applies to Confirmed and Pending Approval visits; for a pending visit the approval is cancelled and its tasks closed. Undone when the visit is rescheduled in Data Maintenance (§2.5.5) |
 
 ---
 
@@ -704,7 +708,7 @@ Without a session the app redirects to Portal sign-in; an expired session return
 - **Launcher**: Portal sidebar → Modules → "VMS" and the home-page card "VMS — Visitor appointments, badge printing, on-site tracking"; visible to every user.
 - **Task Inbox**: VMS tasks appear in Portal "My Task Inbox" under **Visitor**; a click opens the visit or the visitor compliance page in VMS. Portal has no approve buttons for VMS — approval happens on the VMS visit page.
 - **Approval chain**: Portal → Admin → Approval Workflows → VMS Visit. The Quality Manager roster itself lives in VMS Admin.
-- **Data Maintenance**: VMS visits and visitors can be edited (not deleted) by System Admin. A visit is rescheduled through Planned arrival / Planned departure, shown in plant time; a time typed without a UTC offset is taken as plant time. Departure must be after arrival. Visit date is read-only and is reset to the planned arrival's plant-local day on save, and the audit entry records it. Changing the schedule does not change the status: a visit already marked No Show stays No Show.
+- **Data Maintenance**: VMS visits and visitors can be edited (not deleted) by System Admin. A visit is rescheduled through Planned arrival / Planned departure, shown in plant time; a time typed without a UTC offset is taken as plant time. Departure must be after arrival. Visit date is read-only and is reset to the planned arrival's plant-local day on save, and the audit entry records it. Saving a visit that was automatically marked No Show undoes the No Show if its planned arrival is no longer overdue (less than 2 hours ago, or in the future). The visit gets back the status it had before (Confirmed or Pending Approval), along with its approval state and the Host's approval-result email flag. For a pending visit, the approval tasks the No Show closed are reopened, dated with the new visit date, and queued for the task-notification outbox again. A task a person completed is never reopened. The undo is written to the VMS audit log as "visit.no_show_undone". It does not happen when the schedule is still overdue, the visitor already arrived, the status was set to No Show by hand rather than by the scheduler, or the same save sets another status.
 - **Branding**: company name, logo and tagline come from Portal company settings.
 
 See PORTAL.md.
@@ -1025,3 +1029,4 @@ The September 2026 code audit (V2.7) listed defects D-00 to D-22. All except two
 | V2.9 | 16 Oct 2026 | V2.8 folded into the body; 40-character approval title; resubmission resumes at the returning step; platform notification outbox; new findings (delegation visibility, visitor edit rights); Open Items consolidated; self-registration cross-referenced as not built; implementation detail removed |
 | V2.10 | 19 Oct 2026 | Column-header sorting on visit lists, audit log, health declarations and active visits; All Visits and Today page on the server |
 | V2.11 | 20 Oct 2026 | Data Maintenance reschedules visits through planned arrival / departure; Visit date derived (D-24); new open item OI-35 (past planned arrival is no-showed at once) |
+| V2.12 | 20 Oct 2026 | Rescheduling a No Show visit in Data Maintenance undoes the No Show and reopens a pending approval |

@@ -149,7 +149,7 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
             raise ValueError(f"Field '{key}' is not editable")
         setattr(row, key, _coerce(spec.schema.field_type(key), value))
     if spec.after_edit is not None:
-        spec.after_edit(row)
+        await spec.after_edit(db, row, actor_id, actor_email)
     await db.flush()
     after = _serialize(spec, row)
     # Patched fields plus any the after_edit hook re-derived.
