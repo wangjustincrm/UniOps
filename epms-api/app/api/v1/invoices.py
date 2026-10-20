@@ -10,7 +10,7 @@ from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_p
 from app.core.access_scope import build_scope, is_agreement_visible
 from uniops_authz import has_permission
 
-from app.core.ontology import sees_freight_invoices
+from app.core.ontology import sees_agreement_invoices, sees_freight_invoices
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import invoice as invoice_crud
@@ -544,6 +544,12 @@ async def list_invoices(
         # Courier invoices are uploaded and matched on the Invoices page by
         # epms.freight.manage holders, who are often PO-restricted.
         freight_visible=task_uid is not None and await sees_freight_invoices(db, scope),
+        # Agreement invoices hang off no PO either: the general list admits the
+        # ones whose agreement the caller can open — the same arm the detail
+        # gate (_can_read_invoice) has, so search finds what the agreement
+        # page links to.
+        agreement_visible=task_uid is not None and await sees_agreement_invoices(db, scope),
+        agr_ids_subq=scope["agr_subq"],
         page=page, page_size=page_size,
     )
     await _attach_match_assignees(db, items)
