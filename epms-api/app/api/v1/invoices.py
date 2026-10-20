@@ -510,6 +510,17 @@ async def upload_invoice(body: InvoiceCreate, db: SessionDep, user: InvoiceUploa
     vendor = await vendor_crud.get_by_id(db, body.vendor_id)
     if vendor is None:
         raise HTTPException(status_code=404, detail="Vendor not found")
+    # A carrier's invoice is always a courier invoice (matched to shipments,
+    # paid by a Freight PA) — never a PO / agreement invoice. The upload form
+    # switches to the courier review on its own; this keeps the rule for any
+    # other caller.
+    from app.models.freight import FreightCarrier
+    if (await db.execute(select(FreightCarrier.id).where(
+            FreightCarrier.vendor_id == body.vendor_id, FreightCarrier.is_active.is_(True))
+            .limit(1))).scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail=(
+            f"{vendor.name} is a courier (Freight → Carriers) — its invoices are courier "
+            "invoices, read per shipment and matched to tracking numbers"))
     inv = await invoice_crud.create(
         db, body, vendor_name=vendor.name, uploaded_by=uuid.UUID(user["sub"])
     )

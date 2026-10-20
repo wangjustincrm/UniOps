@@ -468,3 +468,35 @@ async def test_assistant_reads_a_courier_invoice_as_freight(test_engine, admin_c
                                 .where(Invoice.id == uuid.UUID(inv["id"])))).one()
         assert tuple(row) == ("freight", None)
         assert (await db.get(Invoice, uuid.UUID(inv["id"]))).billed_against == "freight"
+
+
+# ── One upload page: courier invoices are uploaded like any invoice ───────────
+
+async def test_invoice_uploader_creates_a_courier_invoice_but_does_not_match_it(test_engine, admin_client, world):
+    """The upload form recognises a carrier's invoice by its vendor and saves it
+    through the Freight API, so creating one takes the ordinary invoice-upload
+    permission. Matching stays on epms.freight.manage."""
+    from tests.conftest import _authenticated_client
+    async with await _authenticated_client(test_engine, "ap_clerk") as ap:
+        assert (await ap.get("/api/v1/freight/me")).json()["manage"] is False
+        carriers = (await ap.get("/api/v1/freight/carriers")).json()
+        assert world["carrier"] in [c["id"] for c in carriers]
+        assert (await ap.get("/api/v1/freight/invoices/duplicate-check", params={
+            "carrier_id": world["carrier"], "vendor_invoice_number": "AP-1"})).status_code == 200
+        r = await ap.post("/api/v1/freight/invoices", json=_ups_invoice(world, number="AP-1"))
+        assert r.status_code == 201, r.text
+        inv = r.json()
+        assert (await ap.post(f"/api/v1/freight/invoices/{inv['id']}/finalize")).status_code == 403
+    # Denial control: no upload permission and no freight key.
+    async with await _authenticated_client(test_engine, "warehouse_staff") as c:
+        assert (await c.get("/api/v1/freight/carriers")).status_code == 403
+        assert (await c.post("/api/v1/freight/invoices",
+                             json=_ups_invoice(world, number="WH-1"))).status_code == 403
+
+
+async def test_a_carriers_invoice_cannot_go_in_as_a_po_invoice(admin_client, world):
+    r = await admin_client.post("/api/v1/invoices", json={
+        "vendor_id": str(world["ups_vendor"]), "vendor_invoice_number": "PO-ROUTE-1",
+        "invoice_date": "2026-10-10", "due_date": "2026-10-26", "currency": "CAD",
+        "amount": "10.00", "tax_amount": "0"})
+    assert r.status_code == 409 and "is a courier" in r.json()["detail"]

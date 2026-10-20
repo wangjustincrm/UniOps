@@ -41,6 +41,17 @@ async def _need(db, user: dict, *keys: str) -> dict[str, bool]:
     return p
 
 
+async def _need_upload(db, user: dict) -> None:
+    """A courier invoice arrives through Invoices → Upload Invoice like any other
+    invoice, so creating one takes the ordinary invoice-upload permission (or the
+    freight manager's key). Matching, finalising and paying stay on
+    epms.freight.manage."""
+    uid, role = uuid.UUID(user["sub"]), user.get("role") or ""
+    if await has_permission(db, uid, role, "invoice_upload"):
+        return
+    await _need(db, user, "manage")
+
+
 def _err(e: FreightError) -> HTTPException:
     return HTTPException(status_code=e.status, detail=e.detail)
 
@@ -65,7 +76,11 @@ async def my_access(db: SessionDep, user: CurrentUserPayload) -> dict:
 @router.get("/carriers", response_model=list[CarrierResponse])
 async def list_carriers(db: SessionDep, user: CurrentUserPayload,
                         include_inactive: bool = False):
-    await _need(db, user, "register", "manage", "admin")
+    # Invoice uploaders read it too: the upload form recognises a courier
+    # invoice by its vendor being a carrier's.
+    uid, role = uuid.UUID(user["sub"]), user.get("role") or ""
+    if not await has_permission(db, uid, role, "invoice_upload"):
+        await _need(db, user, "register", "manage", "admin")
     return [CarrierResponse.model_validate(c).model_copy(update={"vendor_name": n})
             for c, n in await crud.list_carriers(db, include_inactive)]
 
@@ -165,7 +180,7 @@ async def void_shipment(shipment_id: uuid.UUID, db: SessionDep, user: CurrentUse
 @router.get("/invoices/duplicate-check", response_model=DuplicateCheckResponse)
 async def duplicate_check(carrier_id: uuid.UUID, vendor_invoice_number: str,
                           db: SessionDep, user: CurrentUserPayload):
-    await _need(db, user, "manage")
+    await _need_upload(db, user)
     try:
         carrier = await crud.get_carrier(db, carrier_id)
     except FreightError as e:
@@ -190,7 +205,7 @@ async def list_invoices(
 @router.post("/invoices", response_model=FreightInvoiceResponse, status_code=201)
 async def create_invoice(body: FreightInvoiceCreate, db: SessionDep, user: CurrentUserPayload,
                          token: BearerToken):
-    await _need(db, user, "manage")
+    await _need_upload(db, user)
     try:
         inv = await crud.create_invoice(db, body, uuid.UUID(user["sub"]))
     except FreightError as e:
