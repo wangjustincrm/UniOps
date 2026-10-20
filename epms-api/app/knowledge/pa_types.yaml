@@ -50,7 +50,8 @@ values:
         Courier charges (UPS, FedEx, Purolator…) are not paid this way. Buyers
         register each tracking number on EPMS → Freight → Shipments with the
         cost center that bears it; the supply-chain person uploads the carrier's
-        invoice on EPMS → Invoices (Upload Invoice → Courier invoice), it is
+        invoice on EPMS → Invoices → Upload Invoice like any invoice (the form
+        recognises the carrier by the vendor), it is
         matched by tracking number on its invoice page, and a Freight PA is
         raised from EPMS → Payment Applications → New Freight PA (or Create PA
         on the matched invoice) — no PO, no agreement, split by cost center and

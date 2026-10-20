@@ -156,13 +156,17 @@ rules:
       - 快递发票在哪里上传
       - why can this invoice not be matched to a PO
     answer: >
-      A courier invoice is uploaded on EPMS → Invoices → Upload Invoice →
-      Courier invoice (Freight), and is marked Freight in the invoice lists. It
+      A courier invoice is uploaded on EPMS → Invoices → Upload Invoice like any
+      invoice: when its vendor is a carrier's (Freight → Carriers) the form
+      turns into the courier review by itself — there is no type or carrier to
+      choose, and a carrier's invoice can only be a courier invoice. It is marked
+      Freight in the invoice lists. It
       is never matched to a PO or an agreement: on its invoice page each charge
       is matched to a registered shipment's tracking number and cost center,
       and once finalised it is paid from Payment Applications → New Freight PA.
-      Only holders of the Match Courier Invoices permission upload and match
-      it; other invoice readers see it read-only.
+      Anyone who may upload invoices may upload it; only holders of the Match
+      Courier Invoices permission match it, and other invoice readers see it
+      read-only.
     enforced_in: "epms-api app/api/v1/freight.py (create / match / finalize on epms.freight.manage, read-only GET for invoice readers); app/api/v1/invoices.py _refuse_freight; PRD EPMS §3.21"
   - id: invoice_internal_number
     asked_as:

@@ -55,8 +55,10 @@ modules:
         / cost center that bears it on EPMS → Freight → Shipments (Register
         Courier Shipments permission); carriers are set up on Freight →
         Carriers. The carrier's invoice is uploaded like any other invoice, on
-        EPMS → Invoices → Upload Invoice → Courier invoice (Freight), by the
-        supply-chain person (Match Courier Invoices permission). The AI reads
+        EPMS → Invoices → Upload Invoice, by anyone who uploads invoices: when
+        the vendor is a carrier's, the form turns into the courier review by
+        itself (no carrier to choose). The supply-chain person (Match Courier
+        Invoices permission) then matches it. The AI reads
         every shipment line, the lines are matched to the registered tracking
         numbers on that invoice's page, unregistered ones and pickup / late fees
         are assigned by hand, and the matched invoices are paid from EPMS →
