@@ -133,6 +133,7 @@ TERMS_ZH: dict[str, str] = {
     "Budget Plan": "预算计划",
     "Visitor Request": "访客申请",
     "Not to Exceed": "金额上限",
+    "House Account": "挂账账户",
     "NTE": "金额上限",
     "Over-Budget": "超预算",
 }

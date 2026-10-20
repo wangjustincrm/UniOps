@@ -31,8 +31,10 @@ values:
       When you buy from the same vendor repeatedly in small, unplanned amounts
       and raising a PR each time would be pure overhead.
     notes:
-      - Purchases are charged against an open purchase order rather than a new
-        one per transaction.
+      - >-
+        No PR or PO is raised. Each purchase is recorded as an agreement
+        receipt, and the vendor's invoices are matched straight to the
+        agreement, with no purchase order in between.
       - >-
         Each purchase is backed by an agreement receipt (a delivery note or
         slip) recorded on the agreement. When the vendor's invoice is matched to
@@ -105,8 +107,33 @@ rules:
       Status Active means the agreement was approved; it does not mean it is
       still in force. Nothing moves an agreement to Expired when its Valid To
       date passes, so whether it is in force is read from Valid From / Valid To
-      (plus its grace days for invoices).
+      (plus its grace days for invoices — see grace_window).
     enforced_in: "epms-api app/crud/agreement.py (no write of expired/closed anywhere)"
+  - id: grace_window
+    asked_as:
+      - can an invoice still be matched to an expired agreement
+      - can I raise a PA on an agreement after Valid To
+      - 过期的协议还能匹配发票吗
+    answer: >
+      Yes, for a while. New invoices can be matched, and payment applications
+      raised, until Valid To plus the agreement's Grace Days (30 unless set
+      otherwise on the agreement), because a period's invoice always arrives
+      after the period ends. After that, both are refused. Valid From is not
+      checked, so invoices dated before it can still be matched to a back-dated
+      agreement. Drafts and agreements still in approval admit nothing.
+    enforced_in: "epms-api app/crud/agreement.py _admissible_predicate / is_admissible (used by invoice matching and app/api/v1/pa.py); models/agreement.py grace_days server_default 30"
+  - id: nte_is_warning_only
+    asked_as:
+      - can we still pay once the Not to Exceed is reached
+      - what happens when an agreement goes over its NTE
+      - 超过协议金额上限还能付款吗
+    answer: >
+      Yes. Not to Exceed is a warning only: going over it never blocks
+      matching, approval or payment, and adds no approval step. Agreement Detail
+      shows how much has been consumed (the tax-inclusive total of the invoices
+      matched to it) against the ceiling, and warns when it is exceeded. An
+      agreement with no NTE has no ceiling at all.
+    enforced_in: "epms-api app/crud/agreement.py (\"NTE ceiling being warn-only by explicit user decision\"); app/api/v1/pa.py agreement route has no NTE check; epms AgreementCreatePage.tsx \"Not to Exceed is a warning only\""
   - id: who_attaches_house_account_receipts
     asked_as:
       - who can attach receipts to an agreement invoice
