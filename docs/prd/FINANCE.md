@@ -1,9 +1,15 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.5
+**Version:** 2.6
 **Date:** 2026-10-20
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.6** (2026-10-20)
+
+- AP Subledger Health: the search box also finds invoice numbers, and says which bill carries the number and whether it is settled (FIN-APH-06).
+- An open bill with no payment document now shows the journal vouchers that name its invoice number and clear it — old payables finance settled with a GL voucher instead of a payment (FIN-APH-07).
+- An open bill whose invoice number is also on the same supplier's bill in another currency is flagged — a supply-chain CAD payable repeating a foreign-currency bill finance keyed and paid (FIN-APH-08).
 
 **What changed in version 2.5** (2026-10-20)
 
@@ -337,6 +343,10 @@ Budget planning, the dashboard, catalog, factors and budget settings (including 
 | FIN-APH-03 | **Supplier view** with block subtotals, bill-to-payment relationships, and journal entries that cancel each other folded away. A GL search looks for differences finance settled by manual voucher. |
 | FIN-APH-04 | **Dismiss** stale NC payables from the working list with a closed reason set: legacy (NC period closed), duplicate document, settled outside AP by journal, written off, other (note required). Dismissal can be reversed (restore). Bills can be judged in bulk by bill date, with bulk undo. Dismissed bills are excluded from AP Cash Flow. Vendor search is available. |
 | FIN-APH-05 | **A bill can carry several invoices.** In NC the invoice number is on the bill **line**, and one payable often holds several invoices from the same supplier (at measurement, 1,872 of 12,006 approved bills, 65 of 364 open ones). Wherever a bill is shown as one row, the invoice column lists each invoice number on its lines with that invoice's own open amount; the amounts add up to the row's amount. Lines with the same invoice number are one invoice; lines with no number are shown together as "no number". A bill with one invoice shows just the number. The PO column lists every PO on the bill. Sorting by invoice number or PO uses the smallest value on the bill. CSV exports write the invoices as `number (amount); number (amount)`. Dismissal stays per bill. |
+| FIN-APH-06 | **Search by invoice number.** The search box on the supplier and excluded views matches vendor name or code, **or** an invoice number (normalised: upper case, whitespace removed; contains-match; from 3 characters). A supplier is listed when any of its approved bills in that currency carries the number, paid or not, and the row names each matching bill with its date, billed amount and "settled" or its open balance. On the excluded view a bill is listed whole when any of its lines carries the number. |
+| FIN-APH-07 | **Settled by journal voucher.** For an open approved bill with **no approved payment pointing at it**, the supplier view and the bills-by-date view show journal-voucher lines that: are on a 2202* account, carry the same supplier (partner name = NC supplier name), move the payable the opposite way to the bill (a debit against a bill, a credit against a credit note), and whose line or voucher summary contains one of the bill's invoice numbers as a whole number. Up to 5 per bill, with voucher number, date, amount, source subsystem and summary; marked when the amount equals the bill's open balance. The supplier view header counts these bills. Evidence only: the balance is not reduced. At measurement, 49 of 232 such bills that carry an invoice number had a match. |
+| FIN-APH-08 | **Same invoice in another currency.** An open bill is flagged when one of its invoice numbers is on an approved bill of the same supplier code in a **different currency**, with that bill's number, date, shared invoice numbers and whether it is settled. At measurement, 12 open CAD supply-chain bills (trade type D1, 2025-11-29, 1,790,521.22) repeated foreign-currency bills that had been paid, e.g. Independent Can Company. Evidence only; nothing is netted across currencies. |
+| FIN-APH-09 | Invoice numbers are compared as **tokens**: a field holding several invoices is split on `/ , ; &`, and a shorter all-digit token replaces the tail of the number before it (`9151970/1987/1992` = 9151970, 9151987, 9151992). A leading `#` is dropped; tokens under 4 characters are not used. Applies to FIN-APH-07 and FIN-APH-08. |
 
 ### 9.5 AP Cash Flow
 
