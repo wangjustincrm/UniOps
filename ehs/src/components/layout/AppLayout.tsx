@@ -177,6 +177,8 @@ const SETTINGS_NAV: NavItem[] = [
   { label: 'Rules',       href: '/settings/rules', icon: Settings, permission: 'ehs.settings.manage' },
   // Round 7: what each kind of permit has to have confirmed before it is issued.
   { label: 'Permit checks', href: '/settings/permit-checks', icon: ShieldCheck, permission: 'ehs.settings.manage' },
+  // Round 8: an address emailed N days before training certificates expire.
+  { label: 'Expiry notices', href: '/settings/expiry-notices', icon: Mail, permission: 'ehs.settings.manage' },
 ]
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────

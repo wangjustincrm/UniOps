@@ -42,6 +42,7 @@ import MyTrainingPage from '@/pages/MyTrainingPage'
 import AreaOwnersPage from '@/pages/settings/AreaOwnersPage'
 import RulesPage from '@/pages/settings/RulesPage'
 import PermitChecksPage from '@/pages/settings/PermitChecksPage'
+import ExpiryNoticesPage from '@/pages/settings/ExpiryNoticesPage'
 import NotifyGroupsPage from '@/pages/settings/NotifyGroupsPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
 
@@ -300,5 +301,10 @@ export const ehsRoutes: RouteDef[] = [
     path: '/settings/permit-checks',
     element: <PermitChecksPage />,
     tab: { title: 'Permit checks', icon: 'ShieldCheck', keyStrategy: 'static' },
+  },
+  {
+    path: '/settings/expiry-notices',
+    element: <ExpiryNoticesPage />,
+    tab: { title: 'Expiry notices', icon: 'Mail', keyStrategy: 'static' },
   },
 ]

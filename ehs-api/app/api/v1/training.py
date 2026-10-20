@@ -5,10 +5,12 @@ import uuid
 from datetime import date, datetime
 
 from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.core.deps import BearerToken, SessionDep
-from app.core.permissions import CanReportIncident, CanReadTraining, CanWriteTraining
+from app.core.permissions import (
+    CanManageSettings, CanReportIncident, CanReadTraining, CanWriteTraining,
+)
 from app.crud import training as crud
 from sqlalchemy import select
 
@@ -20,6 +22,7 @@ from app.services.http_headers import content_disposition
 from app.crud.incident import _resolve_name
 from app.models.course import CourseMaterial
 from app.models.training import Course
+from app.models.expiry_notice import CertExpiryRule
 from app.services.attachments import (
     MAX_FILE_SIZE, proxy_download, upload_to_file_server,
 )
@@ -515,3 +518,83 @@ async def training_gaps(db: SessionDep, user: CanReadTraining):  # noqa: ARG001
     person's position requires — rather than from a hand-maintained list.
     """
     return await crud.training_gaps(db)
+
+
+# ── Certificate expiry notices (round 8) ─────────────────────────────────────
+
+
+class ExpiryRuleIn(BaseModel):
+    email: EmailStr
+    days_before: int = Field(ge=1, le=365)
+    is_active: bool = True
+
+
+class ExpiryRulePatch(BaseModel):
+    email: EmailStr | None = None
+    days_before: int | None = Field(default=None, ge=1, le=365)
+    is_active: bool | None = None
+
+
+class ExpiryRuleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    email: str
+    days_before: int
+    is_active: bool
+    created_at: datetime
+
+
+async def _rule(db, rule_id: uuid.UUID) -> CertExpiryRule:
+    rule = await db.get(CertExpiryRule, rule_id)
+    if rule is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such expiry notice rule")
+    return rule
+
+
+@router.get("/expiry-rules", response_model=list[ExpiryRuleOut])
+async def list_expiry_rules(db: SessionDep, user: CanManageSettings):  # noqa: ARG001
+    """Who is emailed, how many days ahead of a certificate expiring."""
+    return (await db.execute(select(CertExpiryRule).order_by(
+        CertExpiryRule.days_before, CertExpiryRule.email))).scalars().all()
+
+
+@router.post("/expiry-rules", response_model=ExpiryRuleOut, status_code=201)
+async def create_expiry_rule(payload: ExpiryRuleIn, db: SessionDep, user: CanManageSettings):
+    """Round 8: "notifications … emailed to a specified email address and have
+    a field for the number of days notice". The first sweep after it is made
+    lists everything already inside its window; after that, only what enters."""
+    rule = CertExpiryRule(
+        id=uuid.uuid4(), email=str(payload.email).strip(),
+        days_before=payload.days_before, is_active=payload.is_active,
+        created_by=_user_id(user))
+    db.add(rule)
+    await db.flush()
+    await db.refresh(rule)
+    return rule
+
+
+@router.patch("/expiry-rules/{rule_id}", response_model=ExpiryRuleOut)
+async def update_expiry_rule(
+    rule_id: uuid.UUID, payload: ExpiryRulePatch, db: SessionDep,
+    user: CanManageSettings,  # noqa: ARG001
+):
+    rule = await _rule(db, rule_id)
+    if payload.email is not None:
+        rule.email = str(payload.email).strip()
+    if payload.days_before is not None:
+        rule.days_before = payload.days_before
+    if payload.is_active is not None:
+        rule.is_active = payload.is_active
+    await db.flush()
+    await db.refresh(rule)
+    return rule
+
+
+@router.delete("/expiry-rules/{rule_id}", status_code=204)
+async def delete_expiry_rule(
+    rule_id: uuid.UUID, db: SessionDep, user: CanManageSettings,  # noqa: ARG001
+):
+    await db.delete(await _rule(db, rule_id))
+    await db.flush()
+    return Response(status_code=204)

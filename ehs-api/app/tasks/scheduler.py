@@ -44,7 +44,8 @@ from app.crud import asset as asset_crud
 from app.crud import course as course_crud
 from app.crud import permit as permit_crud
 from app.crud import toolbox as toolbox_crud
-from app.services import schedule_sweep
+from app.services import expiry_notice, schedule_sweep
+from app.services.statutory import ONTARIO
 from app.services.escalation import CapaLadder, capa_level, statutory_level
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ class SweepResult:
     checks_generated: int = 0
     checks_missed: int = 0
     courses_reminded: int = 0
+    expiry_notices: int = 0
     skipped_reason: str | None = None
 
     def __str__(self) -> str:
@@ -78,6 +80,7 @@ class SweepResult:
                 f"{self.checks_generated} equipment checks due, "
                 f"{self.checks_missed} checks missed, "
                 f"{self.courses_reminded} courses reminded, "
+                f"{self.expiry_notices} expiry notices, "
                 f"{self.permits_expired} permits expired")
 
 
@@ -249,6 +252,9 @@ async def run_tick(now: datetime | None = None) -> SweepResult:
         # permit expire — that is computed on every read — but it raises
         # the task that says one lapsed without being closed out.
         expired = await permit_crud.expire_lapsed(db, now=now)
+        # Round 8: HSE's certificate expiry rules. Certificates are dated in
+        # plant time, so "today" is Ontario's, not UTC's (which turns at 8 pm).
+        notices = await expiry_notice.send_due(db, today=now.astimezone(ONTARIO).date())
 
         result = SweepResult(
             statutory_escalated=await sweep_statutory(db, now),
@@ -260,6 +266,7 @@ async def run_tick(now: datetime | None = None) -> SweepResult:
             checks_missed=len(checks_missed),
             courses_reminded=len(reminded),
             permits_expired=len(expired),
+            expiry_notices=notices,
         )
         await db.commit()
         return result
