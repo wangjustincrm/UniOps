@@ -19,6 +19,7 @@ import { Countdown } from '@/components/Countdown'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import { InjuryBadge, MolBadge, StatusBadge } from '@/components/StatusBadge'
 import { usePermissions } from '@/hooks/usePermissions'
+import { InjurySummary } from '@/components/InjurySummary'
 import { CommunicationLog } from '@/components/CommunicationLog'
 import { ReturnToWorkPanel } from '@/components/ReturnToWorkPanel'
 import { NewActionDialog } from '@/components/NewActionDialog'
@@ -33,6 +34,7 @@ interface Person {
   id: string; role: string; person_name: string
   external_company: string | null; body_part_label: string | null
   nature_of_injury_label: string | null; treatment: string | null
+  sent_offsite?: boolean | null; follow_up?: string | null
 }
 interface Incident {
   id: string; incident_no: string; form_kind: string; title: string; status: string
@@ -561,6 +563,15 @@ export default function IncidentDetailPage() {
                 </li>
               ))}
             </ul>
+          )}
+
+          {/* Round 8: the injury and its treatment in one read-only place,
+              under the person hurt — behind the medical permission. */}
+          {can('ehs.incident.medical.read')
+            && (inc.form_kind === 'medical' || inc.persons.some((p) => p.role === 'injured')) && (
+            <InjurySummary incidentId={inc.id} title={inc.title} kind={inc.incident_type_label}
+                           where={inc.location_path} description={inc.description}
+                           persons={inc.persons} />
           )}
 
           {/* ★ Round 7: "only make the statutory, and return to work sections
