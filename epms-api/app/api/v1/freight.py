@@ -52,6 +52,28 @@ async def _need_upload(db, user: dict) -> None:
     await _need(db, user, "manage")
 
 
+async def _can_match(db, user: dict, inv: Invoice) -> bool:
+    """epms.freight.manage, or the person AP assigned this invoice to (an open
+    match_invoice task) — the same rule as any other invoice's matching."""
+    if (await _perms(db, user))["manage"]:
+        return True
+    from app.api.v1.invoices import _has_open_match_task
+    return await _has_open_match_task(db, uuid.UUID(user["sub"]), inv.id)
+
+
+async def _need_match(db, user: dict, inv: Invoice) -> None:
+    if not await _can_match(db, user, inv):
+        raise HTTPException(status_code=403, detail="You do not have access to Freight")
+
+
+async def _detail(db, user: dict, inv: Invoice) -> dict:
+    from app.api.v1.invoices import _attach_match_assignees
+    await _attach_match_assignees(db, [inv])
+    return {**await crud.invoice_detail(db, inv), "can_match": await _can_match(db, user, inv),
+            "match_assignee_id": getattr(inv, "match_assignee_id", None),
+            "match_assignee_name": getattr(inv, "match_assignee_name", None)}
+
+
 def _err(e: FreightError) -> HTTPException:
     return HTTPException(status_code=e.status, detail=e.detail)
 
@@ -211,37 +233,40 @@ async def create_invoice(body: FreightInvoiceCreate, db: SessionDep, user: Curre
     except FreightError as e:
         raise _err(e)
     await finance_sync.sync_ap_invoice(db, inv, token)
-    return await crud.invoice_detail(db, inv)
+    return await _detail(db, user, inv)
 
 
 @router.get("/invoices/{invoice_id}", response_model=FreightInvoiceResponse)
 async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     """Managers work the invoice; anyone else who may read it on the Invoices
     page (AP, finance — the invoice read gate) sees the same panel read-only.
-    Every write below stays on epms.freight.manage."""
+    Matching (auto-match, lines, finalize) is open to epms.freight.manage and
+    to the person AP assigned it to; reopen, delete and the PA stay on manage."""
     inv = await _freight_invoice(db, invoice_id)
-    if not (await _perms(db, user))["manage"]:
+    # Whoever may match it may read it — including an assignee whose role has
+    # no invoice view of its own (the assignment is the reason they are here).
+    if not await _can_match(db, user, inv):
         from app.api.v1.invoices import _can_read_invoice
         if not await _can_read_invoice(db, user, inv, await build_scope(db, user)):
             raise HTTPException(status_code=404, detail="Freight invoice not found")
-    return await crud.invoice_detail(db, inv)
+    return await _detail(db, user, inv)
 
 
 @router.post("/invoices/{invoice_id}/auto-match", response_model=FreightInvoiceResponse)
 async def auto_match(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
-    await _need(db, user, "manage")
     inv = await _freight_invoice(db, invoice_id)
+    await _need_match(db, user, inv)
     if inv.status != "unmatched":
         raise HTTPException(status_code=409, detail="Reopen the invoice before matching again")
     await crud.auto_match(db, inv)
-    return await crud.invoice_detail(db, inv)
+    return await _detail(db, user, inv)
 
 
 @router.patch("/invoices/{invoice_id}/lines/{line_id}", response_model=FreightInvoiceResponse)
 async def update_line(invoice_id: uuid.UUID, line_id: uuid.UUID, body: FreightLineUpdate,
                       db: SessionDep, user: CurrentUserPayload):
-    await _need(db, user, "manage")
     inv = await _freight_invoice(db, invoice_id)
+    await _need_match(db, user, inv)
     try:
         ln = await crud.get_line(db, line_id)
         if ln.invoice_id != inv.id:
@@ -249,18 +274,23 @@ async def update_line(invoice_id: uuid.UUID, line_id: uuid.UUID, body: FreightLi
         await crud.update_line(db, inv, ln, body)
     except FreightError as e:
         raise _err(e)
-    return await crud.invoice_detail(db, inv)
+    return await _detail(db, user, inv)
 
 
 @router.post("/invoices/{invoice_id}/finalize", response_model=FreightInvoiceResponse)
 async def finalize(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
-    await _need(db, user, "manage")
     inv = await _freight_invoice(db, invoice_id)
+    await _need_match(db, user, inv)
+    actor = uuid.UUID(user["sub"])
     try:
-        await crud.finalize(db, inv, uuid.UUID(user["sub"]))
+        await crud.finalize(db, inv, actor)
     except FreightError as e:
         raise _err(e)
-    return await crud.invoice_detail(db, inv)
+    # Matched: the assignment (if any) is done, whoever finalised it.
+    from app.api.v1.invoices import _close_open_match_tasks
+    await _close_open_match_tasks(db, inv.id, actor)
+    await db.commit()
+    return await _detail(db, user, inv)
 
 
 @router.post("/invoices/{invoice_id}/reopen", response_model=FreightInvoiceResponse)
@@ -271,7 +301,7 @@ async def reopen(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload
         await crud.reopen(db, inv)
     except FreightError as e:
         raise _err(e)
-    return await crud.invoice_detail(db, inv)
+    return await _detail(db, user, inv)
 
 
 @router.delete("/invoices/{invoice_id}", status_code=204)
@@ -282,6 +312,10 @@ async def delete_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUse
     if inv.status != "unmatched":
         raise HTTPException(status_code=409, detail="Reopen the invoice before deleting it")
     await finance_sync.sync_ap_invoice(db, inv, token, void=True)
+    # An assignment to match a deleted invoice can never be done — close it
+    # in the same commit as the delete.
+    from app.api.v1.invoices import _close_open_match_tasks
+    await _close_open_match_tasks(db, inv.id, uuid.UUID(user["sub"]))
     try:
         await crud.delete_invoice(db, inv)
     except FreightError as e:

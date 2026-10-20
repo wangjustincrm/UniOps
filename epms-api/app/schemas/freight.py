@@ -200,6 +200,12 @@ class FreightInvoiceResponse(BaseModel):
     pa_number: str | None = None
     # Why finalize would be refused right now; empty when it can go.
     finalize_blockers: list[str] = []
+    # The caller may match it: epms.freight.manage, or the person AP assigned
+    # the invoice to (an open match_invoice task) — same rule as other invoices.
+    can_match: bool = False
+    # Who AP assigned the matching to (open match_invoice task), if anyone.
+    match_assignee_id: uuid.UUID | None = None
+    match_assignee_name: str | None = None
 
 
 class FreightInvoiceListItem(BaseModel):

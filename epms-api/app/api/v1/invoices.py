@@ -149,13 +149,17 @@ async def _can_read_invoice(db, user: dict, inv, scope: dict) -> bool:
     caller who could open the invoice through the agreement arm below — e.g. a
     requester who owns the agreement — 404'd on the chain, and the page could
     not tell them a PA already locks the invoice."""
+    caller_id = uuid.UUID(user["sub"])
+    # Assigned to match it: the task in their inbox links here, so it opens
+    # even for a role whose matrix row has no invoice view (a buyer or a
+    # warehouse lead AP hands a courier invoice to) — otherwise the task is
+    # a dead link. Personal assignment only (assigned_user_id = caller).
+    if await _has_open_match_task(db, caller_id, inv.id):
+        return True
     # Access Control Matrix gate — treat absence of view_invoice as not-found.
     if not scope["perms"].get("view_invoice", False):
         return False
     if not scope["restrict"]:
-        return True
-    caller_id = uuid.UUID(user["sub"])
-    if await _has_open_match_task(db, caller_id, inv.id):
         return True
     # Matcher retention: the person who performed the match retains detail visibility
     # even after their task is completed (you can see what you acted on).
@@ -1269,11 +1273,12 @@ async def assign_match(
     db: SessionDep,
     user: ApDep,
 ):
-    """AP 将这张发票的 PO 匹配工作指派给某个用户(任何角色)。重复调用=改派。"""
+    """AP 将这张发票的 PO 匹配工作指派给某个用户(任何角色)。重复调用=改派。
+    快递发票同样可以指派:受理人凭这条 match_invoice 任务匹配运单(freight.py
+    _can_match),无需 epms.freight.manage。"""
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    _refuse_freight(inv)
     if inv.status not in ("unmatched", "exception"):
         raise HTTPException(status_code=409, detail=f"Invoice already in status '{inv.status}'")
 
@@ -1305,7 +1310,15 @@ async def assign_match(
     # only re-words the case where the link already exists, i.e. the invoice
     # was matched to an agreement and then knocked back to exception, or AP
     # pre-linked it. No lookup, no guess.
-    if inv.agreement_id is not None:
+    if inv.match_route == "freight":
+        title = f"Match courier invoice {inv.internal_ref} to shipments"
+        description = (
+            f"You have been assigned to match courier invoice {inv.internal_ref} "
+            f"({inv.vendor_name}, {inv.currency} {inv.total_amount}). Open the invoice, "
+            f"check that each shipment, pickup and fee has the right cost center, "
+            f"then press Finalize."
+        )
+    elif inv.agreement_id is not None:
         agr_number = (await db.execute(
             select(PurchaseAgreement.number).where(
                 PurchaseAgreement.id == inv.agreement_id))).scalar_one_or_none()

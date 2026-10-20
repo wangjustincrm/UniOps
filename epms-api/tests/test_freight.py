@@ -500,3 +500,48 @@ async def test_a_carriers_invoice_cannot_go_in_as_a_po_invoice(admin_client, wor
         "invoice_date": "2026-10-10", "due_date": "2026-10-26", "currency": "CAD",
         "amount": "10.00", "tax_amount": "0"})
     assert r.status_code == 409 and "is a courier" in r.json()["detail"]
+
+
+async def test_ap_assigns_a_courier_invoice_and_the_assignee_matches_it(test_engine, admin_client, world):
+    """Like any invoice, AP assigns the matching to someone; the open
+    match_invoice task is what lets them match it — no Freight key needed.
+    Finalising closes the task; the Freight PA stays with the freight manager."""
+    from tests.conftest import _authenticated_client
+    from app.models.task import Task
+    await _register(admin_client, world, "1Z4E4F776821544637", "qa_lab")
+    inv = (await admin_client.post("/api/v1/freight/invoices", json=_ups_invoice(world, number="ASG-1"))).json()
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def open_tasks():
+        async with factory() as db:
+            return (await db.execute(select(Task).where(
+                Task.document_id == uuid.UUID(inv["id"]), Task.type == "match_invoice",
+                Task.is_completed.is_(False)))).scalars().all()
+
+    async with await _authenticated_client(test_engine, "warehouse_staff") as other, \
+               await _authenticated_client(test_engine, "warehouse_staff") as who:
+        from jose import jwt
+        me = jwt.get_unverified_claims(who.headers["Authorization"].split()[1])["sub"]
+        # Before the assignment: no access to the matching.
+        assert (await who.post(f"/api/v1/freight/invoices/{inv['id']}/finalize")).status_code == 403
+
+        r = await admin_client.post(f"/api/v1/invoices/{inv['id']}/assign-match", json={"user_id": me})
+        assert r.status_code == 200, r.text
+        tasks = await open_tasks()
+        assert [t.title for t in tasks] == [f"Match courier invoice {inv['internal_ref']} to shipments"]
+
+        # The task links to the invoice page; it must open for the assignee.
+        assert (await who.get(f"/api/v1/invoices/{inv['id']}")).status_code == 200
+        assert (await other.get(f"/api/v1/invoices/{inv['id']}")).status_code == 404
+        d = await who.get(f"/api/v1/freight/invoices/{inv['id']}")
+        assert d.status_code == 200 and d.json()["can_match"] is True
+        assert d.json()["match_assignee_id"] == me
+        # Denial control: same role, not assigned.
+        assert (await other.post(f"/api/v1/freight/invoices/{inv['id']}/finalize")).status_code == 403
+
+        fin = await who.post(f"/api/v1/freight/invoices/{inv['id']}/finalize")
+        assert fin.status_code == 200, fin.text
+        assert fin.json()["status"] == "matched"
+        assert await open_tasks() == []
+        # Paying it is still the freight manager's.
+        assert (await who.post("/api/v1/freight/pa", json={"invoice_ids": [inv["id"]]})).status_code == 403
