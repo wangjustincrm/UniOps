@@ -6,6 +6,7 @@ from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import agreement_schedule
+from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
 from app.models.agreement import PurchaseAgreement
 from app.schemas.agreement import (
@@ -31,6 +32,23 @@ async def get_by_id(db: AsyncSession, agreement_id: uuid.UUID) -> PurchaseAgreem
     )).scalar_one_or_none()
 
 
+# GET /agreements ?sort= keys → what the Agreements list's column shows
+# (whitelist = the SQL-injection boundary; unknown key → 422).
+SORTABLE = {
+    "number": lower_text(PurchaseAgreement.number),
+    "title": lower_text(PurchaseAgreement.title),
+    "vendor_name": lower_text(PurchaseAgreement.vendor_name),
+    # Labels House Account / Milestone / Recurring sort the same as the codes.
+    "agreement_type": PurchaseAgreement.agreement_type,
+    "valid_from": PurchaseAgreement.valid_from,
+    "valid_to": PurchaseAgreement.valid_to,
+    # "Consumed / Not to Exceed": the consumed figure is the cell's headline.
+    "consumed_amount": PurchaseAgreement.consumed_amount,
+    "status": PurchaseAgreement.status,
+}
+SORT_TIEBREAK = (PurchaseAgreement.id.asc(),)
+
+
 async def get_all(
     db: AsyncSession,
     *,
@@ -41,7 +59,10 @@ async def get_all(
     ids_subq=None,
     page: int = 1,
     page_size: int = 20,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[PurchaseAgreement], int]:
+    order = sort_clauses(sort, dir, SORTABLE, SORT_TIEBREAK) or [PurchaseAgreement.created_at.desc()]
     q = select(PurchaseAgreement)
     # Row scope (access_scope.visible_agreement_subquery). None = unrestricted.
     if ids_subq is not None:
@@ -67,7 +88,7 @@ async def get_all(
     )).scalar_one()
 
     rows = (await db.execute(
-        q.order_by(PurchaseAgreement.created_at.desc())
+        q.order_by(*order)
          .offset((page - 1) * page_size).limit(page_size)
     )).scalars().all()
     return list(rows), total

@@ -38,7 +38,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2, Plus, X as XIcon } from 'lucide-react'
-import { Button, Input, FormField } from '@uniops/shell'
+import { Button, Input, FormField, SortTh, useSortableRows } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import {
@@ -123,6 +123,14 @@ export function WeekExceptionsSection({
     () => [...(exceptionsQuery.data ?? [])].sort((a, b) => b.week_start.localeCompare(a.week_start)),
     [exceptionsQuery.data],
   )
+  // Header sort on top of the newest-first default (null = that default).
+  const { rows: sortedExceptions, sort, onSort } = useSortableRows(exceptions, {
+    week: (r) => r.week_start,
+    constraint: (r) => CONSTRAINT_TYPE_LABEL[r.constraint_type],
+    value: (r) => Number(r.limit_value),
+    reason: (r) => r.reason,
+    status: (r) => (r.is_active ? 'Active' : 'Inactive'),
+  })
 
   // Same cache the Planning Calendar section reads — react-query dedupes
   // the request, this just needs the mode for the alignment check above.
@@ -280,16 +288,17 @@ export function WeekExceptionsSection({
           <table className="min-w-full text-sm">
             <thead className="bg-neutral-50">
               <tr>
-                <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Week</th>
-                <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Constraint</th>
-                <th className="border-b border-neutral-200 px-3 py-2 text-right text-[11px] font-semibold text-neutral-600">Value</th>
-                <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Reason</th>
-                <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Status</th>
+                <SortTh label="Week" sortKey="week" sort={sort} onSort={onSort} className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600" />
+                <SortTh label="Constraint" sortKey="constraint" sort={sort} onSort={onSort} className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600" />
+                <SortTh label="Value" sortKey="value" sort={sort} onSort={onSort} align="right"
+                  className="border-b border-neutral-200 px-3 py-2 text-[11px] font-semibold text-neutral-600" />
+                <SortTh label="Reason" sortKey="reason" sort={sort} onSort={onSort} className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600" />
                 {canWrite && <th className="border-b border-neutral-200 px-3 py-2 text-right text-[11px] font-semibold text-neutral-600">Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {exceptions.map((row) => (
+              {sortedExceptions.map((row) => (
                 <tr key={row.id} className="border-b border-neutral-100 last:border-0 odd:bg-white even:bg-neutral-50/50">
                   <td className="px-3 py-2 text-xs text-neutral-800">{formatDate(row.week_start)}</td>
                   <td className="px-3 py-2 text-neutral-600">{CONSTRAINT_TYPE_LABEL[row.constraint_type]}</td>

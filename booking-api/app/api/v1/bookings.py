@@ -15,16 +15,18 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, time, timedelta, timezone
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from sqlalchemy import func, not_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import SessionDep
+from app.core.list_sort import apply_sort, check_sort
 from app.core.permissions import AdminUser, CurrentUser, is_booking_admin
 from app.crud.booking import create_booking_records
 from app.crud.config import get_or_create_config
@@ -34,7 +36,7 @@ from app.models.room import MeetingRoom
 from app.models.user_mirror import User
 from app.schemas.booking import (
     BookingCreate, BookingCreatedOut, BookingOut, BookingSlimOut, BookingUpdate,
-    DaySummaryOut, DaySummaryRoom, DaySummaryBookingOut, SeriesUpdate,
+    DaySummaryOut, DaySummaryRoom, DaySummaryBookingOut, MyBookingPageOut, SeriesUpdate,
 )
 from app.services.notifications import enqueue
 from app.services.recurrence import SeriesSpec, build_rrule_string, expand_series
@@ -618,6 +620,68 @@ async def get_my_bookings(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GET /bookings/mine/paged — My Bookings page (server-paged + server-sorted)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# My Bookings headers -> ORDER BY (the ?sort= whitelist), by what each cell shows.
+MY_BOOKING_SORTABLE = {
+    "title": func.lower(Booking.title),
+    "room": func.lower(MeetingRoom.name),
+    "starts_at": Booking.starts_at,
+    # The cell shows attendees + the organizer.
+    "attendees": func.jsonb_array_length(Booking.attendee_ids),
+    "status": func.lower(Booking.status),
+}
+
+
+@router.get("/mine/paged", response_model=MyBookingPageOut)
+async def get_my_bookings_paged(
+    db: SessionDep,
+    current_user: CurrentUser,
+    scope: Literal["upcoming", "past"] | None = Query(default=None),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    """The caller's bookings as organizer, one page at a time with the total.
+
+    /bookings/mine returns only the 200 latest-starting rows, so a long
+    recurring series pushed near-term and past bookings off My Bookings. This
+    pages in SQL instead. `scope` mirrors the page's two tabs: upcoming =
+    confirmed and not yet ended; past = everything else. No `sort`: starts_at
+    descending (the /mine order); the page itself opens Upcoming soonest-first
+    and Past most-recent-first by sending sort=starts_at explicitly.
+    """
+    check_sort(sort, MY_BOOKING_SORTABLE)
+    organizer_id = uuid.UUID(current_user["sub"])
+    now = datetime.now(timezone.utc)
+    upcoming = (Booking.ends_at >= now) & (Booking.status == "confirmed")
+
+    base = (
+        select(Booking, MeetingRoom)
+        .join(MeetingRoom, Booking.room_id == MeetingRoom.id)
+        .where(Booking.organizer_id == organizer_id)
+    )
+    if scope == "upcoming":
+        base = base.where(upcoming)
+    elif scope == "past":
+        base = base.where(not_(upcoming))
+
+    total = (await db.execute(
+        select(func.count()).select_from(base.subquery()))).scalar_one()
+    stmt = apply_sort(base, sort, dir, MY_BOOKING_SORTABLE, tiebreak=Booking.id,
+                      default=(Booking.starts_at.desc(), Booking.id))
+    rows = (await db.execute(stmt.offset(offset).limit(limit))).all()
+
+    organizer_name = await _resolve_organizer_name(db, organizer_id)
+    return MyBookingPageOut(
+        items=[_make_booking_out(booking, room, organizer_name) for booking, room in rows],
+        total=total,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # GET /bookings/day
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1068,6 +1132,34 @@ async def update_booking_series(
 # ─────────────────────────────────────────────────────────────────────────────
 # PATCH /bookings/{id}
 # ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/{booking_id}", response_model=BookingOut)
+async def get_booking(
+    booking_id: uuid.UUID,
+    db: SessionDep,
+    current_user: CurrentUser,
+):
+    """One booking, for the edit page when it is opened without router state
+    (reload / pasted link). It used to search /bookings/mine, whose latest-200
+    window made older bookings "not found".
+
+    Same visibility as PATCH /bookings/{id}: the organizer or a booking admin
+    (manage_meeting_rooms); anyone else gets 404, not 403, so ids can't be
+    probed. Registered after the static GET paths (/mine, /mine/paged, /day).
+    """
+    actor_id = uuid.UUID(current_user["sub"])
+    row = (await db.execute(
+        select(Booking, MeetingRoom)
+        .join(MeetingRoom, Booking.room_id == MeetingRoom.id)
+        .where(Booking.id == booking_id)
+    )).first()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    booking, room = row
+    if actor_id != booking.organizer_id and not await is_booking_admin(current_user, db):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    return _make_booking_out(booking, room, await _resolve_organizer_name(db, booking.organizer_id))
+
 
 @router.patch("/{booking_id}", response_model=BookingOut)
 async def update_booking(

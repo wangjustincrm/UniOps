@@ -57,6 +57,13 @@ export interface CreateVendorCreditBody {
   source?: 'upload' | 'manual'
 }
 
+export interface VendorCreditListOptions {
+  page?: number
+  pageSize: number
+  sort?: string
+  dir?: 'asc' | 'desc'
+}
+
 const qs = (params: Record<string, string | undefined>) => {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) if (v) sp.set(k, v)
@@ -65,8 +72,15 @@ const qs = (params: Record<string, string | undefined>) => {
 }
 
 export const vendorCreditsService = {
-  list:    (status?: string) =>
-    financeApi.get<VendorCreditListResponse>(`/vendor-credits${qs({ status })}`),
+  // Without `page` the call keeps the API's old behaviour (newest first, first
+  // 100). The Vendor Credits page sends limit/offset and the sort pair.
+  list:    (status?: string, opts?: VendorCreditListOptions) =>
+    financeApi.get<VendorCreditListResponse>(`/vendor-credits${qs({
+      status,
+      sort: opts?.sort, dir: opts?.sort ? opts.dir : undefined,
+      limit: opts?.page ? String(opts.pageSize) : undefined,
+      offset: opts?.page ? String((opts.page - 1) * opts.pageSize) : undefined,
+    })}`),
   get:     (id: string) =>
     financeApi.get<VendorCredit>(`/vendor-credits/${id}`),
   create:  (body: CreateVendorCreditBody) =>

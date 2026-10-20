@@ -10,8 +10,12 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { BookOpen, Loader2, X } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+
+/** The amount a Debit / Credit cell shows; 0 renders blank, so it sorts as empty. */
+function shown(v: string | null | undefined) { return Number(v ?? 0) || null }
 
 function money(v: string | null | undefined) {
   const n = Number(v ?? 0)
@@ -39,6 +43,11 @@ export function AccountVouchersModal({ accountCode, period, dimsValues, title,
     queryKey: ['ab-vouchers', accountCode, period, dimsValues ?? '', includeUnposted],
     queryFn: () => financeApi.get<VouchersResp>(`/gl/account-balance/${accountCode}/vouchers${qs}`),
   })
+  const { rows, sort, onSort } = useSortableRows(data?.rows, {
+    date: (r) => r.voucher_date, voucher: (r) => r.jv_number,
+    account: (r) => `${r.account_code}${r.account_name ? ` · ${r.account_name}` : ''}`,
+    summary: (r) => r.summary, debit: (r) => shown(r.local_debit), credit: (r) => shown(r.local_credit),
+  })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
@@ -59,19 +68,19 @@ export function AccountVouchersModal({ accountCode, period, dimsValues, title,
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                 <tr>
-                  <th className="px-3 py-2 w-24">Date</th>
-                  <th className="px-3 py-2 w-36">Voucher</th>
-                  <th className="px-3 py-2 w-40">Account</th>
-                  <th className="px-3 py-2">Summary</th>
-                  <th className="px-3 py-2 w-28 text-right">Debit</th>
-                  <th className="px-3 py-2 w-28 text-right">Credit</th>
+                  <SortTh label="Date" sortKey="date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
+                  <SortTh label="Voucher" sortKey="voucher" sort={sort} onSort={onSort} className="px-3 py-2 w-36" />
+                  <SortTh label="Account" sortKey="account" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
+                  <SortTh label="Summary" sortKey="summary" sort={sort} onSort={onSort} className="px-3 py-2" />
+                  <SortTh label="Debit" sortKey="debit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-28" />
+                  <SortTh label="Credit" sortKey="credit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-28" />
                 </tr>
               </thead>
               <tbody>
-                {(data?.rows ?? []).length === 0 && (
+                {rows.length === 0 && (
                   <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">No vouchers.</td></tr>
                 )}
-                {(data?.rows ?? []).map((r, i) => (
+                {rows.map((r, i) => (
                   <tr key={`${r.jv_id}-${i}`} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
                     <td className="px-3 py-2 font-mono text-xs text-neutral-600">{r.voucher_date}</td>
                     <td className="px-3 py-2">

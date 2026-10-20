@@ -5,19 +5,40 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.coa import _require_manage
 from app.core.deps import _FINANCE_ROLES, CurrentUser
+from app.core.list_sort import SortDir, lower, order_by
 from app.crud import ap_invoice as crud
 from app.crud import payment_execute
 from app.crud.ap_accrual import has_postings, post_invoice_accrual, reverse_invoice_accrual
 from app.db.base import get_db
-from app.models.ap_invoice import POSTED, VOID, ApInvoice
+from app.models.ap_invoice import OPEN_STATUSES, POSTED, VOID, ApInvoice
 
 router = APIRouter(prefix="/ap", tags=["accounts-payable-invoices"])
+
+# GET /ap/invoices click-to-sort whitelist — each key sorts what that column of
+# the AP workbench shows (finance/src/pages/finance/AccountsPayablePage.tsx).
+# "outstanding" is shown only for open invoices (dash otherwise), so it is NULL
+# for the rest and those sink to the bottom.
+_INVOICE_SORT = {
+    "ap_invoice_number": ApInvoice.ap_invoice_number,
+    "source": ApInvoice.source,
+    "vendor_name": lower(ApInvoice.vendor_name),
+    "vendor_invoice_number": lower(ApInvoice.vendor_invoice_number),
+    "invoice_date": ApInvoice.invoice_date,
+    "due_date": ApInvoice.due_date,
+    "total_amount": ApInvoice.total_amount,
+    "outstanding": case(
+        (ApInvoice.status.in_(OPEN_STATUSES),
+         ApInvoice.total_amount - ApInvoice.paid_amount),
+        else_=None),
+    "status": ApInvoice.status,
+    "nc_exported_at": ApInvoice.nc_exported_at,
+}
 
 
 async def _require_finance_role(db: AsyncSession, user: dict) -> None:
@@ -151,10 +172,13 @@ async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         q: str | None = Query(default=None),
                         exported: bool | None = Query(default=None),
                         limit: int = Query(default=50, le=200),
-                        offset: int = Query(default=0, ge=0)):
+                        offset: int = Query(default=0, ge=0),
+                        sort: str | None = Query(default=None),
+                        dir: SortDir = Query(default="asc")):
+    order = order_by(sort, dir, _INVOICE_SORT, tiebreak=(ApInvoice.id,))
     total, rows = await crud.list_invoices(
         db, source=source, vendor_id=vendor_id, status=status, q=q,
-        exported=exported, limit=limit, offset=offset)
+        exported=exported, limit=limit, offset=offset, order=order)
     return {"total": total,
             "items": [InvoiceOut.model_validate(r) for r in rows]}
 

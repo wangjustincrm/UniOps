@@ -5,6 +5,7 @@
  * unauthorized users see a clean message instead of a stack of 403s.
  */
 import { useState } from 'react'
+import { SortTh, useSort, sortParams } from '@uniops/shell'
 import {
   Download, FileSearch, Filter, Loader2, AlertCircle, ChevronLeft, ChevronRight,
 } from 'lucide-react'
@@ -49,7 +50,11 @@ export default function AuditLogPage() {
   const [pending, setPending] = useState<AuditLogFilters>({ page: 1, page_size: 50 })
   const [applied, setApplied] = useState<AuditLogFilters>({ page: 1, page_size: 50 })
 
-  const { data, isLoading, error } = useAuditLogs(applied)
+  // Server-sorted (the log pages). Kept out of `applied` so the CSV export
+  // keeps its own chronological order.
+  const [sort, onSort] = useSort<'timestamp' | 'user_name' | 'action_type' | 'entity_type' | 'ip_address' | 'notes'>(
+    null, () => { setApplied(prev => ({ ...prev, page: 1 })); setPending(prev => ({ ...prev, page: 1 })) })
+  const { data, isLoading, error } = useAuditLogs({ ...applied, ...sortParams(sort) })
   const { data: facets } = useAuditFacets()
 
   if (role && !ALLOWED_ROLES.has(role)) {
@@ -215,12 +220,12 @@ export default function AuditLogPage() {
         <table className="min-w-full divide-y divide-neutral-200">
           <thead className="bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">
             <tr>
-              <th className="px-3 py-2.5">When</th>
-              <th className="px-3 py-2.5">Who</th>
-              <th className="px-3 py-2.5">Action</th>
-              <th className="px-3 py-2.5">Entity</th>
-              <th className="px-3 py-2.5 hidden lg:table-cell">IP</th>
-              <th className="px-3 py-2.5">Notes</th>
+              <SortTh label="When" sortKey="timestamp" sort={sort} onSort={onSort} className="px-3 py-2.5" />
+              <SortTh label="Who" sortKey="user_name" sort={sort} onSort={onSort} className="px-3 py-2.5" />
+              <SortTh label="Action" sortKey="action_type" sort={sort} onSort={onSort} className="px-3 py-2.5" />
+              <SortTh label="Entity" sortKey="entity_type" sort={sort} onSort={onSort} className="px-3 py-2.5" />
+              <SortTh label="IP" sortKey="ip_address" sort={sort} onSort={onSort} className="px-3 py-2.5 hidden lg:table-cell" />
+              <SortTh label="Notes" sortKey="notes" sort={sort} onSort={onSort} className="px-3 py-2.5" />
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 bg-white text-sm">

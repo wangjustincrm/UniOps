@@ -1,9 +1,13 @@
 # OA — Product Requirements Document
 
-**Version:** 3.0
-**Date:** 2026-10-16
+**Version:** 3.1
+**Date:** 2026-10-19
 **Status:** In Production
 **Scope:** Employee expense reimbursement and business travel in UniOps — General Expense (EXP), Mileage (MIL), Travel Application (TRA), Travel Expense (TRV) and admin-defined Custom Forms (CFM), with their approvals, attachments, claim PDF, payment hand-off and budget display.
+
+**What changed in version 3.1** (2026-10-19)
+
+- The Expense Claims and Travel Applications lists sort by clicking a column header, ascending then descending, on the server across all pages (column sorting rule in EPMS.md §3.20 (UI-SORT-001…007)). The Date column sorts by submitted date, else created date, as shown.
 
 **What changed in this version** (v2.0, 2026-06-02 → v3.0; every statement re-checked against the system as deployed):
 - **Module re-scoped to reimbursement and travel.** The OA Direct Payment Application (PA-DIR) and the OA Invoices pages are **retired** (hidden in the UI, new Direct PAs refused by the server). PO-linked PAs belong to EPMS (see EPMS.md §3.15). The shared invoice, invoice-attachment and OCR services that EPMS still uses remain and are listed in §15.

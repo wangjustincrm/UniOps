@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { formatDate } from '@/lib/utils'
+import { SortTh, useSortableRows } from '@uniops/shell'
 
 const GR_STATUS_STYLES: Record<string, string> = {
   pending_ack:        'bg-warning-100 text-warning-700',
@@ -33,7 +34,15 @@ export default function WarehouseDashboard() {
   const { data } = useDashboard()
 
   const kpi = (title: string) => data?.kpis.find((k) => k.title === title)
-  const recentGrs = data?.recent_grs ?? []
+  // Recent-N widget, loaded whole: sorting the rows here is exact.
+  const { rows: recentGrs, sort, onSort } = useSortableRows(data?.recent_grs, {
+    number: (g) => g.number,
+    gr_type: (g) => (g.gr_type === 'physical' ? 'Physical' : 'Service'),
+    po_number: (g) => g.po_number,
+    vendor_name: (g) => g.vendor_name,
+    status: (g) => GR_STATUS_LABEL[g.status] ?? g.status,
+    created_at: (g) => g.created_at,
+  })
 
   const now = new Date()
 
@@ -88,12 +97,12 @@ export default function WarehouseDashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 text-left">
-                  <th className="pb-2 font-medium text-neutral-500">GR #</th>
-                  <th className="pb-2 font-medium text-neutral-500">Type</th>
-                  <th className="pb-2 font-medium text-neutral-500">PO #</th>
-                  <th className="pb-2 font-medium text-neutral-500">Vendor</th>
-                  <th className="pb-2 font-medium text-neutral-500">Status</th>
-                  <th className="pb-2 font-medium text-neutral-500">Created</th>
+                  <SortTh label="GR #" sortKey="number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                  <SortTh label="Type" sortKey="gr_type" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                  <SortTh label="PO #" sortKey="po_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                  <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                  <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
                   <th className="pb-2 font-medium text-neutral-500"></th>
                 </tr>
               </thead>

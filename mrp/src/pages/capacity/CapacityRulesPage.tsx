@@ -13,7 +13,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Pencil, Plus, Trash2, X as XIcon } from 'lucide-react'
-import { Button } from '@uniops/shell'
+import { Button, SortTh, useSortableRows } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
@@ -186,6 +186,8 @@ export default function CapacityRulesPage() {
   )
 }
 
+const RULE_TH = 'border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600'
+
 function RulesTable({
   rules, canWrite, onEdit, onDelete,
 }: {
@@ -194,6 +196,15 @@ function RulesTable({
   onEdit: (rule: CapacityRule) => void
   onDelete: (rule: CapacityRule) => void
 }) {
+  // Whole list loaded: client sort, each column by what it shows.
+  const { rows: sortedRules, sort, onSort } = useSortableRows(rules, {
+    scope: (r) => scopeLabel(r),
+    constraint: (r) => CONSTRAINT_TYPE_LABEL[r.constraint_type],
+    limit: (r) => Number(r.limit_value),
+    uom: (r) => r.uom,
+    effective: (r) => r.effective_from,
+    status: (r) => (r.is_active ? 'Active' : 'Inactive'),
+  })
   if (rules.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 py-16 text-center">
@@ -207,17 +218,17 @@ function RulesTable({
       <table className="min-w-full text-sm">
         <thead className="bg-neutral-50">
           <tr>
-            <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Scope</th>
-            <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Constraint</th>
-            <th className="border-b border-neutral-200 px-3 py-2 text-right text-[11px] font-semibold text-neutral-600">Limit</th>
-            <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Unit</th>
-            <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Effective</th>
-            <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Status</th>
+            <SortTh label="Scope" sortKey="scope" sort={sort} onSort={onSort} className={RULE_TH} />
+            <SortTh label="Constraint" sortKey="constraint" sort={sort} onSort={onSort} className={RULE_TH} />
+            <SortTh label="Limit" sortKey="limit" sort={sort} onSort={onSort} align="right" className="border-b border-neutral-200 px-3 py-2 text-[11px] font-semibold text-neutral-600" />
+            <SortTh label="Unit" sortKey="uom" sort={sort} onSort={onSort} className={RULE_TH} />
+            <SortTh label="Effective" sortKey="effective" sort={sort} onSort={onSort} className={RULE_TH} />
+            <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={RULE_TH} />
             {canWrite && <th className="border-b border-neutral-200 px-3 py-2 text-right text-[11px] font-semibold text-neutral-600">Actions</th>}
           </tr>
         </thead>
         <tbody>
-          {rules.map((rule) => (
+          {sortedRules.map((rule) => (
             <tr key={rule.id} className="border-b border-neutral-100 last:border-0 odd:bg-white even:bg-neutral-50/50">
               <td className="px-3 py-2 text-neutral-800">{scopeLabel(rule)}</td>
               <td className="px-3 py-2 text-neutral-600">{CONSTRAINT_TYPE_LABEL[rule.constraint_type]}</td>

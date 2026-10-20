@@ -354,10 +354,13 @@ async def list_claims(
     status: str | None = None,
     employee_id: uuid.UUID | None = None,
     exclude_types: list[str] | None = None,
+    order_by: list | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[ExpenseClaim], int]:
-    q = select(ExpenseClaim).order_by(ExpenseClaim.created_at.desc())
+    """`order_by` = ORDER BY clauses for a click-sorted list; None keeps the
+    default newest-first order."""
+    q = select(ExpenseClaim).order_by(*(order_by or [ExpenseClaim.created_at.desc()]))
     if claim_type:
         q = q.where(ExpenseClaim.claim_type == claim_type)
     if exclude_types:

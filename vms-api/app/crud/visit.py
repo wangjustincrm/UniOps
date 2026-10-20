@@ -20,7 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.task_mirror import Task
 from app.models.user_mirror import User
-from app.models.visit import Visit, VisitStatus
+from app.core.list_sort import apply_sort, label_case
+from app.models.visit import AccessArea, Visit, VisitStatus
+from app.models.visitor import Visitor
 from app.schemas.visit import VisitCheckOut, VisitCreate, VisitUpdate
 
 
@@ -88,6 +90,33 @@ def apply_visibility_scope(
 
 # ── List ─────────────────────────────────────────────────────────────────────
 
+# Labels the VMS list shows for the coded columns (vms/src/components/StatusBadge.tsx
+# STATUS_LABEL / ACCESS_AREA_LABEL) — the sort follows the label, not the code
+# ("On-Site" for checked_in, "Entire Plant" for all). Keep in step with that file.
+_STATUS_LABEL = {
+    VisitStatus.pending_approval: "Pending Approval", VisitStatus.confirmed: "Confirmed",
+    VisitStatus.checked_in: "On-Site", VisitStatus.checked_out: "Departed",
+    VisitStatus.cancelled: "Cancelled", VisitStatus.no_show: "No Show",
+}
+_AREA_LABEL = {
+    AccessArea.office: "Office", AccessArea.warehouse: "Warehouse",
+    AccessArea.production_non_gmp: "Production (Non-GMP)",
+    AccessArea.production_gmp: "Production (GMP)",
+    AccessArea.laboratory: "Laboratory", AccessArea.all: "Entire Plant",
+}
+_main_visitor = lambda col: (  # noqa: E731 — the visit's primary visitor's column
+    select(col).where(Visitor.id == Visit.visitor_id).correlate(Visit).scalar_subquery())
+
+# Visit list / dashboard headers -> ORDER BY (the ?sort= whitelist).
+VISIT_SORTABLE = {
+    "visitor": _main_visitor(func.lower(Visitor.first_name + " " + Visitor.last_name)),
+    "company": _main_visitor(func.lower(Visitor.company_name)),
+    "planned_arrival": Visit.planned_arrival,
+    "access_area": label_case(Visit.access_area, _AREA_LABEL),
+    "status": label_case(Visit.status, _STATUS_LABEL),
+}
+
+
 async def list_visits(
     db: AsyncSession,
     *,
@@ -100,8 +129,11 @@ async def list_visits(
     date_to: date | None = None,
     page: int = 1,
     page_size: int = 20,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[Visit], int]:
-    q = select(Visit).order_by(Visit.visit_date.desc(), Visit.planned_arrival.desc())
+    q = apply_sort(select(Visit), sort, dir, VISIT_SORTABLE, tiebreak=Visit.id,
+                   default=(Visit.visit_date.desc(), Visit.planned_arrival.desc()))
     q = apply_visibility_scope(
         q, user_id=user_id, role=role, department_id=department_id
     )

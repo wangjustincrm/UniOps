@@ -61,6 +61,10 @@ export interface VendorFilters {
   search?: string
   category?: string
   active_only?: boolean
+  inactive_only?: boolean
+  // Server-side column sort (epms-api crud/vendor.py VENDOR_SORTABLE).
+  sort?: string
+  dir?: 'asc' | 'desc'
   page?: number
   page_size?: number
 }

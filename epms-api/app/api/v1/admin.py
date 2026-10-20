@@ -1,6 +1,6 @@
 """Cross-system data-maintenance admin endpoints (Phase 1: EPMS)."""
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -44,7 +44,10 @@ def _actor(user: dict) -> tuple[uuid.UUID, str]:
 
 @router.get("/entities")
 async def list_entities(user: AdminUser):
-    return [spec.schema.to_dict() | {"system": spec.system} for spec in REGISTRY.values()]
+    # sortable_columns: the list columns ?sort= accepts (real columns only).
+    return [spec.schema.to_dict() | {"system": spec.system,
+                                     "sortable_columns": list(service.SORTABLE[key])}
+            for key, spec in REGISTRY.items()]
 
 
 @router.get("/lookup/{source}")
@@ -59,9 +62,14 @@ async def lookup(source: str, db: SessionDep, user: AdminUser,
 @router.get("/{entity}", response_model=ListResponse)
 async def list_records(entity: str, db: SessionDep, user: AdminUser,
                        page: int = Query(1, ge=1), page_size: int = Query(20, le=200),
-                       search: str | None = Query(None)):
+                       search: str | None = Query(None),
+                       sort: str | None = Query(None),
+                       dir: Literal["asc", "desc"] = Query("asc")):
     try:
-        items, total = await service.list_records(db, entity, page=page, page_size=page_size, search=search)
+        items, total = await service.list_records(db, entity, page=page, page_size=page_size,
+                                                  search=search, sort=sort, dir=dir)
+    except service.UnknownSortKey as e:
+        raise HTTPException(422, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     return ListResponse(items=items, total=total)

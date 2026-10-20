@@ -2,13 +2,15 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._list_order import lower_text, sort_clauses
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_receipt import AgreementReceipt
 from app.models.agreement_receipt_attachment import AgreementReceiptAttachment
 from app.models.invoice import Invoice
+from app.models.user import User
 from app.schemas.agreement_receipt import ReceiptCreate, ReceiptUpdate, validate_totals
 
 
@@ -136,6 +138,37 @@ async def get_one_with_agreement(
     return row[0], row[1], row[2], row[3], row[4], row[5], row[6]
 
 
+# GET /agreement-receipts ?sort= keys → what the Receipts list's column shows
+# (whitelist = the SQL-injection boundary; unknown key → 422). Type and status
+# labels (Counter slip / Delivery note / Service sign-off; Open / Pending AP
+# Review / Reconciled / Rejected / Removed) sort the same as their codes.
+SORTABLE = {
+    "receipt_date": AgreementReceipt.receipt_date,
+    "receipt_type": AgreementReceipt.receipt_type,
+    "receipt_ref": lower_text(AgreementReceipt.receipt_ref),
+    "vendor_name": lower_text(AgreementReceipt.vendor_name),
+    "agreement_number": PurchaseAgreement.number,
+    # The Amount cell prints total_amount (an em-dash when there is none).
+    "total_amount": AgreementReceipt.total_amount,
+    # Received By shows the person's name, never the received_by uuid.
+    "received_by_name": lower_text(
+        select(User.full_name).where(User.id == AgreementReceipt.received_by)
+        .correlate_except(User).scalar_subquery()
+    ),
+    "status": AgreementReceipt.status,
+    # Evidence shows the attachment count ("No photo" = 0).
+    "attachment_count": (
+        select(func.count(AgreementReceiptAttachment.id))
+        .where(AgreementReceiptAttachment.receipt_id == AgreementReceipt.id)
+        .correlate_except(AgreementReceiptAttachment)
+        .scalar_subquery()
+    ),
+    # Linked Invoice prints the invoice's internal_ref (else a short id).
+    "invoice_ref": func.coalesce(Invoice.internal_ref, cast(AgreementReceipt.invoice_id, String)),
+}
+SORT_TIEBREAK = (AgreementReceipt.id.asc(),)
+
+
 async def list_all(
     db: AsyncSession,
     *,
@@ -146,6 +179,8 @@ async def list_all(
     agreement_ids_subq=None,
     page: int = 1,
     page_size: int = 20,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[ReceiptRow], int]:
     """Cross-agreement listing (GET /agreement-receipts, Task 9) — the reason
     this page exists is that AP/warehouse staff shouldn't have to open an
@@ -213,12 +248,13 @@ async def list_all(
     # that was already on page 1, and never see one that fell in the gap.
     # created_at narrows the tie a lot (insertion order); id (the primary
     # key, always unique) guarantees the chain terminates.
+    order = sort_clauses(sort, dir, SORTABLE, SORT_TIEBREAK) or (
+        AgreementReceipt.receipt_date.desc(),
+        AgreementReceipt.created_at.desc(),
+        AgreementReceipt.id.desc(),
+    )
     rows = (await db.execute(
-        q.order_by(
-            AgreementReceipt.receipt_date.desc(),
-            AgreementReceipt.created_at.desc(),
-            AgreementReceipt.id.desc(),
-        ).offset(offset).limit(page_size)
+        q.order_by(*order).offset(offset).limit(page_size)
     )).all()
     return [(row[0], row[1], row[2], row[3], row[4], row[5], row[6]) for row in rows], total
 

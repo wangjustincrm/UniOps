@@ -12,9 +12,10 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Search, X,
 } from 'lucide-react'
+import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { formatDateOnly, inventoryApi, isPositiveQty, qty } from './inventoryApi'
+import { formatDateOnly, inventoryApi, isPositiveQty, qty, type MaterialSortKey } from './inventoryApi'
 import { isZero } from '@/lib/number'
 import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
@@ -111,6 +112,7 @@ export function MaterialsTab({
   const [onlyWithStock, setOnlyWithStock] = useState(false)
   const [page, setPage] = useState(1)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [sort, onSort] = useSort<MaterialSortKey>()
 
   useEffect(() => {
     const timer = setTimeout(() => { setSearch(searchInput); setPage(1) }, 300)
@@ -119,7 +121,7 @@ export function MaterialsTab({
 
   // Back to page 1 when the filters change — adjusted during render (React's
   // "storing information from previous renders"), not in an effect.
-  const resetKey = JSON.stringify([erpClassCode, onlyWithStock, includeByproducts])
+  const resetKey = JSON.stringify([erpClassCode, onlyWithStock, includeByproducts, sort])
   const [prevResetKey, setPrevResetKey] = useState(resetKey)
   if (prevResetKey !== resetKey) {
     setPrevResetKey(resetKey)
@@ -132,7 +134,8 @@ export function MaterialsTab({
     erp_class_code: erpClassCode || undefined,
     only_with_stock: onlyWithStock,
     include_byproducts: includeByproducts,
-  }), [search, erpClassCode, onlyWithStock, includeByproducts])
+    ...sortParams(sort),
+  }), [search, erpClassCode, onlyWithStock, includeByproducts, sort])
 
   const query = useQuery({
     queryKey: ['inventory-materials', page, filters],
@@ -189,14 +192,14 @@ export function MaterialsTab({
         <table className="min-w-full text-sm">
           <thead className={stickyHeadCls}>
             <tr>
-              <th className="px-3 py-2 text-left">Material</th>
-              <th className="px-3 py-2 text-right">On hand</th>
-              <th className="px-3 py-2 text-right">Available</th>
-              <th className="px-3 py-2 text-right">On hold</th>
-              <th className="px-3 py-2 text-right">Expired</th>
-              <th className="px-3 py-2 text-left">Next expiry</th>
-              <th className="px-3 py-2 text-right">On order</th>
-              <th className="px-3 py-2 text-left">Arriving</th>
+              <SortTh label="Material" sortKey="material_code" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+              <SortTh label="On hand" sortKey="on_hand" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Available" sortKey="available" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="On hold" sortKey="on_hold" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Expired" sortKey="expired_qty" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Next expiry" sortKey="next_expiry" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+              <SortTh label="On order" sortKey="in_transit" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Arriving" sortKey="earliest_arrival" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
             </tr>
           </thead>
           <tbody>

@@ -1,5 +1,6 @@
 // inventory-api: Settings page endpoints (inventory-api/app/api/v1/settings.py
 // and admin_sync.py). Reads are gated inventory.view, writes inventory.admin.
+import type { SortDir } from '@uniops/shell'
 import { api } from '@/lib/api'
 
 // ── NC sync ──────────────────────────────────────────────────────────────────
@@ -42,8 +43,15 @@ export interface TieoutIssues {
   amount_issues_hidden: number
   amounts_visible: boolean
   by_check: Record<string, number>
+  /** Rows matching the filters (= total_stored); `items` is one page of them. */
+  total: number
+  page: number
+  page_size: number | null
   items: TieoutIssue[]
 }
+
+/** Sort keys `GET /admin/nc-sync/tieout-issues` whitelists (check sorts by its label). */
+export type TieoutSort = 'check' | 'measure' | 'label' | 'mirror' | 'nc' | 'diff'
 
 /** Tie-out check names → what the page calls them. */
 export const TIEOUT_CHECK_LABELS: Record<string, string> = {
@@ -139,8 +147,13 @@ export const settingsApi = {
   wmsSyncStatus: () => api.get<NcSyncStatus>('/admin/wms-sync/status'),
   runWmsSync: () => api.post<WmsSyncResult>('/admin/wms-sync'),
   /** All sources' findings, or one check's. */
-  tieoutIssues: (check?: string) => api.get<TieoutIssues>(
-    `/admin/nc-sync/tieout-issues?limit=1000${check ? `&check=${encodeURIComponent(check)}` : ''}`),
+  /** One page of one sync's tie-out issues, sorted by the API. */
+  tieoutIssues: (p: { source: 'nc' | 'wms'; page: number; page_size: number; sort?: TieoutSort; dir?: SortDir }) => {
+    const q = new URLSearchParams({ source: p.source, page: String(p.page), page_size: String(p.page_size) })
+    if (p.sort) q.set('sort', p.sort)
+    if (p.dir) q.set('dir', p.dir)
+    return api.get<TieoutIssues>(`/admin/nc-sync/tieout-issues?${q}`)
+  },
 
   params: () => api.get<ParamsResponse>('/settings/params'),
   putParam: (key: string, value: unknown) =>

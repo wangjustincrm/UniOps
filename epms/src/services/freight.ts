@@ -71,6 +71,9 @@ export interface ShipmentFilters {
   carrier_id?: string
   search?: string
   mine?: boolean
+  // Server-side column sort (epms-api crud/freight.py _shipment_sortable).
+  sort?: string
+  dir?: 'asc' | 'desc'
   page?: number
   page_size?: number
 }

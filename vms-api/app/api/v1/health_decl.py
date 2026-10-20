@@ -10,7 +10,7 @@ signed-URL flow is deferred to Phase 3 per S2_ARCHITECTURE_REVIEW.md F7.
 """
 import uuid
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel
@@ -206,6 +206,8 @@ async def browse_health_declarations(
     q: str | None = Query(default=None, max_length=200),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
     """Browse signed health declarations across visits. Visibility-scoped like
     /visits — auditor / system_admin see all, hosts see their own, dept-managers
@@ -221,6 +223,8 @@ async def browse_health_declarations(
         q=q,
         page=page,
         page_size=page_size,
+        sort=sort,
+        dir=dir,
     )
     items = [
         HealthDeclarationListItem(

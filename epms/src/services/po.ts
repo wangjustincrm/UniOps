@@ -192,6 +192,9 @@ export interface PlaceOrderBody {
 }
 
 export interface PoFilters {
+  // Server-side column sort (GET … ?sort=<key>&dir=asc|desc); omitted = API default order.
+  sort?: string
+  dir?: 'asc' | 'desc'
   status?: PoStatus
   pr_type?: number
   department_id?: string

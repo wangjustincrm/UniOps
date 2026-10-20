@@ -13,6 +13,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
 from app.models.cost_center import CostCenter
 from app.models.department import Department
@@ -208,9 +209,41 @@ async def void_shipment(db: AsyncSession, s: FreightShipment) -> FreightShipment
     return s
 
 
+def _shipment_sortable() -> dict:
+    """Sortable columns of the Shipments list (sort=<key>&dir=asc|desc), each
+    sorting what its cell shows: "Carrier" shows the carrier CODE; "Department /
+    Cost Center" shows the cost centre's department name over its code (the
+    same labels shipment_dicts resolves); "Invoice" shows the vendor invoice
+    number of the latest finalised invoice that billed the shipment."""
+    S = FreightShipment
+    carrier_code = (select(FreightCarrier.code)
+                    .where(FreightCarrier.id == S.carrier_id).scalar_subquery())
+    dept_name = (select(Department.name)
+                 .join(CostCenter, CostCenter.department_id == Department.id)
+                 .where(CostCenter.id == S.cost_center_id).scalar_subquery())
+    cc_code = (select(CostCenter.code)
+               .where(CostCenter.id == S.cost_center_id).scalar_subquery())
+    invoice_no = (select(Invoice.vendor_invoice_number)
+                  .join(FreightInvoiceLine, FreightInvoiceLine.invoice_id == Invoice.id)
+                  .where(FreightInvoiceLine.shipment_id == S.id, Invoice.status != "unmatched")
+                  .order_by(Invoice.invoice_date.desc()).limit(1).scalar_subquery())
+    return {
+        "carrier": lower_text(carrier_code),
+        "tracking_no": lower_text(S.tracking_no),
+        "direction": lower_text(S.direction),
+        "department": (lower_text(dept_name), lower_text(cc_code)),
+        "created_by_name": lower_text(S.created_by_name),
+        "created_at": S.created_at,
+        # Labels Pending / Billed / Void sort the same as their codes.
+        "status": lower_text(S.status),
+        "invoice_number": lower_text(invoice_no),
+    }
+
+
 async def list_shipments(db: AsyncSession, *, created_by: uuid.UUID | None, status: str | None,
                          carrier_id: uuid.UUID | None, search: str | None,
-                         page: int, page_size: int) -> tuple[list[dict], int]:
+                         page: int, page_size: int,
+                         sort: str | None = None, dir: str = "asc") -> tuple[list[dict], int]:
     q = select(FreightShipment)
     if created_by is not None:
         q = q.where(FreightShipment.created_by == created_by)
@@ -220,9 +253,12 @@ async def list_shipments(db: AsyncSession, *, created_by: uuid.UUID | None, stat
         q = q.where(FreightShipment.carrier_id == carrier_id)
     if search:
         q = q.where(FreightShipment.tracking_no.ilike(f"%{normalize_tracking(search) or search}%"))
+    ordering = sort_clauses(sort, dir, _shipment_sortable(),
+                            tiebreak=[FreightShipment.created_at.desc(), FreightShipment.id])
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     rows = list((await db.execute(
-        q.order_by(FreightShipment.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+        q.order_by(*(ordering or [FreightShipment.created_at.desc()]))
+        .offset((page - 1) * page_size).limit(page_size)
     )).scalars().all())
     return await shipment_dicts(db, rows), total
 

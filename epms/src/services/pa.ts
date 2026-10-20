@@ -205,6 +205,9 @@ export interface PaActionBody {
 }
 
 export interface PaFilters {
+  // Server-side column sort (GET … ?sort=<key>&dir=asc|desc); omitted = API default order.
+  sort?: string
+  dir?: 'asc' | 'desc'
   status?: PaStatus
   pa_type?: PaType
   department_id?: string

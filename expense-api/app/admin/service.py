@@ -5,7 +5,8 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import ARRAY, JSON, Enum, String, cast, func, or_, select
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.registry import REGISTRY, EntitySpec
@@ -17,6 +18,41 @@ def _spec(entity: str) -> EntitySpec:
     if spec is None:
         raise ValueError(f"Unknown entity '{entity}'")
     return spec
+
+
+class UnknownSortKey(Exception):
+    """?sort= named a column this entity's list does not offer -> HTTP 422."""
+
+
+def _sort_expr(model, name: str):
+    """ORDER BY expression for one list column, or None when it cannot sort.
+
+    Only real mapped columns qualify — list_columns is free text in the
+    registry, and this lookup is the SQL-injection boundary for ?sort=.
+    Text sorts case-insensitively ("amazon" with "Amazon"); an enum by its
+    label (a PG enum would otherwise order by declaration position);
+    JSON/array columns are not sortable."""
+    col = sa_inspect(model).columns.get(name)
+    if col is None:
+        return None
+    attr = getattr(model, name)
+    t = col.type
+    if isinstance(t, (JSON, ARRAY)):
+        return None
+    if isinstance(t, Enum):            # Enum subclasses String: check it first
+        return func.lower(cast(attr, String))
+    if isinstance(t, String):          # Text is a String too
+        return func.lower(func.nullif(func.trim(attr), ""))   # trimmed; blank = empty
+    return attr
+
+
+# entity -> {list column -> ORDER BY expression}. Built once from the registry,
+# so the list page can only ever sort by a column it actually shows.
+SORTABLE: dict[str, dict] = {
+    key: {c: e for c in spec.schema.list_columns
+          if (e := _sort_expr(spec.model, c)) is not None}
+    for key, spec in REGISTRY.items()
+}
 
 
 def _serialize(spec: EntitySpec, row) -> dict:
@@ -50,9 +86,12 @@ def _coerce(field_type: str, value):
 
 
 async def list_records(db: AsyncSession, entity: str, *, page: int, page_size: int,
-                       search: str | None) -> tuple[list[dict], int]:
+                       search: str | None, sort: str | None = None,
+                       dir: str = "asc") -> tuple[list[dict], int]:
     spec = _spec(entity)
     model = spec.model
+    if sort is not None and sort not in SORTABLE[entity]:
+        raise UnknownSortKey(f"'{entity}' cannot be sorted by {sort!r}")
     stmt = select(model)
     if search and spec.schema.search_fields:
         clauses = [getattr(model, f).ilike(f"%{search}%") for f in spec.schema.search_fields]
@@ -60,9 +99,15 @@ async def list_records(db: AsyncSession, entity: str, *, page: int, page_size: i
     total = int((await db.execute(
         select(func.count()).select_from(stmt.subquery())
     )).scalar_one())
-    col, _, direction = spec.schema.order_by.partition(" ")
-    order = getattr(model, col)
-    stmt = stmt.order_by(order.desc() if direction.lower() == "desc" else order.asc())
+    if sort is None:
+        col, _, direction = spec.schema.order_by.partition(" ")
+        order = getattr(model, col)
+        stmt = stmt.order_by(order.desc() if direction.lower() == "desc" else order.asc())
+    else:
+        expr = SORTABLE[entity][sort]
+        expr = expr.asc() if dir == "asc" else expr.desc()
+        # NULLs last both ways (PG DESC puts them first); id keeps pages stable.
+        stmt = stmt.order_by(expr.nulls_last(), model.id.asc())
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(stmt)).scalars().all()
     return [_serialize(spec, r) for r in rows], total

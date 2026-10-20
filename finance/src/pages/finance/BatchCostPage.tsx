@@ -12,6 +12,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -114,6 +115,12 @@ export default function BatchCostPage() {
     queryFn: () => financeApi.get<ListResp>(`/cost-analysis/batches?material=${encodeURIComponent(material)}&from=${from}&to=${to}`),
     enabled: !!material && from <= to,
   })
+  // Whole list; each batch and its open detail row share one keyed Fragment.
+  const { rows: batches, sort, onSort } = useSortableRows(data?.batches, {
+    batch: (b) => b.batch, month: (b) => b.period, qty: (b) => b.qty,
+    nc_unit: (b) => b.nc_unit, actual_unit: (b) => b.actual_unit, variance: (b) => b.variance,
+    basis: (b) => (b.basis === 'month' ? 'month (no order)' : `order ${b.mo_codes.join(', ')}`),
+  })
   if (!user) return <Navigate to="/login" replace />
 
   return (
@@ -147,15 +154,16 @@ export default function BatchCostPage() {
             <div className="overflow-x-auto rounded-lg border border-neutral-200">
               <table className="w-full text-xs">
                 <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
-                  <th className="px-2 py-1.5 font-medium">Batch</th><th className="px-2 py-1.5 font-medium">Month</th>
-                  <th className="px-2 py-1.5 text-right font-medium">Qty</th>
-                  <th className="px-2 py-1.5 text-right font-medium">NC unit cost</th>
-                  <th className="px-2 py-1.5 text-right font-medium">Actual unit cost</th>
-                  <th className="px-2 py-1.5 text-right font-medium">NC − actual</th>
-                  <th className="px-2 py-1.5 font-medium">Basis</th>
+                  <SortTh label="Batch" sortKey="batch" sort={sort} onSort={onSort} className="px-2 py-1.5 font-medium" />
+                  <SortTh label="Month" sortKey="month" sort={sort} onSort={onSort} className="px-2 py-1.5 font-medium" />
+                  <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
+                  <SortTh label="NC unit cost" sortKey="nc_unit" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
+                  <SortTh label="Actual unit cost" sortKey="actual_unit" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
+                  <SortTh label="NC − actual" sortKey="variance" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
+                  <SortTh label="Basis" sortKey="basis" sort={sort} onSort={onSort} className="px-2 py-1.5 font-medium" />
                 </tr></thead>
                 <tbody>
-                  {data.batches.map((b) => {
+                  {batches.map((b) => {
                     const off = Math.abs(b.variance) >= Math.max(0.005 * Math.abs((b.actual_unit ?? 0) * b.qty), 1)
                     return (
                       <Fragment key={b.batch}>

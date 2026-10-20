@@ -5,6 +5,7 @@
  * declaration (answers + e-signature) in a read-only modal.
  */
 import { useState } from 'react'
+import { SortTh, useSort, sortParams } from '@uniops/shell'
 import { Eye, Search, ShieldCheck, ShieldAlert } from 'lucide-react'
 import {
   useBrowseHealthDeclarations, type HealthDeclarationListItem,
@@ -20,9 +21,11 @@ export default function HealthDeclarationsPage() {
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
   const [view, setView] = useState<HealthDeclarationListItem | null>(null)
+  const [sort, onSort] = useSort<'visit_date' | 'visitor_name' | 'company' | 'host_name' | 'access_area' | 'result' | 'updated_at'>(
+    null, () => setPage(1))
 
   const { data, isLoading, error } = useBrowseHealthDeclarations({
-    from, to, q, page, page_size: PAGE_SIZE,
+    from, to, q, page, page_size: PAGE_SIZE, ...sortParams(sort),
   })
   const items = data?.items ?? []
   const total = data?.total ?? 0
@@ -72,13 +75,13 @@ export default function HealthDeclarationsPage() {
         <table className="w-full text-sm">
           <thead className="border-b border-neutral-100 bg-neutral-50 text-left text-xs uppercase tracking-wider text-neutral-500">
             <tr>
-              <th className="px-3 py-2">Date</th>
-              <th className="px-3 py-2">Visitor</th>
-              <th className="px-3 py-2">Company</th>
-              <th className="px-3 py-2">Host</th>
-              <th className="px-3 py-2">Area</th>
-              <th className="px-3 py-2">Result</th>
-              <th className="px-3 py-2">Submitted</th>
+              <SortTh label="Date" sortKey="visit_date" sort={sort} onSort={onSort} className="px-3 py-2" />
+              <SortTh label="Visitor" sortKey="visitor_name" sort={sort} onSort={onSort} className="px-3 py-2" />
+              <SortTh label="Company" sortKey="company" sort={sort} onSort={onSort} className="px-3 py-2" />
+              <SortTh label="Host" sortKey="host_name" sort={sort} onSort={onSort} className="px-3 py-2" />
+              <SortTh label="Area" sortKey="access_area" sort={sort} onSort={onSort} className="px-3 py-2" />
+              <SortTh label="Result" sortKey="result" sort={sort} onSort={onSort} className="px-3 py-2" />
+              <SortTh label="Submitted" sortKey="updated_at" sort={sort} onSort={onSort} className="px-3 py-2" />
               <th className="px-3 py-2" />
             </tr>
           </thead>

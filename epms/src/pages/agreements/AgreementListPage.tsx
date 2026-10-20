@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Plus, ChevronUp, ChevronDown } from 'lucide-react'
+import { Search, Plus } from 'lucide-react'
+import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/badge'
@@ -37,8 +38,10 @@ const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
-type SortField = 'number' | 'title' | 'valid_to' | 'status'
-type SortDir = 'asc' | 'desc'
+// GET /agreements sort keys (epms-api crud/agreement.py SORTABLE).
+type SortField =
+  | 'number' | 'title' | 'vendor_name' | 'agreement_type' | 'valid_from' | 'valid_to'
+  | 'consumed_amount' | 'status'
 
 // Consumed vs. Not-to-Exceed cell. Decimal fields arrive as JSON strings —
 // every comparison/width calculation below wraps in Number(). The ceiling is
@@ -84,9 +87,10 @@ export default function AgreementListPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [vendorFilter, setVendorFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
-  const [sortField, setSortField] = useState<SortField>('number')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [page, setPage] = useState(1)
+  // Paged by the API, so the API sorts; a new order starts again at page 1.
+  // Opens on Number ↓.
+  const [sort, onSort] = useSort<SortField>({ key: 'number', dir: 'desc' }, () => setPage(1))
   const [pageSize, setPageSize] = useState(20)
 
   const { data: vendorsData } = useVendors({ active_only: true })
@@ -97,6 +101,7 @@ export default function AgreementListPage() {
     status: statusFilter !== 'all' ? (statusFilter as AgreementStatus) : undefined,
     vendor_id: vendorFilter !== 'all' ? vendorFilter : undefined,
     agreement_type: typeFilter !== 'all' ? (typeFilter as AgreementType) : undefined,
+    ...sortParams(sort),
     page,
     page_size: pageSize,
   })
@@ -107,26 +112,6 @@ export default function AgreementListPage() {
   // role list — the same key gates POST /agreements.
   const perms = useRolePermissions().data?.permissions
   const canCreate = user?.role === 'system_admin' || !!perms?.['epms.agreement.write']
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortField(field); setSortDir('desc') }
-  }
-
-  const sorted = [...agreements].sort((a, b) => {
-    let cmp = 0
-    if (sortField === 'valid_to') cmp = a.valid_to.localeCompare(b.valid_to)
-    else if (sortField === 'status') cmp = a.status.localeCompare(b.status)
-    else cmp = String(a[sortField]).localeCompare(String(b[sortField]))
-    return sortDir === 'asc' ? cmp : -cmp
-  })
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <ChevronUp className="h-3 w-3 text-neutral-300" />
-    return sortDir === 'asc'
-      ? <ChevronUp className="h-3 w-3 text-primary-600" />
-      : <ChevronDown className="h-3 w-3 text-primary-600" />
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -194,40 +179,20 @@ export default function AgreementListPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                <th
-                  className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 cursor-pointer hover:text-neutral-700 select-none"
-                  onClick={() => handleSort('number')}
-                >
-                  <span className="flex items-center gap-1">Number <SortIcon field="number" /></span>
-                </th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 cursor-pointer hover:text-neutral-700 select-none"
-                  onClick={() => handleSort('title')}
-                >
-                  <span className="flex items-center gap-1">Title <SortIcon field="title" /></span>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500">Vendor</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500">Valid From</th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 cursor-pointer hover:text-neutral-700 select-none"
-                  onClick={() => handleSort('valid_to')}
-                >
-                  <span className="flex items-center gap-1">Valid Until <SortIcon field="valid_to" /></span>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500">Consumed / Not to Exceed</th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 cursor-pointer hover:text-neutral-700 select-none"
-                  onClick={() => handleSort('status')}
-                >
-                  <span className="flex items-center gap-1">Status <SortIcon field="status" /></span>
-                </th>
+                <SortTh label="Number" sortKey="number" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Type" sortKey="agreement_type" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Valid From" sortKey="valid_from" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Valid Until" sortKey="valid_to" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Consumed / Not to Exceed" sortKey="consumed_amount" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {isLoading && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={9} />)}
-              {!isLoading && sorted.length === 0 && (
+              {!isLoading && agreements.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-4 py-16 text-center">
                     <div className="flex flex-col items-center gap-2 text-neutral-400">
@@ -238,7 +203,7 @@ export default function AgreementListPage() {
                   </td>
                 </tr>
               )}
-              {sorted.map((agreement) => (
+              {agreements.map((agreement) => (
                 <tr
                   key={agreement.id}
                   className="border-b border-neutral-100 last:border-0 bg-white hover:bg-primary-50/60 transition-colors"

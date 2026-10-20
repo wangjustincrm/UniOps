@@ -11,7 +11,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { deriveTabMeta, useOptionalTabStoreApi } from '@uniops/shell'
+import { SortTh, deriveTabMeta, useOptionalTabStoreApi, useSortableRows } from '@uniops/shell'
 import { financeRoutes } from '@/app/routes'
 import { ChevronDown, ChevronRight, Loader2, Search } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
@@ -24,6 +24,8 @@ import {
 } from '@/lib/costAnalysis'
 
 const RULE_ORDER = ['A1', 'A3', 'A5', 'A8', 'A2', 'A4', 'A6']
+
+const SEVERITY_RANK: Record<string, number> = { high: 0, medium: 1, info: 2 }
 
 function summary(a: Anomaly): string {
   const m = a.metrics
@@ -162,12 +164,22 @@ export default function CostAnomaliesPage() {
     enabled: !!from && !!to && from <= to,
   })
 
-  const rows = useMemo(() => {
+  // Each row carries its index in the API response as a stable id, so the
+  // expanded set follows the anomaly through filtering and re-sorting.
+  const filtered = useMemo(() => {
     const s = search.trim().toLowerCase()
-    return (data?.anomalies ?? []).filter((a) =>
+    return (data?.anomalies ?? []).map((a, id) => ({ a, id })).filter(({ a }) =>
       (!rule || a.rule === rule)
       && (!s || `${a.material_code ?? ''} ${a.material_name ?? ''} ${a.refs.join(' ')}`.toLowerCase().includes(s)))
   }, [data, rule, search])
+  const { rows, sort, onSort } = useSortableRows(filtered, {
+    // Worst first when ascending: High, Medium, Info.
+    severity: ({ a }) => SEVERITY_RANK[a.severity] ?? 1,
+    rule: ({ a }) => `${a.rule} ${a.title}`,
+    month: ({ a }) => a.period,
+    material: ({ a }) => a.material_code || a.material_name,
+    what: ({ a }) => summary(a),
+  })
 
   if (!user) return <Navigate to="/login" replace />
 
@@ -237,16 +249,16 @@ export default function CostAnomaliesPage() {
                   <thead className="bg-neutral-50">
                     <tr className="text-left text-xs text-neutral-500">
                       <th className="w-6 px-2 py-2" />
-                      <th className="px-2.5 py-2 font-medium">Severity</th>
-                      <th className="px-2.5 py-2 font-medium">Rule</th>
-                      <th className="px-2.5 py-2 font-medium">Month</th>
-                      <th className="px-2.5 py-2 font-medium">Material</th>
-                      <th className="px-2.5 py-2 font-medium">What happened</th>
+                      <SortTh label="Severity" sortKey="severity" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
+                      <SortTh label="Rule" sortKey="rule" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
+                      <SortTh label="Month" sortKey="month" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
+                      <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
+                      <SortTh label="What happened" sortKey="what" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
                       <th className="px-2.5 py-2 font-medium" />
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((a, i) => {
+                    {rows.map(({ a, id: i }) => {
                       const open = expanded.has(i)
                       const href = traceHref(a, from, to)
                       return (

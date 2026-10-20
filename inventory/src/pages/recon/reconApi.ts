@@ -5,12 +5,25 @@
 //
 // Numbers are Decimal strings (format with lib/number.ts); dates are plain
 // "YYYY-MM-DD" strings, never passed through new Date().
+import type { SortDir } from '@uniops/shell'
 import { api } from '@/lib/api'
 import { qs } from '@/pages/nc/ncApi'
 
 export type ReconStatus = 'ok' | 'explained' | 'unexplained'
 export type ReconSide = 'ic_wms' | 'ia_ic' | 'gl_ia'
+/** The Sort menu's presets: material order, or the largest UNEXPLAINED
+ *  remainder of one side (sent without `dir` = largest first). */
 export type ReconSort = 'material' | 'ic_wms' | 'ia_ic' | 'gl_ia'
+/** Column-header sorts. The difference columns sort by the size of the
+ *  UNEXPLAINED remainder (PRD INV-056): `ic_wms` / `ia_ic` / `gl_ia` (amount
+ *  when visible, else quantity) / `gl_ia_qty`; the rest by the value shown. */
+export const RECON_COLUMN_SORTS = [
+  'material', 'wms', 'ic_wms_qty', 'ic_elsewhere', 'ic_total', 'ia_qty', 'gl_qty',
+  'ic_wms', 'ia_ic', 'gl_ia_qty', 'ia_amount', 'gl_amount', 'gl_ia', 'status',
+] as const
+/** Keys whose first click sorts largest first. */
+export const RECON_UNEXPLAINED_SORTS: readonly string[] = ['ic_wms', 'ia_ic', 'gl_ia', 'gl_ia_qty']
+export type ReconColumnSort = typeof RECON_COLUMN_SORTS[number]
 
 export const STATUSES: { key: ReconStatus; label: string }[] = [
   { key: 'unexplained', label: 'Unexplained' },
@@ -135,7 +148,8 @@ export interface ReconFilters {
   class_code?: string
   search?: string
   include_unposted: boolean
-  sort: ReconSort
+  sort?: ReconColumnSort
+  dir?: SortDir
   page: number
   page_size: number
 }

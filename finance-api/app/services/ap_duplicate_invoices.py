@@ -58,6 +58,8 @@ from decimal import Decimal
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.list_sort import SortDir, sort_rows
+from app.models.nc_ap import DUP_REVIEW_REASONS
 
 EXACT = "exact"
 AMOUNT_DIFFERS = "amount_differs"
@@ -441,12 +443,47 @@ def summarise(found: list[Finding]) -> dict:
     return out
 
 
+# What the page's Action column prints for each status — sorting it must
+# follow the label, not the code.
+STATUS_LABELS = {"stop_approval": "Stop approval", "stop_payment": "Stop payment",
+                 "recover": "Recover", "review": "Review"}
+
+
+def _suppliers_shown(f: Finding) -> str:
+    """The Supplier cell: the group's supplier, else every copy's, de-duplicated."""
+    if f.supplier_name is not None:
+        return f.supplier_name
+    return " / ".join(dict.fromkeys(e.supplier_name for e in f.entries))
+
+
+def _lower(v: str | None) -> str | None:
+    return v.lower() if v else None
+
+
+# Click-to-sort over the computed findings (each finding is one group row with
+# its bills nested in it, so a group can never be split across pages).
+FINDING_SORT = {
+    "action": lambda f: STATUS_LABELS.get(f.status, f.status).lower(),
+    "invoice": lambda f: _lower(f.invoice_no or f.invoice_no_norm),
+    "supplier": lambda f: _lower(_suppliers_shown(f)),
+    "currency": lambda f: f.currency,
+    "amount": lambda f: f.amount,
+    "bills": lambda f: len(f.bill_nos),
+    "extra": lambda f: f.extra_amount,
+    "open": lambda f: f.open_exposure,
+    "review": lambda f: (DUP_REVIEW_REASONS.get(f.review.get("reason"), f.review.get("reason"))
+                         .lower() if f.review else None),
+}
+
+
 async def report(db: AsyncSession, *, kind: str | None = None,
                  reviewed: bool | None = False, currency: str | None = None,
-                 q: str | None = None, limit: int = 500) -> dict:
+                 q: str | None = None, limit: int = 500, offset: int = 0,
+                 sort: str | None = None, dir: SortDir = "asc") -> dict:
     """Summary over everything, rows filtered. The summary never follows the
     filter — a page whose totals shrink with the filter cannot say how much
-    was left out."""
+    was left out. Rows are sorted (FINDING_SORT; default biggest exposure
+    first) BEFORE the page is cut, and `total` counts every matching group."""
     found = await findings(db)
     rows = [f for f in found
             if (kind is None or f.kind == kind)
@@ -459,7 +496,8 @@ async def report(db: AsyncSession, *, kind: str | None = None,
                 or any(needle in (e.supplier_name or "").upper().replace(" ", "")
                        or needle == (e.supplier_code or "") or needle == e.bill_no
                        for e in f.entries)]
-    shown = rows[:limit]
+    rows = sort_rows(rows, sort, dir, FINDING_SORT, tiebreak=lambda f: f.key)
+    shown = rows[offset:offset + limit]
     pays = await _payments(db, sorted({e.nc_pk for f in shown for e in f.entries}))
     return {"summary": summarise(found), "total": len(rows),
             "findings": [finding_json(f, pays) for f in shown]}

@@ -2,13 +2,29 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   creditAttachmentService, vendorCreditsService, type CreateVendorCreditBody,
+  type VendorCredit, type VendorCreditListOptions,
 } from '@/services/vendorCredits'
 
-export function useVendorCredits(status?: string) {
+export function useVendorCredits(status?: string, opts?: VendorCreditListOptions) {
   return useQuery({
-    queryKey: ['vendor-credits', status ?? 'all'],
-    queryFn: () => vendorCreditsService.list(status),
+    // Page and sort are in the key; mutations invalidate the ['vendor-credits'] prefix.
+    queryKey: ['vendor-credits', status ?? 'all', opts ?? null],
+    queryFn: () => vendorCreditsService.list(status, opts),
     staleTime: 30_000,
+  })
+}
+
+/** One credit by id (GET /vendor-credits/{id}) — for a credit that need not be
+ * on the list page currently shown. `seed` (e.g. the create response) shows
+ * at once; it is refetched immediately and after every vendor-credit mutation
+ * (same ['vendor-credits'] prefix). */
+export function useVendorCredit(id: string | null, seed?: VendorCredit | null) {
+  return useQuery({
+    queryKey: ['vendor-credits', 'detail', id],
+    queryFn: () => vendorCreditsService.get(id!),
+    enabled: !!id,
+    initialData: seed && seed.id === id ? seed : undefined,
+    initialDataUpdatedAt: 0,
   })
 }
 

@@ -1,7 +1,7 @@
 """Purchase Request endpoints."""
 import logging
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.core.access_scope import build_scope
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
 from app.crud import pr as pr_crud
+from app.crud._list_order import sort_clauses
 from app.crud.current_step import enrich_current_step
 from app.schemas.pr import (
     ApprovalEventResponse,
@@ -47,7 +48,10 @@ async def list_prs(
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
+    sort_clauses(sort, dir, pr_crud.SORTABLE, ())   # unknown key → 422, before any work
     # §1.3 PL-001–006: server-side scope enforcement — cannot be bypassed by client params.
     # build_scope encodes per-role visibility AND multi-role expansion via Role Management
     # (a dept_manager who is also the configured procurement_manager gets unrestricted scope).
@@ -67,6 +71,8 @@ async def list_prs(
         search=search,
         page=page,
         page_size=page_size,
+        sort=sort,
+        dir=dir,
     )
     await enrich_current_step(db, "pr", items)
     return PrListResponse(items=items, total=total)

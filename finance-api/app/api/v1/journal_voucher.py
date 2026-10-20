@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uniops_authz import has_permission
 
 from app.core.deps import CurrentUser
+from app.core.list_sort import SortDir, lower
 from app.crud import journal_voucher as crud
 from app.db.base import get_db
 from app.models.journal_voucher import (JournalVoucher, JournalVoucherLine,
@@ -21,13 +22,17 @@ router = APIRouter(prefix="/journal-vouchers", tags=["journal-vouchers"])
 _SORTABLE = {
     "voucher_date": JournalVoucher.voucher_date,
     "jv_number": JournalVoucher.jv_number,
-    "summary": JournalVoucher.summary,
+    "summary": lower(JournalVoucher.summary),
     # The list's "Debit (CAD)" column displays total_local_debit, so sort on the
     # SAME column — sorting the original-currency total_debit would make the
     # visible CAD column non-monotonic for a multi-currency book (27k USD lines).
     "total_debit": JournalVoucher.total_local_debit,
     "status": JournalVoucher.status,
     "source_subsystem": JournalVoucher.source_subsystem,
+    # The Source cell leads with the document number; Prepared / Checked leads
+    # with the preparer. Each sorts by the line it shows first.
+    "source_doc_number": lower(JournalVoucher.source_doc_number),
+    "nc_prepared_name": lower(JournalVoucher.nc_prepared_name),
 }
 
 _SUBSYSTEM_LABELS = {
@@ -132,7 +137,7 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         limit: int = Query(default=50, le=200),
                         offset: int = Query(default=0, ge=0),
                         sort: str = Query(default="voucher_date"),
-                        dir: str = Query(default="desc")):
+                        dir: SortDir = Query(default="desc")):
     """NC's 凭证查询 has period/date/number RANGES and an auxiliary picker; this
     used to offer a single exact fiscal_period, so listing a quarter meant three
     separate queries and listing "all of 2026" was impossible.
@@ -200,9 +205,11 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
     if sort not in _SORTABLE:
         raise HTTPException(status_code=422, detail=f"unknown sort column {sort!r}")
     col = _SORTABLE[sort]
-    col = col.asc() if dir == "asc" else col.desc()
+    # nulls_last both ways: Postgres DESC would otherwise lift every voucher
+    # without a summary / source document above the real values.
+    col = (col.asc() if dir == "asc" else col.desc()).nulls_last()
     rows = (await db.execute(
-        base.order_by(col, JournalVoucher.jv_number.desc())   # jv_number 作稳定次级键
+        base.order_by(col, JournalVoucher.jv_number.desc(), JournalVoucher.id)   # 稳定次级键
         .offset(offset).limit(limit))).scalars().all()
     return {"total": total, "items": [_hdr(jv) for jv in rows]}
 

@@ -3,12 +3,15 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import array as sa_array
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ontology import scope_po
+from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
+from app.crud.current_step import status_step_sort_keys
+from app.crud.pr import type_label_key
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
@@ -63,6 +66,27 @@ def _compute_totals(items_in, tax_rate: Decimal):
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
 
+# GET /po ?sort= keys → what the PO list's column shows (whitelist = the
+# SQL-injection boundary; unknown key → 422).
+SORTABLE = {
+    "number": lower_text(PurchaseOrder.number),
+    # "PR Ref." prints pr_number only when the PO is linked to a PR.
+    "pr_number": case((PurchaseOrder.pr_id.is_not(None), lower_text(PurchaseOrder.pr_number))),
+    # "Title / Vendor" — the title is the cell's headline; the vendor is the
+    # grey second line, so it is a separate key.
+    "title": lower_text(PurchaseOrder.title),
+    "vendor_name": lower_text(PurchaseOrder.vendor_name),
+    "type": type_label_key(PurchaseOrder.type),
+    "total": PurchaseOrder.total,
+    # status → current approval step in chain order → approver name.
+    "status": status_step_sort_keys(PurchaseOrder.status, PurchaseOrder.id, "po"),
+    "created_at": PurchaseOrder.created_at,
+    "is_prepaid": PurchaseOrder.is_prepaid,
+    "expected_delivery": PurchaseOrder.expected_delivery,
+}
+SORT_TIEBREAK = (PurchaseOrder.id.asc(),)
+
+
 async def get_all(
     db: AsyncSession,
     *,
@@ -77,7 +101,10 @@ async def get_all(
     po_ids_subq=None,
     page: int = 1,
     page_size: int = 20,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[PurchaseOrder], int]:
+    order = sort_clauses(sort, dir, SORTABLE, SORT_TIEBREAK) or [PurchaseOrder.created_at.desc()]
     q = select(PurchaseOrder)
     # Row scope lives in ontology.scope_po — see the note in crud/pr.py.
     q = await scope_po(q, {"po_subq": po_ids_subq}, db)
@@ -113,7 +140,7 @@ async def get_all(
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(
-        q.order_by(PurchaseOrder.created_at.desc()).offset(offset).limit(page_size)
+        q.order_by(*order).offset(offset).limit(page_size)
     )).scalars().all())
     return items, total
 

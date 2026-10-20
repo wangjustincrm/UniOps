@@ -4,11 +4,11 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { Badge } from '@uniops/shell'
+import { Badge, SortTh, sortParams, useSort } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import { formatMoney, formatQty, formatUnitPrice, isNegative } from '@/lib/number'
 import { ncApi, type CostRow, type CostSort } from './ncApi'
-import { EmptyRow, ErrorBox, LoadingRows, MaterialCell, Pager, SortTh, Uom, thCls } from './NcUi'
+import { EmptyRow, ErrorBox, LoadingRows, MaterialCell, Pager, Uom, thCls } from './NcUi'
 import { usePageFor } from './usePageFor'
 import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
@@ -187,7 +187,7 @@ function CostRowView({ r, showAmt, open, onToggle, date, cols }: {
 }
 
 export function CostTab({ date, classCode, search }: { date: string; classCode: string; search: string }) {
-  const [sortState, setSort] = useState<CostSort>('material')
+  const [sortState, onSort] = useSort<CostSort>()
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
 
   const filterKey = JSON.stringify([date, classCode, search, sortState])
@@ -197,15 +197,16 @@ export function CostTab({ date, classCode, search }: { date: string; classCode: 
     queryKey: ['nc', 'cost', date, classCode, search, sortState, page],
     queryFn: () => ncApi.cost({
       date, class_code: classCode || undefined, search: search || undefined,
-      sort: sortState, page, page_size: PAGE_SIZE,
+      ...sortParams(sortState), page, page_size: PAGE_SIZE,
     }),
     placeholderData: keepPreviousData,
   })
 
   const data = q.data
   const showAmt = data?.amounts_visible ?? false
-  // The API falls back to material order when amounts are hidden.
-  const sort: CostSort = sortState === 'amount' && !showAmt ? 'material' : sortState
+  // The API ignores an amount sort when amounts are hidden (default order).
+  const sort = sortState && (sortState.key === 'amount' || sortState.key === 'unit_price') && !showAmt
+    ? null : sortState
   const cols = showAmt ? 6 : 4
 
   function toggle(code: string) {
@@ -235,11 +236,11 @@ export function CostTab({ date, classCode, search }: { date: string; classCode: 
             <thead className={stickyHeadCls}>
               <tr>
                 <th className="w-8 px-2 py-2" aria-label="Expand" />
-                <SortTh label="Material" sortKey="material" current={sort} onSort={setSort} />
-                <SortTh label="Qty" sortKey="qty" current={sort} onSort={setSort} align="right" descending />
-                {showAmt && <SortTh label="Amount" sortKey="amount" current={sort} onSort={setSort} align="right" descending />}
-                {showAmt && <th className="px-3 py-2 text-right">Unit price</th>}
-                <th className="px-3 py-2 text-left">Costing</th>
+                <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+                <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+                {showAmt && <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />}
+                {showAmt && <SortTh label="Unit price" sortKey="unit_price" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />}
+                <SortTh label="Costing" title="Sort by number of uncosted rows" sortKey="uncosted" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               </tr>
             </thead>
             <tbody>

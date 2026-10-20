@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ontology import scope_gr
+from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
 from app.crud.pr_owner import get_pr_owner_id
 from app.crud.signatories import gr_signatories, resolve_user_names
@@ -69,6 +70,31 @@ def _build_line_items(gr_id: uuid.UUID, items_in) -> list[GrLineItem]:
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
 
+# GET /gr ?sort= keys → what the GR list's column shows (whitelist = the
+# SQL-injection boundary; unknown key → 422).
+SORTABLE = {
+    "number": lower_text(GoodsReceipt.number),
+    "po_number": lower_text(GoodsReceipt.po_number),
+    "vendor_name": lower_text(GoodsReceipt.vendor_name),
+    # Labels Physical / Service sort the same as the codes.
+    "gr_type": GoodsReceipt.gr_type,
+    # Status labels (Cancelled, Collected, Collection Pending, Confirmed,
+    # Discrepancy, Pending Acknowledgement) sort the same as the codes.
+    "status": GoodsReceipt.status,
+    "received_at": GoodsReceipt.received_at,
+    # "Total Value" is the sum of the receipt's line totals, as the row adds it up.
+    "total_value": func.coalesce(
+        select(func.sum(GrLineItem.line_total))
+        .where(GrLineItem.gr_id == GoodsReceipt.id)
+        .correlate_except(GrLineItem)
+        .scalar_subquery(),
+        0,
+    ),
+    "received_by": lower_text(GoodsReceipt.received_by),
+}
+SORT_TIEBREAK = (GoodsReceipt.id.asc(),)
+
+
 async def get_all(
     db: AsyncSession,
     *,
@@ -81,7 +107,10 @@ async def get_all(
     po_ids_subq=None,
     page: int = 1,
     page_size: int = 20,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[GoodsReceipt], int]:
+    order = sort_clauses(sort, dir, SORTABLE, SORT_TIEBREAK) or [GoodsReceipt.created_at.desc()]
     q = select(GoodsReceipt)
     # Row scope lives in ontology.scope_gr — see the note in crud/pr.py.
     q = await scope_gr(q, {"po_subq": po_ids_subq}, db)
@@ -106,7 +135,7 @@ async def get_all(
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(
-        q.order_by(GoodsReceipt.created_at.desc()).offset(offset).limit(page_size)
+        q.order_by(*order).offset(offset).limit(page_size)
     )).scalars().all())
     return items, total
 

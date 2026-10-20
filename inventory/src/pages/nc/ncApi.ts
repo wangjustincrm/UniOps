@@ -7,6 +7,7 @@
 // Every number is a Decimal serialised as a string; format with lib/number.ts.
 // Every date is a plain string ("YYYY-MM-DD", or NC's raw "YYYY-MM-DD HH:MM:SS"
 // on its own clock) — shown as-is, never passed through new Date().
+import type { SortDir } from '@uniops/shell'
 import { api } from '@/lib/api'
 
 export const MATERIAL_CLASSES = [
@@ -60,7 +61,11 @@ export interface NcMeta {
 
 // ── Stock (IC) ───────────────────────────────────────────────────────────────
 
-export type StockSort = 'material' | 'warehouse' | 'batch' | 'qty'
+/** Sort keys the API whitelists (inventory-api nc_inventory.py), one per column. */
+export type StockBatchSort = 'warehouse' | 'material' | 'batch' | 'supplier_batch' | 'produced'
+  | 'expires' | 'qty' | 'locked' | 'available' | 'state'
+export type StockMaterialSort = 'material' | 'qty' | 'qty_wms' | 'qty_external' | 'qty_production'
+  | 'qty_other' | 'batches' | 'locked'
 
 export interface StockSummaryRow {
   warehouse_class: string
@@ -120,7 +125,7 @@ export type StockResponse =
 
 // ── Cost (IA) ────────────────────────────────────────────────────────────────
 
-export type CostSort = 'material' | 'qty' | 'amount'
+export type CostSort = 'material' | 'qty' | 'amount' | 'unit_price' | 'uncosted'
 
 export interface CostRow {
   material_code: string | null
@@ -251,7 +256,12 @@ export interface CommonFilters {
   search?: string
   page: number
   page_size: number
+  /** Column sort; absent = the API's default order. */
+  sort?: string
+  dir?: SortDir
 }
+
+export type LedgerSort = 'account' | 'material' | 'qty' | 'amount'
 
 export function qs(params: Record<string, string | number | boolean | string[] | undefined | null>): string {
   const sp = new URLSearchParams()
@@ -269,10 +279,10 @@ const enc = encodeURIComponent
 export const ncApi = {
   meta: (date: string) => api.get<NcMeta>(`/nc/meta${qs({ date })}`),
 
-  stock: (f: CommonFilters & { group: 'batch' | 'material'; warehouse_class: string[]; sort: StockSort }) =>
+  stock: (f: CommonFilters & { group: 'batch' | 'material'; warehouse_class: string[] }) =>
     api.get<StockResponse>(`/nc/stock${qs({ ...f })}`),
 
-  cost: (f: CommonFilters & { sort: CostSort }) => api.get<CostResponse>(`/nc/cost${qs({ ...f })}`),
+  cost: (f: CommonFilters) => api.get<CostResponse>(`/nc/cost${qs({ ...f })}`),
 
   costBreakdown: (materialCode: string, date: string) =>
     api.get<CostBreakdownResponse>(`/nc/cost/${enc(materialCode)}/breakdown${qs({ date })}`),

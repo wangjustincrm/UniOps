@@ -2,7 +2,7 @@
 approve_{doctype} task (the resync-authoritative 'real current step') rather
 than approval_step_idx, which over-budget injection and stale routing can skew.
 """
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.delegation import active_delegate_ids
@@ -31,12 +31,59 @@ ROLE_ORDER: dict[str, int] = {
     "dept_manager": 20,
     "director": 30,
     "procurement_manager": 35,
+    # A gm_or_opm step is assigned as the resolved post (gm or opm), so open
+    # tasks carry those codes; the Freight PA chain runs OPM before GM.
+    "opm": 39,
     "gm_or_opm": 40,
+    "gm": 40,
+    "ap_clerk": 45,        # legacy PA review step, before Finance BP
     "finance_bp": 50,
     "finance_manager": 60,
     "finance_director": 65,
     "vendor_manager": 70,
 }
+
+
+# A document whose current step is unknown (no open task, or a role not in
+# ROLE_ORDER) gets a NULL step, so the caller's nulls_last keeps it after every
+# known step in BOTH directions — "no value sorts last" (PRD UI-SORT-003).
+
+
+def status_step_sort_keys(status_col, id_col, doc_type: str) -> tuple:
+    """ORDER BY keys for a list's Status column, in SQL so a paged list sorts
+    across all pages: status, then (in_review only) the current step's place
+    in the approval chain, then that step's approver name (named before the
+    role pool once the caller adds nulls_last).
+
+    The current step is the one enrich_current_step shows: the EARLIEST open
+    approve_{doc_type} task of the document — same filter, same order. Outside
+    in_review both step keys are NULL, as the step hint is never shown there.
+    """
+    def _earliest_open_task(col):
+        return (
+            select(col)
+            .select_from(Task)
+            .outerjoin(User, User.id == Task.assigned_user_id)
+            .where(
+                Task.document_type == doc_type,
+                Task.type == f"approve_{doc_type}",
+                Task.is_completed == False,  # noqa: E712
+                Task.document_id == id_col,
+            )
+            .order_by(Task.created_at.asc(), Task.id.asc())
+            .limit(1)
+            .correlate_except(Task, User)
+            .scalar_subquery()
+        )
+
+    in_review = status_col == "in_review"
+    step_order = case(
+        (in_review, case(ROLE_ORDER, value=_earliest_open_task(Task.assigned_role),
+                         else_=None)),
+        else_=None,
+    )
+    approver = case((in_review, _earliest_open_task(func.lower(User.full_name))), else_=None)
+    return (status_col, step_order, approver)
 
 
 def role_label(role: str) -> str:
@@ -70,7 +117,9 @@ async def enrich_current_step(db: AsyncSession, doc_type: str, items: list) -> N
             Task.type == task_type,
             Task.is_completed == False,  # noqa: E712
             Task.document_id.in_(ids),
-        ).order_by(Task.created_at.asc())
+        # id breaks created_at ties the same way status_step_sort_keys does,
+        # so the step shown and the step the list is sorted by are one task.
+        ).order_by(Task.created_at.asc(), Task.id.asc())
     )).scalars().all()
 
     task_by_doc: dict = {}

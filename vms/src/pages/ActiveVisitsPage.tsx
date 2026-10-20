@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, UserCheck, Users } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useActiveVisits, useBatchCheckOut } from '@/services/api'
-import { AccessAreaBadge, OverdueBadge, isVisitOverdue } from '@/components/StatusBadge'
+import { AccessAreaBadge, OverdueBadge, accessAreaLabel, isVisitOverdue } from '@/components/StatusBadge'
 import { formatDateTime, timeAgo } from '@/lib/utils'
 
 function getRole(): string | null {
@@ -19,6 +20,13 @@ function getRole(): string | null {
 export default function ActiveVisitsPage() {
   const { data, isLoading } = useActiveVisits()
   const items = data ?? []
+  // Whole list (/visits/active is not paged) → sorted here.
+  const sorted = useSortableRows(data, {
+    visit: (v) => (v.visitor ? `${v.visitor.first_name} ${v.visitor.last_name}` : `Visit #${v.id.slice(0, 8)}`),
+    area: (v) => accessAreaLabel(v.access_area),
+    checked_in: (v) => v.actual_arrival,
+    duration: (v) => (v.actual_arrival ? Date.now() - Date.parse(v.actual_arrival) : null),
+  })
   const isAdmin = getRole() === 'system_admin'
 
   const batch = useBatchCheckOut()
@@ -76,10 +84,10 @@ export default function ActiveVisitsPage() {
         <table className="min-w-full divide-y divide-neutral-200">
           <thead className="bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">
             <tr>
-              <th className="px-4 py-2.5">Visit</th>
-              <th className="px-4 py-2.5">Area</th>
-              <th className="px-4 py-2.5 hidden md:table-cell">Checked In</th>
-              <th className="px-4 py-2.5">Duration</th>
+              <SortTh label="Visit" sortKey="visit" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-2.5" />
+              <SortTh label="Area" sortKey="area" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-2.5" />
+              <SortTh label="Checked In" sortKey="checked_in" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-2.5 hidden md:table-cell" />
+              <SortTh label="Duration" sortKey="duration" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-2.5" />
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 bg-white text-sm">
@@ -93,7 +101,7 @@ export default function ActiveVisitsPage() {
                 </td>
               </tr>
             )}
-            {items.map(v => (
+            {sorted.rows.map(v => (
               <tr key={v.id} className="hover:bg-primary-50/30">
                 <td className="px-4 py-2.5">
                   <span className="inline-flex items-center gap-1.5">

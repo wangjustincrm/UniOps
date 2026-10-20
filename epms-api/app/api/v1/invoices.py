@@ -1,7 +1,7 @@
 """Invoice endpoints."""
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -472,9 +472,13 @@ async def list_invoices(
     search: str | None = Query(default=None),
     sort: str | None = Query(
         default=None,
-        pattern="^-?due_date$",
-        description="due_date | -due_date. Omit for the default newest-first order.",
+        description=(
+            "Column key from crud.invoice.INVOICE_SORTABLE (unknown key -> 422); "
+            "the legacy `-due_date` still means due_date descending. "
+            "Omit for the default newest-first order."
+        ),
     ),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
     overdue: bool = Query(
         default=False,
         description="Only invoices past their due date and not yet paid.",
@@ -533,7 +537,7 @@ async def list_invoices(
         po_subq = own_uploads = task_uid = None
     items, total = await invoice_crud.get_all(
         db, status=status, vendor_id=vendor_id, po_id=po_id, agreement_id=agreement_id, search=search,
-        sort=sort, overdue=overdue, route=route,
+        sort=sort, dir=dir, overdue=overdue, route=route,
         po_ids_subq=po_subq,
         own_uploads_user_id=own_uploads,
         task_user_id=task_uid,

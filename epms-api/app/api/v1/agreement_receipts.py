@@ -1,6 +1,6 @@
 """House-account agreement receipt endpoints (entry / list / void / AP review)."""
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -12,6 +12,7 @@ from app.core.authz import require_permission
 from app.core.deps import SessionDep
 from app.crud import agreement as agr_crud
 from app.crud import agreement_receipt as receipt_crud
+from app.crud._list_order import sort_clauses
 from app.crud import vendor as vendor_crud
 from app.crud.agreement_receipt import RETIRED as RETIRED_RECEIPT_STATUSES
 from app.crud.agreement_receipt import ReceiptRow
@@ -335,12 +336,15 @@ async def list_all_receipts(
     # negative OFFSET, which Postgres rejects — an unhandled 500 instead of a
     # clean 422 on a malformed request.
     page_size: int = Query(default=20, ge=1, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
+    sort_clauses(sort, dir, receipt_crud.SORTABLE, ())   # unknown key → 422, before any work
     scope = await build_scope(db, user)
     rows, total = await receipt_crud.list_all(
         db, agreement_id=agreement_id, receipt_type=receipt_type, status=status_filter,
         search=search, agreement_ids_subq=scope["agr_subq"],
-        page=page, page_size=page_size,
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
     return {"items": [_with_agreement(row) for row in rows], "total": total}
 

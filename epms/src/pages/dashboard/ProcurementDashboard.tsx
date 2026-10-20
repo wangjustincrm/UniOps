@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { formatAmount, formatDate } from '@/lib/utils'
+import { SortTh, useSortableRows } from '@uniops/shell'
 
 const PO_STATUS_STYLES: Record<string, string> = {
   draft:      'bg-neutral-100 text-neutral-600',
@@ -25,7 +26,14 @@ export default function ProcurementDashboard() {
   const { data } = useDashboard()
 
   const kpi = (title: string) => data?.kpis.find((k) => k.title === title)
-  const recentPos = data?.recent_pos ?? []
+  // Recent-N widget, loaded whole: sorting the rows here is exact.
+  const { rows: recentPos, sort, onSort } = useSortableRows(data?.recent_pos, {
+    number: (p) => p.number,
+    title: (p) => p.title,
+    vendor_name: (p) => p.vendor_name,
+    total: (p) => Number(p.total),
+    status: (p) => p.status.replace('_', ' '),
+  })
 
   return (
     <div className="flex flex-col gap-6">
@@ -60,11 +68,11 @@ export default function ProcurementDashboard() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-neutral-100 text-left">
-                      <th className="pb-2 font-medium text-neutral-500">PO #</th>
-                      <th className="pb-2 font-medium text-neutral-500">Title</th>
-                      <th className="pb-2 font-medium text-neutral-500">Vendor</th>
-                      <th className="pb-2 text-right font-medium text-neutral-500">Amount</th>
-                      <th className="pb-2 font-medium text-neutral-500">Status</th>
+                      <SortTh label="PO #" sortKey="number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                      <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                      <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                      <SortTh label="Amount" sortKey="total" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
+                      <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-50">

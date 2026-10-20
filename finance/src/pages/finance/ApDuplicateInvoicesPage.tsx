@@ -23,10 +23,17 @@ import { Fragment, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, Loader2, Undo2 } from 'lucide-react'
+import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+import { ListPager } from '@/components/ListPager'
+
+const PAGE_SIZE = 50
+/** GET /ap-duplicate-invoices sort keys (finance-api ap_duplicate_invoices.FINDING_SORT). */
+type FindingSortKey = 'action' | 'invoice' | 'supplier' | 'currency' | 'amount' | 'bills'
+  | 'extra' | 'open' | 'review'
 
 type Kind = 'exact' | 'amount_differs' | 'pending'
 type Status = 'stop_approval' | 'stop_payment' | 'recover' | 'review'
@@ -204,11 +211,23 @@ export default function ApDuplicateInvoicesPage() {
   const [reviewing, setReviewing] = useState<Finding | null>(null)
   const [reviewError, setReviewError] = useState<string | null>(null)
 
-  const qs = new URLSearchParams({ kind, reviewed, limit: '2000' })
-  if (search.trim()) qs.set('q', search.trim())
+  // Groups are computed, sorted and paged by the API (a group's bills always
+  // travel with it). A page belongs to the filter it was turned on; a new
+  // filter or a new sort starts at page 1.
+  const filterQs = new URLSearchParams({ kind, reviewed })
+  if (search.trim()) filterQs.set('q', search.trim())
+  const [pageAt, setPageAt] = useState({ key: filterQs.toString(), page: 1 })
+  const page = pageAt.key === filterQs.toString() ? pageAt.page : 1
+  const setPage = (p: number) => setPageAt({ key: filterQs.toString(), page: p })
+  const [sort, onSort] = useSort<FindingSortKey>(null, () => setPage(1))
+  const sortQs = (() => {
+    const { sort: key, dir } = sortParams(sort)
+    return key && dir ? `&sort=${key}&dir=${dir}` : ''
+  })()
   const { data, isFetching, error } = useQuery({
-    queryKey: ['ap-dup-invoices', kind, reviewed, search.trim()],
-    queryFn: () => financeApi.get<Resp>(`/ap-duplicate-invoices?${qs}`),
+    queryKey: ['ap-dup-invoices', kind, reviewed, search.trim(), page, sort],
+    queryFn: () => financeApi.get<Resp>(
+      `/ap-duplicate-invoices?${filterQs}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}${sortQs}`),
   })
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['ap-dup-invoices'] })
@@ -240,6 +259,7 @@ export default function ApDuplicateInvoicesPage() {
     [reasonData])
 
   const summary = data?.summary
+  // Expansion is keyed by the group key, so it survives paging and sorting.
   const rows = data?.findings ?? []
 
   const toggle = (key: string) => setExpanded((prev) => {
@@ -248,12 +268,20 @@ export default function ApDuplicateInvoicesPage() {
     return next
   })
 
-  const exportCsv = () => {
+  // Every matching group (not just this page), in the on-screen sort.
+  const exportCsv = async () => {
+    const all: Finding[] = []
+    for (let off = 0; ; off += 2000) {
+      const r = await financeApi.get<Resp>(
+        `/ap-duplicate-invoices?${filterQs}&limit=2000&offset=${off}${sortQs}`)
+      all.push(...r.findings)
+      if (all.length >= r.total || r.findings.length === 0) break
+    }
     const head = ['Action', 'Kind', 'Invoice no', 'Currency', 'Supplier code', 'Supplier',
                   'Invoice amount', 'Extra copies', 'Billed twice', 'Still payable on copies',
                   'NC bill', 'Bill status', 'Bill date', 'Bill supplier', 'Amount on bill',
                   'Open on bill', 'Paid on bill', 'NC payments', 'Reviewed', 'Reason', 'Note']
-    const body = rows.flatMap((f) => f.bills.map((b) => [
+    const body = all.flatMap((f) => f.bills.map((b) => [
       STATUS[f.status].label, f.kind_label, f.invoice_no, f.currency, f.supplier_code,
       f.supplier_name, f.amount, f.extra_copies, f.extra_amount, f.open_exposure,
       b.bill_no, b.status_label, b.bill_date, b.supplier_name, b.amount, b.open,
@@ -359,20 +387,21 @@ export default function ApDuplicateInvoicesPage() {
             {reviewed === 'no' ? 'Nothing left to review here.' : 'No groups.'}
           </div>
         ) : (
+          <>
           <div className="overflow-x-auto rounded-lg border border-neutral-200">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50">
                 <tr className="text-left text-xs text-neutral-500">
                   <th className="w-6 px-2 py-2" />
-                  <th className="px-2.5 py-2 font-medium">Action</th>
-                  <th className="px-2.5 py-2 font-medium">Invoice no</th>
-                  <th className="px-2.5 py-2 font-medium">Supplier</th>
-                  <th className="px-2.5 py-2 font-medium">Ccy</th>
-                  <th className="px-2.5 py-2 text-right font-medium">Invoice amount</th>
-                  <th className="px-2.5 py-2 text-right font-medium">Bills</th>
-                  {showMoney && <th className="px-2.5 py-2 text-right font-medium">Billed twice</th>}
-                  {showMoney && <th className="px-2.5 py-2 text-right font-medium">Still payable</th>}
-                  <th className="px-2.5 py-2 font-medium">Review</th>
+                  <SortTh label="Action" sortKey="action" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
+                  <SortTh label="Invoice no" sortKey="invoice" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
+                  <SortTh label="Supplier" sortKey="supplier" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
+                  <SortTh label="Ccy" sortKey="currency" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
+                  <SortTh label="Invoice amount" sortKey="amount" sort={sort} onSort={onSort} align="right" className="px-2.5 py-2 font-medium" />
+                  <SortTh label="Bills" sortKey="bills" sort={sort} onSort={onSort} align="right" className="px-2.5 py-2 font-medium" />
+                  {showMoney && <SortTh label="Billed twice" sortKey="extra" sort={sort} onSort={onSort} align="right" className="px-2.5 py-2 font-medium" />}
+                  {showMoney && <SortTh label="Still payable" sortKey="open" sort={sort} onSort={onSort} align="right" className="px-2.5 py-2 font-medium" />}
+                  <SortTh label="Review" sortKey="review" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
                 </tr>
               </thead>
               <tbody>
@@ -453,6 +482,8 @@ export default function ApDuplicateInvoicesPage() {
               </tbody>
             </table>
           </div>
+          <ListPager page={page} pageSize={PAGE_SIZE} total={data.total} noun="groups" onPage={setPage} />
+          </>
         )}
       </div>
 

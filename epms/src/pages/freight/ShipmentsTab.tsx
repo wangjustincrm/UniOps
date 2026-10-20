@@ -17,6 +17,11 @@ import {
 import {
   CostCenterSelect, Modal, SELECT_CLS, ShipmentStatusBadge, TH_CLS, daysSince, errorMessage,
 } from './freightUi'
+import { SortTh, useSort, sortParams } from '@uniops/shell'
+
+type ShipmentSortKey =
+  | 'carrier' | 'tracking_no' | 'direction' | 'department' | 'created_by_name'
+  | 'created_at' | 'status' | 'invoice_number'
 
 const AGEING_DAYS = 60
 
@@ -27,6 +32,8 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
   const [mineOnly, setMineOnly] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  // Paged by the API, so the API sorts (null = its default, newest first).
+  const [sort, onSort] = useSort<ShipmentSortKey>(null, () => setPage(1))
   const [dialog, setDialog] = useState<{ mode: 'create' } | { mode: 'edit'; shipment: FreightShipment } | null>(null)
 
   const { data: carriers = [] } = useFreightCarriers()
@@ -35,6 +42,7 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
     carrier_id: carrierId || undefined,
     search: search.trim() || undefined,
     mine: canManage && mineOnly ? true : undefined,
+    ...sortParams(sort),
     page,
     page_size: pageSize,
   })
@@ -101,9 +109,15 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 bg-neutral-50">
-                  {['Carrier', 'Tracking No', 'Direction', 'Department / Cost Center', 'Registered By', 'Registered', 'Status', 'Invoice', ''].map((h) => (
-                    <th key={h} className={TH_CLS}>{h}</th>
-                  ))}
+                  <SortTh label="Carrier" sortKey="carrier" sort={sort} onSort={onSort} className={TH_CLS} />
+                  <SortTh label="Tracking No" sortKey="tracking_no" sort={sort} onSort={onSort} className={TH_CLS} />
+                  <SortTh label="Direction" sortKey="direction" sort={sort} onSort={onSort} className={TH_CLS} />
+                  <SortTh label="Department / Cost Center" sortKey="department" sort={sort} onSort={onSort} className={TH_CLS} />
+                  <SortTh label="Registered By" sortKey="created_by_name" sort={sort} onSort={onSort} className={TH_CLS} />
+                  <SortTh label="Registered" sortKey="created_at" sort={sort} onSort={onSort} className={TH_CLS} />
+                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={TH_CLS} />
+                  <SortTh label="Invoice" sortKey="invoice_number" sort={sort} onSort={onSort} className={TH_CLS} />
+                  <th className={TH_CLS} />
                 </tr>
               </thead>
               <tbody>

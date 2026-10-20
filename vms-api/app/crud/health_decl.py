@@ -18,7 +18,7 @@ from typing import Iterable
 from datetime import date
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health_declaration import HealthDeclaration
@@ -206,6 +206,20 @@ async def get_all_for_visit(
     )
 
 
+# Health declarations page headers -> ORDER BY (the ?sort= whitelist). Each
+# sorts by what the cell shows: the visitor's "First Last", the host's name,
+# the area code with "_" shown as " ", the raw result word.
+DECLARATION_SORTABLE = {
+    "visit_date": Visit.visit_date,
+    "visitor_name": func.lower(func.trim(Visitor.first_name + " " + Visitor.last_name)),
+    "company": func.lower(Visitor.company_name),
+    "host_name": func.lower(User.full_name),
+    "access_area": func.lower(func.replace(cast(Visit.access_area, String), "_", " ")),
+    "result": func.lower(cast(HealthDeclaration.result, String)),
+    "updated_at": HealthDeclaration.updated_at,
+}
+
+
 async def list_declarations(
     db: AsyncSession,
     *,
@@ -217,6 +231,8 @@ async def list_declarations(
     q: str | None = None,
     page: int = 1,
     page_size: int = 25,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[tuple], int]:
     """Cross-visit declarations browser, visibility-scoped like /visits.
 
@@ -225,6 +241,9 @@ async def list_declarations(
     """
     # Local import avoids a circular dependency (visit crud imports schemas).
     from app.crud import visit as visit_crud
+    from app.core.list_sort import apply_sort, check_sort
+
+    check_sort(sort, DECLARATION_SORTABLE)
 
     base = (
         select(HealthDeclaration, Visitor, Visit, User.full_name)
@@ -255,9 +274,10 @@ async def list_declarations(
     ).scalar_one()
     rows = (
         await db.execute(
-            base.order_by(
-                Visit.visit_date.desc(), HealthDeclaration.created_at.desc()
-            )
+            apply_sort(base, sort, dir, DECLARATION_SORTABLE,
+                       tiebreak=HealthDeclaration.id,
+                       default=(Visit.visit_date.desc(),
+                                HealthDeclaration.created_at.desc()))
             .offset((page - 1) * page_size)
             .limit(page_size)
         )

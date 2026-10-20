@@ -29,6 +29,7 @@ from sqlalchemy import Date, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.delegation import PLANT_TIMEZONE
+from app.crud._list_order import lower_text, sort_clauses
 from app.models.approval import ApprovalEvent
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.po import PoLineItem, PurchaseOrder
@@ -81,6 +82,57 @@ class ReceivingRow:
     lead_time_days: int | None
 
 
+# The PO's own "we placed this" stamp is only set by the Place Order action,
+# which about half the orders on file predate. Falling back to the last
+# approval — the point the order was cleared to go out — and then to the
+# creation date keeps a lead time on every row rather than blanking the
+# column for older orders. Newer orders take the first branch and are exact.
+_LAST_APPROVED_AT = (
+    select(func.max(ApprovalEvent.created_at))
+    .where(
+        ApprovalEvent.document_type == "po",
+        ApprovalEvent.document_id == PurchaseOrder.id,
+        ApprovalEvent.action == "approve",
+    )
+    .correlate(PurchaseOrder)
+    .scalar_subquery()
+)
+_ORDERED_AT = func.coalesce(
+    PurchaseOrder.placed_at, _LAST_APPROVED_AT, PurchaseOrder.created_at
+)
+
+
+def _local_day(column):
+    """A timestamptz as the plant's wall-clock date, in SQL."""
+    return cast(func.timezone(PLANT_TIMEZONE, column), Date)
+
+
+_MATERIAL_ID = func.coalesce(GrLineItem.material_id, PoLineItem.material_id)
+_LEAD_DAYS = _local_day(GoodsReceipt.received_at) - _local_day(_ORDERED_AT)
+
+# GET /gr/receiving-report ?sort= keys → what each column shows (whitelist =
+# the SQL-injection boundary; unknown key → 422). Dates sort by the stamp the
+# column's local date is taken from.
+SORTABLE = {
+    "material_id": lower_text(_MATERIAL_ID),
+    "description": lower_text(GrLineItem.description),
+    "supplier": lower_text(GoodsReceipt.vendor_name),
+    "po_number": GoodsReceipt.po_number,
+    "unit": lower_text(GrLineItem.unit),
+    "quantity": GrLineItem.qty_received,
+    "department": lower_text(PurchaseRequest.department_name),
+    "requested_by": lower_text(User.full_name),
+    "date_ordered": _ORDERED_AT,
+    "arrival_date": GoodsReceipt.received_at,
+    "left_warehouse_date": GoodsReceipt.collected_at,
+    "warehouse_receiver": lower_text(GoodsReceipt.received_by),
+    "person_accepting": lower_text(GoodsReceipt.collected_by),
+    "lead_time_days": _LEAD_DAYS,
+    "gr_number": GoodsReceipt.number,
+}
+SORT_TIEBREAK = (GrLineItem.id.asc(),)
+
+
 def _local_date(value: datetime | None) -> date | None:
     return value.astimezone(_TZ).date() if value else None
 
@@ -100,6 +152,8 @@ async def receiving_rows(
     po_ids_subq=None,
     page: int | None = None,
     page_size: int | None = None,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[ReceivingRow], int, ReceivingSummary, bool]:
     """Rows, the total behind them, the window's totals, and whether the row
     cap bites — meaning the xlsx export of this same window would lose its tail.
@@ -109,24 +163,8 @@ async def receiving_rows(
     still describe the whole window.
     """
 
-    # The PO's own "we placed this" stamp is only set by the Place Order action,
-    # which about half the orders on file predate. Falling back to the last
-    # approval — the point the order was cleared to go out — and then to the
-    # creation date keeps a lead time on every row rather than blanking the
-    # column for older orders. Newer orders take the first branch and are exact.
-    last_approved_at = (
-        select(func.max(ApprovalEvent.created_at))
-        .where(
-            ApprovalEvent.document_type == "po",
-            ApprovalEvent.document_id == PurchaseOrder.id,
-            ApprovalEvent.action == "approve",
-        )
-        .correlate(PurchaseOrder)
-        .scalar_subquery()
-    )
-    ordered_at = func.coalesce(
-        PurchaseOrder.placed_at, last_approved_at, PurchaseOrder.created_at
-    )
+    order = sort_clauses(sort, dir, SORTABLE, SORT_TIEBREAK)
+    ordered_at = _ORDERED_AT
 
     q = (
         select(
@@ -142,7 +180,7 @@ async def receiving_rows(
             GrLineItem.description,
             # The GR line carries its own material id when the receiver typed
             # one; otherwise the ordered line's is the same part.
-            func.coalesce(GrLineItem.material_id, PoLineItem.material_id).label("material_id"),
+            _MATERIAL_ID.label("material_id"),
             GrLineItem.unit,
             GrLineItem.qty_received,
             GrLineItem.sort_order,
@@ -193,12 +231,7 @@ async def receiving_rows(
     # local-day arithmetic the rows use — `timezone()` resolves each timestamptz
     # to the plant's wall clock, and a date minus a date is a whole number of
     # days in Postgres.
-    def _local_day(column):
-        return cast(func.timezone(PLANT_TIMEZONE, column), Date)
-
-    counted = q.add_columns(
-        (_local_day(GoodsReceipt.received_at) - _local_day(ordered_at)).label("lead_days")
-    ).subquery()
+    counted = q.add_columns(_LEAD_DAYS.label("lead_days")).subquery()
     totals = (await db.execute(
         select(
             func.count(),
@@ -215,11 +248,11 @@ async def receiving_rows(
     )
     total = summary.lines
 
-    q = q.order_by(
+    q = q.order_by(*(order or (
         GoodsReceipt.received_at.asc(),
         GoodsReceipt.number.asc(),
         GrLineItem.sort_order.asc(),
-    )
+    )))
     if page is not None and page_size:
         q = q.offset((page - 1) * page_size).limit(page_size)
         # Paging itself never truncates — but a window this large will lose its

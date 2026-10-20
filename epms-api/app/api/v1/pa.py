@@ -1,7 +1,7 @@
 """Payment Application endpoints."""
 import uuid
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -21,6 +21,7 @@ from app.services.approval_client import delegate_action
 from app.services import finance_client
 from app.crud import agreement as agr_crud
 from app.crud import pa as pa_crud
+from app.crud._list_order import sort_clauses
 from app.crud import po as po_crud
 from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos
 from app.crud.current_step import enrich_current_step
@@ -308,7 +309,10 @@ async def list_pas(
     mine: bool = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
+    sort_clauses(sort, dir, pa_crud.SORTABLE, ())   # unknown key → 422, before any work
     scope = await build_scope(db, user)
     # Access Control Matrix gate — return empty when view_pa is disabled.
     if not scope["perms"].get("view_pa", False):
@@ -325,7 +329,7 @@ async def list_pas(
         agr_ids_subq=scope["agr_subq"],
         freight_all=await sees_all_freight_pas(db, scope),
         viewer_id=scope["user_id"],
-        page=page, page_size=page_size,
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
     await enrich_current_step(db, "pa", items)
     await pa_crud.attach_po_links(db, items)

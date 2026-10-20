@@ -1,6 +1,6 @@
 """Purchase Order endpoints."""
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -13,6 +13,7 @@ from app.services import approval_client as approval_client
 from app.services.budget_client import ensure_known_budget_code
 from app.services.approval_client import delegate_action
 from app.crud import po as po_crud
+from app.crud._list_order import sort_clauses
 from app.crud import vendor as vendor_crud
 from app.crud import gr as gr_crud
 from app.crud.current_step import enrich_current_step
@@ -45,7 +46,10 @@ async def list_pos(
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
+    sort_clauses(sort, dir, po_crud.SORTABLE, ())   # unknown key → 422, before any work
     scope = await build_scope(db, user)
     # Access Control Matrix gate — return empty when view_po is disabled.
     if not scope["perms"].get("view_po", False):
@@ -58,7 +62,7 @@ async def list_pos(
         pr_type=pr_type, department_id=department_id, is_prepaid=is_prepaid,
         created_by=created_by, search=search,
         po_ids_subq=po_subq,
-        page=page, page_size=page_size,
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
     await enrich_current_step(db, "po", items)
     unpaid_invoice_po_ids: set[uuid.UUID] = set()

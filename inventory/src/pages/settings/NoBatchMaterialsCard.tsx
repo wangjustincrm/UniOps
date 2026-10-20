@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@uniops/shell'
+import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label, SortTh, useSortableRows } from '@uniops/shell'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import type { useToasts } from '@/hooks/useToasts'
 import { settingsApi, type NoBatchMaterial } from './settingsApi'
@@ -117,6 +117,10 @@ export function NoBatchMaterialsCard({ canAdmin, toasts }: {
 
   const items = q.data ?? []
   const existing = new Set(items.map((i) => i.material_code))
+  const { rows, sort, onSort } = useSortableRows(q.data, {
+    code: (m) => m.material_code, since: (m) => m.since_date, note: (m) => m.note,
+  })
+  const th = 'px-3 py-2 font-medium'
 
   return (
     <Card>
@@ -149,14 +153,14 @@ export function NoBatchMaterialsCard({ canAdmin, toasts }: {
             <table className="w-full text-sm">
               <thead className="bg-neutral-50">
                 <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500">
-                  <th className="px-3 py-2 font-medium">Material code</th>
-                  <th className="px-3 py-2 font-medium">Since</th>
-                  <th className="px-3 py-2 font-medium">Note</th>
+                  <SortTh label="Material code" sortKey="code" sort={sort} onSort={onSort} className={th} />
+                  <SortTh label="Since" sortKey="since" sort={sort} onSort={onSort} className={th} />
+                  <SortTh label="Note" sortKey="note" sort={sort} onSort={onSort} className={th} />
                   {canAdmin && <th className="px-3 py-2" />}
                 </tr>
               </thead>
               <tbody>
-                {items.map((m) => (
+                {rows.map((m) => (
                   <tr key={m.material_code} className="border-b border-neutral-100 last:border-0">
                     <td className="px-3 py-2 font-mono text-xs">{m.material_code}</td>
                     <td className="px-3 py-2 tabular-nums">{m.since_date}</td>

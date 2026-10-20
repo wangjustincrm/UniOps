@@ -69,6 +69,11 @@ const ACCESS_AREA_STYLE: Record<AccessArea, string> = {
   all:                 'bg-danger-50 text-danger-600 ring-red-200',
 }
 
+/** The label AccessAreaBadge shows — sort by this, not the code. */
+export function accessAreaLabel(area: AccessArea): string {
+  return ACCESS_AREA_LABEL[area] ?? area
+}
+
 export function AccessAreaBadge({ area }: { area: AccessArea }) {
   return (
     <span className={cn(

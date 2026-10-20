@@ -9,16 +9,16 @@ This folder holds the **authoritative, maintained PRD for every UniOps module**.
 
 | Module | Document | Version | Status | Apps / services |
 |---|---|---|---|---|
-| Portal & platform | [PORTAL.md](PORTAL.md) | 2.0 | In production | portal, identity-api, approval-api, mdm-api, file-api |
-| EPMS — procurement | [EPMS.md](EPMS.md) | 2.25 | In production | epms, epms-api |
-| OA — reimbursement & travel | [OA.md](OA.md) | 3.0 | In production | oa, expense-api |
-| Finance | [FINANCE.md](FINANCE.md) | 2.0 | In production | finance, finance-api |
+| Portal & platform | [PORTAL.md](PORTAL.md) | 2.2 | In production | portal, identity-api, approval-api, mdm-api, file-api |
+| EPMS — procurement | [EPMS.md](EPMS.md) | 2.29 | In production | epms, epms-api |
+| OA — reimbursement & travel | [OA.md](OA.md) | 3.1 | In production | oa, expense-api |
+| Finance | [FINANCE.md](FINANCE.md) | 2.4 | In production | finance, finance-api |
 | AI Financial Analysis | [AI-FINANCIAL-ANALYSIS.md](AI-FINANCIAL-ANALYSIS.md) | 1.0 | In production (Phases 1–5); Phase 6 not started | finance, finance-api |
 | Budget | [BUDGET.md](BUDGET.md) | 2.0 | In production | budget-api (UI in finance / epms) |
-| MRP | [MRP.md](MRP.md) | 2.0 | In production | mrp, mrp-api |
-| Inventory | [INVENTORY.md](INVENTORY.md) | 1.0 | In production | inventory, inventory-api |
-| VMS — visitor management | [VMS.md](VMS.md) | 2.9 | In production | vms, vms-api |
-| Booking — meeting rooms | [BOOKING.md](BOOKING.md) | 1.1 | In production | booking, booking-api |
+| MRP | [MRP.md](MRP.md) | 2.1 | In production | mrp, mrp-api |
+| Inventory | [INVENTORY.md](INVENTORY.md) | 1.1 | In production | inventory, inventory-api |
+| VMS — visitor management | [VMS.md](VMS.md) | 2.10 | In production | vms, vms-api |
+| Booking — meeting rooms | [BOOKING.md](BOOKING.md) | 1.2 | In production | booking, booking-api |
 
 ## Planned / in development
 
@@ -41,6 +41,7 @@ Some behaviour is shared by every module. Each topic is specified once, and the 
 | Task Inbox and notification outbox (immediate / digest per task type) | EPMS.md §3.7, §3.9; PORTAL.md §5.7 |
 | Data Maintenance | PORTAL.md §5.14; EPMS.md §3.6.8 |
 | AI Assistant and UI conventions (tabs, embedding, dates) | EPMS.md §3.19, §3.20 |
+| Sortable list columns (click a header: ascending, then descending; server-sorted when paged) | EPMS.md §3.20 (UI-SORT-001…007) |
 
 ## Maintenance rules
 

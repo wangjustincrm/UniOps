@@ -1,7 +1,10 @@
 # EPMS — Product Requirements Document
-**Version:** 2.30
+**Version:** 2.31
 **Date:** 2026-10-20
 **Status:** In Production
+
+> **v2.31 (2026-10-19)** — Every list column header sorts the list, ascending then descending, across all pages for server-paged lists (UI-SORT-001…007, §3.20; shared by all UniOps modules). PR/PO/PA Status keeps its status → step → approver order, now applied by the server. The Vendors Inactive tab filters on the server; Vendor Credits is paginated; the Receiving Report export follows the on-screen sort.
+>
 
 > **v2.30 (2026-10-20)** — House-account receipt hand-off (AGR-032, AGR-034, task table): an invoice matched to a house account with no receipt evidence raises an `attach_receipts` task for the agreement's owner; the owner (and that task's holder) may now list and attach the agreement's receipts on the invoice. A caller without that right sees a "cannot attach" notice instead of a load error.
 
@@ -397,7 +400,7 @@ Wherever the system displays a person who performed an action (uploader, approve
 
 - Filters: Status, Department, Requester, Type, Prepaid. Department and Requester choices are limited to what the viewer's scope covers; a user whose only role is Requester sees neither (their list is always their own PRs).
 - Search box matches PR number, title, budget code and vendor name.
-- Columns: PR Number, Title, Requester (omitted for pure requesters), Vendor, Amount (CAD), Type, Prepaid, Status, Submitted. For PRs awaiting approval, the Status cell also shows the current step, the approver's name (and stand-in, if delegated) and days waiting; sorting by Status groups by status, then step, then approver.
+- Columns: PR Number, Title, Requester (omitted for pure requesters), Vendor, Amount (CAD), Type, Prepaid, Status, Submitted. For PRs awaiting approval, the Status cell also shows the current step, the approver's name (and stand-in, if delegated) and days waiting; sorting by Status groups by status, then step (approval-chain order), then approver (named approver before an unassigned role pool), across all pages. Every column sorts (UI-SORT-001); the list opens sorted by Submitted, newest first, with PRs not yet submitted last.
 - Select a row and **Copy** to start a new PR pre-filled from it. **New PR** button.
 
 **FR IDs — PR List visibility:**
@@ -1328,6 +1331,7 @@ GST/HST registration number, province and bank details are not held on the EPMS 
 | **VND-006** | When Max Prepayment % is set on a vendor, it overrides the system-wide prepayment cap (Admin Panel → Prepayment Config) for all Prepayment PAs linked to that vendor's POs. If not set, the system-wide cap applies. |
 | **VND-007** | **From ERP.** Users with `vendor_master` can open the *From ERP* drawer on the Vendors page. It lists the NC supplier master mirrored in MDM, paginated and searchable, with an option to show only suppliers not yet imported. Selected suppliers are created as vendors with POID = ERP ID = NC supplier code, with name, phone and address from NC and the chosen default category, payment terms and currency. A supplier whose ERP ID already exists on a vendor is refused (duplicates are checked by exact ERP ID, not by POID). |
 | **VND-008** | A vendor can be saved without a contact name or contact email. |
+| **VND-009** | **Vendors list.** Tabs All / Active / Inactive filter on the server, so the page count and every page match the tab. Every column sorts on the server (UI-SORT-004); POID and ERP ID sort by numeric value when they are all digits, Payment Terms in term order (COD, Net N by days, Prepayment). |
 
 ### 3.11 Project Code Management
 
@@ -1779,6 +1783,7 @@ Goods Receipt → **Receiving Report** (button on the GR List) lists one row per
 - **Scope:** physical GRs only; cancelled or rejected GRs excluded; **NC-mirrored POs excluded** (NC-010).
 - **Filters:** received-date range (plant local dates, America/Toronto), department, vendor, search.
 - **Summary for the whole window:** line count, receipt count, order count, average lead time.
+- **Sorting:** every column sorts on the server (UI-SORT-004); the Excel export uses the same order as the screen.
 - **Lead time** = received date − ordered date. Ordered date is the Place-Order time, else the last PO approval, else PO creation.
 - **Export:** xlsx export of the whole window, capped at 20,000 rows (the page warns when capped).
 - **Visibility** follows the GR list (GR view permission and document scope).
@@ -1791,6 +1796,7 @@ Goods Receipt → **Receiving Report** (button on the GR List) lists one row per
 | **GR-L-002** | `confirm_receipt` task links and emails open **New GR pre-filled with the PO**, including the PO's line items. |
 | **GR-L-003** | If a counted GR (`collected`, `confirmed`, `discrepancy`) is deleted or cancelled through Data Maintenance, PO line received quantities are recomputed from the GRs that remain, and the PO status can fall back from `fully_received`. |
 | **GR-L-004** | Admin → Data Maintenance (§3.6.8) can edit GR line items. |
+| **GR-L-005** | The GR list sorts by any column on the server (UI-SORT-004); Total Value sorts by the sum of line totals. It opens sorted by Received, newest first. |
 ### 3.14 Invoice Management
 
 #### 3.14.1 Invoice Upload & Auto-Routing
@@ -1962,7 +1968,7 @@ AP staff (holders of *Match Invoice*) and admins can reverse a match from Invoic
 | FR ID | Requirement |
 |-------|-------------|
 | **INV-DEL-001** | An invoice can be deleted only in `unmatched` or `exception` (Upload Invoice permission). Deletion closes its open match/review/exception tasks, voids the Finance AP mirror, releases any agreement receipts or billing period it held, and recomputes the agreement's consumed amount. |
-| **INV-LIST-001** | The invoice list offers a status filter, search across invoice ref, vendor, vendor invoice # and PO #, and stat cards (including Paid). It shows a Due Date column with ageing: *Overdue N d* (red), *Due today* / *Due in N d* for ≤ 5 days (amber); paid invoices are not aged. It supports sorting by due date and an *Overdue* filter (past due, not paid). |
+| **INV-LIST-001** | The invoice list offers a status filter, search across invoice ref, vendor, vendor invoice # and PO #, and stat cards (including Paid). It shows a Due Date column with ageing: *Overdue N d* (red), *Due today* / *Due in N d* for ≤ 5 days (amber); paid invoices are not aged. Every column sorts on the server across all pages (UI-SORT-004); the legacy `sort=due_date` / `sort=-due_date` form is still accepted. The Unmatched tab opens oldest upload first. An *Overdue* filter shows past-due, unpaid invoices. |
 | **INV-LIST-002** | Clicking an invoice's due date opens a chain drawer showing Match PO → Link GR → Create PA → Payment for that invoice; PA steps are shown only to users with *View PA*. |
 
 ### 3.15 Payment Applications (PA)
@@ -2356,6 +2362,7 @@ A Purchase Agreement is a standing authorisation with one vendor for spend that 
 |---|---|
 | **AGR-050** | *View Agreements* (`epms.agreement.read`) gates the module (menu entries *Agreements* and *Agreement Receipts*). Unrestricted roles see all agreements; restricted roles see: agreements they created or own (requester), of their department (dept manager/admin), mapped departments (GM/OPM), directed departments (director), created by direct reports (supervisor), and any agreement whose PA they have an open approval task for. Out-of-scope → 404. |
 | **AGR-051** | Agreement Detail shows header, NTE bar, billing schedule (each period with its invoices, status and confirmation), milestones, receipts, matched invoices, attachments, document chain, approval timeline with approver names, and Audit History; *Create PA* is offered only when at least one invoice is payable (AGR-061). |
+| **AGR-052** | The Agreements and Agreement Receipts lists sort by any column on the server (UI-SORT-004). Agreements open sorted by number, newest first. |
 
 #### 3.17.8 Paying an Agreement
 
@@ -2439,6 +2446,18 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 | **UI-EMB-001** | When EPMS is embedded in another UniOps module, it shows only the page content (no sidebar, header or tabs). |
 | **UI-DATE-001** | Calendar dates (no time) display as the same calendar day in every time zone; display format DD/MM/YYYY. |
 | **UI-BTN-001** | Action buttons that change document state (Approve, Return, Reject, Withdraw and similar) are disabled while their request is pending. |
+
+**Sortable list columns (all UniOps modules).** Every list of records in every UniOps app (EPMS, OA, Finance, Inventory, MRP, Portal, VMS, Booking) can be sorted by clicking a column header. This rule is specified once here; the other PRDs refer to it.
+
+| FR ID | Requirement |
+|---|---|
+| **UI-SORT-001** | Each data column header of a list sorts the list. The first click sorts ascending; the next click on the same header reverses it; clicking another header starts that column ascending. A sortable header shows ↕ until it is the active sort, then ↑ or ↓. Checkbox, action-button and expand columns do not sort. |
+| **UI-SORT-002** | A column sorts by **what its cell shows**: a status or type by its label, a person or vendor by name (never by an internal id), an amount as a number, a date chronologically. Text sorts case-insensitively; document numbers sort in number-aware order where the list is loaded whole (508027 before 2026000066). Status columns sort alphabetically by label, except where a module specifies another order (EPMS PR/PO/PA, §3.2). |
+| **UI-SORT-003** | Rows with no value in the sorted column stay at the bottom in **both** directions. Rows with equal values keep a stable order. |
+| **UI-SORT-004** | A list that is paged by the server is **sorted by the server across all pages**, never by re-ordering the rows on the current page. Changing the sort goes back to page 1 (PGN-003). Every such list endpoint takes `sort` (a column key from a fixed allow-list; an unknown key is refused) and `dir` (`asc` / `desc`); without `sort` it keeps its own default order. |
+| **UI-SORT-005** | A list loaded whole is sorted in the browser over all its rows. Lists that used to load only the newest N rows now page on the server instead, so sorting always covers every matching row. |
+| **UI-SORT-006** | A list opens in its default order (stated in its module's section); where that default is a column sort, the header shows the active arrow. Sorting does not change filters, search or selection. |
+| **UI-SORT-007** | Not sortable by design: line items inside a document's detail or edit form; reports and matrices with subtotal, group or total rows inside the table; and tables whose values depend on row order (running balance, cumulative totals, opening/closing roll-forwards). |
 
 ---
 
@@ -2735,7 +2754,7 @@ A PR is over budget when its total exceeds the Available Balance; the over-budge
 
 ## 10. List Pagination
 
-All major document list pages use **server-side pagination**. The backend applies `OFFSET`/`LIMIT` before returning results; the frontend never loads an entire table to paginate in memory. Exceptions: the Task Inbox (returns all open tasks) and Vendor Credits are not paginated.
+All major document list pages use **server-side pagination**. The backend applies `OFFSET`/`LIMIT` before returning results; the frontend never loads an entire table to paginate in memory. Exception: the Task Inbox (returns all open tasks) is not paginated.
 
 ### 10.1 Paginated Endpoints — EPMS
 
@@ -2756,6 +2775,7 @@ All major document list pages use **server-side pagination**. The backend applie
 | Users (admin) | `GET /api/v1/users` | 20 | 200 |
 | Users directory | `GET /api/v1/users/directory` | 20 | 100 |
 | Data Maintenance lists | `GET /api/v1/admin/{entity}` | 20 | 200 |
+| Vendor Credits | finance `GET /api/v1/vendor-credits` (`limit`/`offset`) | 20 (API default 100) | 500 |
 
 Every paginated endpoint accepts `page` (integer ≥ 1, default 1) and `page_size` query parameters and returns:
 
@@ -2770,6 +2790,7 @@ Every paginated endpoint accepts `page` (integer ≥ 1, default 1) and `page_siz
 - The query applies all filters first, then runs `SELECT COUNT(*)` over the filtered subquery to get `total`.
 - `OFFSET` = `(page − 1) × page_size`. `LIMIT` = `page_size`.
 - Access-scope filters (role-based visibility) are applied **before** the count query, so `total` reflects only records the user is allowed to see.
+- Sorting (`sort`, `dir`, UI-SORT-004) is applied in SQL before `OFFSET`/`LIMIT`, with a unique tiebreak so a row never appears on two pages; empty values sort last in both directions. Without `sort`, each endpoint keeps its default order.
 
 ### 10.3 Pagination UI Component
 
@@ -2784,7 +2805,7 @@ The shared `Pagination` component from the UniOps shared shell package is used o
 
 | FR ID | Requirement |
 |-------|-------------|
-| **PGN-001** | All document list pages must use server-side pagination. Loading the full dataset and paginating in the browser is not permitted. (Task Inbox and Vendor Credits are currently unpaginated.) |
+| **PGN-001** | All document list pages must use server-side pagination. Loading the full dataset and paginating in the browser is not permitted. (The Task Inbox is currently unpaginated.) |
 | **PGN-002** | Every paginated endpoint must return a `total` field (full filtered count) alongside `items`. |
 | **PGN-003** | Changing any filter, status tab, search term, or sort order must reset `page` to 1. |
 | **PGN-004** | The pagination UI must display "X–Y of Z" using the server-returned `total`. |

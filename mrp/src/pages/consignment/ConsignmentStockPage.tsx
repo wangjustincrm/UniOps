@@ -14,16 +14,16 @@
 // consignmentApi.ts header — converted with Number() at display/arithmetic
 // sites, never trusted as numbers on the wire.
 import { useState, type FormEvent } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2, Save, CheckCircle2, HelpCircle } from 'lucide-react'
-import { Button, Input, FormField, Badge } from '@uniops/shell'
+import { Button, Input, FormField, Badge, Pagination, SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
 import { MaterialPicker } from './MaterialPicker'
 import { LotCombo } from './LotCombo'
-import { consignmentApi, type ConsignmentStock, type LotHistoryItem } from './consignmentApi'
+import { consignmentApi, type ConsignmentSortKey, type ConsignmentStock, type LotHistoryItem } from './consignmentApi'
 import type { MaterialOption } from '@/lib/materials'
 
 const MAIN_WAREHOUSE = 'MAIN'
@@ -196,10 +196,20 @@ export default function ConsignmentStockPage() {
   }
 
   // ── This period's entries ───────────────────────────────────────────────
+  // Paged and sorted by the API, over every entry. A new sort goes back to
+  // page 1; the ['consignment-stock'] prefix still matches for invalidation.
+  const [stockPage, setStockPage] = useState(1)
+  const [stockPageSize, setStockPageSize] = useState(50)
+  const [stockSort, onStockSort] = useSort<ConsignmentSortKey>(null, () => setStockPage(1))
   const stockQuery = useQuery({
-    queryKey: ['consignment-stock'],
-    queryFn: () => consignmentApi.listStock(1, 100),
+    queryKey: ['consignment-stock', stockPage, stockPageSize, stockSort],
+    queryFn: () => consignmentApi.listStock(stockPage, stockPageSize, sortParams(stockSort)),
+    placeholderData: keepPreviousData,
   })
+  const stockTotal = stockQuery.data?.total ?? 0
+  // Deleting/filtering can leave you past the last page: step back.
+  const stockLastPage = Math.max(1, Math.ceil(stockTotal / stockPageSize))
+  if (stockQuery.data && stockPage > stockLastPage) setStockPage(stockLastPage)
 
   const latestCountDate = stockQuery.data?.latest_count_dates[MAIN_WAREHOUSE] ?? null
   const staleDays = latestCountDate ? daysSince(latestCountDate) : null
@@ -337,7 +347,13 @@ export default function ConsignmentStockPage() {
         {stockQuery.isLoading ? (
           <p role="status" className="py-10 text-center text-sm text-neutral-400">Loading entries…</p>
         ) : (
-          <ConsignmentEntriesTable items={stockQuery.data?.items ?? []} />
+          <>
+            <ConsignmentEntriesTable items={stockQuery.data?.items ?? []} sort={stockSort} onSort={onStockSort} />
+            {stockTotal > 0 && (
+              <Pagination page={stockPage} pageSize={stockPageSize} total={stockTotal}
+                onPageChange={setStockPage} onPageSizeChange={setStockPageSize} />
+            )}
+          </>
         )}
       </div>
 
@@ -352,7 +368,13 @@ function expirySourceBadge(source: ConsignmentStock['expiry_source']) {
   return <span className="text-neutral-300">—</span>
 }
 
-function ConsignmentEntriesTable({ items }: { items: ConsignmentStock[] }) {
+const entryTh = 'border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600'
+
+function ConsignmentEntriesTable({ items, sort, onSort }: {
+  items: ConsignmentStock[]
+  sort: Sort<ConsignmentSortKey> | null
+  onSort: (k: ConsignmentSortKey) => void
+}) {
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 py-12 text-center">
@@ -366,12 +388,13 @@ function ConsignmentEntriesTable({ items }: { items: ConsignmentStock[] }) {
       <table className="min-w-full text-sm">
         <thead className="bg-neutral-50">
           <tr>
-            <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Product</th>
-            <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Lot No.</th>
-            <th className="border-b border-neutral-200 px-3 py-2 text-right text-[11px] font-semibold text-neutral-600">Qty</th>
-            <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Count Date</th>
-            <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Expiry Date</th>
-            <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Source</th>
+            <SortTh label="Product" sortKey="material_code" sort={sort} onSort={onSort} className={entryTh} />
+            <SortTh label="Lot No." sortKey="lot_no" sort={sort} onSort={onSort} className={entryTh} />
+            <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right"
+              className="border-b border-neutral-200 px-3 py-2 text-[11px] font-semibold text-neutral-600" />
+            <SortTh label="Count Date" sortKey="count_date" sort={sort} onSort={onSort} className={entryTh} />
+            <SortTh label="Expiry Date" sortKey="expiry_date" sort={sort} onSort={onSort} className={entryTh} />
+            <SortTh label="Source" sortKey="expiry_source" sort={sort} onSort={onSort} className={entryTh} />
           </tr>
         </thead>
         <tbody>

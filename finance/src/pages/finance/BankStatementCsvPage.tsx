@@ -26,6 +26,7 @@ import {
   Ban, Check, Landmark, Link2, Loader2, Plus, RefreshCw,
   Undo2, Upload, X,
 } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeUploadFields } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -132,6 +133,17 @@ export default function BankStatementCsvPage() {
     queryKey: ['bank-recon', accountId],
     queryFn: () => financeApi.get<Recon>(`/bank/reconciliation?account_id=${accountId}`),
     enabled: !!accountId,
+  })
+
+  // Both lists come back whole (no paging); row actions are keyed by id.
+  const txnSort = useSortableRows(txns, {
+    date: (t) => t.txn_date, description: (t) => t.description, reference: (t) => t.reference,
+    amount: (t) => Number(t.amount), status: (t) => t.status,
+  })
+  const unrecSort = useSortableRows(recon?.unreconciled_payments, {
+    date: (p) => p.payment_date,
+    document: (p) => p.doc_number || p.payment_record_id.slice(0, 8),
+    amount: (p) => Number(p.amount),
   })
 
   const refresh = () => {
@@ -268,11 +280,11 @@ export default function BankStatementCsvPage() {
               <table className="w-full text-sm">
                 <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                   <tr>
-                    <th className="px-3 py-2 w-28">Date</th>
-                    <th className="px-3 py-2">Description</th>
-                    <th className="px-3 py-2 w-40">Reference</th>
-                    <th className="px-3 py-2 w-36 text-right">Amount</th>
-                    <th className="px-3 py-2 w-24">Status</th>
+                    <SortTh label="Date" sortKey="date" sort={txnSort.sort} onSort={txnSort.onSort} className="px-3 py-2 w-28" />
+                    <SortTh label="Description" sortKey="description" sort={txnSort.sort} onSort={txnSort.onSort} className="px-3 py-2" />
+                    <SortTh label="Reference" sortKey="reference" sort={txnSort.sort} onSort={txnSort.onSort} className="px-3 py-2 w-40" />
+                    <SortTh label="Amount" sortKey="amount" sort={txnSort.sort} onSort={txnSort.onSort} align="right" className="px-3 py-2 w-36" />
+                    <SortTh label="Status" sortKey="status" sort={txnSort.sort} onSort={txnSort.onSort} className="px-3 py-2 w-24" />
                     <th className="px-3 py-2 w-44" />
                   </tr>
                 </thead>
@@ -285,7 +297,7 @@ export default function BankStatementCsvPage() {
                     <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
                       No statement lines. Import a statement to begin.</td></tr>
                   )}
-                  {txns.map((t, i) => {
+                  {txnSort.rows.map((t, i) => {
                     const amt = Number(t.amount)
                     return (
                       <tr key={t.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
@@ -340,13 +352,13 @@ export default function BankStatementCsvPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                       <tr>
-                        <th className="px-3 py-2 w-28">Date</th>
-                        <th className="px-3 py-2">Document</th>
-                        <th className="px-3 py-2 w-36 text-right">Amount</th>
+                        <SortTh label="Date" sortKey="date" sort={unrecSort.sort} onSort={unrecSort.onSort} className="px-3 py-2 w-28" />
+                        <SortTh label="Document" sortKey="document" sort={unrecSort.sort} onSort={unrecSort.onSort} className="px-3 py-2" />
+                        <SortTh label="Amount" sortKey="amount" sort={unrecSort.sort} onSort={unrecSort.onSort} align="right" className="px-3 py-2 w-36" />
                       </tr>
                     </thead>
                     <tbody>
-                      {recon.unreconciled_payments.map((p) => (
+                      {unrecSort.rows.map((p) => (
                         <tr key={p.payment_record_id} className="border-t border-neutral-100">
                           <td className="px-3 py-2 font-mono text-xs text-neutral-600">{p.payment_date}</td>
                           <td className="px-3 py-2">{p.doc_number || p.payment_record_id.slice(0, 8)}</td>

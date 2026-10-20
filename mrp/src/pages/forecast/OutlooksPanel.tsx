@@ -16,10 +16,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Search, Trash2, X } from 'lucide-react'
-import { Button } from '@uniops/shell'
+import { Button, SortTh, sortParams, useSort } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
-import { forecastApi, type ForecastVersion } from './forecastApi'
+import { forecastApi, type ForecastVersion, type ListVersionsOptions } from './forecastApi'
 
 const PAGE_SIZE = 10
 
@@ -71,6 +71,8 @@ export function OutlooksPanel({
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ForecastVersion | null>(null)
+  // Sorted by the API (the list is paged); a new sort starts at page 1.
+  const [sort, onSort] = useSort<NonNullable<ListVersionsOptions['sort']>>(null, () => setPage(1))
 
   // Debounced: the box filters a server-side query, and one request per
   // keystroke would have the list flickering through half-typed answers.
@@ -83,8 +85,8 @@ export function OutlooksPanel({
   }, [searchInput])
 
   const listQuery = useQuery({
-    queryKey: ['outlooks', page, search],
-    queryFn: () => forecastApi.listVersions(page, PAGE_SIZE, { status: 'confirmed', search }),
+    queryKey: ['outlooks', page, search, sort],
+    queryFn: () => forecastApi.listVersions(page, PAGE_SIZE, { status: 'confirmed', search, ...sortParams(sort) }),
     // Keeps the previous page on screen while the next one loads, instead of
     // collapsing the panel to "Loading…" and shifting everything below it.
     placeholderData: keepPreviousData,
@@ -169,10 +171,10 @@ export function OutlooksPanel({
             <table className="min-w-full text-xs">
               <thead>
                 <tr className="border-b border-neutral-100 text-left text-[11px] font-semibold text-neutral-500">
-                  <th className="px-2 py-1.5">Version</th>
-                  <th className="px-2 py-1.5">Anchor</th>
-                  <th className="px-2 py-1.5">Horizon</th>
-                  <th className="px-2 py-1.5">Created</th>
+                  <SortTh label="Version" sortKey="version_no" sort={sort} onSort={onSort} className="px-2 py-1.5" />
+                  <SortTh label="Anchor" sortKey="source_anchor_month" sort={sort} onSort={onSort} className="px-2 py-1.5" />
+                  <SortTh label="Horizon" sortKey="horizon_months" sort={sort} onSort={onSort} className="px-2 py-1.5" />
+                  <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="px-2 py-1.5" />
                   <th className="px-2 py-1.5" />
                 </tr>
               </thead>

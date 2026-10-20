@@ -1,9 +1,13 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.1
+**Version:** 2.2
 **Date:** 2026-10-19
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.2** (2026-10-19)
+
+- Admin lists sort by clicking a column header, ascending then descending (column sorting rule in EPMS.md §3.20 (UI-SORT-001…007)). Users, the ERP MDM lists (materials, suppliers, persons) and every Data Maintenance list sort on the server; Departments, Units of Measure, Access Control roles, Approval Routing and Approval Delegation sort in the page (delegation still opens newest start date first).
 
 **What changed in this version (v1.5 → v2.0)** — the document now matches the system as deployed on main. Every statement was checked against the code. Requirements that are wanted but not built are marked **Not implemented** and listed in §14.
 - **Architecture.** Sign-in now runs in a dedicated identity service, reached through the EPMS API gateway. Portal is a launcher plus platform administration. All Finance and Budget pages moved to the standalone Finance app (FINANCE.md, BUDGET.md).
@@ -531,6 +535,8 @@ NC sync failures create Task Inbox items for System Admin that open the NC Sync 
 ### 5.14 Data Maintenance
 
 Data Maintenance is for system-level corrections across modules (permission `data_maintenance`; the owning services enforce it too). Portal merges the record catalogues of the EPMS, OA, VMS and Finance services; a service that does not answer within 15 seconds is left out.
+
+Each record list sorts on the server by any of its columns (EPMS.md UI-SORT-004); the owning service publishes which columns can be sorted.
 
 | System | Records |
 |---|---|

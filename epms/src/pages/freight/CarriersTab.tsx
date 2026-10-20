@@ -8,11 +8,12 @@ import { useVendors } from '@/hooks/useVendors'
 import { useFreightCarriersAll, useSaveCarrier } from '@/hooks/useFreight'
 import type { FreightCarrier } from '@/services/freight'
 import { CostCenterSelect, Modal, SELECT_CLS, TH_CLS, errorMessage } from './freightUi'
+import { SortTh, useSortableRows } from '@uniops/shell'
 
 /** Couriers paid through Freight. Doubles as the whitelist: only a vendor set
  *  up here can be paid by a Freight PA (design §1.1). epms.freight.admin only. */
 export function CarriersTab() {
-  const { data: carriers = [], isLoading } = useFreightCarriersAll()
+  const { data: carrierData, isLoading } = useFreightCarriersAll()
   const { data: deptData } = useDepartments()
   const { data: costCenters = [] } = useCostCenters({ active_only: true })
   const departments = deptData?.items ?? []
@@ -21,6 +22,15 @@ export function CarriersTab() {
     const c = costCenters.find((x) => x.id === id)
     return c ? `${c.code} — ${c.name}` : '—'
   }
+  // The carrier list is loaded whole, so sorting the rows here is exact.
+  const { rows: carriers, sort, onSort } = useSortableRows(carrierData, {
+    code: (c) => c.code,
+    name: (c) => c.name,
+    vendor_name: (c) => c.vendor_name,
+    tracking_pattern: (c) => c.tracking_pattern,
+    default_cost_center: (c) => (c.default_cost_center_id ? ccLabel(c.default_cost_center_id) : null),
+    status: (c) => (c.is_active ? 'Active' : 'Inactive'),
+  })
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
@@ -41,8 +51,15 @@ export function CarriersTab() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50">
-              <tr>{['Code', 'Name', 'Vendor', 'Tracking pattern', 'Default cost center', 'Status', ''].map((h) =>
-                <th key={h} className={TH_CLS}>{h}</th>)}</tr>
+              <tr>
+                <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className={TH_CLS} />
+                <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={TH_CLS} />
+                <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={TH_CLS} />
+                <SortTh label="Tracking pattern" sortKey="tracking_pattern" sort={sort} onSort={onSort} className={TH_CLS} />
+                <SortTh label="Default cost center" sortKey="default_cost_center" sort={sort} onSort={onSort} className={TH_CLS} />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={TH_CLS} />
+                <th className={TH_CLS} />
+              </tr>
             </thead>
             <tbody>
               {carriers.map((c) => (

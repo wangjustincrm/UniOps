@@ -1,9 +1,14 @@
 # Inventory — Product Requirements Document
 
-**Version:** 1.0
-**Date:** 2026-10-16
+**Version:** 1.1
+**Date:** 2026-10-19
 **Status:** Live in production (first released 2026-10-15). Phase 1 complete; the items in §6 remain.
 **Scope:** A standalone UniOps module that shows warehouse (WMS) stock and the three NC inventory ledgers side by side, on any date, and explains the differences between them.
+
+**What changed in version 1.1** (2026-10-19)
+
+- Every list sorts by clicking a column header, ascending then descending (column sorting rule in EPMS.md §3.20 (UI-SORT-001…007)): WMS Batches, Aging and Materials; NC Stock (both groupings), Cost and Ledger; Reconciliation; the Settings lists. Paged lists sort on the server across all pages (INV-016, INV-034, INV-056).
+- Reconciliation difference columns sort by the unexplained remainder (INV-056) in either direction. The tie-out issues list in Settings pages on the server.
 
 **What's in this version**
 
@@ -216,7 +221,7 @@ Current WMS stock from MRP's WMS mirror. The page was moved here from MRP; its b
 | INV-013 | **By-products** CF00AF and CF00WT shall be excluded by default. A visible switch shall add them back whenever the finished-goods class or "all classes" is selected. |
 | INV-014 | **Raw milk** (class 0101) shall never be counted as stock or as on order, and the page shall say so. |
 | INV-015 | **Batches tab.** Stock grouped by **supplier batch**: one row per material × supplier batch × warehouse. Columns: material, supplier batch, quantity, NC QC batch numbers, number of WMS lots, shelf life, production date, expiry date. The internal WMS lot number shall not be displayed, but shall be searchable. |
-| INV-016 | The Batches tab shall support search (material, name, supplier batch, NC QC batch), a status filter (any / available / on hold / expired), sorting by material, supplier batch, quantity, production date or expiry, and server-side paging. |
+| INV-016 | The Batches tab shall support search (material, name, supplier batch, NC QC batch), a status filter (any / available / on hold / expired), sorting by any column header in either direction (EPMS.md UI-SORT-001; opens by expiry, soonest first), and server-side paging. |
 | INV-017 | Where a batch's lots disagree on expiry or production date, the batch row shall show the earliest date and flag that the lots differ. Where they disagree on quality status, the row shall show "Mixed". |
 | INV-018 | Expanding a batch shall list where it physically sits, one row per location × handling unit: location, zone, tracking ID, quantity, dates, quality status. |
 | INV-019 | A summary block shall show, **one line per unit of measure**, the total, available, expired, blocked and expiring-soon (90 days) quantities. Different units shall never be added together. The figures overlap and are not a split of the total. |
@@ -235,7 +240,7 @@ The three NC ledgers as of any date up to today. Three tabs: **Stock (IC)**, **C
 | INV-031 | **Stock: summary.** Per warehouse class: materials, lines, total quantity. |
 | INV-032 | **Stock: by batch** (default). One row per warehouse × material × batch. Columns: warehouse code with class badge, material, batch, supplier batch, production and expiry date, quantity. For today only, also locked, available and stock state. On a past date those columns are greyed out and the page explains why. |
 | INV-033 | **Stock: by material.** One row per material. Columns: total, quantity in WMS-managed warehouses, external, production line-side, other (transient, other and unclassified), number of batches, and locked (today only). |
-| INV-034 | The Stock tab shall filter by warehouse class (multi-select chips; none selected = all), by material class, and by search (material code, name, local name or batch). It shall sort by material, warehouse, batch or quantity, with server-side paging. |
+| INV-034 | The Stock tab shall filter by warehouse class (multi-select chips; none selected = all), by material class, and by search (material code, name, local name or batch). It shall sort by any column header in either direction (EPMS.md UI-SORT-001; a key used without a direction keeps its old one: quantity largest first, codes ascending), with server-side paging. |
 | INV-035 | For today, the number of rows with zero on-hand but a leftover lock shall be reported, not listed. |
 | INV-036 | **Cost tab.** One row per material with non-zero IA quantity or amount. Columns: quantity; amount and unit price (cost viewers only); costing status, giving the number of outbound rows not yet costed in an open period. Tiles show material count, total quantity and, for cost viewers, total amount. Sortable by material, quantity or amount (amount only for cost viewers). |
 | INV-037 | Expanding a Cost row shall show (a) the **quantity breakdown by warehouse and batch**, with quantities only, and the page shall state that IA costs at material level only; and (b) the **ledger lines**: period, business date, direction, quantity, amount (cost viewers), transaction type, bill number, source document, batch, warehouse, and estimate flag. Lines are paged. |
