@@ -7,11 +7,12 @@ someone maintains by hand and forgets.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mirrors import Department, User
@@ -46,14 +47,27 @@ async def get_course(db: AsyncSession, course_id: uuid.UUID) -> Course:
 
 async def create_course(db: AsyncSession, payload) -> Course:
     """A course of the plant's own. The eight statutory ones are seeded."""
+    # Courses are told apart by name now (round 8), so two of one name are
+    # refused rather than told apart by a code nobody sees.
+    same = (await db.execute(select(Course).where(
+        func.lower(Course.name) == payload.name.strip().lower()))).scalars().first()
+    if same is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"A course called {same.name} already exists")
+    code = (payload.code or "").strip().upper()
+    if not code:
+        base = re.sub(r"[^A-Z0-9]+", " ", payload.name.upper()).strip()[:36] or "COURSE"
+        code, n = base, 2
+        while (await db.execute(select(Course.id).where(Course.code == code))).first():
+            code, n = f"{base} {n}", n + 1
     clash = (await db.execute(
-        select(Course).where(Course.code == payload.code))).scalar_one_or_none()
+        select(Course).where(Course.code == code))).scalar_one_or_none()
     if clash is not None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            f"A course with the code {payload.code} already exists ({clash.name})")
+            f"A course with the code {code} already exists ({clash.name})")
     course = Course(
-        id=uuid.uuid4(), code=payload.code, name=payload.name,
+        id=uuid.uuid4(), code=code, name=payload.name.strip(),
         # Statutory is not something a course can be given here: it follows
         # from the regulation that requires it, and the eight that are come
         # seeded with their clause behind them.

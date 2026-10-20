@@ -1021,3 +1021,39 @@ async def test_the_length_of_a_session_is_on_the_report(hse_manager, worker, cou
 
     assert length_text(90) == "1 h 30 min" and length_text(45) == "45 min"
     assert length_text(120) == "2 h" and length_text(None) is None
+
+
+# ── Round 8: a course is its name ───────────────────────────────────────────
+
+
+async def test_a_course_can_be_added_by_name_alone(hse_manager):
+    """"Training course code and name are the same, remove the code and only
+    use the course name." The code is still made, from the name, because other
+    pages link to a course by it."""
+    _, client = hse_manager
+    made = await client.post("/api/v1/training/courses", json={"name": "Ladder safety"})
+    assert made.status_code in (200, 201), made.text
+    assert made.json()["code"] == "LADDER SAFETY"
+
+
+async def test_two_courses_of_one_name_are_refused(hse_manager):
+    """With the code gone from the screen, the name is the only thing telling
+    two courses apart."""
+    _, client = hse_manager
+    first = await client.post("/api/v1/training/courses", json={"name": "Ladder safety"})
+    assert first.status_code in (200, 201), first.text
+    again = await client.post("/api/v1/training/courses", json={"name": "  ladder SAFETY "})
+    assert again.status_code == 409, again.text
+    assert "Ladder safety" in again.json()["detail"]
+    other = await client.post("/api/v1/training/courses", json={"name": "Ladder safety 2"})
+    assert other.status_code in (200, 201), other.text
+
+
+async def test_a_name_that_makes_a_taken_code_gets_another(hse_manager, courses):
+    """A new course called "WHMIS!" makes the code WHMIS, which the seeded
+    course already has; it gets the next free one rather than a 409 about a
+    code nobody can see."""
+    _, client = hse_manager
+    made = await client.post("/api/v1/training/courses", json={"name": "WHMIS!"})
+    assert made.status_code in (200, 201), made.text
+    assert made.json()["code"] == "WHMIS 2"

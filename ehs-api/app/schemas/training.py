@@ -23,7 +23,10 @@ class CourseOut(BaseModel):
 class CourseIn(BaseModel):
     """A new course. The eight statutory ones are seeded; this is for the rest."""
 
-    code: str = Field(min_length=1, max_length=40)
+    # ★ Round 8 (open box): "Training course code and name are the same, remove
+    # the code and only use the course name." Optional now; left out, it is
+    # made from the name (the record still needs a stable key).
+    code: str | None = Field(default=None, max_length=40)
     name: str = Field(min_length=1, max_length=200)
     applies_to_all: bool = False
     validity_months: int | None = Field(default=None, ge=1, le=600)

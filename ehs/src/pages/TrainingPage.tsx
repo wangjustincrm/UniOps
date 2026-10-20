@@ -205,7 +205,7 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
     queryKey: ['courses'],
     queryFn: () => api.get<Course[]>('/api/v1/training/courses'),
   })
-  const courseList = useListView(courses.data, (c) => [c.code, c.name])
+  const courseList = useListView(courses.data, (c) => [c.name])
 
   const create = useMutation({
     mutationFn: async () => {
@@ -248,7 +248,7 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
                   onChange={(e) => setCourseId(e.target.value)}>
             <option value="">Select…</option>
           <SearchBox value={courseList.query} onChange={courseList.setQuery}
-                     placeholder="Search courses by code or name" />
+                     placeholder="Search courses by name" />
             {courseList.pageRows.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}{c.is_statutory ? ' (required)' : ''}
@@ -571,7 +571,6 @@ function NewRecordForm({ onClose, courseCode }: {
  * separately or not at all.
  */
 function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
-  const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
   const courses = useQuery({
     queryKey: ['training-courses'],
@@ -581,15 +580,6 @@ function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
     queryKey: ['quizzes'],
     queryFn: () => api.get<QuizSummary[]>('/api/v1/quizzes'),
   })
-  const patch = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
-      api.patch(`/api/v1/training/courses/${id}`, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['training-courses'] })
-      queryClient.invalidateQueries({ queryKey: ['training', 'gaps'] })
-    },
-  })
-
   if (courses.isLoading) return <p className="text-sm text-neutral-500">Loading…</p>
 
   const quizFor = (courseId: string) =>
@@ -614,9 +604,10 @@ function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-neutral-900">{c.name}</span>
                 <span className="mt-0.5 block text-xs text-neutral-500">
-                  <span className="font-mono">{c.code}</span>
-                  {c.is_statutory && ' · required by law'}
-                  {c.validity_months ? ` · valid ${c.validity_months} months` : ' · does not expire'}
+                  {/* ★ Round 8: the name is the course; the code stays
+                      internal (it is what other pages link by). */}
+                  {c.is_statutory && 'Required by law · '}
+                  {c.validity_months ? `Valid ${c.validity_months} months` : 'Does not expire'}
                 </span>
               </span>
 
@@ -632,28 +623,13 @@ function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
 
               <CourseMaterial course={c} mayWrite={mayWrite} />
 
-              <label className="flex min-h-[32px] items-center gap-1.5 text-xs text-neutral-700">
-                <input
-                  type="checkbox"
-                  checked={c.applies_to_all}
-                  disabled={!mayWrite || patch.isPending}
-                  onChange={(e) => {
-                    if (!patch.isPending) {
-                      patch.mutate({ id: c.id, body: { applies_to_all: e.target.checked } })
-                    }
-                  }}
-                />
-                Everyone must take it
-              </label>
             </li>
           )
         })}
       </ul>
-      <ErrorNote error={patch.error} />
       <p className="mt-2 text-xs text-neutral-500">
-        Untick “everyone” and the course stops counting against every employee in
-        the compliance report — it is then required only of the positions that
-        list it.
+        Who has to take a course is set on the position, under Settings → Positions;
+        the compliance report counts it against the people in those positions.
       </p>
     </div>
   )
@@ -806,18 +782,18 @@ function CourseMaterial({ course, mayWrite }: { course: Course; mayWrite: boolea
 
 function NewCourseForm({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient()
-  const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [months, setMonths] = useState('')
-  const [everyone, setEveryone] = useState(false)
   const create = useMutation({
+    // ★ Round 8: name only. The server makes the internal code from it.
     mutationFn: () => api.post('/api/v1/training/courses', {
-      code: code.trim().toUpperCase(), name: name.trim(),
-      applies_to_all: everyone,
+      name: name.trim(),
       validity_months: months ? Number(months) : null,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['training-courses'] })
+      // The session and record forms read the same list under another key.
+      queryClient.invalidateQueries({ queryKey: ['courses'] })
       onClose()
     },
   })
@@ -825,27 +801,18 @@ function NewCourseForm({ onClose }: { onClose: () => void }) {
     <Card className="mb-4">
       <h3 className="mb-3 text-sm font-semibold text-neutral-900">Add a course</h3>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Code"><input className={inputClass} value={code}
-               onChange={(e) => setCode(e.target.value)} placeholder="LADDER" /></Field>
         <Field label="Name"><input className={inputClass} value={name}
                onChange={(e) => setName(e.target.value)} placeholder="Ladder safety" /></Field>
         <Field label="Valid for (months)" hint="Leave empty if it does not expire">
           <input className={inputClass} type="number" min={1} value={months}
                  onChange={(e) => setMonths(e.target.value)} />
         </Field>
-        <Field label="Who">
-          <label className="flex min-h-[44px] items-center gap-2 text-sm">
-            <input type="checkbox" checked={everyone}
-                   onChange={(e) => setEveryone(e.target.checked)} />
-            Everyone must take it
-          </label>
-        </Field>
       </div>
       <ErrorNote error={create.error} />
       <div className="mt-3 flex justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
         <button type="button" className={primaryButton}
-                disabled={!code.trim() || !name.trim() || create.isPending}
+                disabled={!name.trim() || create.isPending}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
           {create.isPending ? 'Adding…' : 'Add'}
         </button>

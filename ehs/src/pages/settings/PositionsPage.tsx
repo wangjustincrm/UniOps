@@ -56,7 +56,7 @@ export default function PositionsPage() {
     <div className="p-4">
       <PageHeader
         title="Job positions"
-        subtitle="What each job requires — this is what makes training compliance mean anything beyond the courses everyone takes"
+        subtitle="What each job requires — training compliance counts a course against the people whose position requires it"
       >
         {mayWrite && (
           <button type="button" className={primaryButton} onClick={() => setCreating(true)}>
@@ -70,10 +70,9 @@ export default function PositionsPage() {
 
       {positions.data?.length === 0 && !creating ? (
         <Empty>
-          No positions defined. Until there are, training compliance can only
-          check the four courses that apply to everyone — the forklift, confined
-          space, work platform and first aid requirements have nobody to attach
-          to.
+          No positions defined. Until there are, training compliance has no
+          course to check anybody against: who has to take a course is set here,
+          on the position.
         </Empty>
       ) : (
         <ul className="flex flex-col gap-2">
