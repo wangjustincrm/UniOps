@@ -1,9 +1,13 @@
 # VMS (Visitor Management System) — Product Requirements Document
 
-**Version**: V2.12
+**Version**: V2.13
 **Date**: 2026-10-20
 **Status**: As-built. Describes the system on the main line as of 2026-10-16. Everything marked **Implemented** is in production; wanted-but-not-built items are marked **Not implemented** and collected in §13 Open Items.
 **Scope**: Visitor appointments, approval, health and safety checks, badge printing (= check-in), QR check-out, overdue alerts and the compliance audit trail for Canada Royal Milk ULC's plant and offices.
+
+**What changed in V2.13** (2026-10-20)
+
+- **No Show is marked the next day**, not 2 hours after planned arrival: a visit not checked in by the end of its planned arrival's day (plant time) becomes No Show after midnight. Late arrivals the same day are no longer cut off, and a visit entered after its arrival time on the same day is no longer marked minutes later (VMS-PR-019; closes OI-35). A No Show visit rescheduled in Data Maintenance to today or later is restored.
 
 **What changed in V2.12** (2026-10-20)
 
@@ -188,7 +192,7 @@ All area-dependent behaviour (approval routing, health-declaration gate, complia
 | VMS-PR-016a | A visit whose approval hand-off failed can be sent again | P0 | **Implemented** — the visit stays Pending Approval with a banner "Not sent for approval yet" and a **Submit for approval** button; it cannot be badged until submission succeeds |
 | VMS-PR-017 | Host sees own visits; manager sees department visits | P0 | **Implemented** — see visibility rules in §3.2. Lists: Today's Visits, All Visits (**latest 50 only, no paging**), On-Site Now |
 | VMS-PR-018 | Search by visitor name, company, Host, date range | P1 | **Not implemented** — the visit lists have no search or filter |
-| VMS-PR-019 | Auto-mark No Show 2 hours after planned arrival | P2 | **Implemented** — applies to Confirmed and Pending Approval visits; for a pending visit the approval is cancelled and its tasks closed. Undone when the visit is rescheduled in Data Maintenance (§2.5.5) |
+| VMS-PR-019 | Auto-mark No Show once the planned arrival day is over | P2 | **Implemented** — after plant-local midnight following the planned arrival's day (user rule 2026-10-20; was 2 hours after arrival); applies to Confirmed and Pending Approval visits; for a pending visit the approval is cancelled and its tasks closed. Undone when the visit is rescheduled in Data Maintenance (§2.5.5) |
 
 ---
 
@@ -334,7 +338,7 @@ When the visitor leaves, the Host scans the badge QR code — with a USB scanner
 
 | # | Job | Rule | Repeat |
 |---|---|---|---|
-| 1 | No-show | Confirmed or Pending Approval, not arrived, planned arrival + 2 h passed → No Show (pending: approval cancelled, tasks closed) | status change |
+| 1 | No-show | Confirmed or Pending Approval, not arrived, planned arrival's plant day over (after midnight) → No Show (pending: approval cancelled, tasks closed) | status change |
 | 2 | Day-before reminder | Confirmed, visit date = tomorrow (plant time) → email Host | once per visit |
 | 3 | Overdue reminder | On site, planned departure + 1 h passed → email Host + "Check out visitor" task | every 24 h until check-out |
 | 4 | Escalation | On site, planned departure + 4 h passed → email the Host's Department Manager | once per visit |
@@ -708,7 +712,7 @@ Without a session the app redirects to Portal sign-in; an expired session return
 - **Launcher**: Portal sidebar → Modules → "VMS" and the home-page card "VMS — Visitor appointments, badge printing, on-site tracking"; visible to every user.
 - **Task Inbox**: VMS tasks appear in Portal "My Task Inbox" under **Visitor**; a click opens the visit or the visitor compliance page in VMS. Portal has no approve buttons for VMS — approval happens on the VMS visit page.
 - **Approval chain**: Portal → Admin → Approval Workflows → VMS Visit. The Quality Manager roster itself lives in VMS Admin.
-- **Data Maintenance**: VMS visits and visitors can be edited (not deleted) by System Admin. A visit is rescheduled through Planned arrival / Planned departure, shown in plant time; a time typed without a UTC offset is taken as plant time. Departure must be after arrival. Visit date is read-only and is reset to the planned arrival's plant-local day on save, and the audit entry records it. Saving a visit that was automatically marked No Show undoes the No Show if its planned arrival is no longer overdue (less than 2 hours ago, or in the future). The visit gets back the status it had before (Confirmed or Pending Approval), along with its approval state and the Host's approval-result email flag. For a pending visit, the approval tasks the No Show closed are reopened, dated with the new visit date, and queued for the task-notification outbox again. A task a person completed is never reopened. The undo is written to the VMS audit log as "visit.no_show_undone". It does not happen when the schedule is still overdue, the visitor already arrived, the status was set to No Show by hand rather than by the scheduler, or the same save sets another status.
+- **Data Maintenance**: VMS visits and visitors can be edited (not deleted) by System Admin. A visit is rescheduled through Planned arrival / Planned departure, shown in plant time; a time typed without a UTC offset is taken as plant time. Departure must be after arrival. Visit date is read-only and is reset to the planned arrival's plant-local day on save, and the audit entry records it. Saving a visit that was automatically marked No Show undoes the No Show if its planned arrival is no longer overdue (today or later, plant time). The visit gets back the status it had before (Confirmed or Pending Approval), along with its approval state and the Host's approval-result email flag. For a pending visit, the approval tasks the No Show closed are reopened, dated with the new visit date, and queued for the task-notification outbox again. A task a person completed is never reopened. The undo is written to the VMS audit log as "visit.no_show_undone". It does not happen when the schedule is still overdue, the visitor already arrived, the status was set to No Show by hand rather than by the scheduler, or the same save sets another status.
 - **Branding**: company name, logo and tagline come from Portal company settings.
 
 See PORTAL.md.
@@ -1008,7 +1012,7 @@ The September 2026 code audit (V2.7) listed defects D-00 to D-22. All except two
 | OI-32 | Access-card system integration; self-service kiosk | Not implemented |
 | OI-33 | QA sign-off of the health-declaration questions | Open |
 | OI-34 | Paper visitor-register template and historical data migration; printer model confirmation | Open |
-| OI-35 | A visit created (or rescheduled) with a planned arrival already more than 2 hours past is marked No Show by the next scheduler run, and a pending approval is cancelled with it. Seen 2026-10-20: created 16:30 for 08:00 the same day, No Show 3 minutes later | Open |
+| OI-35 | A visit created (or rescheduled) with a planned arrival already more than 2 hours past is marked No Show by the next scheduler run, and a pending approval is cancelled with it. Seen 2026-10-20: created 16:30 for 08:00 the same day, No Show 3 minutes later | Closed 2026-10-20 — No Show now waits until the arrival day is over |
 
 ---
 
@@ -1030,3 +1034,4 @@ The September 2026 code audit (V2.7) listed defects D-00 to D-22. All except two
 | V2.10 | 19 Oct 2026 | Column-header sorting on visit lists, audit log, health declarations and active visits; All Visits and Today page on the server |
 | V2.11 | 20 Oct 2026 | Data Maintenance reschedules visits through planned arrival / departure; Visit date derived (D-24); new open item OI-35 (past planned arrival is no-showed at once) |
 | V2.12 | 20 Oct 2026 | Rescheduling a No Show visit in Data Maintenance undoes the No Show and reopens a pending approval |
+| V2.13 | 20 Oct 2026 | No Show marked after the planned arrival day ends (plant time) instead of 2 hours after arrival; OI-35 closed |

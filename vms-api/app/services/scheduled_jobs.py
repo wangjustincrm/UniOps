@@ -32,6 +32,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.plant_time import plant_tz
 from app.crud import audit as audit_crud
 from app.models.audit_log import AuditLog
 from app.models.task_mirror import Task
@@ -50,7 +51,6 @@ SYSTEM_ACTOR_ID = uuid.UUID(int=0)
 SYSTEM_ACTOR_NAME = "VMS Scheduler"
 
 # Thresholds (PRD). Tunable here — not schema.
-NO_SHOW_GRACE = timedelta(hours=2)         # VMS-PR-019
 OVERDUE_REMINDER_AFTER = timedelta(hours=1)  # VMS-CO-010
 OVERDUE_ESCALATE_AFTER = timedelta(hours=4)  # VMS-CO-011
 OVERDUE_REMINDER_REPEAT = timedelta(hours=24)  # re-nag the Host daily until checkout
@@ -58,6 +58,15 @@ OVERDUE_REMINDER_REPEAT = timedelta(hours=24)  # re-nag the Host daily until che
 
 def _now(now: datetime | None) -> datetime:
     return now or datetime.now(timezone.utc)
+
+
+def no_show_cutoff(now: datetime) -> datetime:
+    """Plant-local midnight starting `now`'s day (VMS-PR-019, user rule
+    2026-10-20). A visit becomes No Show once its planned arrival's plant day
+    is over — late arrivals the same day are not no-shows, and a visit entered
+    after its arrival time on the same day is not marked minutes later."""
+    local = now.astimezone(plant_tz())
+    return local.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 async def _visitor_and_host(
@@ -88,7 +97,8 @@ async def _dept_manager(db: AsyncSession, host: User | None) -> User | None:
 # ── VMS-PR-019: auto no-show ────────────────────────────────────────────────-
 
 async def mark_no_shows(db: AsyncSession, *, now: datetime | None = None) -> list[uuid.UUID]:
-    """Flip visits that never checked in (planned_arrival + 2h < now) to
+    """Flip visits that never checked in by the end of their planned
+    arrival's plant day (planned_arrival < today's plant midnight) to
     `no_show`. Each transition is audit-logged under the system actor.
 
     Covers visits still Pending Approval too: the visitor has not come, so the
@@ -98,7 +108,7 @@ async def mark_no_shows(db: AsyncSession, *, now: datetime | None = None) -> lis
     from app.services.approval import IN_FLIGHT_STATES
 
     now = _now(now)
-    cutoff = now - NO_SHOW_GRACE
+    cutoff = no_show_cutoff(now)
     rows = (await db.execute(
         select(Visit).where(
             Visit.status.in_((VisitStatus.confirmed, VisitStatus.pending_approval)),
@@ -127,7 +137,7 @@ async def mark_no_shows(db: AsyncSession, *, now: datetime | None = None) -> lis
             ip_address="system",
             old_value=before,
             new_value=audit_crud.snapshot(visit),
-            notes="Auto no-show: not checked in within 2h of planned arrival",
+            notes="Auto no-show: not checked in on the planned arrival day",
         )
         marked.append(visit.id)
     if marked:
@@ -147,7 +157,7 @@ async def undo_no_show(
     """Put an auto no-showed visit back the way mark_no_shows found it.
 
     Called when Data Maintenance saves a No Show visit whose planned arrival
-    is not yet overdue (it was rescheduled). Restores status, approval state
+    is today or later in plant time (it was rescheduled). Restores status, approval state
     and host_notified_at from the `visit.no_show` audit row, and reopens the
     approval tasks the no-show closed so the approver sees them again.
     Returns False — visit left as is — when the schedule is still overdue
@@ -157,7 +167,7 @@ async def undo_no_show(
     now = _now(now)
     if visit.status != VisitStatus.no_show or visit.actual_arrival is not None:
         return False
-    if visit.planned_arrival < now - NO_SHOW_GRACE:
+    if visit.planned_arrival < no_show_cutoff(now):
         return False
     event = (await db.execute(
         select(AuditLog)

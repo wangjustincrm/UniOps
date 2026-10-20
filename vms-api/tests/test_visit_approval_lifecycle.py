@@ -263,7 +263,7 @@ async def test_pending_visit_past_arrival_becomes_no_show_and_tasks_close(reques
     user, client = requester
     approver = await make_user(test_engine, role="dept_manager")
     vid = await _visitor(client)
-    arrival = datetime.now(timezone.utc) - timedelta(hours=3)
+    arrival = datetime.now(timezone.utc) - timedelta(days=1, hours=1)  # yesterday (plant day over)
     v = (await client.post("/api/v1/visits", json=_payload(vid, user.id, area="warehouse", arrival=arrival))).json()
     await _add_task(v["id"], task_type="approve_vms_visit", assignee=approver)
 
