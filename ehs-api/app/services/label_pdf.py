@@ -68,9 +68,12 @@ MARGIN_X = 10 * mm
 QR_SIDE = 32.5 * mm
 
 # ★ Round 7, TC-07: "the font is too small, increase the font size to 10
-# point." The body — every statement, PPE, first aid, the manufacturer — is
-# printed at these sizes on every stock, whatever the label's scale. Before,
-# it was 8.5 pt times the scale: 6.8 pt on the small label, less once shrunk.
+# point." On the small label the body — every statement, PPE, first aid, the
+# manufacturer — is printed at these sizes and does not shrink. ★ Round 8,
+# question 1, HSE chose (b): 10 pt on the small label only. At 10 pt
+# everywhere 8 of 10 real labels no longer fitted the standard size; the
+# standard and large labels are back to 8.5 pt times their scale, shrinking to
+# a readable floor (MIN_SCALE_FACTOR) as before round 7.
 BODY_PT = 10.0
 HAZARD_PT = 10.5
 BODY_LEAD = 4.4 * mm
@@ -136,11 +139,10 @@ CHOICES = (FIT,) + tuple(s.code for s in SIZES)
 # How far the type may shrink before the label is declared too small. Below
 # this a hazard statement stops being readable at arm's length, which is the
 # whole function of the label.
-# ★ Round 7: 1.0 — the type no longer shrinks to fit. With the body at 10 pt,
-# shrinking would only squeeze the line spacing under the type. What does not
-# fit moves up a size (Fit), or is refused by name, or — on the small label —
+# Not on the small label (round 8, (b)): its body is a fixed 10 pt, and
+# shrinking would only squeeze the spacing under it; what does not fit there
 # leaves statements for the data sheet and says how many.
-MIN_SCALE_FACTOR = 1.0
+MIN_SCALE_FACTOR = 0.72
 
 
 def _wrap(c: pdfcanvas.Canvas, text: str, font: str, size: float,
@@ -242,6 +244,14 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
     # went. Found making the small label always print (round 6, TC-09).
     squeeze = min(1.0, scale / size.scale)
 
+    # The body's size and spacing, as `line` takes them (it multiplies by the
+    # scale). Fixed printed sizes on the small label; scaled ones elsewhere.
+    fixed = size.always_prints
+    hazard_pt, hazard_lead = ((HAZARD_PT / scale, HAZARD_LEAD / scale) if fixed
+                              else (9.5, 4.6 * mm / scale))
+    body_pt, body_lead = ((BODY_PT / scale, BODY_LEAD / scale) if fixed
+                          else (8.5, 4.1 * mm / scale))
+
     def line(text: str, font: str, pts: float, lead: float, colour=black) -> None:
         nonlocal y
         # ★ Round-6 review: a supplier named in Chinese printed as black boxes.
@@ -278,18 +288,18 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
     # ★ No cap. Six of seven statements printed, with nothing saying so, is the
     # fault round 5 reported as "data is being cut off".
     for entry in list(label.hazard_statements or []):
-        line(_statement(entry), "Helvetica-Bold", HAZARD_PT / scale, HAZARD_LEAD / scale)
+        line(_statement(entry), "Helvetica-Bold", hazard_pt, hazard_lead)
 
     y -= 1 * mm * scale
     for entry in list(label.precautionary_statements or []):
-        line(_statement(entry), "Helvetica", BODY_PT / scale, BODY_LEAD / scale)
+        line(_statement(entry), "Helvetica", body_pt, body_lead)
 
     # ★ Said on the label when the small stock could not hold every statement —
     # never left out silently. See `render`.
     omitted = getattr(label, "omitted_statements", 0)
     if omitted:
         line(f"+{omitted} more statement{'s' if omitted != 1 else ''} on the safety "
-             "data sheet — scan the code", "Helvetica-Bold", BODY_PT / scale, BODY_LEAD / scale)
+             "data sheet — scan the code", "Helvetica-Bold", body_pt, body_lead)
 
     # ── PPE, then first aid ─────────────────────────────────────────────────
     # ★ Round 5: "PPE required freeform text is not being copied to the label."
@@ -297,22 +307,22 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
     # container.
     if label.ppe_note:
         y -= 1.5 * mm * scale
-        line("PPE REQUIRED", "Helvetica-Bold", BODY_PT / scale, BODY_LEAD / scale)
-        line(label.ppe_note, "Helvetica", BODY_PT / scale, BODY_LEAD / scale)
+        line("PPE REQUIRED", "Helvetica-Bold", body_pt, body_lead)
+        line(label.ppe_note, "Helvetica", body_pt, body_lead)
 
     if label.first_aid:
         y -= 1.5 * mm * scale
-        line("FIRST AID", "Helvetica-Bold", BODY_PT / scale, BODY_LEAD / scale, colour=GHS_RED)
-        line(label.first_aid, "Helvetica", BODY_PT / scale, BODY_LEAD / scale)
+        line("FIRST AID", "Helvetica-Bold", body_pt, body_lead, colour=GHS_RED)
+        line(label.first_aid, "Helvetica", body_pt, body_lead)
 
     # ── Manufacturer: name and how to reach them ────────────────────────────
     # Round 6, TC-09: "the manufacturer's name contact must be shown."
     contact = getattr(label, "supplier_contact", None)
     if label.supplier or contact:
         y -= 2 * mm * scale
-        line("MANUFACTURER", "Helvetica-Bold", BODY_PT / scale, BODY_LEAD / scale)
-        line(" · ".join(x for x in (label.supplier, contact) if x), "Helvetica", BODY_PT / scale,
-             BODY_LEAD / scale, colour=HexColor("#444444"))
+        line("MANUFACTURER", "Helvetica-Bold", body_pt, body_lead)
+        line(" · ".join(x for x in (label.supplier, contact) if x), "Helvetica", body_pt,
+             body_lead, colour=HexColor("#444444"))
 
     text_height = top - y
 
@@ -441,7 +451,7 @@ def render_with_omitted(label, *, chemical_id: str, copies: int = 2,
 
     scale = chosen.scale
     needed = need(scale)
-    floor = chosen.scale * MIN_SCALE_FACTOR
+    floor = chosen.scale if chosen.always_prints else chosen.scale * MIN_SCALE_FACTOR
     while needed > usable and scale > floor:
         scale = max(floor, scale - 0.02)
         needed = need(scale)

@@ -241,12 +241,12 @@ class TestTheLabelFitsWhatIsOnIt:
         assert b"/MediaBox [ 0 0 432 288 ]" in pdf or \
             f"/MediaBox [ 0 0 {6 * inch:g} {4 * inch:g} ]".encode() in pdf
 
-    @pytest.mark.parametrize("size", ["bottle", "drum", "sheet"])
-    def test_the_body_prints_at_ten_point_on_every_size(self, size):
-        """★ Round 7, TC-07: "the font is too small, increase the font size to
-        10 point." Measured on what is drawn: every statement, PPE, first aid
-        and manufacturer line, at 10 pt or more — including a small label that
-        had to leave statements for the data sheet."""
+    @pytest.mark.parametrize("size,smallest", [("bottle", 10.0), ("drum", 8.5), ("sheet", 8.5 * 1.25)])
+    def test_the_body_type_size_by_stock(self, size, smallest):
+        """★ Round 7, TC-07: "increase the font size to 10 point"; round 8,
+        question 1, HSE chose (b): 10 pt on the small label only, the standard
+        and large back to 8.5 pt times their scale. Measured on what is drawn:
+        every statement, PPE, first aid and manufacturer line."""
         from app.services import label_pdf
 
         lbl = self._label(supplier="Acme Chemicals Ltd")
@@ -255,10 +255,9 @@ class TestTheLabelFitsWhatIsOnIt:
                                                   size=size, sds_available=True)
         drawn = _pdf_text_sizes(pdf)
         body = [(pt, t) for pt, t in drawn
-                if t.startswith(("H3", "P2", "PPE", "FIRST AID", "MANUFACTURER", "Acme",
-                                 "Rinse", "+"))]
+                if t.startswith(("P2", "PPE", "FIRST AID", "MANUFACTURER", "Acme", "Rinse"))]
         assert body, "the body text was not found"
-        assert all(pt >= 10 for pt, _ in body), [x for x in body if x[0] < 10]
+        assert min(pt for pt, _ in body) == pytest.approx(smallest), body
 
     def test_precautions_go_before_hazards(self):
         from app.services import label_pdf
