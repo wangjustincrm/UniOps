@@ -1015,6 +1015,7 @@ function SheetActions(
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chemical-sds', chemicalId] })
       queryClient.invalidateQueries({ queryKey: ['chemicals'] })
+      queryClient.invalidateQueries({ queryKey: ['chemical-labels', chemicalId] })
     },
   })
 
@@ -1075,6 +1076,11 @@ function NewSheetForm({ chemicalId }: { chemicalId: string }) {
       queryClient.invalidateQueries({ queryKey: ['chemical-sds', chemicalId] })
       queryClient.invalidateQueries({ queryKey: ['chemicals'] })
       queryClient.invalidateQueries({ queryKey: ['chemical-gaps'] })
+      // ★ Round 8, TC-05: "if I add a revision, automatically remove the old
+      // label and require a refresh the label from the new sheet." The server
+      // already supersedes the label on a new revision; this list kept its
+      // earlier copy until something else made it read again.
+      queryClient.invalidateQueries({ queryKey: ['chemical-labels', chemicalId] })
     },
   })
 
@@ -1215,6 +1221,7 @@ function ChemicalForm({ existing, onClose }: { existing?: Chemical; onClose: () 
           // to "open it and file the sheet from there" needs to find it.
           queryClient.invalidateQueries({ queryKey: ['chemicals'] })
           queryClient.invalidateQueries({ queryKey: ['chemical-gaps'] })
+          queryClient.invalidateQueries({ queryKey: ['chemical-labels'] })
           setPartial(
             'The product was added, but its data sheet was not attached. '
             + 'Open it and file the sheet from there.')
