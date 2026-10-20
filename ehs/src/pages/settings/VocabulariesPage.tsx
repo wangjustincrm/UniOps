@@ -18,7 +18,7 @@ interface Vocabulary {
 interface Item {
   id: string; code: string; label: string; sort_order: number
   is_active: boolean; parent_id: string | null; path: string | null
-  attrs?: { pictogram_file_id?: string; pictogram_filename?: string }
+  attrs?: { pictogram_file_id?: string; pictogram_filename?: string; severity?: Record<string, string> }
 }
 
 /**
@@ -156,6 +156,7 @@ export default function VocabulariesPage() {
             )}
             <span className="font-mono text-xs text-neutral-400">{i.code}</span>
             {active === PICTOGRAM_VOCABULARY && <PictogramSlot code={active} item={i} />}
+            {active === 'consequence_type' && <SeverityWording code={active} item={i} />}
             <button
               type="button"
               disabled={toggle.isPending || (current?.is_system_locked && i.is_active)}
@@ -293,5 +294,72 @@ function RenameField({ item, code, onDone }: { item: Item; code: string; onDone:
         Cancel
       </button>
     </span>
+  )
+}
+
+
+/**
+ * What each level of "how bad" means when a risk is judged on this.
+ *
+ * ★ Round 8, question 5: "Judged on" is HSE's list, Equipment included. The
+ * matrix kept its wording in one column per consequence, so a new one had
+ * nowhere to keep any — and a consequence with no wording is not offered on
+ * the assessment, because "severity 3" means nothing without it.
+ */
+function SeverityWording({ code, item }: { code: string; item: Item }) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState<Record<string, string>>(item.attrs?.severity ?? {})
+  const written = Object.values(item.attrs?.severity ?? {}).filter((v) => v && v.trim()).length
+  const save = useMutation({
+    mutationFn: () => api.patch(`/api/v1/settings/vocabularies/${code}/items/${item.id}`, {
+      attrs: {
+        ...(item.attrs ?? {}),
+        severity: Object.fromEntries(Object.entries(text).filter(([, v]) => v.trim()).map(([k, v]) => [k, v.trim()])),
+      },
+    }),
+    onSuccess: () => {
+      setOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['vocabularies'] })
+      queryClient.invalidateQueries({ queryKey: ['risk-matrix'] })
+    },
+  })
+  return (
+    <>
+      <button type="button" onClick={() => { setText(item.attrs?.severity ?? {}); setOpen(true) }}
+              className="min-h-[32px] rounded-md px-2 text-xs font-medium text-primary-700 hover:underline">
+        How-bad wording ({written}/6)
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-4">
+            <h3 className="text-sm font-semibold text-neutral-900">How bad — judged on {item.label}</h3>
+            <p className="mt-1 text-xs text-neutral-500">
+              What each level means for this consequence. A level left empty cannot be chosen;
+              with none written, this is not offered on a risk assessment.
+            </p>
+            <div className="mt-3 flex flex-col gap-2">
+              {['5', '4', '3', '2', '1', '0'].map((lv) => (
+                <label key={lv} className="flex items-center gap-2 text-sm">
+                  <span className="w-6 font-mono text-xs text-neutral-500">{lv}</span>
+                  <input className="min-h-[38px] flex-1 rounded-lg border border-neutral-300 px-2.5 text-sm"
+                         aria-label={`Level ${lv}`} value={text[lv] ?? ''}
+                         onChange={(e) => setText({ ...text, [lv]: e.target.value })} />
+                </label>
+              ))}
+            </div>
+            {save.isError && <p className="mt-2 text-xs text-danger-700">{(save.error as Error).message}</p>}
+            <div className="mt-3 flex justify-end gap-2">
+              <button type="button" className="min-h-[38px] rounded-lg border border-neutral-300 px-3 text-sm"
+                      onClick={() => setOpen(false)} disabled={save.isPending}>Cancel</button>
+              <button type="button" className="min-h-[38px] rounded-lg bg-primary-600 px-3 text-sm font-semibold text-white disabled:opacity-50"
+                      disabled={save.isPending} onClick={() => { if (!save.isPending) save.mutate() }}>
+                {save.isPending ? 'Saving…' : 'Save the wording'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
