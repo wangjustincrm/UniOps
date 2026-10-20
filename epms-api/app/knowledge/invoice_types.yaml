@@ -164,9 +164,11 @@ rules:
       is never matched to a PO or an agreement: on its invoice page each charge
       is matched to a registered shipment's tracking number and cost center,
       and once finalised it is paid from Payment Applications → New Freight PA.
-      Anyone who may upload invoices may upload it; only holders of the Match
-      Courier Invoices permission match it, and other invoice readers see it
-      read-only.
+      Anyone who may upload invoices may upload it. It is matched by holders of
+      the Match Courier Invoices permission, or by the person AP assigns it to
+      from the Unmatched Queue (like any invoice — they get a "Match Invoice"
+      task and need no Freight permission); other invoice readers see it
+      read-only. Only the freight manager raises the Freight PA.
     enforced_in: "epms-api app/api/v1/freight.py (create / match / finalize on epms.freight.manage, read-only GET for invoice readers); app/api/v1/invoices.py _refuse_freight; PRD EPMS §3.21"
   - id: invoice_internal_number
     asked_as:
