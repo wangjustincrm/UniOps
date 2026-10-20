@@ -19,18 +19,23 @@ The whole statement additionally runs inside a READ ONLY transaction, so a
 future bug here cannot write even if it tried to.
 """
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.delegation import PLANT_TIMEZONE
 from app.core.ontology import (
     BOOL, DATE, DATETIME, ENUM, INT, MONEY, REGISTRY, TEXT, Entity, get_entity,
     may_view,
 )
+
+_PLANT_TZ = ZoneInfo(PLANT_TIMEZONE)
+_BARE_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # Row caps. A planner asking for "all of them" gets this many, and the response
 # says so — silent truncation would read as a complete answer when it is not.
@@ -193,6 +198,51 @@ def _coerce(kind: str, raw: Any) -> Any:
         _reject(f"Value {raw!r} is not a valid {kind}")
 
 
+def _day_bounds(raw: Any) -> tuple[datetime, datetime] | None:
+    """A bare date against a DATETIME column, as the plant's whole day.
+
+    "2026-10-19" used to become 2026-10-19 00:00 — so `received_at <= to`
+    dropped the last day of every range and a one-day question always found
+    nothing (ISS-0074) — and the day began at midnight UTC, which is 20:00 the
+    evening before in Toronto. A day someone names is a local day: it runs from
+    their midnight to the next, half-open so the next midnight is not in it.
+
+    None for anything that is not a bare date: a full timestamp means what it
+    says and is compared as given.
+    """
+    if isinstance(raw, datetime):
+        return None
+    if isinstance(raw, date):
+        day = raw
+    elif isinstance(raw, str) and _BARE_DATE.match(raw.strip()):
+        day = date.fromisoformat(raw.strip())
+    else:
+        return None
+    return (datetime.combine(day, time.min, tzinfo=_PLANT_TZ),
+            datetime.combine(day + timedelta(days=1), time.min, tzinfo=_PLANT_TZ))
+
+
+def _datetime_day_clause(col, op: str, value: Any):
+    """The clause for a DATETIME compared with bare date(s), or None."""
+    if op == "between":
+        lo, hi = _day_bounds(value[0]), _day_bounds(value[1])
+        if lo is None or hi is None:
+            return None
+        return sa.and_(col >= lo[0], col < hi[1])
+    bounds = _day_bounds(value)
+    if bounds is None:
+        return None
+    start, end = bounds
+    return {
+        "eq": lambda: sa.and_(col >= start, col < end),
+        "ne": lambda: sa.or_(col < start, col >= end),
+        "gt": lambda: col >= end,
+        "gte": lambda: col >= start,
+        "lt": lambda: col < start,
+        "lte": lambda: col < end,
+    }[op]()
+
+
 def _apply_default_filter(stmt, entity: Entity, clauses: list[dict], hops: list,
                           request: dict) -> tuple:
     """Apply the entity's safe default, unless the caller is asking about it.
@@ -279,6 +329,14 @@ def _apply_where(stmt, entity: Entity, clauses: list[dict], hops: list):
             stmt = stmt.where(col.in_(items) if op == "in" else col.notin_(items))
             continue
 
+        if kind == DATETIME and op in ("eq", "ne", "gt", "gte", "lt", "lte", "between"):
+            if op == "between" and (not isinstance(value, list) or len(value) != 2):
+                _reject(f"Operator 'between' needs exactly two values for '{name}'")
+            day_clause = _datetime_day_clause(col, op, value)
+            if day_clause is not None:
+                stmt = stmt.where(day_clause)
+                continue
+
         if op == "between":
             if not isinstance(value, list) or len(value) != 2:
                 _reject(f"Operator 'between' needs exactly two values for '{name}'")
@@ -338,9 +396,13 @@ def _apply_period(stmt, entity: Entity, period: dict | None, hops: list):
         frm, to = period.get("from"), period.get("to")
         kind = _kind_of(entity, name)
         if frm:
-            stmt = stmt.where(col >= _coerce(kind, frm))
+            day = _day_bounds(frm) if kind == DATETIME else None
+            stmt = stmt.where(col >= (day[0] if day else _coerce(kind, frm)))
         if to:
-            stmt = stmt.where(col <= _coerce(kind, to))
+            day = _day_bounds(to) if kind == DATETIME else None
+            # The whole of the last day is in the range: up to, not including,
+            # the next local midnight.
+            stmt = stmt.where(col < day[1] if day else col <= _coerce(kind, to))
         return stmt
 
     if _kind_of(entity, name) == DATE:
@@ -357,6 +419,10 @@ def _serialise(value: Any) -> Any:
     """
     if isinstance(value, Decimal):
         return str(value)
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        # In the plant's time, offset included. Sent as UTC, an invoice
+        # uploaded at 17:39 was reported as uploaded at 21:39 (ISS-0053).
+        return value.astimezone(_PLANT_TZ).isoformat()
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if value is None or isinstance(value, (str, int, float, bool)):

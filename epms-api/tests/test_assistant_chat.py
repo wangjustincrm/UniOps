@@ -514,11 +514,13 @@ async def test_the_planner_is_told_what_day_it_is(admin_client, monkeypatch):
     and nothing in the answer hinted the year had been invented. The only fix is
     to tell it the date; it cannot know otherwise.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
     from app.services.assistant_llm import _today_note
 
     note = _today_note()
-    today = datetime.now(timezone.utc)
+    # The plant's date (ISS-0048), not UTC's.
+    today = datetime.now(ZoneInfo("America/Toronto"))
     assert f"{today:%Y-%m-%d}" in note
     assert str(today.year) in note
     # And it must say what to do with it, not just state it.

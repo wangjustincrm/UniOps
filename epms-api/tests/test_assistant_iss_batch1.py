@@ -116,3 +116,110 @@ def test_direct_pa_is_not_offered_as_a_process():
     enum = assistant_llm._PROCESS_TOOL["input_schema"]["properties"]["doc_type"]["enum"]
     assert "pa_dir" not in enum
     assert "discontinued" in _rules("pa")["direct_pa_retired"]
+
+
+# ── ISS-0074 / ISS-0053 / ISS-0048: a named day is the plant's whole day ─────
+
+async def _seed_pos_at(test_engine, admin_client, tag, stamps):
+    """One PO per (suffix, aware datetime), created_at set explicitly."""
+    import uuid
+    from decimal import Decimal
+
+    from jose import jwt
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.core.config import settings
+    from app.models.po import PurchaseOrder
+    from app.models.vendor import Vendor
+
+    token = admin_client.headers["Authorization"].split()[1]
+    uid = uuid.UUID(jwt.decode(token, settings.JWT_SECRET_KEY,
+                               algorithms=[settings.JWT_ALGORITHM])["sub"])
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        vendor = Vendor(code=f"V-{uuid.uuid4().hex[:6]}", name="Day Bounds Vendor",
+                        category="Services", contact_name="A", contact_email="a@t.test")
+        db.add(vendor)
+        await db.flush()
+        for suffix, at in stamps:
+            db.add(PurchaseOrder(
+                number=f"PO-DAY-{tag}-{suffix}", title="d", type=2, status="approved",
+                subtotal=Decimal("1"), total=Decimal("1"), vendor_id=vendor.id,
+                vendor_name=vendor.name, created_by=uid, created_at=at))
+        await db.commit()
+
+
+async def _numbers(admin_client, tag, **query):
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "purchase_order", "select": ["number"],
+        "where": [{"field": "number", "op": "like", "value": f"PO-DAY-{tag}"}]
+                 + query.pop("where", []),
+        **query,
+    })
+    assert r.status_code == 200, r.text
+    return {row["number"].rsplit("-", 1)[1] for row in r.json()["rows"]}
+
+
+async def test_a_named_day_is_the_plants_whole_day(test_engine, admin_client):
+    """from = to = one day used to find nothing (the day ended at its own
+    midnight), and the day began at midnight UTC = 20:00 the evening before."""
+    import uuid
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("America/Toronto")
+    tag = uuid.uuid4().hex[:6]
+    await _seed_pos_at(test_engine, admin_client, tag, [
+        ("early", datetime(2026, 10, 19, 0, 30, tzinfo=tz)),
+        ("late", datetime(2026, 10, 19, 23, 30, tzinfo=tz)),   # 03:30 UTC on the 20th
+        ("eve", datetime(2026, 10, 18, 21, 0, tzinfo=tz)),     # 01:00 UTC on the 19th
+        ("next", datetime(2026, 10, 20, 0, 0, tzinfo=tz)),
+    ])
+    day = {"early", "late"}
+
+    assert await _numbers(admin_client, tag,
+                          period={"from": "2026-10-19", "to": "2026-10-19"}) == day
+    assert await _numbers(admin_client, tag, period={"from": "2026-10-18",
+                                                     "to": "2026-10-19"}) == day | {"eve"}
+    for op, value, want in [
+        ("eq", "2026-10-19", day),
+        ("between", ["2026-10-19", "2026-10-19"], day),
+        ("lte", "2026-10-19", day | {"eve"}),
+        ("lt", "2026-10-19", {"eve"}),
+        ("gte", "2026-10-19", day | {"next"}),
+        ("gt", "2026-10-19", {"next"}),
+        ("ne", "2026-10-19", {"eve", "next"}),
+    ]:
+        got = await _numbers(admin_client, tag, where=[
+            {"field": "created_at", "op": op, "value": value}])
+        assert got == want, (op, got)
+
+    # A full timestamp still means exactly what it says.
+    got = await _numbers(admin_client, tag, where=[
+        {"field": "created_at", "op": "lt", "value": "2026-10-19T12:00:00-04:00"}])
+    assert got == {"eve", "early"}
+
+
+def test_timestamps_reach_the_narrator_in_plant_time():
+    """An invoice uploaded at 17:39 was reported as 21:39 (UTC)."""
+    from datetime import datetime, timezone
+
+    from app.services import controlled_query
+
+    got = controlled_query._serialise(datetime(2026, 10, 19, 21, 39, tzinfo=timezone.utc))
+    assert got == "2026-10-19T17:39:00-04:00"
+
+
+def test_planner_is_told_dates_are_day_first_and_local():
+    from app.services import assistant_llm
+
+    note = assistant_llm._today_note()
+    assert "DD/MM/YYYY" in note and "10/11 is 10 November" in note
+
+
+def test_new_invoices_are_asked_about_by_upload_date():
+    from app.core.ontology import REGISTRY
+    from app.services import assistant_llm
+
+    assert "Upload Date" in REGISTRY["invoice"].fields["created_at"].label
+    assert "set period.field\n  to created_at" in assistant_llm._PLAN_SYSTEM

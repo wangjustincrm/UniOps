@@ -28,8 +28,10 @@ import re
 import logging
 from datetime import date, datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
+from app.core.delegation import PLANT_TIMEZONE
 from app.services.controlled_query import _OPS_BY_KIND as cq_ops
 
 log = logging.getLogger(__name__)
@@ -37,6 +39,7 @@ log = logging.getLogger(__name__)
 from app.services import guide_view, reply_language
 
 MODEL = "claude-haiku-4-5-20251001"
+_PLANT_TZ = ZoneInfo(PLANT_TIMEZONE)
 
 # The plan call returns a small JSON object; 1024 is generous for it. Narration
 # is prose about at most a few hundred rows of summary.
@@ -64,6 +67,13 @@ Rules:
 - For a NAMED month or an explicit range ("September", "Q2", "since June"), use
   period with from/to, and take the year from today's date given below. Getting
   the year wrong returns zero rows and reads exactly like "there were none".
+  A date range includes the whole of its last day, so a single day is
+  from = to = that day.
+- An invoice has two dates. `invoice_date` is the date the VENDOR put on it
+  and is the default; `created_at` is when it was uploaded into EPMS (the
+  Invoices list's Upload Date). "New", "recent", "uploaded", "received"
+  invoices and "invoices from the last 7 days" mean uploaded: set period.field
+  to created_at. Only "invoices dated …" or "billed in …" mean invoice_date.
 - To COMPARE two things — two versions, two months, two vendors — fetch both in
   ONE query and select the column that tells them apart. Filter with `in` on
   that column and put it in `select`; the comparison is then done from the rows.
@@ -726,14 +736,20 @@ def _today_note() -> str:
 
     Deliberately in the user turn rather than the cached system block, so the
     schema prefix keeps its cache across the day boundary.
+
+    The plant's date, not UTC's: after 20:00 in Toronto UTC is already
+    tomorrow, and "today" pointed at a day that had not started (ISS-0048).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(_PLANT_TZ)
     return (
         f"\n\nToday is {now:%Y-%m-%d} ({now:%A}). Resolve every date against "
         f"this, never against anything you remember. A month or day given "
         f"without a year means the most recent one that has already started — "
         f"normally {now.year}, or {now.year - 1} if {now.year} would put it in "
-        f"the future."
+        f"the future. A date written with slashes is day first, the way EPMS "
+        f"shows dates (DD/MM/YYYY): 10/11 is 10 November, never 11 October. "
+        f"When a slashed date could be read either way, say in the answer which "
+        f"date was used."
     )
 
 

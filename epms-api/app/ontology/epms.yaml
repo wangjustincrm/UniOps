@@ -452,7 +452,7 @@ entities:
           not received\" is status = matched AND billed_against = purchase_order
           AND po_receipt_recorded = false"
       uploaded_by_name: {kind: text, label: "Who uploaded it"}
-      created_at: {kind: datetime, label: "Created at"}
+      created_at: {kind: datetime, label: "Uploaded at — when the invoice entered EPMS (the Invoices list's Upload Date); not the vendor's invoice date"}
     metrics:
       total: {fn: sum, field: total_amount, label: "Total invoiced including tax"}
       pre_tax: {fn: sum, field: amount, label: "Total invoiced before tax"}
