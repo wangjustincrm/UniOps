@@ -14,6 +14,7 @@ Cascade facts (verified against the ORM models):
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
@@ -28,9 +29,10 @@ from app.models.visit import Visit
 from app.models.visitor import Visitor
 
 CascadeFn = Callable[[AsyncSession, object], Awaitable[dict[str, int]]]
-# Runs after an edit's fields are applied, before flush. Re-derives fields the
-# edit form does not expose; raises ValueError (-> 400) to reject the edit.
-AfterEditFn = Callable[[object], None]
+# Runs after an edit's fields are applied, before the audit snapshot.
+# Re-derives fields the edit form does not expose and applies side effects;
+# raises ValueError (-> 400) to reject the edit. Args: db, row, actor id/email.
+AfterEditFn = Callable[[AsyncSession, object, uuid.UUID, str], Awaitable[None]]
 
 
 @dataclass
@@ -64,7 +66,7 @@ async def _visit_delete(db: AsyncSession, visit) -> dict[str, int]:
     return _merge({"vms_visits": 1}, refs)
 
 
-def _visit_after_edit(visit) -> None:
+async def _visit_after_edit(db: AsyncSession, visit, actor_id: uuid.UUID, actor_email: str) -> None:
     # The schedule is planned_arrival / planned_departure: the Visit List, the
     # detail page and the auto no-show job all read them. visit_date is only a
     # day index (list filters, dashboard "today", reports, reminders), so it is
@@ -75,6 +77,14 @@ def _visit_after_edit(visit) -> None:
     if visit.planned_departure is not None and visit.planned_departure <= visit.planned_arrival:
         raise ValueError("Planned departure must be after planned arrival")
     visit.visit_date = visit.planned_arrival.astimezone(plant_tz()).date()
+    # Saving a No Show visit whose schedule is no longer overdue means it was
+    # rescheduled: put status, approval and its tasks back (user rule 2026-10-20).
+    from app.models.user_mirror import User
+    from app.services.scheduled_jobs import undo_no_show
+    actor = await db.get(User, actor_id)
+    await undo_no_show(db, visit, actor_id=actor_id,
+                       actor_name=(actor.full_name if actor else "") or actor_email or str(actor_id),
+                       ip_address="data-maintenance")
 
 
 # ── Visitor ──────────────────────────────────────────────────────────────────

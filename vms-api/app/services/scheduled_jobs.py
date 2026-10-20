@@ -33,6 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.crud import audit as audit_crud
+from app.models.audit_log import AuditLog
+from app.models.task_mirror import Task
 from app.models.user_mirror import User
 from app.models.visit import Visit, VisitStatus
 from app.models.visitor import Visitor
@@ -131,6 +133,83 @@ async def mark_no_shows(db: AsyncSession, *, now: datetime | None = None) -> lis
     if marked:
         log.info("Scheduler: marked %d visit(s) no-show", len(marked))
     return marked
+
+
+# Tasks mark_no_shows closed carry its clock (a few ms after the audit row's
+# timestamp) and no completed_by; a person's approve / revise always sets it.
+_NO_SHOW_TASK_WINDOW = timedelta(minutes=1)
+
+
+async def undo_no_show(
+    db: AsyncSession, visit: Visit, *, actor_id: uuid.UUID, actor_name: str,
+    ip_address: str, now: datetime | None = None,
+) -> bool:
+    """Put an auto no-showed visit back the way mark_no_shows found it.
+
+    Called when Data Maintenance saves a No Show visit whose planned arrival
+    is not yet overdue (it was rescheduled). Restores status, approval state
+    and host_notified_at from the `visit.no_show` audit row, and reopens the
+    approval tasks the no-show closed so the approver sees them again.
+    Returns False — visit left as is — when the schedule is still overdue
+    (the next tick would mark it again), the visitor did arrive, or there is
+    no auto no-show event to restore from (status set by hand).
+    """
+    now = _now(now)
+    if visit.status != VisitStatus.no_show or visit.actual_arrival is not None:
+        return False
+    if visit.planned_arrival < now - NO_SHOW_GRACE:
+        return False
+    event = (await db.execute(
+        select(AuditLog)
+        .where(AuditLog.entity_id == visit.id, AuditLog.action_type == "visit.no_show")
+        .order_by(AuditLog.timestamp.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    old = (event.old_value or {}) if event else {}
+    prior = old.get("status")
+    if prior not in (VisitStatus.confirmed.value, VisitStatus.pending_approval.value):
+        return False
+
+    before = audit_crud.snapshot(visit)
+    visit.status = VisitStatus(prior)
+    visit.approval_status = old.get("approval_status")
+    hn = old.get("host_notified_at")
+    visit.host_notified_at = datetime.fromisoformat(hn) if hn else None
+
+    reopened = 0
+    if prior == VisitStatus.pending_approval.value:
+        old_day = old.get("visit_date")
+        tasks = (await db.execute(
+            select(Task).where(
+                Task.document_type == visit_tasks.DOC_TYPE_VISIT,
+                Task.document_id == visit.id,
+                Task.is_completed.is_(True),
+                Task.completed_by.is_(None),
+                Task.completed_at >= event.timestamp - _NO_SHOW_TASK_WINDOW,
+                Task.completed_at <= event.timestamp + _NO_SHOW_TASK_WINDOW,
+            )
+        )).scalars().all()
+        for task in tasks:
+            task.is_completed = False
+            task.completed_at = None
+            if old_day:
+                task.title = task.title.replace(old_day, visit.visit_date.isoformat())
+            task.notified_at = None  # outbox mails it again per the admin's policy
+        reopened = len(tasks)
+    await db.flush()
+    await audit_crud.log_event(
+        db,
+        user_id=actor_id,
+        user_name=actor_name,
+        action_type="visit.no_show_undone",
+        entity_type="visit",
+        entity_id=visit.id,
+        ip_address=ip_address,
+        old_value=before,
+        new_value=audit_crud.snapshot(visit),
+        notes=f"Rescheduled in Data Maintenance; No Show undone, {reopened} task(s) reopened",
+    )
+    return True
 
 
 # ── VMS-PR-012: day-before reminder ─────────────────────────────────────────-
