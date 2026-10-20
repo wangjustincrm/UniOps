@@ -33,6 +33,7 @@ import { invalidateApJudgement } from '@/lib/apJudgement'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
+import { BillInvoices, billPurchaseOrders, invoicesCsv, type BillInvoice } from '@/components/ap/BillInvoices'
 
 const PAGE_SIZE = 100
 /** Bulk "Ignore all matching" refuses more than this many (ap_ledger_health.dismiss_matching). */
@@ -87,7 +88,8 @@ interface OpenBill {
   paid_against: string | null
   /** How many approved payment lines point at this bill. */
   payment_lines: number
-  invoice_no: string | null; purchase_order: string | null; trade_type: string | null
+  /** One per invoice number on the bill's lines — usually one, often several. */
+  invoices: BillInvoice[]; trade_type: string | null
   /** Set when finance took this bill off the working list. */
   dismissed: { reason: string; note: string | null; by: string | null; at: string | null } | null
 }
@@ -110,7 +112,7 @@ interface DismissReason { code: string; label: string }
 interface FlatBill {
   bill_no: string; currency: string; bill_date: string | null
   supplier_code: string | null; supplier_name: string | null
-  invoice_no: string | null; purchase_order: string | null; trade_type: string | null
+  invoices: BillInvoice[]; trade_type: string | null
   money_cr: string; money_bal: string
   dismissed: { reason: string; note: string | null; by: string | null; at: string | null } | null
 }
@@ -134,7 +136,7 @@ interface DetailResp {
 interface AbandonedRow {
   bill_no: string; currency: string; bill_date: string | null; bill_year: string | null
   bill_status: number | null; approve_status: number | null
-  supplier_code: string | null; supplier_name: string | null; invoice_no: string | null
+  supplier_code: string | null; supplier_name: string | null; invoices: BillInvoice[]
   money_cr: string; money_bal: string; superseded: boolean
 }
 interface AbandonedResp { total: number; items: AbandonedRow[] }
@@ -455,7 +457,7 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                             )}
                           </td>
                           <td className="whitespace-nowrap px-2.5 py-1.5 text-neutral-600">{day(b.bill_date)}</td>
-                          <td className="px-2.5 py-1.5 font-mono text-neutral-600">{b.invoice_no ?? '—'}</td>
+                          <td className="px-2.5 py-1.5 font-mono text-neutral-600"><BillInvoices invoices={b.invoices} /></td>
                           <td className="px-2.5 py-1.5 text-right font-mono tabular-nums">{money(b.money_cr)}</td>
                           <td className={cn('px-2.5 py-1.5 text-right font-mono tabular-nums',
                                             covered ? 'font-semibold text-amber-700' : 'text-neutral-500')}>
@@ -984,8 +986,8 @@ function BillsByDate({ currency }: { currency: string }) {
                     </div>
                     <div className="font-mono text-[11px] text-neutral-400">{b.supplier_code ?? '—'}</div>
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs text-neutral-600">{b.invoice_no ?? '—'}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-neutral-500">{b.purchase_order ?? '—'}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-neutral-600"><BillInvoices invoices={b.invoices} /></td>
+                  <td className="px-3 py-2 font-mono text-xs text-neutral-500">{billPurchaseOrders(b.invoices).join(', ') || '—'}</td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums text-neutral-600">{money(b.money_cr)}</td>
                   <td className={cn('px-3 py-2 text-right font-mono tabular-nums font-semibold',
                                     gone && 'font-normal line-through')}>
@@ -1098,7 +1100,7 @@ export default function ApLedgerHealthPage() {
          'Ignored bills', 'Ignored balance', 'Open after ignored']
     const body = view === 'abandoned'
       ? allAbandoned.map((r) => [
-          r.bill_no, r.bill_date, r.supplier_code, r.supplier_name, r.invoice_no,
+          r.bill_no, r.bill_date, r.supplier_code, r.supplier_name, invoicesCsv(r.invoices),
           r.currency, r.money_cr, r.money_bal, r.bill_status, r.approve_status,
           r.superseded ? 'yes' : 'no'])
       : allSuppliers.map((r) => [
@@ -1278,7 +1280,7 @@ export default function ApLedgerHealthPage() {
                       <div className="text-neutral-800">{r.supplier_name ?? '—'}</div>
                       <div className="font-mono text-[11px] text-neutral-400">{r.supplier_code ?? '—'}</div>
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs text-neutral-600">{r.invoice_no ?? '—'}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-neutral-600"><BillInvoices invoices={r.invoices} /></td>
                     <td className="px-3 py-2 text-right font-mono tabular-nums text-neutral-600">{money(r.money_cr)}</td>
                     <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-amber-700">{money(r.money_bal)}</td>
                     <td className="px-3 py-2 text-xs">

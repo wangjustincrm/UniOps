@@ -33,6 +33,7 @@ import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
+import { BillInvoices, billPurchaseOrders, invoicesCsv, type BillInvoice } from '@/components/ap/BillInvoices'
 
 const BILL_PAGE_SIZE = 100
 /** GET /ap-cash-flow/items sort keys (finance-api ap_cash_flow.ITEM_SORT). */
@@ -63,7 +64,8 @@ interface SummaryResp {
 interface BillRow {
   bill_no: string; currency: string; bill_date: string | null
   supplier_code: string | null; supplier_name: string | null
-  invoice_no: string | null; purchase_order: string | null; trade_type: string | null
+  /** One per invoice number on the bill's lines — usually one, often several. */
+  invoices: BillInvoice[]; trade_type: string | null
   open_bal: string
   payment_terms: string | null; term_days: number | null
   due_date: string | null; days_to_due: number | null
@@ -183,7 +185,8 @@ export default function ApCashFlowPage() {
                   'Bill date', 'Payment term', 'Term days', 'Due date', 'Days to due',
                   'Open balance', 'Bucket', 'No vendor record']
     const body = all.map((r) => [
-      r.bill_no, r.supplier_code, r.supplier_name, r.invoice_no, r.purchase_order,
+      r.bill_no, r.supplier_code, r.supplier_name, invoicesCsv(r.invoices),
+      billPurchaseOrders(r.invoices).join('; '),
       r.currency, r.bill_date, r.payment_terms, r.term_days, r.due_date, r.days_to_due,
       r.open_bal, r.bucket_label, r.no_vendor_record ? 'yes' : 'no'])
     const csv = [head, ...body].map((c) => c.map(csvEscape).join(',')).join('\n')
@@ -417,8 +420,8 @@ export default function ApCashFlowPage() {
                         <div className="text-neutral-800">{r.supplier_name ?? '—'}</div>
                         <div className="font-mono text-[11px] text-neutral-400">{r.supplier_code ?? '—'}</div>
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-600">{r.invoice_no ?? '—'}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-500">{r.purchase_order ?? '—'}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-neutral-600"><BillInvoices invoices={r.invoices} /></td>
+                      <td className="px-3 py-2 font-mono text-xs text-neutral-500">{billPurchaseOrders(r.invoices).join(', ') || '—'}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-xs text-neutral-600">{day(r.bill_date)}</td>
                       <td className="px-3 py-2 text-xs text-neutral-500">
                         {r.payment_terms ?? '—'}
