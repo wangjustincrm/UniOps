@@ -194,7 +194,7 @@ async def bills(user: CurrentUser,
                                 date_to=date_to, supplier_code=supplier_code,
                                 include_dismissed=include_dismissed,
                                 min_amount=min_amount, limit=limit, offset=offset,
-                                order=order)
+                                order=order, with_evidence=True)
 
 
 @router.post("/dismiss-matching")

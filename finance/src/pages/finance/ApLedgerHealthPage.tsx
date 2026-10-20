@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 import { BillInvoices, billPurchaseOrders, invoicesCsv, type BillInvoice } from '@/components/ap/BillInvoices'
+import { BillEvidence, type JvMatch, type OtherCurrencyBill } from '@/components/ap/BillEvidence'
 
 const PAGE_SIZE = 100
 /** Bulk "Ignore all matching" refuses more than this many (ap_ledger_health.dismiss_matching). */
@@ -64,7 +65,14 @@ interface CcyRow {
 }
 interface SummaryResp { currencies: CcyRow[] }
 
+/** A bill whose invoice number matched the search box. */
+interface InvoiceHit {
+  bill_no: string; invoice_no: string | null; bill_date: string | null
+  money_cr: string; money_bal: string; dismissed: boolean
+}
 interface SupplierRow {
+  /** Set only when the search text matched invoice numbers. */
+  invoice_hits: InvoiceHit[]
   supplier_code: string | null
   supplier_name: string | null
   currency: string
@@ -90,6 +98,10 @@ interface OpenBill {
   payment_lines: number
   /** One per invoice number on the bill's lines — usually one, often several. */
   invoices: BillInvoice[]; trade_type: string | null
+  /** Only for bills with no payment document: JV lines naming one of its invoices. */
+  jv_matches: JvMatch[]
+  /** The same invoice number on this supplier's bills in another currency. */
+  other_currency: OtherCurrencyBill[]
   /** Set when finance took this bill off the working list. */
   dismissed: { reason: string; note: string | null; by: string | null; at: string | null } | null
 }
@@ -114,6 +126,8 @@ interface FlatBill {
   supplier_code: string | null; supplier_name: string | null
   invoices: BillInvoice[]; trade_type: string | null
   money_cr: string; money_bal: string
+  payment_lines: number
+  jv_matches: JvMatch[]; other_currency: OtherCurrencyBill[]
   dismissed: { reason: string; note: string | null; by: string | null; at: string | null } | null
 }
 interface BillsResp {
@@ -313,6 +327,10 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
   // The sharper finding: bills that are fully covered by payments pointing
   // straight at them, and are still flagged open. Nothing to chase — just
   // never cleared.
+  // Settled by journal instead of a payment document — the invoice number in a
+  // JV summary is the only link NC has (see BillEvidence).
+  const inJv = bills.filter((b) => b.jv_matches.length > 0).length
+  const twinned = bills.filter((b) => b.other_currency.length > 0).length
   const paidButOpen = bills.filter(
     (b) => Number(b.paid_against ?? 0) >= Number(b.money_cr ?? 0) && Number(b.money_cr ?? 0) > 0).length
 
@@ -334,6 +352,16 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
               )}
               {untied > 0 && (
                 <> · <span className="text-neutral-500">{untied} payments applied to no payable</span></>
+              )}
+              {inJv > 0 && (
+                <> · <span className="font-medium text-sky-700">
+                  {inJv} with no payment document found in a JV
+                </span></>
+              )}
+              {twinned > 0 && (
+                <> · <span className="font-medium text-amber-700">
+                  {twinned} with the same invoice in another currency
+                </span></>
               )}
             </p>
           </div>
@@ -455,6 +483,7 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                                 ignored
                               </span>
                             )}
+                            <BillEvidence jv={b.jv_matches} other={b.other_currency} />
                           </td>
                           <td className="whitespace-nowrap px-2.5 py-1.5 text-neutral-600">{day(b.bill_date)}</td>
                           <td className="px-2.5 py-1.5 font-mono text-neutral-600"><BillInvoices invoices={b.invoices} /></td>
@@ -978,6 +1007,7 @@ function BillsByDate({ currency }: { currency: string }) {
                         ignored
                       </span>
                     )}
+                    <BillEvidence jv={b.jv_matches} other={b.other_currency} />
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-xs text-neutral-600">{day(b.bill_date)}</td>
                   <td className="px-3 py-2">
@@ -1236,7 +1266,7 @@ export default function ApLedgerHealthPage() {
               <div className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                 <input type="search" value={vendorQ} onChange={(e) => setVendorQ(e.target.value)}
-                       placeholder="Search vendor name or code" aria-label="Search vendor"
+                       placeholder="Search vendor or invoice no." aria-label="Search vendor or invoice number"
                        className="w-64 rounded-lg border border-neutral-300 py-1.5 pl-8 pr-2.5 text-sm" />
               </div>
               <button onClick={exportCsv}
@@ -1270,7 +1300,7 @@ export default function ApLedgerHealthPage() {
                 ) : abandonedRows.length === 0 ? (
                   <tr><td colSpan={7} className="px-3 py-8 text-center text-neutral-400">
                     {searching
-                      ? <>No vendor matching &ldquo;{vendorQ.trim()}&rdquo; in {currency}.</>
+                      ? <>No vendor or invoice matching &ldquo;{vendorQ.trim()}&rdquo; in {currency}.</>
                       : <>No abandoned documents carrying a balance in {currency}.</>}</td></tr>
                 ) : abandonedRows.map((r) => (
                   <tr key={r.bill_no} className="border-t border-neutral-100 hover:bg-neutral-50/60">
@@ -1322,7 +1352,7 @@ export default function ApLedgerHealthPage() {
               ) : supplierRows.length === 0 ? (
                 <tr><td colSpan={7} className="px-3 py-8 text-center text-neutral-400">
                   {searching
-                    ? <>No vendor matching &ldquo;{vendorQ.trim()}&rdquo; in {currency}.</>
+                    ? <>No vendor or invoice matching &ldquo;{vendorQ.trim()}&rdquo; in {currency}.</>
                     : <>No suppliers in this state for {currency}.</>}</td></tr>
               ) : supplierRows.map((r) => {
                 // A supplier whose whole balance has been judged away is not
@@ -1344,6 +1374,14 @@ export default function ApLedgerHealthPage() {
                       )}
                     </div>
                     <div className="font-mono text-[11px] text-neutral-400">{r.supplier_code ?? '—'}</div>
+                    {r.invoice_hits.map((h) => (
+                      <div key={h.bill_no} className="mt-0.5 text-[11px] text-[#085E5E]">
+                        <span className="font-mono">{h.invoice_no}</span> on <span className="font-mono">{h.bill_no}</span>
+                        {' · '}{day(h.bill_date)} · billed {money(h.money_cr)} ·{' '}
+                        {Number(h.money_bal) === 0 ? 'settled' : `open ${money(h.money_bal)}`}
+                        {h.dismissed && ' · ignored'}
+                      </div>
+                    ))}
                   </td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums text-neutral-600">{money(r.billed)}</td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums text-neutral-600">{money(r.paid)}</td>
