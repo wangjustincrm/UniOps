@@ -6,7 +6,7 @@ Three permission keys (design §8.2):
   epms.freight.admin    — maintain carriers
 """
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from uniops_authz import has_permission
@@ -109,6 +109,8 @@ async def list_shipments(
     db: SessionDep, user: CurrentUserPayload,
     status: str | None = None, carrier_id: uuid.UUID | None = None,
     search: str | None = None, mine: bool = False,
+    sort: Annotated[str | None, Query(description="Key of crud.freight._shipment_sortable(); unknown -> 422")] = None,
+    dir: Annotated[Literal["asc", "desc"], Query()] = "asc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ):
@@ -117,6 +119,7 @@ async def list_shipments(
     only = uuid.UUID(user["sub"]) if (mine or not p["manage"]) else None
     items, total = await crud.list_shipments(db, created_by=only, status=status,
                                              carrier_id=carrier_id, search=search,
+                                             sort=sort, dir=dir,
                                              page=page, page_size=page_size)
     return {"items": items, "total": total}
 
