@@ -41,8 +41,11 @@ type Step = 'reading' | 'review'
  * a carrier's invoice is always a courier invoice. The same PDF is read again
  * for its per-shipment detail, and the reviewer checks the lines here.
  */
-export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClose, onCreated }: {
+export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClose, onCreated, embedded = false }: {
   carrier: FreightCarrier
+  /** Render inside the Upload Invoice window (right of its PDF preview) instead
+   *  of a dialog of its own: narrow column, lines as cards, own Save bar. */
+  embedded?: boolean
   /** The PDF the upload form was given; null = entered by hand. */
   file: File | null
   /** "Invoice 2 of 5" when stepping through a split PDF. */
@@ -224,6 +227,14 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+  if (step === 'reading' && embedded) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-primary-100 bg-primary-50 px-3 py-2.5 text-sm text-primary-700">
+        <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+        {carrier.vendor_name ?? carrier.name} is a courier — reading the invoice shipment by shipment. A long bill can take up to a minute…
+      </div>
+    )
+  }
   if (step === 'reading') {
     return (
       <Modal title="Courier invoice" subtitle={`${carrier.name}${file ? ` · ${file.name}` : ''}`} onClose={onClose}>
@@ -235,9 +246,7 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
     )
   }
 
-  return (
-    <Modal wide title={queueLabel ? `Check the Courier Invoice — ${queueLabel}` : 'Check the Courier Invoice'}
-      subtitle={`${carrier.name}${file ? ` · ${file.name}` : ' · entered by hand'}`} onClose={onClose}>
+  const body = (
       <div className="flex flex-col gap-5">
         <div className="flex items-start justify-between gap-3 rounded-lg border border-primary-100 bg-primary-50 px-3 py-2.5 text-xs text-primary-800">
           <p>
@@ -271,7 +280,7 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
         )}
 
         {/* Header */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className={cn('grid grid-cols-2 gap-3', !embedded && 'md:grid-cols-4')}>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-neutral-700">Carrier</label>
             <div className="flex h-10 items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm font-medium text-neutral-800">
@@ -327,7 +336,58 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
             badText={`Line taxes add up to ${formatAmount(linesTax, currency || 'CAD')}; the invoice says ${formatAmount(headerTax, currency || 'CAD')}. The difference is spread over the lines by amount when you save.`} />
         </div>
 
-        {/* Lines */}
+        {/* Lines — cards beside the preview, a table in the stand-alone dialog */}
+        {embedded ? (
+          <div className="flex flex-col gap-2">
+            {lines.map((l, i) => (
+              <div key={l.key} className="rounded-lg border border-neutral-200 bg-white p-3 flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 text-xs text-neutral-400">{i + 1}</span>
+                  <select value={l.charge_type} onChange={(e) => updateLine(l.key, { charge_type: e.target.value as ChargeType })}
+                    className={cn(SELECT_SM_CLS, 'w-32')} aria-label={`Line ${i + 1} type`}>
+                    {Object.entries(CHARGE_TYPE_LABEL).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                  </select>
+                  <input type="date" value={l.ship_date} onChange={(e) => updateLine(l.key, { ship_date: e.target.value })}
+                    className={cn(INPUT_SM_CLS, 'w-36')} aria-label={`Line ${i + 1} date`} />
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <input type="number" step="0.01" value={l.amount} placeholder="Amount"
+                      onChange={(e) => updateLine(l.key, { amount: e.target.value })}
+                      className={cn(INPUT_SM_CLS, 'w-24 text-right font-mono')} aria-label={`Line ${i + 1} amount`} />
+                    <input type="number" step="0.01" value={l.tax_amount} placeholder="Tax"
+                      onChange={(e) => updateLine(l.key, { tax_amount: e.target.value })}
+                      className={cn(INPUT_SM_CLS, 'w-20 text-right font-mono')} aria-label={`Line ${i + 1} tax`} />
+                    <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
+                      disabled={lines.length === 1}
+                      className="rounded-md p-1.5 text-neutral-400 hover:bg-danger-50 hover:text-danger-600 disabled:opacity-30" aria-label="Remove line">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 pl-7">
+                  <input value={l.tracking_no} placeholder="Tracking no" onChange={(e) => updateLine(l.key, { tracking_no: e.target.value })}
+                    className={cn(INPUT_SM_CLS, 'font-mono')} aria-label={`Line ${i + 1} tracking number`} />
+                  <input value={l.packages} placeholder="Other packages (comma separated)" onChange={(e) => updateLine(l.key, { packages: e.target.value })}
+                    className={cn(INPUT_SM_CLS, 'font-mono')} aria-label={`Line ${i + 1} other packages`} />
+                  <input value={l.reference} placeholder="Reference" onChange={(e) => updateLine(l.key, { reference: e.target.value })}
+                    className={INPUT_SM_CLS} aria-label={`Line ${i + 1} reference`} />
+                  <input value={l.description} placeholder="Description" onChange={(e) => updateLine(l.key, { description: e.target.value })}
+                    className={INPUT_SM_CLS} aria-label={`Line ${i + 1} description`} />
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 text-xs font-semibold">
+              <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine()])}
+                className="inline-flex items-center gap-1 text-primary-700 hover:underline">
+                <Plus className="h-3.5 w-3.5" /> Add line
+              </button>
+              <span className="font-mono">
+                <span className={amountOk ? 'text-neutral-800' : 'text-danger-600'}>{formatAmount(linesAmount, currency || 'CAD')}</span>
+                <span className="text-neutral-400"> · tax </span>
+                <span className={taxOk ? 'text-neutral-800' : 'text-warning-600'}>{formatAmount(linesTax, currency || 'CAD')}</span>
+              </span>
+            </div>
+          </div>
+        ) : (
         <div className="rounded-xl border border-neutral-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -380,6 +440,7 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
             </table>
           </div>
         </div>
+        )}
 
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-neutral-700">Notes</label>
@@ -389,13 +450,20 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
 
         {saveError && <p className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">{saveError}</p>}
 
-        <div className="flex justify-end gap-2">
+        <div className={cn('flex justify-end gap-2', embedded && 'sticky bottom-0 -mx-1 border-t border-neutral-100 bg-white px-1 py-3')}>
+          {queueLabel && embedded && <span className="mr-auto self-center text-xs text-neutral-500">{queueLabel}</span>}
           <Button variant="secondary" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button size="sm" onClick={save} disabled={saving || dup.duplicate || dup.checking}>
             {createInvoice.isPending ? 'Saving…' : uploadAttachment.isPending ? 'Attaching PDF…' : 'Save and match'}
           </Button>
         </div>
       </div>
+  )
+  if (embedded) return body
+  return (
+    <Modal wide title={queueLabel ? `Check the Courier Invoice — ${queueLabel}` : 'Check the Courier Invoice'}
+      subtitle={`${carrier.name}${file ? ` · ${file.name}` : ' · entered by hand'}`} onClose={onClose}>
+      {body}
     </Modal>
   )
 }

@@ -668,20 +668,6 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const courierCarrier = docType === 'invoice' && selectedVendor && !createdInv
     ? carriers.find((c) => c.is_active && c.vendor_id === selectedVendor.id)
     : undefined
-  if (courierCarrier) {
-    return (
-      <CourierInvoiceReview
-        key={`${queueIndex}-${file?.name ?? 'manual'}`}
-        carrier={courierCarrier}
-        file={file?.raw ?? null}
-        queueLabel={queueTotal > 1 ? `Invoice ${queueIndex + 1} of ${queueTotal}` : undefined}
-        onBack={() => { setSelectedVendor(null); setVendorOpen(true) }}
-        onClose={onClose}
-        onCreated={(id) => finishOne(id)}
-      />
-    )
-  }
-
   // ── Step 2: line-level allocation (invoice created, PO recognized) ──────────
   if (createdInv) {
     // Candidate POs: the recognized PO first, then other open POs for the vendor.
@@ -803,10 +789,12 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
             <div>
               <h2 className="text-sm font-semibold text-neutral-900">
                 {queueTotal > 1 ? `Upload Invoice ${queueIndex + 1} of ${queueTotal}` : 'Upload Invoice'}
+                {courierCarrier && <span className="ml-2 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700">Courier invoice</span>}
               </h2>
               <p className="text-xs text-neutral-400">
                 {queueTotal > 1
                   ? `${file?.name ?? ''} · ${createdIds.length} of ${queueTotal} created so far`
+                  : courierCarrier ? 'Each line is matched to a registered tracking number and cost center after saving'
                   : 'New invoice will be queued for PO matching'}
               </p>
             </div>
@@ -887,12 +875,27 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               makes both wrappers transparent so the layout is exactly as before. */}
           <div className={cn(file ? 'flex flex-1 min-h-0 gap-5' : 'contents')}>
           {file && (
-            <div className="w-[60%] shrink-0">
+            <div className={cn('shrink-0', courierCarrier ? 'w-1/2' : 'w-[60%]')}>
               <FilePreviewPanel file={file.raw} />
             </div>
           )}
           <div className={cn(file ? 'flex-1 min-w-0 overflow-y-auto flex flex-col gap-4 pr-1' : 'contents')}>
 
+          {courierCarrier ? (
+            // A carrier's invoice: same window, same preview — only the form on
+            // the right becomes the courier one (one line per shipment).
+            <CourierInvoiceReview
+              embedded
+              key={`${queueIndex}-${file?.name ?? 'manual'}-${courierCarrier.id}`}
+              carrier={courierCarrier}
+              file={file?.raw ?? null}
+              queueLabel={queueTotal > 1 ? `Invoice ${queueIndex + 1} of ${queueTotal}` : undefined}
+              onBack={() => { setSelectedVendor(null); setVendorOpen(true) }}
+              onClose={onClose}
+              onCreated={(id) => finishOne(id)}
+            />
+          ) : (
+          <>
           {/* Document type */}
           {showCreditNoteBanner ? (
             <div className="mb-4 rounded-lg border border-warning-300 bg-warning-50 p-3">
@@ -1304,6 +1307,8 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               placeholder="Any additional notes..."
               className="px-3 py-2 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none" />
           </div>
+          </>
+          )}
 
           </div>
           </div>
@@ -1313,7 +1318,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
         {/* Footer */}
         <div className={cn('border-t border-neutral-100 px-6 py-4 flex-col gap-2 shrink-0',
-                           pendingSplit ? 'hidden' : 'flex')}>
+                           pendingSplit || courierCarrier ? 'hidden' : 'flex')}>
           {queueRemaining > 0 && (
             <p className="text-xs text-neutral-500">
               {queueRemaining} more {queueRemaining === 1 ? 'invoice' : 'invoices'} from this file after
