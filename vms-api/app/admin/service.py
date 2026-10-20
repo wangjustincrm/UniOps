@@ -43,7 +43,7 @@ def _sort_expr(model, name: str):
     if isinstance(t, Enum):            # Enum subclasses String: check it first
         return func.lower(cast(attr, String))
     if isinstance(t, String):          # Text is a String too
-        return func.lower(attr)
+        return func.lower(func.nullif(func.trim(attr), ""))   # trimmed; blank = empty
     return attr
 
 

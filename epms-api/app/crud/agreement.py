@@ -35,7 +35,7 @@ async def get_by_id(db: AsyncSession, agreement_id: uuid.UUID) -> PurchaseAgreem
 # GET /agreements ?sort= keys → what the Agreements list's column shows
 # (whitelist = the SQL-injection boundary; unknown key → 422).
 SORTABLE = {
-    "number": PurchaseAgreement.number,
+    "number": lower_text(PurchaseAgreement.number),
     "title": lower_text(PurchaseAgreement.title),
     "vendor_name": lower_text(PurchaseAgreement.vendor_name),
     # Labels House Account / Milestone / Recurring sort the same as the codes.

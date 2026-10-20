@@ -111,7 +111,7 @@ def type_label_key(type_col):
 # GET /pr ?sort= keys → what the PR list's column shows. The key goes into
 # ORDER BY, so this dict is the SQL-injection boundary (unknown key → 422).
 SORTABLE = {
-    "number": PurchaseRequest.number,
+    "number": lower_text(PurchaseRequest.number),
     "title": lower_text(PurchaseRequest.title),
     # Requester column = the creator's full name (as _attach_creator_names
     # resolves it), never the created_by uuid.

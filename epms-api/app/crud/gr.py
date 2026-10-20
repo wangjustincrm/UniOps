@@ -73,8 +73,8 @@ def _build_line_items(gr_id: uuid.UUID, items_in) -> list[GrLineItem]:
 # GET /gr ?sort= keys → what the GR list's column shows (whitelist = the
 # SQL-injection boundary; unknown key → 422).
 SORTABLE = {
-    "number": GoodsReceipt.number,
-    "po_number": GoodsReceipt.po_number,
+    "number": lower_text(GoodsReceipt.number),
+    "po_number": lower_text(GoodsReceipt.po_number),
     "vendor_name": lower_text(GoodsReceipt.vendor_name),
     # Labels Physical / Service sort the same as the codes.
     "gr_type": GoodsReceipt.gr_type,

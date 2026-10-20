@@ -69,9 +69,9 @@ def _compute_totals(items_in, tax_rate: Decimal):
 # GET /po ?sort= keys → what the PO list's column shows (whitelist = the
 # SQL-injection boundary; unknown key → 422).
 SORTABLE = {
-    "number": PurchaseOrder.number,
+    "number": lower_text(PurchaseOrder.number),
     # "PR Ref." prints pr_number only when the PO is linked to a PR.
-    "pr_number": case((PurchaseOrder.pr_id.is_not(None), PurchaseOrder.pr_number)),
+    "pr_number": case((PurchaseOrder.pr_id.is_not(None), lower_text(PurchaseOrder.pr_number))),
     # "Title / Vendor" — the title is the cell's headline; the vendor is the
     # grey second line, so it is a separate key.
     "title": lower_text(PurchaseOrder.title),

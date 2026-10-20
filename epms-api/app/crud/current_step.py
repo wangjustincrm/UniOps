@@ -31,7 +31,12 @@ ROLE_ORDER: dict[str, int] = {
     "dept_manager": 20,
     "director": 30,
     "procurement_manager": 35,
+    # A gm_or_opm step is assigned as the resolved post (gm or opm), so open
+    # tasks carry those codes; the Freight PA chain runs OPM before GM.
+    "opm": 39,
     "gm_or_opm": 40,
+    "gm": 40,
+    "ap_clerk": 45,        # legacy PA review step, before Finance BP
     "finance_bp": 50,
     "finance_manager": 60,
     "finance_director": 65,
@@ -39,9 +44,9 @@ ROLE_ORDER: dict[str, int] = {
 }
 
 
-# Where a document whose current step is unknown (no open task, or a role not
-# in ROLE_ORDER) sorts within in_review — after every known step.
-UNKNOWN_STEP_ORDER = 999
+# A document whose current step is unknown (no open task, or a role not in
+# ROLE_ORDER) gets a NULL step, so the caller's nulls_last keeps it after every
+# known step in BOTH directions — "no value sorts last" (PRD UI-SORT-003).
 
 
 def status_step_sort_keys(status_col, id_col, doc_type: str) -> tuple:
@@ -74,7 +79,7 @@ def status_step_sort_keys(status_col, id_col, doc_type: str) -> tuple:
     in_review = status_col == "in_review"
     step_order = case(
         (in_review, case(ROLE_ORDER, value=_earliest_open_task(Task.assigned_role),
-                         else_=UNKNOWN_STEP_ORDER)),
+                         else_=None)),
         else_=None,
     )
     approver = case((in_review, _earliest_open_task(func.lower(User.full_name))), else_=None)

@@ -147,7 +147,7 @@ _STATUS_CASES = [
     ("H", "in_review", [("finance_bp", "Yan Approver", 1), ("supervisor", "Aa First", 9)]),
 ]
 _STATUS_ASC = ["F", "G", "C", "B", "D", "A", "H", "E"]
-_STATUS_DESC = ["E", "H", "A", "B", "C", "D", "G", "F"]
+_STATUS_DESC = ["H", "A", "B", "C", "D", "E", "G", "F"]   # no-step E stays last
 _EXPECTED_STEP = {"A": "director", "B": "supervisor", "C": "supervisor",
                   "D": "supervisor", "H": "finance_bp"}
 
@@ -247,6 +247,79 @@ async def test_status_lists_unknown_key_and_default(admin_client, test_engine, d
     # No sort → created_at desc, as before.
     body = await _ids(admin_client, url, search=tok, page_size=50)
     assert _order(body) == [ids[c[0]] for c in reversed(_STATUS_CASES)]
+
+
+# Open approval tasks carry the RESOLVED post: a gm_or_opm step is assigned as
+# gm or opm, and older PAs still have an ap_clerk review step. Each must group
+# at its own place in the chain (ROLE_ORDER), not fall into "unknown".
+_RESOLVED_POSTS = [("p_opm", "opm"), ("p_gm", "gm"), ("p_ap", "ap_clerk"),
+                   ("p_fbp", "finance_bp"), ("p_none", None)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("doc_type", ["po", "pa"])
+async def test_status_sort_groups_resolved_posts_by_step(admin_client, test_engine, doc_type):
+    tok = _tok()
+    ids = {}
+    async with _factory(test_engine)() as db:
+        creator = await _user(db, "Creator")
+        approver = await _user(db, "Same Approver")   # one name: only the step differs
+        vendor = await _vendor(db, f"{tok} Vendor")
+        # Insert in reverse chain order so creation order cannot fake the result.
+        for i, (label, role) in enumerate(reversed(_RESOLVED_POSTS)):
+            doc = await _make_doc(db, doc_type, tok, label, "in_review", creator, vendor, i)
+            ids[label] = str(doc.id)
+            if role:
+                db.add(Task(type=f"approve_{doc_type}", document_type=doc_type,
+                            document_id=doc.id, document_number=f"{tok}-{label}",
+                            assigned_role=role, assigned_user_id=approver.id, title="Approve",
+                            is_completed=False, created_at=_t(5)))
+        await db.commit()
+    url = _LIST_URL[doc_type]
+    label_of = {v: k for k, v in ids.items()}
+    chain = [label for label, _ in _RESOLVED_POSTS]
+
+    asc = await _ids(admin_client, url, search=tok, sort="status", dir="asc")
+    assert [label_of[i] for i in _order(asc)] == chain     # opm < gm < ap_clerk < finance_bp < no task
+    assert [(it.get("current_step") or {}).get("role") for it in asc["items"]] == \
+        [role for _, role in _RESOLVED_POSTS]
+
+    # desc reverses the known steps; the no-task document has no step, so it
+    # stays last in both directions (UI-SORT-003).
+    desc = await _ids(admin_client, url, search=tok, sort="status", dir="desc")
+    assert [label_of[i] for i in _order(desc)] == list(reversed(chain[:-1])) + chain[-1:]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("doc_type", ["pr", "po"])
+async def test_number_sorts_trimmed_and_case_insensitive(admin_client, test_engine, doc_type):
+    """A leading space or a lowercase prefix must not jump to the top."""
+    tok = _tok()
+    pfx = doc_type.upper()
+    numbers = {"a": f"{doc_type}-{tok}-a",        # lowercase
+               "b": f" {pfx}-{tok}-b",           # leading space
+               "c": f"{pfx}-{tok}-c"}
+    ids = {}
+    async with _factory(test_engine)() as db:
+        who = await _user(db, "Num Creator")
+        vendor = await _vendor(db)
+        for i, (lbl, num) in enumerate(numbers.items()):
+            if doc_type == "pr":
+                doc = PurchaseRequest(number=num, title=f"{tok} {lbl}", type=2,
+                                      created_by=who.id, created_at=_t(i))
+            else:
+                doc = PurchaseOrder(number=num, title=f"{tok} {lbl}", type=2, vendor_id=vendor.id,
+                                    vendor_name=vendor.name, created_by=who.id, created_at=_t(i))
+            db.add(doc)
+            await db.flush()
+            ids[lbl] = str(doc.id)
+        await db.commit()
+    url = _LIST_URL[doc_type]
+    rev = {v: k for k, v in ids.items()}
+    asc = await _ids(admin_client, url, search=tok, sort="number", dir="asc")
+    assert [rev[i] for i in _order(asc)] == ["a", "b", "c"]
+    desc = await _ids(admin_client, url, search=tok, sort="number", dir="desc")
+    assert [rev[i] for i in _order(desc)] == ["c", "b", "a"]
 
 
 # ════════════════════════════════════════════════════════════════════════════
