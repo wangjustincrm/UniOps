@@ -1,9 +1,13 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.4
-**Date:** 2026-10-19
+**Version:** 2.5
+**Date:** 2026-10-20
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.5** (2026-10-20)
+
+- An NC payable can carry several supplier invoices, one per line. The bill lists in AP Subledger Health (supplier view, bills by date, excluded) and the AP Cash Flow drill-down now show every invoice on the bill with its own amount, instead of one invoice number beside the bill's total (FIN-APH-05, FIN-CF-06). The CSV exports list every invoice too.
 
 **What changed in version 2.4** (2026-10-19)
 
@@ -332,6 +336,7 @@ Budget planning, the dashboard, catalog, factors and budget settings (including 
 | FIN-APH-02 | **Excluded** (shown with amount, not worked): payables raised and never approved. **Inconsistent**: approved bills where open ≠ billed − paid (tolerance 0.01). This is kept as a tripwire. |
 | FIN-APH-03 | **Supplier view** with block subtotals, bill-to-payment relationships, and journal entries that cancel each other folded away. A GL search looks for differences finance settled by manual voucher. |
 | FIN-APH-04 | **Dismiss** stale NC payables from the working list with a closed reason set: legacy (NC period closed), duplicate document, settled outside AP by journal, written off, other (note required). Dismissal can be reversed (restore). Bills can be judged in bulk by bill date, with bulk undo. Dismissed bills are excluded from AP Cash Flow. Vendor search is available. |
+| FIN-APH-05 | **A bill can carry several invoices.** In NC the invoice number is on the bill **line**, and one payable often holds several invoices from the same supplier (at measurement, 1,872 of 12,006 approved bills, 65 of 364 open ones). Wherever a bill is shown as one row, the invoice column lists each invoice number on its lines with that invoice's own open amount; the amounts add up to the row's amount. Lines with the same invoice number are one invoice; lines with no number are shown together as "no number". A bill with one invoice shows just the number. The PO column lists every PO on the bill. Sorting by invoice number or PO uses the smallest value on the bill. CSV exports write the invoices as `number (amount); number (amount)`. Dismissal stays per bill. |
 
 ### 9.5 AP Cash Flow
 
@@ -341,6 +346,7 @@ Budget planning, the dashboard, catalog, factors and budget settings (including 
 | FIN-CF-02 | Due date = NC bill date + the **vendor master payment term** (`net<N>` = N days for any N in 1–365, not only the Net 15/30/60/90 presets; COD and prepayment = 0). An unknown or missing term is **not** defaulted to net30. Such bills are reported as **undated** ("No payment term on file") with the amount and the supplier list. |
 | FIN-CF-03 | Buckets: overdue >180 / 91–180 / 31–90 / ≤30 days; due within 7 / 8–30 / 31–60 / 61–90 / beyond 90 days; undated. Clicking a figure lists its bills. |
 | FIN-CF-04 | Missing-terms panel lists NC suppliers with no vendor record, and the largest single-date amount, which is typically NC's go-live opening load. |
+| FIN-CF-06 | The drill-down shows every invoice on a bill with its own open amount, as in FIN-APH-05. The due date stays per bill (NC bill date + vendor term). |
 | FIN-CF-05 | **Not implemented:** invoice-level term precedence (invoice term → vendor term → "term unknown"); further layers (UniOps invoices not yet in NC, received-not-invoiced, ordered-not-received, recurring agreement schedules, a monthly milk layer). See FIN-OI-12. |
 
 ---

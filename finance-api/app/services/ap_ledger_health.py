@@ -44,6 +44,8 @@ from decimal import Decimal
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.nc_ap_bill_invoices import invoices, lines_agg
+
 CONSISTENT = "consistent"
 INCONSISTENT = "inconsistent"
 ABANDONED = "abandoned"
@@ -121,6 +123,7 @@ with ab as (
     select b.bill_no, b.currency, b.bill_date::date as bill_date, b.bill_year,
            b.bill_status, b.approve_status,
            l.supplier_code, l.supplier_name, l.invoice_no, l.invoice_no_norm,
+           l.purchase_order, l.scomment, l.row_no, l.nc_pk,
            l.money_cr, l.money_bal
       from nc_ap_bill_lines l
       join nc_ap_bills b on b.id = l.bill_id
@@ -226,7 +229,7 @@ async def abandoned_items(db: AsyncSession, currency: str | None = None,
     rows = (await db.execute(text(_ABANDONED + f"""
         select bill_no, currency, bill_date, bill_year, bill_status, approve_status,
                supplier_code, max(supplier_name) as supplier_name,
-               max(invoice_no) as invoice_no,
+               {lines_agg("")} as invoice_lines,
                sum(money_cr) as money_cr, sum(money_bal) as money_bal,
                bool_or(superseded) as superseded
         {grouped}
@@ -240,7 +243,7 @@ async def abandoned_items(db: AsyncSession, currency: str | None = None,
         "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
         "bill_year": r["bill_year"], "bill_status": r["bill_status"],
         "approve_status": r["approve_status"], "supplier_code": r["supplier_code"],
-        "supplier_name": r["supplier_name"], "invoice_no": r["invoice_no"],
+        "supplier_name": r["supplier_name"], "invoices": invoices(r["invoice_lines"]),
         "money_cr": str(r["money_cr"]), "money_bal": str(r["money_bal"]),
         "superseded": r["superseded"],
     } for r in rows]}
@@ -387,14 +390,13 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
     would read as if it had been paid several times over.
     """
     lim = max(1, min(limit, 2000))
-    bills = (await db.execute(text("""
+    bills = (await db.execute(text(f"""
         select l.bill_no,
                min(l.bill_date)::date as bill_date,
                min(l.bill_year) as bill_year,
                sum(l.money_cr)  as money_cr,
                sum(l.money_bal) as money_bal,
-               min(l.invoice_no) as invoice_no,
-               min(l.purchase_order) as purchase_order,
+               {lines_agg()} as invoice_lines,
                min(b.trade_type) as trade_type,
                -- What NC's own payment documents say was paid against this
                -- exact bill. When this equals the billed amount and the bill is
@@ -524,7 +526,7 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
             "money_cr": m(r["money_cr"]), "money_bal": m(r["money_bal"]),
             "paid_against": m(r["paid_against"]),
             "payment_lines": int(r["payment_lines"]),
-            "invoice_no": r["invoice_no"], "purchase_order": r["purchase_order"],
+            "invoices": invoices(r["invoice_lines"]),
             "trade_type": r["trade_type"],
             "dismissed": None if not r["dismiss_reason"] else {
                 "reason": r["dismiss_reason"],
@@ -971,8 +973,7 @@ async def open_bills(db: AsyncSession, currency: str | None = None,
                min(l.bill_date)::date as bill_date,
                min(l.supplier_code) as supplier_code,
                min(l.supplier_name) as supplier_name,
-               min(l.invoice_no) as invoice_no,
-               min(l.purchase_order) as purchase_order,
+               {lines_agg()} as invoice_lines,
                min(b.trade_type) as trade_type,
                sum(l.money_cr) as money_cr,
                sum(l.money_bal) as money_bal,
@@ -1007,8 +1008,7 @@ async def open_bills(db: AsyncSession, currency: str | None = None,
             "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
             "supplier_code": r["supplier_code"],
             "supplier_name": r["supplier_name"],
-            "invoice_no": r["invoice_no"],
-            "purchase_order": r["purchase_order"],
+            "invoices": invoices(r["invoice_lines"]),
             "trade_type": r["trade_type"],
             "money_cr": str(r["money_cr"]),
             "money_bal": str(r["money_bal"]),

@@ -37,6 +37,8 @@ from datetime import date
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.nc_ap_bill_invoices import invoices, lines_agg
+
 # What epms-api / mdm-api accept for vendors.payment_terms: `net<N>` for any
 # N in 1..365 (Net 14, Net 21… not just the form's presets), plus two non-day
 # terms. Anything else that reaches the column is treated as no term rather
@@ -99,8 +101,11 @@ open_bills as (
            min(l.bill_date)::date as bill_date,
            min(l.supplier_code) as supplier_code,
            min(l.supplier_name) as supplier_name,
+           -- Sort key only: a bill carries one invoice per line, often
+           -- several. What the page shows is `invoice_lines`.
            min(l.invoice_no) as invoice_no,
            min(l.purchase_order) as purchase_order,
+           {lines_agg()} as invoice_lines,
            min(b.trade_type) as trade_type,
            sum(l.money_bal) as open_bal
       from nc_ap_bill_lines l
@@ -235,7 +240,7 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
     clause = " where " + " and ".join(where)
     rows = (await db.execute(text(_BASE + f"""
         select bill_no, currency, bill_date, supplier_code, supplier_name,
-               invoice_no, purchase_order, trade_type, open_bal,
+               invoice_lines, trade_type, open_bal,
                payment_terms, term_days, due_date, days_to_due, bucket,
                no_vendor_record
           from bucketed {clause}
@@ -256,8 +261,7 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
             "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
             "supplier_code": r["supplier_code"],
             "supplier_name": r["supplier_name"],
-            "invoice_no": r["invoice_no"],
-            "purchase_order": r["purchase_order"],
+            "invoices": invoices(r["invoice_lines"]),
             "trade_type": r["trade_type"],
             "open_bal": str(r["open_bal"]),
             "payment_terms": r["payment_terms"],

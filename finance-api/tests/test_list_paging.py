@@ -170,6 +170,17 @@ def _bill(bill_no, amount, *, sc, name=None, inv="INV-1", ccy="CAD", open_=0,
            "".join(inv.upper().split()) if inv else None, sc, supplier, po))
 
 
+def _min_of(row, field):
+    """What the server sorts a bill by: the smallest value over its invoices
+    (a bill carries one invoice per line — see services/nc_ap_bill_invoices)."""
+    vals = []
+    for inv in row["invoices"]:
+        v = inv[field]
+        vals += v if isinstance(v, list) else [v]
+    vals = [v for v in vals if v]
+    return min(vals) if vals else None
+
+
 def _vendors(*codes):
     _exec("create table if not exists vendors (id uuid primary key, erp_id varchar(50), "
           "payment_terms varchar(50), is_active boolean, updated_at timestamptz)")
@@ -201,8 +212,8 @@ async def test_ap_cash_flow_items_paged_and_sorted(client, db_session):
     await _check(client, "/finance/v1/ap-cash-flow/items", {"currency": "CAD"}, {
         "bill_no": lambda r: r["bill_no"],
         "supplier": lambda r: _low(r["supplier_name"] or r["supplier_code"]),
-        "invoice_no": lambda r: _low(r["invoice_no"]),
-        "purchase_order": lambda r: _low(r["purchase_order"]),
+        "invoice_no": lambda r: _low(_min_of(r, "invoice_no")),
+        "purchase_order": lambda r: _low(_min_of(r, "purchase_orders")),
         "bill_date": lambda r: r["bill_date"],
         "due_date": lambda r: r["due_date"],
         "open_bal": lambda r: Decimal(r["open_bal"]),
@@ -217,8 +228,8 @@ async def test_ap_ledger_health_bills_paged_and_sorted(client, db_session):
         "bill_no": lambda r: r["bill_no"],
         "bill_date": lambda r: r["bill_date"],
         "supplier": lambda r: _low(r["supplier_name"] or r["supplier_code"]),
-        "invoice_no": lambda r: _low(r["invoice_no"]),
-        "purchase_order": lambda r: _low(r["purchase_order"]),
+        "invoice_no": lambda r: _low(_min_of(r, "invoice_no")),
+        "purchase_order": lambda r: _low(_min_of(r, "purchase_orders")),
         "money_cr": lambda r: Decimal(r["money_cr"]),
         "money_bal": lambda r: Decimal(r["money_bal"]),
     }, n=5, ident=lambda r: r["bill_no"], nullable=("purchase_order",))
@@ -253,7 +264,7 @@ async def test_ap_ledger_health_abandoned_paged_and_sorted(client, db_session):
         "bill_no": lambda r: r["bill_no"],
         "bill_date": lambda r: r["bill_date"],
         "supplier": lambda r: _low(r["supplier_name"] or r["supplier_code"]),
-        "invoice_no": lambda r: _low(r["invoice_no"]),
+        "invoice_no": lambda r: _low(_min_of(r, "invoice_no")),
         "money_cr": lambda r: Decimal(r["money_cr"]),
         "money_bal": lambda r: Decimal(r["money_bal"]),
         "status": lambda r: f'{r["bill_status"]}/{r["approve_status"]}',
