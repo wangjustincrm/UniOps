@@ -49,9 +49,13 @@ export default function IncidentListPage() {
   const drill = DRILL_KEYS
     .flatMap((k) => search.getAll(k).map((v) => `${k}=${encodeURIComponent(v)}`))
   const cameFrom = search.get('via')
-  // A figure counts a whole year; asked for the default fifty the list would
-  // show the newest of them and the two would not agree.
-  const limit = drill.length ? 200 : 50
+  // ★ Round 8: "only the 50 most recent were loaded; older incidents are not in
+  // this list. how do we see all incidents?" The whole register is read, a page
+  // of the server's at a time, so the search, the sort and the pages here work
+  // over every incident rather than the newest fifty. A plant's register is a
+  // few hundred a year; MAX_ROWS is a backstop, said on screen if ever reached.
+  const PAGE = 200
+  const MAX_ROWS = 5000
 
   const dateFilter = useDateFilter(undefined, {
     from: search.get('occurred_from'), to: search.get('occurred_to'),
@@ -65,14 +69,21 @@ export default function IncidentListPage() {
     ...drill,
     from ? `occurred_from=${from}` : '',
     to ? `occurred_to=${to}` : '',
-    `limit=${limit}`,
     order !== 'newest' ? `order=${order}` : '',
   ].filter(Boolean).join('&')
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['incidents', params],
-    queryFn: () => api.get<IncidentListItem[]>(
-      `/api/v1/incidents${params ? `?${params}` : ''}`),
+    queryFn: async () => {
+      const rows: IncidentListItem[] = []
+      for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
+        const page = await api.get<IncidentListItem[]>(
+          `/api/v1/incidents?${[params, `limit=${PAGE}`, `offset=${offset}`].filter(Boolean).join('&')}`)
+        rows.push(...page)
+        if (page.length < PAGE) break
+      }
+      return rows
+    },
     // The previous range's rows stay on screen while the new ones are fetched.
     // Without this the page falls back to "Loading…", taking the date inputs
     // with it — which closes the picker halfway through typing a year.
@@ -95,7 +106,7 @@ export default function IncidentListPage() {
   // Say when the list came back full, against what was actually asked for —
   // a note that names fifty while two hundred were requested is worse than
   // none, and it would fire on every drill-down of more than fifty records.
-  const capped = incidents.length >= limit
+  const capped = incidents.length >= MAX_ROWS
 
   // ★ The empty state keeps the filter bar. It used to return early, which was
   // harmless when nothing could narrow the list — now a range that matches
