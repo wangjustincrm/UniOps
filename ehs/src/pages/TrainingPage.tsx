@@ -464,6 +464,21 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
   )
 }
 
+/**
+ * ★ Round 8: "when entering the completed on date, automatically change the
+ * expiry date to 3 years less a day. Still allow for that date to be changed."
+ * On the date strings themselves — a date-only value put through local time
+ * comes out a day early here (UTC−4). 29 February plus three years lands on
+ * 1 March, so less a day is 28 February.
+ */
+function threeYearsLessADay(completed: string): string {
+  const [y, m, d] = completed.split('-').map(Number)
+  if (!y || !m || !d) return ''
+  const t = new Date(Date.UTC(y + 3, m - 1, d) - 86_400_000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`
+}
+
 function NewRecordForm({ onClose, courseCode }: {
   onClose: () => void; courseCode?: string | null
 }) {
@@ -471,8 +486,13 @@ function NewRecordForm({ onClose, courseCode }: {
   const [person, setPerson] = useState<PersonValue>(EMPTY_PERSON)
   const [courseId, setCourseId] = useState('')
   const [completedOn, setCompletedOn] = useState(todayForInput())
-  const [expiresOn, setExpiresOn] = useState('')
+  const [expiresOn, setExpiresOn] = useState(() => threeYearsLessADay(todayForInput()))
   const [delivery, setDelivery] = useState('external')
+  // ★ Round 8: the certificate chosen with the record, not afterwards on it.
+  const [file, setFile] = useState<File | null>(null)
+  // Once the record is saved, a failed upload must not save it a second time
+  // when Save is pressed again — it retries the file alone.
+  const [savedId, setSavedId] = useState<string | null>(null)
 
   const courses = useQuery({
     queryKey: ['courses'],
@@ -492,20 +512,35 @@ function NewRecordForm({ onClose, courseCode }: {
   }, [courseCode, courseId, courseList])
 
   const create = useMutation({
-    mutationFn: () => api.post('/api/v1/training/records', {
-      user_id: person.userId,
-      course_id: courseId,
-      completed_on: completedOn,
-      // Left blank, the server derives it from the course's validity period.
-      expires_on: expiresOn || null,
-      delivery,
-    }),
+    mutationFn: async () => {
+      let id = savedId
+      if (!id) {
+        const made = await api.post<{ id: string }>('/api/v1/training/records', {
+          user_id: person.userId,
+          course_id: courseId,
+          completed_on: completedOn,
+          // Left blank, the server derives it from the course's validity period.
+          expires_on: expiresOn || null,
+          delivery,
+        })
+        id = made.id
+        setSavedId(id)
+      }
+      if (file) {
+        const body = new FormData()
+        body.append('file', file)
+        await api.upload(`/api/v1/training/records/${id}/certificate`, body)
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['training-records'] })
       queryClient.invalidateQueries({ queryKey: ['training', 'gaps'] })
       onClose()
     },
+    // The record may be saved even though the file was not.
+    onError: () => queryClient.invalidateQueries({ queryKey: ['training-records'] }),
   })
+  const locked = savedId !== null
 
   return (
     <Card className="mb-4">
@@ -519,41 +554,57 @@ function NewRecordForm({ onClose, courseCode }: {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Who">
-          <PersonPicker value={person} onChange={setPerson} allowExternal={false} />
+          <PersonPicker value={person} onChange={setPerson} allowExternal={false}
+                        disabled={locked} />
         </Field>
         <Field label="Course">
-          <select className={inputClass} value={courseId}
+          <select className={inputClass} value={courseId} disabled={locked}
                   onChange={(e) => setCourseId(e.target.value)}>
             <option value="">Select…</option>
             {courses.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
         <Field label="Completed on">
-          <input type="date" className={inputClass} value={completedOn}
-                 onChange={(e) => setCompletedOn(e.target.value)} />
+          <input type="date" className={inputClass} value={completedOn} disabled={locked}
+                 onChange={(e) => {
+                   setCompletedOn(e.target.value)
+                   setExpiresOn(threeYearsLessADay(e.target.value))
+                 }} />
         </Field>
         <Field label="Expires on"
-               hint="Leave blank to use the course's own validity period">
-          <input type="date" className={inputClass} value={expiresOn}
+               hint="Three years less a day after completion; change it if the certificate says otherwise, or clear it to use the course's own validity period">
+          <input type="date" className={inputClass} value={expiresOn} disabled={locked}
                  onChange={(e) => setExpiresOn(e.target.value)} />
         </Field>
         <Field label="Taken">
-          <select className={inputClass} value={delivery}
+          <select className={inputClass} value={delivery} disabled={locked}
                   onChange={(e) => setDelivery(e.target.value)}>
             <option value="external">With an outside provider</option>
             <option value="internal">In house</option>
           </select>
         </Field>
+        <Field label="Certificate" hint="Optional. A PDF or a photo of it">
+          <input type="file" className="block min-h-[44px] w-full text-sm"
+                 accept="application/pdf,image/png,image/jpeg,image/webp"
+                 onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        </Field>
       </div>
 
+      {locked && create.isError && (
+        <p role="alert" className="mt-3 text-sm text-amber-800">
+          The training is saved; the certificate did not upload. Choose the file
+          again or press Attach to retry, or close and attach it from the record.
+        </p>
+      )}
       <ErrorNote error={create.error} />
 
       <div className="mt-3 flex justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
         <button type="button" className={primaryButton}
-                disabled={!person.userId || !courseId || !completedOn || create.isPending}
+                disabled={!person.userId || !courseId || !completedOn || create.isPending
+                          || (locked && !file)}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
-          {create.isPending ? 'Saving…' : 'Save'}
+          {create.isPending ? 'Saving…' : locked ? 'Attach' : 'Save'}
         </button>
       </div>
     </Card>
