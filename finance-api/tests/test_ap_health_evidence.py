@@ -74,13 +74,13 @@ def _payment(bill_no, amount, *, sc="S1", ccy="CAD"):
 
 
 def _jv(jv_number, summary, *, debit=0, credit=0, partner="Can Co", account="220201",
-        ccy="CAD"):
+        ccy="CAD", day="2025-12-15", src="GL"):
     jv = uuid.uuid4()
     _exec("insert into journal_vouchers (id, jv_number, voucher_word, voucher_date, "
           "fiscal_period, summary, status, total_debit, total_credit, total_local_debit, "
           "total_local_credit, source_subsystem, created_at, updated_at) values "
-          "(%s,%s,'JV','2025-12-15','2025-12',%s,'posted',0,0,0,0,'GL',now(),now())",
-          (jv, jv_number, summary))
+          "(%s,%s,'JV',%s,'2025-12',%s,'posted',0,0,0,0,%s,now(),now())",
+          (jv, jv_number, day, summary, src))
     _exec("insert into journal_voucher_lines (id, jv_id, line_no, account_code, summary, "
           "orig_debit, orig_credit, local_debit, local_credit, currency, fx_rate, partner_name, "
           "created_at, updated_at) values (%s,%s,1,%s,%s,%s,%s,%s,%s,%s,1,%s,now(),now())",
@@ -169,3 +169,48 @@ async def test_same_invoice_in_another_currency(client, db_session):
     assert [(t["bill_no"], t["currency"], t["invoice_nos"], t["money_bal"]) for t in tw] == \
         [("U1", "USD", ["9151987"], "0.00"), ("U2", "USD", ["9151992"], "0.00")]
     assert bills["C2"]["other_currency"] == []
+
+
+async def test_partner_name_with_trailing_space_still_matches(client, db_session):
+    _bill("T1", [("2025000076", "42.00", "42.00")])
+    _jv("JV-T", "settle 2025000076", debit="42.00", partner="Can Co ")
+    r = await client.get("/finance/v1/ap-ledger-health/supplier",
+                         params={"supplier_code": "S1", "currency": "CAD"})
+    (b,) = r.json()["open_bills"]
+    assert [m["jv_number"] for m in b["jv_matches"]] == ["JV-T"]
+
+
+async def test_clearing_that_names_no_invoice(client, db_session):
+    _bill("K1", [("2025000066", "100.00", "100.00")], day=date(2025, 11, 11))
+    _bill("K2", [("2025000085", "200.00", "200.00")], day=date(2025, 12, 31))
+    _bill("K3", [("2025000050", "70.00", "0")], day=date(2025, 9, 1))      # settled
+    _payment("K3", "70.00")
+    _bill("K4", [("OLD-1", "9.00", "9.00")], day=date(2020, 8, 31))        # set aside
+    _exec("insert into nc_ap_bill_dismissals (id, bill_no, reason, dismissed_at) "
+          "values (%s,'K4','legacy',now())", (uuid.uuid4(),))
+    _jv("JV-A", "Record AR & AP deducted", debit="292.00", partner="Can Co ",
+        day="2025-12-30")                                                  # the one
+    _jv("JV-B", "Accrual Oct", credit="50.00", day="2025-11-20")           # accrual ...
+    _jv("JV-C", "Reverse accrual Oct", credit="-50.00", day="2025-11-21")  # ... and reversal
+    _jv("JV-D", "EFT inv 2025000050", debit="70.00", day="2025-11-25")     # names a bill
+    _jv("JV-E", "EFT run", debit="30.00", day="2025-11-26", src="AP")      # payment doc's
+    _jv("JV-F", "before any unpaid bill", debit="5.00", day="2025-10-01")
+    _jv("JV-G", "other currency", debit="8.00", day="2025-12-30", ccy="USD")
+    _jv("JV-H", "raises the payable", credit="12.00", day="2025-12-30")
+
+    r = await client.get("/finance/v1/ap-ledger-health/supplier",
+                         params={"supplier_code": "S1", "currency": "CAD"})
+    u = r.json()["unattributed_clearings"]
+    assert u["since"] == "2025-11-11"
+    assert (u["unpaid_bills"], u["unpaid_open"]) == (2, "300.00")
+    assert [(x["jv_number"], x["amount"]) for x in u["lines"]] == [("JV-A", "292.00")]
+    assert u["total"] == "292.00"
+
+
+async def test_no_unpaid_bills_no_clearing_panel(client, db_session):
+    _bill("P1", [("777", "10.00", "10.00")])
+    _payment("P1", "5.00")
+    _jv("JV-Z", "netting", debit="10.00")
+    r = await client.get("/finance/v1/ap-ledger-health/supplier",
+                         params={"supplier_code": "S1", "currency": "CAD"})
+    assert r.json()["unattributed_clearings"]["lines"] == []

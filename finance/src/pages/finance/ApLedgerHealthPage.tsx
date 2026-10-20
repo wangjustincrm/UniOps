@@ -141,7 +141,15 @@ interface ClusterRow {
 }
 interface ClustersResp { items: ClusterRow[] }
 interface PaymentsTotal { lines: number; money_de: string }
+/** Payable-account clearings for the supplier that name no invoice
+ *  (finance-api nc_ap_bill_evidence.unattributed_clearings). */
+interface UnattributedClearings {
+  since: string | null; unpaid_bills: number; unpaid_open: string; total: string
+  lines: { jv_number: string; voucher_date: string; subsystem: string | null
+           amount: string; summary: string | null }[]
+}
 interface DetailResp {
+  unattributed_clearings: UnattributedClearings
   supplier_code: string; currency: string
   open_bills_total: BillsTotal; payments_total: PaymentsTotal
   open_bills: OpenBill[]; payments: PayLine[]
@@ -374,6 +382,39 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
         {isFetching && !data ? (
           <div className="py-16 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
         ) : (
+          <>
+          {/* A voucher that cleared the payable without naming an invoice —
+              e.g. receivable netted against payable — is invisible to the
+              per-bill match. Shown beside the bills for finance to compare,
+              never applied to any of them. */}
+          {(data?.unattributed_clearings.lines.length ?? 0) > 0 && (
+            <div className="mx-5 mt-5 rounded-lg border border-sky-200 bg-sky-50/60 px-4 py-3 text-xs">
+              <div className="font-semibold text-sky-900">
+                Cleared on the payable account without naming an invoice
+              </div>
+              <p className="mt-0.5 text-sky-800">
+                {data!.unattributed_clearings.unpaid_bills} open bills since{' '}
+                {day(data!.unattributed_clearings.since)} have no payment document,{' '}
+                {money(data!.unattributed_clearings.unpaid_open)} {currency} (not counting ignored ones).
+                These journal lines reduced this supplier&rsquo;s payable in that time and name none
+                of its invoices — {money(data!.unattributed_clearings.total)} {currency} in all.
+                Check which bills they settled; nothing here is applied automatically.
+              </p>
+              <table className="mt-2 w-full text-[11px]">
+                <tbody>
+                  {data!.unattributed_clearings.lines.map((l) => (
+                    <tr key={l.jv_number + l.amount} className="border-t border-sky-100">
+                      <td className="py-1 pr-3 font-mono">{l.jv_number}</td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{day(l.voucher_date)}</td>
+                      <td className="py-1 pr-3 text-sky-700">{l.subsystem ?? '—'}</td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{money(l.amount)}</td>
+                      <td className="py-1 text-neutral-600">{l.summary ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           <div className="grid gap-5 p-5 lg:grid-cols-2">
             <div className="min-w-0">
               <h3 className="mb-1 text-sm font-semibold text-neutral-800">Bills NC still shows as open</h3>
@@ -611,6 +652,7 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
               </div>
             </div>
           </div>
+          </>
         )}
 
         {confirming && (
