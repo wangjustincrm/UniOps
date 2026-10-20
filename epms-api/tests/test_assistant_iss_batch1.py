@@ -50,3 +50,58 @@ def test_nte_rule_matches_the_payment_route():
 def test_house_account_has_a_fixed_chinese_name():
     """It was translated as 房间账户 (a hotel room account)."""
     assert reply_language.TERMS_ZH["House Account"] == "挂账账户"
+
+
+# ── ISS-0025: over-budget ────────────────────────────────────────────────────
+
+async def test_process_payload_carries_justification_and_over_budget_rules(monkeypatch):
+    from app.services import guide_view
+
+    async def fake_forward(method, path, token, **kw):
+        return 200, {"doc_type": "pr", "steps": [],
+                     "over_budget": {"mode": "allow",
+                                     "mode_label": "Allow without extra approval",
+                                     "added_steps": [], "blocks_submission": False,
+                                     "justification_required": True, "note": "n"}}
+
+    monkeypatch.setattr(guide_view.approval_client, "forward", fake_forward)
+    got = await guide_view.process_steps("pr", "t")
+    assert got["over_budget"]["justification_required"] is True
+    ids = {r["id"] for r in got["rules"]}
+    assert {"budget_check_applies_to_types_2_to_6", "over_budget_checked_on_save",
+            "budget_not_reserved"} <= ids
+    # The same rules the document-type route carries, not a copy.
+    assert got["rules"] == [r for r in doc_type_guide.build("pr")["rules"]
+                            if r.get("topic") == "over_budget"]
+    # Other processes carry no PR rules.
+    po = await guide_view.process_steps("po", "t")
+    assert "rules" not in po
+
+
+def test_narrator_is_told_to_give_the_whole_frozen_mode_note():
+    """The narrator was told to say only "fixed when the PR is submitted",
+    dropping that a looser mode skips steps a PR has not yet passed."""
+    from app.services import assistant_llm
+
+    guide = assistant_llm._GUIDE_SYSTEM
+    assert "justification_required" in guide
+    assert "looser one skips over-budget steps" in guide
+    assert "is fixed when the PR is submitted" not in guide
+
+
+def test_over_budget_is_decided_on_save_not_on_submit():
+    """over_budget_checked_on_save says submit does not re-check. Pin it: the
+    only callers of the computation are create and update."""
+    from app.crud import pr as pr_crud
+
+    src = inspect.getsource(pr_crud)
+    assert src.count("await _compute_over_budget(") == 2
+    assert "_compute_over_budget" in inspect.getsource(pr_crud.create)
+    assert "_compute_over_budget" in inspect.getsource(pr_crud.update)
+
+
+def test_budget_unreachable_is_treated_as_within_budget():
+    from app.crud import pr as pr_crud
+
+    assert "return False, None" in inspect.getsource(pr_crud.compute_budget_check)
+    assert "treated as within budget" in _rules("pr")["budget_not_reserved"]

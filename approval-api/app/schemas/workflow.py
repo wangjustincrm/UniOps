@@ -25,6 +25,11 @@ class OverBudgetRule(BaseModel):
     # Steps put in front of the normal chain for an over-budget PR, in order.
     added_steps: list[WorkflowNodeDef]
     blocks_submission: bool
+    # Whether the PR form demands a written justification from an over-budget
+    # requester. Stated because "no extra steps" (allow) was read as "nothing
+    # extra needed at all" and the Assistant said no justification was required
+    # (ISS-0025); the form requires one in every mode that lets the PR submit.
+    justification_required: bool = False
     note: str
 
 

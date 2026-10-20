@@ -229,7 +229,8 @@ def build(doc_type: str) -> dict:
 
 
 def rules_of(doc: dict) -> list[dict]:
-    return [{"id": r["id"], "answer": " ".join((r.get("answer") or "").split())}
+    return [{"id": r["id"], "answer": " ".join((r.get("answer") or "").split()),
+             **({"topic": r["topic"]} if r.get("topic") else {})}
             for r in doc.get("rules") or []]
 
 

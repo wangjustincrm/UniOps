@@ -88,6 +88,9 @@ async def test_pr_read_out_states_the_over_budget_rule(engine_db_session, mode, 
     assert ob["mode"] == mode and ob["blocks_submission"] is blocks
     assert [s["label"] for s in ob["added_steps"]] == added
     assert ob["mode_label"] and "submitted" in ob["note"]
+    # ISS-0025: the PR form demands a justification in every mode that lets an
+    # over-budget PR submit, including allow (no extra steps).
+    assert ob["justification_required"] is (mode != "hard_block")
     # The rule is reported beside the chain, never folded into it: it applies
     # only to over-budget PRs.
     assert not any(s["id"].startswith("ob_") for s in body["steps"])

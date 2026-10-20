@@ -20,7 +20,7 @@ import yaml
 
 from app.crud import task as task_crud
 from app.crud.current_step import role_label
-from app.services import approval_client
+from app.services import approval_client, doc_type_guide
 
 # doc_type -> how to say it to a person
 # Every chain approval-api's /workflows/{doc_type} read-out serves. Adding one
@@ -225,6 +225,17 @@ async def process_steps(doc_type: str, token: str) -> dict:
             "mode_label": over_budget.get("mode_label"),
             "added_steps": [s.get("label") for s in over_budget.get("added_steps") or []],
             "blocks_submission": over_budget.get("blocks_submission"),
+            "justification_required": over_budget.get("justification_required"),
             "note": over_budget.get("note"),
         }} if over_budget else {}),
+        # The PR rules about over-budget, the same ones explain_document_types
+        # carries. An over-budget question reaches either route, and on this
+        # one it used to get the mode alone, so "do consumables need a budget
+        # check?" was answered from the mode name (ISS-0025).
+        **({"rules": over_budget_rules()} if doc_type == "pr" else {}),
     }
+
+
+def over_budget_rules() -> list[dict]:
+    return [r for r in doc_type_guide.build("pr")["rules"]
+            if r.get("topic") == "over_budget"]

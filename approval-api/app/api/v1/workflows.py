@@ -72,6 +72,10 @@ async def get_workflow_for_doc(doc_type: str, db: AsyncSession = Depends(get_db)
             mode_label=_OB_MODE_LABELS.get(mode, mode),
             added_steps=[WorkflowNodeDef(**n) for n in _ob_prefix(mode)],
             blocks_submission=mode == "hard_block",
+            # The form's rule, not the engine's: PrCreatePage/PrEditPage refuse
+            # an over-budget PR with an empty justification unless the mode is
+            # hard_block (then it cannot be submitted at all).
+            justification_required=mode != "hard_block",
             note=("Applies only to a PR whose total exceeds the Available balance of "
                   "its cost centre and budget account. The mode is read when the PR "
                   "is submitted and kept for that PR; changing it later never adds "
