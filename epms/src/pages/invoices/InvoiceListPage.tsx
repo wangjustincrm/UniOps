@@ -279,7 +279,10 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       setDocTypeAutoDetected(detected)
 
       const carrierHit = fields.vendorName
-        ? carriers.find((c) => c.is_active && !!c.vendor_name && carrierNameMatches(c.vendor_name, fields.vendorName!))
+        // Against the carrier's vendor name AND its own name: invoices often
+        // print just "UPS" where the vendor master says "UPS Canada Ltd.".
+        ? carriers.find((c) => c.is_active && !!c.vendor_name && (
+            carrierNameMatches(c.vendor_name, fields.vendorName!) || carrierNameMatches(c.name, fields.vendorName!)))
         : undefined
       if (fields.vendorName) {
         if (keepVendor && vendorNamesLookAlike(keepVendor.name, fields.vendorName)) {

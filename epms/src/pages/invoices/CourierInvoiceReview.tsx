@@ -120,15 +120,22 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
       : [emptyLine()])
   }
 
-  // Read once, on arrival. The ref keeps React's dev double-mount from paying
-  // for a second model call.
+  // Read once, on arrival. `readStarted` keeps React's dev double-mount from
+  // paying for a second model call; `mounted` (not a per-run flag) decides
+  // whether the answer still has somewhere to go — a per-run flag would be
+  // cleared by that double-mount and the only read's answer thrown away,
+  // leaving the form "reading" for ever.
   const readStarted = useRef(false)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   useEffect(() => {
     if (!file || readStarted.current) return
     readStarted.current = true
-    let live = true
     readFreightInvoice(file).then((res) => {
-      if (!live) return
+      if (!mounted.current) return
       if (!res.ok) {
         setOcrError({
           kind: res.kind,
@@ -142,7 +149,6 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
       }
       setStep('review')
     })
-    return () => { live = false }
   }, [file]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const changeInvoiceDate = (v: string) => {
