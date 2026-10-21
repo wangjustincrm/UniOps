@@ -100,7 +100,10 @@ values:
       configured tolerance (or, for an agreement, falls outside its tolerance or
       schedule). A missing receipt or a quantity difference does not cause it.
       It carries a task to whoever has to resolve it, and it cannot be paid
-      until that is cleared.
+      until that is cleared. AP clears it by accepting the variance (the
+      invoice becomes Matched) or by asking the vendor for a credit note; either
+      needs a written note, which stays visible on the invoice's 3-Way Match
+      tab and in its History.
 
   - value: approved
     label: Approved
