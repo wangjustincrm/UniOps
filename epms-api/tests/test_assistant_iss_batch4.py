@@ -330,3 +330,165 @@ async def test_the_task_list_is_given_the_real_roles(admin_client, monkeypatch):
     me = calls["guide"][0]["payload"]["me"]
     assert me["primary_role"] == "System Admin"
     assert "email" not in me and "never name a role from a task" in me["roles_are"]
+
+
+# ── ISS-0068: the document on screen, on every detail page ───────────────────
+
+from datetime import date  # noqa: E402
+from decimal import Decimal  # noqa: E402
+
+
+async def _seed_chain(test_engine, uid, tag=None):
+    """PR → PO → GR → invoice → PA, plus an agreement with one receipt.
+    The shape of PR-20260928-0001's chain in ISS-0030."""
+    from app.models.agreement import PurchaseAgreement
+    from app.models.agreement_receipt import AgreementReceipt
+    from app.models.gr import GoodsReceipt
+    from app.models.invoice import Invoice
+    from app.models.pa import PaymentApplication
+    from app.models.pa_po_link import PaPoLink
+    from app.models.po import PurchaseOrder
+    from app.models.pr import PurchaseRequest
+    from app.models.vendor import Vendor
+
+    tag = tag or uuid.uuid4().hex[:6]
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        v = Vendor(code=f"V-{tag}", name=f"Chain Vendor {tag}", category="Services",
+                   contact_name="C", contact_email="c@t.test")
+        db.add(v)
+        await db.flush()
+        pr = PurchaseRequest(number=f"PR-CH-{tag}", title="chain", type=2, status="approved",
+                             amount=Decimal("7175.17"), vendor_name=v.name, created_by=uid)
+        db.add(pr)
+        await db.flush()
+        po = PurchaseOrder(number=f"PO-CH-{tag}", title="chain", type=2, vendor_id=v.id,
+                           vendor_name=v.name, subtotal=Decimal("7175.17"),
+                           total=Decimal("7175.17"), status="partially_received",
+                           created_by=uid, pr_id=pr.id, pr_number=pr.number)
+        db.add(po)
+        await db.flush()
+        pr.po_id, pr.po_number = po.id, po.number
+        gr = GoodsReceipt(number=f"GR-CH-{tag}", title="g", po_id=po.id, po_number=po.number,
+                          vendor_id=v.id, vendor_name=v.name, gr_type="physical",
+                          procurement_type=2, status="collected", created_by=uid)
+        cancelled_gr = GoodsReceipt(number=f"GR-CHX-{tag}", title="g", po_id=po.id,
+                                    po_number=po.number, vendor_id=v.id, vendor_name=v.name,
+                                    gr_type="physical", procurement_type=2,
+                                    status="cancelled", created_by=uid)
+        db.add_all([gr, cancelled_gr])
+        await db.flush()
+        inv = Invoice(internal_ref=f"INV-CH-{tag}", vendor_invoice_number=f"V{tag}",
+                      vendor_id=v.id, vendor_name=v.name, amount=Decimal("7175.17"),
+                      tax_amount=Decimal("0"), total_amount=Decimal("7175.17"),
+                      invoice_date=date(2026, 10, 1), due_date=date(2026, 11, 1),
+                      status="matched", line_items=[], uploaded_by=uid, po_id=po.id,
+                      po_number=po.number, gr_id=gr.id, gr_ids=[str(gr.id)])
+        db.add(inv)
+        await db.flush()
+        pa = PaymentApplication(pa_number=f"PA-CH-{tag}", title="p", po_id=po.id,
+                                po_number=po.number, vendor_id=v.id, vendor_name=v.name,
+                                invoice_ids=[str(inv.id)], gr_ids=[str(gr.id)],
+                                subtotal=Decimal("7175.17"),
+                                payment_amount=Decimal("7175.17"), status="approved",
+                                created_by=uid)
+        db.add(pa)
+        await db.flush()
+        db.add(PaPoLink(pa_id=pa.id, po_id=po.id, po_number=po.number))
+        agr = PurchaseAgreement(number=f"AGR-CH-{tag}", title="a", agreement_type="house_account",
+                                vendor_id=v.id, vendor_name=v.name, valid_from=date(2026, 1, 1),
+                                valid_to=date(2026, 12, 31), status="active", created_by=uid)
+        db.add(agr)
+        await db.flush()
+        receipt = AgreementReceipt(agreement_id=agr.id, receipt_date=date(2026, 8, 4),
+                                   receipt_ref=f"R{tag}", amount=Decimal("200"),
+                                   tax_amount=Decimal("8.48"), total_amount=Decimal("208.48"),
+                                   received_by=uid, created_by=uid, status="open")
+        db.add(receipt)
+        await db.commit()
+        return SimpleNamespace(tag=tag, vendor=v, pr=pr, po=po, gr=gr, cancelled_gr=cancelled_gr,
+                               inv=inv, pa=pa, agr=agr, receipt=receipt)
+
+
+def _capture_context(monkeypatch) -> list:
+    seen: list = []
+
+    async def fake_plan(schema, message, context=None, retry_error=None, history=None):
+        seen.append(context)
+        return {"kind": "cannot", "reason": "x", "explanation": "n/a"}
+
+    monkeypatch.setattr(assistant_llm, "plan", fake_plan)
+    return seen
+
+
+async def test_a_gr_page_is_recognised(test_engine, admin_client, monkeypatch):
+    """GR-20261020-0001: "这张收货单是哪个 PO 的？收了多少？" was refused twice."""
+    c = await _seed_chain(test_engine, _uid(admin_client))
+    seen = _capture_context(monkeypatch)
+    await admin_client.post(CHAT, json={
+        "message": "这张收货单是哪个 PO 的？收了多少？",
+        "context": {"app": "epms", "doc_type": "gr", "doc_id": str(c.gr.id)}})
+    ctx = seen[0]
+    assert ctx["doc_number"] == c.gr.number and ctx["doc_entity"] == "goods_receipt"
+    assert ctx["doc_lines"] == f"gr_line filtered on receipt.number = {c.gr.number}"
+    note = assistant_llm._context_note(ctx)
+    assert f"query on goods_receipt filtered on number = {c.gr.number}" in note
+    assert "explain_workflow does not apply" in note
+
+
+async def test_invoice_agreement_and_receipt_pages_are_recognised(
+        test_engine, admin_client, monkeypatch):
+    """The invoice page said it had no invoice data, the agreement page asked
+    for the agreement to be opened, the receipt page was read as a GR."""
+    from tests.test_assistant_iss_fixes import _grant_agreement_read
+    await _grant_agreement_read(test_engine, "system_admin")   # as in production
+    c = await _seed_chain(test_engine, _uid(admin_client))
+    seen = _capture_context(monkeypatch)
+    for doc_type, doc_id in (("invoice", c.inv.id), ("agreement", c.agr.id),
+                             ("agreement_receipt", c.receipt.id)):
+        await admin_client.post(CHAT, json={
+            "message": "这张单是什么情况？",
+            "context": {"app": "epms", "doc_type": doc_type, "doc_id": str(doc_id)}})
+    inv, agr, rcpt = seen
+    assert (inv["doc_entity"], inv["doc_number_field"], inv["doc_number"]) == (
+        "invoice", "internal_ref", c.inv.internal_ref)
+    assert (agr["doc_entity"], agr["doc_number"]) == ("purchase_agreement", c.agr.number)
+    assert rcpt["doc_entity"] == "agreement_receipt"
+    assert rcpt["doc_filters"] == [{"field": "receipt_ref", "value": c.receipt.receipt_ref},
+                                   {"field": "agreement.number", "value": c.agr.number}]
+    note = assistant_llm._context_note(rcpt)
+    assert (f"query on agreement_receipt filtered on receipt_ref = {c.receipt.receipt_ref} "
+            f"and agreement.number = {c.agr.number}") in note
+
+
+async def test_a_page_document_the_caller_cannot_see_adds_nothing(
+        test_engine, admin_client, requester_client, monkeypatch):
+    c = await _seed_chain(test_engine, _uid(admin_client))   # someone else's
+    seen = _capture_context(monkeypatch)
+    for doc_type, doc_id in (("gr", c.gr.id), ("invoice", c.inv.id),
+                             ("agreement", c.agr.id), ("agreement_receipt", c.receipt.id)):
+        await requester_client.post(CHAT, json={
+            "message": "这张单是什么情况？",
+            "context": {"app": "epms", "doc_type": doc_type, "doc_id": str(doc_id)}})
+    for ctx in seen:
+        assert "doc_number" not in ctx and "doc_filters" not in ctx
+
+
+async def test_the_planner_can_query_what_the_note_names(test_engine, admin_client):
+    """The filters handed to the planner are valid queries returning the document."""
+    from tests.test_assistant_iss_fixes import _grant_agreement_read
+    await _grant_agreement_read(test_engine, "system_admin")
+    c = await _seed_chain(test_engine, _uid(admin_client))
+    for entity, where in (
+        ("goods_receipt", [{"field": "number", "op": "eq", "value": c.gr.number}]),
+        ("gr_line", [{"field": "receipt.number", "op": "eq", "value": c.gr.number}]),
+        ("invoice", [{"field": "internal_ref", "op": "eq", "value": c.inv.internal_ref}]),
+        ("purchase_agreement", [{"field": "number", "op": "eq", "value": c.agr.number}]),
+        ("agreement_receipt", [{"field": "receipt_ref", "op": "eq", "value": c.receipt.receipt_ref},
+                               {"field": "agreement.number", "op": "eq", "value": c.agr.number}]),
+    ):
+        r = await admin_client.post("/api/v1/assistant/query", json={
+            "entity": entity, "metrics": ["count"], "where": where})
+        assert r.status_code == 200, (entity, r.text)
+        expected = 0 if entity == "gr_line" else 1
+        assert r.json()["matched_rows"] == expected, entity

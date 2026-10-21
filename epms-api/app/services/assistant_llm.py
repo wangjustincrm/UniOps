@@ -942,18 +942,32 @@ def _context_note(context: dict | None) -> str:
         return ""
     session = _session_note(context)
     context = {k: v for k, v in context.items() if k not in _SESSION_KEYS}
-    bits = [f"{k}={v}" for k, v in context.items() if v]
+    bits = [f"{k}={v}" for k, v in context.items()
+            if v and k not in ("doc_filters", "doc_lines")]
     note = ("\n\nThe person is currently looking at: " + ", ".join(bits) +
             ". Resolve 'this'/'that' against it when it fits the question.") if bits else ""
-    if bits and context.get("doc_number"):
+    if bits and (context.get("doc_number") or context.get("doc_filters")):
         # Without this a question ABOUT the document on screen ("who is the
         # vendor on this one?") went to explain_workflow, the only route that
         # took the document implicitly (ISS-0004).
+        filters = context.get("doc_filters") or [
+            {"field": context.get("doc_number_field") or "number",
+             "value": context["doc_number"]}]
+        entity = context.get("doc_entity")
         note += (f" A question about this document's own data — its vendor, "
-                 f"amount, lines, dates, status — is a query filtered on "
-                 f"{context.get('doc_number_field') or 'number'} = {context['doc_number']}. "
-                 f"explain_workflow is only for "
-                 f"who has approved it and who it is waiting on.")
+                 f"amount, lines, dates, status — is a query"
+                 f"{' on ' + entity if entity else ''} filtered on "
+                 + " and ".join(f"{f['field']} = {f['value']}" for f in filters) + ".")
+        if context.get("doc_lines"):
+            note += f" Its lines are {context['doc_lines']}."
+        if context.get("doc_type") in ("pr", "po", "pa"):
+            note += (" explain_workflow is only for "
+                     "who has approved it and who it is waiting on.")
+        else:
+            # A GR page asked "which PO is this for?" was told "I can only
+            # track PR / PO / PA approvals" (ISS-0068).
+            note += (" It is not a PR, PO or PA, so explain_workflow does not "
+                     "apply to it; questions about it are queries.")
     return note + session
 
 

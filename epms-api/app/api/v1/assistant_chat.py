@@ -43,6 +43,7 @@ from app.services import report_lineage
 from app.services import workflow_view
 from app.services import controlled_query as cq
 from app.services import caller_view
+from app.services import page_document
 
 log = logging.getLogger(__name__)
 
@@ -390,18 +391,16 @@ async def _with_document_number(db, scope, context: dict | None) -> dict | None:
     route that accepts "the document on screen" without a number: its approval
     history (ISS-0004). Resolved with the same visibility rule as everything
     else, so a document this person cannot see adds nothing.
+
+    Every detail page, not only PR / PO / PA: GR, invoice, agreement and
+    agreement-receipt pages were not recognised at all (ISS-0068) — see
+    page_document.
     """
     if not context or context.get("doc_number"):
         return context
-    doc_type, doc_id = context.get("doc_type"), context.get("doc_id")
-    if doc_type not in workflow_view.SUPPORTED or not doc_id:
-        return context
-    doc = await workflow_view.resolve(db, scope, doc_type, None, doc_id)
-    if doc is None:
-        return context
-    field = workflow_view.number_attr(doc_type)
-    number = getattr(doc, field, None)
-    return {**context, "doc_number": number, "doc_number_field": field} if number else context
+    found = await page_document.resolve(db, scope, context.get("doc_type"),
+                                        context.get("doc_id"))
+    return {**context, **found} if found else context
 
 
 async def _resolve_pr(db, scope, number: str | None, context: dict | None):
