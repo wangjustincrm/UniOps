@@ -30,9 +30,7 @@ from datetime import date
 
 async def _make_vendor(client, code):
     r = await client.post("/api/v1/vendors", json={
-        # A name per vendor: invoice numbers repeat across these tests, and the
-        # server refuses the same vendor name + invoice # twice (INV-004).
-        "code": code, "name": f"Sync Vendor {code}", "category": "Parts",
+        "code": code, "name": "Sync Vendor", "category": "Parts",
         "contact_name": "X", "contact_email": "x@x.com",
         "payment_terms": "net30", "currency": "CAD"})
     r.raise_for_status()

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -355,30 +355,6 @@ async def is_visible(db: AsyncSession, invoice: Invoice, scope: dict) -> bool:
 
 
 # ── Create ─────────────────────────────────────────────────────────────────────
-
-async def find_duplicate(
-    db: AsyncSession, vendor_id: uuid.UUID, vendor_name: str, vendor_invoice_number: str,
-) -> Invoice | None:
-    """An existing invoice with the same vendor and vendor invoice # (PRD INV-004).
-
-    The upload form refuses these, but only against the invoices its user can
-    see, and nothing stopped a direct API call; this is the same rule on the
-    server, against every invoice. Same comparison as the form
-    (InvoiceListPage isDuplicate): invoice # case-insensitive and trimmed;
-    the vendor by name, case-insensitive, as the form does — or by id, which
-    is what "same vendor" means when the vendor has been renamed since. Every
-    status counts (an invoice is deleted, never cancelled, so a deleted one
-    is gone). Credit notes are not invoices: Vendor Credits has its own rule
-    (VC-002)."""
-    number = vendor_invoice_number.strip().lower()
-    return (await db.execute(
-        select(Invoice).where(
-            func.lower(func.trim(Invoice.vendor_invoice_number)) == number,
-            or_(Invoice.vendor_id == vendor_id,
-                func.lower(Invoice.vendor_name) == vendor_name.lower()),
-        ).order_by(Invoice.created_at).limit(1)
-    )).scalar_one_or_none()
-
 
 async def create(
     db: AsyncSession,
