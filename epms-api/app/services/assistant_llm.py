@@ -73,6 +73,9 @@ Rules:
   question must always map to the same period.
 - Only a literal rolling window — "the last 3 months", "过去 30 天", "recent" —
   is last_n_months or last_n_days.
+- "Compared with the same period last year" / 同比 / 增长了多少 is ONE query:
+  the totals for the period with compare_previous_year true. Never answer it
+  with budget_vs_actual — that compares budget with spending, not two years.
 - For a NAMED month or an explicit range ("September", "Q2", "since June"), use
   period with from/to, and take the year from today's date given below. Getting
   the year wrong returns zero rows and reads exactly like "there were none".
@@ -393,6 +396,10 @@ results are the only facts you have.
   query is built for them. Name the condition the system could not apply. Filtering by eye
   over one page and reporting the outcome is how "none qualify" was once given
   for a question where 44 orders did.
+- `comparison` (a year-on-year question) holds, per currency and metric, the
+  current figure, the same period last year, the change and the change in
+  percent, all computed for you — report them, never recompute. The two
+  periods are `resolved_period` and `previous_year.resolved_period`.
 - `resolved_period` is the dates the query covered. State them once, in the
   reply's date format (DD/MM/YYYY), so the reader can see which period was
   used — e.g. "this quarter (01/10/2026 – 20/10/2026)".
@@ -499,6 +506,15 @@ _QUERY_TOOL = {
                         "description": (
                             "With calendar only: move the period by whole "
                             "years. -1 = the same period last year."),
+                    },
+                    "compare_previous_year": {
+                        "type": "boolean",
+                        "description": (
+                            "Also run the same query for the same period one "
+                            "year earlier and return the change — for "
+                            "'compared with the same period last year', "
+                            "'year on year', '同比'. Totals only (metrics, no "
+                            "group_by)."),
                     },
                     "last_n_months": {"type": "integer"},
                     "last_n_days": {"type": "integer"},
@@ -805,6 +821,33 @@ _EXPLAIN_PLAN_TOOL = {
     },
 }
 
+_RECEIVING_TOOL = {
+    "name": "receiving_report",
+    "description": (
+        "The Receiving Report's totals for a period: how many lines were "
+        "received, on how many receipts, against how many POs, and the average "
+        "lead time (days from ordering to receipt). Use it for 'how much did we "
+        "receive this month', 'average delivery lead time', '收货报表里本月收了多少"
+        "行、几张收货单、几张 PO、平均交货周期'. It is the Goods Receipt → "
+        "Receiving Report page's own calculation: physical receipts only, "
+        "cancelled/rejected left out, NC-mirrored orders left out."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "calendar": {
+                "type": "string",
+                "enum": ["today", "yesterday", "this_week", "last_week",
+                         "this_month", "last_month", "this_quarter",
+                         "last_quarter", "this_year", "last_year"],
+                "description": "A named calendar period (plant time).",
+            },
+            "from": {"type": "string", "description": "First day, YYYY-MM-DD"},
+            "to": {"type": "string", "description": "Last day, YYYY-MM-DD"},
+        },
+    },
+}
+
 _CANNOT_TOOL = {
     "name": "cannot_answer",
     "description": (
@@ -947,7 +990,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _NEXT_TOOL,
                    _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
                    _MODULES_TOOL, _PRODUCIBLE_TOOL, _REPORT_TOOL,
-                   _BUDGET_VARIANCE_TOOL, _CANNOT_TOOL],
+                   _BUDGET_VARIANCE_TOOL, _RECEIVING_TOOL, _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -978,6 +1021,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             return {"kind": "modules", "usage": _usage(resp)}
         if block.name == "explain_document_types":
             return {"kind": "doc_types", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "receiving_report":
+            return {"kind": "receiving", **dict(block.input), "usage": _usage(resp)}
         if block.name == "budget_vs_actual":
             return {"kind": "variance", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_report":
@@ -1326,6 +1371,11 @@ You are helping a colleague who may never have been trained on this system.
   万元 or another unit, and never rescale the numbers. Say which months the
   actual covers (1 to `through_month` of `fiscal_year`); a current year does
   not run "to December".
+- For the Receiving Report (`kind` receiving_report): give lines, receipts,
+  orders and the average lead time for `period` exactly as given, and say the
+  report counts physical receipts only and leaves out NC-mirrored orders.
+  `avg_lead_days` null means no line in the window has an order date — say
+  that, never 0. Lines are received lines, not receipts.
 - For one cost centre × account (`kind` budget_account_balance): lead with
   `available` — when `over_budget_by` is set, say it is over budget by that
   amount and nothing is left. Then annual budget, committed and actual spent,

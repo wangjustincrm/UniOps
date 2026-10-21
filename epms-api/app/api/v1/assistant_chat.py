@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 import datetime as _dt
 import uuid as _uuid
+from decimal import Decimal
 
 from sqlalchemy import select
 
@@ -100,7 +101,58 @@ async def _execute_in_schema(db, query: dict, scope: dict, schema: list[dict]):
     if query.get("entity") not in names:
         raise cq.QueryRejected(
             f"Unknown entity '{query.get('entity')}'. Available: {', '.join(sorted(names))}")
+    if (query.get("period") or {}).get("compare_previous_year"):
+        return await _compare_with_previous_year(db, query, scope)
     return await cq.execute(db, query, scope)
+
+
+async def _compare_with_previous_year(db, query: dict, scope: dict) -> dict:
+    """The same totals for the same period a year earlier, and the change.
+
+    "How much has this quarter's purchasing grown on the same period last
+    year" had no answer: one question runs one query, so the planner reached
+    for the budget comparison instead (ISS-0021 #5). The subtraction is done
+    here, per currency, so the model never does it.
+    """
+    period = {k: v for k, v in query["period"].items() if k != "compare_previous_year"}
+    if query.get("group_by"):
+        raise cq.QueryRejected(
+            "compare_previous_year works on totals: drop group_by and ask for metrics.")
+    if period.get("calendar"):
+        earlier = {**period, "shift_years": int(period.get("shift_years") or 0) - 1}
+    elif period.get("from") and period.get("to"):
+        earlier = {**period,
+                   "from": cq._shift_years(_dt.date.fromisoformat(period["from"]), -1).isoformat(),
+                   "to": cq._shift_years(_dt.date.fromisoformat(period["to"]), -1).isoformat()}
+    else:
+        raise cq.QueryRejected(
+            "compare_previous_year needs period.calendar or from/to dates.")
+    current = await cq.execute(db, {**query, "period": period}, scope)
+    previous = await cq.execute(db, {**query, "period": earlier}, scope)
+
+    entity = REGISTRY[query["entity"]]
+    split = current.get("currency_split") or previous.get("currency_split")
+    additive = [k for k in query.get("metrics") or []
+                if k in entity.metrics and entity.metrics[k].fn in ("sum", "count")]
+
+    def by_key(result):
+        return {(r.get(split) if split else None): r for r in result.get("rows") or []}
+
+    now, before = by_key(current), by_key(previous)
+    comparison = []
+    for key in sorted(set(now) | set(before), key=lambda k: str(k)):
+        for metric in additive:
+            a = Decimal(str((now.get(key) or {}).get(metric) or 0))
+            b = Decimal(str((before.get(key) or {}).get(metric) or 0))
+            change = a - b
+            comparison.append({
+                **({split: key} if split else {}), "metric": metric,
+                "current": str(a), "previous_year": str(b), "change": str(change),
+                "change_pct": (str((change / b * 100).quantize(Decimal("0.1")))
+                               if b else None)})
+    return {**current, "comparison": comparison,
+            "previous_year": {"rows": previous.get("rows"),
+                              "resolved_period": previous.get("resolved_period")}}
 
 
 async def _timed_out(db, query: dict) -> dict:
@@ -213,6 +265,9 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
 
     if planned["kind"] == "report":
         return await _answer_report_lineage(db, scope, token, body, planned, actor)
+
+    if planned["kind"] == "receiving":
+        return await _answer_receiving_report(db, scope, body, planned, actor)
 
     if planned["kind"] == "variance":
         return await _answer_budget_variance(db, scope, token, body, planned, actor)
@@ -626,6 +681,41 @@ async def _answer_doc_types(db, body, planned, actor) -> dict:
         "document_types": guide,
         "sources": {"document": guide["label"], "types": len(guide["types"])},
     }
+
+
+async def _answer_receiving_report(db, scope, body, planned, actor) -> dict:
+    """The Receiving Report's window totals, from its own crud (ISS-0021 #4, #7).
+
+    Asked as a goods_receipt count it gave 101 "lines" (receipt records)
+    against the report's 87 lines / 58 receipts / 56 POs / 18 days.
+    """
+    from app.crud import gr_report as gr_report_crud
+
+    if not scope["perms"].get("view_gr", False):
+        return {"_fixed_text": True,
+                "answer": "You do not have permission to view goods receipts.",
+                "kind": "denied", "query": None, "sources": None}
+    if planned.get("calendar"):
+        frm, to = cq.calendar_range(planned["calendar"])
+    else:
+        frm = _dt.date.fromisoformat(planned["from"]) if planned.get("from") else None
+        to = _dt.date.fromisoformat(planned["to"]) if planned.get("to") else None
+    _, total, summary, _ = await gr_report_crud.receiving_rows(
+        db, date_from=frm, date_to=to, po_ids_subq=scope["po_subq"],
+        page=1, page_size=1)
+    result = {"period": {"from": frm.isoformat() if frm else None,
+                         "to": to.isoformat() if to else None},
+              "lines": summary.lines, "receipts": summary.receipts,
+              "orders": summary.orders, "avg_lead_days": summary.avg_lead_days}
+    payload = {"question": body.message, "kind": "receiving_report", **result}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+    return {"answer": told["text"], "kind": "receiving_report", "query": None,
+            "receiving_report": result,
+            "sources": {"entity": "Receiving Report", "row_count": total, "complete": True}}
 
 
 async def _answer_account_balance(db, scope, token, body, planned, actor, year) -> dict:

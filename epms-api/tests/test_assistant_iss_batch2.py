@@ -882,3 +882,85 @@ async def test_an_invoice_is_compared_with_its_po_line_by_line(test_engine, admi
                              "variance": "0.00"}]
     # The transport line was never invoiced: it has no allocation, and the PO
     # line itself still shows it outstanding.
+
+
+# ── ISS-0021 #4 #7 #5: the Receiving Report's totals; year on year ──────────
+
+async def test_receiving_report_totals_come_from_the_report(test_engine, admin_client, monkeypatch):
+    from datetime import datetime, timezone
+
+    from app.models.gr import GoodsReceipt, GrLineItem
+    from app.services import assistant_llm
+
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        po = _po(v, uid, f"PO-RCV-{tag}", placed_at=datetime(2099, 1, 5, 15, tzinfo=timezone.utc))
+        db.add(po)
+        await db.flush()
+        gr = GoodsReceipt(number=f"GR-RCV-{tag}", title="g", po_id=po.id, po_number=po.number,
+                          vendor_id=v.id, vendor_name=v.name, gr_type="physical",
+                          procurement_type=2, status="collected", created_by=uid,
+                          received_at=datetime(2099, 1, 15, 15, tzinfo=timezone.utc))
+        db.add(gr)
+        await db.flush()
+        db.add_all([GrLineItem(gr_id=gr.id, description=d, qty_ordered=Decimal("1"),
+                               qty_received=Decimal("1"), unit="ea", unit_price=Decimal("1"),
+                               line_total=Decimal("1")) for d in ("a", "b")])
+        await db.commit()
+
+    async def fake_plan(schema, message, context=None, retry_error=None, history=None):
+        return {"kind": "receiving", "from": "2099-01-01", "to": "2099-01-31", "usage": {}}
+
+    seen = {}
+
+    async def fake_guide(message, payload):
+        seen.update(payload)
+        return {"text": "ok", "usage": {}}
+
+    monkeypatch.setattr(assistant_llm, "plan", fake_plan)
+    monkeypatch.setattr(assistant_llm, "narrate_guide", fake_guide)
+    r = await admin_client.post("/api/v1/assistant/chat", json={"message": "收货报表本月收了多少"})
+    assert r.status_code == 200, r.text
+    assert (seen["lines"], seen["receipts"], seen["orders"], seen["avg_lead_days"]) == (2, 1, 1, 10)
+
+
+async def test_year_on_year_is_computed_for_the_narrator(test_engine, admin_client, monkeypatch):
+    from datetime import datetime, timezone
+
+    from app.services import assistant_llm
+
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        db.add_all([
+            _po(v, uid, f"PO-YOY-{tag}-1", total=Decimal("100"),
+                created_at=datetime(2098, 3, 10, 15, tzinfo=timezone.utc)),
+            _po(v, uid, f"PO-YOY-{tag}-2", total=Decimal("250"),
+                created_at=datetime(2099, 3, 10, 15, tzinfo=timezone.utc)),
+        ])
+        await db.commit()
+
+    async def fake_plan(schema, message, context=None, retry_error=None, history=None):
+        return {"kind": "query", "usage": {}, "query": {
+            "entity": "purchase_order", "metrics": ["amount"],
+            "where": [{"field": "number", "op": "like", "value": f"PO-YOY-{tag}"}],
+            "period": {"from": "2099-03-01", "to": "2099-03-31",
+                       "compare_previous_year": True}}}
+
+    seen = {}
+
+    async def fake_narrate(message, query, result):
+        seen.update(result)
+        return {"text": "ok", "usage": {}}
+
+    monkeypatch.setattr(assistant_llm, "plan", fake_plan)
+    monkeypatch.setattr(assistant_llm, "narrate", fake_narrate)
+    r = await admin_client.post("/api/v1/assistant/chat", json={"message": "同比增长了多少？"})
+    assert r.status_code == 200, r.text
+    assert seen["comparison"] == [{"currency": "CAD", "metric": "amount", "current": "250.00",
+                                   "previous_year": "100.00", "change": "150.00",
+                                   "change_pct": "150.0"}]
+    assert seen["previous_year"]["resolved_period"] == {"from": "2098-03-01", "to": "2098-03-31"}
