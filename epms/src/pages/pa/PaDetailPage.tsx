@@ -56,7 +56,7 @@ function TimelineStep({
   label, actor, date, status, note,
 }: {
   label: string; actor?: string; date?: string;
-  status: 'done' | 'active' | 'pending' | 'skipped';
+  status: 'done' | 'active' | 'pending' | 'skipped' | 'rejected';
   note?: string;
 }) {
   const isAutoApproved = note?.includes('Auto-approved')
@@ -69,6 +69,7 @@ function TimelineStep({
           'bg-primary-600 ring-4 ring-primary-100': status === 'active',
           'bg-neutral-200':  status === 'pending',
           'border-2 border-dashed border-neutral-300 bg-white': status === 'skipped',
+          'bg-danger-600': status === 'rejected',
         })}>
           {status === 'done'
             ? <CheckCircle2 className="h-4 w-4 text-white" />
@@ -76,7 +77,9 @@ function TimelineStep({
               ? <Clock className="h-3.5 w-3.5 text-white animate-pulse" />
               : status === 'skipped'
                 ? <SkipForward className="h-3.5 w-3.5 text-neutral-300" />
-                : <div className="h-2 w-2 rounded-full bg-neutral-400" />}
+                : status === 'rejected'
+                  ? <XCircle className="h-4 w-4 text-white" />
+                  : <div className="h-2 w-2 rounded-full bg-neutral-400" />}
         </div>
         <div className="w-px flex-1 bg-neutral-200 mt-1" />
       </div>
@@ -91,6 +94,11 @@ function TimelineStep({
         {status === 'skipped' && (
           <span className="inline-flex items-center mt-1 rounded-full bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
             Auto-skipped
+          </span>
+        )}
+        {status === 'rejected' && (
+          <span className="inline-flex items-center mt-1 rounded-full bg-danger-50 border border-danger-200 px-2 py-0.5 text-[10px] font-medium text-danger-700">
+            Rejected
           </span>
         )}
         {/* Quoted for a real comment somebody typed; unquoted for a skip
@@ -500,6 +508,12 @@ export default function PaDetailPage() {
       return acc
     }, {})
   const submitEvent = (events ?? []).find((e) => e.action === 'submit')
+  // A rejection cancels the PA (PA-APR-004), so the status cannot say who
+  // stopped it, and every step from there on used to stay a grey "pending"
+  // dot. The reject event says it: which step, who, when and why (ISS-0078).
+  const rejectEvent = (['cancelled', 'rejected'] as PaStatus[]).includes(pa.status)
+    ? [...(events ?? [])].reverse().find((e) => e.action === 'reject')
+    : undefined
 
   const steps = [
     {
@@ -512,6 +526,15 @@ export default function PaDetailPage() {
       note: undefined as string | undefined,
     },
     ...wfNodes.map((node, i) => {
+      if (rejectEvent && i === rejectEvent.step_idx) {
+        return {
+          label: node.label,
+          actor: rejectEvent.actor_name ?? undefined,
+          date: rejectEvent.created_at,
+          note: rejectEvent.comment ?? undefined,
+          status: 'rejected' as const,
+        }
+      }
       const isDone = ['approved', 'processed'].includes(pa.status) || i < stepIdx
       const isActive = !isDone && i === stepIdx && ['submitted', 'in_review'].includes(pa.status)
       const evt = approveEventByStep[i]
@@ -563,7 +586,7 @@ export default function PaDetailPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-xl font-bold text-neutral-900">{pa.pa_number}</h1>
-              <PaStatusBadge status={pa.status} />
+              <PaStatusBadge status={pa.rejected_in_approval ? 'rejected' : pa.status} />
               {pa.pa_type === 'prepayment' && (
                 <span className="inline-flex items-center rounded-full bg-info-50 border border-info-200 px-2 py-0.5 text-[10px] font-semibold text-info-700 uppercase">Prepayment</span>
               )}

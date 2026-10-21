@@ -43,7 +43,7 @@ def _factory(test_engine):
 
 async def _pa(test_engine, uid, tag, **kw) -> PaymentApplication:
     async with _factory(test_engine)() as db:
-        vendor = Vendor(code=f"V-{tag[:6]}", name=f"B5 Vendor {tag}", category="Services",
+        vendor = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name=f"B5 Vendor {tag}", category="Services",
                         contact_name="A", contact_email="a@t.test")
         db.add(vendor)
         await db.flush()
@@ -147,3 +147,44 @@ async def test_pa_events_say_skipped_not_approved_by_the_trigger(test_engine, ad
     assert rows[3]["skip_reason"].startswith("over-budget approval no longer required")
     # The raw record is unchanged — the engine's data is not rewritten.
     assert rows[2]["action"] == "approve" and rows[2]["comment"] == ENGINE_SKIP_NO_DIRECTOR
+
+
+# ── ISS-0078 ──────────────────────────────────────────────────────────────────
+
+async def test_rejected_filter_finds_pas_cancelled_by_a_rejection(test_engine, admin_client):
+    """The engine cancels a rejected PA, so status=rejected used to find
+    nothing. Rejected = cancelled with a reject event; a PA cancelled without
+    one (withdrawn) is not rejected. Cancelled still lists both: it is the
+    stored status."""
+    uid = _uid(admin_client)
+    tag = uuid.uuid4().hex[:8]
+    rejected = await _pa(test_engine, uid, tag + "r", status="cancelled")
+    withdrawn = await _pa(test_engine, uid, tag + "w", status="cancelled")
+    live = await _pa(test_engine, uid, tag + "l", status="in_review")
+    await _events(test_engine, "pa", rejected.id, rejected.pa_number, [
+        (0, "submit", uid, "requester", None),
+        (1, "reject", uid, "ap_clerk", "Dublicate payment."),
+    ])
+    await _events(test_engine, "pa", withdrawn.id, withdrawn.pa_number, [
+        (0, "submit", uid, "requester", None),
+        (0, "cancel", uid, "requester", None),
+    ])
+    # A return is not a rejection.
+    await _events(test_engine, "pa", live.id, live.pa_number, [
+        (0, "submit", uid, "requester", None),
+        (1, "return", uid, "ap_clerk", "fix"),
+    ])
+
+    async def listed(status):
+        r = await admin_client.get("/api/v1/pa", params={
+            "status": status, "search": f"PA-B5-{tag}", "page_size": 50})
+        assert r.status_code == 200, r.text
+        return {i["pa_number"]: i["rejected_in_approval"] for i in r.json()["items"]}
+
+    assert await listed("rejected") == {rejected.pa_number: True}
+    assert await listed("cancelled") == {rejected.pa_number: True, withdrawn.pa_number: False}
+    assert await listed("in_review") == {live.pa_number: False}
+
+    detail = (await admin_client.get(f"/api/v1/pa/{rejected.id}")).json()
+    assert detail["status"] == "cancelled" and detail["rejected_in_approval"] is True
+    assert (await admin_client.get(f"/api/v1/pa/{withdrawn.id}")).json()["rejected_in_approval"] is False

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._list_order import blank_as_null, lower_text, sort_clauses
@@ -80,6 +80,51 @@ async def set_po_links(
     pa.po_id = pos[0][0] if pos else None
     pa.po_number = pos[0][1] if pos else None
     await db.flush()
+
+
+# A rejected PA is not status "rejected": the approval engine cancels it
+# (approval-api engine.py execute_action, PRD PA-APR-004), so "Rejected" in the
+# list found nothing and "Cancelled" mixed rejections with withdrawals
+# (ISS-0078). What tells them apart is a reject event in the PA's history.
+# pa_dir is OA's Direct PA — never listed here, but the same engine rule.
+_PA_EVENT_TYPES = ("pa", "pa_dir")
+
+
+def rejected_in_approval():
+    """SQL: this PA has a reject event (it was cancelled by a rejection)."""
+    return exists().where(
+        ApprovalEvent.document_type.in_(_PA_EVENT_TYPES),
+        ApprovalEvent.document_id == PaymentApplication.id,
+        ApprovalEvent.action == "reject",
+    )
+
+
+def status_filter(status: str):
+    """The list's status filter. "rejected" means rejected in approval —
+    cancelled with a reject event (or a literal "rejected" row, none today);
+    every other value is the stored status, unchanged."""
+    if status == "rejected":
+        return or_(
+            PaymentApplication.status == "rejected",
+            and_(PaymentApplication.status == "cancelled", rejected_in_approval()),
+        )
+    return PaymentApplication.status == status
+
+
+async def attach_rejected(db: AsyncSession, pas: list[PaymentApplication]) -> None:
+    """Populate the transient `rejected_in_approval` PaResponse field."""
+    ids = [pa.id for pa in pas if pa.status in ("cancelled", "rejected")]
+    hit: set[uuid.UUID] = set()
+    if ids:
+        hit = set((await db.execute(
+            select(ApprovalEvent.document_id).where(
+                ApprovalEvent.document_type.in_(_PA_EVENT_TYPES),
+                ApprovalEvent.document_id.in_(ids),
+                ApprovalEvent.action == "reject",
+            )
+        )).scalars().all())
+    for pa in pas:
+        pa.rejected_in_approval = pa.id in hit
 
 
 async def attach_po_links(db: AsyncSession, pas: list[PaymentApplication]) -> None:
@@ -196,7 +241,7 @@ async def get_all(
     elif created_by:
         q = q.where(PaymentApplication.created_by == created_by)
     if status:
-        q = q.where(PaymentApplication.status == status)
+        q = q.where(status_filter(status))
     if po_id:
         # "Payments on this PO" — a PA that pays this PO as its second or third
         # order belongs in the answer just as much as one where it is primary.
