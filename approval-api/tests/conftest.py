@@ -22,7 +22,7 @@ from app.models.routing import ApprovalBackup, ApprovalSetting, DeptRouting
 from app.models.agreement import PurchaseAgreement
 from app.models.task import Task
 from app.models.user import User
-from app.models.visit import Visit as VmsVisit
+from app.models.visit import Visit as VmsVisit, VmsZone
 
 TEST_DB = os.getenv("TEST_APPROVAL_DB", "approval_test")
 TEST_HOST = os.getenv("TEST_PG_HOST", "localhost")
@@ -82,7 +82,8 @@ _ENGINE_TABLES = [
     ApprovalBackup.__table__,
     ApprovalSetting.__table__,
     ApprovalDelegation.__table__,
-    # VMS visits (thin mirror) — test_engine_vms_visit.py
+    # VMS visits + zones (thin mirrors) — test_engine_vms_visit.py
+    VmsZone.__table__,
     VmsVisit.__table__,
 ]
 
@@ -121,6 +122,10 @@ def _build_engine_schema():
         # above). The engine reads it on EVERY pa action — a payment covering
         # purchase orders from several departments skips its department-scoped
         # steps — so it has to exist even for tests that never populate it.
+        # `vms_visits.status` is vms-api's enum column, outside the thin mirror;
+        # the post-approve callback sets it by raw SQL, so a test that approves
+        # a visit needs the column to exist.
+        conn.execute(sa.text("ALTER TABLE vms_visits ADD COLUMN status varchar(30)"))
         conn.execute(sa.text("DROP TABLE IF EXISTS pa_po_links CASCADE"))
         conn.execute(sa.text(
             "CREATE TABLE pa_po_links (id uuid PRIMARY KEY, pa_id uuid NOT NULL,"
