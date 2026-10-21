@@ -320,3 +320,52 @@ def test_the_planner_is_told_calendar_words_are_calendar_periods():
     enum = assistant_llm._QUERY_TOOL["input_schema"]["properties"]["period"]["properties"]["calendar"]["enum"]
     from app.services.controlled_query import CALENDAR_PERIODS
     assert tuple(enum) == CALENDAR_PERIODS
+
+
+# ── ISS-0024 / ISS-0015: numbers as people type them ─────────────────────────
+
+def test_typed_numbers_are_read_in_their_stored_form():
+    from app.core.doc_numbers import normalize
+
+    assert normalize("PR", "pr20260928-0001") == "PR-20260928-0001"
+    assert normalize("PR", "20260928-0001") == "PR-20260928-0001"
+    assert normalize("PR", " PR 202609280001 ") == "PR-20260928-0001"
+    assert normalize("PA", "pa-20261013-0003") == "PA-20261013-0003"
+    assert normalize("INV", "inv20260631") == "INV-2026-0631"
+    assert normalize("AGR", "agr2026080007") == "AGR-202608-0007"
+    assert normalize("PO", "po332-2610-01") == "PO-332-2610-01"
+    assert normalize("PO", "PO-ABC-2604-03-2") == "PO-ABC-2604-03-2"
+    # Not a format the system writes: compared exactly as typed.
+    assert normalize("INV", " inv-106 ") == "inv-106"
+    assert normalize("PO", "PO-SCOPE-abc123") == "PO-SCOPE-abc123"
+    assert normalize("PR", "GR-20260928-0001") == "GR-20260928-0001"
+
+
+async def test_a_number_typed_loosely_finds_the_document(test_engine, admin_client):
+    from app.models.pr import PurchaseRequest
+
+    day = "209901" + uuid.uuid4().hex[:2].translate(str.maketrans("abcdef", "123456"))
+    number = f"PR-{day}-0001"
+    async with _factory(test_engine)() as db:
+        db.add(PurchaseRequest(number=number, title="loose", type=2, status="draft",
+                               amount=Decimal("1"), created_by=_uid(admin_client)))
+        await db.commit()
+    for typed in (number.lower(), number.replace("PR-", "pr"), number[3:]):
+        body = await _query(admin_client, entity="purchase_request", select=["number"],
+                            where=[{"field": "number", "op": "eq", "value": typed}])
+        assert [r["number"] for r in body["rows"]] == [number], typed
+        assert body["numbers_read_as"][0]["used"] == number
+
+    # A slip in the digits: not found, but the real number is offered.
+    body = await _query(admin_client, entity="purchase_request", select=["number"],
+                        where=[{"field": "number", "op": "eq", "value": f"PR-{day}-001"}])
+    assert body["rows"] == []
+    assert number in body["near_misses"]["number"]
+
+
+def test_invoice_numbers_point_at_the_epms_invoice():
+    from app.core.ontology import REGISTRY
+
+    assert "INV-" in REGISTRY["invoice"].fields["internal_ref"].label
+    assert REGISTRY["invoice"].fields["internal_ref"].doc_number == "INV"
+    assert "use `invoice`" in REGISTRY["ap_invoice"].label

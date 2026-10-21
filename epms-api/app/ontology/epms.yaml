@@ -36,7 +36,7 @@ entities:
     scope: pr
     date_field: created_at
     fields:
-      number: {kind: text, label: "PR number"}
+      number: {kind: text, doc_number: PR, label: "PR number"}
       title: {kind: text, label: "Title"}
       # The stored code and what it means. Duplicated today in two front-end
       # tables that have already drifted (PrEditPage says "Raw Mat./Pack.",
@@ -151,7 +151,7 @@ entities:
     # the axis means rather than pretend it means something else.
     date_field: created_at
     fields:
-      number: {kind: text, label: "PO number"}
+      number: {kind: text, doc_number: PO, label: "PO number"}
       title: {kind: text, label: "Title"}
       # The stored code and what it means. Duplicated today in two front-end
       # tables that have already drifted (PrEditPage says "Raw Mat./Pack.",
@@ -210,7 +210,7 @@ entities:
       currency: {kind: text, label: "Currency", enumerate: true}
       vendor_name: {kind: text, label: "Vendor name"}
       budget_code: {kind: text, label: "Budget account code"}
-      pr_number: {kind: text, label: "Originating PR number"}
+      pr_number: {kind: text, doc_number: PR, label: "Originating PR number"}
       expected_delivery: {kind: date, label: "Expected delivery date"}
       placed_at: {kind: datetime, label: "Date the order was placed with the vendor"}
       is_prepaid: {kind: bool, label: "Prepaid order"}
@@ -368,7 +368,7 @@ entities:
     date_field: received_at
     date_field_nullable_ok: true
     fields:
-      number: {kind: text, label: "GR number"}
+      number: {kind: text, doc_number: GR, label: "GR number"}
       title: {kind: text, label: "Title"}
       # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
       # found values in the data the planner had never been told about.
@@ -377,8 +377,8 @@ entities:
         label: "Status"
         values: [pending_ack, acknowledged, collection_pending, collected,
                  confirmed, cancelled]
-      po_number: {kind: text, label: "PO number"}
-      pr_number: {kind: text, label: "PR number"}
+      po_number: {kind: text, doc_number: PO, label: "PO number"}
+      pr_number: {kind: text, doc_number: PR, label: "PR number"}
       vendor_name: {kind: text, label: "Vendor name"}
       gr_type: {kind: text, label: "Receipt type", enumerate: true}
       currency: {kind: text, label: "Currency", enumerate: true}
@@ -418,7 +418,7 @@ entities:
     scope: invoice
     date_field: invoice_date
     fields:
-      internal_ref: {kind: text, label: "Internal reference"}
+      internal_ref: {kind: text, doc_number: INV, label: "EPMS invoice number shown on the Invoices list, INV-YYYY-NNNN (e.g. INV-2026-0631). An INV- number is ALWAYS this field — the vendor's own number is vendor_invoice_number"}
       vendor_invoice_number: {kind: text, label: "Vendor's own invoice number"}
       vendor_name: {kind: text, label: "Vendor name"}
       # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
@@ -433,13 +433,13 @@ entities:
       currency: {kind: text, label: "Currency", enumerate: true}
       invoice_date: {kind: date, label: "Invoice date"}
       due_date: {kind: date, label: "Payment due date"}
-      po_number: {kind: text, label: "PO number this invoice bills against"}
+      po_number: {kind: text, doc_number: PO, label: "PO number this invoice bills against"}
       gr_number:
         kind: text
         label: "Goods receipt number linked to the invoice. Empty does NOT mean
           not received — agreement invoices never have one. For received or not,
           use po_receipt_recorded"
-      agreement_number: {kind: text, label: "Agreement number, for agreement billing"}
+      agreement_number: {kind: text, doc_number: AGR, label: "Agreement number, for agreement billing"}
       # Added 2026-10-19 (ISS-0013).
       billed_against:
         kind: enum
@@ -485,7 +485,7 @@ entities:
     scope: pa
     date_field: created_at
     fields:
-      pa_number: {kind: text, label: "PA number"}
+      pa_number: {kind: text, doc_number: PA, label: "PA number"}
       title: {kind: text, label: "Title"}
       # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
       # found values in the data the planner had never been told about.
@@ -515,8 +515,8 @@ entities:
         label: "Payment type"
         values: [regular, prepayment, settlement, balance]
       vendor_name: {kind: text, label: "Vendor name"}
-      po_number: {kind: text, label: "PO number being paid"}
-      agreement_number: {kind: text, label: "Agreement number, for agreement payments"}
+      po_number: {kind: text, doc_number: PO, label: "PO number being paid"}
+      agreement_number: {kind: text, doc_number: AGR, label: "Agreement number, for agreement payments"}
       subtotal: {kind: money, label: "Amount before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
       payment_amount: {kind: money, label: "Amount to be paid"}
@@ -559,7 +559,7 @@ entities:
     scope: agreement
     date_field: created_at
     fields:
-      number: {kind: text, label: "Agreement number, e.g. AGR-202608-0007"}
+      number: {kind: text, doc_number: AGR, label: "Agreement number, e.g. AGR-202608-0007"}
       title: {kind: text, label: "Title"}
       agreement_type:
         kind: enum

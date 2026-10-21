@@ -233,7 +233,11 @@ entities:
 
   ap_invoice:
     table: ap_invoices
-    label: "AP Invoice — a payable as finance records it"
+    # ISS-0015: with two "invoice" entities in the schema the planner picked
+    # either, and the same question gave different invoices and totals. This
+    # is a copy of EPMS invoices made by finance_sync (fail-open, so it can lag
+    # or miss rows); EPMS's own `invoice` is the one the Invoices list shows.
+    label: "Finance's AP ledger copy of EPMS invoices (AP- numbers, as on Finance → Accounts Payable). It can lag or miss invoices. For invoices, vendors' bills, unpaid or overdue invoices and INV- numbers use `invoice`; use this only when the question is about Finance AP, AP- numbers or AP posting"
     perm_key: view_finance
     scope: permission_only
     date_field: invoice_date

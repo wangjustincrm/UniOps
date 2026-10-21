@@ -23,6 +23,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from app.core import doc_numbers
 from app.core.access_scope import is_pa_visible, is_po_visible, is_pr_visible
 from app.crud import pa as pa_crud
 from app.crud import po as po_crud
@@ -61,8 +62,10 @@ async def resolve(db, scope: dict, doc_type: str, number: str | None,
     model, number_attr = spec["model"], spec["number"]
 
     if number:
+        # The same reading of a typed number as the query layer's (ISS-0024).
+        stored = doc_numbers.normalize(doc_type.upper(), number)
         doc = (await db.execute(select(model).where(
-            getattr(model, number_attr) == number.strip()))).scalar_one_or_none()
+            getattr(model, number_attr) == stored))).scalar_one_or_none()
     elif doc_id:
         try:
             parsed = uuid.UUID(doc_id)

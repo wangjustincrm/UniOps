@@ -28,6 +28,7 @@ import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import doc_numbers
 from app.core.delegation import PLANT_TIMEZONE
 from app.core.ontology import (
     BOOL, DATE, DATETIME, ENUM, INT, MONEY, REGISTRY, TEXT, Entity, get_entity,
@@ -217,6 +218,31 @@ def _group_expr(entity: Entity, name: str):
                 f"Group by a calendar unit instead, e.g. '{field}:month' "
                 f"(grains: {', '.join(sorted(_GRAINS))}).")
     return col, path
+
+
+def _normalize_numbers(entity: Entity, clauses: list[dict]) -> tuple[list, list]:
+    """Rewrite typed document numbers into their stored form (ISS-0024).
+
+    Only exact comparisons on a field declared as a document number; a `like`
+    is a fragment search and is left alone. Returns the clauses and what was
+    changed, so the answer can say which number it looked up.
+    """
+    out, changed = [], []
+    for clause in clauses:
+        op = (clause.get("op") or "eq").lower()
+        field = _field_of(entity, clause.get("field") or "")
+        if field is None or not field.doc_number or op not in ("eq", "ne", "in", "not_in"):
+            out.append(clause)
+            continue
+        value = clause.get("value")
+        values = value if isinstance(value, list) else [value]
+        fixed = [doc_numbers.normalize(field.doc_number, v) if v is not None else v
+                 for v in values]
+        for before, after in zip(values, fixed):
+            if before is not None and str(before) != after:
+                changed.append({"field": clause["field"], "asked": before, "used": after})
+        out.append({**clause, "value": fixed if isinstance(value, list) else fixed[0]})
+    return out, changed
 
 
 def _many_link(path):
@@ -795,7 +821,7 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
     # Gate 2 — the row filter. Unconditional, and applied before any caller
     # supplied predicate so nothing can be OR-ed around it.
     stmt = await entity.apply_scope(stmt, scope, db)
-    clauses = list(request.get("where") or [])
+    clauses, numbers_read_as = _normalize_numbers(entity, list(request.get("where") or []))
     stmt, applied_default = _apply_default_filter(
         stmt, entity, clauses, hops, request)
     local_clauses, many_groups = _split_many(entity, clauses)
@@ -968,6 +994,8 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
         out["matched_rows"] = matched
     if total_rows is not None:
         out["total_rows"] = total_rows
+    if numbers_read_as:
+        out["numbers_read_as"] = numbers_read_as
     covered = resolved_period(request.get("period"))
     if covered:
         out["resolved_period"] = covered
@@ -1025,6 +1053,26 @@ async def _near_misses(db: AsyncSession, entity, scope: dict,
     """
     suggestions: dict[str, list[str]] = {}
     for clause in clauses:
+        numbered = _field_of(entity, clause.get("field") or "")
+        if (clause.get("op") or "eq") == "eq" and numbered is not None and numbered.doc_number:
+            # An exact document number that matched nothing: offer the numbers
+            # that share its digits, in order, so "did you mean …" can be asked
+            # instead of "not found" (ISS-0024).
+            groups = doc_numbers.digit_groups(clause.get("value") or "")
+            if groups:
+                try:
+                    col, path = _resolve(entity, clause["field"])
+                    stmt = select(col).select_from(entity.model).distinct()
+                    stmt = await entity.apply_scope(stmt, scope, db)
+                    stmt = await _apply_hops(db, stmt, list(path), scope)
+                    stmt = stmt.where(col.ilike("%" + "%".join(groups) + "%"))
+                    found = [r[0] for r in (await db.execute(
+                        stmt.limit(_MAX_SUGGESTIONS))).all() if r[0]]
+                except Exception:  # noqa: BLE001 — best effort, as below
+                    found = []
+                if found:
+                    suggestions[clause["field"]] = found
+            continue
         if clause.get("op") != "like":
             continue
         name = clause.get("field")

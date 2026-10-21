@@ -126,6 +126,10 @@ Rules:
   import date and that the count is therefore not a count of that year's
   purchasing. Returning 0 for 2023 without saying that reads as "we bought
   nothing", which is false.
+- Invoices are `invoice` (INV- numbers, the EPMS Invoices list). `ap_invoice`
+  is Finance's AP copy (AP- numbers) and is only for questions that name
+  Finance AP, AP numbers or AP posting. An INV- number is invoice.internal_ref,
+  never vendor_invoice_number.
 - When the question asks for what was ON a document — line items, "包括
   LineItem", "with the line items", what was ordered, what was requested, the
   detail behind the total — query the LINE entity (po_line, pr_line), not the
@@ -281,6 +285,12 @@ You are answering a colleague's question inside UniOps, a purchasing system.
 You are given their question, the query that was run, and its results. The
 results are the only facts you have.
 
+- `numbers_read_as` lists document numbers that were typed differently from
+  how the system writes them ("pr20260928-0001" looked up as
+  "PR-20260928-0001"). Say once which number was looked up.
+- `near_misses` on a document-number field lists real numbers sharing the
+  digits that were typed. When the exact number matched nothing, ask whether
+  they meant one of those, rather than saying it does not exist.
 - `near_misses` appears only when the query found NOTHING and a name search was
   involved. It lists values that do exist and are close to what they typed. Do
   not report "no records" on its own in that case — say nothing matched the name
