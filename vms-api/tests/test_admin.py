@@ -154,7 +154,7 @@ async def test_visit_edit_reschedules_planned_times(test_engine):
 
 
 async def _no_showed_visit(test_engine, *, pending: bool):
-    """A visit the scheduler has just marked No Show (planned 3h ago), with
+    """A visit the scheduler has just marked No Show (planned yesterday), with
     its approval task closed by the no-show and an older task a person
     completed. Returns (visit_id, approve_task_id, human_task_id, admin)."""
     from app.models.task_mirror import Task
@@ -167,7 +167,7 @@ async def _no_showed_visit(test_engine, *, pending: bool):
     approver = await make_user(test_engine, role="dept_manager")
     admin = await make_user(test_engine, role="system_admin")
     now = datetime.now(timezone.utc)
-    arrival = now - timedelta(hours=3)
+    arrival = now - timedelta(days=1, hours=1)
     visitor_id, visit_id = uuid.uuid4(), uuid.uuid4()
     async with factory() as db:
         db.add(Visitor(id=visitor_id, first_name="Mike", last_name="NoShow",
@@ -242,9 +242,9 @@ async def test_dm_reschedule_undoes_no_show_and_reopens_approval(test_engine):
 
 @pytest.mark.asyncio
 async def test_dm_undo_no_show_restores_confirmed_and_needs_future_schedule(test_engine):
-    """A confirmed visit goes back to Confirmed. Saving it while the schedule is
-    still overdue leaves it No Show — the next scheduler tick would mark it
-    again anyway."""
+    """A confirmed visit goes back to Confirmed. Saving it while the planned
+    arrival is still on a past plant day leaves it No Show — the next
+    scheduler tick would mark it again anyway."""
     from app.models.visit import Visit, VisitStatus
 
     visit_id, _, _, admin = await _no_showed_visit(test_engine, pending=False)
@@ -254,8 +254,10 @@ async def test_dm_undo_no_show_restores_confirmed_and_needs_future_schedule(test
         assert r.status_code == 200, r.text
         assert r.json()["status"] == "no_show"
 
-        later = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
-        r = await client.patch(f"/api/v1/admin/visit/{visit_id}", json={"planned_arrival": later})
+        later = datetime.now(timezone.utc) + timedelta(days=1)
+        r = await client.patch(f"/api/v1/admin/visit/{visit_id}", json={
+            "planned_arrival": later.isoformat(),
+            "planned_departure": (later + timedelta(hours=8)).isoformat()})
         assert r.status_code == 200, r.text
         assert r.json()["status"] == "confirmed"
 
