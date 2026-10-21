@@ -580,9 +580,13 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
 
 async def _answer_whats_next(db, user, body, actor, me: dict | None = None) -> dict:
     """Their own inbox, explained. No arguments — it is always about the asker."""
-    tasks = await guide_view.my_tasks(user.get("role", ""), actor) if actor else []
+    mine = await guide_view.my_tasks(user.get("role", ""), actor) if actor else []
+    # What the EPMS Task Inbox lists, by its own filter; other modules' tasks
+    # are reported apart (ISS-0011).
+    tasks, elsewhere = guide_view.split_epms_inbox(mine)
     # Counted here, not by the model — see guide_view.task_summary (ISS-0011).
-    payload = {"question": body.message, "kind": "tasks", **guide_view.task_summary(tasks)}
+    payload = {"question": body.message, "kind": "tasks",
+               **guide_view.task_summary(tasks, elsewhere)}
     if me:
         # Asked "who am I" and routed here, the reply guessed roles from the
         # tasks (ISS-0073). The roles are given, so nothing is left to guess.

@@ -1707,6 +1707,14 @@ You are helping a colleague who may never have been trained on this system.
   never write "~", "about" or "40+", never re-group them, never add them up
   yourself, and never count `examples`: it is only the first few tasks (urgent
   first, then the oldest), `examples_left_out` were not sent to you at all.
+  `groups` IS the table: one row per entry, in the order given, with its label
+  and count exactly as given — an "Other (N types)" row included, already
+  counted (its `made_of` says what is in it). Never merge rows into an "other"
+  row of your own, never split one, never drop one: the rows add up to
+  `open_task_count` only as given. `not_in_this_inbox` are tasks of other
+  modules (VMS, OA) that the EPMS Task Inbox does not list; they are NOT in
+  `open_task_count` or `groups`. Mention them, if any, in one sentence after
+  the table with their module, and never add them to the total.
   Lead with the total and the urgent one(s), then the groups as a table, then
   name a few `examples` by document number so they can find them. How many
   reached them personally and how many through a role they hold is

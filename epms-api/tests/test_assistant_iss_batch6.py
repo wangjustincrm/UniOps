@@ -214,3 +214,79 @@ async def test_no_rule_says_agreement_payments_are_unchecked():
     assert "accepted_at.is_(None)" in src and "legacy_settlement" in src
     assert "_validate_agreement_pa_invoices" in inspect.getsource(pa_api.create_pa)
 
+
+# ── ISS-0011: the task counts are the EPMS Task Inbox's ──────────────────────
+
+def _task(t, doc_type="po", priority="normal", n=0):
+    return {"type": t, "document_type": doc_type, "priority": priority,
+            "document_number": f"D-{t}-{n}", "due_date": None,
+            "created_at": f"2026-10-{1 + n % 28:02d}"}
+
+
+async def test_task_counts_leave_out_what_the_epms_inbox_leaves_out(admin_client, monkeypatch):
+    """403 against the inbox's 397: the six were vms_confirm_training."""
+    from app.services import guide_view
+
+    async def fake_tasks(role, user_id):
+        return ([_task("confirm_receipt", n=i) for i in range(5)]
+                + [_task("approve_exp", "exp", n=i) for i in range(2)]
+                + [_task("vms_confirm_training", "vms_train", n=i) for i in range(6)]
+                + [_task("check_out_visitor", "vms_visit")])
+
+    seen: list = []
+
+    async def fake_plan(schema, message, context=None, retry_error=None, history=None):
+        return {"kind": "next"}
+
+    async def fake_guide(message, payload):
+        seen.append(payload)
+        return {"text": "ok", "usage": {}}
+
+    monkeypatch.setattr(guide_view, "my_tasks", fake_tasks)
+    monkeypatch.setattr(assistant_llm, "plan", fake_plan)
+    monkeypatch.setattr(assistant_llm, "narrate_guide", fake_guide)
+    r = await admin_client.post(CHAT, json={"message": "我现在有几条待办？"})
+    p = seen[0]
+    assert p["open_task_count"] == 7 == p["groups_add_up_to"]
+    assert {g["type"] for g in p["groups"]} == {"confirm_receipt", "approve_exp"}
+    assert {(g["type"], g["count"], g["module"]) for g in p["not_in_this_inbox"]} == {
+        ("vms_confirm_training", 6, "VMS"), ("check_out_visitor", 1, "VMS")}
+    assert r.json()["sources"]["open_tasks"] == 7
+
+
+async def test_groups_add_up_to_the_total_with_an_other_row():
+    """The narrator once merged seven small groups into "其他（7 项）| 4" and
+    the table added up to 402 of 403. The merge is done here, counted."""
+    from app.services import guide_view
+
+    tasks = []
+    for i, t in enumerate(sorted(guide_view.TASK_TYPE_LABELS)[:19]):
+        tasks += [_task(t, n=j) for j in range(i % 4 + 1)]
+    tasks += [_task("resolve_ap_duplicate_invoice", priority="urgent")]
+    s = guide_view.task_summary(tasks)
+    assert len(s["groups"]) == 12 and s["groups"][-1]["type"] == "other"
+    other = s["groups"][-1]
+    assert other["count"] == sum(m["count"] for m in other["made_of"])
+    assert other["label"] == f"Other ({len(other['made_of'])} types)"
+    assert sum(g["count"] for g in s["groups"]) == s["groups_add_up_to"] == s["open_task_count"]
+    assert s["open_task_count"] == len(tasks)
+    # Few types: every group on its own row, still adding up.
+    few = guide_view.task_summary(tasks[:6])
+    assert all(g["type"] != "other" for g in few["groups"])
+    assert sum(g["count"] for g in few["groups"]) == few["open_task_count"] == 6
+
+
+async def test_the_inbox_filter_is_the_frontends():
+    import re
+    from pathlib import Path
+
+    from app.services import guide_view
+
+    hook = Path(__file__).resolve().parents[2] / "epms" / "src" / "hooks" / "useTasks.ts"
+    if not hook.exists():
+        pytest.skip("epms frontend not mounted in this container")
+    line = re.search(r"NON_EPMS_DOC_TYPES = new Set\(\[([^\]]*)\]\)", hook.read_text()).group(1)
+    assert set(re.findall(r"'([a-z_]+)'", line)) == set(guide_view.NOT_IN_EPMS_INBOX)
+    assert "not_in_this_inbox" in assistant_llm._GUIDE_SYSTEM
+    assert "never merge rows" in " ".join(assistant_llm._GUIDE_SYSTEM.split()).lower() or \
+        "Never merge rows" in " ".join(assistant_llm._GUIDE_SYSTEM.split())

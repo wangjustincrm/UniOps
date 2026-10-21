@@ -88,25 +88,61 @@ TASK_TYPE_LABELS: dict[str, str] = {
     "resolve_ap_duplicate_invoice": "Resolve Duplicate NC Invoices",
 }
 
+# Tasks the EPMS Task Inbox does not show. /tasks is shared by every module
+# (Portal aggregates them all, VMS pulls its own); the EPMS inbox reads it
+# through useTasks, which drops these document types — copied from
+# epms/src/hooks/useTasks.ts NON_EPMS_DOC_TYPES, and
+# tests/test_assistant_iss_batch6.py fails when the two drift. Counted in, the
+# Assistant's total was the inbox's plus 6 VMS training tasks (ISS-0011).
+NOT_IN_EPMS_INBOX: dict[str, str] = {
+    "vms_visit": "VMS", "vms_train": "VMS", "vms_ppe": "VMS", "pa_dir": "OA",
+}
+
+# More task types than this and the smallest are given as one "Other" row,
+# counted here: left to the narrator, a merged row read "其他（7 项）| 4" and
+# the table no longer added up to the total (ISS-0011).
+_MAX_TASK_GROUPS = 12
+
+
+def split_epms_inbox(tasks: list[dict]) -> tuple[list[dict], list[dict]]:
+    """(what the EPMS Task Inbox lists, what it leaves out) — the inbox's own
+    filter, so the Assistant's total and groups are the inbox's."""
+    inbox = [t for t in tasks if t.get("document_type") not in NOT_IN_EPMS_INBOX]
+    elsewhere = [t for t in tasks if t.get("document_type") in NOT_IN_EPMS_INBOX]
+    return inbox, elsewhere
+
+
+def _groups(tasks: list[dict]) -> list[dict]:
+    by_type: dict[str, int] = {}
+    for t in tasks:
+        by_type[t["type"]] = by_type.get(t["type"], 0) + 1
+    return sorted(
+        ({"type": k, "label": TASK_TYPE_LABELS.get(k, k), "count": n}
+         for k, n in by_type.items()),
+        key=lambda g: (-g["count"], g["label"]))
+
+
 # How many tasks go to the narrator as examples. The COUNTS cover every task;
 # the narrator never counts (ISS-0011: given 365 tasks it produced group counts
 # that changed on every answer and added up to 237).
 _TASK_EXAMPLES = 12
 
 
-def task_summary(tasks: list[dict]) -> dict:
+def task_summary(tasks: list[dict], elsewhere: list[dict] | None = None) -> dict:
     """Counts the narrator reports verbatim, plus the few tasks worth naming.
 
     Grouped exactly as the Task Inbox groups them, so every number in the
-    reply can be checked against a header on that page.
+    reply can be checked against a header on that page. `tasks` is what the
+    inbox lists (split_epms_inbox); `elsewhere` — tasks of other modules the
+    inbox does not show — is reported apart and never counted in.
     """
-    by_type: dict[str, int] = {}
-    for t in tasks:
-        by_type[t["type"]] = by_type.get(t["type"], 0) + 1
-    groups = sorted(
-        ({"type": k, "label": TASK_TYPE_LABELS.get(k, k), "count": n}
-         for k, n in by_type.items()),
-        key=lambda g: (-g["count"], g["label"]))
+    groups = _groups(tasks)
+    if len(groups) > _MAX_TASK_GROUPS:
+        kept, rest = groups[:_MAX_TASK_GROUPS - 1], groups[_MAX_TASK_GROUPS - 1:]
+        groups = kept + [{
+            "type": "other", "label": f"Other ({len(rest)} types)",
+            "count": sum(g["count"] for g in rest),
+            "made_of": [{"label": g["label"], "count": g["count"]} for g in rest]}]
     urgent = [t for t in tasks if t.get("priority") == "urgent"]
     # Urgent first, then the oldest — the ones most likely to be overdue.
     ordered = sorted(tasks, key=lambda t: (t.get("priority") != "urgent",
@@ -137,6 +173,11 @@ def task_summary(tasks: list[dict]) -> dict:
         "overdue_count": len(overdue),
         "examples": examples,
         "examples_shown": len(examples),
+        # Other modules' tasks, which the EPMS Task Inbox does not list.
+        "not_in_this_inbox": [
+            {**g, "module": NOT_IN_EPMS_INBOX[next(
+                t["document_type"] for t in elsewhere if t["type"] == g["type"])]}
+            for g in _groups(elsewhere or [])],
         "examples_left_out": len(tasks) - len(examples),
         # Overdue, urgent, closing a task — the registry's tasks rules.
         "rules": _task_rules(),
