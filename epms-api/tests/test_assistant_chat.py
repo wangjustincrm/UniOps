@@ -546,6 +546,28 @@ async def test_conversation_history_reaches_the_planner(admin_client, monkeypatc
     assert history[0]["role"] == "user" and history[1]["role"] == "assistant"
 
 
+async def test_unanswered_questions_never_reach_the_planner(admin_client, monkeypatch):
+    """ISS-0071: two failed requests left their questions in the history with
+    no answer after them; three user turns in a row read as one request, and a
+    PO question was planned as the earlier goods-receipt question."""
+    calls = _stub(monkeypatch, plans=[{"kind": "cannot", "reason": "too_ambiguous",
+                                       "explanation": "n/a"}])
+    await admin_client.post(CHAT, json={
+        "message": "PO-079-2605-03 发给供应商了吗？",
+        "history": [
+            {"role": "assistant", "text": "orphan answer at the start"},
+            {"role": "user", "text": "PO-400 的状态？"},
+            {"role": "assistant", "text": "Issued"},
+            {"role": "user", "text": "今天收了哪些货？"},
+            {"role": "user", "text": "今天收了哪些货？"},
+        ],
+    })
+    history = calls["plan"][0]["history"]
+    assert [t["role"] for t in history] == ["user", "assistant"]
+    assert "PO-400" in history[0]["content"]
+    assert all("收了哪些货" not in t["content"] for t in history)
+
+
 async def test_history_is_capped(admin_client, monkeypatch):
     """A long session must not be re-sent in full on every question."""
     from app.api.v1.assistant_chat import _MAX_HISTORY_TURNS

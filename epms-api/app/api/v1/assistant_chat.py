@@ -87,6 +87,24 @@ class ChatRequest(BaseModel):
 _MAX_HISTORY_TURNS = 6
 
 
+def _answered_exchanges(turns: list[ChatTurn]) -> list[ChatTurn]:
+    """Only question-and-answer pairs, in order, so roles strictly alternate
+    and the history (and any even-length tail of it) starts with a question.
+
+    A question whose request failed comes back with no answer after it. Kept,
+    it made consecutive user turns, which the model reads as one request: after
+    two failures a PO question was planned as the earlier goods-receipt
+    question (ISS-0071). The panel drops such pairs itself; this holds for any
+    caller.
+    """
+    out: list[ChatTurn] = []
+    for question, answer in zip(turns, turns[1:]):
+        if (question.role == "user" and answer.role == "assistant"
+                and question.text.strip() and answer.text.strip()):
+            out.extend((question, answer))
+    return out
+
+
 @router.post("/chat")
 async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
                token: BearerToken) -> dict:
@@ -132,8 +150,7 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
     actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
     history = [
         {"role": t.role, "content": _turn_content(t)}
-        for t in (body.history or [])[-_MAX_HISTORY_TURNS:]
-        if t.text.strip()
+        for t in _answered_exchanges(body.history or [])[-_MAX_HISTORY_TURNS:]
     ]
 
     try:

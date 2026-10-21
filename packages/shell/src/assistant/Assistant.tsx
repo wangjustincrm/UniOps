@@ -28,6 +28,7 @@ import {
   AlertTriangle, Check, ChevronDown, Download, Loader2, MessageSquare, Send, Star, X,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
+import { buildHistory } from './history'
 import { Markdown } from './markdown'
 import type {
   AssistantCheck, AssistantContext, AssistantMessage, AssistantReply,
@@ -136,12 +137,7 @@ export function Assistant({
       setDraft('')
       // Snapshot before appending: the new question goes in `message`, not in
       // the history, or the model sees it twice.
-      // An answer's query rides along with its text: a follow-up like "drop the
-      // second rule" has to be rebuilt from what actually ran, and the prose
-      // does not say which filters that was.
-      const priorTurns: AssistantTurn[] = messages
-        .filter((m) => !m.error)
-        .map((m) => ({ role: m.role, text: m.text, query: m.reply?.query ?? null }))
+      const priorTurns: AssistantTurn[] = buildHistory(messages)
       setMessages((m) => [...m, { id: nextId(), role: 'user', text: question }])
       setBusy(true)
       try {
