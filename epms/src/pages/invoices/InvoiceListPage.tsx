@@ -25,6 +25,7 @@ import { useGrs } from '@/hooks/useGrs'
 import { useVendors } from '@/hooks/useVendors'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions, useConfig } from '@/hooks/useConfig'
+import { invoiceService } from '@/services/invoices'
 import type { ApiInvoice, InvoiceLineItem, AllocationInput, NonPoLineInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 import { InvoiceAllocationPanel, type AllocationAssignment } from './InvoiceAllocationPanel'
@@ -152,8 +153,6 @@ const carrierNameMatches = (carrierVendor: string, read: string): boolean => {
 }
 
 function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalProps) {
-  const { data: invoicesData } = useInvoices()
-  const invoices = invoicesData?.items ?? []
   const { data: posData } = usePos()
   const pos = posData?.items ?? []
   const { data: grsData } = useGrs()
@@ -503,15 +502,30 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
       )
     : undefined
 
-  // Duplicate check: same vendor + same vendor invoice number
-  const isDuplicate =
-    !!selectedVendor &&
-    vendorInvoiceNumber.trim() !== '' &&
-    invoices.some(
-      (i) =>
-        i.vendor_name.toLowerCase() === selectedVendor.name.toLowerCase() &&
-        i.vendor_invoice_number.toLowerCase() === vendorInvoiceNumber.trim().toLowerCase()
-    )
+  // Duplicate check (PRD INV-004): asked of the server, which compares against
+  // EVERY invoice. It used to compare against this user's own invoice list —
+  // a PO-scoped requester could not see AP's upload of the same invoice, and
+  // nine duplicates got in that way. POST /invoices refuses one regardless.
+  const [dup, setDup] = useState<{ checking: boolean; duplicate: boolean; uncheckable: boolean; detail: string | null }>({
+    checking: false, duplicate: false, uncheckable: false, detail: null,
+  })
+  useEffect(() => {
+    const n = vendorInvoiceNumber.trim()
+    if (docType !== 'invoice' || !selectedVendor || !n) {
+      setDup({ checking: false, duplicate: false, uncheckable: false, detail: null })
+      return
+    }
+    let live = true
+    setDup((d) => ({ ...d, checking: true }))
+    const t = setTimeout(() => {
+      invoiceService.duplicateCheck(selectedVendor.id, n)
+        .then((r) => { if (live) setDup({ checking: false, duplicate: r.duplicate, uncheckable: r.uncheckable, detail: r.detail }) })
+        // The check failing is not a pass: the server still refuses on upload.
+        .catch(() => { if (live) setDup({ checking: false, duplicate: false, uncheckable: false, detail: null }) })
+    }, 350)
+    return () => { live = false; clearTimeout(t) }
+  }, [docType, selectedVendor, vendorInvoiceNumber])
+  const isDuplicate = docType === 'invoice' && (dup.duplicate || dup.uncheckable)
 
   // Greedily pair each invoice line with an unused PO line of equal pre-tax amount.
   // Returns line-level allocations ONLY if every invoice line is paired AND they
@@ -560,11 +574,15 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
       )
       return
     }
-    // isDuplicate checks vendorInvoiceNumber against the regular-invoice list —
-    // not meaningful for credit notes, whose numbers live in a separate
-    // namespace. finance-api does its own duplicate detection for credits
-    // (409 with the existing credit named), surfaced in the catch below.
-    if (docType === 'invoice' && isDuplicate) return
+    // The invoice duplicate check is for invoices only — credit notes' numbers
+    // live in a separate namespace. finance-api does its own duplicate
+    // detection for credits (409 with the existing credit named), surfaced in
+    // the catch below.
+    if (docType === 'invoice' && dup.checking) {
+      setSubmitError('Still checking whether this invoice is already in the system — try again in a moment.')
+      return
+    }
+    if (isDuplicate) return
 
     if (docType === 'credit_note') {
       try {
@@ -1030,11 +1048,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
             {isDuplicate && (
               <div className="flex items-center gap-2 rounded-lg border border-danger-300 bg-danger-50 px-3 py-2 text-xs text-danger-700">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                <span>
-                  Duplicate invoice — <span className="font-semibold">{vendorInvoiceNumber.trim()}</span> from{' '}
-                  <span className="font-semibold">{selectedVendor?.name}</span> already exists in the system.
-                  Please verify this invoice has not already been uploaded.
-                </span>
+                <span>{dup.detail}</span>
               </div>
             )}
           </div>

@@ -275,6 +275,14 @@ export interface InvoiceListResponse {
   total: number
 }
 
+export interface InvoiceDuplicateCheck {
+  duplicate: boolean
+  /** The number has no letter or digit — the upload will be refused. */
+  uncheckable: boolean
+  detail: string | null
+  existing_ref: string | null
+}
+
 export const invoiceService = {
   list: (filters?: InvoiceFilters) =>
     api.get<InvoiceListResponse>('/invoices', filters as Record<string, string | number | boolean | null | undefined>),
@@ -293,6 +301,14 @@ export const invoiceService = {
 
   create: (body: CreateInvoiceBody) =>
     api.post<ApiInvoice>('/invoices', body),
+
+  // PRD INV-004 — the rule POST /invoices enforces, against every invoice (not
+  // just the ones this user can see). The form's live warning; the server
+  // refuses the upload regardless.
+  duplicateCheck: (vendorId: string, number: string) =>
+    api.get<InvoiceDuplicateCheck>('/invoices/duplicate-check', {
+      vendor_id: vendorId, vendor_invoice_number: number,
+    }),
 
   update: (id: string, body: UpdateInvoiceBody) =>
     api.patch<ApiInvoice>(`/invoices/${id}`, body),
