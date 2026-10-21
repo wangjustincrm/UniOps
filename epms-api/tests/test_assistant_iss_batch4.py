@@ -686,7 +686,11 @@ async def test_each_part_is_planned_and_answered_on_its_own(test_engine, admin_c
     assert body["parts"][1]["query"]["entity"] == "invoice", "its own receipt for export"
     text = body["answer"]
     assert f"**1. {parts[0]}**" in text and f"**3. {parts[2]}**" in text
-    assert "写诗不在我能做的范围内" in text
+    # A part that is no data question gets the code-written refusal naming what
+    # can be answered (ISS-0022), never the model's own "ask someone" text.
+    assert "写诗不在我能做的范围内" not in text
+    assert body["parts"][2]["reason"] == "no_rule"
+    assert "I have no rule or data that answers that" in body["parts"][2]["answer"]
     # The fourth part is named as not looked up — never as having no data.
     assert body["not_looked_up"] == [parts[3]]
     assert "这次没有去查" in text and parts[3] in text

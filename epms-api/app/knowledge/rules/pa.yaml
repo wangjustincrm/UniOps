@@ -10,14 +10,17 @@ rules:
       - are there rejected PAs
     answer: >
       A rejected payment application gets status Cancelled, not Rejected — the
-      approval engine sets cancelled for every PA rejection. So filtering PAs by
-      Rejected finds nothing; to find rejected ones, look for Cancelled PAs whose
-      history has a Reject. (Purchase requests and orders, by contrast, do get
-      status Rejected.)
-    enforced_in: "approval-api app/crud/engine.py execute_action reject: cancelled for pa / pa_dir (pinned by approval-api tests/test_engine_multiholder_approve.py)"
+      approval engine sets cancelled for every PA rejection. The Payment
+      Applications list's "Rejected" filter finds them all the same: it shows
+      the Cancelled PAs whose history has a Reject, and they carry a Rejected
+      badge; their Approval Progress shows who rejected, when and why. The
+      "Cancelled" filter shows every cancelled PA, rejected ones included.
+      (Purchase requests and orders, by contrast, do get status Rejected.)
+    enforced_in: "approval-api app/crud/engine.py execute_action reject: cancelled for pa / pa_dir (pinned by approval-api tests/test_engine_multiholder_approve.py); epms-api app/crud/pa.py status_filter (rejected = cancelled with a reject event)"
     provenance: pinned
     test:
       - "approval-api/tests/test_engine_multiholder_approve.py::test_reject_allowed_for_authorized_holder"
+      - "tests/test_iss_batch5_product.py::test_rejected_filter_finds_pas_cancelled_by_a_rejection"
   - id: pa_numbering
     asked_as:
       - how are PA numbers generated

@@ -16,12 +16,12 @@ rules:
       - how do I set up approval delegation
     answer: >
       Ask a System Admin. Delegations are set up on the Approval Delegation
-      page, which System Admins find in the left sidebar under ADMIN (it is
-      not in the Admin page's own menu): they choose the person to be
+      page, which System Admins find in the left sidebar under ADMIN, or in
+      the Admin page's menu under "More admin pages": they choose the person to be
       covered, who covers them, and the first and last day. There is no
       separate "Absence Cover" any more — Approval Delegation is the only
       way to have someone approve for you while you are away.
-    enforced_in: "portal/src/components/layout/navConfig.tsx (ADMIN → Approval Delegation, adminOnly); approval-api app/api/v1/delegations.py (system_admin only)"
+    enforced_in: "portal/src/components/layout/navConfig.tsx (ADMIN → Approval Delegation, adminOnly; adminPageLinks for the Admin page); portal/src/pages/admin/AdminPanel.tsx (More admin pages); approval-api app/api/v1/delegations.py (system_admin only)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_the_delegation_page_is_in_the_admin_sidebar"
