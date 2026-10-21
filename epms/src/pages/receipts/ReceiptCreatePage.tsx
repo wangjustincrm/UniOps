@@ -222,6 +222,7 @@ export default function ReceiptCreatePage() {
                 is actually visible. */}
             <ReceiptEntryForm
               agreementId={selectedAgreement.id}
+              validFrom={selectedAgreement.valid_from}
               receiptType={receiptType}
               onSuccess={() => replaceTab(cancelHref)}
             />

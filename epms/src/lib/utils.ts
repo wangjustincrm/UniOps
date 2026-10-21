@@ -76,8 +76,16 @@ export function formatAmount(amount: number, currency: string): string {
   }
 }
 
-export function todayISODate(): string {
-  return new Date().toISOString().slice(0, 10)
+/** Today's calendar date where the user is, as YYYY-MM-DD.
+ *
+ *  Not `toISOString().slice(0, 10)`: that is the UTC date, which in Toronto is
+ *  already tomorrow from 20:00 (19:00 in winter). Every form defaulting a date
+ *  to "today" defaulted to tomorrow in the evening, and a "date is in the
+ *  future" check would fire on every evening entry (ISS-0075). */
+export function todayISODate(now: Date = new Date()): string {
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${m}-${d}`
 }
 
 // A date-only string ("2026-07-30") carries no time zone. `new Date()` parses it
