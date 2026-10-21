@@ -311,6 +311,10 @@ export default function InvoiceDetailPage() {
   const varianceAbs = Math.abs(Number(inv.variance ?? 0))
   const variancePctAbs = Math.abs(Number(inv.variance_pct ?? 0))
   const hasException = inv.status === 'exception'
+  // An accepted exception leaves "exception" for "matched" — the variance is
+  // still there, a person signed it off. Must not read as "within tolerance".
+  const exceptionAccepted = !hasException && inv.exception_resolution === 'accepted'
+  const resolutionNoteLabel = inv.exception_resolution === 'accepted' ? 'Justification' : 'Instructions'
   // Agreement route: no PO/GR, so the PO-vs-GR-vs-Invoice 3-way table doesn't
   // apply — there is nothing to reconcile against but the agreement itself.
   const isAgreementRoute = inv.match_route === 'agreement'
@@ -499,6 +503,11 @@ export default function InvoiceDetailPage() {
               <p className="text-xs text-neutral-500 mt-1">
                 Resolved by {inv.exception_resolved_by_name ?? inv.exception_resolved_by} on {formatDateTime(inv.exception_resolved_at)} —{' '}
                 {inv.exception_resolution === 'accepted' ? 'Accepted with justification' : 'Credit note requested'}
+              </p>
+            )}
+            {inv.exception_resolved_at && inv.exception_resolution_note && (
+              <p className="text-xs text-neutral-700 mt-1 whitespace-pre-wrap">
+                <span className="text-neutral-500">{resolutionNoteLabel}:</span> {inv.exception_resolution_note}
               </p>
             )}
           </div>
@@ -1170,15 +1179,18 @@ export default function InvoiceDetailPage() {
                 <>
                   {/* Summary row */}
                   <div className={cn('rounded-xl border p-5 flex items-center gap-4',
-                    hasException ? 'border-danger-200 bg-danger-50' : 'border-success-200 bg-success-50')}>
-                    {hasException
-                      ? <AlertTriangle className="h-8 w-8 text-danger-600 flex-shrink-0" />
+                    hasException ? 'border-danger-200 bg-danger-50'
+                      : exceptionAccepted ? 'border-warning-200 bg-warning-50'
+                      : 'border-success-200 bg-success-50')}>
+                    {hasException || exceptionAccepted
+                      ? <AlertTriangle className={cn('h-8 w-8 flex-shrink-0', hasException ? 'text-danger-600' : 'text-warning-600')} />
                       : <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />
                     }
                     <div>
-                      <p className={cn('text-sm font-semibold', hasException ? 'text-danger-700' : 'text-success-700')}>
-                        {hasException
-                          ? `3-Way Match: Exception — Variance ${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% (${inv.currency} ${formatAmount(Number(inv.variance ?? 0), inv.currency)})`
+                      <p className={cn('text-sm font-semibold',
+                        hasException ? 'text-danger-700' : exceptionAccepted ? 'text-warning-700' : 'text-success-700')}>
+                        {hasException || exceptionAccepted
+                          ? `3-Way Match: ${hasException ? 'Exception' : 'Exception accepted'} — Variance ${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% (${inv.currency} ${formatAmount(Number(inv.variance ?? 0), inv.currency)})`
                           : `3-Way Match: ✓ Passed — Invoice within ${matchTolerancePct}% tolerance of PO`
                         }
                       </p>
@@ -1246,8 +1258,8 @@ export default function InvoiceDetailPage() {
                           href={`/invoices/${inv.id}`}
                           amount={inv.total_amount}
                           currency={inv.currency}
-                          note={hasException
-                            ? `${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% vs PO`
+                          note={hasException || exceptionAccepted
+                            ? `${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% vs PO${exceptionAccepted ? ' (accepted)' : ''}`
                             : 'Within tolerance'}
                           ok={!hasException}
                         />
@@ -1303,14 +1315,19 @@ export default function InvoiceDetailPage() {
                   )}
 
                   {/* Exception resolution detail */}
-                  {hasException && inv.exception_resolved_at && (
+                  {inv.exception_resolved_at && (
                     <div className="rounded-xl border border-neutral-200 bg-white p-5">
                       <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Exception Resolution</h3>
                       <div className="flex flex-col gap-2">
                         <MetaRow label="Resolution" value={inv.exception_resolution === 'accepted' ? 'Accepted with justification' : 'Credit note requested'} />
                         <MetaRow label="Resolved By" value={inv.exception_resolved_by_name ?? inv.exception_resolved_by ?? '—'} />
                         <MetaRow label="Resolved On" value={formatDateTime(inv.exception_resolved_at)} />
-                        {inv.notes && <MetaRow label="Notes" value={inv.notes} />}
+                        {inv.exception_resolution_note && (
+                          <div className="flex gap-2 text-sm">
+                            <span className="text-neutral-400 min-w-36 flex-shrink-0">{resolutionNoteLabel}</span>
+                            <span className="text-neutral-800 whitespace-pre-wrap">{inv.exception_resolution_note}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1329,6 +1346,7 @@ export default function InvoiceDetailPage() {
                     date: inv.exception_resolved_at,
                     actor: inv.exception_resolved_by_name ?? inv.exception_resolved_by ?? 'System',
                     action: inv.exception_resolution === 'accepted' ? 'Exception accepted with justification' : 'Credit note requested',
+                    note: inv.exception_resolution_note ?? undefined,
                     color: 'bg-warning-500',
                   },
                   inv.matched_at && {
@@ -1339,8 +1357,8 @@ export default function InvoiceDetailPage() {
                     // rendered on. Same derived wording as the banner above.
                     action: isAgreementRoute
                       ? `Matched to Agreement ${inv.agreement_number ?? inv.agreement_id?.slice(0, 8) ?? ''} — ${agreementEvidenceSummary}`
-                      : `Matched to ${inv.po_number}${hasException ? ' — Exception raised' : ' — 3-way match passed'}`,
-                    color: hasException ? 'bg-danger-600' : 'bg-success-600',
+                      : `Matched to ${inv.po_number}${hasException || exceptionAccepted ? ' — Exception raised' : ' — 3-way match passed'}`,
+                    color: hasException || exceptionAccepted ? 'bg-danger-600' : 'bg-success-600',
                   },
                   {
                     date: inv.uploaded_at,
@@ -1352,7 +1370,7 @@ export default function InvoiceDetailPage() {
                   .filter(Boolean)
                   .sort((a, b) => new Date((b as {date:string}).date).getTime() - new Date((a as {date:string}).date).getTime())
                   .map((entry, i, arr) => {
-                    const e = entry as { date: string; actor: string; action: string; color: string }
+                    const e = entry as { date: string; actor: string; action: string; note?: string; color: string }
                     return (
                       <div key={i} className="flex gap-3">
                         <div className="flex flex-col items-center">
@@ -1361,6 +1379,11 @@ export default function InvoiceDetailPage() {
                         </div>
                         <div className="pb-4">
                           <p className="text-sm text-neutral-900">{e.action}</p>
+                          {e.note && (
+                            <p className="text-sm text-neutral-700 mt-1 rounded-md bg-neutral-50 border border-neutral-200 px-3 py-2 whitespace-pre-wrap">
+                              {e.note}
+                            </p>
+                          )}
                           <p className="text-xs text-neutral-400 mt-0.5">{e.actor} · {formatDateTime(e.date)}</p>
                         </div>
                       </div>

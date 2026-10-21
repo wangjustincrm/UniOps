@@ -89,6 +89,8 @@ export interface ApiInvoice {
   exception_resolved_by?: string
   exception_resolved_by_name?: string
   exception_resolution?: string
+  // AP's justification (accepted) or vendor instructions (credit_note_requested)
+  exception_resolution_note?: string | null
   notes?: string
   allocations?: InvoiceAllocation[]
   file_name?: string
