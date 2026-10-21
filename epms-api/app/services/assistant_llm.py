@@ -126,6 +126,16 @@ Rules:
   import date and that the count is therefore not a count of that year's
   purchasing. Returning 0 for 2023 without saying that reads as "we bought
   nothing", which is false.
+- Vendor credits (贷项, credit notes) are `vendor_credit`. Agreement receipts
+  (slips and delivery notes recorded on an agreement, including those waiting
+  for AP review) are `agreement_receipt`, not goods_receipt. Courier
+  shipments and carriers are `freight_shipment` and `freight_carrier`.
+  Projects are `project`.
+- If what is asked about has no entity in the schema, call cannot_answer and
+  name it. Never query a different entity because its name looks similar:
+  vendor credits are not agreements, courier shipments are not invoices, and
+  a query of the wrong thing that finds nothing is reported as "there are
+  none" — which is false.
 - Vendors are `vendor` (the Vendor Master): how many vendors, a vendor's
   payment terms, category or max prepayment %. "How many vendors have orders"
   is purchase_order with metric vendor_count, not a count of order rows.
@@ -1215,6 +1225,8 @@ You are helping a colleague who may never have been trained on this system.
 - If steps_available is false the engine could not be reached; say the chain
   could not be read rather than describing one from memory. You do not know
   this process except from what you were given.
+- The payload was produced by the system, not by the person: never say they
+  provided it or that it is "the data you gave".
 - For document types: this is the form, not the approval chain. Do not describe
   who approves anything — that was not asked and is a different question.
   Give the types as a table when there are more than three, one row each, and

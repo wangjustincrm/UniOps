@@ -149,3 +149,17 @@ rules:
       the invoice is settled without receipt evidence, and it moves with the
       agreement if the owner changes.
     enforced_in: "epms-api app/api/v1/invoices.py _require_invoice_receipt_access; app/crud/attach_receipts_task.py; PRD EPMS AGR-032"
+  - id: who_records_agreement_receipts
+    asked_as:
+      - who can record agreement receipts
+      - 谁可以录入协议收据
+    answer: >
+      Anyone holding the Record Agreement Receipts permission (together with
+      View Agreements). By default that is System Admin, AP Clerk and
+      Department Admin; it is changed in Portal → Admin → Access Control, and
+      the current grants can be listed from the permission matrix
+      (role_permission, permission epms.agreement.receipt.write). Receipts are
+      recorded by Finance on the employee's behalf. A receipt entered with a
+      missing-receipt reason waits for AP review before it can be used.
+    enforced_in: "epms-api app/api/v1/agreement_receipts.py (epms.agreement.receipt.write); identity-api alembic 0007_receipt_write_perm (default grants)"
+

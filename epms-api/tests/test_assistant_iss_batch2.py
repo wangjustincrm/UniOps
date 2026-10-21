@@ -507,3 +507,70 @@ def test_the_prepayment_cap_rule_is_stated():
     rules = {r["id"]: r["answer"] for r in doc_type_guide.build("pa")["rules"]}
     assert "Max Prepayment %" in rules["prepayment_cap"]
     assert "never more than that system cap" in rules["prepayment_cap"]
+
+
+# ── ISS-0021: vendor credits, agreement receipts, couriers, projects ─────────
+
+async def test_vendor_credits_are_queryable_per_currency(test_engine, admin_client):
+    import sqlalchemy as sa
+
+    tag = uuid.uuid4().hex[:6]
+    async with test_engine.begin() as conn:
+        for n, (status, total, cur) in enumerate([("available", "527.03", "CAD"),
+                                                  ("available", "38.41", "CAD"),
+                                                  ("void", "99.00", "CAD"),
+                                                  ("pending_review", "10.00", "USD")]):
+            await conn.execute(sa.text(
+                "INSERT INTO vendor_credits (id, credit_number, vendor_name, vendor_credit_number,"
+                " credit_date, currency, amount, tax_amount, total_amount, applied_amount,"
+                " remaining_amount, status, source, uploaded_at) VALUES (:id, :num, :v, :ref,"
+                " :d, :cur, :t, 0, :t, 0, :t, :st, 'manual', now())"),
+                {"id": uuid.uuid4(), "num": f"VC-{tag}-{n}", "v": f"Amazon {tag}",
+                 "ref": f"R{n}", "d": date(2026, 10, 9), "cur": cur, "t": Decimal(total),
+                 "st": status})
+    body = await _query(admin_client, entity="vendor_credit", metrics=["remaining"],
+                        where=[{"field": "vendor_name", "op": "like", "value": tag}])
+    got = {r["currency"]: Decimal(r["remaining"]) for r in body["rows"]}
+    assert got == {"CAD": Decimal("565.44"), "USD": Decimal("10.00")}, "void left out"
+    body = await _query(admin_client, entity="vendor_credit", select=["credit_number"],
+                        where=[{"field": "vendor_name", "op": "like", "value": tag},
+                               {"field": "status", "op": "eq", "value": "pending_review"}])
+    assert [r["credit_number"] for r in body["rows"]] == [f"VC-{tag}-3"]
+
+
+async def test_agreement_receipts_projects_and_carriers_are_entities(admin_client):
+    for entity in ("agreement_receipt", "project", "freight_carrier"):
+        r = await admin_client.post(QUERY, json={"entity": entity, "metrics": ["count"]})
+        assert r.status_code == 200, (entity, r.text)
+
+
+async def test_courier_shipments_follow_the_freight_page_scope():
+    from sqlalchemy import select
+
+    from app.core.ontology import scope_freight_shipment
+    from app.models.freight import FreightShipment
+
+    me = uuid.uuid4()
+    registrar = await scope_freight_shipment(select(FreightShipment.id),
+                                             {"perms": {"epms.freight.register": True},
+                                              "user_id": me}, None)
+    assert "created_by" in str(registrar), "a registrar sees only their own"
+    manager = await scope_freight_shipment(select(FreightShipment.id),
+                                           {"perms": {"epms.freight.manage": True},
+                                            "user_id": me}, None)
+    assert "created_by" not in str(manager), "a freight manager sees all"
+
+
+def test_who_records_agreement_receipts_is_a_rule():
+    from app.services import doc_type_guide
+
+    rules = {r["id"]: r["answer"] for r in doc_type_guide.build("agreement")["rules"]}
+    assert "Record Agreement Receipts" in rules["who_records_agreement_receipts"]
+
+
+def test_the_planner_is_told_not_to_substitute_a_look_alike_entity():
+    from app.services import assistant_llm
+
+    assert "Never query a different entity because its name looks similar" in \
+        assistant_llm._PLAN_SYSTEM
+    assert "`vendor_credit`" in assistant_llm._PLAN_SYSTEM

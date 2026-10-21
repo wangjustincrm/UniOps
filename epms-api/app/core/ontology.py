@@ -30,12 +30,15 @@ from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.agreement import PurchaseAgreement
+from app.models.agreement_receipt import AgreementReceipt
+from app.models.freight import FreightCarrier, FreightShipment
 from app.models.pa import PaymentApplication
 from app.models.user import User
 from app.models.department import Department
 from app.models.cost_center import CostCenter
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.part import Part
+from app.models.project import Project
 from app.models.pr import PrLineItem, PurchaseRequest
 from app.models.vendor import Vendor
 
@@ -93,6 +96,10 @@ _MODELS: dict[str, type] = {
     "GrLineItem": GrLineItem,
     "Vendor": Vendor,
     "Part": Part,
+    "AgreementReceipt": AgreementReceipt,
+    "FreightShipment": FreightShipment,
+    "FreightCarrier": FreightCarrier,
+    "Project": Project,
     "Invoice": Invoice,
     "PaymentApplication": PaymentApplication,
     "PurchaseAgreement": PurchaseAgreement,
@@ -370,6 +377,20 @@ async def scope_agreement(q: Select, scope: dict, db: AsyncSession) -> Select:
     return q if agr_subq is None else q.where(PurchaseAgreement.id.in_(agr_subq))
 
 
+async def scope_agreement_receipt(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """A receipt is exactly as visible as its agreement."""
+    agr_subq = scope.get("agr_subq")
+    return q if agr_subq is None else q.where(AgreementReceipt.agreement_id.in_(agr_subq))
+
+
+async def scope_freight_shipment(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """As Freight → Shipments lists them (api/v1/freight.list_shipments):
+    a freight manager sees every shipment, a registrar only their own."""
+    if (scope.get("perms") or {}).get("epms.freight.manage"):
+        return q
+    return q.where(FreightShipment.created_by == scope["user_id"])
+
+
 # ── Scopes for tables this service reads but does not own ─────────────────────
 
 
@@ -535,6 +556,8 @@ _SCOPES: dict[str, Callable] = {
     "po_line": scope_po_line,
     "gr_line": scope_gr_line,
     "vendor": scope_vendor,
+    "agreement_receipt": scope_agreement_receipt,
+    "freight_shipment": scope_freight_shipment,
     "pr_line": scope_pr_line,
     "invoice": scope_invoice,
     "pa": scope_pa,

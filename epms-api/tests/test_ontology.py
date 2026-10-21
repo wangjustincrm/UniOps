@@ -208,6 +208,11 @@ def test_every_entity_gates_on_a_permission_that_exists_in_the_matrix():
         # signed-in user (api/v1/vendors.py, parts.py), so the Assistant shows
         # them to the same people. ontology.SIGNED_IN.
         "signed_in",
+        # freight_shipment / freight_carrier (2026-10-21): the keys Freight's
+        # own endpoints check (api/v1/freight.py _perms; identity 0023), and
+        # invoice_upload, which also opens the carrier list.
+        "epms.freight.register", "epms.freight.manage", "epms.freight.admin",
+        "invoice_upload",
     }
     for entity in REGISTRY.values():
         for key in entity.perm_key:
@@ -594,6 +599,11 @@ async def test_every_enum_value_in_the_database_is_declared():
 
     problems: list[str] = []
     checked = 0
+    # Tables newer than the reference database this test reads. Named, so a
+    # table that is missing for any other reason still fails.
+    newer_than_reference = {
+        "freight_shipments",  # Freight, in production since 2026-10-19
+    }
     engine = create_async_engine(str(settings.DATABASE_URL))
     try:
         async with engine.connect() as conn:
@@ -609,6 +619,9 @@ async def test_every_enum_value_in_the_database_is_declared():
                         # its values are the CASE branches in code, not data —
                         # nothing can appear in a table that the code did not
                         # write, and there is no column to SELECT.
+                        continue
+                    if table in newer_than_reference and not (await conn.execute(
+                            sa.text("SELECT to_regclass(:t)"), {"t": table})).scalar():
                         continue
                     found = {v for (v,) in (await conn.execute(sa.text(
                         f"SELECT DISTINCT {fname} FROM {table} "

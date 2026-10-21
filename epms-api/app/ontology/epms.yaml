@@ -768,3 +768,185 @@ entities:
     metrics:
       count: {fn: count, field: "*", label: "Number of parts"}
 
+  # ── ISS-0021: questions that were answered from a look-alike entity ────────
+  # Vendor credits were looked for on agreements, agreement receipts on goods
+  # receipts, courier shipments on invoices, projects on agreements — and
+  # each came back "none". These are the entities those pages read.
+
+  # Owned by finance-api (same database), so declared as a table. The Vendor
+  # Credits page is gated by View Invoices (PRD VC-004), and lists every credit.
+  vendor_credit:
+    table: vendor_credits
+    label: "Vendor credit — money a vendor owes back (credit note, manual
+      credit or import), netted against payments to that vendor. EPMS →
+      Vendor Credits"
+    perm_key: view_invoice
+    scope: permission_only
+    date_field: credit_date
+    amount_excludes:
+      field: status
+      values: [void]
+      note: "Amounts leave out void credits (no status was asked about)"
+    fields:
+      credit_number: {kind: text, label: "Credit number (VC-YYYYMMDD-NNNN)"}
+      vendor_name: {kind: text, label: "Vendor name"}
+      vendor_credit_number: {kind: text, label: "The vendor's own credit note / reference number"}
+      credit_date: {kind: date, label: "Credit date"}
+      currency: {kind: text, label: "Currency", enumerate: true}
+      amount: {kind: money, label: "Amount before tax"}
+      tax_amount: {kind: money, label: "Tax"}
+      total_amount: {kind: money, label: "Total credit including tax"}
+      applied_amount: {kind: money, label: "Already netted against payments"}
+      remaining_amount: {kind: money, label: "Still available to net"}
+      status:
+        kind: enum
+        label: "Status"
+        values: [pending_review, available, exhausted, void]
+        value_labels:
+          pending_review: "Pending review"
+          available: "Available — will be netted at the next payment to the vendor"
+          exhausted: "Fully used"
+          void: "Void (rejected or voided)"
+      source:
+        kind: enum
+        label: "Where it came from"
+        values: [upload, manual, qbo_import]
+        value_labels:
+          upload: "Credit note uploaded"
+          manual: "Manual credit (vendor email)"
+          qbo_import: "Imported from QuickBooks"
+      uploaded_at: {kind: datetime, label: "Recorded at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of credits"}
+      total: {fn: sum, field: total_amount, label: "Total credit", currency: currency}
+      remaining: {fn: sum, field: remaining_amount, label: "Still available", currency: currency}
+
+  agreement_receipt:
+    model: AgreementReceipt
+    label: "Agreement receipt — a slip, delivery note or service sign-off
+      recorded against a purchase agreement (EPMS → Agreement Receipts). Not a
+      goods receipt"
+    perm_key: epms.agreement.read
+    scope: agreement_receipt
+    date_field: receipt_date
+    fields:
+      agreement_id: {kind: uuid, internal: true}
+      receipt_type:
+        kind: enum
+        label: "Kind of receipt"
+        values: [counter_slip, delivery, service]
+        value_labels:
+          counter_slip: "Counter slip"
+          delivery: "Delivery note"
+          service: "Service sign-off"
+      receipt_date: {kind: date, label: "Receipt date"}
+      receipt_ref: {kind: text, label: "Reference on the receipt"}
+      vendor_name: {kind: text, label: "Merchant on the receipt (may differ from the agreement's vendor)"}
+      amount: {kind: money, label: "Amount before tax"}
+      tax_amount: {kind: money, label: "Tax"}
+      total_amount: {kind: money, label: "Total"}
+      status:
+        kind: enum
+        label: "Status"
+        values: [pending_ap_review, open, reconciled, voided, rejected]
+        value_labels:
+          pending_ap_review: "Waiting for AP review (entered with a missing-receipt reason)"
+          open: "Open — not attached to an invoice yet"
+          reconciled: "Attached to an invoice"
+          voided: "Removed"
+          rejected: "Rejected by AP"
+      missing_receipt_reason: {kind: text, label: "Why there is no physical receipt"}
+      created_at: {kind: datetime, label: "Recorded at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of receipts"}
+      total: {fn: sum, field: total_amount, label: "Total", currency: agreement.currency}
+    links:
+      agreement:
+        target: purchase_agreement
+        cardinality: many_to_one
+        local: agreement_id
+        remote: id
+        label: "The agreement the receipt is recorded against"
+
+  freight_shipment:
+    model: FreightShipment
+    label: "Courier shipment — a waybill registered in Freight → Shipments.
+      Courier invoices are matched to these"
+    perm_key: [epms.freight.register, epms.freight.manage]
+    scope: freight_shipment
+    date_field: created_at
+    fields:
+      carrier_id: {kind: uuid, internal: true}
+      tracking_no: {kind: text, label: "Tracking number"}
+      direction:
+        kind: enum
+        label: "Direction"
+        values: [outbound, inbound]
+      ship_date: {kind: date, label: "Ship date (filled from the invoice once billed)"}
+      status:
+        kind: enum
+        label: "Status"
+        values: [pending, billed, void]
+        value_labels:
+          pending: "Not billed yet"
+          billed: "Billed on a courier invoice"
+          void: "Void"
+      source:
+        kind: enum
+        label: "How it was recorded"
+        values: [registered, from_invoice]
+        value_labels:
+          registered: "Registered at ship time"
+          from_invoice: "Added while matching an invoice"
+      note: {kind: text, label: "Note"}
+      created_by_name: {kind: text, label: "Registered by"}
+      created_at: {kind: datetime, label: "Registered at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of shipments"}
+    links:
+      carrier:
+        target: freight_carrier
+        cardinality: many_to_one
+        local: carrier_id
+        remote: id
+        label: "The carrier"
+
+  freight_carrier:
+    model: FreightCarrier
+    label: "Courier carrier (Freight → Carriers), e.g. FedEx, Purolator, UPS"
+    perm_key: [invoice_upload, epms.freight.register, epms.freight.manage, epms.freight.admin]
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Carrier code"}
+      name: {kind: text, label: "Carrier name"}
+      is_active: {kind: bool, label: "Active"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of carriers"}
+
+  # Projects (Master Data → Projects); readable by anyone signed in, as
+  # GET /projects is.
+  project:
+    model: Project
+    label: "Project — the Projects list (Master Data → Projects): code, name,
+      budget, dates and status"
+    perm_key: signed_in
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Project code"}
+      name: {kind: text, label: "Project name"}
+      description: {kind: text, label: "Description"}
+      status: {kind: text, label: "Status", enumerate: true}
+      budget: {kind: money, label: "Project budget"}
+      currency: {kind: text, label: "Currency", enumerate: true}
+      start_date: {kind: date, label: "Start date"}
+      end_date: {kind: date, label: "End date"}
+      owner_dept: {kind: text, label: "Owning department"}
+      manager_name: {kind: text, label: "Project manager"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of projects"}
+      budget: {fn: sum, field: budget, label: "Total project budget", currency: currency}
+
