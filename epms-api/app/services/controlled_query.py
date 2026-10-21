@@ -181,6 +181,85 @@ def _field_of(entity: Entity, name: str):
     return current.fields.get(parts[-1])
 
 
+def _many_link(path):
+    """The first one-to-many link on a resolved path, or None."""
+    return next((link for _, link, _ in path if link.cardinality == "one_to_many"), None)
+
+
+def _refuse_many(entity: Entity, name: str, path, use: str) -> None:
+    """A select / group_by / order_by / period across a one-to-many link.
+
+    Joined, it repeats the row once per child: a PO with three invoices is
+    listed three times, and every count and sum over the result grows with it
+    (1,104 "purchase orders" out of 535, ISS-0060). There is no correct way to
+    show one value of a many-valued link per row, so it is refused with what to
+    do instead.
+    """
+    link = _many_link(path)
+    if link is None:
+        return
+    _reject(
+        f"'{name}' cannot be used in {use}: it goes through '{link.name}', and "
+        f"one {entity.name} has many {link.target} rows, so every {entity.name} "
+        f"would be repeated once per {link.target}. Query {link.target} itself "
+        f"(reach {entity.name}'s fields through its link), or use the field in "
+        f"`where`, where it means \"has at least one {link.target} that ...\"."
+    )
+
+
+def _split_many(entity: Entity, clauses: list[dict]) -> tuple[list, list]:
+    """Separate the `where` clauses that cross a one-to-many link.
+
+    Those become EXISTS sub-queries (_apply_many) instead of joins, grouped by
+    path so that several conditions on the same link describe the SAME child
+    row: "an invoice that is matched and over 1,000", not "a matched invoice
+    and some invoice over 1,000".
+    """
+    local, groups = [], {}
+    for clause in clauses:
+        name = clause.get("field") or ""
+        _, path = _resolve(entity, name)
+        if _many_link(path) is None:
+            local.append(clause)
+            continue
+        key = tuple(link.name for _, link, _ in path)
+        groups.setdefault(key, (path, []))[1].append(clause)
+    return local, list(groups.values())
+
+
+async def _apply_many(db: AsyncSession, stmt, entity: Entity, groups: list,
+                      scope: dict):
+    """Filter on child rows without multiplying the parent: EXISTS / NOT EXISTS.
+
+    `invoices.status eq matched` keeps the POs that have at least one matched
+    invoice, each once. A clause asking for the child field to be empty
+    (`eq` null) asks for the opposite — "POs with no invoice" — so it becomes
+    NOT EXISTS over the remaining conditions of the group. Every table on the
+    path is scoped as its own entity, exactly as _apply_hops does for joins.
+    """
+    for path, clauses in groups:
+        src, link, target = path[0]
+        visible = await target.apply_scope(select(target.model.id), scope, db)
+        sub = select(sa.literal(1)).select_from(target.model).where(
+            getattr(entity.model, link.local) == getattr(target.model, link.remote),
+            target.model.id.in_(visible),
+        )
+        for src, link, target in path[1:]:
+            visible = await target.apply_scope(select(target.model.id), scope, db)
+            sub = sub.join(target.model, sa.and_(
+                getattr(src.model, link.local) == getattr(target.model, link.remote),
+                target.model.id.in_(visible),
+            ))
+        absent = [c for c in clauses
+                  if (c.get("op") or "eq").lower() == "eq" and c.get("value") is None]
+        present = [c for c in clauses if c not in absent]
+        local = [{**c, "field": c["field"].rsplit(".", 1)[1]} for c in present]
+        sub = _apply_where(sub, target, local, [])
+        exists = sub.exists()
+        stmt = stmt.where(~exists if absent else exists)
+    return stmt
+
+
 def _column(entity: Entity, name: str):
     if name not in entity.fields:
         _reject(
@@ -406,6 +485,7 @@ def _apply_period(stmt, entity: Entity, period: dict | None, hops: list):
         return stmt
     name = period.get("field") or entity.date_field
     col, path = _resolve(entity, name)
+    _refuse_many(entity, name, path, "period")
     hops.extend(path)
 
     months = period.get("last_n_months")
@@ -530,6 +610,7 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
         selected, labels = [], []
         for name in group_by:
             col, path = _resolve(entity, name)
+            _refuse_many(entity, name, path, "group_by")
             hops.extend(path)
             selected.append(col)
             labels.append(name)
@@ -545,6 +626,7 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
                 target = sa.literal_column("*")
             else:
                 target, path = _resolve(entity, metric.field)
+                _refuse_many(entity, metric.field, path, f"metric '{key}'")
                 hops.extend(path)
             selected.append(agg(target).label(key))
             labels.append(key)
@@ -570,6 +652,7 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
         cols = []
         for f in fields:
             col, path = _resolve(entity, f)
+            _refuse_many(entity, f, path, "select")
             hops.extend(path)
             cols.append(col)
         stmt = select(*cols).select_from(entity.model)
@@ -580,7 +663,9 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
     clauses = list(request.get("where") or [])
     stmt, applied_default = _apply_default_filter(
         stmt, entity, clauses, hops, request)
-    stmt = _apply_where(stmt, entity, clauses, hops)
+    local_clauses, many_groups = _split_many(entity, clauses)
+    stmt = _apply_where(stmt, entity, local_clauses, hops)
+    stmt = await _apply_many(db, stmt, entity, many_groups, scope)
     stmt = _apply_period(stmt, entity, request.get("period"), hops)
 
     # Resolve grouping and ordering BEFORE the joins are built, because
@@ -606,6 +691,7 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
             order_col = sa.literal_column(f'"{name}"')
         else:
             order_col, path = _resolve(entity, name)
+            _refuse_many(entity, name, path, "order_by")
             hops.extend(path)
 
     stmt = await _apply_hops(db, stmt, hops, scope)
@@ -640,7 +726,8 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
         if total_cols:
             t_stmt = select(*total_cols).select_from(entity.model)
             t_stmt = await entity.apply_scope(t_stmt, scope, db)
-            t_stmt = _apply_where(t_stmt, entity, request.get("where") or [], [])
+            t_stmt = _apply_where(t_stmt, entity, local_clauses, [])
+            t_stmt = await _apply_many(db, t_stmt, entity, many_groups, scope)
             t_stmt = _apply_period(t_stmt, entity, request.get("period"), [])
             t_stmt = await _apply_hops(db, t_stmt, hops, scope)
             t_row = (await db.execute(t_stmt)).first()
