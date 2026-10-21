@@ -940,6 +940,8 @@ def _context_note(context: dict | None) -> str:
     """What the user is looking at, so "this PO" has a referent."""
     if not context:
         return ""
+    session = _session_note(context)
+    context = {k: v for k, v in context.items() if k not in _SESSION_KEYS}
     bits = [f"{k}={v}" for k, v in context.items() if v]
     note = ("\n\nThe person is currently looking at: " + ", ".join(bits) +
             ". Resolve 'this'/'that' against it when it fits the question.") if bits else ""
@@ -952,7 +954,85 @@ def _context_note(context: dict | None) -> str:
                  f"{context.get('doc_number_field') or 'number'} = {context['doc_number']}. "
                  f"explain_workflow is only for "
                  f"who has approved it and who it is waiting on.")
-    return note
+    return note + session
+
+
+# ── The conversation (ISS-0038, ISS-0067) ─────────────────────────────────────
+#
+# Keys the chat layer adds to the planner's context that are not about the
+# page. _context_note renders them on their own instead of listing them as
+# "currently looking at".
+_SESSION_KEYS = ("conversation",)
+
+# Appended to _PLAN_SYSTEM: rules about the conversation itself.
+_PLAN_SESSION_RULES = """\
+- A question about the CONVERSATION itself — what my first / previous / third
+  question was, what you answered then — is recall_conversation. Never answer
+  it from the turns you were shown: a long conversation is cut to its last few
+  exchanges, and the earliest turn you can see is not its first question. One
+  such answer named the 18th question of 20 as the first.
+- A reference to something said EARLIER — "刚才那张单呢？", "that one", "the
+  previous document", "上一张" — needs an earlier turn that names it. When the
+  conversation note says nothing came before this message, and the page being
+  viewed has no document either, call cannot_answer with reason too_ambiguous
+  and ask which document they mean, by number. Never fall back to whats_next
+  or to any query: a new conversation answered with the person's whole task
+  list is an answer to a question nobody asked.
+"""
+
+
+def _session_note(context: dict) -> str:
+    """What the planner is told about the conversation it is in."""
+    conversation = context.get("conversation")
+    if not isinstance(conversation, dict):
+        return ""
+    earlier = int(conversation.get("earlier_questions") or 0)
+    shown = int(conversation.get("shown_questions") or 0)
+    if earlier == 0:
+        return ("\n\nThis is the first message of this conversation: nothing was "
+                "asked or answered before it.")
+    if shown < earlier:
+        return (f"\n\nThis conversation has {earlier} earlier questions; only the "
+                f"last {shown} of them (and their answers) are included above. "
+                f"You cannot see what was asked before those.")
+    return (f"\n\nThe conversation above is complete: {earlier} earlier "
+            f"question(s), all shown.")
+
+
+_RECALL_TOOL = {
+    "name": "recall_conversation",
+    "description": (
+        "Use when someone asks about this conversation itself: what their first "
+        "(or previous, or Nth) question was, or what you answered to it — "
+        "'我在这次对话里问的第一个问题是什么？你当时怎么回答的？', 'what did I "
+        "just ask?'. The server holds the whole conversation; you may only be "
+        "shown its last few turns."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "position": {
+                "type": "integer",
+                "description": (
+                    "Which earlier question: 1 = the first of the conversation, "
+                    "2 = the second, ...; -1 = the one just before this message, "
+                    "-2 = the one before that."
+                ),
+            },
+        },
+        "required": ["position"],
+    },
+}
+
+# Tool name -> the `kind` plan() returns for it.
+_SESSION_TOOL_KINDS = {
+    "recall_conversation": "recall",
+}
+
+
+def _session_tools(context: dict | None) -> list[dict]:
+    """The planner tools this section adds."""
+    return [_RECALL_TOOL]
 
 
 def _language_note(message: str) -> str:
@@ -995,7 +1075,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
         )
 
     system = [
-        {"type": "text", "text": _PLAN_SYSTEM},
+        {"type": "text", "text": _PLAN_SYSTEM + _PLAN_SESSION_RULES},
         # The schema is the stable half of the prompt and by far the larger one,
         # so it sits in its own block for caching.
         {"type": "text", "text": "Schema:\n" + json.dumps(schema, ensure_ascii=False),
@@ -1011,7 +1091,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
                    _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
                    _MODULES_TOOL, _PRODUCIBLE_TOOL, _REPORT_TOOL,
                    _BUDGET_VARIANCE_TOOL, _RECEIVING_TOOL, _VENDOR_SUMMARY_TOOL,
-                   _CANNOT_TOOL],
+                   *_session_tools(context), _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -1030,6 +1110,9 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
     for block in resp.content:
         if block.type != "tool_use":
             continue
+        if block.name in _SESSION_TOOL_KINDS:
+            return {"kind": _SESSION_TOOL_KINDS[block.name], **dict(block.input),
+                    "usage": _usage(resp)}
         if block.name == "run_query":
             return {"kind": "query", "query": dict(block.input), "usage": _usage(resp)}
         if block.name == "whats_next":

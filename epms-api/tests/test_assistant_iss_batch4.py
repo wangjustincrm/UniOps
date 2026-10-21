@@ -170,3 +170,80 @@ def test_without_any_source_for_the_step_the_recorded_role_stays():
     got = workflow_view.history_entries([_ev(0, "return", "X", "gm", 4)], [])
     # Unchanged, not dropped: no step to read a better one from.
     assert got[0]["actor_role"] == workflow_view.role_label("gm")
+
+
+# ── ISS-0038 / ISS-0067: what the planner knows about the conversation ──────
+
+def _conversation(n):
+    turns = []
+    for i in range(1, n + 1):
+        turns += [{"role": "user", "text": f"question {i}"},
+                  {"role": "assistant", "text": f"answer {i}"}]
+    return turns
+
+
+async def test_a_new_conversation_says_nothing_came_before(admin_client, monkeypatch):
+    """"刚才那张单呢？" in a new conversation was answered with 390 open tasks."""
+    calls = _stub(monkeypatch, plans=[{"kind": "cannot", "reason": "too_ambiguous",
+                                       "explanation": "您指的是哪张单？请给出单号。"}])
+    r = await admin_client.post(CHAT, json={"message": "刚才那张单呢？"})
+    assert r.json()["kind"] == "cannot_answer"
+    ctx = calls["plan"][0]["context"]
+    assert ctx["conversation"] == {"earlier_questions": 0, "shown_questions": 0}
+    note = assistant_llm._context_note(ctx)
+    assert "first message of this conversation" in note
+    assert "conversation=" not in note, "not listed as something on screen"
+    rules = assistant_llm._PLAN_SESSION_RULES
+    assert "刚才那张单" in rules and "too_ambiguous" in rules and "whats_next" in rules
+
+
+async def test_a_long_conversation_says_it_was_cut(admin_client, monkeypatch):
+    calls = _stub(monkeypatch, plans=[{"kind": "cannot", "reason": "too_ambiguous",
+                                       "explanation": "n/a"}])
+    await admin_client.post(CHAT, json={"message": "and the PO?", "history": _conversation(20)})
+    ctx = calls["plan"][0]["context"]
+    assert ctx["conversation"] == {"earlier_questions": 20, "shown_questions": 3}
+    assert len(calls["plan"][0]["history"]) == 6
+    assert "only the last 3" in assistant_llm._context_note(ctx)
+
+
+async def test_the_first_question_is_read_from_the_whole_conversation(admin_client, monkeypatch):
+    """After 20 questions the 18th was named as the first."""
+    _stub(monkeypatch, plans=[{"kind": "recall", "position": 1}])
+    r = await admin_client.post(CHAT, json={
+        "message": "我在这次对话里问的第一个问题是什么？你当时怎么回答的？",
+        "history": _conversation(20)})
+    body = r.json()
+    assert body["kind"] == "recall"
+    assert "「question 1」" in body["answer"] and "answer 1" in body["answer"]
+    assert "question 18" not in body["answer"]
+
+
+async def test_the_previous_question_and_out_of_range(admin_client, monkeypatch):
+    calls = _stub(monkeypatch, plans=[{"kind": "recall", "position": -1},
+                                      {"kind": "recall", "position": 30},
+                                      {"kind": "recall", "position": 1}])
+    r = await admin_client.post(CHAT, json={"message": "what did I just ask?",
+                                            "history": _conversation(4)})
+    assert "previous question" in r.json()["answer"] and "“question 4”" in r.json()["answer"]
+    r = await admin_client.post(CHAT, json={"message": "what was my 30th question?",
+                                            "history": _conversation(4)})
+    assert r.json()["kind"] == "cannot_answer"
+    assert "only 4 earlier questions" in r.json()["answer"]
+    r = await admin_client.post(CHAT, json={"message": "what was my first question?"})
+    assert r.json()["kind"] == "cannot_answer" and "first question" in r.json()["answer"]
+    assert not calls["fixed"], "English replies are not re-rendered"
+
+
+def test_a_long_earlier_answer_is_quoted_in_part():
+    from app.api.v1.assistant_chat import _excerpt
+    long = "\n".join(f"| row {i} | {'x' * 40} |" for i in range(40))
+    got = _excerpt(long)
+    assert len(got) < 700 and got.endswith("…")
+    assert all(line.startswith("| row") for line in got.split("\n\n")[0].splitlines()), \
+        "cut at a line break, not mid-row"
+
+
+def test_the_planner_is_offered_recall_conversation():
+    assert assistant_llm._RECALL_TOOL in assistant_llm._session_tools(None)
+    assert assistant_llm._SESSION_TOOL_KINDS["recall_conversation"] == "recall"

@@ -238,14 +238,19 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
             "kind": "denied", "query": None, "sources": None,
         }
 
-    context = body.context.model_dump(exclude_none=True) if body.context else None
+    context = body.context.model_dump(exclude_none=True) if body.context else {}
     scope = await build_scope(db, user)
     context = await _with_document_number(db, scope, context)
     actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
+    exchanges = _answered_exchanges(body.history or [])
     history = [
         {"role": t.role, "content": _turn_content(t)}
-        for t in _answered_exchanges(body.history or [])[-_MAX_HISTORY_TURNS:]
+        for t in exchanges[-_MAX_HISTORY_TURNS:]
     ]
+    # Whether anything came before, and how much of it the planner sees
+    # (ISS-0038, ISS-0067).
+    context = {**context, "conversation": {"earlier_questions": len(exchanges) // 2,
+                                           "shown_questions": len(history) // 2}}
 
     try:
         planned = await assistant_llm.plan(schema, body.message, context,
@@ -253,6 +258,9 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "plan", planned.get("usage") or {})
+
+    if planned["kind"] == "recall":
+        return _answer_recall(body, planned, exchanges)
 
     if planned["kind"] == "next":
         return await _answer_whats_next(db, user, body, actor)
@@ -938,3 +946,63 @@ async def _answer_process(db, user, token, body, planned, actor) -> dict:
         "sources": {"process": process["label"], "steps": len(process["steps"]),
                     "complete": process["steps_available"]},
     }
+
+
+# ── The conversation itself (ISS-0067) ────────────────────────────────────────
+#
+# "我在这次对话里问的第一个问题是什么？" after 20 questions named the 18th: the
+# planner sees only the last _MAX_HISTORY_TURNS turns and took the earliest of
+# those for the first. The panel sends the whole conversation, so the answer
+# is read from that, in code, rather than from what the model was shown.
+
+# How much of an earlier answer is quoted back. The question is "what did you
+# answer", not "answer it again"; a table cut mid-row is avoided by cutting at
+# a line break when one is close enough.
+_RECALL_ANSWER_CHARS = 600
+
+
+def _excerpt(text: str, limit: int = _RECALL_ANSWER_CHARS) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    head, sep, _ = cut.rpartition("\n")
+    return (head if sep and len(head) > limit // 2 else cut).rstrip() + "\n\n…"
+
+
+def _answer_recall(body: ChatRequest, planned: dict, exchanges: list[ChatTurn]) -> dict:
+    pairs = [(exchanges[i], exchanges[i + 1]) for i in range(0, len(exchanges) - 1, 2)]
+    n = len(pairs)
+    try:
+        position = int(planned.get("position") or 1)
+    except (TypeError, ValueError):
+        position = 1
+    index = position - 1 if position > 0 else n + position
+    if n == 0:
+        return {"_fixed_text": True,
+                "answer": "This is the first question of this conversation — "
+                          "nothing was asked before it.",
+                "kind": "cannot_answer", "reason": "nothing_earlier",
+                "query": None, "sources": None}
+    if not 0 <= index < n:
+        return {"_fixed_text": True,
+                "answer": f"This conversation has only {n} earlier question"
+                          f"{'' if n == 1 else 's'}.",
+                "kind": "cannot_answer", "reason": "nothing_earlier",
+                "query": None, "sources": None}
+
+    question, answer = pairs[index]
+    ordinal = index + 1
+    quoted = _excerpt(answer.text)
+    if reply_language.detect(body.message) == "Chinese (Simplified)":
+        which = ("第一个问题" if ordinal == 1 else
+                 "上一个问题" if position == -1 else f"第 {ordinal} 个问题")
+        return {"answer": f"你在这次对话里问的{which}是：「{question.text.strip()}」\n\n"
+                          f"我当时的回答：\n\n{quoted}",
+                "kind": "recall", "query": None, "sources": None}
+    which = ("first question" if ordinal == 1 else
+             "previous question" if position == -1 else f"question {ordinal}")
+    return {"_fixed_text": True,
+            "answer": f"Your {which} in this conversation was: “{question.text.strip()}”\n\n"
+                      f"My answer was:\n\n{quoted}",
+            "kind": "recall", "query": None, "sources": None}
