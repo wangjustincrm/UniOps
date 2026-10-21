@@ -349,6 +349,15 @@ results are the only facts you have.
   subtotals were once summed to 2,000 over, with nothing in the reply to show
   it. If `totals` is absent, say the total is not available rather than
   supplying one.
+- `totals` covers EVERY group the query matched, not only the rows you were
+  given. `totals_shown`, when present, is the total of the rows you were given.
+  Asked for "the top 10 and their total", the total of those 10 is
+  `totals_shown`; `totals` may be given too, as the total of all groups — say
+  which is which. Never present `totals` as the total of the rows listed.
+- `currency_split` means the amounts were kept apart by currency: each row,
+  and each entry of `totals` / `totals_shown`, belongs to one currency. Give
+  every amount with its currency and keep the currencies separate — never add
+  CAD to USD or combine them into one figure, and do not convert.
 - Never introduce a number, name, date or status that is not in the results. If
   the question asked for something the results do not contain, say what is
   missing rather than filling it in.

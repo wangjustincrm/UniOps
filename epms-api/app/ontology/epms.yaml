@@ -83,9 +83,9 @@ entities:
       submitted_at: {kind: datetime, label: "Submitted at"}
       created_at: {kind: datetime, label: "Created at"}
     metrics:
-      amount: {fn: sum, field: amount, label: "Total requested amount"}
+      amount: {fn: sum, field: amount, label: "Total requested amount", currency: currency}
       count: {fn: count, field: "*", label: "Number of PRs"}
-      avg_amount: {fn: avg, field: amount, label: "Average PR amount"}
+      avg_amount: {fn: avg, field: amount, label: "Average PR amount", currency: currency}
     links:
       orders:
         target: purchase_order
@@ -217,10 +217,10 @@ entities:
       source: {kind: text, label: "Origin system (NC mirror or created here)", enumerate: true}
       created_at: {kind: datetime, label: "Created at"}
     metrics:
-      amount: {fn: sum, field: total, label: "Total ordered amount including tax"}
-      subtotal: {fn: sum, field: subtotal, label: "Total ordered amount before tax"}
+      amount: {fn: sum, field: total, label: "Total ordered amount including tax", currency: currency}
+      subtotal: {fn: sum, field: subtotal, label: "Total ordered amount before tax", currency: currency}
       count: {fn: count, field: "*", label: "Number of POs"}
-      avg_amount: {fn: avg, field: total, label: "Average PO value"}
+      avg_amount: {fn: avg, field: total, label: "Average PO value", currency: currency}
     links:
       originating_pr:
         target: purchase_request
@@ -311,7 +311,7 @@ entities:
     metrics:
       count: {fn: count, field: "*", label: "Lines"}
       qty: {fn: sum, field: qty, label: "Quantity"}
-      value: {fn: sum, field: line_total, label: "Line value"}
+      value: {fn: sum, field: line_total, label: "Line value", currency: order.currency}
     links:
       order:
         target: purchase_order
@@ -341,7 +341,7 @@ entities:
     metrics:
       count: {fn: count, field: "*", label: "Lines"}
       qty: {fn: sum, field: qty, label: "Quantity"}
-      value: {fn: sum, field: line_total, label: "Line value"}
+      value: {fn: sum, field: line_total, label: "Line value", currency: request.currency}
     links:
       request:
         target: purchase_request
@@ -455,10 +455,10 @@ entities:
       uploaded_by_name: {kind: text, label: "Who uploaded it"}
       created_at: {kind: datetime, label: "Uploaded at — when the invoice entered EPMS (the Invoices list's Upload Date); not the vendor's invoice date"}
     metrics:
-      total: {fn: sum, field: total_amount, label: "Total invoiced including tax"}
-      pre_tax: {fn: sum, field: amount, label: "Total invoiced before tax"}
+      total: {fn: sum, field: total_amount, label: "Total invoiced including tax", currency: currency}
+      pre_tax: {fn: sum, field: amount, label: "Total invoiced before tax", currency: currency}
       count: {fn: count, field: "*", label: "Number of invoices"}
-      avg_total: {fn: avg, field: total_amount, label: "Average invoice value"}
+      avg_total: {fn: avg, field: total_amount, label: "Average invoice value", currency: currency}
     links:
       order:
         target: purchase_order
@@ -527,9 +527,9 @@ entities:
           processed). \"Paid last week\" and \"when was it paid\" filter or read
           this, never created_at"
     metrics:
-      amount: {fn: sum, field: payment_amount, label: "Total requested for payment"}
+      amount: {fn: sum, field: payment_amount, label: "Total requested for payment", currency: currency}
       count: {fn: count, field: "*", label: "Number of payment applications"}
-      avg_amount: {fn: avg, field: payment_amount, label: "Average payment value"}
+      avg_amount: {fn: avg, field: payment_amount, label: "Average payment value", currency: currency}
     links:
       order:
         target: purchase_order
@@ -599,4 +599,4 @@ entities:
       created_at: {kind: datetime, label: "Created at"}
     metrics:
       count: {fn: count, field: "*", label: "Number of agreements"}
-      consumed: {fn: sum, field: consumed_amount, label: "Total consumed"}
+      consumed: {fn: sum, field: consumed_amount, label: "Total consumed", currency: currency}

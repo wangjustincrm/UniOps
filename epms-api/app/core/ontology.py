@@ -558,6 +558,11 @@ class Metric:
     fn: str
     field: str  # a declared field name, or "*" for count
     label: str
+    # For an amount of money: the field (or many-to-one link path) holding its
+    # currency. The executor splits such a metric by that field, so amounts in
+    # different currencies are never added together (ISS-0035). Declared, not
+    # inferred from the field kind: quantities are stored as `money` too.
+    currency: str | None = None
 
 
 @dataclass(frozen=True)
@@ -770,7 +775,16 @@ def _build_entity(name: str, spec: dict) -> Entity:
         target = mspec.get("field")
         _require(target == "*" or target in fields,
                  f"{where}.metrics.{mname}: field {target!r} is not declared")
-        metrics[mname] = Metric(fn=fn, field=target, label=mspec.get("label", mname))
+        currency = mspec.get("currency")
+        if currency:
+            head = currency.split(".")[0]
+            _require(currency in fields or (
+                "." in currency and head in (spec.get("links") or {})
+                and (spec["links"][head].get("cardinality") == "many_to_one")),
+                f"{where}.metrics.{mname}: currency {currency!r} is neither a "
+                f"declared field nor a many-to-one link path")
+        metrics[mname] = Metric(fn=fn, field=target, label=mspec.get("label", mname),
+                                currency=currency)
 
     links: dict[str, Link] = {}
     for lname, lspec in (spec.get("links") or {}).items():

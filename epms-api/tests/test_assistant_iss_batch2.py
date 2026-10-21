@@ -125,3 +125,80 @@ async def test_listing_or_grouping_across_a_child_link_is_refused(admin_client):
     r = await admin_client.post(QUERY, json={
         "entity": "invoice", "group_by": ["order.status"], "metrics": ["count"]})
     assert r.status_code == 200, r.text
+
+
+# ── ISS-0035 / ISS-0032: amounts per currency; the total of what is listed ──
+
+async def _two_currency_pos(test_engine, admin_client):
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    async with _factory(test_engine)() as db:
+        big = await _vendor(db, name=f"Big {tag}")
+        small = await _vendor(db, name=f"Small {tag}")
+        db.add_all([
+            _po(big, uid, f"PO-CUR-{tag}-1", total=Decimal("300"), currency="CAD"),
+            _po(big, uid, f"PO-CUR-{tag}-2", total=Decimal("200"), currency="CAD"),
+            _po(big, uid, f"PO-CUR-{tag}-3", total=Decimal("50"), currency="USD"),
+            _po(small, uid, f"PO-CUR-{tag}-4", total=Decimal("100"), currency="CAD"),
+        ])
+        await db.commit()
+    return tag
+
+
+async def test_a_money_total_is_never_added_across_currencies(test_engine, admin_client):
+    tag = await _two_currency_pos(test_engine, admin_client)
+    body = await _query(admin_client, entity="purchase_order", metrics=["amount", "count"],
+                        where=[{"field": "number", "op": "like", "value": f"PO-CUR-{tag}"}])
+    assert body["currency_split"] == "currency"
+    by_cur = {r["currency"]: r for r in body["rows"]}
+    assert Decimal(by_cur["CAD"]["amount"]) == Decimal("600")
+    assert Decimal(by_cur["USD"]["amount"]) == Decimal("50")
+    assert body["matched_rows"] == 4, "the row count is still the whole match"
+
+
+async def test_grouped_totals_are_per_currency_and_say_what_was_listed(test_engine, admin_client):
+    tag = await _two_currency_pos(test_engine, admin_client)
+    body = await _query(admin_client, entity="purchase_order",
+                        group_by=["vendor_name"], metrics=["amount"],
+                        where=[{"field": "number", "op": "like", "value": f"PO-CUR-{tag}"}],
+                        order_by={"field": "amount", "desc": True}, limit=1)
+    # Three (vendor, currency) groups; the top one is listed.
+    assert body["truncated"] and body["total_rows"] == 3
+    assert body["rows"] == [{"vendor_name": f"Big {tag}", "currency": "CAD", "amount": "500.00"}]
+    totals = {t["currency"]: Decimal(t["amount"]) for t in body["totals"]}
+    assert totals == {"CAD": Decimal("600"), "USD": Decimal("50")}, "every group"
+    shown = {t["currency"]: Decimal(t["amount"]) for t in body["totals_shown"]}
+    assert shown == {"CAD": Decimal("500")}, "only the row listed"
+
+
+async def test_quantities_are_not_split_by_currency(test_engine, admin_client):
+    """qty is stored with the money kind; only declared amounts are split."""
+    r = await admin_client.post(QUERY, json={"entity": "po_line", "metrics": ["qty"]})
+    assert r.status_code == 200, r.text
+    assert "currency_split" not in r.json()
+
+
+def test_every_declared_currency_resolves():
+    from app.core.ontology import REGISTRY
+    from app.services.controlled_query import _resolve
+
+    declared = [(e, m) for e in REGISTRY.values() for m in e.metrics.values() if m.currency]
+    assert len(declared) >= 15
+    for entity, metric in declared:
+        _resolve(entity, metric.currency)   # raises if the path does not exist
+
+
+async def test_the_export_has_one_total_row_per_currency(test_engine, admin_client):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    tag = await _two_currency_pos(test_engine, admin_client)
+    r = await admin_client.post("/api/v1/assistant/export", json={
+        "entity": "purchase_order", "group_by": ["vendor_name"], "metrics": ["amount"],
+        "where": [{"field": "number", "op": "like", "value": f"PO-CUR-{tag}"}]})
+    assert r.status_code == 200, r.text
+    rows = [[c.value for c in row] for row in load_workbook(BytesIO(r.content)).active.iter_rows()]
+    totals = {row[0]: row for row in rows if str(row[0] or "").startswith("Total (")}
+    assert set(totals) == {"Total (CAD)", "Total (USD)"}
+    assert 600 in totals["Total (CAD)"] and 50 in totals["Total (USD)"]

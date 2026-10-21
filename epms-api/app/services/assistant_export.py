@@ -62,7 +62,8 @@ def _pretty(label: str, headers: dict[str, str]) -> str:
 
 def build_workbook(*, question: str, entity_label: str, query: dict,
                    rows: list[dict], labels: list[str],
-                   headers: dict[str, str], totals: dict | None,
+                   headers: dict[str, str], totals: dict | list | None,
+                   currency_split: str | None = None,
                    truncated: bool, row_cap: int,
                    generated_for: str | None) -> bytes:
     wb = Workbook()
@@ -119,17 +120,25 @@ def build_workbook(*, question: str, entity_label: str, query: dict,
                 ws.cell(row=i, column=col, value=raw)
 
     if totals:
-        r = head_row + len(rows) + 2
-        ws.cell(row=r, column=1, value="Total").font = _TOTAL_FONT
-        for col, key in enumerate(labels, start=1):
-            if key not in totals:
-                continue
-            number = _looks_numeric(totals[key])
-            c = ws.cell(row=r, column=col,
-                        value=number if number is not None else totals[key])
-            c.font = _TOTAL_FONT
-            if number is not None and number != number.to_integral_value():
-                c.number_format = _MONEY_FMT
+        # One Total row per currency when the amounts were split by currency
+        # (ISS-0035): adding them into one figure is the error being avoided.
+        entries = totals if isinstance(totals, list) else [totals]
+        r = head_row + len(rows) + 1
+        for entry in entries:
+            r += 1
+            label = "Total"
+            if currency_split and entry.get(currency_split):
+                label = f"Total ({entry[currency_split]})"
+            ws.cell(row=r, column=1, value=label).font = _TOTAL_FONT
+            for col, key in enumerate(labels, start=1):
+                if key not in entry or key == currency_split:
+                    continue
+                number = _looks_numeric(entry[key])
+                c = ws.cell(row=r, column=col,
+                            value=number if number is not None else entry[key])
+                c.font = _TOTAL_FONT
+                if number is not None and number != number.to_integral_value():
+                    c.number_format = _MONEY_FMT
         ws.cell(row=r + 1, column=1,
                 value="Totals are computed over the whole result, not the rows "
                       "shown above.").font = _META_FONT

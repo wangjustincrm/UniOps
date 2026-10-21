@@ -258,8 +258,8 @@ entities:
       created_at: {kind: datetime, label: "Created"}
     metrics:
       count: {fn: count, field: "*", label: "Invoices"}
-      total: {fn: sum, field: total_amount, label: "Total"}
-      paid: {fn: sum, field: paid_amount, label: "Paid"}
+      total: {fn: sum, field: total_amount, label: "Total", currency: currency}
+      paid: {fn: sum, field: paid_amount, label: "Paid", currency: currency}
 
   bank_account:
     table: bank_accounts

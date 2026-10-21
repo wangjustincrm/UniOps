@@ -598,9 +598,20 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
     if entity.apply_scope is None:  # pragma: no cover — registry invariant
         raise RuntimeError(f"Entity {entity.name} has no scope function")
 
-    group_by = request.get("group_by") or []
+    group_by = list(request.get("group_by") or [])
     metrics = request.get("metrics") or []
     grouped = bool(group_by or metrics)
+
+    # Money is split by currency, always. A sum of CAD, USD, EUR and CNY amounts
+    # is not an amount of anything (ISS-0035), and saying "include the currency"
+    # in the prompt did nothing: a grouped row had no currency column to show.
+    asked_group_by = list(group_by)
+    currency_split = next(
+        (entity.metrics[k].currency for k in metrics
+         if k in entity.metrics and entity.metrics[k].currency
+         and entity.metrics[k].fn in ("sum", "avg", "min", "max")), None)
+    if currency_split and currency_split not in group_by:
+        group_by.append(currency_split)
 
     # Hops needed by any part of the request, collected before the statement is
     # built so each relationship is joined exactly once.
@@ -637,7 +648,7 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
         # count alongside any real column hid this; asking for it by itself did
         # not.
         stmt = select(*selected).select_from(entity.model)
-        if not group_by:
+        if not asked_group_by:
             # A bare aggregate over zero rows returns NULL, which reads exactly
             # like "there were rows but the value was empty" — the caller cannot
             # tell "no draft PAs exist" from "drafts exist with no amount", and a
@@ -710,8 +721,8 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
     # arithmetic does not stop it; having the answer already there does. Run over
     # the whole result, not the returned page, or a capped list would total only
     # what happened to fit.
-    totals: dict | None = None
-    if grouped and group_by:
+    totals: dict | list | None = None
+    if grouped and asked_group_by:
         total_cols = []
         total_labels = []
         for key in metrics:
@@ -724,15 +735,26 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
             total_cols.append(agg(target).label(key))
             total_labels.append(key)
         if total_cols:
-            t_stmt = select(*total_cols).select_from(entity.model)
+            cur_col = _resolve(entity, currency_split)[0] if currency_split else None
+            t_stmt = select(*([cur_col] if cur_col is not None else []),
+                            *total_cols).select_from(entity.model)
             t_stmt = await entity.apply_scope(t_stmt, scope, db)
+            # The same default as the grouped rows, or the total covers rows
+            # the groups do not (every BOM version, every budget plan version).
+            t_stmt, _ = _apply_default_filter(t_stmt, entity, clauses, [], request)
             t_stmt = _apply_where(t_stmt, entity, local_clauses, [])
             t_stmt = await _apply_many(db, t_stmt, entity, many_groups, scope)
             t_stmt = _apply_period(t_stmt, entity, request.get("period"), [])
             t_stmt = await _apply_hops(db, t_stmt, hops, scope)
-            t_row = (await db.execute(t_stmt)).first()
-            if t_row is not None:
-                totals = {k: _serialise(v) for k, v in zip(total_labels, t_row)}
+            if cur_col is not None:
+                t_rows = (await db.execute(t_stmt.group_by(cur_col))).all()
+                totals = [{currency_split: _serialise(r[0]),
+                           **{k: _serialise(v) for k, v in zip(total_labels, r[1:])}}
+                          for r in t_rows]
+            else:
+                t_row = (await db.execute(t_stmt)).first()
+                if t_row is not None:
+                    totals = {k: _serialise(v) for k, v in zip(total_labels, t_row)}
 
     if for_export:
         # The planner's own limit is ignored here: it was chosen for a chat
@@ -766,9 +788,33 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
                 stmt.order_by(None).limit(None).subquery()))).scalar_one()
 
     matched = None
-    if grouped and not group_by:
-        matched = rows[0].pop(_MATCHED, None) if rows else 0
-        matched = int(matched) if matched is not None else 0
+    if grouped and not asked_group_by:
+        # One row per currency when the aggregate was split; the match count is
+        # theirs added up.
+        matched = sum(int(r.pop(_MATCHED, None) or 0) for r in rows)
+
+    # The total of the groups actually listed, when they are not all of them.
+    # `totals` is every group the query matched; asked for "the top 10 and
+    # their total", the model gave that figure as the top-10 total — 15.8M
+    # against 8.8M for the ten it listed (ISS-0032). Added up here from the
+    # unrounded values, per currency, for additive metrics only.
+    totals_shown = None
+    if truncated and asked_group_by and totals is not None:
+        additive = [k for k in metrics if entity.metrics[k].fn in ("sum", "count")]
+        if additive:
+            by_cur: dict = {}
+            for row in raw[:limit]:
+                values = dict(zip(labels, row))
+                key = values.get(currency_split) if currency_split else None
+                acc = by_cur.setdefault(key, {k: 0 for k in additive})
+                for k in additive:
+                    acc[k] += values.get(k) or 0
+            if currency_split:
+                totals_shown = [{currency_split: _serialise(c),
+                                 **{k: _serialise(v) for k, v in acc.items()}}
+                                for c, acc in by_cur.items()]
+            else:
+                totals_shown = {k: _serialise(v) for k, v in by_cur.get(None, {}).items()}
 
     out = {"entity": entity.name, "rows": rows, "row_count": len(rows),
            "truncated": truncated, "denied": False,
@@ -798,6 +844,10 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
         out["total_rows"] = total_rows
     if totals is not None:
         out["totals"] = totals
+    if totals_shown is not None:
+        out["totals_shown"] = totals_shown
+    if currency_split:
+        out["currency_split"] = currency_split
 
     if not rows and not grouped:
         near = await _near_misses(db, entity, scope, clauses, hops)
