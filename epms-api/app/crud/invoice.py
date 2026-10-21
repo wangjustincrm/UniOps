@@ -232,6 +232,7 @@ async def get_all(
     freight_visible: bool = False,
     agreement_visible: bool = False,
     agr_ids_subq=None,
+    direct_subq=None,
     route: str | None = None,
     page: int = 1,
     page_size: int = 20,
@@ -246,7 +247,8 @@ async def get_all(
         scope_conds = await invoice_scope_conditions(
             db, po_ids_subq, own_uploads_user_id, task_user_id,
             freight_visible=freight_visible,
-            agreement_visible=agreement_visible, agr_ids_subq=agr_ids_subq)
+            agreement_visible=agreement_visible, agr_ids_subq=agr_ids_subq,
+            direct_subq=direct_subq)
         q = q.where(or_(*scope_conds))
 
     if status:
@@ -260,12 +262,13 @@ async def get_all(
         q = q.where(or_(Invoice.po_id == po_id, Invoice.id.in_(alloc_by_po)))
     if agreement_id:
         q = q.where(Invoice.agreement_id == agreement_id)
-    if route in ("agreement", "freight"):
+    if route in ("agreement", "freight", "direct"):
         q = q.where(Invoice.match_route == route)
     elif route == "po":
-        # Legacy rows carry NULL; everything that is not one of the two
+        # Legacy rows carry NULL; everything that is not one of the three
         # non-PO routes is a PO invoice.
-        q = q.where(func.coalesce(Invoice.match_route, "po").notin_(("agreement", "freight")))
+        q = q.where(func.coalesce(Invoice.match_route, "po").notin_(
+            ("agreement", "freight", "direct")))
     if search and search.strip():
         term = f"%{search.strip()}%"
         q = q.where(or_(
@@ -343,6 +346,10 @@ async def is_visible(db: AsyncSession, invoice: Invoice, scope: dict) -> bool:
     # Matcher retention: once a user has matched an invoice they retain visibility
     # even after their task is completed (you can see what you acted on).
     conds.append(Invoice.matched_by == user_id)
+    # On a Direct PA the caller may open (ontology.invoice_scope_conditions).
+    if scope.get("direct_subq") is not None:
+        from app.core.ontology import direct_pa_invoice_cond
+        conds.append(direct_pa_invoice_cond(scope["direct_subq"]))
 
     if not conds:
         return True  # unrestricted
@@ -1399,6 +1406,66 @@ async def unmatch_po(db: AsyncSession, invoice: Invoice) -> tuple[list[uuid.UUID
     await db.flush()
     await db.refresh(invoice)
     return po_ids, before
+
+
+class DirectRouteInvalid(ValueError):
+    """The invoice cannot go to / come back from the Direct PA route."""
+
+
+async def mark_direct(db: AsyncSession, invoice: Invoice, *, matched_by: uuid.UUID) -> Invoice:
+    """Route an unmatched invoice to a Direct PA: no PO, no agreement.
+
+    The invoice becomes `matched` with match_route='direct' — "ready to pay",
+    exactly what a PO / agreement match means to everything downstream (the AP
+    mirror posts it, the Create Direct PA picker offers it). There is nothing to
+    compare it against, so there is no variance, no tolerance and no review.
+    The department / cost centre / budget account it is charged to are chosen
+    on the Direct PA (crud.pa.create_direct), not here.
+    """
+    if invoice.match_route == "freight":
+        raise DirectRouteInvalid("A courier invoice is matched to shipments, not paid by a Direct PA.")
+    if invoice.status != "unmatched":
+        raise DirectRouteInvalid(
+            f"Only an unmatched invoice can be sent to a Direct PA (this one is '{invoice.status}'). "
+            "Unmatch it first.")
+    if invoice.po_id is not None or invoice.agreement_id is not None:
+        raise DirectRouteInvalid("This invoice is still linked to a PO or agreement. Unmatch it first.")
+    has_alloc = (await db.execute(select(InvoicePoAllocation.id).where(
+        InvoicePoAllocation.invoice_id == invoice.id).limit(1))).first() is not None
+    if has_alloc:
+        raise DirectRouteInvalid("This invoice still has PO allocations. Unmatch it first.")
+    name = (await db.execute(select(User.full_name).where(User.id == matched_by))).scalar_one_or_none()
+    invoice.match_route = "direct"
+    invoice.match_route_auto = False
+    invoice.status = "matched"
+    invoice.matched_at = datetime.now(timezone.utc)
+    invoice.matched_by = matched_by
+    invoice.matched_by_name = name
+    invoice.variance = None
+    invoice.variance_pct = None
+    invoice.exception_reason = None
+    await db.flush()
+    return invoice
+
+
+async def unmatch_direct(db: AsyncSession, invoice: Invoice) -> dict:
+    """Take an invoice back off the Direct PA route, to `unmatched`. The caller
+    has already checked no live PA holds it (gr_unlink_blocker). Returns the
+    `before` snapshot for the audit row."""
+    if invoice.match_route != "direct":
+        raise DirectRouteInvalid("This invoice is not on the Direct PA route.")
+    before = {
+        "status": invoice.status, "match_route": invoice.match_route,
+        "matched_at": invoice.matched_at.isoformat() if invoice.matched_at else None,
+        "matched_by_name": invoice.matched_by_name,
+    }
+    invoice.match_route = None
+    invoice.status = "unmatched"
+    invoice.matched_at = None
+    invoice.matched_by = None
+    invoice.matched_by_name = None
+    await db.flush()
+    return before
 
 
 async def unmatch_gr(db: AsyncSession, invoice: Invoice) -> tuple[list[uuid.UUID], dict]:

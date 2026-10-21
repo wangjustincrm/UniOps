@@ -204,7 +204,8 @@ async def invoice_scope_conditions(db: AsyncSession, po_ids_subq,
                                    task_user_id: uuid.UUID | None,
                                    freight_visible: bool = False,
                                    agreement_visible: bool = False,
-                                   agr_ids_subq=None) -> list:
+                                   agr_ids_subq=None,
+                                   direct_subq=None) -> list:
     """The OR-ed reasons a restricted caller may see an invoice.
 
     Six of them, and the breadth is the point: an invoice reaches people
@@ -246,7 +247,21 @@ async def invoice_scope_conditions(db: AsyncSession, po_ids_subq,
         # page but cannot find it by searching the Invoices list.
         conds.append(Invoice.agreement_id.in_(agr_ids_subq) if agr_ids_subq is not None
                      else Invoice.agreement_id.is_not(None))
+    if direct_subq is not None:
+        # A Direct invoice hangs off no PO either: whoever may open the Direct
+        # PA paying it (its department's manager, an approver) may open it.
+        conds.append(direct_pa_invoice_cond(direct_subq))
     return conds
+
+
+def direct_pa_invoice_cond(direct_subq):
+    """Invoice is listed on one of the Direct PAs in `direct_subq`.
+
+    invoice_ids is a JSONB array of uuid strings with no FK — compare as text."""
+    from sqlalchemy import String, cast, func
+    return cast(Invoice.id, String).in_(
+        select(func.jsonb_array_elements_text(PaymentApplication.invoice_ids))
+        .where(PaymentApplication.id.in_(direct_subq)))
 
 
 async def scope_invoice(q: Select, scope: dict, db: AsyncSession) -> Select:
@@ -263,7 +278,8 @@ async def scope_invoice(q: Select, scope: dict, db: AsyncSession) -> Select:
         db, po_subq, own_uploads, task_uid,
         freight_visible=restricted and await sees_freight_invoices(db, scope),
         agreement_visible=restricted and await sees_agreement_invoices(db, scope),
-        agr_ids_subq=scope.get("agr_subq"))
+        agr_ids_subq=scope.get("agr_subq"),
+        direct_subq=scope.get("direct_subq") if restricted else None)
     return q.where(or_(*conds)) if conds else q
 
 
@@ -287,7 +303,8 @@ async def sees_agreement_invoices(db: AsyncSession, scope: dict) -> bool:
 
 
 def pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by,
-                        freight_all: bool = False, viewer_id=None) -> list:
+                        freight_all: bool = False, viewer_id=None,
+                        direct_subq=None) -> list:
     """The OR-ed reasons a restricted caller may see a payment application.
 
     Each branch stands on its own rather than leaning on po/agr subqueries being
@@ -312,20 +329,28 @@ def pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by,
     elif viewer_id is not None:
         conds.append(and_(PaymentApplication.source == "freight",
                           PaymentApplication.created_by == viewer_id))
+    # Direct PAs scope off their own department (access_scope.visible_direct_pa_subquery).
+    if direct_subq is not None:
+        conds.append(PaymentApplication.id.in_(direct_subq))
+    elif viewer_id is not None:
+        conds.append(and_(PaymentApplication.source == "direct",
+                          PaymentApplication.created_by == viewer_id))
     return conds
 
 
 def epms_owned_pa():
-    """EPMS's rows of the shared payment_applications table: PO, agreement and
-    Freight PAs. OA's retired Direct PAs (no PO, no agreement, not freight)
-    are not EPMS's at all. An ownership filter, not a visibility one."""
+    """EPMS's rows of the shared payment_applications table: PO, agreement,
+    Freight and Direct PAs. OA's retired Direct PAs (no PO, no agreement,
+    source 'oa_direct') are not EPMS's at all. An ownership filter, not a
+    visibility one."""
+    from app.models.pa import EPMS_PO_LESS_SOURCES
     return or_(PaymentApplication.po_id.is_not(None),
                PaymentApplication.agreement_id.is_not(None),
-               PaymentApplication.source == "freight")
+               PaymentApplication.source.in_(EPMS_PO_LESS_SOURCES))
 
 
 async def scope_pa(q: Select, scope: dict, db: AsyncSession) -> Select:
-    # Ownership filter first: OA's Direct PAs have both columns NULL and are not
+    # Ownership filter first: OA's Direct PAs (source 'oa_direct') are not
     # EPMS's rows at all. This is separate from visibility and applies to
     # everyone, unrestricted callers included.
     q = q.where(epms_owned_pa())
@@ -338,7 +363,8 @@ async def scope_pa(q: Select, scope: dict, db: AsyncSession) -> Select:
     from app.core.access_scope import sees_all_freight_pas
     freight_all = await sees_all_freight_pas(db, scope)
     return q.where(or_(*pa_scope_conditions(po_subq, agr_subq, created_by,
-                                            freight_all, scope.get("user_id"))))
+                                            freight_all, scope.get("user_id"),
+                                            scope.get("direct_subq"))))
 
 
 async def scope_agreement(q: Select, scope: dict, db: AsyncSession) -> Select:

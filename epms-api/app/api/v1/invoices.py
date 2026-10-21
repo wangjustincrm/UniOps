@@ -64,6 +64,16 @@ def _refuse_freight(inv) -> None:
                             detail="This is a courier invoice — it is matched to shipments on its invoice page")
 
 
+async def _lock_invoice(db, invoice_id: uuid.UUID) -> Invoice | None:
+    """Row-lock the invoice and reload it, for every path that turns an
+    unmatched invoice into a matched one (POST /match, /mark-direct). Without
+    it two concurrent requests both read `unmatched` and both write — an
+    invoice matched to a PO AND sent to the Direct route is payable twice."""
+    return (await db.execute(
+        select(Invoice).where(Invoice.id == invoice_id).with_for_update()
+        .execution_options(populate_existing=True))).scalar_one_or_none()
+
+
 async def _is_ap(db, user: dict) -> bool:
     """Is this caller AP staff, regardless of an open task assignment?
 
@@ -485,8 +495,8 @@ async def list_invoices(
     ),
     route: str | None = Query(
         default=None,
-        pattern="^(po|agreement|freight)$",
-        description="po | agreement | freight. 'po' includes legacy rows with no route.",
+        pattern="^(po|agreement|freight|direct)$",
+        description="po | agreement | freight | direct. 'po' includes legacy rows with no route.",
     ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
@@ -550,6 +560,7 @@ async def list_invoices(
         # page links to.
         agreement_visible=task_uid is not None and await sees_agreement_invoices(db, scope),
         agr_ids_subq=scope["agr_subq"],
+        direct_subq=scope.get("direct_subq") if task_uid is not None else None,
         page=page, page_size=page_size,
     )
     await _attach_match_assignees(db, items)
@@ -781,6 +792,58 @@ async def unmatch_invoice_gr(
     return inv
 
 
+@router.post("/{invoice_id}/mark-direct", response_model=InvoiceResponse)
+async def mark_invoice_direct(
+    invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload, token: BearerToken,
+):
+    """Match an invoice to no PO and no agreement: it will be paid by a Direct
+    PA (Payment Applications → Create Direct PA). Same rights as matching it to
+    a PO — AP, its uploader, or whoever holds an open match task for it."""
+    caller_id = uuid.UUID(user["sub"])
+    if await _lock_invoice(db, invoice_id) is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if (not await _is_ap(db, user) and inv.uploaded_by != caller_id
+            and not await _has_open_match_task(db, caller_id, invoice_id)):
+        raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
+    try:
+        await invoice_crud.mark_direct(db, inv, matched_by=caller_id)
+    except invoice_crud.DirectRouteInvalid as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    # Matching is done — nobody still needs to be asked to match it.
+    await _close_open_match_tasks(db, inv.id, caller_id)
+    await _sync_exception_task(db, inv, inv, caller_id)
+    await db.commit()
+    await db.refresh(inv)
+    await finance_sync.sync_ap_invoice(db, inv, token)
+    await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
+    return inv
+
+
+@router.post("/{invoice_id}/unmatch-direct", response_model=InvoiceResponse)
+async def unmatch_invoice_direct(
+    invoice_id: uuid.UUID, body: UnmatchRequest, db: SessionDep,
+    user: ApDep, token: BearerToken,
+):
+    """Take an invoice back off the Direct PA route (to `unmatched`). AP only,
+    as for unmatch-po; refused while a live PA still lists the invoice."""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if inv.match_route != "direct":
+        raise HTTPException(status_code=422, detail="This invoice is not on the Direct PA route")
+    await _guard_unmatch(db, inv)
+    before = await invoice_crud.unmatch_direct(db, inv)
+    await _audit_unmatch(db, inv, user, "direct", before, body.reason, {})
+    await db.commit()
+    await db.refresh(inv)
+    await finance_sync.sync_ap_invoice(db, inv, token)
+    await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
+    return inv
+
+
 @router.patch("/{invoice_id}", response_model=InvoiceResponse)
 async def update_invoice(
     invoice_id: uuid.UUID,
@@ -789,15 +852,33 @@ async def update_invoice(
     user: InvoiceUploadDep,
     token: BearerToken,
 ):
-    inv = await invoice_crud.get_by_id(db, invoice_id)
-    if inv is None:
+    # Locked first: a Direct invoice's amounts must not change under a
+    # create_direct that is snapshotting them (it holds the same row lock).
+    if await _lock_invoice(db, invoice_id) is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    inv = await invoice_crud.get_by_id(db, invoice_id)
     _refuse_freight(inv)
     if inv.status not in ("unmatched", "exception", "matched"):
         raise HTTPException(
             status_code=409,
             detail=f"Cannot edit invoice in '{inv.status}' status"
         )
+    if inv.match_route == "direct":
+        # No goods receipt on the Direct route — linking one would make it look
+        # 3-way matched. Unmatch it and match it to the PO instead.
+        if body.gr_ids is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This invoice is matched for a Direct PA and takes no goods receipt — "
+                       "unmatch it first to match it to a PO.")
+        # A Direct PA copies its amounts from the invoices when it is raised;
+        # changing them underneath it would pay the old figures.
+        held = await invoice_crud._invoice_referenced_by_active_pa(db, inv.id)
+        if held is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{held.pa_number} ({held.status}) pays this invoice — cancel it first, "
+                       "then edit the invoice and raise a new Direct PA.")
     # Capture existing PO/GR links before update so we can re-match after
     prev_po_id = inv.po_id
     prev_gr_ids: list[uuid.UUID] = []
@@ -866,10 +947,12 @@ async def match_invoice(
 ):
     caller_id = uuid.UUID(user["sub"])
     is_ap = await _is_ap(db, user)
-    inv = await invoice_crud.get_by_id(db, invoice_id)
-    if inv is None:
+    if await _lock_invoice(db, invoice_id) is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    inv = await invoice_crud.get_by_id(db, invoice_id)
     _refuse_freight(inv)
+    if inv.match_route == "direct":
+        raise HTTPException(status_code=409, detail="This invoice is matched for a Direct PA — unmatch it first")
     is_uploader = inv.uploaded_by == caller_id
     if not is_ap and not is_uploader and not await _has_open_match_task(db, caller_id, invoice_id):
         raise HTTPException(status_code=403, detail="Not allowed to match this invoice")

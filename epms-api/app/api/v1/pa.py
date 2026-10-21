@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
@@ -34,7 +34,10 @@ from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.vendor import Vendor
 from app.schemas.config import PrepaymentConfig
-from app.schemas.pa import PaActionRequest, PaCreate, PaListResponse, PaResponse, PaUpdate
+from app.schemas.invoice import InvoiceListResponse
+from app.schemas.pa import (
+    DirectPaCreate, PaActionRequest, PaCreate, PaListResponse, PaResponse, PaUpdate,
+)
 from app.schemas.pr import ApprovalEventResponse
 
 router = APIRouter(prefix="/pa", tags=["payment-applications"])
@@ -290,11 +293,13 @@ async def _assert_pos_coherent(pos: list[PurchaseOrder], pa_type: str) -> None:
 
 
 def _not_epms_pa(pa) -> bool:
-    """Missing, or OA's retired Direct PA (no PO, no agreement, not freight) —
-    a row of the shared table that is not EPMS's. Agreement PAs (agreement_id
-    set) and Freight PAs (source='freight') have no PO and ARE EPMS's."""
+    """Missing, or OA's retired Direct PA (no PO, no agreement, source
+    'oa_direct') — a row of the shared table that is not EPMS's. Agreement PAs
+    (agreement_id set), Freight PAs and EPMS Direct PAs (source 'freight' /
+    'direct') have no PO and ARE EPMS's."""
+    from app.models.pa import EPMS_PO_LESS_SOURCES
     return pa is None or (pa.po_id is None and pa.agreement_id is None
-                          and pa.source != "freight")
+                          and pa.source not in EPMS_PO_LESS_SOURCES)
 
 
 @router.get("", response_model=PaListResponse)
@@ -329,10 +334,12 @@ async def list_pas(
         agr_ids_subq=scope["agr_subq"],
         freight_all=await sees_all_freight_pas(db, scope),
         viewer_id=scope["user_id"],
+        direct_subq=scope.get("direct_subq"),
         page=page, page_size=page_size, sort=sort, dir=dir,
     )
     await enrich_current_step(db, "pa", items)
     await pa_crud.attach_po_links(db, items)
+    await pa_crud.attach_direct_labels(db, items)
     return {"items": [PaResponse.model_validate(pa) for pa in items], "total": total}
 
 
@@ -382,6 +389,59 @@ async def _may_create_pa_on_behalf(
         own_dept = await _user_dept_id(db, user_id)
         return await is_pr_in_departments(db, po.pr_id, {own_dept} if own_dept else set())
     return False
+
+
+@router.get("/direct/candidates", response_model=InvoiceListResponse)
+async def direct_pa_candidates(db: SessionDep, user: PaWriteDep,
+                               vendor_id: uuid.UUID | None = Query(default=None)):
+    """Invoices the caller may put on a Direct PA: matched to the Direct route,
+    visible to them on the Invoices page (same scope), and not already listed
+    by a live PA. Oldest due first."""
+    from app.api.v1.invoices import list_invoices
+    items: list = []
+    page = 1
+    while True:   # all of them, not the first 200 (held ones are dropped below)
+        out = await list_invoices(
+            db=db, user=user, status="matched", vendor_id=vendor_id, po_id=None,
+            agreement_id=None, search=None, sort="due_date", dir="asc", overdue=False,
+            route="direct", page=page, page_size=200)
+        items.extend(out.items)
+        if len(out.items) < 200:
+            break
+        page += 1
+    if items:
+        held = set((await db.execute(
+            select(func.jsonb_array_elements_text(PaymentApplication.invoice_ids))
+            .where(PaymentApplication.status != "cancelled"))).scalars().all())
+        items = [i for i in items if str(i.id) not in held]
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/direct", response_model=PaResponse, status_code=201)
+async def create_direct_pa(body: DirectPaCreate, db: SessionDep, user: PaWriteDep,
+                           token: BearerToken):
+    """Draft Direct PA: invoices matched to no PO and no agreement (Match →
+    Direct PA on the invoice), charged to the department / cost centre /
+    budget account chosen here, approved on the `pa_dir` chain.
+
+    Who may raise one is the ordinary PA right (epms.pa.write) plus being able
+    to open every invoice on it — the same read gate as the invoice page, so a
+    requester can pay what they uploaded and AP can pay anything."""
+    from app.api.v1.invoices import _can_read_invoice
+    from app.services.budget_client import ensure_known_budget_code
+    scope = await build_scope(db, user)
+    for iid in dict.fromkeys(body.invoice_ids):
+        inv = await db.get(Invoice, iid)
+        if inv is None or not await _can_read_invoice(db, user, inv, scope):
+            raise HTTPException(status_code=404, detail="Invoice not found")
+    await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
+    await ensure_known_budget_code(token, body.budget_account_code)
+    try:
+        pa = await pa_crud.create_direct(db, body, uuid.UUID(user["sub"]))
+    except pa_crud.DirectPaInvalid as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    await pa_crud.attach_direct_labels(db, [pa])
+    return pa
 
 
 @router.post("", response_model=PaResponse, status_code=201)
@@ -671,11 +731,13 @@ async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     if pa.source == "freight":
         from app.crud.freight import cost_allocations
         pa.cost_allocations = await cost_allocations(db, pa.id)
+    await pa_crud.attach_direct_labels(db, [pa])
     return pa
 
 
 @router.patch("/{pa_id}", response_model=PaResponse)
-async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: CurrentUserPayload):
+async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: CurrentUserPayload,
+                    token: BearerToken):
     pa = await pa_crud.get_by_id(db, pa_id)
     if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
@@ -689,6 +751,12 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: Curr
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     if pa.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail=f"Cannot edit PA in status '{pa.status}'")
+    _DIRECT_DIMS = {"department_id", "cost_center_id", "budget_account_code"}
+    if pa.source != "direct" and body.model_fields_set & _DIRECT_DIMS:
+        raise HTTPException(
+            status_code=422,
+            detail="Department, cost center and budget account are set on a Direct PA only; "
+                   "other PAs take them from their PR or agreement.")
     if pa.source == "freight":
         # Amounts, invoices and the cost split all come from the matched
         # carrier invoices (crud.freight.create_pa); editing them here would
@@ -699,6 +767,32 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: Curr
                 status_code=422,
                 detail="A Freight PA takes its amounts and invoices from the Freight page; "
                        "only the title and notes can be edited here.")
+    if pa.source == "direct":
+        # Amounts and invoices come from the invoices it pays (crud.pa.
+        # create_direct) — to change them, cancel and raise a new one. What it
+        # is charged to, and the reason, stay editable until it is submitted.
+        changed = body.model_fields_set - {"title", "notes"} - _DIRECT_DIMS
+        if changed:
+            raise HTTPException(
+                status_code=422,
+                detail="A Direct PA takes its amounts and invoices from the invoices it pays; "
+                       "only the title, reason, department, cost center and budget account "
+                       "can be edited.")
+        for f in _DIRECT_DIMS & body.model_fields_set:
+            if getattr(body, f) is None:
+                raise HTTPException(status_code=422, detail=f"A Direct PA needs a {f.replace('_id', '').replace('_', ' ')}")
+        if "notes" in body.model_fields_set and not (body.notes or "").strip():
+            raise HTTPException(status_code=422, detail="A Direct PA needs a reason for the payment")
+        if body.model_fields_set & {"department_id", "cost_center_id"}:
+            try:
+                await pa_crud.validate_direct_dims(
+                    db, body.department_id or pa.department_id,
+                    body.cost_center_id or pa.cost_center_id)
+            except pa_crud.DirectPaInvalid as exc:
+                raise HTTPException(status_code=exc.status, detail=exc.detail)
+        if body.budget_account_code is not None:
+            from app.services.budget_client import ensure_known_budget_code
+            await ensure_known_budget_code(token, body.budget_account_code)
     # Whole-branch review finding: pa_crud.update() assigns invoice_ids
     # unconditionally, with none of create_pa's agreement gates re-run — a
     # PATCH could swap in an invoice that is unconfirmed, unlinked to a
@@ -774,7 +868,9 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: Curr
             await pa_crud.reopen_create_pa_tasks_if_unpaid(db, pid)
         return updated
 
-    return await pa_crud.update(db, pa, body)
+    updated = await pa_crud.update(db, pa, body)
+    await pa_crud.attach_direct_labels(db, [updated])
+    return updated
 
 
 def _assert_invoice_link_on_submit(pa) -> None:
@@ -804,6 +900,15 @@ def _assert_invoice_link_on_submit(pa) -> None:
         if pa.invoice_ids:
             return
         raise HTTPException(status_code=409, detail="This Freight PA links no invoice.")
+    if pa.source == "direct":
+        missing = [label for label, v in (
+            ("invoice", pa.invoice_ids), ("department", pa.department_id),
+            ("cost center", pa.cost_center_id), ("budget account", pa.budget_account_code),
+            ("reason", (pa.notes or "").strip())) if not v]
+        if missing:
+            raise HTTPException(status_code=409,
+                                detail=f"This Direct PA has no {', '.join(missing)}. Edit it and submit again.")
+        return
     if pa.po_id is None or pa.pa_type == "prepayment" or pa.invoice_ids:
         return
     raise HTTPException(
@@ -878,6 +983,7 @@ async def pa_action(
         if getattr(pa, "source", None) == "freight":
             from app.crud.freight import cost_allocations as _cost_allocations
             pa.cost_allocations = await _cost_allocations(db, pa.id)
+        await pa_crud.attach_direct_labels(db, [pa])
         loop = asyncio.get_event_loop()
         pdf_bytes = await loop.run_in_executor(
             None, generate_pa_pdf, pa, company_name,

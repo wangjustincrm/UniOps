@@ -59,6 +59,18 @@ values:
         approved by OPM → GM → Finance Manager → Finance BP (configurable as
         "Freight PA" in Portal → Admin → Approval Workflows); only its title and
         notes can be edited, its amounts come from the invoices.
+      - >-
+        An invoice that has no purchase order and no agreement behind it is paid
+        by a Direct PA. On the invoice, Match → Direct PA marks it (whoever may
+        match the invoice may do this); then EPMS → Payment Applications →
+        Create Direct PA (or Create Direct PA on the invoice) picks one or more
+        such invoices of the same vendor and currency, and the department
+        (defaulting to your own), cost center, budget account and the reason
+        for paying without a PO are filled in. A Direct PA is a regular PA
+        approved on the "PA (Direct)" workflow in Portal → Admin → Approval
+        Workflows. Its amounts come from the invoices; the title, reason,
+        department, cost center and budget account stay editable until it is
+        submitted. OA no longer has Direct PAs.
 
   - value: prepayment
     label: Prepayment

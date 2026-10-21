@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text, case
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Numeric, String, Text, case
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -13,6 +13,13 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
 
 class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "invoices"
+    # A Direct-route invoice is matched to nothing; a PO or agreement link on
+    # it would let a PO/agreement PA and a Direct PA both pay it (dp01_direct_pa).
+    __table_args__ = (
+        CheckConstraint("match_route IS DISTINCT FROM 'direct' OR "
+                        "(po_id IS NULL AND agreement_id IS NULL)",
+                        name="ck_invoices_direct_no_po"),
+    )
 
     internal_ref: Mapped[str] = mapped_column(String(30), unique=True, index=True, nullable=False)
     vendor_invoice_number: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -88,7 +95,8 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     freight_carrier_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("freight_carriers.id", ondelete="RESTRICT"),
         nullable=True, index=True)
-    # "po" | "agreement" | "freight" — which candidate pool this invoice was matched against.
+    # "po" | "agreement" | "freight" | "direct" — which candidate pool this
+    # invoice was matched against; "direct" = none, it is paid by a Direct PA.
     match_route: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # True only when the system resolved the route itself (1B). A human override
     # sets it False, which doubles as a health signal: a vendor whose route is
@@ -143,6 +151,7 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     @hybrid_property
     def billed_against(self) -> str:
         return ("freight" if self.match_route == "freight" else
+                "direct" if self.match_route == "direct" else
                 "agreement" if self.agreement_id else
                 "purchase_order" if self.po_id else "none")
 
@@ -152,6 +161,7 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
         # A courier invoice has neither id, matched or not — without its own
         # value it would read as "not matched to either yet".
         return case((cls.match_route == "freight", "freight"),
+                    (cls.match_route == "direct", "direct"),
                     (cls.agreement_id.is_not(None), "agreement"),
                     (cls.po_id.is_not(None), "purchase_order"), else_="none")
 

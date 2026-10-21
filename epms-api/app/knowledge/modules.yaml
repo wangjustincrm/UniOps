@@ -47,8 +47,19 @@ modules:
       - Raise a payment application once it is all lined up
       - Record a vendor credit so it is deducted from the next payment to that vendor
       - Register a courier tracking number and pay the courier's invoice (Freight)
+      - Pay an invoice that has no purchase order or agreement (Direct PA)
     documents: [pr, po, gr, invoice, pa, agreement]
     notes:
+      - >-
+        An invoice with no purchase order or agreement behind it is paid by a
+        Direct PA, which moved here from OA. Upload the invoice as usual on
+        EPMS → Invoices → Upload Invoice; on its Match panel choose the Direct
+        PA tab and confirm. Then EPMS → Payment Applications → Create Direct PA
+        (or the Create Direct PA button on the invoice) takes one or more such
+        invoices of one vendor, with the department it is charged to (your own
+        by default), a cost center of that department, a budget account and the
+        reason. It is approved on the "PA (Direct)" workflow set in Portal →
+        Admin → Approval Workflows, and paid like any other PA.
       - >-
         Courier freight (UPS, FedEx, Purolator…) does not go through PR → PO.
         A buyer registers the tracking number of each pickup with the department
