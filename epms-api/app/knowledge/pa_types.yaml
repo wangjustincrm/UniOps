@@ -40,8 +40,14 @@ values:
       The default. Use it whenever the vendor is paid after delivery against an
       invoice you have already matched.
     notes:
-      - Needs receipt evidence behind it; a PO with nothing received cannot be
-        paid this way.
+      - >-
+        On a PO it needs receipt evidence (a goods receipt, or a received
+        quantity on one of the PO's lines) unless a user with the "Override
+        Receipt on PA" permission overrides that check and gives a reason. On an
+        agreement there is no receipt check or override; the agreement's
+        invoice checks apply instead (receipts attached or settled without
+        evidence for a house account, the period's service confirmed for a
+        recurring agreement).
       - >-
         A PA raised against purchase orders can pay several invoices from the
         same vendor, but only if they fall due within 7 days of each other;

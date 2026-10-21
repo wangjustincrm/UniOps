@@ -137,6 +137,42 @@ rules:
       - "tests/test_pa_multi_po.py::test_receipt_gate_checks_every_po"
       - "tests/test_pa_multi_po.py::test_mixed_departments_allowed"
       - "tests/test_rule_registry.py::test_pa_window_is_the_routes"
+  # ISS-0010 follow-up: one answer said "agreement payments need no receipt
+  # check", which contradicts PRD AGR-061 and the code below.
+  - id: agreement_pa_gates
+    also_in: [agreement, invoice]
+    asked_as:
+      - 采购协议的付款需要收货检查吗？
+      - what is checked before an agreement can be paid
+      - why can I not raise a PA on this agreement
+    answer: >
+      A payment application against an agreement has no goods-receipt check
+      and no receipt override — but it is not unchecked: the checks are on its
+      invoices. It must list at least one invoice; each must be matched to
+      that agreement and cleared for payment (Matched, or Approved after AP
+      review — not Pending Review, Exception or Unmatched); the agreement must
+      be active or still in its grace window; and only a Regular PA can be
+      raised. Recurring agreement: each invoice must be linked to a billing
+      period whose service the department has confirmed. House account: each
+      invoice must have its agreement receipts attached, or be settled
+      explicitly without receipt evidence, with a reason. Milestone: no
+      confirmation check. The same checks run again whenever the PA's
+      invoices are changed.
+    enforced_in: "epms-api app/api/v1/pa.py create_pa agreement branch + _validate_agreement_pa_invoices (_PAYABLE_INVOICE_STATUSES matched/approved; recurring schedule_id + accepted_at; house_account receipt_ids or legacy_settlement); app/schemas/invoice.py SettleWithoutReceiptRequest (reason required); PRD EPMS AGR-061"
+    provenance: pinned
+    test:
+      - "tests/test_agreement_pa.py::test_agreement_pa_skips_the_goods_receipt_gate"
+      - "tests/test_agreement_pa.py::test_agreement_pa_requires_at_least_one_invoice"
+      - "tests/test_agreement_pa.py::test_agreement_pa_refused_for_invoice_still_in_match_review"
+      - "tests/test_agreement_pa.py::test_agreement_pa_refused_when_agreement_not_admissible"
+      - "tests/test_agreement_pa.py::test_agreement_pa_rejects_non_regular_pa_type"
+      - "tests/test_agreement_pa.py::test_recurring_pa_payable_after_manual_period_assignment"
+      - "tests/test_agreement_pa.py::test_milestone_pa_not_gated_by_confirmation"
+      - "tests/test_agreement_pa.py::test_patch_pa_rejects_swapping_in_an_unconfirmed_invoice"
+      - "tests/test_receipt_pa_gate.py::test_house_account_pa_refused_when_invoice_has_neither_receipts_nor_legacy"
+      - "tests/test_receipt_pa_gate.py::test_house_account_pa_allowed_for_a_legacy_settled_invoice"
+      - "tests/test_invoice_receipts.py::test_settle_without_receipt_requires_a_reason"
+      - "tests/test_assistant_iss_batch6.py::test_no_rule_says_agreement_payments_are_unchecked"
   - id: open_prepayment_blocks_a_regular_pa
     asked_as:
       - 有未结清的预付 PA 时，还能建普通 PA 吗？

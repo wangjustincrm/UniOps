@@ -17,20 +17,29 @@ rules:
       exception. Goods receipts are not compared at all, so an invoice can be
       Matched while nothing has been received yet. Receipts that exist are
       linked to the invoice for reference.
-      Receiving matters at the NEXT step, payment: a payment application for a
-      PO (other than a prepayment) can only be created once that PO has a
-      matched invoice AND some evidence of receipt — a goods receipt, or a
-      received quantity on its lines. That checks that something was received,
-      still not that the quantities agree. Without it the PA is refused unless a
-      user with the "Override Receipt on PA" permission overrides it with a
-      reason. A matched invoice with no receipt yet is why a "Confirm Goods
-      Receipt" task appears. Agreement payments have no goods-receipt check; a
-      house account invoice needs its agreement receipts attached (or an
-      explicit settlement without receipt evidence) instead.
-    enforced_in: "epms-api app/crud/invoice.py match() (amount variance vs PoLineItem.line_total); app/api/v1/pa.py receipt gate + crud/po.py po_has_three_way_matched_invoice; PRD EPMS INV-3WM-006, PA-013"
+      Receiving matters at the NEXT step, payment, and only there: a payment
+      application on a PO (any type except a prepayment) is refused unless
+      every PO on it has a matched invoice AND some evidence of receipt — a
+      goods receipt that is not cancelled or rejected, or a received quantity
+      above zero on one of its lines (orders migrated from the old PMS have
+      quantities but no goods receipt documents) — OR a user holding the
+      "Override Receipt on PA" permission overrides the check and gives a
+      reason. That checks that something was received, still not that the
+      quantities agree. A matched invoice with no receipt yet is why a
+      "Confirm Goods Receipt" task appears. Agreement payments have no
+      goods-receipt check and no override, but they have their own: a house
+      account invoice needs its agreement receipts attached, or to be settled
+      explicitly without receipt evidence with a reason; a recurring
+      agreement's invoice needs its billing period's service confirmed.
+    enforced_in: "epms-api app/crud/invoice.py match() (amount variance vs PoLineItem.line_total); app/api/v1/pa.py create_pa receipt gate (po_has_three_way_matched_invoice -> core/po_facts.three_way_matched + core/receipt_evidence; receipt_override + pa_override_receipt + reason) and _validate_agreement_pa_invoices; PRD EPMS INV-3WM-006, PA-013, AGR-061 (PRD names only a linked goods receipt — the code also accepts a received quantity on a PO line)"
     provenance: pinned
     test:
       - "tests/test_assistant_iss_round2.py::test_invoice_matches_with_nothing_received"
+      - "tests/test_assistant_iss_batch6.py::test_pa_receipt_evidence_is_a_gr_or_a_received_quantity"
+      - "tests/test_assistant_iss_batch6.py::test_pa_without_receipt_needs_the_override_and_a_reason"
+      - "tests/test_pa_multi_po.py::test_receipt_override_covers_the_ungated_po"
+      - "tests/test_receipt_pa_gate.py::test_house_account_pa_refused_when_invoice_has_neither_receipts_nor_legacy"
+      - "tests/test_agreement_pa.py::test_recurring_pa_payable_after_manual_period_assignment"
   - id: courier_invoices_are_matched_to_shipments
     asked_as:
       - where do I upload a UPS / FedEx / Purolator invoice
