@@ -99,7 +99,8 @@ def test_shipped_date_fields_are_non_nullable_or_acknowledged():
     from app.core.ontology import _TABLE_MODELS
 
     acknowledged = {"goods_receipt",  # received_at: 0 of 948 null, see the yaml
-                    "gr_line"}        # the same axis, receipt.received_at
+                    "gr_line",        # the same axis, receipt.received_at
+                    "agreement_period"}  # expected_date: set on every period, see the yaml
     for entity in REGISTRY.values():
         # A table-backed entity's columns are all declared nullable because the
         # ontology does not know the real constraint. Their axes are checked

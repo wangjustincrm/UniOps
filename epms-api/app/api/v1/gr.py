@@ -24,6 +24,13 @@ from app.schemas.gr_report import (
 )
 from app.services.receiving_report_xlsx import build_receiving_workbook
 
+# The PO statuses a new receipt is accepted in. Constants so the Assistant's
+# rule (knowledge/rules/gr.yaml gr_create_statuses) states this exact list —
+# it answered "can a fully received PO take another GR?" without naming the
+# other refused statuses (ISS-0017).
+SERVICE_GR_PO_STATUSES = ("approved", "issued", "partially_received")
+PHYSICAL_GR_PO_STATUSES = ("issued", "partially_received")
+
 router = APIRouter(prefix="/gr", tags=["goods-receipts"])
 
 WarehouseDep = Annotated[dict, Depends(require_permission("epms.gr.receive"))]
@@ -98,7 +105,7 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
         may_confirm = actor_id in {i for i in (pr_requester_id, pr_owner_id) if i}
         if not can_receive and not may_confirm:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
-        if po.status not in ("approved", "issued", "partially_received"):
+        if po.status not in SERVICE_GR_PO_STATUSES:
             raise HTTPException(
                 status_code=409,
                 detail=f"Cannot create GR for PO in status '{po.status}'"
@@ -106,7 +113,7 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
     else:
         if not can_receive:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
-        if po.status not in ("issued", "partially_received"):
+        if po.status not in PHYSICAL_GR_PO_STATUSES:
             raise HTTPException(
                 status_code=409,
                 detail=f"Cannot create GR for PO in status '{po.status}' (must be issued or partially_received)"

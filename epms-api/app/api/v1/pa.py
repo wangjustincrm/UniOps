@@ -206,6 +206,23 @@ async def _assert_invoices_belong_to_pos(
 PA_INVOICE_DUE_WINDOW_DAYS = 7
 
 
+# Statuses in which a prepayment PA no longer blocks a regular PA on its PO
+# (PP-008). One function for create_pa and the Assistant's PO check, so the
+# two cannot disagree about what "still open" means.
+PREPAYMENT_CLOSED_STATUSES = ("cancelled", "rejected", "processed")
+
+
+async def open_prepayment_pa_number(db, po_ids: list[uuid.UUID]) -> str | None:
+    """The number of a prepayment PA still open on any of these POs, else None."""
+    return (await db.execute(
+        select(PaymentApplication.pa_number).where(
+            PaymentApplication.id.in_(pa_ids_for_pos(po_ids)),
+            PaymentApplication.pa_type == "prepayment",
+            PaymentApplication.status.notin_(list(PREPAYMENT_CLOSED_STATUSES)),
+        )
+    )).scalars().first()
+
+
 async def _assert_invoice_due_dates_within_window(
     db: SessionDep, invoice_ids: list[uuid.UUID],
 ) -> None:
@@ -573,13 +590,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # An open prepayment on ANY of the POs blocks this regular payment —
         # checking only the primary would let an unsettled advance ride along on
         # a second PO and be paid for twice.
-        blocking = (await db.execute(
-            select(PaymentApplication.pa_number).where(
-                PaymentApplication.id.in_(pa_ids_for_pos([p.id for p in pos])),
-                PaymentApplication.pa_type == "prepayment",
-                PaymentApplication.status.notin_(["cancelled", "rejected", "processed"]),
-            )
-        )).scalars().first()
+        blocking = await open_prepayment_pa_number(db, [p.id for p in pos])
         if blocking:
             raise HTTPException(
                 status_code=409,

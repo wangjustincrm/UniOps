@@ -1,0 +1,236 @@
+area: pa
+label: Payment applications and payment
+covers: >
+  What can go on one payment application, prepayments, PA tax, who executes the payment, self-payment, vendor credits, remittance advice.
+rules:
+  - id: rejected_pa_is_cancelled
+    asked_as:
+      - what status does a rejected payment application have
+      - 被拒绝的付款申请是什么状态
+      - are there rejected PAs
+    answer: >
+      A rejected payment application gets status Cancelled, not Rejected — the
+      approval engine sets cancelled for every PA rejection. So filtering PAs by
+      Rejected finds nothing; to find rejected ones, look for Cancelled PAs whose
+      history has a Reject. (Purchase requests and orders, by contrast, do get
+      status Rejected.)
+    enforced_in: "approval-api app/crud/engine.py execute_action reject: cancelled for pa / pa_dir (pinned by approval-api tests/test_engine_multiholder_approve.py)"
+    provenance: pinned
+    test:
+      - "approval-api/tests/test_engine_multiholder_approve.py::test_reject_allowed_for_authorized_holder"
+  - id: pa_numbering
+    asked_as:
+      - how are PA numbers generated
+    answer: >
+      PA-YYYYMMDD-NNNN: the date it was created, then a 4-digit sequence that
+      restarts each day. The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
+    enforced_in: "epms-api app/crud/pa.py _next_number"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_round2.py::test_numbers_have_the_formats_the_guide_states"
+  - id: direct_pa_retired
+    asked_as:
+      - what is a direct payment application
+      - can I raise a direct PA
+      - 直接付款申请怎么走
+    answer: >
+      Direct Payment Applications (OA's PA-DIR, a payment with no purchase
+      order) have been discontinued and can no longer be created; the system
+      refuses a new one and says to raise the payment against a purchase order
+      instead. Ones that already exist can still be opened, approved and paid.
+    enforced_in: "expense-api app/api/v1/pa.py DIRECT_PA_RETIRED (create returns 410 Gone)"
+    provenance: pinned
+    test:
+      - "expense-api/tests/test_direct_pa_retired.py::test_creating_a_direct_pa_is_gone"
+      - "expense-api/tests/test_direct_pa_retired.py::test_an_existing_direct_pa_can_still_be_acted_on"
+  - id: paid_pa_is_processed
+    asked_as:
+      - how much was paid last week
+      - which PAs have been paid
+      - are the invoices on a paid PA marked paid
+      - 上周付了多少钱
+    answer: >
+      A payment application that has been paid has status Processed — there is
+      no Paid status on a PA. Its payment date is the date Finance recorded when
+      executing the payment. Paying it marks the invoices on it Paid, or
+      Partially paid for a prepayment. A PA in status Approved is fully approved
+      and still waiting to be paid.
+    enforced_in: "finance-api app/crud/payment_execute.py (pa.status = processed, paid_at = payment date; invoices paid / partially_paid for a prepayment)"
+    provenance: pinned
+    test:
+      - "finance-api/tests/test_payment_execute.py::test_execute_pa_po_marks_invoices_paid"
+  - id: prepayment_cap
+    also_in: [vendor]
+    asked_as:
+      - 供应商 Raise The Standard 可以预付吗？
+      - can this vendor be prepaid
+      - how much can we prepay this vendor
+      - what is the maximum prepayment percentage
+      - 供应商最多能预付百分之几
+    answer: >
+      A prepayment can be at most the vendor's Max Prepayment % (on the vendor
+      record) when one is set, otherwise the system cap in Admin Panel →
+      Prepayment Config — and never more than that system cap in either case.
+      A cap of 0 means the vendor cannot be prepaid. The cap is not on
+      agreements or POs. The vendor's own setting is readable as
+      vendor.max_prepayment_pct; the system cap is only in Admin Panel →
+      Prepayment Config. Whether a vendor can be prepaid is decided by these
+      caps alone — never by the Prepaid flag on its past PRs or POs, which
+      the payment application does not read.
+    enforced_in: "epms-api app/api/v1/pa.py create (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_prepayment_cap_reads_the_vendor_then_the_system"
+  - id: vendor_credit_netting
+    asked_as:
+      - how are vendor credits used when we pay
+      - how much is actually paid on a PA after credits
+      - 贷项在付款时怎么抵扣
+    answer: >
+      Vendor credits are not entered on the payment application; they are
+      netted when the payment is executed. At that moment every Available
+      credit of the same vendor and the same currency is applied automatically,
+      oldest credit date first, until the payment amount is covered; the person
+      paying can untick credits in the payment dialog, which shows Gross,
+      Vendor credits applied and Net. A credit that is used up becomes
+      Exhausted; one partly used keeps the rest for the next payment. Credits
+      still pending review, void, or in another currency are never applied.
+      The PA keeps its gross amount; the net paid and the credits applied are
+      on the payment record, and the remittance advice lists each credit note.
+    enforced_in: "finance-api app/crud/vendor_credit.py select_credits_for_payment (AVAILABLE, same vendor and currency, ORDER BY credit_date, created_at); app/crud/payment_execute.py (net = base - credit_applied on the PaymentRecord); pinned by finance-api tests/test_vendor_credit_netting.py"
+    provenance: pinned
+    test:
+      - "finance-api/tests/test_vendor_credit_netting.py::test_fifo_takes_oldest_first_and_stops_at_base"
+      - "finance-api/tests/test_vendor_credit_netting.py::test_payment_is_reduced_by_available_credit"
+
+  # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
+  - id: what_can_go_on_one_pa
+    asked_as:
+      - 一张 PA 能付多张 PO 吗？
+      - 为什么这几张发票不能放在同一张 PA 里？
+      - can one PA pay several POs
+    answer: >
+      A regular payment application can pay several POs and several
+      invoices, as long as all the POs are with the same vendor and in the
+      same currency (departments may differ — it is then approved as a
+      cross-department payment). Prepayment, settlement and balance PAs are
+      always for exactly one PO. The usual reasons invoices cannot go on one
+      PA: they belong to POs of different vendors or currencies; an invoice
+      is not on one of the PA's POs; their due dates are more than {window}
+      days apart; a PO has no three-way matched invoice and no authorised
+      receipt override; or an invoice is already on another payment
+      application that is not cancelled or rejected (the form does not offer
+      it). Agreement PAs follow the agreement's own rules and have no
+      due-date window. Give me the invoice or PO numbers and I can look at
+      their data.
+    provenance: derived
+    derive: pa_invoice_window
+    enforced_in: "epms-api app/api/v1/pa.py _assert_pos_coherent, _assert_invoices_belong_to_pos, PA_INVOICE_DUE_WINDOW_DAYS, receipt gate (po_has_three_way_matched_invoice / pa_override_receipt); epms/src/pages/pa/PaCreatePage.tsx (claimed invoices hidden)"
+    test:
+      - "tests/test_pa_multi_po.py::test_mixed_vendors_refused"
+      - "tests/test_pa_multi_po.py::test_mixed_currencies_refused"
+      - "tests/test_pa_multi_po.py::test_multi_po_prepayment_refused"
+      - "tests/test_pa_multi_po.py::test_invoice_from_an_unlisted_po_refused"
+      - "tests/test_pa_multi_po.py::test_receipt_gate_checks_every_po"
+      - "tests/test_pa_multi_po.py::test_mixed_departments_allowed"
+      - "tests/test_rule_registry.py::test_pa_window_is_the_routes"
+  - id: open_prepayment_blocks_a_regular_pa
+    asked_as:
+      - 有未结清的预付 PA 时，还能建普通 PA 吗？
+      - can I create a regular PA while a prepayment is open
+    answer: >
+      No. While a PO has a prepayment PA that is not cancelled, rejected or
+      processed (paid), a regular PA cannot be created on that PO — the
+      system refuses and names the open prepayment PA. Settlement and
+      balance PAs are exempt. A PO can have only one prepayment PA: a second
+      one is refused even after the first has been paid.
+    enforced_in: "epms-api app/api/v1/pa.py create_pa (PP-008 regular branch; PP-004 prepayment branch)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_an_open_prepayment_blocks_a_regular_pa"
+  - id: pa_tax
+    asked_as:
+      - PA 上的运费要交税吗？
+      - 没有发票时 PA 的税额是怎么算的？
+      - is freight on a PA taxed
+    answer: >
+      PA tax is on the lines only. Shipping/freight and other charges are
+      added after tax and are never taxed — a charge that is taxable has to
+      be entered as a line. When invoices are linked, the PA's tax is filled
+      with the invoices' own tax. With no invoice, the form fills tax as the
+      pre-tax amount × the PO's tax rate (the agreement's on an agreement
+      PA), for CAD only — 13% is used only for an agreement that has no rate
+      recorded; in another currency the tax starts at 0. Once you type in
+      the tax field it is no longer filled for you.
+    enforced_in: "epms-api app/admin/recompute.py recompute_pa_header_only ('shipping and other charges are never taxed'); app/crud/pa.py _compute_payment; epms/src/pages/pa/PaCreatePage.tsx tax prefill"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_pa_tax_is_on_the_lines_only"
+  - id: who_executes_payment
+    asked_as:
+      - 谁可以执行付款？AP Clerk 可以吗？
+      - who can execute a payment
+    answer: >
+      An approved PA is paid with Mark as Processed — on the PA page, or from
+      Finance → Payments and payment batches — by a Payment Officer, Finance
+      Manager or Finance BP (as main or additional role) or a System Admin
+      (main role only). An AP Clerk cannot. Payment is refused while the PA
+      is not approved or the accounting period is closed. This is not an
+      approval step: it is not part of any approval chain.
+    enforced_in: "finance-api app/crud/payment_execute.py _PAY_ROLES / _PAY_ROLES_ASSIGNED, _check_can_pay, _check_period_open, status approved"
+    provenance: pinned
+    test:
+      - "finance-api/tests/test_payment_authority.py::test_ap_clerk_can_no_longer_execute_payments"
+      - "finance-api/tests/test_payment_authority.py::test_payment_officer_works_as_an_additional_role"
+      - "finance-api/tests/test_payment_authority.py::test_system_admin_as_additional_role_is_denied"
+      - "finance-api/tests/test_payment_execute.py::test_execute_blocked_when_period_closed"
+      - "finance-api/tests/test_payment_execute.py::test_execute_rejects_non_approved"
+  - id: no_paying_your_own_pa
+    asked_as:
+      - 我自己建的 PA 可以自己执行付款吗？
+      - can I pay a PA I created
+    answer: >
+      No, while the self-payment segregation-of-duties rule is enabled (it
+      is by default): the person who created a PA cannot execute its
+      payment, even after it is fully approved — someone else with payment
+      authority has to. Whether you approved it is not what decides this.
+    enforced_in: "finance-api app/crud/payment_execute.py _check_self_payment (SoD rule self_payment, seeded enabled)"
+    provenance: pinned
+    test:
+      - "finance-api/tests/test_payment_execute.py::test_self_payment_blocked_for_pa_creator"
+      - "finance-api/tests/test_payment_execute.py::test_self_payment_allowed_when_rule_disabled"
+  - id: remittance_advice
+    asked_as:
+      - PA 的汇款通知发给供应商了吗？
+      - was the remittance advice sent
+    answer: >
+      The remittance advice is a separate email to the vendor that Finance
+      sends by hand after paying — from Finance → Payments or a payment
+      batch. It is not sent automatically, and a PA's approval history says
+      nothing about it. Whether it was sent (and when, or whether it failed)
+      is recorded on the Finance payment pages; EPMS and this assistant
+      cannot see that record.
+    enforced_in: "finance-api app/api/v1/remittance.py (manual send routes); app/crud/payment_execute.py sends none; app/models/remittance.py payment_remittance_notifications (not in the assistant's ontology)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_remittance_is_sent_by_hand_and_not_modelled"
+  - id: recording_a_manual_credit
+    asked_as:
+      - 录入手工贷项需要什么？
+      - what do I need to record a manual credit
+    answer: >
+      A manual vendor credit (recorded from the vendor's email rather than an
+      uploaded credit note) needs the vendor, the vendor's credit-note
+      reference number, the credit date, the amount (and tax, if any) and a
+      note explaining its basis; the server refuses a manual credit without
+      that note. The form also requires the vendor's email or document to be
+      attached, and a manual credit with no attachment cannot be approved
+      from its detail panel — both are rules of the screen, not checks the
+      server makes. The same credit-note number cannot be recorded twice for
+      one vendor (unless the earlier one was voided).
+    enforced_in: "finance-api app/schemas/vendor_credit.py _manual_needs_a_reason; app/crud/vendor_credit.py _find_duplicate; epms/src/pages/vendorcredits/ManualCreditModal.tsx (files required) and CreditDetailDrawer.tsx (needsEvidence)"
+    provenance: pinned
+    test:
+      - "finance-api/tests/test_vendor_credit.py::test_post_manual_credit_requires_notes"
+      - "finance-api/tests/test_vendor_credit.py::test_manual_credit_collides_with_an_uploaded_one_of_the_same_number"
+      - "tests/test_rule_registry.py::test_a_manual_credit_needs_its_email_on_screen"

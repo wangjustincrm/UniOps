@@ -31,6 +31,7 @@ from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_receipt import AgreementReceipt
+from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.freight import FreightCarrier, FreightShipment
 from app.models.pa import PaymentApplication
 from app.models.user import User
@@ -98,6 +99,7 @@ _MODELS: dict[str, type] = {
     "Vendor": Vendor,
     "Part": Part,
     "AgreementReceipt": AgreementReceipt,
+    "AgreementPaymentSchedule": AgreementPaymentSchedule,
     "FreightShipment": FreightShipment,
     "FreightCarrier": FreightCarrier,
     "Project": Project,
@@ -390,6 +392,12 @@ async def scope_agreement_receipt(q: Select, scope: dict, db: AsyncSession) -> S
     return q if agr_subq is None else q.where(AgreementReceipt.agreement_id.in_(agr_subq))
 
 
+async def scope_agreement_period(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """A billing period is exactly as visible as its agreement."""
+    agr_subq = scope.get("agr_subq")
+    return q if agr_subq is None else q.where(AgreementPaymentSchedule.agreement_id.in_(agr_subq))
+
+
 async def scope_freight_shipment(q: Select, scope: dict, db: AsyncSession) -> Select:
     """As Freight → Shipments lists them (api/v1/freight.list_shipments):
     a freight manager sees every shipment, a registrar only their own."""
@@ -565,6 +573,7 @@ _SCOPES: dict[str, Callable] = {
     "invoice_allocation": scope_invoice_allocation,
     "vendor": scope_vendor,
     "agreement_receipt": scope_agreement_receipt,
+    "agreement_period": scope_agreement_period,
     "freight_shipment": scope_freight_shipment,
     "pr_line": scope_pr_line,
     "invoice": scope_invoice,

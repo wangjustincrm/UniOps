@@ -12,11 +12,7 @@ any document. The PRDs describing these flows are two to four months behind
 production; a workflow generated from the live config cannot drift, because it
 IS what runs.
 """
-import functools
 import uuid
-from pathlib import Path
-
-import yaml
 
 from app.crud import task as task_crud
 from app.crud.current_step import role_label
@@ -117,6 +113,13 @@ def task_summary(tasks: list[dict]) -> dict:
                                            str(t.get("due_date") or "9999"),
                                            str(t.get("created_at") or "")))
     examples = ordered[:_TASK_EXAMPLES]
+    # Overdue is counted from the tasks' due dates, never inferred from
+    # "urgent": one urgent duplicate-invoice task was reported as "1 overdue,
+    # 381 on time" when no task in EPMS carries a due date at all (ISS-0049).
+    from app.core.delegation import local_today
+    today = local_today()
+    with_due = [t for t in tasks if t.get("due_date")]
+    overdue = [t for t in with_due if _as_date(t["due_date"]) < today]
     return {
         "open_task_count": len(tasks),
         "urgent_count": len(urgent),
@@ -130,10 +133,28 @@ def task_summary(tasks: list[dict]) -> dict:
             1 for t in tasks if t.get("assigned_to_me_personally")),
         "reached_me_through_a_role_count": sum(
             1 for t in tasks if not t.get("assigned_to_me_personally")),
+        "with_due_date_count": len(with_due),
+        "overdue_count": len(overdue),
         "examples": examples,
         "examples_shown": len(examples),
         "examples_left_out": len(tasks) - len(examples),
+        # Overdue, urgent, closing a task — the registry's tasks rules.
+        "rules": _task_rules(),
     }
+
+
+def _task_rules() -> list[dict]:
+    from app.services import rule_registry
+    return rule_registry.static_rules("tasks")
+
+
+def _as_date(value):
+    from datetime import date, datetime
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
 
 
 async def my_tasks(role: str, user_id: uuid.UUID) -> list[dict]:
@@ -172,13 +193,13 @@ async def my_tasks(role: str, user_id: uuid.UUID) -> list[dict]:
         } for t in tasks]
 
 
-@functools.lru_cache(maxsize=None)
 def approval_rules() -> list[dict]:
-    """How approvals are given (knowledge/approvals.yaml) — true of every chain."""
-    with (Path(__file__).resolve().parent.parent / "knowledge" / "approvals.yaml").open(
-            encoding="utf-8") as fh:
-        doc = yaml.safe_load(fh)
-    return [{"id": r["id"], "answer": " ".join(r["answer"].split())} for r in doc["rules"]]
+    """How approvals are given — true of every chain. The rule registry's
+    approve_only_in_the_system (knowledge/rules/approval_engine.yaml)."""
+    from app.services import rule_registry
+
+    return [r for r in rule_registry.static_rules("approval_engine")
+            if r["id"] == "approve_only_in_the_system"]
 
 
 async def process_steps(doc_type: str, token: str) -> dict:
@@ -207,9 +228,20 @@ async def process_steps(doc_type: str, token: str) -> dict:
         # could not be read, and saying so beats describing one from memory.
         available = False
 
+    # How every chain behaves — resuming after a return, the same approver on
+    # two steps, an empty post, the System Admin — from approval-api, beside
+    # the code that does it. A process question often carries one of these
+    # ("退回后重新提交会从第一步开始吗？" came here and was answered "yes,
+    # from the top" with only the steps to go on — ISS-0018).
+    from app.services import rule_registry
+    engine = await rule_registry._remote_rules(token) if available else None
+
     return {
         "doc_type": doc_type,
         "label": PROCESS_LABELS.get(doc_type, doc_type.upper()),
+        **({"engine_rules": [{"id": r["id"], "answer": r["answer"]} for r in engine
+                             if r.get("area") == "approval_engine"]}
+           if engine is not None else {}),
         "steps": [{
             "index": i + 1,
             "role": s.get("role"),

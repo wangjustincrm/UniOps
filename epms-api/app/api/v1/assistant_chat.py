@@ -37,6 +37,7 @@ from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
 from app.services import reply_language
 from app.services import doc_type_guide, guide_view, plan_view
+from app.services import po_action_check, rule_registry
 from app.services import producible_view
 from app.services import budget_variance
 from app.services import report_lineage
@@ -258,7 +259,13 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
         return await _answer_process(db, user, token, body, planned, actor)
 
     if planned["kind"] == "doc_types":
-        return await _answer_doc_types(db, body, planned, actor)
+        return await _answer_doc_types(db, body, planned, actor, token=token)
+
+    if planned["kind"] == "rules":
+        return await _answer_rules(db, token, body, planned.get("areas") or [], actor)
+
+    if planned["kind"] == "dashboard":
+        return await _answer_dashboard(db, user, body, actor)
 
     if planned["kind"] == "modules":
         return await _answer_modules(db, body, actor)
@@ -289,14 +296,9 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
 
     if planned["kind"] == "cannot":
         # A refusal is a real answer, and worth returning as one — "I can't
-        # answer that" beats a confident wrong reply, and beats a 500.
-        return {
-            "answer": planned.get("explanation")
-                      or "I cannot answer that from the purchasing data.",
-            "kind": "cannot_answer",
-            "reason": planned.get("reason"),
-            "query": None, "sources": None,
-        }
+        # answer that" beats a confident wrong reply, and beats a 500. But a
+        # question about how the system behaves gets the rules first (ISS-0022).
+        return await _refusal(db, token, body, planned, actor)
 
     query = planned["query"]
     try:
@@ -314,12 +316,7 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
         except assistant_llm.LlmUnavailable as exc2:
             raise HTTPException(status_code=503, detail=str(exc2))
         if planned["kind"] == "cannot":
-            return {
-                "answer": planned.get("explanation")
-                          or "I cannot answer that from the purchasing data.",
-                "kind": "cannot_answer", "reason": planned.get("reason"),
-                "query": None, "sources": None,
-            }
+            return await _refusal(db, token, body, planned, actor)
         query = planned["query"]
         try:
             result = await _execute_in_schema(db, query, scope, schema)
@@ -415,16 +412,19 @@ async def _answer_gate_question(db, user, token, scope, body, planned) -> dict:
     doc_type = planned.get("doc_type", "pr")
     context = body.context.model_dump(exclude_none=True) if body.context else None
 
+    actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
+    if doc_type == "po":
+        return await _answer_po_check(db, user, token, scope, body, planned, actor)
     if doc_type != "pr":
-        return {
-            "_fixed_text": True, "answer": f"I can only check purchase requests so far, not {doc_type.upper()}s.",
-            "kind": "cannot_answer", "reason": "not_supported",
-            "query": None, "sources": None,
-        }
+        # Was a fixed "I can only check purchase requests" (ISS-0017).
+        return (await _rules_instead(db, token, body, actor)
+                or _no_rule_reply())
 
     pr = await _resolve_pr(db, scope, planned.get("doc_number"), context)
     if pr is None:
         asked = planned.get("doc_number")
+        if not asked and (rescued := await _rules_instead(db, token, body, actor)):
+            return rescued
         return {
             "_fixed_text": True, "answer": (f"I could not find {asked}." if asked else
                        "Tell me which document you mean — a PR number works best."),
@@ -460,7 +460,12 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
     doc_type = (planned.get("doc_type") or "").lower()
     context = body.context.model_dump(exclude_none=True) if body.context else None
 
+    actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
     if doc_type not in workflow_view.SUPPORTED:
+        # "协议 … 这个月的服务确认了吗？" got "I can only trace approvals for
+        # PR, PO, PA" (ISS-0022 #1). A rule question gets the rules.
+        if rescued := await _rules_instead(db, token, body, actor):
+            return rescued
         return {
             "_fixed_text": True, "answer": f"I can only trace approvals for "
                       f"{', '.join(t.upper() for t in workflow_view.SUPPORTED)}.",
@@ -474,6 +479,12 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
     doc = await workflow_view.resolve(db, scope, doc_type, planned.get("doc_number"), ctx_id)
     if doc is None:
         asked = planned.get("doc_number")
+        # No document named and none on screen: a general question ("what do
+        # I see if someone else approved first?") gets the rule rather than
+        # "which document do you mean" (ISS-0061, ISS-0026).
+        if not asked and not ctx_id and (
+                rescued := await _rules_instead(db, token, body, actor)):
+            return rescued
         return {
             "_fixed_text": True, "answer": (f"I could not find {asked}." if asked else
                        "Tell me which document you mean — its number works best."),
@@ -652,7 +663,7 @@ async def _answer_modules(db, body, actor) -> dict:
     }
 
 
-async def _answer_doc_types(db, body, planned, actor) -> dict:
+async def _answer_doc_types(db, body, planned, actor, token: str | None = None) -> dict:
     """What kinds of a document exist and what differs when you create one.
 
     Ungated, unlike every other route here, and deliberately: this describes the
@@ -663,6 +674,8 @@ async def _answer_doc_types(db, body, planned, actor) -> dict:
     """
     doc_type = (planned.get("doc_type") or "").lower()
     if doc_type not in doc_type_guide.SUPPORTED:
+        if rescued := await _rules_instead(db, token, body, actor):
+            return rescued
         return {
             "_fixed_text": True, "answer": ("I can explain purchase requests, purchase orders, goods "
                        "receipts, payment applications, invoices and purchase "
@@ -672,6 +685,10 @@ async def _answer_doc_types(db, body, planned, actor) -> dict:
         }
 
     guide = doc_type_guide.build(doc_type)
+    # Derived rules carry {placeholders} until filled from the live system.
+    guide["rules"], missing = await rule_registry.resolve(guide["rules"], db)
+    if missing:
+        guide["unavailable"] = missing
     payload = {"question": body.message, "kind": "document_types", **guide}
     try:
         told = await assistant_llm.narrate_guide(body.message, payload)
@@ -909,8 +926,10 @@ async def _answer_process(db, user, token, body, planned, actor) -> dict:
         # does a GR work" the planner still reached for this route, and the
         # reply was only the list of processes (ISS-0029). The document guide
         # carries how it works, so answer from that.
-        return await _answer_doc_types(db, body, {"doc_type": doc_type}, actor)
+        return await _answer_doc_types(db, body, {"doc_type": doc_type}, actor, token=token)
     if doc_type not in guide_view.SUPPORTED_PROCESSES:
+        if rescued := await _rules_instead(db, token, body, actor):
+            return rescued
         return {
             # Derived from what is wired up, so it cannot omit one (it left out
             # PO sign-off) or name one that is not.
@@ -935,3 +954,130 @@ async def _answer_process(db, user, token, body, planned, actor) -> dict:
         "sources": {"process": process["label"], "steps": len(process["steps"]),
                     "complete": process["steps_available"]},
     }
+
+
+# ── System rules (ISS-0022) ──────────────────────────────────────────────────
+#
+# How the system behaves, from the rule registry (services/rule_registry.py):
+# each rule tied to the code that enforces it, settings filled in live, the
+# approval engine's own rules fetched from approval-api. The refusals above —
+# the planner's "not a data question", a document type outside a tool's
+# list, "which document do you mean" with none named — come here first.
+
+async def _answer_rules(db, token, body, areas: list[str], actor) -> dict:
+    rules = await rule_registry.build(areas, db, token)
+    if not rules["areas"]:
+        return _no_rule_reply()
+    payload = {"question": body.message, "kind": "rules", **rules}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+    return {
+        "answer": told["text"], "kind": "rules", "query": None,
+        "rules": rules,
+        "sources": {"rules": sum(len(a["rules"]) for a in rules["areas"]),
+                    "areas": [a["label"] for a in rules["areas"]],
+                    "complete": not rules["unavailable"]},
+    }
+
+
+async def _rules_instead(db, token, body, actor) -> dict | None:
+    """The rules, when the question turns out to be about them; else None."""
+    picked = await assistant_llm.pick_rule_areas(body.message)
+    await assistant_llm.record_usage(db, actor, "pick_rule_areas", picked.get("usage") or {})
+    if not picked["areas"]:
+        return None
+    return await _answer_rules(db, token, body, picked["areas"], actor)
+
+
+def _no_rule_reply() -> dict:
+    """Written here, not by the model: no "ask the System Admin", no role
+    that does not exist — what CAN be answered instead."""
+    areas = "; ".join(c["label"] for c in rule_registry.catalogue())
+    return {
+        "_fixed_text": True,
+        "answer": ("I have no rule or data that answers that. I can explain how "
+                   f"the system behaves in these areas: {areas}."),
+        "kind": "cannot_answer", "reason": "no_rule",
+        "query": None, "sources": None,
+    }
+
+
+async def _refusal(db, token, body, planned, actor) -> dict:
+    reason = planned.get("reason")
+    if reason in ("not_a_data_question", "not_in_schema"):
+        if rescued := await _rules_instead(db, token, body, actor):
+            return rescued
+    if reason == "not_a_data_question":
+        # The model's own text here was "not in my data, ask the System
+        # Admin" (ISS-0022) — never shown again.
+        return _no_rule_reply()
+    return {
+        "answer": planned.get("explanation")
+                  or "I cannot answer that from the purchasing data.",
+        "kind": "cannot_answer", "reason": reason,
+        "query": None, "sources": None,
+    }
+
+
+async def _answer_po_check(db, user, token, scope, body, planned, actor) -> dict:
+    """Why a PA, a GR or a sign-off cannot be done on this PO (ISS-0017)."""
+    action = planned.get("action")
+    context = body.context.model_dump(exclude_none=True) if body.context else None
+    ctx_id = (context or {}).get("doc_id") if (context or {}).get("doc_type") == "po" else None
+    if action not in po_action_check.ACTIONS:
+        return await _answer_rules(db, token, body, ["po"], actor)
+    po = await workflow_view.resolve(db, scope, "po", planned.get("doc_number"), ctx_id)
+    if po is None:
+        asked = planned.get("doc_number")
+        if not asked and (rescued := await _rules_instead(db, token, body, actor)):
+            return rescued
+        return {
+            "_fixed_text": True, "answer": (f"I could not find {asked}." if asked else
+                       "Tell me which purchase order you mean — its number works best."),
+            "kind": "cannot_answer", "reason": "document_not_found",
+            "query": None, "sources": None,
+        }
+    result = await po_action_check.check(db, user, po, action, token)
+    try:
+        told = await assistant_llm.narrate_preflight(body.message, po.number, result)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_preflight", told.get("usage") or {})
+    return {
+        "answer": told["text"], "kind": "preflight", "query": None,
+        "preflight": result,
+        "sources": {"document": po.number, "allowed": result["allowed"],
+                    "complete": result["complete"]},
+    }
+
+
+async def _answer_dashboard(db, user, body, actor) -> dict:
+    """The asker's own dashboard cards, from the Dashboard page's own code
+    (ISS-0022 #2: "my dashboard numbers" was refused as "look at the screen",
+    while each card asked singly was answered)."""
+    from app.crud import dashboard as dash_crud
+
+    board = await dash_crud.build(db, user.get("role", "requester"), actor)
+    result = {
+        "role": board.role,
+        "kpis": [{"title": k.title, "value": k.value,
+                  **({"subtitle": k.subtitle} if k.subtitle else {})} for k in board.kpis],
+        **({"users_by_role": [{"role": r.role, "count": r.count} for r in board.users_by_role]}
+           if board.users_by_role else {}),
+        # What some cards really are (a fixed label, always 0, not FY).
+        "rules": rule_registry.static_rules("dashboard") + [
+            r for r in rule_registry.static_rules("tasks") if r["id"] == "tasks_have_no_due_date"],
+    }
+    payload = {"question": body.message, "kind": "dashboard", **result}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+    return {"answer": told["text"], "kind": "dashboard", "query": None,
+            "dashboard": result,
+            "sources": {"entity": "dashboard", "row_count": len(result["kpis"]),
+                        "complete": True}}

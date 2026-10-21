@@ -14,10 +14,17 @@ what_it_is: >
   invoices and the receipts that justify the payment, goes through approval,
   and on approval becomes a remittance.
 
+# ISS-0066: this used to say the type is "driven by the purchase order: a PO
+# marked prepayment required needs a prepayment PA first", and the Assistant
+# concluded a vendor cannot be prepaid because its old PRs had the flag off.
+# create_pa never reads is_prepaid; the vendor's cap decides (rule
+# prepayment_cap).
 how_types_are_set: >
-  Set when the PA is created, and driven by the purchase order: a PO marked
-  "prepayment required" is paid before delivery and needs a prepayment PA
-  first, then a settlement once the goods or the invoice arrive.
+  Chosen by the person creating the PA. The form offers Prepayment and
+  Settlement only for a single PO marked Prepaid; otherwise it offers Regular.
+  Whether a prepayment is allowed at all is decided by the vendor's Max
+  Prepayment % (or, when the vendor has none, the system cap in Prepayment
+  Config) — never by the Prepaid flag on past PRs or POs.
 
 question_hints:
   - what types of payment application are there
@@ -94,79 +101,5 @@ values:
 # ── Rules people ask about ───────────────────────────────────────────────────
 # "被拒绝的付款申请是什么状态？" searched status = rejected, found nothing and
 # answered that there were no rejected PAs — nine existed (ISS-0008).
-rules:
-  - id: rejected_pa_is_cancelled
-    asked_as:
-      - what status does a rejected payment application have
-      - 被拒绝的付款申请是什么状态
-      - are there rejected PAs
-    answer: >
-      A rejected payment application gets status Cancelled, not Rejected — the
-      approval engine sets cancelled for every PA rejection. So filtering PAs by
-      Rejected finds nothing; to find rejected ones, look for Cancelled PAs whose
-      history has a Reject. (Purchase requests and orders, by contrast, do get
-      status Rejected.)
-    enforced_in: "approval-api app/crud/engine.py execute_action reject: cancelled for pa / pa_dir (pinned by approval-api tests/test_engine_multiholder_approve.py)"
-  - id: pa_numbering
-    asked_as:
-      - how are PA numbers generated
-    answer: >
-      PA-YYYYMMDD-NNNN: the date it was created, then a 4-digit sequence that
-      restarts each day. The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
-    enforced_in: "epms-api app/crud/pa.py _next_number"
-  - id: direct_pa_retired
-    asked_as:
-      - what is a direct payment application
-      - can I raise a direct PA
-      - 直接付款申请怎么走
-    answer: >
-      Direct Payment Applications (OA's PA-DIR, a payment with no purchase
-      order) have been discontinued and can no longer be created; the system
-      refuses a new one and says to raise the payment against a purchase order
-      instead. Ones that already exist can still be opened, approved and paid.
-    enforced_in: "expense-api app/api/v1/pa.py DIRECT_PA_RETIRED (create returns 410 Gone)"
-  - id: paid_pa_is_processed
-    asked_as:
-      - how much was paid last week
-      - which PAs have been paid
-      - are the invoices on a paid PA marked paid
-      - 上周付了多少钱
-    answer: >
-      A payment application that has been paid has status Processed — there is
-      no Paid status on a PA. Its payment date is the date Finance recorded when
-      executing the payment. Paying it marks the invoices on it Paid, or
-      Partially paid for a prepayment. A PA in status Approved is fully approved
-      and still waiting to be paid.
-    enforced_in: "finance-api app/crud/payment_execute.py (pa.status = processed, paid_at = payment date; invoices paid / partially_paid for a prepayment)"
-  - id: prepayment_cap
-    asked_as:
-      - how much can we prepay this vendor
-      - what is the maximum prepayment percentage
-      - 供应商最多能预付百分之几
-    answer: >
-      A prepayment can be at most the vendor's Max Prepayment % (on the vendor
-      record) when one is set, otherwise the system cap in Admin Panel →
-      Prepayment Config — and never more than that system cap in either case.
-      A cap of 0 means the vendor cannot be prepaid. The cap is not on
-      agreements or POs. The vendor's own setting is readable as
-      vendor.max_prepayment_pct; the system cap is only in Admin Panel →
-      Prepayment Config.
-    enforced_in: "epms-api app/api/v1/pa.py create (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap)"
-  - id: vendor_credit_netting
-    asked_as:
-      - how are vendor credits used when we pay
-      - how much is actually paid on a PA after credits
-      - 贷项在付款时怎么抵扣
-    answer: >
-      Vendor credits are not entered on the payment application; they are
-      netted when the payment is executed. At that moment every Available
-      credit of the same vendor and the same currency is applied automatically,
-      oldest credit date first, until the payment amount is covered; the person
-      paying can untick credits in the payment dialog, which shows Gross,
-      Vendor credits applied and Net. A credit that is used up becomes
-      Exhausted; one partly used keeps the rest for the next payment. Credits
-      still pending review, void, or in another currency are never applied.
-      The PA keeps its gross amount; the net paid and the credits applied are
-      on the payment record, and the remittance advice lists each credit note.
-    enforced_in: "finance-api app/crud/vendor_credit.py select_credits_for_payment (AVAILABLE, same vendor and currency, ORDER BY credit_date, created_at); app/crud/payment_execute.py (net = base - credit_applied on the PaymentRecord); pinned by finance-api tests/test_vendor_credit_netting.py"
 
+# The rules people ask about live in rules/pa.yaml (app/services/rule_registry.py).

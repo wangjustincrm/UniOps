@@ -1,0 +1,34 @@
+area: tasks
+label: Tasks in the Task Inbox
+covers: >
+  Overdue and urgent tasks, closing a task, why a task reached you.
+rules:
+  - id: tasks_have_no_due_date
+    asked_as:
+      - 我有哪些待办已经超时了？
+      - which of my tasks are overdue
+    answer: >
+      Tasks in EPMS have no due date — no kind of task is created with one —
+      so none can be overdue, and the dashboard's Overdue Tasks count is
+      always 0. Urgent is a priority a task is created with (duplicate NC
+      invoices, damaged goods and the like); it does not mean the task is
+      late. What can be shown instead is the urgent tasks, or the ones that
+      have been open the longest.
+    enforced_in: "every Task(...) construction in epms-api leaves due_date unset (raw inserts in nc_purchase_sync/error_tasks.py too); app/crud/dashboard.py build_requester Overdue Tasks = due_date < today"
+    provenance: not_built
+    test:
+      - "tests/test_rule_registry.py::test_no_task_is_created_with_a_due_date"
+  - id: tasks_close_themselves
+    asked_as:
+      - 怎么把一个任务标记为完成？
+      - how do I mark a task as done
+    answer: >
+      You cannot mark a task done by hand — the Task Inbox has no Mark Done
+      (it was removed). A task closes by itself when the work it asks for is
+      done: the document approved or returned, the receipt confirmed, the PA
+      created, and so on. Open the task's document and do that.
+    enforced_in: "epms/src/services/tasks.ts (no complete() on purpose); epms/src/pages/tasks/TaskInboxPage.tsx; epms-api app/api/v1/tasks.py complete refuses approval tasks"
+    provenance: pinned
+    test:
+      - "tests/test_task_complete_rejects_approvals.py::test_complete_rejects_approval_tasks"
+      - "tests/test_rule_registry.py::test_the_task_inbox_has_no_mark_done"

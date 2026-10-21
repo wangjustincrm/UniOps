@@ -1,0 +1,117 @@
+area: gr
+label: Goods receipts and service confirmations
+covers: >
+  When a receipt can be created, damaged goods, reminders and escalation for receipts and service completion, the Receiving Report.
+rules:
+  - id: gr_numbering
+    asked_as:
+      - how are GR numbers generated
+    answer: >
+      GR-YYYYMMDD-NNNN: the date it was recorded, then a 4-digit sequence that
+      restarts each day. The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
+    enforced_in: "epms-api app/crud/gr.py _next_number"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_round2.py::test_numbers_have_the_formats_the_guide_states"
+  - id: gr_without_pr
+    asked_as:
+      - who confirms a GR when the PO has no PR
+      - does the requester confirm a receipt for an imported PO
+      - 没有 PR 的 PO 收货后要申请人确认吗
+    answer: >
+      Nobody. A purchase order with no PR (imported from NC or PMS) has no
+      requester or owner to ask, so when its goods receipt is recorded the
+      acknowledge, collect and confirm steps are skipped: a physical receipt
+      goes straight to Collected and a service one straight to Confirmed, the
+      received quantities are posted, and System Admins get an alert so the
+      missing PR link can be restored. Only someone with the warehouse receive
+      permission can record it, whatever the type.
+    enforced_in: "epms-api app/crud/gr.py _auto_complete_requester_steps; app/api/v1/gr.py (service PO with no PR: warehouse permission only)"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_batch1.py::test_gr_without_pr_rule_matches_the_code"
+
+  # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
+  - id: when_a_receipt_can_be_created
+    asked_as:
+      - 已经全部收货的采购订单还能再建收货单吗？
+      - 为什么不能建收货单
+      - can I create a GR for a fully received PO
+    answer: >
+      A goods receipt can be created on a goods (physical) PO only while the
+      PO is {physical}; on a service or project PO only while it is
+      {service}. Any other status is refused — fully received, closed,
+      cancelled, draft or still in approval, waiting in NC (nc_pending), and
+      milk orders (nc_milk), whose receipts are booked in NC.
+    provenance: derived
+    derive: gr_po_statuses
+    enforced_in: "epms-api app/api/v1/gr.py create_gr (PHYSICAL_GR_PO_STATUSES / SERVICE_GR_PO_STATUSES)"
+    test:
+      - "tests/test_rule_registry.py::test_gr_statuses_are_the_routes"
+  - id: damaged_goods
+    asked_as:
+      - 收货时发现货物损坏会怎样？
+      - what happens if goods arrive damaged
+    answer: >
+      Record the receipt with the line's condition set to what it is (not
+      Good). Any line received in a condition other than Good raises an
+      urgent Report Goods Damage task for the Procurement Officers (anyone
+      holding that role), who arrange the return or a credit note with the
+      vendor.
+    enforced_in: "epms-api app/crud/gr.py create (damaged_lines) → _create_damage_report_task (urgent, procurement_officer)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_a_damaged_line_raises_an_urgent_task_for_procurement"
+  - id: no_escalation_for_goods_receipts
+    also_in: [notifications]
+    asked_as:
+      - GR 确认超时会升级给谁？
+      - 收货确认超时会升级给经理吗？
+      - who is a late GR confirmation escalated to
+    answer: >
+      For goods (physical) receipts there are no reminders and no escalation
+      when nobody acknowledges or collects them: the GR Notification SLA
+      setting in Admin is stored, but nothing acts on it. Open receipt tasks
+      only reach people through the normal task notification settings and
+      the daily digest. Service and project POs are different — see
+      service_completion_reminders.
+    enforced_in: "epms-api: CompanyConfig.gr_notification_sla has no reader outside config storage"
+    provenance: not_built
+    test:
+      - "tests/test_rule_registry.py::test_nothing_reads_the_gr_notification_sla"
+  - id: service_completion_reminders
+    also_in: [notifications]
+    asked_as:
+      - 服务完成日到了会提醒吗？
+      - 服务类 PO 确认超时会升级给谁？
+      - is there a reminder when the service completion date passes
+    answer: >
+      Yes, for service and project POs. Once a day (at {time} UTC) the system
+      looks for orders whose PR's expected completion date is more than
+      {reminder_days} day(s) past with no receipt recorded. For each, the
+      PR's Service/Project Owner (the requester when none is named) gets a
+      Confirm Goods Receipt task and a reminder email; when the completion
+      date is {escalation_days} or more days past and a reminder has already
+      been sent, one escalation email goes to the owner's Department Manager.
+      The day counts are set in Admin → Service GR SLA. This reminder is
+      currently {state}.
+    provenance: derived
+    derive: service_gr_reminders
+    enforced_in: "epms-api app/tasks/service_gr_due.py (service_gr_sla, notification_settings service_gr_due_enabled / service_gr_due_dry_run, owner task, escalation after a reminder)"
+    test:
+      - "tests/test_rule_registry.py::test_service_gr_reminder_facts_are_read_from_config"
+  - id: receiving_report_scope
+    also_in: [reports]
+    asked_as:
+      - 收货报告里有 NC 的收货吗？
+      - does the Receiving Report include NC receipts
+    answer: >
+      No. The Receiving Report (Goods Receipts → Receiving Report) counts
+      goods (physical) receipts only; service confirmations, cancelled or
+      rejected receipts, and receipts on POs mirrored from NC are left out.
+    enforced_in: "epms-api app/crud/gr_report.py receiving_rows (gr_type physical, not cancelled/rejected, source distinct from nc)"
+    provenance: pinned
+    test:
+      - "tests/test_gr_receiving_report.py::test_nc_mirrored_orders_are_excluded"
+      - "tests/test_gr_receiving_report.py::test_service_confirmations_are_excluded"
+      - "tests/test_gr_receiving_report.py::test_cancelled_receipts_are_excluded"
