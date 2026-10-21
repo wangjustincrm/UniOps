@@ -262,8 +262,9 @@ async def _po_branch(db, scope: dict, po_id: uuid.UUID) -> dict:
     if po is not None:
         await _waiting_on(db, "po", [po])
     return {
-        "purchase_order": _po(po, facts) if po is not None else (
-            {"not_visible": True} if pos is None else None),
+        # Out of the caller's scope reads as not visible, never as "no PO": a
+        # receipt or invoice they can see already names it.
+        "purchase_order": _po(po, facts) if po is not None else {"not_visible": True},
         "goods_receipts": _layer(grs, _gr),
         "invoices": _layer(invoices, lambda i: _invoice(i, pas_by_invoice.get(str(i.id), []))),
         "payment_applications": _layer(

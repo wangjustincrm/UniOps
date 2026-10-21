@@ -573,6 +573,11 @@ async def test_each_document_stays_inside_its_own_scope(
     assert order["invoices"] == {"not_visible": True}
     assert order["payment_applications"] == {"not_visible": True}
     assert order["goods_receipts"]["count"] == 1
+    # Asked from the receipt by someone who may not see orders: the PO is
+    # "not visible", never "there is no PO".
+    chain = await _chain_for(test_engine, uid, "system_admin", "gr", c.gr.number,
+                             perms={"view_po": False})
+    assert chain["orders"][0]["purchase_order"] == {"not_visible": True}
 
 
 async def test_an_agreement_purchase_follows_the_agreement(test_engine, admin_client):
