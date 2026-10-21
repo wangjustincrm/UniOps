@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils'
-import type { VisitStatus, AccessArea } from '@/services/api'
+import { useAreaRules, type VisitStatus, type AccessArea, type AreaRule } from '@/services/api'
+import { zoneName } from '@/lib/visitOptions'
 
 const STATUS_LABEL: Record<VisitStatus, string> = {
   pending_approval: 'Pending Approval',
@@ -51,16 +52,9 @@ export function OverdueBadge() {
   )
 }
 
-const ACCESS_AREA_LABEL: Record<AccessArea, string> = {
-  office:              'Office',
-  warehouse:           'Warehouse',
-  production_non_gmp:  'Production (Non-GMP)',
-  production_gmp:      'Production (GMP)',
-  laboratory:          'Laboratory',
-  all:                 'Entire Plant',
-}
-
-const ACCESS_AREA_STYLE: Record<AccessArea, string> = {
+// The six original zones keep their colours; zones added in VMS Admin are red
+// when GMP-grade, slate otherwise.
+const ACCESS_AREA_STYLE: Record<string, string> = {
   office:              'bg-success-50 text-success-600 ring-emerald-200',
   warehouse:           'bg-warning-50 text-warning-500 ring-amber-200',
   production_non_gmp:  'bg-orange-50 text-orange-600 ring-orange-200',
@@ -68,19 +62,23 @@ const ACCESS_AREA_STYLE: Record<AccessArea, string> = {
   laboratory:          'bg-danger-50 text-danger-600 ring-red-200',
   all:                 'bg-danger-50 text-danger-600 ring-red-200',
 }
+const GMP_STYLE = 'bg-danger-50 text-danger-600 ring-red-200'
+const OTHER_STYLE = 'bg-neutral-100 text-neutral-600 ring-neutral-200'
 
 /** The label AccessAreaBadge shows — sort by this, not the code. */
-export function accessAreaLabel(area: AccessArea): string {
-  return ACCESS_AREA_LABEL[area] ?? area
+export function accessAreaLabel(area: AccessArea, rules: Record<string, AreaRule> | undefined): string {
+  return zoneName(rules, area)
 }
 
 export function AccessAreaBadge({ area }: { area: AccessArea }) {
+  const { data: rules } = useAreaRules()
+  const rule = rules?.[area]
   return (
     <span className={cn(
       'inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset',
-      ACCESS_AREA_STYLE[area],
+      ACCESS_AREA_STYLE[area] ?? (rule?.gmp_grade ? GMP_STYLE : OTHER_STYLE),
     )}>
-      {ACCESS_AREA_LABEL[area]}
+      {zoneName(rules, area)}
     </span>
   )
 }

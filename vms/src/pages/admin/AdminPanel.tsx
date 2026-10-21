@@ -1,7 +1,7 @@
 /** Admin Panel shell (PRD §3.2 — `system_admin` only).
  *
  * Tab navigation across the four admin sub-pages:
- *   - Quality Managers (W10 backend, this page is W11 UI)
+ *   - Zones (access zones, their GMP grade and zone managers)
  *   - Notification Contacts (W11)
  *   - Health Questions (W11)
  *   - Badge Templates (W5 backend stub, this page is the first real UI)
@@ -11,19 +11,19 @@
  */
 import { useState } from 'react'
 import {
-  AlertCircle, ShieldCheck, Bell, ClipboardList, Image, Mail,
+  AlertCircle, Bell, ClipboardList, Image, Mail, MapPin,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import QualityManagerRosterPage from '@/pages/admin/QualityManagerRosterPage'
+import ZonesPage from '@/pages/admin/ZonesPage'
 import NotificationContactsPage from '@/pages/admin/NotificationContactsPage'
 import HealthQuestionsPage from '@/pages/admin/HealthQuestionsPage'
 import BadgeTemplatesPage from '@/pages/admin/BadgeTemplatesPage'
 import EmailSettingsPage from '@/pages/admin/EmailSettingsPage'
 
-type Tab = 'qm' | 'notifications' | 'email' | 'health' | 'badges'
+type Tab = 'zones' | 'notifications' | 'email' | 'health' | 'badges'
 
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: 'qm',            label: 'Quality Managers',      icon: ShieldCheck },
+  { key: 'zones',         label: 'Zones',                 icon: MapPin },
   { key: 'notifications', label: 'Notification Contacts', icon: Bell },
   { key: 'email',         label: 'Email Settings',        icon: Mail },
   { key: 'health',        label: 'Health Questions',      icon: ClipboardList },
@@ -42,7 +42,7 @@ function getRole(): string | null {
 }
 
 export default function AdminPanel() {
-  const [tab, setTab] = useState<Tab>('qm')
+  const [tab, setTab] = useState<Tab>('zones')
   const role = getRole()
 
   if (role && role !== 'system_admin') {
@@ -63,7 +63,7 @@ export default function AdminPanel() {
     <div>
       <h1 className="text-2xl font-bold text-neutral-900">VMS Admin</h1>
       <p className="mt-1 text-sm text-neutral-500">
-        Roster, notification, email, questionnaire, and badge template configuration.
+        Zones, notification, email, questionnaire, and badge template configuration.
       </p>
 
       {/* Tabs */}
@@ -89,7 +89,7 @@ export default function AdminPanel() {
 
       {/* Body */}
       <div className="mt-6">
-        {tab === 'qm'            && <QualityManagerRosterPage />}
+        {tab === 'zones'         && <ZonesPage />}
         {tab === 'notifications' && <NotificationContactsPage />}
         {tab === 'email'         && <EmailSettingsPage />}
         {tab === 'health'        && <HealthQuestionsPage />}
