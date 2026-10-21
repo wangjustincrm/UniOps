@@ -56,8 +56,11 @@ const DUE_TYPES: { key: DueType; label: string }[] = [
   { key: 'all', label: 'All' }, { key: 'pa', label: 'PA' }, { key: 'freight', label: 'Freight PA' },
   { key: 'pa_dir', label: 'Direct PA' }, { key: 'claim', label: 'Expense Claim' },
 ]
+// An EPMS Direct PA (pa_source 'direct') is doc_kind 'pa' — paid like any EPMS
+// PA — but it is what the Direct PA filter means; OA's retired ones are 'pa_dir'.
 const dueTypeOf = (d: Due): DueType =>
-  d.doc_kind === 'expense_claim' ? 'claim' : d.doc_kind === 'pa_dir' ? 'pa_dir'
+  d.doc_kind === 'expense_claim' ? 'claim'
+    : d.doc_kind === 'pa_dir' || d.pa_source === 'direct' ? 'pa_dir'
     : d.pa_source === 'freight' ? 'freight' : 'pa'
 
 interface Batch {
@@ -79,7 +82,8 @@ function fmtMoney(v: string, ccy?: string): string {
 /** The label the Type column shows — sorting by it must follow what is on screen. */
 function dueTypeLabel(d: Due): string {
   return d.doc_kind === 'expense_claim' ? `Claim · ${d.claim_type ?? ''}`
-    : d.doc_kind === 'pa_dir' ? 'Direct PA' : d.pa_source === 'freight' ? 'Freight PA' : 'PA'
+    : d.doc_kind === 'pa_dir' || d.pa_source === 'direct' ? 'Direct PA'
+    : d.pa_source === 'freight' ? 'Freight PA' : 'PA'
 }
 
 function StatusPill({ status }: { status: string }) {
