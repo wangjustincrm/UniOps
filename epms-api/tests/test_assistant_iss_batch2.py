@@ -574,3 +574,129 @@ def test_the_planner_is_told_not_to_substitute_a_look_alike_entity():
     assert "Never query a different entity because its name looks similar" in \
         assistant_llm._PLAN_SYSTEM
     assert "`vendor_credit`" in assistant_llm._PLAN_SYSTEM
+
+
+# ── ISS-0060 / 0058 / 0059 / 0036: facts the code decides, as fields ────────
+
+async def test_po_facts_three_way_invoiced_and_pa(test_engine, admin_client):
+    from app.models.pa import PaymentApplication
+    from app.models.pa_po_link import PaPoLink
+    from app.models.po import PoLineItem
+
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        pos = {k: _po(v, uid, f"PO-FCT-{tag}-{k}") for k in ("recv", "norecv", "bare", "second")}
+        db.add_all(pos.values())
+        await db.flush()
+        db.add(PoLineItem(po_id=pos["recv"].id, description="x", qty=Decimal("1"), unit="ea",
+                          unit_price=Decimal("10"), line_total=Decimal("10"),
+                          received_qty=Decimal("1")))
+        db.add_all([_inv(v, uid, f"INV-FCT-{tag}-{k}", po_id=pos[k].id, po_number=pos[k].number)
+                    for k in ("recv", "norecv")])
+        # One PA paying two POs: "recv" is the primary, "second" only linked.
+        pa = PaymentApplication(pa_number=f"PA-FCT-{tag}", title="p", po_id=pos["recv"].id,
+                                po_number=pos["recv"].number, vendor_id=v.id,
+                                vendor_name=v.name, invoice_ids=[], gr_ids=[],
+                                subtotal=Decimal("1"), payment_amount=Decimal("1"),
+                                status="approved", created_by=uid)
+        db.add(pa)
+        await db.flush()
+        db.add_all([PaPoLink(pa_id=pa.id, po_id=pos[k].id, po_number=pos[k].number)
+                    for k in ("recv", "second")])
+        await db.commit()
+    body = await _query(admin_client, entity="purchase_order",
+                        select=["number", "three_way_matched", "invoiced", "has_pa"],
+                        where=[{"field": "number", "op": "like", "value": f"PO-FCT-{tag}"}])
+    facts = {r["number"].rsplit("-", 1)[1]: (r["three_way_matched"], r["invoiced"], r["has_pa"])
+             for r in body["rows"]}
+    assert facts == {"recv": (True, True, True), "norecv": (False, True, False),
+                     "bare": (False, False, False), "second": (False, False, True)}
+
+    # The PA receipt gate reads the same definition.
+    from app.crud.po import po_has_three_way_matched_invoice
+    async with _factory(test_engine)() as db:
+        assert await po_has_three_way_matched_invoice(db, pos["recv"].id) is True
+        assert await po_has_three_way_matched_invoice(db, pos["norecv"].id) is False
+
+
+async def test_goods_received_long_ago_without_an_invoice(test_engine, admin_client):
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.gr import GoodsReceipt
+
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    old = datetime.now(timezone.utc) - timedelta(days=40)
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        billed, unbilled = _po(v, uid, f"PO-OLD-{tag}-b"), _po(v, uid, f"PO-OLD-{tag}-u")
+        db.add_all([billed, unbilled])
+        await db.flush()
+        db.add(_inv(v, uid, f"INV-OLD-{tag}", po_id=billed.id, po_number=billed.number))
+        for po in (billed, unbilled):
+            db.add(GoodsReceipt(number=f"GR-OLD-{tag}-{po.number[-1]}", title="g", po_id=po.id,
+                                po_number=po.number, vendor_id=v.id, vendor_name=v.name,
+                                gr_type="physical", procurement_type=2, status="collected",
+                                received_at=old, created_by=uid))
+        await db.commit()
+    body = await _query(admin_client, entity="goods_receipt", select=["number"], where=[
+        {"field": "number", "op": "like", "value": f"GR-OLD-{tag}"},
+        {"field": "gr_type", "op": "eq", "value": "physical"},
+        {"field": "days_since_received", "op": "gt", "value": 30},
+        {"field": "po_invoiced", "op": "eq", "value": False}])
+    assert [r["number"] for r in body["rows"]] == [f"GR-OLD-{tag}-u"]
+
+
+async def test_average_days_to_approve_a_pr(test_engine, admin_client):
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.approval import ApprovalEvent
+    from app.models.pr import PurchaseRequest
+
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    t0 = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
+    async with _factory(test_engine)() as db:
+        for n, days in enumerate((2, 4)):
+            pr = PurchaseRequest(number=f"PR-AVG-{tag}-{n}", title="a", type=2,
+                                 status="approved", amount=Decimal("1"), created_by=uid,
+                                 submitted_at=t0)
+            db.add(pr)
+            await db.flush()
+            db.add(ApprovalEvent(document_type="pr", document_id=pr.id,
+                                 document_number=pr.number, step_idx=0, action="approve",
+                                 actor_id=uid, actor_role="dept_manager",
+                                 created_at=t0 + timedelta(days=days)))
+        await db.commit()
+    body = await _query(admin_client, entity="purchase_request",
+                        metrics=["avg_days_to_approve"],
+                        where=[{"field": "number", "op": "like", "value": f"PR-AVG-{tag}"}])
+    assert Decimal(body["rows"][0]["avg_days_to_approve"]) == Decimal("3")
+
+
+async def test_an_invoice_knows_its_payment_application(test_engine, admin_client):
+    from app.models.pa import PaymentApplication
+
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        po = _po(v, uid, f"PO-INVPA-{tag}")
+        db.add(po)
+        await db.flush()
+        inv = _inv(v, uid, f"INV-INVPA-{tag}", po_id=po.id, po_number=po.number)
+        db.add(inv)
+        await db.flush()
+        db.add(PaymentApplication(pa_number=f"PA-INVPA-{tag}", title="p", po_id=po.id,
+                                  po_number=po.number, vendor_id=v.id, vendor_name=v.name,
+                                  invoice_ids=[str(inv.id)], gr_ids=[], subtotal=Decimal("1"),
+                                  payment_amount=Decimal("1"), status="processed",
+                                  created_by=uid))
+        await db.commit()
+    body = await _query(admin_client, entity="invoice", select=["pa_number", "pa_status", "status"],
+                        where=[{"field": "internal_ref", "op": "eq", "value": f"INV-INVPA-{tag}"}])
+    # Matched, on a processed (paid) PA: exactly the mismatch ISS-0059 asked to find.
+    assert body["rows"] == [{"pa_number": f"PA-INVPA-{tag}", "pa_status": "processed",
+                             "status": "matched"}]

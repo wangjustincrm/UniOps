@@ -85,11 +85,18 @@ entities:
       is_prepaid: {kind: bool, label: "Prepaid purchase"}
       over_budget: {kind: bool, label: "Exceeds its budget account"}
       submitted_at: {kind: datetime, label: "Submitted at"}
+      # ISS-0060: approval time lives only in the approval history.
+      approved_at:
+        kind: datetime
+        label: "When the PR was finally approved (its last approval), approved
+          PRs only. PMS-imported PRs carry a reconstructed history"
+      days_to_approve: {kind: money, label: "Days from submission to final approval (approved PRs with a submission time)"}
       created_at: {kind: datetime, label: "Created at"}
     metrics:
       amount: {fn: sum, field: amount, label: "Total requested amount", currency: currency}
       count: {fn: count, field: "*", label: "Number of PRs"}
       avg_amount: {fn: avg, field: amount, label: "Average PR amount", currency: currency}
+      avg_days_to_approve: {fn: avg, field: days_to_approve, label: "Average days from submission to approval"}
     links:
       orders:
         target: purchase_order
@@ -233,6 +240,19 @@ entities:
           nc: "Ordered in NC (mirrored PO)"
       place_order_email_to: {kind: text, label: "Who the order email was sent to (email orders). Sending is recorded, delivery is not confirmed"}
       place_order_reference: {kind: text, label: "Reference recorded when placing the order (portal order ID; the NC number for NC orders)"}
+      # Derived from the code that acts on them (core.po_facts, crud.pa_links);
+      # ISS-0036 / ISS-0060.
+      three_way_matched:
+        kind: bool
+        label: "Whether the PO is three-way matched: a matched invoice and
+          something received against it — the test a payment application
+          needs (INV-3WM-006)"
+      invoiced: {kind: bool, label: "Whether the PO has any invoice that is not cancelled"}
+      has_pa:
+        kind: bool
+        label: "Whether any payment application pays this PO (any status, as the
+          Create Payment Application task counts). \"No PA yet\" is has_pa =
+          false"
       is_prepaid: {kind: bool, label: "Prepaid order"}
       source: {kind: text, label: "Origin system (NC mirror or created here)", enumerate: true}
       created_at: {kind: datetime, label: "Created at"}
@@ -408,7 +428,22 @@ entities:
       po_number: {kind: text, doc_number: PO, label: "PO number"}
       pr_number: {kind: text, doc_number: PR, label: "PR number"}
       vendor_name: {kind: text, label: "Vendor name"}
-      gr_type: {kind: text, label: "Receipt type", enumerate: true}
+      gr_type:
+        kind: enum
+        label: "Receipt type. \"Goods\" means physical; a service confirmation
+          is not a receipt of goods"
+        values: [physical, service]
+        value_labels:
+          physical: "Goods received (physical)"
+          service: "Service confirmation"
+      # ISS-0058: "received more than 30 days ago with no invoice" was rebuilt
+      # from joins each time (1 / 116 / 48, all wrong). Both facts derived.
+      po_invoiced:
+        kind: bool
+        label: "Whether the receipt's PO has any invoice that is not cancelled
+          (on its header or by line allocation). \"Not invoiced yet\" is
+          po_invoiced = false"
+      days_since_received: {kind: int, label: "Days since it was received (plant-local dates)"}
       currency: {kind: text, label: "Currency", enumerate: true}
       storage_location: {kind: text, label: "Storage location"}
       received_by: {kind: text, label: "Received by"}
@@ -508,6 +543,12 @@ entities:
           tolerance; over it, the invoice goes to exception"
       variance_pct: {kind: money, label: "variance as a percent of the matched PO amount"}
       exception_reason: {kind: text, label: "Why matching put it in exception"}
+      # ISS-0059: the PA an invoice is on (not cancelled), and its status.
+      pa_number: {kind: text, doc_number: PA, label: "The payment application this invoice is on (not cancelled); empty = on none"}
+      pa_status:
+        kind: enum
+        label: "Status of that payment application (processed = paid)"
+        values: [draft, submitted, in_review, approved, rejected, returned, processed, paid]
       created_at: {kind: datetime, label: "Uploaded at — when the invoice entered EPMS (the Invoices list's Upload Date); not the vendor's invoice date"}
     metrics:
       total: {fn: sum, field: total_amount, label: "Total invoiced including tax", currency: currency}

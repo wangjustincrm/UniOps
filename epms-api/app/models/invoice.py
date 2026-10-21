@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text, case
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text, case, cast, func, select
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -166,3 +166,38 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
         # NULL off the PO route: "not applicable", never "not received".
         return case((cls.agreement_id.is_(None) & cls.po_id.is_not(None),
                      receipt_evidence(cls.po_id)), else_=None)
+
+    # The live payment application this invoice is on, and its status. A PA
+    # links invoices only through its invoice_ids JSONB array, so "are the
+    # invoices on paid PAs marked paid" could not be asked at all (ISS-0059).
+    # Same test as crud.invoice._invoice_referenced_by_active_pa: containment,
+    # PA not cancelled. Query side only.
+    @classmethod
+    def _live_pa(cls, column):
+        from app.models.pa import PaymentApplication
+        return (select(column)
+                .where(PaymentApplication.invoice_ids.op("@>")(
+                           func.jsonb_build_array(cast(cls.id, String))),
+                       PaymentApplication.status != "cancelled")
+                .order_by(PaymentApplication.created_at.desc())
+                .limit(1).scalar_subquery())
+
+    @hybrid_property
+    def pa_number(self) -> str | None:
+        return None
+
+    @pa_number.inplace.expression
+    @classmethod
+    def _pa_number_expression(cls):
+        from app.models.pa import PaymentApplication
+        return cls._live_pa(PaymentApplication.pa_number)
+
+    @hybrid_property
+    def pa_status(self) -> str | None:
+        return None
+
+    @pa_status.inplace.expression
+    @classmethod
+    def _pa_status_expression(cls):
+        from app.models.pa import PaymentApplication
+        return cls._live_pa(PaymentApplication.status)

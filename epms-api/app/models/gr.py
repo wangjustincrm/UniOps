@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, cast, func, literal
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -68,6 +68,30 @@ class GoodsReceipt(UUIDPrimaryKey, TimestampMixin, Base):
         "GrLineItem", back_populates="gr", cascade="all, delete-orphan",
         lazy="selectin", order_by="GrLineItem.sort_order"
     )
+
+    # ── Facts for the Assistant (query side only), ISS-0058.
+    @hybrid_property
+    def po_invoiced(self) -> bool | None:
+        return None
+
+    @po_invoiced.inplace.expression
+    @classmethod
+    def _po_invoiced_expression(cls):
+        # By PO, as decided 2026-10-21 (core.po_facts.has_invoice).
+        from app.core.po_facts import has_invoice
+        return has_invoice(cls.po_id)
+
+    @hybrid_property
+    def days_since_received(self) -> int | None:
+        return None
+
+    @days_since_received.inplace.expression
+    @classmethod
+    def _days_since_received_expression(cls):
+        # Plant-local dates on both sides; bound when the query is built.
+        from app.core.delegation import PLANT_TIMEZONE, local_today
+        return (cast(literal(local_today()), Date)
+                - cast(func.timezone(literal(PLANT_TIMEZONE), cls.received_at), Date))
 
 
 class GrLineItem(UUIDPrimaryKey, Base):

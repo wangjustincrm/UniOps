@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text,
-                        case, select)
+                        case, cast, func, select)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -134,6 +134,34 @@ class PurchaseRequest(UUIDPrimaryKey, TimestampMixin, Base):
     def _requester_full_name_expression(cls):
         from app.models.user import User
         return select(User.full_name).where(User.id == cls.created_by).scalar_subquery()
+
+    # When the PR was finally approved: the last "approve" in its approval
+    # history (the engine writes no approved_at on a PR). Query side only, for
+    # "how long does approval take" (ISS-0060).
+    @hybrid_property
+    def approved_at(self) -> datetime | None:
+        return None
+
+    @approved_at.inplace.expression
+    @classmethod
+    def _approved_at_expression(cls):
+        from app.models.approval import ApprovalEvent
+        last = (select(func.max(ApprovalEvent.created_at))
+                .where(ApprovalEvent.document_type == "pr",
+                       ApprovalEvent.document_id == cls.id,
+                       ApprovalEvent.action == "approve")
+                .scalar_subquery())
+        return case((cls.status == "approved", last), else_=None)
+
+    @hybrid_property
+    def days_to_approve(self) -> Decimal | None:
+        return None
+
+    @days_to_approve.inplace.expression
+    @classmethod
+    def _days_to_approve_expression(cls):
+        span = func.extract("epoch", cls.approved_at - cls.submitted_at)
+        return func.round(cast(span / 86400, Numeric(12, 4)), 1)
 
     line_items: Mapped[list["PrLineItem"]] = relationship(
         "PrLineItem", back_populates="pr", cascade="all, delete-orphan", lazy="selectin",

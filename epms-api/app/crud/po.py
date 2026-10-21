@@ -858,39 +858,10 @@ async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -
     matched 也永远判「未收货」,拿不到 create_pa,只会反复收到一条谁也满足不了
     的催收货任务(生产 11 条僵尸任务)。
     """
-    header = (await db.execute(
-        select(Invoice.id).where(
-            Invoice.po_id == po_id,
-            Invoice.status == "matched",
-            Invoice.gr_id.is_not(None),
-        ).limit(1)
-    )).scalar_one_or_none()
-    if header is not None:
-        return True
-
-    # 表头 matched 但 gr_id 为空 —— 回落到本 PO 自己的收货证据。gr_id 为空既可能
-    # 是历史单从来没有 GR,也可能是自动挂接漏了(生产 22 张 matched 发票 gr_id
-    # 为空而其 PO 有 GR);两种都不该被读成「货没到」。
-    header_no_gr = (await db.execute(
-        select(Invoice.id).where(
-            Invoice.po_id == po_id,
-            Invoice.status == "matched",
-        ).limit(1)
-    )).scalar_one_or_none()
-    if header_no_gr is not None and await po_has_receipt_evidence(db, po_id):
-        return True
-
-    allocated = (await db.execute(
-        select(InvoicePoAllocation.invoice_id)
-        .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
-        .where(
-            InvoicePoAllocation.po_id == po_id,
-            Invoice.status == "matched",
-        ).limit(1)
-    )).scalar_one_or_none()
-    if allocated is None:
-        return False
-    return await po_has_receipt_evidence(db, po_id)
+    # One definition, shared with the Assistant's purchase_order.three_way_matched
+    # (core.po_facts) — it used to be three queries here and a guess there.
+    from app.core.po_facts import three_way_matched
+    return bool((await db.execute(select(three_way_matched(po_id)))).scalar())
 
 
 async def payable_invoice_po_ids(

@@ -145,6 +145,13 @@ Rules:
 - How an order was placed (email / online / NC) and when are
   purchase_order.place_order_method and placed_at; WHO placed it is in the
   PO's history: explain_workflow.
+- Facts the system already decides are fields — use them instead of rebuilding
+  them from joins: purchase_order.three_way_matched, invoiced, has_pa ("no
+  PA yet" = has_pa false); goods_receipt.po_invoiced and days_since_received
+  ("goods received over 30 days ago with no invoice" = gr_type physical,
+  days_since_received gt 30, po_invoiced false); purchase_request
+  days_to_approve and metric avg_days_to_approve; invoice.pa_number and
+  pa_status (the payment application an invoice is on).
 - Whether an invoice is over its PO, by how much, and its match result are on
   `invoice` (variance, matched_reference_total, status) — filter by
   po_number. Never answer them from the PO alone.

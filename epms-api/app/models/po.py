@@ -115,6 +115,43 @@ class PurchaseOrder(UUIDPrimaryKey, TimestampMixin, Base):
         order_by="PoLineItem.sort_order"
     )
 
+    # ── Facts for the Assistant (query side only), each from the one place the
+    # code decides it (ISS-0036, ISS-0058, ISS-0060).
+    @hybrid_property
+    def three_way_matched(self) -> bool | None:
+        return None
+
+    @three_way_matched.inplace.expression
+    @classmethod
+    def _three_way_matched_expression(cls):
+        from app.core.po_facts import three_way_matched
+        return three_way_matched(cls.id)
+
+    # Not "has_invoice": PoResponse already has that field, filled from the PO
+    # object, and a hybrid of the same name reads None on an instance.
+    @hybrid_property
+    def invoiced(self) -> bool | None:
+        return None
+
+    @invoiced.inplace.expression
+    @classmethod
+    def _invoiced_expression(cls):
+        from app.core.po_facts import has_invoice
+        return has_invoice(cls.id)
+
+    @hybrid_property
+    def has_pa(self) -> bool | None:
+        return None
+
+    @has_pa.inplace.expression
+    @classmethod
+    def _has_pa_expression(cls):
+        # The same test the Create PA task uses (crud.task): any PA paying this
+        # PO, primary or not. payment_applications.po_id alone misses every PO
+        # after the first on a multi-PO PA.
+        from app.crud.pa_links import po_ids_with_pa
+        return cls.id.in_(po_ids_with_pa())
+
 
 class PoLineItem(UUIDPrimaryKey, Base):
     __tablename__ = "po_line_items"
