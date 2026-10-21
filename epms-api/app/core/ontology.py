@@ -622,6 +622,17 @@ class Entity:
     # default must not be applied. Declared rather than inferred: "version" is
     # such a field and shares no prefix with "is_default".
     default_filter_stand_down: tuple[str, ...] = ()
+    # Statuses an AMOUNT leaves out unless the question is about status: a
+    # cancelled, rejected or draft document is not money spent or owed. The
+    # totals that included two cancelled POs (ISS-0057) and the vendor ranking
+    # that counted every status (ISS-0032) are what this answers. (field path,
+    # values, note) — the note is said in the answer, like default_filter's.
+    # Decided by the product owner 2026-10-21.
+    amount_excludes: tuple[str, tuple[str, ...], str] | None = None
+    # Apps (the panel's context.app) whose assistant does not see this entity
+    # at all. Finance's AP copy of the invoices is kept out of EPMS, where it
+    # was picked instead of `invoice` and gave different answers (ISS-0015).
+    hidden_in_apps: tuple[str, ...] = ()
 
 
 # Filled during _build_entity, drained by load() once every entity exists: a
@@ -778,6 +789,13 @@ def _build_entity(name: str, spec: dict) -> Entity:
         _df_note = df["note"]
         _df_stand_down = tuple(df.get("stand_down_on") or ())
 
+    ax = spec.get("amount_excludes")
+    _amount_excludes = None
+    if ax:
+        _require(bool(ax.get("field")) and bool(ax.get("values")) and bool(ax.get("note")),
+                 f"{where}.amount_excludes: needs field, values and note")
+        _amount_excludes = (ax["field"], tuple(ax["values"]), ax["note"])
+
     metrics: dict[str, Metric] = {}
     for mname, mspec in (spec.get("metrics") or {}).items():
         fn = mspec.get("fn")
@@ -815,6 +833,8 @@ def _build_entity(name: str, spec: dict) -> Entity:
         nullable_axis_ok=spec.get("date_field_nullable_ok") is True,
         default_filter=_default_filter, default_filter_note=_df_note,
         default_filter_stand_down=_df_stand_down,
+        amount_excludes=_amount_excludes,
+        hidden_in_apps=tuple(spec.get("hidden_in_apps") or ()),
     )
 
 

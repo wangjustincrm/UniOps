@@ -35,6 +35,10 @@ entities:
     perm_key: view_pr
     scope: pr
     date_field: created_at
+    amount_excludes:
+      field: status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out cancelled, rejected and draft requisitions (no status was asked about)"
     fields:
       number: {kind: text, doc_number: PR, label: "PR number"}
       title: {kind: text, label: "Title"}
@@ -150,6 +154,10 @@ entities:
     # real order_date column is backfilled, the assistant is told to say what
     # the axis means rather than pretend it means something else.
     date_field: created_at
+    amount_excludes:
+      field: status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out cancelled, rejected and draft purchase orders (no status was asked about)"
     fields:
       number: {kind: text, doc_number: PO, label: "PO number"}
       title: {kind: text, label: "Title"}
@@ -280,6 +288,10 @@ entities:
     # this the only date reachable is the header's, one hop away, and a period
     # filter would be silently dropped.
     date_field: order.created_at
+    amount_excludes:
+      field: order.status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out lines of cancelled, rejected and draft purchase orders (no status was asked about)"
     fields:
       po_id: {kind: uuid, internal: true}
       description: {kind: text, label: "Description"}
@@ -331,6 +343,10 @@ entities:
     perm_key: view_pr
     scope: pr_line
     date_field: request.created_at
+    amount_excludes:
+      field: request.status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out lines of cancelled, rejected and draft requisitions (no status was asked about)"
     fields:
       pr_id: {kind: uuid, internal: true}
       description: {kind: text, label: "Description"}
@@ -417,6 +433,10 @@ entities:
     # uploaded it, whoever has an open task on it, and whoever matched it.
     scope: invoice
     date_field: invoice_date
+    amount_excludes:
+      field: status
+      values: [cancelled]
+      note: "Amounts leave out cancelled invoices (no status was asked about)"
     fields:
       internal_ref: {kind: text, doc_number: INV, label: "EPMS invoice number shown on the Invoices list, INV-YYYY-NNNN (e.g. INV-2026-0631). An INV- number is ALWAYS this field — the vendor's own number is vendor_invoice_number"}
       vendor_invoice_number: {kind: text, label: "Vendor's own invoice number"}
@@ -484,6 +504,10 @@ entities:
     # both po_id and agreement_id NULL and are not EPMS's rows at all.
     scope: pa
     date_field: created_at
+    amount_excludes:
+      field: status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out cancelled (incl. rejected) and draft payment applications (no status was asked about)"
     fields:
       pa_number: {kind: text, doc_number: PA, label: "PA number"}
       title: {kind: text, label: "Title"}
@@ -558,6 +582,10 @@ entities:
     perm_key: epms.agreement.read
     scope: agreement
     date_field: created_at
+    amount_excludes:
+      field: status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out cancelled, rejected and draft agreements (no status was asked about)"
     fields:
       number: {kind: text, doc_number: AGR, label: "Agreement number, e.g. AGR-202608-0007"}
       title: {kind: text, label: "Title"}

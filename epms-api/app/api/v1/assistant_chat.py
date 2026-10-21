@@ -30,6 +30,7 @@ from app.api.v1.assistant_preflight import preflight as run_preflight
 from app.api.v1.assistant_query import assistant_schema
 from app.core.access_scope import build_scope, is_pr_visible
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
+from app.core.ontology import REGISTRY
 from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
 from app.services import reply_language
@@ -85,6 +86,20 @@ class ChatRequest(BaseModel):
 # Enough for "it" to have an antecedent without paying for the whole session on
 # every question. Six turns is roughly three exchanges.
 _MAX_HISTORY_TURNS = 6
+
+
+async def _execute_in_schema(db, query: dict, scope: dict, schema: list[dict]):
+    """Run a planned query, but only against an entity the planner was shown.
+
+    The schema handed to the planner leaves out what this person cannot see
+    and what this app does not use; a plan naming anything else is sent back
+    for one retry like any other invalid plan.
+    """
+    names = {e["name"] for e in schema}
+    if query.get("entity") not in names:
+        raise cq.QueryRejected(
+            f"Unknown entity '{query.get('entity')}'. Available: {', '.join(sorted(names))}")
+    return await cq.execute(db, query, scope)
 
 
 async def _timed_out(db, query: dict) -> dict:
@@ -153,6 +168,11 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
 
 async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
     schema = (await assistant_schema(db, user))["entities"]
+    # Entities this app's assistant does not use (ISS-0015: Finance's AP copy
+    # of the invoices is kept out of EPMS).
+    app = body.context.app if body.context else None
+    if app:
+        schema = [e for e in schema if app not in REGISTRY[e["name"]].hidden_in_apps]
     if not schema:
         # No visible entities at all. Say so rather than letting the planner
         # hallucinate against an empty schema.
@@ -221,7 +241,7 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
 
     query = planned["query"]
     try:
-        result = await cq.execute(db, query, scope)
+        result = await _execute_in_schema(db, query, scope, schema)
     except cq.QueryTimedOut:
         return await _timed_out(db, query)
     except cq.QueryRejected as exc:
@@ -243,7 +263,7 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
             }
         query = planned["query"]
         try:
-            result = await cq.execute(db, query, scope)
+            result = await _execute_in_schema(db, query, scope, schema)
         except cq.QueryTimedOut:
             return await _timed_out(db, query)
         except cq.QueryRejected as exc2:

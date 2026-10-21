@@ -232,6 +232,7 @@ entities:
       count: {fn: count, field: "*", label: "Mapping rules"}
 
   ap_invoice:
+    hidden_in_apps: [epms]
     table: ap_invoices
     # ISS-0015: with two "invoice" entities in the schema the planner picked
     # either, and the same question gave different invoices and totals. This

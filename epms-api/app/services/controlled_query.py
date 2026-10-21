@@ -451,6 +451,32 @@ def _apply_default_filter(stmt, entity: Entity, clauses: list[dict], hops: list,
     return stmt.where(col.is_(True) if value is True else col == value), True
 
 
+def _apply_amount_excludes(stmt, entity: Entity, clauses: list[dict], hops: list,
+                           request: dict) -> tuple:
+    """Leave cancelled / rejected / draft documents out of an amount.
+
+    Only when the query asks for an amount (a metric with a currency) and does
+    not itself mention the status field — "how much did we spend with X" is
+    not a question about cancelled orders; "how much was cancelled" is, and is
+    answered as asked. The answer says it was applied (`assumption`).
+    """
+    ax = entity.amount_excludes
+    metrics = request.get("metrics") or []
+    if not ax or not any(entity.metrics[k].currency for k in metrics
+                         if k in entity.metrics):
+        return stmt, False
+    field, values, _ = ax
+    referenced = {c.get("field") for c in clauses}
+    referenced |= {g.partition(":")[0] for g in request.get("group_by") or []}
+    referenced |= set(request.get("select") or [])
+    referenced.add((request.get("order_by") or {}).get("field"))
+    if field in referenced:
+        return stmt, False
+    col, path = _resolve(entity, field)
+    hops.extend(path)
+    return stmt.where(sa.or_(col.is_(None), col.notin_(values))), True
+
+
 def _refuse_column_as_value(entity: Entity, name: str, kind: str, value: Any) -> None:
     """Reject `received_qty lt "qty"` with a reason the planner can act on.
 
@@ -824,6 +850,7 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
     clauses, numbers_read_as = _normalize_numbers(entity, list(request.get("where") or []))
     stmt, applied_default = _apply_default_filter(
         stmt, entity, clauses, hops, request)
+    stmt, applied_excludes = _apply_amount_excludes(stmt, entity, clauses, hops, request)
     local_clauses, many_groups = _split_many(entity, clauses)
     stmt = _apply_where(stmt, entity, local_clauses, hops)
     stmt = await _apply_many(db, stmt, entity, many_groups, scope)
@@ -894,6 +921,7 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
             # The same default as the grouped rows, or the total covers rows
             # the groups do not (every BOM version, every budget plan version).
             t_stmt, _ = _apply_default_filter(t_stmt, entity, clauses, [], request)
+            t_stmt, _ = _apply_amount_excludes(t_stmt, entity, clauses, [], request)
             t_stmt = _apply_where(t_stmt, entity, local_clauses, [])
             t_stmt = await _apply_many(db, t_stmt, entity, many_groups, scope)
             t_stmt = _apply_period(t_stmt, entity, request.get("period"), [])
@@ -976,8 +1004,13 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
 
     # Say so when a default narrowed the question. A result that quietly shows
     # one version of six is not wrong, but a reply that does not mention it is.
+    notes = []
     if applied_default and entity.default_filter_note:
-        out["assumption"] = entity.default_filter_note
+        notes.append(entity.default_filter_note)
+    if applied_excludes:
+        notes.append(entity.amount_excludes[2])
+    if notes:
+        out["assumption"] = " ".join(notes)
 
     # Codes that stand for something, for the columns actually returned. The
     # schema block carries these too, but only the planner sees that; whatever

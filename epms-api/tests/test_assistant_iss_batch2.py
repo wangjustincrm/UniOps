@@ -369,3 +369,57 @@ def test_invoice_numbers_point_at_the_epms_invoice():
     assert "INV-" in REGISTRY["invoice"].fields["internal_ref"].label
     assert REGISTRY["invoice"].fields["internal_ref"].doc_number == "INV"
     assert "use `invoice`" in REGISTRY["ap_invoice"].label
+
+
+# ── Decisions of 2026-10-21: amount defaults, and no AP copy in EPMS ────────
+
+async def test_amounts_leave_out_cancelled_rejected_and_draft_unless_asked(
+        test_engine, admin_client):
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        db.add_all([_po(v, uid, f"PO-EXC-{tag}-{st}", status=st, total=Decimal(amt))
+                    for st, amt in (("issued", "100"), ("closed", "50"), ("cancelled", "7"),
+                                    ("rejected", "8"), ("draft", "9"))])
+        await db.commit()
+    mine = {"field": "number", "op": "like", "value": f"PO-EXC-{tag}"}
+
+    body = await _query(admin_client, entity="purchase_order", metrics=["amount"], where=[mine])
+    assert body["rows"] == [{"currency": "CAD", "amount": "150.00"}]
+    assert "cancelled, rejected and draft" in body["assumption"]
+
+    # Asked about a status: answered as asked, no default.
+    body = await _query(admin_client, entity="purchase_order", metrics=["amount"],
+                        where=[mine, {"field": "status", "op": "eq", "value": "cancelled"}])
+    assert body["rows"] == [{"currency": "CAD", "amount": "7.00"}]
+    assert "assumption" not in body
+
+    # A count alone is not an amount: every PO is counted.
+    body = await _query(admin_client, entity="purchase_order", metrics=["count"], where=[mine])
+    assert body["rows"] == [{"count": 5}]
+
+
+async def test_the_epms_assistant_does_not_see_finance_ap_copy(admin_client, monkeypatch):
+    from app.services import assistant_llm
+
+    shown = {}
+
+    async def fake_plan(schema, message, context=None, retry_error=None, history=None):
+        shown.setdefault("names", {e["name"] for e in schema})
+        shown.setdefault("retry", retry_error)
+        if retry_error:
+            return {"kind": "cannot", "reason": "x", "explanation": "n/a", "usage": {}}
+        return {"kind": "query", "usage": {}, "query": {"entity": "ap_invoice", "metrics": ["total"]}}
+
+    monkeypatch.setattr(assistant_llm, "plan", fake_plan)
+    r = await admin_client.post("/api/v1/assistant/chat", json={
+        "message": "unpaid invoices?", "context": {"app": "epms"}})
+    assert r.status_code == 200, r.text
+    assert "invoice" in shown["names"] and "ap_invoice" not in shown["names"]
+
+    # Elsewhere (Finance) it is still there.
+    shown.clear()
+    await admin_client.post("/api/v1/assistant/chat", json={
+        "message": "AP posting?", "context": {"app": "finance"}})
+    assert "ap_invoice" in shown["names"]
