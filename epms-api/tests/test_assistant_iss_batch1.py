@@ -312,3 +312,90 @@ def test_po_returned_is_declared():
 
 def test_paid_pa_rule_is_stated():
     assert "Processed" in _rules("pa")["paid_pa_is_processed"]
+
+
+# ── ISS-0052: "Failed to fetch" ──────────────────────────────────────────────
+
+async def test_a_real_statement_timeout_is_recognised(test_engine):
+    """The detector is checked against what Postgres really raises, through the
+    same driver, not against a hand-made exception."""
+    import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.services import controlled_query as cq
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession)
+    async with factory() as db:
+        await db.execute(sa.text("SET LOCAL statement_timeout = 10"))
+        try:
+            await db.execute(sa.text("SELECT pg_sleep(1)"))
+        except sa.exc.DBAPIError as exc:
+            caught = exc
+        else:  # pragma: no cover
+            raise AssertionError("pg_sleep(1) was not cancelled")
+        await db.rollback()
+    assert cq._is_statement_timeout(caught)
+
+    # And something else is not mistaken for one.
+    async with factory() as db:
+        try:
+            await db.execute(sa.text("SELECT 1/0"))
+        except sa.exc.DBAPIError as exc:
+            assert not cq._is_statement_timeout(exc)
+        await db.rollback()
+
+
+async def test_a_timed_out_query_is_answered_not_failed(admin_client, monkeypatch):
+    """A cancelled statement used to escape as a 500. Now it is an answer, the
+    aborted transaction is rolled back, and the next request still works."""
+    from app.services import assistant_llm
+    from app.services import controlled_query as cq
+
+    async def fake_plan(schema, message, context=None, retry_error=None, history=None):
+        return {"kind": "query", "usage": {},
+                "query": {"entity": "purchase_order", "select": ["number"]}}
+
+    async def too_slow(db, query, scope, for_export=False):
+        import sqlalchemy as sa
+        # Abort the request's transaction the way a real cancel does.
+        await db.execute(sa.text("SET LOCAL statement_timeout = 10"))
+        try:
+            await db.execute(sa.text("SELECT pg_sleep(1)"))
+        except sa.exc.DBAPIError as exc:
+            raise cq.QueryTimedOut(str(exc)) from exc
+
+    monkeypatch.setattr(assistant_llm, "plan", fake_plan)
+    monkeypatch.setattr(cq, "execute", too_slow)
+    r = await admin_client.post("/api/v1/assistant/chat",
+                                json={"message": "list every purchase order"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["reason"] == "timeout" and "took too long" in body["answer"]
+    assert body["query"] is None
+
+    monkeypatch.undo()
+    r = await admin_client.get("/api/v1/assistant/schema")
+    assert r.status_code == 200
+
+
+async def test_an_unhandled_error_still_carries_cors_headers():
+    """The 500 for an unhandled error was produced outside CORSMiddleware, so
+    the browser could not read it and reported "Failed to fetch"."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.core.config import settings
+    from app.main import create_app
+
+    app = create_app()
+
+    async def boom():
+        raise RuntimeError("boom")
+
+    app.add_api_route("/__boom", boom)
+    origin = settings.ALLOWED_ORIGINS[0]
+    async with AsyncClient(transport=ASGITransport(app=app),
+                           base_url="http://test") as c:
+        r = await c.get("/__boom", headers={"Origin": origin})
+    assert r.status_code == 500
+    assert r.json() == {"detail": "Internal server error"}
+    assert r.headers.get("access-control-allow-origin") == origin

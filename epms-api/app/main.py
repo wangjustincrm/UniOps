@@ -72,6 +72,47 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # ── Catch-all, INSIDE CORS ────────────────────────────────────────────────
+    # Starlette runs exception_handler(Exception) in ServerErrorMiddleware, the
+    # outermost layer — outside CORSMiddleware — so that 500 carried no
+    # Access-Control-Allow-Origin. The browser then hides the response and the
+    # frontends (which call this API cross-origin) show only "Failed to fetch"
+    # (ISS-0052). Added before CORS, this sits inside it: every unhandled error
+    # becomes a 500 the page can read. The handler below stays for anything
+    # raised after a response has started.
+    from starlette.types import ASGIApp, Receive, Scope, Send
+
+    class _CatchAllMiddleware:
+        def __init__(self, app: ASGIApp) -> None:
+            self.app = app
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+            started = False
+
+            async def _send_wrapper(message):
+                nonlocal started
+                if message["type"] == "http.response.start":
+                    started = True
+                await send(message)
+
+            try:
+                await self.app(scope, receive, _send_wrapper)
+            except Exception:
+                if started:
+                    raise
+                request = Request(scope)
+                logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+                response = JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    content={"detail": "Internal server error"},
+                )
+                await response(scope, receive, send)
+
+    app.add_middleware(_CatchAllMiddleware)
+
     # ── CORS ──────────────────────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
@@ -82,8 +123,6 @@ def create_app() -> FastAPI:
     )
 
     # ── Request logging middleware (pure ASGI — no BaseHTTPMiddleware task spawn) ─
-    from starlette.types import ASGIApp, Receive, Scope, Send
-
     class _LoggingMiddleware:
         def __init__(self, app: ASGIApp) -> None:
             self.app = app

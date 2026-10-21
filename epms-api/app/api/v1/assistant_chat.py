@@ -87,6 +87,24 @@ class ChatRequest(BaseModel):
 _MAX_HISTORY_TURNS = 6
 
 
+async def _timed_out(db, query: dict) -> dict:
+    """The query ran past its time limit. An answer, not a 500: the 500 this
+    used to be reached the browser without CORS headers and was shown as
+    "Failed to fetch", and asking again usually worked because the second run
+    found the data cached (ISS-0052). The request's transaction is aborted by
+    the cancel, so roll it back before anything else touches the session."""
+    await db.rollback()
+    log.warning("assistant | query timed out | %s", query)
+    return {
+        "_fixed_text": True,
+        "answer": "That query took too long and was stopped. Try a shorter "
+                  "period or a narrower question, or ask again in a moment.",
+        "kind": "cannot_answer", "reason": "timeout",
+        # No query: it would offer Export to Excel for a query that cannot run.
+        "query": None, "sources": None,
+    }
+
+
 def _answered_exchanges(turns: list[ChatTurn]) -> list[ChatTurn]:
     """Only question-and-answer pairs, in order, so roles strictly alternate
     and the history (and any even-length tail of it) starts with a question.
@@ -204,6 +222,8 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
     query = planned["query"]
     try:
         result = await cq.execute(db, query, scope)
+    except cq.QueryTimedOut:
+        return await _timed_out(db, query)
     except cq.QueryRejected as exc:
         # Hand the rejection back once. It names what IS available, so the
         # second attempt usually lands; a second failure is reported rather
@@ -224,6 +244,8 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
         query = planned["query"]
         try:
             result = await cq.execute(db, query, scope)
+        except cq.QueryTimedOut:
+            return await _timed_out(db, query)
         except cq.QueryRejected as exc2:
             log.warning("assistant | plan rejected twice | %s", exc2)
             return {

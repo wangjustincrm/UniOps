@@ -76,6 +76,34 @@ class QueryRejected(Exception):
     """
 
 
+class QueryTimedOut(Exception):
+    """The statement ran past STATEMENT_TIMEOUT_MS and Postgres cancelled it.
+
+    Raised instead of the database error so a caller can answer "that took too
+    long" rather than fail the request. Unhandled, it became a 500 — and a 500
+    the browser could not read, shown as "Failed to fetch" (ISS-0052). The
+    caller's transaction is aborted by then and must be rolled back before the
+    session is used again.
+    """
+
+
+# Postgres query_canceled — what statement_timeout raises.
+_QUERY_CANCELED = "57014"
+
+
+def _is_statement_timeout(exc: BaseException) -> bool:
+    """Whether a DBAPIError is Postgres cancelling the statement. asyncpg's
+    error sits under SQLAlchemy's adapter, which may or may not copy the code
+    up, so look at each layer."""
+    seen = exc
+    while seen is not None:
+        for attr in ("sqlstate", "pgcode"):
+            if getattr(seen, attr, None) == _QUERY_CANCELED:
+                return True
+        seen = getattr(seen, "orig", None) or seen.__cause__
+    return False
+
+
 def _reject(msg: str) -> None:
     raise QueryRejected(msg)
 
@@ -462,11 +490,22 @@ async def _apply_hops(db: AsyncSession, stmt, hops: list, scope: dict):
 
 async def execute(db: AsyncSession, request: dict, scope: dict,
                   for_export: bool = False) -> dict:
-    """Run one controlled query. Raises QueryRejected on anything unrecognised.
+    """Run one controlled query. Raises QueryRejected on anything unrecognised,
+    and QueryTimedOut when Postgres cancels it for running too long.
 
     `scope` is build_scope()'s output; both gates are read from it and neither is
     optional.
     """
+    try:
+        return await _execute(db, request, scope, for_export)
+    except sa.exc.DBAPIError as exc:
+        if _is_statement_timeout(exc):
+            raise QueryTimedOut(str(exc.orig)) from exc
+        raise
+
+
+async def _execute(db: AsyncSession, request: dict, scope: dict,
+                   for_export: bool) -> dict:
     entity = get_entity(request.get("entity") or "")
     if entity is None:
         _reject(f"Unknown entity. Available: {', '.join(sorted(REGISTRY))}")
