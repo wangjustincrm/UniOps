@@ -219,3 +219,26 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     def _pa_status_expression(cls):
         from app.models.pa import PaymentApplication
         return cls._live_pa(PaymentApplication.status)
+
+    # Paying a PA writes its invoices' status: paid, or partially_paid when the
+    # PA is a prepayment (finance-api crud/payment_execute.py, PRD PAY-005).
+    # "Do the invoices of paid PAs all show paid?" read partially_paid as "not
+    # paid" — this says, per invoice on a processed PA, whether its status is
+    # the one that payment writes (ISS-0059). NULL while the PA is not paid.
+    PAID_STATUS_BY_PA_TYPE = {"prepayment": "partially_paid"}
+    PAID_STATUS_DEFAULT = "paid"
+
+    @hybrid_property
+    def pa_payment_shown(self) -> bool | None:
+        return None
+
+    @pa_payment_shown.inplace.expression
+    @classmethod
+    def _pa_payment_shown_expression(cls):
+        from app.models.pa import PaymentApplication
+        pa_type = cls._live_pa(PaymentApplication.pa_type)
+        expected = case(
+            *[(pa_type == t, s) for t, s in cls.PAID_STATUS_BY_PA_TYPE.items()],
+            else_=cls.PAID_STATUS_DEFAULT)
+        return case((cls._live_pa(PaymentApplication.status) == "processed",
+                     cls.status == expected), else_=None)

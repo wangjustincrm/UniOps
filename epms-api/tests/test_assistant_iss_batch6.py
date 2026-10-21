@@ -404,3 +404,66 @@ async def test_a_pasted_note_becomes_the_status_name(admin_client, monkeypatch):
     answer = r.json()["answer"]
     assert note not in answer and "outstanding" not in answer
     assert "| PO-1 | Issued |" in answer and "状态为 Issued。" in answer
+
+
+# ── ISS-0059: a prepayment's invoices show Partially Paid, and that is right ─
+
+async def test_pa_payment_shown_is_the_rule_payment_writes(admin_client, test_engine):
+    """Invoices on paid (processed) PAs: paid for a regular PA, partially_paid
+    for a prepayment — what finance-api's payment writes. Only the regular
+    PA's still-matched invoice is reported as not showing its payment."""
+    import uuid
+    from decimal import Decimal
+    from pathlib import Path
+
+    from app.models.invoice import Invoice
+    from app.models.pa import PaymentApplication
+    from tests.test_assistant_iss_batch2 import _factory, _inv, _po, _uid, _vendor
+
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    cases = {  # invoice status, PA type, PA status -> expected pa_payment_shown
+        "pre-ok": ("partially_paid", "prepayment", "processed", True),
+        "pre-bad": ("matched", "prepayment", "processed", False),
+        "reg-ok": ("paid", "regular", "processed", True),
+        "reg-bad": ("matched", "regular", "processed", False),
+        "reg-part": ("partially_paid", "regular", "processed", False),
+        "unpaid": ("matched", "regular", "approved", None),
+    }
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        for key, (inv_status, pa_type, pa_status, _) in cases.items():
+            po = _po(v, uid, f"PO-PPS-{tag}-{key}")
+            db.add(po)
+            await db.flush()
+            inv = _inv(v, uid, f"INV-PPS-{tag}-{key}", po_id=po.id, po_number=po.number,
+                       status=inv_status)
+            db.add(inv)
+            await db.flush()
+            db.add(PaymentApplication(
+                pa_number=f"PA-PPS-{tag}-{key}", title="p", po_id=po.id, po_number=po.number,
+                vendor_id=v.id, vendor_name=v.name, invoice_ids=[str(inv.id)], gr_ids=[],
+                subtotal=Decimal("1"), payment_amount=Decimal("1"), pa_type=pa_type,
+                status=pa_status, created_by=uid))
+        await db.commit()
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "invoice", "select": ["internal_ref", "status", "pa_payment_shown"],
+        "where": [{"field": "internal_ref", "op": "like", "value": f"INV-PPS-{tag}"}]})
+    assert r.status_code == 200, r.text
+    got = {row["internal_ref"].replace(f"INV-PPS-{tag}-", ""): row["pa_payment_shown"]
+           for row in r.json()["rows"]}
+    assert got == {k: c[3] for k, c in cases.items()}
+    # The status has a page name and a note saying it is expected.
+    status = REGISTRY["invoice"].fields["status"]
+    assert "partially_paid" in status.values
+    assert dict(status.value_labels)["partially_paid"] == "Partially Paid"
+    assert "expected status" in dict(status.value_notes)["partially_paid"]
+
+    # The same rule as the payment itself (finance-api, whole repo mounted).
+    src = Path(__file__).resolve().parents[2] / "finance-api" / "app" / "crud" / "payment_execute.py"
+    if src.exists():
+        assert ('inv_status = "partially_paid" if pa.pa_type == "prepayment" else "paid"'
+                in src.read_text(encoding="utf-8"))
+    assert Invoice.PAID_STATUS_BY_PA_TYPE == {"prepayment": "partially_paid"}
+    assert Invoice.PAID_STATUS_DEFAULT == "paid"
+    assert "pa_payment_shown" in assistant_llm._PLAN_SYSTEM

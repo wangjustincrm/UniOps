@@ -164,7 +164,9 @@ Rules:
   ("goods received over 30 days ago with no invoice" = gr_type physical,
   days_since_received gt 30, po_invoiced false); purchase_request
   days_to_approve and metric avg_days_to_approve; invoice.pa_number and
-  pa_status (the payment application an invoice is on).
+  pa_status (the payment application an invoice is on); "do the invoices of
+  paid PAs all show paid / which do not" is invoice.pa_payment_shown (false =
+  not shown; a prepayment's invoices correctly show partially_paid).
 - Whether an invoice is over its PO, by how much, and its match result are on
   `invoice` (variance, matched_reference_total, status) — filter by
   po_number. Never answer them from the PO alone. Line by line it is

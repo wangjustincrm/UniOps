@@ -527,7 +527,8 @@ entities:
       status:
         kind: enum
         label: "Matching status"
-        values: [unmatched, match_review, matched, exception, paid, cancelled]
+        values: [unmatched, match_review, matched, exception, paid,
+                 partially_paid, cancelled]
         # The names the Invoices list shows (InvoiceListPage STATUS_CFG), so a
         # status column reads like the page (ISS-0013).
         value_labels:
@@ -536,6 +537,8 @@ entities:
           matched: "Matched"
           exception: {label: "Exception", note: "Billed more than a PO line's value beyond the match tolerance"}
           paid: {label: "Paid", note: "Paid — set when Finance pays the payment application the invoice is on"}
+          # ISS-0059. The Invoices list has no name for it; PRD §3.15 / PAY-005.
+          partially_paid: {label: "Partially Paid", note: "Set when Finance pays a PREPAYMENT payment application the invoice is on: the advance is paid and the invoice stays an open item until settled. For an invoice on a paid prepayment PA this is the expected status, not a missing payment"}
           cancelled: "Cancelled"
       amount: {kind: money, label: "Amount before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
@@ -592,6 +595,14 @@ entities:
         kind: enum
         label: "Status of that payment application (processed = paid)"
         values: [draft, submitted, in_review, approved, rejected, returned, processed, paid]
+      # Added 2026-10-21 (ISS-0059).
+      pa_payment_shown:
+        kind: bool
+        label: "For an invoice on a paid (processed) payment application:
+          whether the invoice's own status shows that payment — paid, or
+          partially_paid when the PA is a prepayment (what the payment
+          writes). Empty while its PA is not paid. \"Invoices of paid PAs
+          that do not show paid\" is pa_payment_shown = false"
       created_at: {kind: datetime, label: "Uploaded at — when the invoice entered EPMS (the Invoices list's Upload Date); not the vendor's invoice date"}
     metrics:
       total: {fn: sum, field: total_amount, label: "Total invoiced including tax", currency: currency}
