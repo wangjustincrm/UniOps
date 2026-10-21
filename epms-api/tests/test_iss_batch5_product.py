@@ -188,3 +188,21 @@ async def test_rejected_filter_finds_pas_cancelled_by_a_rejection(test_engine, a
     detail = (await admin_client.get(f"/api/v1/pa/{rejected.id}")).json()
     assert detail["status"] == "cancelled" and detail["rejected_in_approval"] is True
     assert (await admin_client.get(f"/api/v1/pa/{withdrawn.id}")).json()["rejected_in_approval"] is False
+
+
+# ── PA Detail "Payment Processed" = the payment date ─────────────────────────
+
+async def test_pa_detail_gives_the_payment_date_not_last_modified(test_engine, admin_client):
+    """finance-api stores the entered payment DATE as midnight UTC (20:00 the
+    evening before in Toronto). The detail endpoint gives that date back as a
+    plain date; updated_at (any later write) is not it."""
+    uid = _uid(admin_client)
+    tag = uuid.uuid4().hex[:8]
+    pa = await _pa(test_engine, uid, tag, status="processed",
+                   paid_at=datetime(2026, 10, 19, tzinfo=timezone.utc))
+    body = (await admin_client.get(f"/api/v1/pa/{pa.id}")).json()
+    assert body["paid_on"] == "2026-10-19"
+    assert body["updated_at"][:10] != "2026-10-19"   # created now, not on the 19th
+
+    unpaid = await _pa(test_engine, uid, tag + "u", status="approved")
+    assert (await admin_client.get(f"/api/v1/pa/{unpaid.id}")).json()["paid_on"] is None

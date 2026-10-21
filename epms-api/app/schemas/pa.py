@@ -197,6 +197,11 @@ class PaResponse(BaseModel):
     status: str
     notes: str | None
     submitted_at: datetime | None
+    # When the PA was paid: the payment DATE Finance entered (PAY-005), as a
+    # plain date — paid_at is that date at midnight UTC, which shown as a time
+    # in Toronto reads as the evening before. Not updated_at, which any later
+    # write moves (PRD 3.7.2: event dates, not last-modified).
+    paid_on: date | None = None
     prepayment_pct: Decimal | None
     expected_settlement_date: date | None
     settlement_status: str | None

@@ -53,9 +53,11 @@ function PaStatusBadge({ status }: { status: PaStatus }) {
 // ─── Approval timeline ────────────────────────────────────────────────────────
 
 function TimelineStep({
-  label, actor, date, status, note,
+  label, actor, date, dateOnly, status, note,
 }: {
   label: string; actor?: string; date?: string;
+  /** `date` is a calendar date with no time of day (the payment date). */
+  dateOnly?: boolean;
   status: 'done' | 'active' | 'pending' | 'skipped' | 'rejected';
   note?: string;
 }) {
@@ -85,7 +87,7 @@ function TimelineStep({
       </div>
       <div className="pb-5">
         <p className={cn('text-sm font-semibold text-neutral-800', status === 'skipped' && 'line-through text-neutral-400')}>{actor ? `${label} — ${actor}` : label}</p>
-        {date && <p className="text-xs text-neutral-400 mt-0.5">{formatDateTime(date)}</p>}
+        {date && <p className="text-xs text-neutral-400 mt-0.5">{dateOnly ? formatDate(date) : formatDateTime(date)}</p>}
         {isAutoApproved && (
           <span className="inline-flex items-center mt-1 rounded-full bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
             Auto-approved
@@ -559,7 +561,11 @@ export default function PaDetailPage() {
     {
       label: 'Payment Processed',
       actor: undefined as string | undefined,
-      date: pa.status === 'processed' ? pa.updated_at : undefined,
+      // The payment date Finance recorded (PAY-005) — a date, so shown
+      // without a time. It used to be updated_at, the last time anything
+      // touched the PA, which is not when it was paid (PRD 3.7.2).
+      date: pa.status === 'processed' ? pa.paid_on ?? undefined : undefined,
+      dateOnly: true,
       note: undefined as string | undefined,
       status: pa.status === 'processed' ? 'done' as const : pa.status === 'approved' ? 'active' as const : 'pending' as const,
     },

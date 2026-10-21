@@ -117,6 +117,9 @@ export interface ApiPa {
   created_at: string
   updated_at: string
   current_step?: CurrentStep | null
+  /** The payment date Finance entered (YYYY-MM-DD, a plain date); null until
+   *  paid. Not updated_at, which any later write moves. */
+  paid_on?: string | null
   /** Cancelled because an approver rejected it — the engine cancels a rejected
    *  PA, so status alone says "cancelled" (ISS-0078). List and detail only. */
   rejected_in_approval?: boolean
