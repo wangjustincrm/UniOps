@@ -145,6 +145,11 @@ Rules:
 - How an order was placed (email / online / NC) and when are
   purchase_order.place_order_method and placed_at; WHO placed it is in the
   PO's history: explain_workflow.
+- When a payment application was paid and from which account: query
+  payment_record where pa_number = the PA, selecting payment_date,
+  bank_account.name, amount (net of credits) and credit_applied. Without
+  View Finance there is no payment_record; then payment_application.paid_on
+  gives the date and the account cannot be shown — say so.
 - Facts the system already decides are fields — use them instead of rebuilding
   them from joins: purchase_order.three_way_matched, invoiced, has_pa ("no
   PA yet" = has_pa false); goods_receipt.po_invoiced and days_since_received
@@ -1097,6 +1102,13 @@ sitting right now.
 - If steps_available is false the engine could not be reached, so you have the
   history but not the full chain — say that rather than implying the chain is
   short.
+- For a payment application, `milestones.paid_on` is the payment date Finance
+  recorded (null = not paid yet); submitted_at and approved_at are when it was
+  submitted and fully approved. Payment is not an approval step, so it is not
+  in history.
+- A comment is not a payment account, a bank or a payment date. If what was
+  asked is not in what you were given, say it is not shown here — never read
+  it out of a comment.
 - Never invent a name, a step, a date or a role that is not in what you were
   given.
 """

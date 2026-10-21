@@ -19,6 +19,7 @@ The current step deliberately comes from `enrich_current_step` rather than from
 and that helper already resolves the assignee's name and any active stand-in.
 """
 import uuid
+from datetime import timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -116,7 +117,7 @@ async def build(db, doc_type: str, doc, token: str) -> dict:
     await enrich_current_step(db, doc_type, [doc])
     current = getattr(doc, "current_step", None)
 
-    return {
+    out = {
         "doc_type": doc_type,
         "document_number": number,
         "status": getattr(doc, "status", None),
@@ -125,3 +126,15 @@ async def build(db, doc_type: str, doc, token: str) -> dict:
         "current_step": current,
         "history": history,
     }
+    if doc_type == "pa":
+        # Payment is not an approval event, so the history stops at the last
+        # approval and "when was it paid" had no answer here (ISS-0043). The
+        # payment date is the date Finance entered: paid_at is that date at
+        # midnight UTC (see PaymentApplication.paid_on).
+        paid_at = getattr(doc, "paid_at", None)
+        out["milestones"] = {
+            "submitted_at": getattr(doc, "submitted_at", None),
+            "approved_at": getattr(doc, "approved_at", None),
+            "paid_on": paid_at.astimezone(timezone.utc).date() if paid_at else None,
+        }
+    return out

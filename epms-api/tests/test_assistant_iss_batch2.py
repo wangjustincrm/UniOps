@@ -711,3 +711,52 @@ def test_the_credit_netting_rule_is_stated():
     rule = rules["vendor_credit_netting"]
     assert "oldest credit date first" in rule and "same currency" in rule
     assert "not entered on the payment application" in rule
+
+
+# ── ISS-0043 / ISS-0056: when, from which account, how much after credits ──
+
+async def test_a_pas_payment_record_gives_date_account_and_net(test_engine, admin_client):
+    import sqlalchemy as sa
+
+    tag = uuid.uuid4().hex[:6]
+    bank_id = uuid.uuid4()
+    async with test_engine.begin() as conn:
+        await conn.execute(sa.text(
+            "INSERT INTO bank_accounts (id, name, bank_name, currency, is_active, created_at)"
+            " VALUES (:id, :n, 'RBC', 'CAD', true, now())"), {"id": bank_id, "n": f"Ops {tag}"})
+        await conn.execute(sa.text(
+            "INSERT INTO payment_records (id, pa_number, vendor_name, payment_date,"
+            " payment_method, amount, credit_applied, currency, status, bank_account_id)"
+            " VALUES (:id, :pa, 'V', :d, 'eft', 6648.14, 527.03, 'CAD', 'completed', :b)"),
+            {"id": uuid.uuid4(), "pa": f"PA-PAY-{tag}", "d": date(2026, 10, 19), "b": bank_id})
+    body = await _query(admin_client, entity="payment_record",
+                        select=["payment_date", "bank_account.name", "amount", "credit_applied"],
+                        where=[{"field": "pa_number", "op": "eq", "value": f"PA-PAY-{tag}"}])
+    assert body["rows"] == [{"payment_date": "2026-10-19", "bank_account.name": f"Ops {tag}",
+                             "amount": "6648.14", "credit_applied": "527.03"}]
+
+
+async def test_the_workflow_view_of_a_pa_carries_its_payment_date(monkeypatch):
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
+    from app.services import workflow_view
+
+    async def no_steps(*a, **k):
+        return []
+
+    async def no_events(db, doc_id):
+        return []
+
+    async def no_step(db, doc_type, items):
+        for it in items:
+            it.current_step = None
+
+    monkeypatch.setattr(workflow_view.approval_client, "get_workflow_steps", no_steps)
+    monkeypatch.setattr(workflow_view._SPEC["pa"]["crud"], "get_approval_events", no_events)
+    monkeypatch.setattr(workflow_view, "enrich_current_step", no_step)
+    pa = SimpleNamespace(id=uuid.uuid4(), pa_number="PA-1", status="processed",
+                         submitted_at=None, approved_at=None,
+                         paid_at=datetime(2026, 10, 19, tzinfo=timezone.utc))
+    view = await workflow_view.build(None, "pa", pa, "t")
+    assert view["milestones"]["paid_on"] == date(2026, 10, 19)

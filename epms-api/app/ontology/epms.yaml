@@ -643,6 +643,13 @@ entities:
         local: agreement_id
         remote: id
         label: "The purchase agreement this PA pays against, for agreement payments"
+      payments:
+        target: payment_record
+        cardinality: one_to_many
+        local: id
+        remote: pa_id
+        label: "The payment(s) Finance executed for this PA — date, account, net
+          paid. Needs View Finance"
 
   # Added 2026-10-16 (ISS-0002): the Agreement detail page showed validity, NTE
   # and consumed, and the Assistant said none of it existed — one answer even
