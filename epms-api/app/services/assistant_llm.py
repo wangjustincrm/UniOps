@@ -848,6 +848,26 @@ _RECEIVING_TOOL = {
     },
 }
 
+_VENDOR_SUMMARY_TOOL = {
+    "name": "vendor_summary",
+    "description": (
+        "A summary of all business with ONE vendor: purchase orders, "
+        "agreements, invoices, payment applications and available vendor "
+        "credits, each counted and totalled per currency. Use it for '供应商 X "
+        "和我们合作的情况总结一下', 'summarise our business with X', 'everything "
+        "we have with X'. A single query covers one kind of document; this "
+        "covers all of them."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "vendor": {"type": "string",
+                       "description": "The vendor's name, or part of it, as asked."},
+        },
+        "required": ["vendor"],
+    },
+}
+
 _CANNOT_TOOL = {
     "name": "cannot_answer",
     "description": (
@@ -990,7 +1010,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _NEXT_TOOL,
                    _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
                    _MODULES_TOOL, _PRODUCIBLE_TOOL, _REPORT_TOOL,
-                   _BUDGET_VARIANCE_TOOL, _RECEIVING_TOOL, _CANNOT_TOOL],
+                   _BUDGET_VARIANCE_TOOL, _RECEIVING_TOOL, _VENDOR_SUMMARY_TOOL,
+                   _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -1021,6 +1042,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             return {"kind": "modules", "usage": _usage(resp)}
         if block.name == "explain_document_types":
             return {"kind": "doc_types", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "vendor_summary":
+            return {"kind": "vendor_summary", **dict(block.input), "usage": _usage(resp)}
         if block.name == "receiving_report":
             return {"kind": "receiving", **dict(block.input), "usage": _usage(resp)}
         if block.name == "budget_vs_actual":
@@ -1371,6 +1394,15 @@ You are helping a colleague who may never have been trained on this system.
   万元 or another unit, and never rescale the numbers. Say which months the
   actual covers (1 to `through_month` of `fiscal_year`); a current year does
   not run "to December".
+- For a vendor summary (`kind` vendor_summary): one short section per kind of
+  document in `sections` — counts and totals exactly as given, each amount
+  with its currency, never added across currencies or across sections.
+  Totals leave out cancelled, rejected and draft documents (say so once);
+  `by_status` gives the counts of every status, cancelled included. A section
+  with `not_visible` is one this person may not see: say it is not shown
+  rather than "none". `candidates` means the name matched several vendors:
+  list them and ask which one. Do not add opinions such as "a stable
+  relationship" — report the figures.
 - For the Receiving Report (`kind` receiving_report): give lines, receipts,
   orders and the average lead time for `period` exactly as given, and say the
   report counts physical receipts only and leaves out NC-mirrored orders.

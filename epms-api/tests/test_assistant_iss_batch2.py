@@ -964,3 +964,54 @@ async def test_year_on_year_is_computed_for_the_narrator(test_engine, admin_clie
                                    "previous_year": "100.00", "change": "150.00",
                                    "change_pct": "150.0"}]
     assert seen["previous_year"]["resolved_period"] == {"from": "2098-03-01", "to": "2098-03-31"}
+
+
+# ── ISS-0057: everything with one vendor ─────────────────────────────────────
+
+async def test_a_vendor_summary_covers_every_kind_of_document(test_engine, admin_client, monkeypatch):
+    import sqlalchemy as sa
+
+    from app.services import assistant_llm
+
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    name = f"Qualtech {tag}"
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db, name=name)
+        live = _po(v, uid, f"PO-SUM-{tag}-1", total=Decimal("100"))
+        db.add_all([live, _po(v, uid, f"PO-SUM-{tag}-2", total=Decimal("7"), status="cancelled")])
+        await db.flush()
+        db.add(_inv(v, uid, f"INV-SUM-{tag}", po_id=live.id, po_number=live.number))
+        await db.commit()
+    async with test_engine.begin() as conn:
+        await conn.execute(sa.text(
+            "INSERT INTO vendor_credits (id, credit_number, vendor_name, vendor_credit_number,"
+            " credit_date, currency, amount, tax_amount, total_amount, applied_amount,"
+            " remaining_amount, status, source, uploaded_at) VALUES (:id, :n, :v, 'R',"
+            " '2026-10-01', 'CAD', 5, 0, 5, 0, 5, 'available', 'manual', now())"),
+            {"id": uuid.uuid4(), "n": f"VC-SUM-{tag}", "v": name})
+
+    async def fake_plan(schema, message, context=None, retry_error=None, history=None):
+        return {"kind": "vendor_summary", "vendor": name.lower(), "usage": {}}
+
+    seen = {}
+
+    async def fake_guide(message, payload):
+        seen.update(payload)
+        return {"text": "ok", "usage": {}}
+
+    monkeypatch.setattr(assistant_llm, "plan", fake_plan)
+    monkeypatch.setattr(assistant_llm, "narrate_guide", fake_guide)
+    r = await admin_client.post("/api/v1/assistant/chat", json={"message": f"{name} 合作情况总结"})
+    assert r.status_code == 200, r.text
+    s = seen["sections"]
+    assert seen["vendor"] == name
+    assert s["purchase_orders"]["totals"]["rows"] == [{"currency": "CAD", "count": 1, "amount": "100.00"}]
+    assert {row["status"]: row["count"] for row in s["purchase_orders"]["by_status"]["rows"]} \
+        == {"issued": 1, "cancelled": 1}
+    assert s["invoices"]["unpaid"]["rows"][0]["count"] == 1
+    credit = s["vendor_credits"]["available"]["rows"]
+    assert [(c["currency"], c["count"], Decimal(c["remaining"])) for c in credit] \
+        == [("CAD", 1, Decimal("5"))]
+    assert set(s) == {"purchase_orders", "agreements", "invoices", "payment_applications",
+                      "vendor_credits"}

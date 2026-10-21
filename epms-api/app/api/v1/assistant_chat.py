@@ -266,6 +266,9 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
     if planned["kind"] == "report":
         return await _answer_report_lineage(db, scope, token, body, planned, actor)
 
+    if planned["kind"] == "vendor_summary":
+        return await _answer_vendor_summary(db, scope, body, planned, actor, schema)
+
     if planned["kind"] == "receiving":
         return await _answer_receiving_report(db, scope, body, planned, actor)
 
@@ -681,6 +684,77 @@ async def _answer_doc_types(db, body, planned, actor) -> dict:
         "document_types": guide,
         "sources": {"document": guide["label"], "types": len(guide["types"])},
     }
+
+
+# What a vendor summary covers: (section, entity, [(label, extra where, metrics,
+# group_by)]). Each runs as an ordinary scoped query, so nothing here can show
+# what the person could not have queried one by one.
+_VENDOR_SECTIONS = (
+    ("purchase_orders", "purchase_order", (
+        ("totals", [], ["count", "amount"], []),
+        ("by_status", [], ["count"], ["status"]))),
+    ("agreements", "purchase_agreement", (
+        ("totals", [], ["count", "consumed"], []),)),
+    ("invoices", "invoice", (
+        ("totals", [], ["count", "total"], []),
+        ("unpaid", [{"field": "status", "op": "not_in", "value": ["paid", "cancelled"]}],
+         ["count", "total"], []))),
+    ("payment_applications", "payment_application", (
+        ("totals", [], ["count", "amount"], []),
+        ("paid", [{"field": "status", "op": "eq", "value": "processed"}],
+         ["count", "amount"], []))),
+    ("vendor_credits", "vendor_credit", (
+        ("available", [{"field": "status", "op": "eq", "value": "available"}],
+         ["count", "remaining"], []),)),
+)
+
+
+async def _answer_vendor_summary(db, scope, body, planned, actor, schema) -> dict:
+    """Everything with one vendor, per kind of document (ISS-0057).
+
+    Summarised from POs alone, with two cancelled orders in the total and no
+    currency, the answer left out agreements, invoices, PAs and credits.
+    """
+    asked = (planned.get("vendor") or "").strip()
+    shown = {e["name"] for e in schema}
+    found = await cq.execute(db, {"entity": "vendor", "select": ["name"],
+                                  "where": [{"field": "name", "op": "like", "value": asked}],
+                                  "limit": 10}, scope)
+    names = [r["name"] for r in found["rows"]]
+    exact = [n for n in names if n.lower() == asked.lower()]
+    if len(exact) == 1:
+        names = exact
+    result: dict = {"vendor_asked": asked}
+    if len(names) != 1:
+        result["candidates"] = names
+    else:
+        vendor = names[0]
+        result["vendor"] = vendor
+        sections = {}
+        for section, entity, parts in _VENDOR_SECTIONS:
+            if entity not in shown:
+                sections[section] = {"not_visible": True}
+                continue
+            out = {}
+            for label, where, metrics, group_by in parts:
+                res = await cq.execute(db, {
+                    "entity": entity, "metrics": metrics, "group_by": group_by,
+                    "where": [{"field": "vendor_name", "op": "eq", "value": vendor}, *where]},
+                    scope)
+                out[label] = {"rows": res.get("rows"),
+                              **({"assumption": res["assumption"]} if res.get("assumption") else {})}
+            sections[section] = out
+        result["sections"] = sections
+    payload = {"question": body.message, "kind": "vendor_summary", **result}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+    return {"answer": told["text"], "kind": "vendor_summary", "query": None,
+            "vendor_summary": result,
+            "sources": {"entity": "vendor summary", "row_count": len(result.get("sections") or {}),
+                        "complete": True}}
 
 
 async def _answer_receiving_report(db, scope, body, planned, actor) -> dict:
