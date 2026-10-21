@@ -108,8 +108,8 @@ async def build(db, doc_type: str, doc, token: str) -> dict:
         "at": getattr(e, "created_at", None),
     } for e in events]
 
-    # enrich_current_step only fills documents in review, which is exactly when
-    # "who is it with" has an answer.
+    # enrich_current_step only fills documents awaiting approval (submitted or
+    # in review), which is exactly when "who is it with" has an answer.
     await enrich_current_step(db, doc_type, [doc])
     current = getattr(doc, "current_step", None)
 
