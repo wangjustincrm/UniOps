@@ -125,6 +125,11 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     exception_resolved_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # accepted | credit_note_requested
     exception_resolution: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # The human's justification (accepted) or vendor instructions
+    # (credit_note_requested). Kept apart from exception_reason, which match()
+    # rewrites on every re-match — the note used to be stored there and was
+    # overwritten by the first edit after acceptance.
+    exception_resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Multi-PO line-level allocations (set at match time)
     allocations: Mapped[list["InvoicePoAllocation"]] = relationship(  # noqa: F821

@@ -168,7 +168,7 @@ async def test_resolve_exception_credit_note(admin_client):
     await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"po_id": po["id"]})
 
     r = await admin_client.post(f"{INV_URL}/{inv['id']}/exception", json={
-        "resolution": "credit_note_requested"
+        "resolution": "credit_note_requested", "note": "Ask vendor for credit"
     })
     assert r.status_code == 200
     # credit note → stays as exception (not auto-matched)

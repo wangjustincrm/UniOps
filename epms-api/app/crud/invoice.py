@@ -1560,6 +1560,7 @@ async def rematch_from_existing(
         inv.exception_resolved_at = None
         inv.exception_resolved_by = None
         inv.exception_resolved_by_name = None
+        inv.exception_resolution_note = None
 
     # Allocations are PRE-TAX (tax stays at the invoice header), so balance them
     # against the pre-tax amount — mirroring match()'s integrity check. Comparing
@@ -1683,8 +1684,10 @@ async def resolve_exception(
     invoice.exception_resolved_by = resolved_by
     invoice.exception_resolved_by_name = resolver_result.scalar_one_or_none()
     invoice.exception_resolution = req.resolution
-    if req.note:
-        invoice.exception_reason = req.note
+    # Not exception_reason: that is match()'s system-written variance
+    # description, and re-matching rewrites it — the justification stored there
+    # disappeared from every page once the invoice left "exception".
+    invoice.exception_resolution_note = req.note
     # After resolution, move to matched (accepted) or stay as-is
     if req.resolution == "accepted":
         invoice.status = "matched"
