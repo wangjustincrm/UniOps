@@ -957,12 +957,12 @@ def _context_note(context: dict | None) -> str:
     return note + session
 
 
-# ── The conversation (ISS-0038, ISS-0067) ─────────────────────────────────────
+# ── The conversation and the caller (ISS-0038, ISS-0067, ISS-0073) ────────────
 #
 # Keys the chat layer adds to the planner's context that are not about the
 # page. _context_note renders them on their own instead of listing them as
 # "currently looking at".
-_SESSION_KEYS = ("conversation",)
+_SESSION_KEYS = ("conversation", "caller")
 
 # Appended to _PLAN_SYSTEM: rules about the conversation itself.
 _PLAN_SESSION_RULES = """\
@@ -978,12 +978,34 @@ _PLAN_SESSION_RULES = """\
   and ask which document they mean, by number. Never fall back to whats_next
   or to any query: a new conversation answered with the person's whole task
   list is an answer to a question nobody asked.
+- "Who am I", "what are my roles", "which department am I in" is who_am_i.
+  The person asking is known (see the note about them below the question);
+  never say they cannot be identified, and never work out their roles from
+  their tasks — a task reaching someone does not make its role theirs, and a
+  System Admin sees every task without holding any of those roles.
 """
 
 
+def _caller_note(caller) -> str:
+    """Who is asking, so "my", "me" and "I" have a referent (ISS-0073)."""
+    if not isinstance(caller, dict) or not caller.get("name"):
+        return ""
+    roles = caller.get("primary_role") or "none"
+    extra = [r.get("label") for r in caller.get("additional_roles") or [] if r.get("label")]
+    return (f"\n\nThe person asking is {caller['name']}"
+            f"{' (' + caller['department'] + ')' if caller.get('department') else ''}"
+            f"; primary role {roles}"
+            f"{'; additional roles ' + ', '.join(extra) if extra else ''}. "
+            f"\"I\", \"me\" and \"my\" mean them.")
+
+
 def _session_note(context: dict) -> str:
-    """What the planner is told about the conversation it is in."""
-    conversation = context.get("conversation")
+    """What the planner is told about the conversation it is in, and who is
+    asking."""
+    return _conversation_note(context.get("conversation")) + _caller_note(context.get("caller"))
+
+
+def _conversation_note(conversation) -> str:
     if not isinstance(conversation, dict):
         return ""
     earlier = int(conversation.get("earlier_questions") or 0)
@@ -1024,15 +1046,27 @@ _RECALL_TOOL = {
     },
 }
 
+_WHO_AM_I_TOOL = {
+    "name": "who_am_i",
+    "description": (
+        "Use when someone asks who they are in the system: their name, their "
+        "department, their roles — '我是谁？我有哪些角色？', 'what roles do I "
+        "have', 'which department am I in'. Returns their own record and every "
+        "role they hold, as the system resolves it. Takes no arguments."
+    ),
+    "input_schema": {"type": "object", "properties": {}},
+}
+
 # Tool name -> the `kind` plan() returns for it.
 _SESSION_TOOL_KINDS = {
     "recall_conversation": "recall",
+    "who_am_i": "me",
 }
 
 
 def _session_tools(context: dict | None) -> list[dict]:
     """The planner tools this section adds."""
-    return [_RECALL_TOOL]
+    return [_RECALL_TOOL, _WHO_AM_I_TOOL]
 
 
 def _language_note(message: str) -> str:

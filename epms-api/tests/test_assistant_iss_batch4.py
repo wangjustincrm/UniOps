@@ -247,3 +247,86 @@ def test_a_long_earlier_answer_is_quoted_in_part():
 def test_the_planner_is_offered_recall_conversation():
     assert assistant_llm._RECALL_TOOL in assistant_llm._session_tools(None)
     assert assistant_llm._SESSION_TOOL_KINDS["recall_conversation"] == "recall"
+
+
+# ── ISS-0073: who is asking ──────────────────────────────────────────────────
+
+from sqlalchemy import text as _sql  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: E402
+
+
+async def _make_me_a_director_and_finance_bp(test_engine, uid):
+    from app.models.department import Department
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        dept = Department(name=f"Oversea {uuid.uuid4().hex[:4]}", code=f"OV{uuid.uuid4().hex[:4]}")
+        db.add(dept)
+        await db.flush()
+        await db.execute(_sql("UPDATE users SET department_id = :d WHERE id = :u"),
+                         {"d": dept.id, "u": uid})
+        await db.execute(_sql("INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'finance_bp')"),
+                         {"u": uid})
+        await db.execute(_sql(
+            "INSERT INTO approval_dept_routing (dept_id, gm_or_opm, director_user_id, supervisor_enabled) "
+            "VALUES (:d, 'gm', :u, false)"), {"d": str(dept.id), "u": str(uid)})
+        await db.commit()
+        return dept
+
+
+async def _undo(test_engine, dept):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await db.execute(_sql("DELETE FROM approval_dept_routing WHERE dept_id = :d"),
+                         {"d": str(dept.id)})
+        await db.commit()
+
+
+async def test_who_am_i_names_the_person_and_every_role(test_engine, requester_client, monkeypatch):
+    """Answered "the system cannot identify you", then roles guessed from tasks."""
+    dept = await _make_me_a_director_and_finance_bp(test_engine, _uid(requester_client))
+    try:
+        calls = _stub(monkeypatch, plans=[{"kind": "me"}, {"kind": "me"}])
+        r = await requester_client.post(CHAT, json={"message": "who am I? what roles do I have?"})
+        body = r.json()
+        assert body["kind"] == "me"
+        text = body["answer"]
+        assert "Test requester" in text and dept.name in text
+        assert "Primary role: Requester" in text
+        assert "Finance BP" in text
+        assert "Director (set as a department's Director in Approval Routing)" in text
+        assert not calls["fixed"], "an English question is answered as written"
+
+        r = await requester_client.post(CHAT, json={"message": "我是谁？我有哪些角色？"})
+        assert calls["fixed"] and "Primary role: Requester" in calls["fixed"][0]["text"], \
+            "a Chinese question gets the same facts, rendered by the fixed-reply step"
+    finally:
+        await _undo(test_engine, dept)
+
+
+async def test_the_planner_knows_who_is_asking(test_engine, requester_client, monkeypatch):
+    dept = await _make_me_a_director_and_finance_bp(test_engine, _uid(requester_client))
+    try:
+        calls = _stub(monkeypatch, plans=[{"kind": "cannot", "reason": "too_ambiguous",
+                                           "explanation": "n/a"}])
+        await requester_client.post(CHAT, json={"message": "my open PRs"})
+        caller = calls["plan"][0]["context"]["caller"]
+        assert caller["name"] == "Test requester" and caller["primary_role"] == "Requester"
+        assert {r["label"] for r in caller["additional_roles"]} == {"Finance BP", "Director"}
+        note = assistant_llm._context_note(calls["plan"][0]["context"])
+        assert "The person asking is Test requester" in note and "Finance BP" in note
+        assert "who_am_i" in assistant_llm._PLAN_SESSION_RULES
+    finally:
+        await _undo(test_engine, dept)
+
+
+async def test_the_task_list_is_given_the_real_roles(admin_client, monkeypatch):
+    calls = _stub(monkeypatch, plans=[{"kind": "next"}])
+
+    async def no_tasks(role, user_id):
+        return []
+    from app.services import guide_view
+    monkeypatch.setattr(guide_view, "my_tasks", no_tasks)
+    await admin_client.post(CHAT, json={"message": "我是谁？我有哪些角色？"})
+    me = calls["guide"][0]["payload"]["me"]
+    assert me["primary_role"] == "System Admin"
+    assert "email" not in me and "never name a role from a task" in me["roles_are"]

@@ -42,6 +42,7 @@ from app.services import budget_variance
 from app.services import report_lineage
 from app.services import workflow_view
 from app.services import controlled_query as cq
+from app.services import caller_view
 
 log = logging.getLogger(__name__)
 
@@ -251,6 +252,10 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
     # (ISS-0038, ISS-0067).
     context = {**context, "conversation": {"earlier_questions": len(exchanges) // 2,
                                            "shown_questions": len(history) // 2}}
+    # Who is asking (ISS-0073).
+    me = await caller_view.describe(db, user)
+    if me:
+        context["caller"] = me
 
     try:
         planned = await assistant_llm.plan(schema, body.message, context,
@@ -262,8 +267,11 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
     if planned["kind"] == "recall":
         return _answer_recall(body, planned, exchanges)
 
+    if planned["kind"] == "me":
+        return _answer_who_am_i(me)
+
     if planned["kind"] == "next":
-        return await _answer_whats_next(db, user, body, actor)
+        return await _answer_whats_next(db, user, body, actor, me)
 
     if planned["kind"] == "process":
         return await _answer_process(db, user, token, body, planned, actor)
@@ -516,11 +524,18 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
     }
 
 
-async def _answer_whats_next(db, user, body, actor) -> dict:
+async def _answer_whats_next(db, user, body, actor, me: dict | None = None) -> dict:
     """Their own inbox, explained. No arguments — it is always about the asker."""
     tasks = await guide_view.my_tasks(user.get("role", ""), actor) if actor else []
     # Counted here, not by the model — see guide_view.task_summary (ISS-0011).
     payload = {"question": body.message, "kind": "tasks", **guide_view.task_summary(tasks)}
+    if me:
+        # Asked "who am I" and routed here, the reply guessed roles from the
+        # tasks (ISS-0073). The roles are given, so nothing is left to guess.
+        payload["me"] = {**{k: v for k, v in me.items() if k != "email"}, "roles_are": (
+            "the complete list of this person's roles — primary_role plus "
+            "additional_roles. A task's assigned_role is the role the task was "
+            "sent to, not a role of theirs: never name a role from a task.")}
     try:
         told = await assistant_llm.narrate_guide(body.message, payload)
     except assistant_llm.LlmUnavailable as exc:
@@ -1006,3 +1021,15 @@ def _answer_recall(body: ChatRequest, planned: dict, exchanges: list[ChatTurn]) 
             "answer": f"Your {which} in this conversation was: “{question.text.strip()}”\n\n"
                       f"My answer was:\n\n{quoted}",
             "kind": "recall", "query": None, "sources": None}
+
+
+# ── Who is asking (ISS-0073) ──────────────────────────────────────────────────
+
+def _answer_who_am_i(me: dict | None) -> dict:
+    """Their own record, written in code: name, department, every role."""
+    if not me:
+        return {"_fixed_text": True, "answer": "I cannot see who is signed in.",
+                "kind": "cannot_answer", "reason": "no_user",
+                "query": None, "sources": None}
+    return {"_fixed_text": True, "answer": caller_view.as_text(me),
+            "kind": "me", "me": me, "query": None, "sources": None}
