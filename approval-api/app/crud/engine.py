@@ -532,16 +532,36 @@ async def _actor_is_step_holder(
     role was not recognised at gm_or_opm whenever the real GM sorted first, so
     the skip never fired and they had to approve the same document twice.
     """
+    return actor_id in await _step_holder_ids(
+        db, step_role, routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
+        doc, director_uid, supervisor_uid, cross_dept_pa)
+
+
+async def _step_holder_ids(
+    db: AsyncSession,
+    step_role: str,
+    routing_dept_id: uuid.UUID | None,
+    rm: dict,
+    dept_gm_opm: dict,
+    finance_bp_ids: set[uuid.UUID],
+    doc: Any | None = None,
+    director_uid: uuid.UUID | None = None,
+    supervisor_uid: uuid.UUID | None = None,
+    cross_dept_pa: bool = False,
+) -> set[uuid.UUID]:
+    """Everyone who holds `step_role` for this document in their own right.
+
+    Membership in this set is what _actor_is_step_holder answers; the set itself
+    is what the claimant skip needs (is the claimant the ONLY one who could act).
+    """
     if step_role == "quality_manager":
-        if doc is None:
-            return False
-        expected = getattr(doc, "quality_approver_id", None)
-        return expected is not None and actor_id == expected
+        expected = getattr(doc, "quality_approver_id", None) if doc is not None else None
+        return {expected} if expected is not None else set()
     if step_role == "finance_bp":
-        return actor_id in finance_bp_ids
+        return set(finance_bp_ids)
     if step_role == "dept_manager":
         dept_mgr_id = await _get_dept_manager_id(db, routing_dept_id)
-        return dept_mgr_id is not None and actor_id == dept_mgr_id
+        return {dept_mgr_id} if dept_mgr_id is not None else set()
     if step_role == "gm_or_opm":
         # Resolve which post (gm/opm) this department routes to — same logic as
         # task assignment — then match ANY active holder of that post, not just
@@ -551,20 +571,21 @@ async def _actor_is_step_holder(
         # task is visible to all of them, so all of them must be able to act.
         resolved_role, resolved_user_id = await _resolve_gm_or_opm(
             db, routing_dept_id, rm, dept_gm_opm, cross_dept_pa)
-        if resolved_user_id is not None and actor_id == resolved_user_id:
-            return True
-        return actor_id in await post_holder_ids(db, resolved_role)
+        holders = await post_holder_ids(db, resolved_role)
+        if resolved_user_id is not None:
+            holders.add(resolved_user_id)
+        return holders
     if step_role == "director":
         # Director is resolved per-department (routing_dept_id), not via a
         # collapsed global holder, so a director covering multiple departments
         # already matches on any of their departments' documents.
-        return director_uid is not None and actor_id == director_uid
+        return {director_uid} if director_uid is not None else set()
     if step_role == "supervisor":
-        return supervisor_uid is not None and actor_id == supervisor_uid
+        return {supervisor_uid} if supervisor_uid is not None else set()
     # Named post role (gm/opm/finance_manager/procurement_manager/vendor_manager/
     # finance_director as a direct step): membership in the holder set, not
     # equality to the single collapsed rm['<role>_user_id'].
-    return actor_id in await post_holder_ids(db, step_role)
+    return await post_holder_ids(db, step_role)
 
 
 async def _actor_can_approve(
@@ -1388,6 +1409,62 @@ def _step_skip(node, doc_type, doc, director_uid, supervisor_uid,
                              dept_has_supervisor, cross_dept_pa)
 
 
+# A claimant never approves their own OA claim (OA.md §7.3; expense-api's
+# can_approve refuses the owner). The engine, unlike that rule, routes by role:
+# a Department Manager's own claim lands its first step on the Department
+# Manager — the claimant — and nobody can move it (TRA-20261020-0001/0002).
+# When the claimant is the ONLY holder of a step, that step is skipped and the
+# next level approves. A step someone else also holds stays with them.
+CLAIMANT_SKIP_REASON = "Auto-skipped (claimant holds this step — cannot approve own claim)"
+MSG_CLAIMANT_HOLDS_EVERY_STEP = (
+    "Cannot submit: every approval step of this claim would be approved by the "
+    "claimant themselves. Ask an administrator to adjust the approval workflow "
+    "(Admin → Approval Workflows) so someone else approves it."
+)
+
+
+async def _claimant_step_skip(db: AsyncSession, doc_type: str, ctx: "ActionContext",
+                              node: dict) -> str | None:
+    """CLAIMANT_SKIP_REASON when the claimant is the sole holder of this step."""
+    if ctx.meta["model"] is not ExpenseClaim:
+        return None
+    claimant = getattr(ctx.doc, "created_by", None)   # = expense_claims.employee_id
+    if claimant is None:
+        return None
+    holders = await _step_holder_ids(
+        db, node["role"], ctx.routing_dept_id, ctx.rm, ctx.dept_gm_opm,
+        {uuid.UUID(u) for u in ctx.rm.get("finance_bp_user_ids", [])},
+        ctx.doc, ctx.director_uid, ctx.supervisor_uid, ctx.cross_dept_pa)
+    return CLAIMANT_SKIP_REASON if holders == {claimant} else None
+
+
+async def submission_landing(
+    db: AsyncSession, doc_type: str, ctx: "ActionContext",
+    workflow: list[dict], start: int,
+) -> tuple[int, list[tuple[int, str, str]], bool]:
+    """first_actionable_step plus the claimant skip — where a submission lands.
+
+    Returns (start, skipped, claimant_skipped). Shared by execution and
+    preflight so the two cannot disagree about it.
+    """
+    skipped: list[tuple[int, str, str]] = []
+    claimant_skipped = False
+    while True:
+        start, cond = first_actionable_step(
+            doc_type, ctx.doc, workflow, ctx.director_uid, ctx.supervisor_uid,
+            ctx.dept_has_director, ctx.dept_has_supervisor, ctx.cross_dept_pa,
+            start=start, cfg_ob_mode=ctx.cfg_ob_mode or None)
+        skipped.extend(cond)
+        if start >= len(workflow):
+            return start, skipped, claimant_skipped
+        reason = await _claimant_step_skip(db, doc_type, ctx, workflow[start])
+        if reason is None:
+            return start, skipped, claimant_skipped
+        skipped.append((start, workflow[start]["role"], reason))
+        claimant_skipped = True
+        start += 1
+
+
 # ── Main execution entry point ────────────────────────────────────────────────
 
 @dataclass
@@ -1538,12 +1615,14 @@ async def preflight_submit(db: AsyncSession, doc_type: str,
     # unconfigured department manager is exactly the kind of thing worth knowing
     # about before you go fix something else and come back.
     sub_workflow = ctx.submit_workflow if ctx.submit_workflow is not None else ctx.workflow
-    start, _skipped = first_actionable_step(
-        doc_type, ctx.doc, sub_workflow, ctx.director_uid, ctx.supervisor_uid,
-        ctx.dept_has_director, ctx.dept_has_supervisor, ctx.cross_dept_pa,
-        start=await submission_start(db, doc_type, ctx, status),
-        cfg_ob_mode=ctx.cfg_ob_mode or None)
-    if start >= len(sub_workflow):
+    start, _skipped, claimant_skipped = await submission_landing(
+        db, doc_type, ctx, sub_workflow, await submission_start(db, doc_type, ctx, status))
+    if claimant_skipped and start >= len(sub_workflow):
+        checks.append(Check(
+            id="approver_routing", layer="config", passed=False,
+            message=MSG_CLAIMANT_HOLDS_EVERY_STEP, fixable_by_user=False, owner="admin",
+        ))
+    elif start >= len(sub_workflow):
         # Whole workflow auto-skips: submission goes straight to approved.
         checks.append(Check(id="approver_routing", layer="config", passed=True))
     else:
@@ -1618,13 +1697,13 @@ async def execute_action(
         if doc_type == "pr":
             # Freeze the over-budget mode this approval run walks — see _ob_prefix.
             doc.ob_mode_applied = ctx.submit_ob_mode
+        start, skipped_prefix, claimant_skipped = await submission_landing(
+            db, doc_type, ctx, workflow, resume_at)
+        if claimant_skipped and start >= len(workflow):
+            raise ValueError(MSG_CLAIMANT_HOLDS_EVERY_STEP)
         _set_status(meta, doc, "submitted")
         if hasattr(doc, "submitted_at"):
             doc.submitted_at = now
-        start, skipped_prefix = first_actionable_step(
-            doc_type, doc, workflow, director_uid, supervisor_uid,
-            dept_has_director, dept_has_supervisor, cross_dept_pa, start=resume_at,
-            cfg_ob_mode=ctx.cfg_ob_mode or None)
         for idx, skipped_role, reason in skipped_prefix:
             db.add(ApprovalEvent(
                 document_type=doc_type, document_id=doc.id, document_number=doc_number,
@@ -1702,6 +1781,17 @@ async def execute_action(
                     step_idx=next_step, action="approve",
                     actor_id=actor_id, actor_role=next_role,
                     comment="Auto-approved (same approver holds both roles)",
+                ))
+                auto_skipped.append(next_step)
+                next_step += 1
+                continue
+            claimant_reason = await _claimant_step_skip(db, doc_type, ctx, workflow[next_step])
+            if claimant_reason:
+                db.add(ApprovalEvent(
+                    document_type=doc_type, document_id=doc.id, document_number=doc_number,
+                    step_idx=next_step, action="approve",
+                    actor_id=actor_id, actor_role=next_role,
+                    comment=claimant_reason,
                 ))
                 auto_skipped.append(next_step)
                 next_step += 1
@@ -2001,20 +2091,40 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
 
     # Case A — true step is now skippable: an optional level gone (Director /
     # Supervisor), or an over-budget step Budget Config no longer requires
-    # (mode loosened to fm_only / allow — the FM's task moves on). Advance.
-    skip_now, _r = _step_skip(
-        workflow[true_step], doc_type, doc, director_uid, supervisor_uid,
-        dept_has_director, dept_has_supervisor, cross_dept_pa, cfg_ob_mode)
-    if skip_now:
+    # (mode loosened to fm_only / allow — the FM's task moves on), or an OA
+    # step whose only holder is the claimant (claims submitted before the
+    # claimant skip existed sit there for good). Advance.
+    claim_ctx = (await load_action_context(db, doc_type, doc.id)
+                 if Model is ExpenseClaim else None)
+
+    async def _skip_reason(i: int) -> str | None:
+        sk, reason = _step_skip(
+            workflow[i], doc_type, doc, director_uid, supervisor_uid,
+            dept_has_director, dept_has_supervisor, cross_dept_pa, cfg_ob_mode)
+        if sk:
+            return reason
+        if claim_ctx is not None:
+            return await _claimant_step_skip(db, doc_type, claim_ctx, workflow[i])
+        return None
+
+    if await _skip_reason(true_step):
+        reasons: list[tuple[int, str]] = []
+        while true_step + len(reasons) < len(workflow):
+            reason = await _skip_reason(true_step + len(reasons))
+            if reason is None:
+                break
+            reasons.append((true_step + len(reasons), reason))
+        if (true_step + len(reasons) >= len(workflow)
+                and any(r == CLAIMANT_SKIP_REASON for _, r in reasons)):
+            # Same refusal as submit: never approve a claim with nobody but the
+            # claimant left to approve it.
+            return {"doc_type": doc_type, "number": number, "final_step": _step_of(meta, doc),
+                    "actions": [f"WARN claimant holds every remaining step from step{true_step} "
+                                "— adjust the workflow, then re-sync"]}
         start = true_step
         skipped: list[str] = []
-        while start < len(workflow):
+        for _i, reason in reasons:
             r = workflow[start]["role"]
-            sk, reason = _step_skip(
-                workflow[start], doc_type, doc, director_uid, supervisor_uid,
-                dept_has_director, dept_has_supervisor, cross_dept_pa, cfg_ob_mode)
-            if not sk:
-                break
             db.add(ApprovalEvent(
                 document_type=doc_type, document_id=doc.id, document_number=number,
                 step_idx=start, action="approve", actor_id=routing_uid, actor_role=r,
