@@ -573,7 +573,7 @@ Each workflow is an **ordered list of steps**, configured in Portal Admin Panel 
 | `gm`, `opm`, `procurement_manager`, `finance_manager`, `finance_director`, `vendor_manager` | Current holder(s) of the post (primary or additional role) | Role pool |
 | `finance_bp` | Users assigned Finance BP as an additional role | Role pool |
 | `ap_clerk` | Users with the role | Role pool |
-| `quality_manager` | VMS only — the QM chosen on the visit | That person |
+| `zone_manager` | VMS only — every manager of the visit's access zone, snapshotted at submit (`quality_manager` = legacy alias, same behaviour) | One task each; any one approves; skipped if none |
 
 **Routing department.** Department-scoped steps (Department Manager, Director, GM/OPM) use the department named on the document: the PR's selected department (for a PR and the POs/PAs raised from it) or the agreement's department (for an agreement and its PAs). Only when none is recorded does the engine fall back to the requester's/creator's own department. A PA covering POs from several departments skips Department Manager and Director and goes to the cross-department GM/OPM setting. The Supervisor step always follows the requester personally.
 
@@ -595,7 +595,7 @@ Each workflow is an **ordered list of steps**, configured in Portal Admin Panel 
 | `mil` | `dept_manager → finance_bp` |
 | `cfm` | `dept_manager` |
 | `budget_plan` | `dept_manager → finance_manager` |
-| `vms_visit` | `dept_manager` (+ optional `quality_manager`) |
+| `vms_visit` | `dept_manager` (+ optional `zone_manager`) |
 
 Admins may add, remove, or reorder steps freely in Portal → Admin → Approval Workflows without any code changes or service restart. The workflows actually configured in production may differ from these shipped defaults.
 
