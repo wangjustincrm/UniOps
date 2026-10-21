@@ -67,7 +67,7 @@ _KINDS = frozenset({TEXT, ENUM, MONEY, DATE, DATETIME, BOOL, INT})
 # Tables owned by other services are mapped here, on their own metadata — see
 # _model_for_table. Never the application Base.
 _ExternalBase = declarative_base()
-_AGG_FNS = frozenset({"sum", "count", "avg", "min", "max"})
+_AGG_FNS = frozenset({"sum", "count", "avg", "min", "max", "count_distinct"})
 _CARDINALITIES = frozenset({"one_to_many", "many_to_one"})
 
 # YAML names a model; only these are addressable. Adding an entity means adding

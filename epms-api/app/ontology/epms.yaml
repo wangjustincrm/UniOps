@@ -221,6 +221,9 @@ entities:
       subtotal: {fn: sum, field: subtotal, label: "Total ordered amount before tax", currency: currency}
       count: {fn: count, field: "*", label: "Number of POs"}
       avg_amount: {fn: avg, field: total, label: "Average PO value", currency: currency}
+      # ISS-0054: "how many vendors have orders" is a distinct count, not the
+      # number of order rows.
+      vendor_count: {fn: count_distinct, field: vendor_name, label: "Number of different vendors on these POs"}
     links:
       originating_pr:
         target: purchase_request

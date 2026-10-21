@@ -65,7 +65,13 @@ _OPS_BY_KIND: dict[str, frozenset[str]] = {
 }
 
 _AGG_FN = {"sum": func.sum, "count": func.count, "avg": func.avg,
-           "min": func.min, "max": func.max}
+           "min": func.min, "max": func.max,
+           # "How many vendors have orders": counting order rows gave 7,067 and
+           # grouping then counting groups gave 593 (ISS-0054).
+           "count_distinct": lambda col: func.count(sa.distinct(col))}
+
+# Grains a date can be grouped by, as `<field>:<grain>` (ISS-0033).
+_GRAINS = frozenset({"day", "week", "month", "quarter", "year"})
 
 
 class QueryRejected(Exception):
@@ -179,6 +185,38 @@ def _field_of(entity: Entity, name: str):
             return None
         current = REGISTRY[link.target]
     return current.fields.get(parts[-1])
+
+
+def _group_expr(entity: Entity, name: str):
+    """A group_by entry as (expression, path): a field, or `<date field>:<grain>`.
+
+    Grouping by a timestamp made one group per document — "purchases per month"
+    came back as 200 single-order groups (ISS-0033). A date field is grouped by
+    the calendar unit asked for, in the plant's time, and a timestamp without a
+    grain is refused rather than silently grouped to the microsecond.
+    """
+    field, _, grain = name.partition(":")
+    col, path = _resolve(entity, field)
+    kind = _kind_of(entity, field)
+    if grain:
+        if grain not in _GRAINS:
+            _reject(f"Unknown grain '{grain}' in '{name}'. Use one of: "
+                    f"{', '.join(sorted(_GRAINS))}")
+        if kind not in (DATE, DATETIME):
+            _reject(f"'{field}' is not a date, so it cannot be grouped by {grain}")
+        # Literals, not bound parameters: the SELECT and the GROUP BY copies of
+        # this expression must be textually identical for Postgres to accept
+        # them as one, and two binds of the same value are not. Both values
+        # come from a fixed list (_GRAINS, PLANT_TIMEZONE), never from input.
+        local = (func.timezone(sa.literal_column(f"'{PLANT_TIMEZONE}'"), col)
+                 if kind == DATETIME else col)
+        return sa.cast(func.date_trunc(sa.literal_column(f"'{grain}'"), local),
+                       sa.Date), path
+    if kind == DATETIME:
+        _reject(f"Grouping by the timestamp '{field}' gives one group per record. "
+                f"Group by a calendar unit instead, e.g. '{field}:month' "
+                f"(grains: {', '.join(sorted(_GRAINS))}).")
+    return col, path
 
 
 def _many_link(path):
@@ -620,7 +658,7 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
     if grouped:
         selected, labels = [], []
         for name in group_by:
-            col, path = _resolve(entity, name)
+            col, path = _group_expr(entity, name)
             _refuse_many(entity, name, path, "group_by")
             hops.extend(path)
             selected.append(col)
@@ -690,7 +728,7 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
     group_cols = []
     if grouped and group_by:
         for n in group_by:
-            col, path = _resolve(entity, n)
+            col, path = _group_expr(entity, n)
             hops.extend(path)
             group_cols.append(col)
 
@@ -700,6 +738,8 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
         name = order.get("field")
         if name in entity.metrics and grouped:
             order_col = sa.literal_column(f'"{name}"')
+        elif grouped and name in group_by and ":" in name:
+            order_col = _group_expr(entity, name)[0]
         else:
             order_col, path = _resolve(entity, name)
             _refuse_many(entity, name, path, "order_by")

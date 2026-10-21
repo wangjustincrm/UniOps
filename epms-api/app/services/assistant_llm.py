@@ -408,7 +408,14 @@ _QUERY_TOOL = {
                     "required": ["field", "op", "value", "because"],
                 },
             },
-            "group_by": {"type": "array", "items": {"type": "string"}},
+            "group_by": {"type": "array", "items": {"type": "string"},
+                         "description": (
+                             "Fields to group by. A date or timestamp is grouped "
+                             "by a calendar unit written field:grain — "
+                             "created_at:month, invoice_date:week, "
+                             "created_at:quarter, created_at:year, "
+                             "received_at:day. A timestamp without a grain is "
+                             "rejected.")},
             "metrics": {"type": "array", "items": {"type": "string"}},
             "period": {
                 "type": "object",

@@ -202,3 +202,49 @@ async def test_the_export_has_one_total_row_per_currency(test_engine, admin_clie
     totals = {row[0]: row for row in rows if str(row[0] or "").startswith("Total (")}
     assert set(totals) == {"Total (CAD)", "Total (USD)"}
     assert 600 in totals["Total (CAD)"] and 50 in totals["Total (USD)"]
+
+
+# ── ISS-0033 / ISS-0054: per month, and distinct counts ─────────────────────
+
+async def test_amounts_group_by_calendar_month_in_plant_time(test_engine, admin_client):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("America/Toronto")
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        db.add_all([
+            _po(v, uid, f"PO-MON-{tag}-1", total=Decimal("10"),
+                created_at=datetime(2026, 9, 30, 22, 0, tzinfo=tz)),   # 02:00 UTC 1 Oct
+            _po(v, uid, f"PO-MON-{tag}-2", total=Decimal("20"),
+                created_at=datetime(2026, 10, 2, 9, 0, tzinfo=tz)),
+            _po(v, uid, f"PO-MON-{tag}-3", total=Decimal("30"),
+                created_at=datetime(2026, 10, 20, 9, 0, tzinfo=tz)),
+        ])
+        await db.commit()
+    body = await _query(admin_client, entity="purchase_order",
+                        group_by=["created_at:month"], metrics=["amount", "count"],
+                        where=[{"field": "number", "op": "like", "value": f"PO-MON-{tag}"}],
+                        order_by={"field": "created_at:month"})
+    got = [(r["created_at:month"], Decimal(r["amount"]), r["count"]) for r in body["rows"]]
+    assert got == [("2026-09-01", Decimal("10"), 1), ("2026-10-01", Decimal("50"), 2)]
+
+
+async def test_grouping_by_a_raw_timestamp_is_refused_with_the_fix(admin_client):
+    r = await admin_client.post(QUERY, json={
+        "entity": "purchase_order", "group_by": ["created_at"], "metrics": ["count"]})
+    assert r.status_code == 422
+    assert "created_at:month" in r.json()["detail"]
+    r = await admin_client.post(QUERY, json={
+        "entity": "purchase_order", "group_by": ["vendor_name:month"], "metrics": ["count"]})
+    assert r.status_code == 422
+
+
+async def test_vendor_count_is_a_distinct_count(test_engine, admin_client):
+    tag = await _two_currency_pos(test_engine, admin_client)
+    body = await _query(admin_client, entity="purchase_order",
+                        metrics=["vendor_count", "count"],
+                        where=[{"field": "number", "op": "like", "value": f"PO-CUR-{tag}"}])
+    assert body["rows"] == [{"vendor_count": 2, "count": 4}]
