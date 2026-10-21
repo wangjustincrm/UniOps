@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
@@ -28,6 +28,7 @@ import { getTaxLines } from '@/services/invoiceTax'
 import { AssignMatchDialog } from './AssignMatchDialog'
 import { MatchPanel } from './MatchPanel'
 import { CourierInvoiceView } from './CourierInvoiceView'
+import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -120,6 +121,47 @@ function UnmatchButton({ label, blockedReason, onClick }: {
   )
 }
 
+/** 3-Way Match tab for a Direct-route invoice: there is nothing to compare it
+ *  against — it is paid by a Direct PA that names its own charge-to. */
+function DirectRouteCard({ inv, pa, canCreatePa, onCreatePa, unmatchAction }: {
+  inv: { matched_at?: string | null; matched_by_name?: string | null; matched_by?: string | null }
+  pa: { id: string; number: string | null; status: string | null } | null
+  canCreatePa: boolean
+  onCreatePa: () => void
+  unmatchAction: ReactNode
+}) {
+  return (
+    <div className="rounded-xl border border-primary-200 bg-primary-50 p-5 flex flex-col gap-3">
+      <div className="flex items-center gap-4">
+        <CheckCircle2 className="h-8 w-8 text-primary-600 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-primary-800">Matched for a Direct PA — no PO or agreement</p>
+          {inv.matched_at && (
+            <p className="text-xs text-neutral-500 mt-0.5">
+              Matched by {inv.matched_by_name ?? inv.matched_by} on {formatDateTime(inv.matched_at)}
+            </p>
+          )}
+        </div>
+        {unmatchAction}
+      </div>
+      <p className="text-xs text-neutral-600">
+        There is no 3-way match on this route. The department, cost center and budget account it is charged to,
+        and the reason, are on the Direct PA; it is approved on the PA (Direct) workflow.
+      </p>
+      {pa ? (
+        <p className="text-xs text-neutral-700">
+          Paid by <Link to={`/pa/${pa.id}`} className="font-mono font-semibold text-primary-700 hover:underline">{pa.number}</Link>
+          {pa.status && <span className="ml-1 capitalize text-neutral-500">({pa.status.replace(/_/g, ' ')})</span>}
+        </p>
+      ) : canCreatePa ? (
+        <div><Button size="sm" onClick={onCreatePa}>Create Direct PA</Button></div>
+      ) : (
+        <p className="text-xs text-neutral-500">No payment application yet — someone with the Create / Edit PAs permission raises it.</p>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function InvoiceDetailPage() {
@@ -133,6 +175,9 @@ export default function InvoiceDetailPage() {
   // — AP staff and admins. Deliberately narrower than the rule for PERFORMING a
   // match, which also admits the uploader and the holder of an open match task.
   const canUnmatch = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
+  // Same key as POST /pa/direct (and the PA list's Create Direct PA button).
+  const canCreatePa = user?.role === 'system_admin' || !!perms?.['epms.pa.write']
+  const { openTab } = useStaticTabNav()
   const deleteInvoice = useDeleteInvoice()
 
   const { data: inv, isLoading } = useInvoice(id ?? '')
@@ -149,7 +194,10 @@ export default function InvoiceDetailPage() {
     inv?.agreement_type === 'recurring' ? (inv.agreement_id ?? '') : '')
   const isAgreementOwner = !!user?.id && recurringAgreement?.owner_id === user.id
   const canChangePeriod = canUnmatch || isAgreementOwner
-  const { data: chain } = useInvoiceChain(canChangePeriod ? (id ?? null) : null)
+  // A Direct-route invoice always needs it: whether a Direct PA already pays it
+  // decides between "Create Direct PA" and a link to that PA.
+  const { data: chain } = useInvoiceChain(
+    canChangePeriod || inv?.match_route === 'direct' ? (id ?? null) : null)
   const updateInvoice = useUpdateInvoice()
 
   // Tax lines are the source of truth for the header tax when present: the
@@ -319,6 +367,11 @@ export default function InvoiceDetailPage() {
   // the server answer, rather than blocking on something we cannot see.
   const paStep = chain?.steps.find((s) => s.key === 'create_pa')
   const blockedPa = paStep?.state === 'done' ? (paStep.refs[0]?.number ?? 'a payment application') : null
+  const isDirectRoute = inv.match_route === 'direct'
+  const directPa = isDirectRoute && paStep?.state === 'done' && paStep.refs[0]
+    ? { id: paStep.refs[0].id, number: paStep.refs[0].number, status: paStep.detail ?? null }
+    : null
+  const createDirectPa = () => openTab('/pa/new', `source=direct&invoice=${inv.id}`)
   const unmatchBlockedReason =
     inv.status === 'approved' || inv.status === 'paid'
       ? `This invoice has already entered payment (status "${inv.status}").`
@@ -429,6 +482,12 @@ export default function InvoiceDetailPage() {
             <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setShowAssignDialog(true)}>
               <UserPlus className="h-3.5 w-3.5" />
               {inv.match_assignee_name ? `Reassign (${inv.match_assignee_name})` : 'Assign'}
+            </Button>
+          )}
+          {isDirectRoute && inv.status === 'matched' && !directPa && canCreatePa && !editing && (
+            <Button size="sm" className="gap-1.5" onClick={createDirectPa}>
+              <FileText className="h-3.5 w-3.5" />
+              Create Direct PA
             </Button>
           )}
           {canEdit && !editing && (
@@ -1082,6 +1141,17 @@ export default function InvoiceDetailPage() {
                   <p className="text-xs text-neutral-400">Go to the Unmatched Queue to link this invoice to a PO</p>
                   <Link to="/invoices"><Button variant="secondary" size="sm">Go to Unmatched Queue</Button></Link>
                 </div>
+              ) : isDirectRoute ? (
+                <DirectRouteCard
+                  inv={inv}
+                  pa={directPa}
+                  canCreatePa={canCreatePa}
+                  onCreatePa={createDirectPa}
+                  unmatchAction={canUnmatch && (
+                    <UnmatchButton label="Unmatch" blockedReason={unmatchBlockedReason}
+                      onClick={() => setUnmatchScope('direct')} />
+                  )}
+                />
               ) : isAgreementRoute ? (
                 // Fix-round 1 (Minor 3): the outer card used to be
                 // unconditionally green + a success checkmark, even while the

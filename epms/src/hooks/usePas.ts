@@ -3,6 +3,7 @@ import {
   paService,
   type PaFilters,
   type CreatePaBody,
+  type CreateDirectPaBody,
   type UpdatePaBody,
   type PaActionBody,
   type ApiPa,
@@ -81,6 +82,25 @@ export function useCreatePa() {
     // Surface the server error (e.g. a 422 validation failure) rather than
     // swallowing it — the create pages catch the throw silently.
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to create payment application'),
+  })
+}
+
+export function useDirectPaCandidates() {
+  return useQuery({
+    queryKey: ['pas', 'direct-candidates'],
+    queryFn: () => paService.directCandidates(),
+  })
+}
+
+// No onError alert: the Direct PA form shows the server's message inline.
+export function useCreateDirectPa() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: CreateDirectPaBody) => paService.createDirect(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pas'] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+    },
   })
 }
 

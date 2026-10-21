@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, Search, X } from 'lucide-react'
+import { AlertTriangle, FileInput, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
-import { useDeclineMatch, useMatchCandidates, useMatchInvoice } from '@/hooks/useInvoices'
+import { useDeclineMatch, useMarkInvoiceDirect, useMatchCandidates, useMatchInvoice } from '@/hooks/useInvoices'
+import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import { useAgreementCandidates, useAgreementSchedule } from '@/hooks/useAgreements'
 import { useAuthStore } from '@/stores/auth.store'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
@@ -13,7 +14,8 @@ import type { ApiAgreement, ApiScheduleRow } from '@/services/agreement'
 import type { DocumentStatus } from '@/types'
 import { InvoiceAllocationPanel } from './InvoiceAllocationPanel'
 
-type Route = 'po' | 'agreement'
+// 'direct' = no PO and no agreement: the invoice is paid by a Direct PA.
+type Route = 'po' | 'agreement' | 'direct'
 
 // One selectable agreement candidate row — number, title, validity window,
 // and Consumed/NTE (mirrors AgreementListPage's ConsumedCell; decimals arrive
@@ -241,7 +243,20 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   const { data: agrCandData, isLoading: agrCandLoading } = useAgreementCandidates(inv.id)
   const matchInvoiceMutation = useMatchInvoice()
   const declineMutation = useDeclineMatch()
+  const markDirect = useMarkInvoiceDirect()
   const navigate = useNavigate()
+  const { openTab } = useStaticTabNav()
+  // Same rights as a PO match (AP / uploader / match-task holder) — the server
+  // checks; this panel is only shown to those who may match.
+  const handleMarkDirect = (thenCreate: boolean) => {
+    if (markDirect.isPending) return
+    markDirect.mutate(inv.id, {
+      onSuccess: () => {
+        onClose()
+        if (thenCreate) openTab('/pa/new', `source=direct&invoice=${inv.id}`)
+      },
+    })
+  }
 
   const [poSearch, setPoSearch] = useState('')
   const [declining, setDeclining] = useState(false)
@@ -451,9 +466,46 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
         >
           Agreements ({agreementCandidates.length})
         </button>
+        <button
+          type="button"
+          onClick={() => setRoute('direct')}
+          className={cn(
+            'px-1 pb-2 text-xs font-medium border-b-2 -mb-px transition-colors',
+            route === 'direct' ? 'border-primary-600 text-primary-700' : 'border-transparent text-neutral-500 hover:text-neutral-700',
+          )}
+        >
+          Direct PA
+        </button>
       </div>
 
-      {route === 'po' ? (
+      {route === 'direct' && (
+        <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-3">
+          <div className="flex items-start gap-2 text-xs text-neutral-600">
+            <FileInput className="h-4 w-4 shrink-0 text-primary-600 mt-px" />
+            <p>
+              No purchase order or agreement behind this invoice. It will be paid by a <span className="font-medium">Direct PA</span>:
+              on <span className="font-medium">Payment Applications → Create Direct PA</span> you choose the department, cost
+              center and budget account it is charged to and the reason, and it is approved on the PA (Direct) workflow.
+            </p>
+          </div>
+          {markDirect.isError && (
+            <p className="flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              {markDirect.error instanceof Error ? markDirect.error.message : 'Could not match the invoice'}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => handleMarkDirect(false)} disabled={markDirect.isPending}>
+              {markDirect.isPending ? 'Matching…' : 'Match for Direct PA'}
+            </Button>
+            <Button onClick={() => handleMarkDirect(true)} disabled={markDirect.isPending}>
+              Match & Create Direct PA
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {route === 'direct' ? null : route === 'po' ? (
         <>
           {/* PO search — narrows the candidate POs shown as drop targets */}
           <div className="relative">

@@ -127,6 +127,23 @@ export function useInvoicesForPos(poIds: string[], enabled = true) {
   return { items, isLoading: false }
 }
 
+// A Direct PA's invoices: no PO or agreement to list them by, so one detail
+// fetch each (same key as useInvoice, so the caches are shared). A 404 (not
+// visible to the caller) is simply left out.
+export function useInvoicesByIds(ids: string[], enabled = true) {
+  const results = useQueries({
+    queries: ids.map((id) => ({
+      queryKey: ['invoices', id],
+      queryFn: () => invoiceService.get(id),
+      enabled,
+      staleTime: 30_000,
+      retry: false,
+    })),
+  })
+  const items = results.map((r) => r.data).filter((d): d is ApiInvoice => !!d)
+  return { items, isLoading: results.some((r) => r.isLoading) }
+}
+
 // Fetched only while the drawer is open (`enabled`): the chain costs a PA
 // lookup per invoice, so the list must not prefetch one per row.
 export function useInvoiceChain(id: string | null) {
@@ -138,14 +155,14 @@ export function useInvoiceChain(id: string | null) {
   })
 }
 
-export type UnmatchScope = 'po' | 'gr'
+export type UnmatchScope = 'po' | 'gr' | 'direct'
 
 export function useUnmatchInvoice() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, scope, reason }: { id: string; scope: UnmatchScope; reason: string }) =>
-      scope === 'po'
-        ? invoiceService.unmatchPo(id, reason)
+      scope === 'po' ? invoiceService.unmatchPo(id, reason)
+        : scope === 'direct' ? invoiceService.unmatchDirect(id, reason)
         : invoiceService.unmatchGr(id, reason),
     onSuccess: () => {
       // ['invoices'] prefix-matches the detail query AND ['invoices', id,
@@ -155,6 +172,18 @@ export function useUnmatchInvoice() {
       qc.invalidateQueries({ queryKey: ['invoices'] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
       qc.invalidateQueries({ queryKey: ['pos'] })
+    },
+  })
+}
+
+export function useMarkInvoiceDirect() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => invoiceService.markDirect(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
 }
