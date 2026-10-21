@@ -43,7 +43,7 @@ def _factory(test_engine):
 
 async def _pa(test_engine, uid, tag, **kw) -> PaymentApplication:
     async with _factory(test_engine)() as db:
-        vendor = Vendor(code=f"V-{tag[:6]}", name=f"B5 Vendor {tag}", category="Services",
+        vendor = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name=f"B5 Vendor {tag}", category="Services",
                         contact_name="A", contact_email="a@t.test")
         db.add(vendor)
         await db.flush()
