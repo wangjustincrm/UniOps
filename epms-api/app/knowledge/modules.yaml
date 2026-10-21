@@ -162,18 +162,31 @@ modules:
   - key: vms
     label: VMS — Visitor Management
     covers: Visitors coming on site, and the approvals and health checks around it.
-    who: Whoever is hosting a visitor, plus the approvers for the areas being visited.
+    who: Whoever is hosting a visitor, plus the zone managers of the zones being visited.
     typical:
-      - Register a visitor and the areas they need access to
+      - Register a visitor and the zone they need access to
       - Get the visit approved before they arrive
       - Print a badge on the day
+      - Set up access zones and who approves each one (System Admin, VMS Admin → Zones)
     notes:
       - >-
-        The access area decides the route: Office / Lobby is confirmed at
-        once; Warehouse and non-GMP production need the Department Manager;
-        GMP, Laboratory and Entire Plant also need the Quality Manager, and
-        every visitor needs a passing health declaration before the badge
-        prints.
+        The access zone decides the route. Zones, and who manages each, are
+        set by a System Admin in VMS Admin → Zones — the booking page lists
+        the current ones, so name a zone only as the person picked it. A zone
+        with no zone managers needs no approval: the visit is confirmed when
+        booked. A zone with zone managers goes through the VMS visit approval
+        workflow (its steps are set in Portal → Admin → Approval Workflows);
+        at its Zone Manager step every manager of that zone gets the task and
+        any one of them can approve. If none of a zone's managers is still
+        active, the visit stays Pending Approval until an admin updates the
+        zone and it is submitted again. A zone marked GMP-grade also needs a
+        passing health declaration for every visitor before the badge prints.
+      - >-
+        Who approves is fixed when the visit is submitted: changing a zone's
+        managers afterwards does not move a visit already waiting for
+        approval. A confirmed visit can only be moved to a zone that needs no
+        approval or whose managers already had it; otherwise cancel it and
+        book again.
       - >-
         A visit an approver returns for edit comes back to its Host or the
         person who booked it: open the visit, use Edit visit, then Submit for
