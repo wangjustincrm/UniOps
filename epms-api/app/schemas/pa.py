@@ -220,10 +220,6 @@ class PaResponse(BaseModel):
     receipt_override_reason: str | None = None
     receipt_override_by: uuid.UUID | None = None
     current_step: CurrentStep | None = None
-    # Cancelled because an approver rejected it (a reject event in its
-    # history) — the engine cancels a rejected PA. Set on the list and detail
-    # endpoints (crud.pa.attach_rejected); False elsewhere. ISS-0078.
-    rejected_in_approval: bool = False
     agreement_id: uuid.UUID | None = None
     agreement_number: str | None = None
     # po | agreement | freight (direct never reaches EPMS's endpoints)

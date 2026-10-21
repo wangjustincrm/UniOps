@@ -350,7 +350,6 @@ async def list_pas(
     )
     await enrich_current_step(db, "pa", items)
     await pa_crud.attach_po_links(db, items)
-    await pa_crud.attach_rejected(db, items)
     return {"items": [PaResponse.model_validate(pa) for pa in items], "total": total}
 
 
@@ -683,7 +682,6 @@ async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     if pa.source == "freight":
         from app.crud.freight import cost_allocations
         pa.cost_allocations = await cost_allocations(db, pa.id)
-    await pa_crud.attach_rejected(db, [pa])
     return pa
 
 
