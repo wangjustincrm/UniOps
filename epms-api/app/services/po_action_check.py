@@ -111,14 +111,24 @@ async def _create_pa(db, user: dict, po) -> tuple[list[dict], list[str]]:
 async def _submit_signoff(db, user: dict, po, token: str) -> tuple[list[dict], list[str]]:
     from app.api.v1 import po_signoff
 
+    # The submit route's own gate (PoSignoffDep, PO-SGN-002).
+    may_submit = await has_permission(db, uuid.UUID(user["sub"]), user.get("role", ""),
+                                      po_signoff.SIGNOFF_SUBMIT_PERMISSION)
+    permission = _check(
+        "you_may_submit_signoff", may_submit,
+        "Submitting a sign-off needs the PO sign-off permission "
+        f"({po_signoff.SIGNOFF_SUBMIT_PERMISSION}) — the ERP PA Officer's job; "
+        "a System Admin grants it in Access Control.")
     try:
         workflow = await po_signoff._workflow(po.id, token)
     except Exception:  # noqa: BLE001 — the engine down is a partial answer, not a 500
-        return [_check("signoff_status", po.signoff_status in ("draft", "returned"),
+        return [permission,
+                _check("signoff_status", po.signoff_status in ("draft", "returned"),
                        f"The sign-off is already '{po.signoff_status}'.")], [
             "the sign-off workflow could not be read from the approval engine"]
     state = await po_signoff._state(db, po, workflow, uuid.UUID(user["sub"]))
-    checks = [_check("signoff_status", po.signoff_status in ("draft", "returned"),
+    checks = [permission,
+              _check("signoff_status", po.signoff_status in ("draft", "returned"),
                      f"The sign-off is already '{po.signoff_status}', so there is "
                      f"nothing to submit.")]
     for i, blocker in enumerate(state["blockers"]):

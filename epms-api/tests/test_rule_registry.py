@@ -289,6 +289,71 @@ async def test_why_no_pa_names_the_missing_invoice_and_receipt(monkeypatch):
     assert out["not_checked"] and out["complete"]
 
 
+async def test_why_no_signoff_checks_the_submit_permission(monkeypatch):
+    """"为什么我不能提交这张 PO 的签署？" from someone without the sign-off
+    permission was told it could be submitted: the check ran the page's
+    blockers but not the submit route's own gate (PO-SGN-002)."""
+    from app.api.v1 import po_signoff
+    from app.services import po_action_check
+
+    async def no(*a, **kw):
+        return False
+
+    async def no_steps(*a, **kw):
+        return []
+
+    async def clear(*a, **kw):
+        return {"blockers": []}
+
+    monkeypatch.setattr(po_action_check, "has_permission", no)
+    monkeypatch.setattr(po_signoff, "_workflow", no_steps)
+    monkeypatch.setattr(po_signoff, "_state", clear)
+    po = SimpleNamespace(id=uuid.uuid4(), number="PO-079-2605-03", type=1,
+                         status="issued", pr_id=None, is_prepaid=False,
+                         signoff_status="draft")
+    out = await po_action_check.check(None, {"sub": str(uuid.uuid4()), "role": "requester"},
+                                      po, "submit_signoff", "t")
+    failed = {c["id"]: c["message"] for c in out["checks"] if not c["passed"]}
+    assert set(failed) == {"you_may_submit_signoff"}
+    assert "epms.po.signoff" in failed["you_may_submit_signoff"]
+    assert out["allowed"] is False and out["complete"]
+    # The same key the submit route requires.
+    assert po_signoff.SIGNOFF_SUBMIT_PERMISSION == "epms.po.signoff"
+    sig = inspect.signature(po_signoff.submit_signoff)
+    assert sig.parameters["user"].annotation is po_signoff.PoSignoffDep
+    assert "SIGNOFF_SUBMIT_PERMISSION" in inspect.getsource(po_signoff).split("PoSignoffDep =")[1].split("\n")[0]
+
+
+async def test_my_dashboard_is_the_dashboard_pages_own_figures(admin_client, monkeypatch):
+    """"我的仪表盘上的数字分别是什么？" (ISS-0022 #2) — read from the same
+    build() the Dashboard page calls, for the asker's role."""
+    from app.api.v1 import dashboard as dash_api
+    from app.crud import dashboard as dash_crud
+
+    called = []
+
+    async def fake_build(db, role, user_id):
+        called.append(role)
+        return SimpleNamespace(role=role, users_by_role=[], kpis=[
+            SimpleNamespace(title="Pending Approvals", value=4, subtitle=None),
+            SimpleNamespace(title="Total Committed (FY)", value="1,000.00", subtitle="Open POs")])
+
+    monkeypatch.setattr(dash_crud, "build", fake_build)
+    seen = _stub_llm(monkeypatch, plan={"kind": "dashboard"})
+    body = (await admin_client.post(CHAT, json={"message": "我的仪表盘上的数字分别是什么？"})).json()
+    assert body["kind"] == "dashboard", body
+    assert called == ["system_admin"]
+    payload = seen["guide"][0]
+    assert payload["kpis"] == [
+        {"title": "Pending Approvals", "value": 4},
+        {"title": "Total Committed (FY)", "value": "1,000.00", "subtitle": "Open POs"}]
+    assert body["sources"]["row_count"] == 2
+    # What some cards really are travels with the figures.
+    assert {r["id"] for r in payload["rules"]} >= {"tasks_have_no_due_date"}
+    # The page and the Assistant read one function.
+    assert "dash_crud.build(db, role, user_id)" in inspect.getsource(dash_api)
+
+
 def test_the_pa_check_uses_create_pas_own_queries():
     from app.api.v1 import pa as pa_api
 

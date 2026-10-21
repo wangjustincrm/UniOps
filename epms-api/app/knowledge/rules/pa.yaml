@@ -163,7 +163,7 @@ rules:
       with the invoices' own tax. With no invoice, the form fills tax as the
       pre-tax amount × the PO's tax rate (the agreement's on an agreement
       PA), for CAD only — 13% is used only for an agreement that has no rate
-      recorded; in another currency the tax starts at 0. Once you type in
+      recorded; in another currency the tax is left blank. Once you type in
       the tax field it is no longer filled for you.
     enforced_in: "epms-api app/admin/recompute.py recompute_pa_header_only ('shipping and other charges are never taxed'); app/crud/pa.py _compute_payment; epms/src/pages/pa/PaCreatePage.tsx tax prefill"
     provenance: pinned

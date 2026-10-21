@@ -110,12 +110,14 @@ rules:
       - why can't I submit the sign-off
     answer: >
       A sign-off can be submitted only on a PO that came from NC and is
-      nc_pending, issued or nc_milk. It is refused when no sign-off workflow
+      nc_pending, issued or nc_milk, and only by someone with the PO sign-off
+      permission (epms.po.signoff — the ERP PA Officer's job, set in Access
+      Control). It is refused when no sign-off workflow
       is configured, when a step's post has no active holder, or when none of
       a step's holders has saved a signature in My Profile → My Signature.
       Signing needs your own saved signature. Sign-off tasks are not passed
       to delegates — a signature is personal.
-    enforced_in: "epms-api app/crud/po_signoff.py SIGNOFF_SOURCES, _SUBMITTABLE_PO_STATUSES, build_step_states; app/api/v1/po_signoff.py submit/sign"
+    enforced_in: "epms-api app/crud/po_signoff.py SIGNOFF_SOURCES, _SUBMITTABLE_PO_STATUSES, build_step_states; app/api/v1/po_signoff.py submit (PoSignoffDep: epms.po.signoff) / sign"
     provenance: pinned
     test:
       - "tests/test_po_signoff.py::test_submit_is_refused_when_a_signer_has_no_signature"
@@ -123,3 +125,4 @@ rules:
       - "tests/test_po_signoff.py::test_submit_is_refused_on_a_locally_raised_po"
       - "tests/test_po_signoff.py::test_signing_without_a_preset_signature_is_refused_before_the_engine_runs"
       - "tests/test_rule_registry.py::test_signoff_statuses"
+      - "tests/test_rule_registry.py::test_why_no_signoff_checks_the_submit_permission"

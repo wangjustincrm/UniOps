@@ -932,7 +932,7 @@ entities:
       Payment Schedule: the period (e.g. 2026-10), its expected date and
       amount, its status, the invoice that settled it, and who confirmed the
       service and when. \"Was this month's service confirmed?\" is
-      confirmed_at / confirmed_by_name on the period of that agreement"
+      accepted_at / confirmed_by_name on the period of that agreement"
     perm_key: epms.agreement.read
     scope: agreement_period
     date_field: expected_date

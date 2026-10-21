@@ -36,7 +36,8 @@ router = APIRouter(prefix="/po", tags=["po-signoff"])
 # the buyer detail an NC import does not carry. Signing is NOT gated on a
 # permission key: the engine admits the holder of the step's role and nobody
 # else, and that is the only correct gate.
-PoSignoffDep = Annotated[dict, Depends(require_permission("epms.po.signoff"))]
+SIGNOFF_SUBMIT_PERMISSION = "epms.po.signoff"
+PoSignoffDep = Annotated[dict, Depends(require_permission(SIGNOFF_SUBMIT_PERMISSION))]
 
 
 async def _load(po_id: uuid.UUID, db: SessionDep, user: dict):
