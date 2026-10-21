@@ -98,3 +98,75 @@ async def test_the_reply_leaves_with_nc_whatever_the_model_wrote(admin_client, m
     assert r.status_code == 200, r.text
     assert "北卡" not in r.json()["answer"]
     assert "NC重复发票" in r.json()["answer"]
+
+
+# ── ISS-0070: the HISTORY block — no import marker, the role actually held ──
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+from pathlib import Path  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+from app.services import workflow_view  # noqa: E402
+
+_T0 = datetime(2026, 10, 13, 9, 0, tzinfo=timezone.utc)
+
+
+def _ev(minutes, action, name, role, step, comment=None):
+    return SimpleNamespace(step_idx=step, action=action, actor_name=name, actor_role=role,
+                           comment=comment, created_at=_T0 + timedelta(minutes=minutes))
+
+
+def test_the_import_marker_is_not_shown_as_a_comment():
+    """PO-079-2605-03: every line read "[reconstructed]"."""
+    got = workflow_view.history_entries([
+        _ev(0, "submit", "Kris Enriquez", "requester", 0, "[reconstructed]"),
+        _ev(1, "approve", "Balakrishnan Raghul", "dept_manager", 0, "[reconstructed]"),
+        _ev(2, "approve", "Kris Enriquez", "director", 1,
+            "[reconstructed] Auto-skipped (director not in legacy system)"),
+        _ev(3, "approve", "Farshid Mohammadi", "procurement_manager", 2, "Looks fine"),
+    ], [])
+    assert [e["comment"] for e in got] == [
+        None, None, "Auto-skipped (director not in legacy system)", "Looks fine"]
+    assert [e["imported"] for e in got] == [True, True, True, False]
+    assert not any("[reconstructed]" in (e["comment"] or "") for e in got)
+
+
+def test_the_marker_is_the_one_the_pms_import_writes():
+    script = Path(workflow_view.__file__).resolve().parents[2] / "scripts" / "import_pms" / "reconstruct.py"
+    assert f'RECON_TAG = "{workflow_view.IMPORTED_MARKER}"' in script.read_text(encoding="utf-8")
+
+
+def test_a_return_carries_the_role_of_the_step_it_was_decided_at():
+    """PA-20261013-0003: Yuping Huang approved as Finance BP and her return
+    was listed as "Requester" — her primary role, which the engine records
+    for return/reject."""
+    steps = [{"role": "dept_manager", "label": "Dept Manager"},
+             {"role": "finance_bp", "label": "Finance BP"},
+             {"role": "finance_director", "label": "Finance Director of Oversea Department"}]
+    got = workflow_view.history_entries([
+        _ev(0, "submit", "Kris Enriquez", "requester", 0),
+        _ev(1, "approve", "A Manager", "dept_manager", 0),
+        _ev(2, "return", "Yuping Huang", "requester", 1, "Wrong amount"),
+        _ev(3, "submit", "Kris Enriquez", "requester", 0),
+        _ev(4, "approve", "A Manager", "dept_manager", 0),
+        _ev(5, "approve", "Yuping Huang", "finance_bp", 1),
+        _ev(6, "reject", "Yuping Huang", "requester", 2, "No budget"),
+    ], steps)
+    roles = [(e["action"], e["actor_name"], e["actor_role"]) for e in got]
+    assert roles == [
+        ("submit", "Kris Enriquez", "Requester"),
+        ("approve", "A Manager", "Dept Manager"),
+        # the step's role as recorded on this document's own approve at step 1
+        ("return", "Yuping Huang", "Finance BP"),
+        ("submit", "Kris Enriquez", "Requester"),
+        ("approve", "A Manager", "Dept Manager"),
+        ("approve", "Yuping Huang", "Finance BP"),
+        # no approve at step 2 yet: the engine's chain names the step
+        ("reject", "Yuping Huang", "Finance Director of Oversea Department"),
+    ]
+
+
+def test_without_any_source_for_the_step_the_recorded_role_stays():
+    got = workflow_view.history_entries([_ev(0, "return", "X", "gm", 4)], [])
+    # Unchanged, not dropped: no step to read a better one from.
+    assert got[0]["actor_role"] == workflow_view.role_label("gm")

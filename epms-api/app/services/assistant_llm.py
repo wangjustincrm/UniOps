@@ -1186,7 +1186,9 @@ sitting right now.
   delegation. Say so; it matters to whoever is chasing it.
 - history is what has already happened, most useful as "approved by X on DATE".
   Include comments when they are there — a returned document's comment is
-  usually the reason.
+  usually the reason. An event with `imported` true was carried over from the
+  old PMS system when the document was migrated; it is not a comment anyone
+  wrote. Each event's actor_role is the role the person acted in.
 - current_step is null when the document is not awaiting approval. Then say what
   its status is instead of inventing a waiting party.
 - If steps_available is false the engine could not be reached, so you have the

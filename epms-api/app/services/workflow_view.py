@@ -88,6 +88,68 @@ async def resolve(db, scope: dict, doc_type: str, number: str | None,
     return doc if visible else None
 
 
+# The PMS migration marks every event it rebuilt with this prefix
+# (scripts/import_pms/reconstruct.py RECON_TAG). It is bookkeeping, not
+# something anyone wrote: shown as a comment it read as "[reconstructed]" on
+# every line of an imported PO's history (ISS-0070).
+IMPORTED_MARKER = "[reconstructed]"
+
+# Actions taken AT an approval step, under that step's authority. The engine
+# records approve with the step's role, but return and reject with the actor's
+# base (JWT) role — so a Finance BP returning a PA was listed as "Requester",
+# her primary role (ISS-0070). The write side is the approval engine's; this
+# reads the role off the step instead, and changes no stored event.
+_STEP_DECISIONS = ("return", "reject")
+
+
+def _step_role_at(idx, when, approvals: list, steps: list[dict]) -> str | None:
+    """The role label of approval step `idx` for this document.
+
+    First choice is what the engine itself recorded for that step on this
+    document — an approve event at the same index (nearest earlier one, else
+    the first later one): it is the chain as it stood then. Failing that, the
+    document's current effective chain from the engine.
+    """
+    at_step = [(t, role) for (i, t, role) in approvals if i == idx and role]
+    if at_step:
+        before = [r for t, r in at_step if when is None or t is None or t <= when]
+        return role_label(before[-1] if before else at_step[0][1])
+    if isinstance(idx, int) and 0 <= idx < len(steps or []):
+        step = steps[idx] or {}
+        return step.get("label") or (role_label(step["role"]) if step.get("role") else None)
+    return None
+
+
+def history_entries(events, steps: list[dict]) -> list[dict]:
+    """The document's events as the assistant shows them (ISS-0070): the PMS
+    import marker becomes `imported`, and a return or reject carries the role
+    of the step it was decided at."""
+    approvals = [(getattr(e, "step_idx", None), getattr(e, "created_at", None),
+                  getattr(e, "actor_role", None))
+                 for e in events if getattr(e, "action", None) == "approve"]
+    out = []
+    for e in events:
+        action = getattr(e, "action", None)
+        comment = getattr(e, "comment", None)
+        imported = isinstance(comment, str) and comment.startswith(IMPORTED_MARKER)
+        if imported:
+            comment = comment[len(IMPORTED_MARKER):].strip() or None
+        role = role_label(getattr(e, "actor_role", "") or "")
+        if action in _STEP_DECISIONS:
+            role = _step_role_at(getattr(e, "step_idx", None),
+                                 getattr(e, "created_at", None), approvals, steps) or role
+        out.append({
+            "step_idx": getattr(e, "step_idx", None),
+            "action": action,
+            "actor_name": getattr(e, "actor_name", None),
+            "actor_role": role,
+            "comment": comment,
+            "imported": imported,
+            "at": getattr(e, "created_at", None),
+        })
+    return out
+
+
 async def build(db, doc_type: str, doc, token: str) -> dict:
     """Assemble the chain, the history, and where it is sitting now."""
     spec = _SPEC[doc_type]
@@ -103,14 +165,7 @@ async def build(db, doc_type: str, doc, token: str) -> dict:
         steps_available = False
 
     events = await spec["crud"].get_approval_events(db, doc.id)
-    history = [{
-        "step_idx": getattr(e, "step_idx", None),
-        "action": getattr(e, "action", None),
-        "actor_name": getattr(e, "actor_name", None),
-        "actor_role": role_label(getattr(e, "actor_role", "") or ""),
-        "comment": getattr(e, "comment", None),
-        "at": getattr(e, "created_at", None),
-    } for e in events]
+    history = history_entries(events, steps)
 
     # enrich_current_step only fills documents awaiting approval (submitted or
     # in review), which is exactly when "who is it with" has an answer.

@@ -77,8 +77,11 @@ export interface AssistantWorkflowEvent {
   step_idx: number | null
   action: string | null
   actor_name: string | null
+  /** The role the person acted in — for a return or reject, the step's role. */
   actor_role: string | null
   comment: string | null
+  /** Carried over from PMS when the document was migrated (not a comment). */
+  imported?: boolean
   at: string | null
 }
 
