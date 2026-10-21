@@ -423,3 +423,87 @@ async def test_the_epms_assistant_does_not_see_finance_ap_copy(admin_client, mon
     await admin_client.post("/api/v1/assistant/chat", json={
         "message": "AP posting?", "context": {"app": "finance"}})
     assert "ap_invoice" in shown["names"]
+
+
+# ── ISS-0031 / 0044 / 0045 / 0054 / 0016: data that was there but not modelled ──
+
+async def test_receipt_quantities_are_queryable(test_engine, admin_client):
+    from app.models.gr import GoodsReceipt, GrLineItem
+
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        po = _po(v, uid, f"PO-GRL-{tag}")
+        db.add(po)
+        await db.flush()
+        gr = GoodsReceipt(number=f"GR-GRL-{tag}", title="g", po_id=po.id, po_number=po.number,
+                          vendor_id=v.id, vendor_name=v.name, gr_type="physical",
+                          procurement_type=2, status="collected", created_by=uid)
+        db.add(gr)
+        await db.flush()
+        db.add_all([
+            GrLineItem(gr_id=gr.id, description="a", qty_ordered=Decimal("10"),
+                       qty_received=Decimal("4"), unit="ea", unit_price=Decimal("1"),
+                       line_total=Decimal("4")),
+            GrLineItem(gr_id=gr.id, description="b", qty_ordered=Decimal("10"),
+                       qty_received=Decimal("9"), actual_qty=Decimal("8"), unit="ea",
+                       unit_price=Decimal("1"), line_total=Decimal("8")),
+        ])
+        await db.commit()
+    body = await _query(admin_client, entity="gr_line", metrics=["qty"],
+                        where=[{"field": "receipt.number", "op": "eq", "value": f"GR-GRL-{tag}"}])
+    assert Decimal(body["rows"][0]["qty"]) == Decimal("12"), "4 + corrected 8, not 9"
+
+
+async def test_vendors_and_parts_are_visible_to_anyone_signed_in(
+        test_engine, admin_client, requester_client):
+    from app.models.part import Part
+
+    tag = uuid.uuid4().hex[:6]
+    async with _factory(test_engine)() as db:
+        await _vendor(db, name=f"Vend {tag}")
+        customer = Vendor(code=f"C-{tag}", name=f"Cust {tag}", category="x", contact_name="",
+                          contact_email="", is_supplier=False, is_customer=True)
+        db.add(customer)
+        db.add(Part(code=f"M{tag}", category="c", name=f"Spring {tag}", supplier="S",
+                    supplier_part_no="1", unit_price=Decimal("3.50"), unit="ea"))
+        await db.commit()
+    for client in (admin_client, requester_client):
+        body = await _query(client, entity="vendor", select=["name"],
+                            where=[{"field": "name", "op": "like", "value": tag}])
+        assert [r["name"] for r in body["rows"]] == [f"Vend {tag}"], "suppliers only"
+        body = await _query(client, entity="part", select=["code", "unit_price"],
+                            where=[{"field": "code", "op": "eq", "value": f"M{tag}"}])
+        assert body["rows"] == [{"code": f"M{tag}", "unit_price": "3.50"}]
+
+
+async def test_order_placement_and_match_results_are_queryable(test_engine, admin_client):
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        po = _po(v, uid, f"PO-PLC-{tag}", place_order_method="email",
+                 place_order_email_to="buy@vendor.test")
+        db.add(po)
+        await db.flush()
+        db.add(_inv(v, uid, f"INV-PLC-{tag}", po_id=po.id, po_number=po.number,
+                    matched_reference_total=Decimal("100"), variance=Decimal("4.50")))
+        await db.commit()
+    body = await _query(admin_client, entity="purchase_order",
+                        select=["place_order_method", "place_order_email_to"],
+                        where=[{"field": "number", "op": "eq", "value": f"PO-PLC-{tag}"}])
+    assert body["rows"] == [{"place_order_method": "email",
+                             "place_order_email_to": "buy@vendor.test"}]
+    assert body["value_labels"]["place_order_method"]["email"].startswith("Emailed")
+    body = await _query(admin_client, entity="invoice", select=["variance"],
+                        where=[{"field": "po_number", "op": "eq", "value": f"PO-PLC-{tag}"}])
+    assert body["rows"] == [{"variance": "4.50"}]
+
+
+def test_the_prepayment_cap_rule_is_stated():
+    from app.services import doc_type_guide
+
+    rules = {r["id"]: r["answer"] for r in doc_type_guide.build("pa")["rules"]}
+    assert "Max Prepayment %" in rules["prepayment_cap"]
+    assert "never more than that system cap" in rules["prepayment_cap"]

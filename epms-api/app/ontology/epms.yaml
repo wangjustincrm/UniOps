@@ -221,6 +221,18 @@ entities:
       pr_number: {kind: text, doc_number: PR, label: "Originating PR number"}
       expected_delivery: {kind: date, label: "Expected delivery date"}
       placed_at: {kind: datetime, label: "Date the order was placed with the vendor"}
+      # ISS-0045: how the order went out was recorded all along, but not here,
+      # so the answer was "EPMS has no record of it".
+      place_order_method:
+        kind: enum
+        label: "How the order was placed"
+        values: [email, online, nc]
+        value_labels:
+          email: "Emailed to the vendor from EPMS"
+          online: "Placed online, confirmed in EPMS"
+          nc: "Ordered in NC (mirrored PO)"
+      place_order_email_to: {kind: text, label: "Who the order email was sent to (email orders). Sending is recorded, delivery is not confirmed"}
+      place_order_reference: {kind: text, label: "Reference recorded when placing the order (portal order ID; the NC number for NC orders)"}
       is_prepaid: {kind: bool, label: "Prepaid order"}
       source: {kind: text, label: "Origin system (NC mirror or created here)", enumerate: true}
       created_at: {kind: datetime, label: "Created at"}
@@ -423,6 +435,12 @@ entities:
         local: id
         remote: gr_id
         label: "Invoices matched to this receipt"
+      lines:
+        target: gr_line
+        cardinality: one_to_many
+        local: id
+        remote: gr_id
+        label: "The lines of this receipt, with the quantities received"
 
   invoice:
     model: Invoice
@@ -476,6 +494,20 @@ entities:
           not received\" is status = matched AND billed_against = purchase_order
           AND po_receipt_recorded = false"
       uploaded_by_name: {kind: text, label: "Who uploaded it"}
+      # ISS-0016 / ISS-0036: the match result is stored on the invoice; without
+      # these "does the invoice exceed the PO" was answered from the PO alone.
+      matched_at: {kind: datetime, label: "When it was matched"}
+      matched_by_name: {kind: text, label: "Who matched it"}
+      po_total: {kind: money, label: "PO total at the time of matching"}
+      matched_reference_total: {kind: money, label: "Pre-tax PO amount the invoice was matched against (the selected PO lines, or the whole PO)"}
+      variance:
+        kind: money
+        label: "Invoice pre-tax amount (Non-PO fee lines excluded) minus the PO
+          amount it was matched against. Positive = invoiced more than the PO;
+          negative = less (allowed). Each PO line is checked against the match
+          tolerance; over it, the invoice goes to exception"
+      variance_pct: {kind: money, label: "variance as a percent of the matched PO amount"}
+      exception_reason: {kind: text, label: "Why matching put it in exception"}
       created_at: {kind: datetime, label: "Uploaded at — when the invoice entered EPMS (the Invoices list's Upload Date); not the vendor's invoice date"}
     metrics:
       total: {fn: sum, field: total_amount, label: "Total invoiced including tax", currency: currency}
@@ -631,3 +663,108 @@ entities:
     metrics:
       count: {fn: count, field: "*", label: "Number of agreements"}
       consumed: {fn: sum, field: consumed_amount, label: "Total consumed", currency: currency}
+
+  # ── Added 2026-10-21 (issue review batch 2) ────────────────────────────────
+  # ISS-0031: "how much was received" was answered "GRs have no quantity" —
+  # the quantities are on the lines, which were not modelled.
+  gr_line:
+    model: GrLineItem
+    label: "Goods Receipt line — what was received on one receipt, per PO line:
+      quantity, condition. Reach the receipt (number, date, PO) through
+      `receipt`"
+    perm_key: view_gr
+    scope: gr_line
+    date_field: receipt.received_at
+    date_field_nullable_ok: true
+    fields:
+      gr_id: {kind: uuid, internal: true}
+      po_line_id: {kind: uuid, internal: true}
+      description: {kind: text, label: "Description"}
+      material_id: {kind: text, label: "Material ID"}
+      qty_ordered: {kind: money, label: "Quantity ordered on the PO line"}
+      qty_received: {kind: money, label: "Quantity received as entered on the receipt"}
+      actual_qty: {kind: money, label: "Corrected actual quantity, when one was entered"}
+      qty_counted:
+        kind: money
+        label: "Quantity this line adds to the PO line's received quantity
+          (actual_qty if entered, otherwise qty_received). Use this for \"how
+          much was received\""
+      unit: {kind: text, label: "Unit"}
+      condition:
+        kind: enum
+        label: "Condition on arrival"
+        values: [good, discrepancy, damaged]
+      discrepancy_notes: {kind: text, label: "Notes on a damaged or short line"}
+    metrics:
+      count: {fn: count, field: "*", label: "Receipt lines"}
+      qty: {fn: sum, field: qty_counted, label: "Quantity received"}
+    links:
+      receipt:
+        target: goods_receipt
+        cardinality: many_to_one
+        local: gr_id
+        remote: id
+        label: "The receipt this line is on"
+      po_line:
+        target: po_line
+        cardinality: many_to_one
+        local: po_line_id
+        remote: id
+        label: "The PO line this receives against"
+
+  # ISS-0054: the only vendor master in the schema was Finance's
+  # business_partner (view_finance, vendors and customers), so counting vendors
+  # gave 773, 593 or 7,067. This is the Vendors page: suppliers only, readable
+  # by anyone signed in, as that page is.
+  vendor:
+    model: Vendor
+    label: "Vendor — the Vendor Master (EPMS → Vendors): one row per supplier.
+      \"How many vendors\" counts these"
+    perm_key: signed_in
+    scope: vendor
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "POID — the vendor code used in PO numbers"}
+      erp_id: {kind: text, label: "NC supplier code (ERP ID)"}
+      name: {kind: text, label: "Vendor name"}
+      category: {kind: text, label: "Category", enumerate: true}
+      payment_terms: {kind: text, label: "Payment terms", enumerate: true}
+      max_prepayment_pct:
+        kind: money
+        label: "Max prepayment % set on the vendor. Empty = the system cap in
+          Admin Panel → Prepayment Config applies"
+      currency: {kind: text, label: "Default currency", enumerate: true}
+      is_active: {kind: bool, label: "Active (inactive vendors cannot be used on new PRs or POs)"}
+      contact_name: {kind: text, label: "Contact name"}
+      contact_email: {kind: text, label: "Contact email"}
+      phone: {kind: text, label: "Phone"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of vendors"}
+
+  # ISS-0044: the Parts Catalog was not modelled; asked for a part by code the
+  # answer was "not found", and by name it priced a different item from an old
+  # PO line. Readable by anyone signed in, as the catalog page is.
+  part:
+    model: Part
+    label: "Part — the Parts Catalog (EPMS → Parts Catalog): catalog code,
+      name, supplier and catalog unit price. For what was actually paid on
+      orders use po_line"
+    perm_key: signed_in
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Catalog code"}
+      category: {kind: text, label: "Category", enumerate: true}
+      name: {kind: text, label: "Part name"}
+      description: {kind: text, label: "Description"}
+      supplier: {kind: text, label: "Supplier"}
+      supplier_part_no: {kind: text, label: "Supplier part number"}
+      supplier_item_id: {kind: text, label: "Supplier item ID (ASIN / SKU)"}
+      unit_price: {kind: money, label: "Catalog unit price"}
+      unit: {kind: text, label: "Unit"}
+      is_active: {kind: bool, label: "Active in the catalog"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of parts"}
+

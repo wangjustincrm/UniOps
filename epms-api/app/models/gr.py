@@ -3,8 +3,9 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -99,3 +100,15 @@ class GrLineItem(UUIDPrimaryKey, Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     gr: Mapped["GoodsReceipt"] = relationship("GoodsReceipt", back_populates="line_items")
+
+    # What this line adds to the PO line's received quantity: the corrected
+    # actual_qty when one was entered, else qty_received — the same rule as
+    # crud.gr._update_po_received_qty. For the Assistant (ISS-0031).
+    @hybrid_property
+    def qty_counted(self) -> Decimal:
+        return self.actual_qty if self.actual_qty is not None else self.qty_received
+
+    @qty_counted.inplace.expression
+    @classmethod
+    def _qty_counted_expression(cls):
+        return func.coalesce(cls.actual_qty, cls.qty_received)

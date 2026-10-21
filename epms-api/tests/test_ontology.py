@@ -98,7 +98,8 @@ def test_shipped_date_fields_are_non_nullable_or_acknowledged():
     coverage first."""
     from app.core.ontology import _TABLE_MODELS
 
-    acknowledged = {"goods_receipt"}  # received_at: 0 of 948 null, see the yaml
+    acknowledged = {"goods_receipt",  # received_at: 0 of 948 null, see the yaml
+                    "gr_line"}        # the same axis, receipt.received_at
     for entity in REGISTRY.values():
         # A table-backed entity's columns are all declared nullable because the
         # ontology does not know the real constraint. Their axes are checked
@@ -203,6 +204,10 @@ def test_every_entity_gates_on_a_permission_that_exists_in_the_matrix():
         # the Agreements page gates on (AgrReadDep). Checked on production that
         # day: granted to 16 roles including requester and system_admin.
         "epms.agreement.read",
+        # vendor and part (2026-10-21): their list endpoints are open to any
+        # signed-in user (api/v1/vendors.py, parts.py), so the Assistant shows
+        # them to the same people. ontology.SIGNED_IN.
+        "signed_in",
     }
     for entity in REGISTRY.values():
         for key in entity.perm_key:
@@ -500,6 +505,12 @@ async def test_no_entity_offers_a_column_that_is_always_null():
 
     external = [e for e in REGISTRY.values()
                 if e.model.__tablename__ in _TABLE_MODELS]
+    # Fields where empty is itself the answer, and the label says what it means.
+    empty_means_something = {
+        # Empty = the system cap in Prepayment Config applies (pa.py create);
+        # "what is this vendor's max prepayment %" is answered from that.
+        "vendor.max_prepayment_pct",
+    }
     empty: list[str] = []
     engine = create_async_engine(str(settings.DATABASE_URL))
     try:
@@ -515,7 +526,7 @@ async def test_no_entity_offers_a_column_that_is_always_null():
                         continue
                     filled = (await conn.execute(sa.text(
                         f"SELECT count({fname}) FROM {table}"))).scalar_one()
-                    if not filled:
+                    if not filled and f"{entity.name}.{fname}" not in empty_means_something:
                         empty.append(f"{entity.name}.{fname}")
     finally:
         await engine.dispose()

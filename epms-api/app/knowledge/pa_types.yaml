@@ -138,3 +138,18 @@ rules:
       Partially paid for a prepayment. A PA in status Approved is fully approved
       and still waiting to be paid.
     enforced_in: "finance-api app/crud/payment_execute.py (pa.status = processed, paid_at = payment date; invoices paid / partially_paid for a prepayment)"
+  - id: prepayment_cap
+    asked_as:
+      - how much can we prepay this vendor
+      - what is the maximum prepayment percentage
+      - 供应商最多能预付百分之几
+    answer: >
+      A prepayment can be at most the vendor's Max Prepayment % (on the vendor
+      record) when one is set, otherwise the system cap in Admin Panel →
+      Prepayment Config — and never more than that system cap in either case.
+      A cap of 0 means the vendor cannot be prepaid. The cap is not on
+      agreements or POs. The vendor's own setting is readable as
+      vendor.max_prepayment_pct; the system cap is only in Admin Panel →
+      Prepayment Config.
+    enforced_in: "epms-api app/api/v1/pa.py create (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap)"
+

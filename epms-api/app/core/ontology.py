@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from app.core import doc_numbers
-from app.models.gr import GoodsReceipt
+from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.agreement import PurchaseAgreement
@@ -35,7 +35,9 @@ from app.models.user import User
 from app.models.department import Department
 from app.models.cost_center import CostCenter
 from app.models.po import PoLineItem, PurchaseOrder
+from app.models.part import Part
 from app.models.pr import PrLineItem, PurchaseRequest
+from app.models.vendor import Vendor
 
 _ONTOLOGY_DIR = Path(__file__).resolve().parent.parent / "ontology"
 ONTOLOGY_PATH = _ONTOLOGY_DIR / "epms.yaml"
@@ -88,6 +90,9 @@ _MODELS: dict[str, type] = {
     "PurchaseOrder": PurchaseOrder,
     "PoLineItem": PoLineItem,
     "GoodsReceipt": GoodsReceipt,
+    "GrLineItem": GrLineItem,
+    "Vendor": Vendor,
+    "Part": Part,
     "Invoice": Invoice,
     "PaymentApplication": PaymentApplication,
     "PurchaseAgreement": PurchaseAgreement,
@@ -192,6 +197,21 @@ async def scope_po_line(q: Select, scope: dict, db: AsyncSession) -> Select:
     """
     subq = scope.get("po_subq")
     return q if subq is None else q.where(PoLineItem.po_id.in_(subq))
+
+
+async def scope_gr_line(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """A receipt line is exactly as visible as its receipt (through the PO)."""
+    subq = scope.get("po_subq")
+    if subq is None:
+        return q
+    return q.where(GrLineItem.gr_id.in_(
+        select(GoodsReceipt.id).where(GoodsReceipt.po_id.in_(subq))))
+
+
+async def scope_vendor(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """Suppliers only, as the Vendors page lists them (crud.vendor): the same
+    table holds customer-only business partners, which are not vendors."""
+    return q.where(Vendor.is_supplier.is_(True))
 
 
 async def scope_pr_line(q: Select, scope: dict, db: AsyncSession) -> Select:
@@ -513,6 +533,8 @@ _SCOPES: dict[str, Callable] = {
     "po": scope_po,
     "gr": scope_gr,
     "po_line": scope_po_line,
+    "gr_line": scope_gr_line,
+    "vendor": scope_vendor,
     "pr_line": scope_pr_line,
     "invoice": scope_invoice,
     "pa": scope_pa,
@@ -641,13 +663,20 @@ class Entity:
 _deferred_axis_checks: list[tuple[str, str, str, str]] = []
 
 
+# A perm_key every signed-in caller holds. Only for entities whose own list
+# endpoint is open to any signed-in user — the Vendors list and the Parts
+# Catalog (api/v1/vendors.py, parts.py read with no permission check) — so the
+# Assistant shows exactly what the page already shows.
+SIGNED_IN = "signed_in"
+
+
 def may_view(entity: "Entity", perms: dict) -> bool:
     """Does this caller hold any of the entity's keys?
 
     ANY rather than ALL: the keys on an entity are alternative routes to the
     same data, not a set of requirements.
     """
-    return any(perms.get(k, False) for k in entity.perm_key)
+    return any(k == SIGNED_IN or perms.get(k, False) for k in entity.perm_key)
 
 
 class OntologyError(Exception):
