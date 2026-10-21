@@ -133,6 +133,24 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
         lazy="selectin",
     )
 
+    # ── Overdue: the Invoices list's filter and the Assistant's field ─────────
+    # One definition for both (ISS-0013: "哪些发票已经逾期未付？" was refused as
+    # AP data while the Invoices page's Overdue filter showed 594). Today is
+    # the PLANT's day, not the container's UTC one, and a paid invoice is never
+    # overdue — see crud.invoice.get_all for why both halves matter.
+    @hybrid_property
+    def overdue(self) -> bool:
+        from app.core.delegation import local_today
+        return bool(self.due_date and self.due_date < local_today()
+                    and self.status != "paid")
+
+    @overdue.inplace.expression
+    @classmethod
+    def _overdue_expression(cls):
+        from sqlalchemy import and_
+        from app.core.delegation import local_today
+        return and_(cls.due_date < local_today(), cls.status != "paid")
+
     # ── For the Assistant's ontology (ISS-0013) ───────────────────────────────
     # "Which invoices are matched but not received?" was answered with every
     # invoice lacking a GR number — agreement invoices included, which never

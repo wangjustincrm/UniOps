@@ -614,6 +614,12 @@ class Field:
     # anything but 4. Asked what procurement types exist, the assistant said the
     # system has none, because all it could see was an integer column.
     value_labels: tuple[tuple[str, str], ...] = ()
+    # What a code means beyond its name, for the planner and the narrator ONLY.
+    # value_labels is the name the page shows ("Issued"); the explanation used
+    # to be in the same string, and a status column printed "Issued to the
+    # vendor and still open … (po_line.outstanding_qty) …" in every row
+    # (ISS-0013). Written in YAML as `code: {label: ..., note: ...}`.
+    value_notes: tuple[tuple[str, str], ...] = ()
     # The kind of document number this column holds (PR, PO, GR, PA, INV,
     # AGR). An exact match on it is normalised first (core.doc_numbers), so
     # "pr20260928-0001" finds PR-20260928-0001 (ISS-0024).
@@ -786,6 +792,9 @@ def _build_entity(name: str, spec: dict) -> Entity:
         raw_labels = fspec.get("value_labels") or {}
         _require(isinstance(raw_labels, dict),
                  f"{where}.{fname}: value_labels must be a mapping")
+        _require(all(not isinstance(v, dict) or v.get("label")
+                     for v in raw_labels.values()),
+                 f"{where}.{fname}: a value_labels entry written as a mapping needs a label")
         raw_listed = fspec.get("when_listed")
         _require(raw_listed is None or (
                      isinstance(raw_listed, dict)
@@ -799,7 +808,12 @@ def _build_entity(name: str, spec: dict) -> Entity:
             kind=kind, label=fspec["label"],
             values=tuple(fspec.get("values") or ()),
             enumerate_values=bool(fspec.get("enumerate")),
-            value_labels=tuple((str(k), str(v)) for k, v in raw_labels.items()),
+            value_labels=tuple(
+                (str(k), str(v["label"] if isinstance(v, dict) else v))
+                for k, v in raw_labels.items()),
+            value_notes=tuple(
+                (str(k), " ".join(str(v["note"]).split()))
+                for k, v in raw_labels.items() if isinstance(v, dict) and v.get("note")),
             is_expression=bool(fspec.get("expr")),
             doc_number=doc_number,
             when_listed=((raw_listed["rule"], " ".join(str(raw_listed["note"]).split()),

@@ -223,20 +223,30 @@ entities:
         values: [draft, submitted, in_review, approved, rejected, returned,
                  issued, partially_received, fully_received, closed, cancelled,
                  nc_pending, nc_milk]
+        # label = the name the PO pages show (epms/src/components/ui/badge.tsx);
+        # note = for the planner and narrator only, never shown (ISS-0013).
         value_labels:
           draft: "Draft"
           submitted: "Submitted"
-          in_review: "In review"
+          in_review: "In Review"
           approved: "Approved"
           rejected: "Rejected"
-          returned: "Returned to its creator for changes — not rejected"
-          issued: "Issued to the vendor and still open. Every open NC raw-material/packaging order sits here whatever has arrived — how much is received is on the lines (po_line.outstanding_qty), not in this status"
-          partially_received: "Partially received"
-          fully_received: "Fully received"
+          returned: {label: "Returned", note: "Returned to its creator for changes — not rejected"}
+          issued:
+            label: "Issued"
+            note: "The order has gone out and is still open: it was placed
+              (place_order_method email / online, or ordered in NC). For an
+              email order the system records that the email was sent, never
+              that it was delivered or read — say \"status Issued\" and how
+              it was placed, never that the vendor received it. Every open NC
+              raw-material/packaging order sits here whatever has arrived; how
+              much is received is on the lines, not in this status"
+          partially_received: "Partial Receipt"
+          fully_received: "Fully Received"
           closed: "Closed"
           cancelled: "Cancelled"
-          nc_pending: "Not yet approved in NC — of any trade type, milk included; a milk order only becomes nc_milk once NC approves it"
-          nc_milk: "Milk order (\"Milk type\") — an NC order of any trade type other than raw material/packaging; raw cow/goat milk, skim, evaporated milk. Received and stocked in NC by hand, so its received quantities here are not kept up to date"
+          nc_pending: {label: "NC Pending Approval", note: "Not yet approved in NC — of any trade type, milk included; a milk order only becomes nc_milk once NC approves it"}
+          nc_milk: {label: "Milk / NC", note: "Milk order (\"Milk type\") — an NC order of any trade type other than raw material/packaging; raw cow/goat milk, skim, evaporated milk. Received and stocked in NC by hand, so its received quantities here are not kept up to date"}
       total: {kind: money, label: "Total including tax"}
       subtotal: {kind: money, label: "Total before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
@@ -518,12 +528,27 @@ entities:
         kind: enum
         label: "Matching status"
         values: [unmatched, match_review, matched, exception, paid, cancelled]
+        # The names the Invoices list shows (InvoiceListPage STATUS_CFG), so a
+        # status column reads like the page (ISS-0013).
+        value_labels:
+          unmatched: "Unmatched"
+          match_review: {label: "Pending Review", note: "Matched, but waiting for AP to review the match before it counts as matched"}
+          matched: "Matched"
+          exception: {label: "Exception", note: "Billed more than a PO line's value beyond the match tolerance"}
+          paid: {label: "Paid", note: "Paid — set when Finance pays the payment application the invoice is on"}
+          cancelled: "Cancelled"
       amount: {kind: money, label: "Amount before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
       total_amount: {kind: money, label: "Total including tax"}
       currency: {kind: text, label: "Currency", enumerate: true}
       invoice_date: {kind: date, label: "Invoice date"}
       due_date: {kind: date, label: "Payment due date"}
+      # Added 2026-10-21 (ISS-0013): the Invoices page's Overdue filter.
+      overdue:
+        kind: bool
+        label: "Overdue and unpaid — exactly the Invoices page's Overdue filter:
+          due date before today (plant time) and status not paid. \"Overdue\",
+          \"逾期\", \"逾期未付\", \"past due\" invoices are overdue = true"
       po_number: {kind: text, doc_number: PO, label: "PO number this invoice bills against"}
       gr_number:
         kind: text
@@ -621,16 +646,18 @@ entities:
         # ISS-0072 / ISS-0059 / ISS-0042: with bare values the planner matched
         # "paid" to the legacy value `paid` and "waiting for payment" to
         # in_review, and every payment question came back empty or wrong.
+        # label = the name the PA pages show (PaListPage STATUS_CFG); note =
+        # for the planner and narrator only (ISS-0013).
         value_labels:
-          draft: "Draft — not submitted yet"
-          submitted: "Submitted — waiting for its first approver"
-          in_review: "In approval — still being approved, not payable yet"
-          approved: "Approved and awaiting payment — fully approved, the payment has not been made yet. \"Waiting to be paid\" means this"
-          rejected: "Legacy value from imported history; a PA rejected today is cancelled"
-          returned: "Returned to its creator for changes"
-          processed: "Paid — the payment was made in Finance (paid_on is the payment date). \"Paid\" and \"how much was paid\" mean this status"
-          cancelled: "Cancelled — includes every PA an approver rejected"
-          paid: "Legacy value from imported history, never written now. A paid PA is processed; use paid only together with processed"
+          draft: {label: "Draft", note: "Draft — not submitted yet"}
+          submitted: {label: "Submitted", note: "Submitted — waiting for its first approver"}
+          in_review: {label: "In Review", note: "In approval — still being approved, not payable yet"}
+          approved: {label: "Approved", note: "Approved and awaiting payment — fully approved, the payment has not been made yet. \"Waiting to be paid\" means this"}
+          rejected: {label: "Rejected", note: "Legacy value from imported history; a PA rejected today is cancelled"}
+          returned: {label: "Returned", note: "Returned to its creator for changes"}
+          processed: {label: "Processed", note: "Paid — the payment was made in Finance (paid_on is the payment date). \"Paid\" and \"how much was paid\" mean this status"}
+          cancelled: {label: "Cancelled", note: "Cancelled — includes every PA an approver rejected"}
+          paid: {label: "Paid", note: "Legacy value from imported history, never written now. A paid PA is processed; use paid only together with processed"}
       pa_type:
         kind: enum
         label: "Payment type"
@@ -875,10 +902,10 @@ entities:
         label: "Status"
         values: [pending_review, available, exhausted, void]
         value_labels:
-          pending_review: "Pending review"
-          available: "Available — will be netted at the next payment to the vendor"
-          exhausted: "Fully used"
-          void: "Void (rejected or voided)"
+          pending_review: "Pending Review"
+          available: {label: "Available", note: "Available — will be netted at the next payment to the vendor"}
+          exhausted: {label: "Exhausted", note: "Fully used"}
+          void: {label: "Void", note: "Void (rejected or voided)"}
       source:
         kind: enum
         label: "Where it came from"
@@ -922,11 +949,11 @@ entities:
         label: "Status"
         values: [pending_ap_review, open, reconciled, voided, rejected]
         value_labels:
-          pending_ap_review: "Waiting for AP review (entered with a missing-receipt reason)"
-          open: "Open — not attached to an invoice yet"
-          reconciled: "Attached to an invoice"
+          pending_ap_review: {label: "Pending AP Review", note: "Waiting for AP review (entered with a missing-receipt reason)"}
+          open: {label: "Open", note: "Open — not attached to an invoice yet"}
+          reconciled: {label: "Reconciled", note: "Attached to an invoice"}
           voided: "Removed"
-          rejected: "Rejected by AP"
+          rejected: {label: "Rejected", note: "Rejected by AP"}
       missing_receipt_reason: {kind: text, label: "Why there is no physical receipt"}
       created_at: {kind: datetime, label: "Recorded at"}
     metrics:
@@ -976,10 +1003,10 @@ entities:
         label: "Status of the period"
         values: [pending, received, overdue, waived]
         value_labels:
-          pending: "Pending — no invoice for it yet"
-          received: "Received — its invoice has arrived"
-          overdue: "Overdue — no invoice although the expected date has passed"
-          waived: "Waived — nothing is due for this period"
+          pending: {label: "Pending", note: "Pending — no invoice for it yet"}
+          received: {label: "Received", note: "Received — its invoice has arrived"}
+          overdue: {label: "Overdue", note: "Overdue — no invoice although the expected date has passed"}
+          waived: {label: "Waived", note: "Waived — nothing is due for this period"}
       confirmed_by_name:
         kind: text
         label: "Who confirmed the service for this period (the agreement
@@ -1024,8 +1051,8 @@ entities:
         label: "Status"
         values: [pending, billed, void]
         value_labels:
-          pending: "Not billed yet"
-          billed: "Billed on a courier invoice"
+          pending: {label: "Pending", note: "Not billed yet"}
+          billed: {label: "Billed", note: "Billed on a courier invoice"}
           void: "Void"
       source:
         kind: enum

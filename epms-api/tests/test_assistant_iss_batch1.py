@@ -231,9 +231,11 @@ def test_pa_status_values_say_what_they_mean():
     from app.core.ontology import REGISTRY
 
     status = REGISTRY["payment_application"].fields["status"]
-    labels = dict(status.value_labels)
     # Every declared value has a meaning, and the two that were misread say so.
+    # The meaning is the note; the label is the page's name (ISS-0013).
+    labels = dict(status.value_notes)
     assert set(labels) == set(status.values)
+    assert dict(status.value_labels)["processed"] == "Processed"
     assert labels["processed"].startswith("Paid")
     assert "awaiting payment" in labels["approved"]
     assert "Legacy" in labels["paid"]
@@ -303,7 +305,8 @@ def test_po_returned_is_declared():
 
     status = REGISTRY["purchase_order"].fields["status"]
     assert "returned" in status.values
-    assert "not rejected" in dict(status.value_labels)["returned"]
+    assert "not rejected" in dict(status.value_notes)["returned"]
+    assert dict(status.value_labels)["returned"] == "Returned"
     import inspect
 
     from app.crud import po as po_crud

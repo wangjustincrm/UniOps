@@ -384,7 +384,8 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
     await assistant_llm.record_usage(db, actor, "narrate", told.get("usage") or {})
 
     return {
-        "answer": await _with_listing_notes(told["text"], result, body.message),
+        "answer": await _with_listing_notes(
+            _without_internal_notes(told["text"], result), result, body.message),
         "kind": "answer",
         # The receipt: what ran, over how many rows, and whether the cap bit.
         "query": query,
@@ -395,6 +396,27 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             "total_rows": result.get("total_rows"),
         },
     }
+
+
+def _without_internal_notes(text: str, result: dict) -> str:
+    """A code's note is for the narrator; it is told never to copy one, and
+    any it copies anyway is taken out here (ISS-0013: the PO status note,
+    field name included, was pasted into a table column and into a sentence).
+    A copy standing alone (a table cell) becomes the code's page name; one in
+    brackets after the name is dropped. Only verbatim copies can be caught —
+    the prompt covers the rest."""
+    labels = result.get("value_labels") or {}
+    pairs = {}
+    for column, by_code in (result.get("value_notes") or {}).items():
+        for code, note in by_code.items():
+            if note:
+                pairs[note] = (labels.get(column) or {}).get(code) or ""
+    for note in sorted(pairs, key=len, reverse=True):
+        if note in text:
+            for bracketed in (f" ({note})", f"({note})", f"（{note}）"):
+                text = text.replace(bracketed, "")
+            text = text.replace(note, pairs[note])
+    return text
 
 
 async def _with_listing_notes(text: str, result: dict, message: str) -> str:

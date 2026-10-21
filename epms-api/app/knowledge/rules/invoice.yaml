@@ -40,6 +40,23 @@ rules:
       - "tests/test_pa_multi_po.py::test_receipt_override_covers_the_ungated_po"
       - "tests/test_receipt_pa_gate.py::test_house_account_pa_refused_when_invoice_has_neither_receipts_nor_legacy"
       - "tests/test_agreement_pa.py::test_recurring_pa_payable_after_manual_period_assignment"
+  # ISS-0013: "哪些发票已经逾期未付？" was refused as AP data.
+  - id: overdue_invoices
+    asked_as:
+      - 哪些发票已经逾期未付？
+      - which invoices are overdue
+    answer: >
+      An invoice is overdue when its due date is before today (the plant's
+      date) and its status is anything but Paid — the Invoices page's Overdue
+      filter, and the red "N d overdue" on its Due Date column. It is the
+      same in this answer: the list or count of overdue invoices is read with
+      that filter, and the full list is in Export to Excel.
+    enforced_in: "epms-api app/models/invoice.py Invoice.overdue (used by app/crud/invoice.py get_all overdue=true and by the ontology field invoice.overdue)"
+    provenance: pinned
+    test:
+      - "tests/test_invoice_due_sorting.py::test_overdue_filter_keeps_only_unpaid_past_due_invoices"
+      - "tests/test_invoice_due_sorting.py::test_due_today_is_not_yet_overdue"
+      - "tests/test_assistant_iss_batch6.py::test_overdue_is_the_invoice_pages_filter"
   - id: courier_invoices_are_matched_to_shipments
     asked_as:
       - where do I upload a UPS / FedEx / Purolator invoice

@@ -44,12 +44,13 @@ async def nc_sync_schedule(db) -> dict:
 
 
 def nc_statuses(db) -> dict:
-    """What nc_pending / nc_milk mean — the ontology's own value labels, the
-    same text a query result is read back with."""
+    """What nc_pending / nc_milk mean — the ontology's own page name and note,
+    the same text a query result is read back with."""
     from app.core.ontology import REGISTRY
 
-    labels = dict(REGISTRY["purchase_order"].fields["status"].value_labels)
-    return {"nc_milk": labels["nc_milk"], "nc_pending": labels["nc_pending"]}
+    status = REGISTRY["purchase_order"].fields["status"]
+    labels, notes = dict(status.value_labels), dict(status.value_notes)
+    return {k: f"{labels[k]}: {notes[k]}" for k in ("nc_milk", "nc_pending")}
 
 
 # ── Purchase orders ──────────────────────────────────────────────────────────

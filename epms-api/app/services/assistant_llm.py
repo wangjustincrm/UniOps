@@ -104,7 +104,7 @@ Rules:
   columns you need the same way. Querying the parent alone returns the header
   and none of the detail, which is an answer that describes the question back.
 - A field with `value_labels` stores a code that stands for something: type 4
-  means Service. Filter on the CODE and report the MEANING — a question about
+  means Service (`value_notes`, where present, says more about a code). Filter on the CODE and report the MEANING — a question about
   service purchases becomes type=4, and a result of 4 is read back as "Service",
   never as "4". Asked what the types are, list them from this mapping; it is the
   answer, not a reason to say the system has no such concept.
@@ -170,6 +170,11 @@ Rules:
   po_number. Never answer them from the PO alone. Line by line it is
   `invoice_allocation`: filter order.number, select po_line.description,
   allocated_amount, variance, variance_pct.
+- Overdue invoices — 逾期, 逾期未付, past due, "not paid by the due date" — are
+  `invoice` where `overdue` is true: the same rows as the Invoices page's
+  Overdue filter. Whether an EPMS invoice is paid is its own status, so this
+  is never Finance-only or AP-only data and never a cannot_answer: list them
+  (select number, vendor, due date, total) or count them.
 - Invoices are `invoice` (INV- numbers, the EPMS Invoices list). `ap_invoice`
   is Finance's AP copy (AP- numbers) and is only for questions that name
   Finance AP, AP numbers or AP posting. An INV- number is invoice.internal_ref,
@@ -374,9 +379,20 @@ results are the only facts you have.
   they asked about 工程部 and it ran against "Engineering" — name the value that
   was actually used, once, in passing. They are the only one who can tell you
   the mapping was wrong, and they cannot if it is not shown.
-- A coded column (procurement type and the like) comes back as its number. The
-  query that ran carries `value_labels` where one applies — report the meaning,
-  not the code. "4" tells the reader nothing.
+- A coded column (procurement type, a status and the like) comes back as its
+  code. `value_labels` gives the name the page shows for each code — "4" is
+  "Service", "issued" is "Issued". Report that name, never the code, and in a
+  table's status column write exactly that name and nothing else.
+- `value_notes` explains some codes, for YOU only: use it to understand and
+  to answer correctly, never copy it into the reply, never quote it, and never
+  name a field from it (po_line.outstanding_qty and the like mean nothing to
+  the reader). An internal note pasted into a status column was a reported
+  bug (ISS-0013).
+- A status says what the system recorded, nothing more. "Issued" means the
+  order went out (how: place_order_method); for an email order the system
+  records that the email was SENT, never that it was delivered or read — so
+  never say the vendor received it. Say it is Issued and how and when it was
+  placed, if those were returned.
 - `added_below_your_reply` holds sentences the system adds under your reply
   (in the reply's language). Do not repeat or paraphrase them.
 - An `assumption` means the query was narrowed on the reader's behalf because
@@ -1498,6 +1514,8 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         # not reach this call by itself — which is how the mapping got built,
         # threaded through, and still reported back as "type 2".
         payload["value_labels"] = result["value_labels"]
+    if "value_notes" in result:
+        payload["value_notes"] = result["value_notes"]
     payload.update(reply_language.instructions(message))
     try:
         resp = await _client().messages.create(

@@ -10,7 +10,6 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.delegation import local_today
 from app.crud._list_order import lower_text, sort_clauses
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
@@ -285,7 +284,9 @@ async def get_all(
         #   - a paid invoice is never chased. Without this the filter is
         #     dominated by historic settled invoices, which is precisely the
         #     noise it exists to cut through.
-        q = q.where(Invoice.due_date < local_today(), Invoice.status != "paid")
+        # The condition itself is Invoice.overdue, shared with the Assistant's
+        # invoice.overdue field so the two count the same rows (ISS-0013).
+        q = q.where(Invoice.overdue)
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     # created_at desc stays the default AND the tiebreaker: several invoices

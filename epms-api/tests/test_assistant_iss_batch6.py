@@ -290,3 +290,117 @@ async def test_the_inbox_filter_is_the_frontends():
     assert "not_in_this_inbox" in assistant_llm._GUIDE_SYSTEM
     assert "never merge rows" in " ".join(assistant_llm._GUIDE_SYSTEM.split()).lower() or \
         "Never merge rows" in " ".join(assistant_llm._GUIDE_SYSTEM.split())
+
+
+# ── ISS-0013: overdue invoices, and status names instead of internal notes ───
+
+async def test_overdue_is_the_invoice_pages_filter(admin_client, test_engine):
+    """"哪些发票已经逾期未付？" was refused as AP-only data. invoice.overdue is
+    the Invoices page's Overdue filter itself (Invoice.overdue), so the
+    Assistant's count is the page's."""
+    import uuid
+    from datetime import date, timedelta
+
+    from tests.test_invoice_due_sorting import _make_invoice, _make_vendor, _set_status
+
+    name = f"Overdue B6 {uuid.uuid4().hex[:8]}"
+    v = await _make_vendor(admin_client, name)
+    yesterday = (date.today() - timedelta(days=3)).isoformat()
+    late = await _make_invoice(admin_client, v["id"], yesterday)
+    await _make_invoice(admin_client, v["id"], yesterday)
+    paid = await _make_invoice(admin_client, v["id"], yesterday)
+    await _set_status(test_engine, paid["id"], "paid")
+    await _make_invoice(admin_client, v["id"], (date.today() + timedelta(days=30)).isoformat())
+
+    page = await admin_client.get("/api/v1/invoices", params={
+        "search": name, "overdue": "true", "page_size": 50})
+    on_page = {i["internal_ref"] for i in page.json()["items"]}
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "invoice", "select": ["internal_ref", "due_date"],
+        "where": [{"field": "vendor_name", "op": "eq", "value": name},
+                  {"field": "overdue", "op": "eq", "value": True}]})
+    assert r.status_code == 200, r.text
+    assert {row["internal_ref"] for row in r.json()["rows"]} == on_page
+    assert late["internal_ref"] in on_page and len(on_page) == 2
+    r = await admin_client.post("/api/v1/assistant/query", json={
+        "entity": "invoice", "metrics": ["count"],
+        "where": [{"field": "vendor_name", "op": "eq", "value": name},
+                  {"field": "overdue", "op": "eq", "value": True}]})
+    assert r.json()["rows"][0]["count"] == 2
+
+
+async def test_overdue_is_offered_to_the_epms_planner(admin_client):
+    import inspect
+
+    from app.crud import invoice as invoice_crud
+
+    r = await admin_client.get("/api/v1/assistant/schema")
+    invoice = next(e for e in r.json()["entities"] if e["name"] == "invoice")
+    assert "Overdue filter" in invoice["fields"]["overdue"]["label"]
+    assert "Invoice.overdue" in inspect.getsource(invoice_crud.get_all)
+    plan = " ".join(assistant_llm._PLAN_SYSTEM.split())
+    assert "`overdue` is true" in plan and "never Finance-only or AP-only" in plan
+
+
+def _page_labels(path: str, table: str) -> dict:
+    import re
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[2] / path
+    if not src.exists():
+        pytest.skip("epms frontend not mounted in this container")
+    text = src.read_text(encoding="utf-8")
+    block = text[text.index(table):]
+    block = block[:block.index("\n}")]
+    return dict(re.findall(r"^\s+([a-z_]+):\s*\{\s*label:\s*'([^']+)'", block, re.M))
+
+
+async def test_status_names_are_the_pages():
+    """A status column shows the name the page shows; the explanation is a
+    separate note for the model (ISS-0013)."""
+    badge = _page_labels("epms/src/components/ui/badge.tsx", "STATUS_CONFIG")
+    pa_page = _page_labels("epms/src/pages/pa/PaListPage.tsx", "const STATUS_CFG")
+    inv_page = _page_labels("epms/src/pages/invoices/InvoiceListPage.tsx", "const STATUS_CFG")
+    checks = (("purchase_order", badge), ("payment_application", pa_page),
+              ("invoice", inv_page), ("agreement_receipt", badge),
+              ("agreement_period", badge),
+              ("freight_shipment", _page_labels("epms/src/pages/freight/freightUi.tsx",
+                                                "const SHIPMENT_STATUS")))
+    for entity, page in checks:
+        labels = dict(REGISTRY[entity].fields["status"].value_labels)
+        shared = set(labels) & set(page)
+        assert shared, entity
+        assert {k: labels[k] for k in shared} == {k: page[k] for k in shared}, entity
+    for entity in REGISTRY.values():
+        status = entity.fields.get("status")
+        for code, label in (status.value_labels if status else ()):
+            assert "—" not in label and "." not in label and len(label) <= 25, (entity.name, code)
+    po = REGISTRY["purchase_order"].fields["status"]
+    assert dict(po.value_labels)["issued"] == "Issued"
+    note = dict(po.value_notes)["issued"]
+    assert "never that it was delivered" in note and "outstanding_qty" not in note
+
+
+async def test_the_narrator_gets_names_and_notes_apart(admin_client, monkeypatch):
+    seen = _plan_query(monkeypatch, {"entity": "purchase_order", "select": ["number", "status"],
+                                     "limit": 1})
+    await admin_client.post(CHAT, json={"message": "PO-079-2605-03 已经发给供应商了吗？"})
+    result = seen[0]
+    assert result["value_labels"]["status"]["issued"] == "Issued"
+    assert "sent" in result["value_notes"]["status"]["issued"]
+    narrate = " ".join(assistant_llm._NARRATE_SYSTEM.split())
+    assert "never copy it into the reply" in narrate
+    assert "never that it was delivered or read" in narrate
+
+
+async def test_a_pasted_note_becomes_the_status_name(admin_client, monkeypatch):
+    """Both reported shapes: the note as a table cell, and after the name."""
+    note = dict(REGISTRY["purchase_order"].fields["status"].value_notes)["issued"]
+    _plan_query(monkeypatch, {"entity": "purchase_order", "select": ["number", "status"],
+                              "limit": 1},
+                narration=f"| PO | 状态 |\n|---|---|\n| PO-1 | {note} |\n\n"
+                          f"状态为 Issued（{note}）。")
+    r = await admin_client.post(CHAT, json={"message": "列出 PO"})
+    answer = r.json()["answer"]
+    assert note not in answer and "outstanding" not in answer
+    assert "| PO-1 | Issued |" in answer and "状态为 Issued。" in answer

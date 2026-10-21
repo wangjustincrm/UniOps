@@ -1016,13 +1016,19 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
     # schema block carries these too, but only the planner sees that; whatever
     # writes the reply sees this result and nothing else, and without the
     # mapping it reports "type 2" — a number the reader cannot act on.
-    coded = {}
+    coded, notes = {}, {}
     for label in labels:
         f = _field_of(entity, label)
         if f is not None and f.value_labels:
             coded[label] = {k: v for k, v in f.value_labels}
+        if f is not None and f.value_notes:
+            # For the narrator's understanding only, never to be shown
+            # (ISS-0013); value_labels is the name the page shows.
+            notes[label] = {k: v for k, v in f.value_notes}
     if coded:
         out["value_labels"] = coded
+    if notes:
+        out["value_notes"] = notes
     # A sentence the reply must carry whenever these values are listed — added
     # under the reply by the chat layer, not left to the narrator (ISS-0008).
     listed = []
