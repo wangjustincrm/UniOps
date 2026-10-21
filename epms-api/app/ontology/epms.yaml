@@ -58,6 +58,15 @@ entities:
           4: "Service"
           5: "Fixed Asset"
           6: "Project"
+        # Added under every answer that lists the types (ISS-0008); pinned by
+        # the rule-registry card it names.
+        when_listed:
+          rule: type_1_not_selectable
+          note: "Type 1 (Raw Materials / Packaging) cannot be chosen when
+            creating a PR in EPMS: its tile is disabled, because raw-material
+            and packaging purchasing runs in NC and those orders are mirrored
+            into EPMS."
+          zh: "第 1 类（原材料/包装，Raw Materials / Packaging）在 EPMS 创建请购单时不能选择：该选项是禁用的，因为原材料和包装采购在 NC 中进行，相关订单从 NC 镜像到 EPMS。"
 
       # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
       # found values in the data the planner had never been told about.
@@ -187,6 +196,15 @@ entities:
           4: "Service"
           5: "Fixed Asset"
           6: "Project"
+        # Added under every answer that lists the types (ISS-0008); pinned by
+        # the rule-registry card it names.
+        when_listed:
+          rule: type_1_not_selectable
+          note: "Type 1 (Raw Materials / Packaging) cannot be chosen when
+            creating a PR in EPMS: its tile is disabled, because raw-material
+            and packaging purchasing runs in NC and those orders are mirrored
+            into EPMS."
+          zh: "第 1 类（原材料/包装，Raw Materials / Packaging）在 EPMS 创建请购单时不能选择：该选项是禁用的，因为原材料和包装采购在 NC 中进行，相关订单从 NC 镜像到 EPMS。"
 
       # The list used to be the six statuses of the EPMS approval flow. Orders
       # mirrored from NC — which is nearly all of type 1 — carry four more, and

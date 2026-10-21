@@ -377,6 +377,8 @@ results are the only facts you have.
 - A coded column (procurement type and the like) comes back as its number. The
   query that ran carries `value_labels` where one applies — report the meaning,
   not the code. "4" tells the reader nothing.
+- `added_below_your_reply` holds sentences the system adds under your reply
+  (in the reply's language). Do not repeat or paraphrase them.
 - An `assumption` means the query was narrowed on the reader's behalf because
   they did not say which one they meant. Say so in the reply, in one clause —
   they are looking at a subset and have no way to tell from the numbers alone.
@@ -1487,6 +1489,10 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         payload["totals"] = result["totals"]
     if "assumption" in result:
         payload["assumption"] = result["assumption"]
+    if result.get("said_with_this_list"):
+        # Added under the reply in code (ISS-0008); the narrator only needs to
+        # know not to say them twice.
+        payload["added_below_your_reply"] = [n[1] for n in result["said_with_this_list"]]
     if "value_labels" in result:
         # The payload is a whitelist, so a key added to the query result does
         # not reach this call by itself — which is how the mapping got built,

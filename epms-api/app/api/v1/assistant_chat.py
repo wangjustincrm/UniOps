@@ -384,7 +384,7 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
     await assistant_llm.record_usage(db, actor, "narrate", told.get("usage") or {})
 
     return {
-        "answer": told["text"],
+        "answer": await _with_listing_notes(told["text"], result, body.message),
         "kind": "answer",
         # The receipt: what ran, over how many rows, and whether the cap bit.
         "query": query,
@@ -395,6 +395,32 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             "total_rows": result.get("total_rows"),
         },
     }
+
+
+async def _with_listing_notes(text: str, result: dict, message: str) -> str:
+    """The sentences a list of these values must always carry, added under the
+    narrator's reply in code (ISS-0008: "系统里有哪几种采购类型？" answered as a
+    count per type left out, 1 time in 7, that Type 1 cannot be chosen in
+    EPMS). The narrator is told they will be added and not to repeat them.
+    English and Chinese are written in the ontology; any other language is
+    rendered from the English, which stays if that fails."""
+    notes = result.get("said_with_this_list") or []
+    if not notes:
+        return text
+    language = reply_language.detect(message)
+    said = []
+    for _rule, english, chinese in notes:
+        if language == "Chinese (Simplified)":
+            said.append(chinese)
+        elif language in (None, "English"):
+            said.append(english)
+        else:
+            try:
+                said.append((await assistant_llm.render_fixed_reply(
+                    english, message, language))["text"] or english)
+            except assistant_llm.LlmUnavailable:
+                said.append(english)
+    return "\n\n".join([text.rstrip(), *said])
 
 
 async def _with_document_number(db, scope, context: dict | None) -> dict | None:

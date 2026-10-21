@@ -1023,6 +1023,15 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
             coded[label] = {k: v for k, v in f.value_labels}
     if coded:
         out["value_labels"] = coded
+    # A sentence the reply must carry whenever these values are listed — added
+    # under the reply by the chat layer, not left to the narrator (ISS-0008).
+    listed = []
+    for name in asked_group_by:
+        f = _field_of(entity, name.partition(":")[0])
+        if f is not None and f.when_listed and f.when_listed not in listed:
+            listed.append(f.when_listed)
+    if listed:
+        out["said_with_this_list"] = listed
     if matched is not None:
         out["matched_rows"] = matched
     if total_rows is not None:

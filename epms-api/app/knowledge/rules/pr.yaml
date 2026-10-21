@@ -13,10 +13,11 @@ rules:
       be chosen when creating a PR in EPMS — its tile is disabled — because raw
       material and packaging purchasing runs in NC and those orders arrive in
       EPMS mirrored from it. The other five are chosen on the Create PR form.
-    enforced_in: "epms/src/components/pr/procurementTypes.ts (pinned by procurementTypes.test.ts)"
+    enforced_in: "epms/src/components/pr/procurementTypes.ts (pinned by procurementTypes.test.ts); said under every query answer grouped by procurement type: app/ontology/epms.yaml type.when_listed -> app/api/v1/assistant_chat.py _with_listing_notes (ISS-0008)"
     provenance: pinned
     test:
       - "epms/src/components/pr/procurementTypes.test.ts"
+      - "tests/test_assistant_iss_batch6.py::test_a_list_of_procurement_types_always_says_type_1_is_not_selectable"
   - id: pr_numbering
     asked_as:
       - how are PR numbers generated

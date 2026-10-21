@@ -618,6 +618,13 @@ class Field:
     # AGR). An exact match on it is normalised first (core.doc_numbers), so
     # "pr20260928-0001" finds PR-20260928-0001 (ISS-0024).
     doc_number: str | None = None
+    # (rule id, English sentence, Chinese sentence): said under every answer
+    # that lists this field's values (a query grouped by it). "What procurement
+    # types are there?" answered as a count per type left out that Type 1
+    # cannot be chosen in EPMS in 1 of 7 tries — a label the narrator might
+    # repeat is not enough, so the sentence is added in code (ISS-0008). The
+    # rule id names the rule-registry card whose test pins the statement.
+    when_listed: tuple[str, str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -779,6 +786,11 @@ def _build_entity(name: str, spec: dict) -> Entity:
         raw_labels = fspec.get("value_labels") or {}
         _require(isinstance(raw_labels, dict),
                  f"{where}.{fname}: value_labels must be a mapping")
+        raw_listed = fspec.get("when_listed")
+        _require(raw_listed is None or (
+                     isinstance(raw_listed, dict)
+                     and all(raw_listed.get(k) for k in ("rule", "note", "zh"))),
+                 f"{where}.{fname}: when_listed needs rule, note and zh")
         doc_number = fspec.get("doc_number")
         _require(doc_number is None or doc_number in doc_numbers.PREFIXES,
                  f"{where}.{fname}: doc_number {doc_number!r} is not one of "
@@ -790,6 +802,8 @@ def _build_entity(name: str, spec: dict) -> Entity:
             value_labels=tuple((str(k), str(v)) for k, v in raw_labels.items()),
             is_expression=bool(fspec.get("expr")),
             doc_number=doc_number,
+            when_listed=((raw_listed["rule"], " ".join(str(raw_listed["note"]).split()),
+                          str(raw_listed["zh"]).strip()) if raw_listed else None),
         )
     _require(bool(fields), f"{where}: needs at least one field")
 
