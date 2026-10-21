@@ -165,7 +165,10 @@ RECEIPT_SERVICE = (
     "The PR's Service/Project Owner confirms the work is complete — the "
     "requester unless the PR names someone else. The requester can also "
     "confirm. Once recorded, the confirmation goes through acknowledge and "
-    "confirm tasks, both sent to the owner."
+    "confirm tasks, both sent to the owner. An order with no PR (imported "
+    "from NC or PMS) has no owner or requester: only someone with the "
+    "warehouse receive permission can record it, it is confirmed at once with "
+    "no one asked, and System Admins are alerted."
 )
 RECEIPT_PHYSICAL = (
     "The warehouse records the goods receipt. The PR's requester then gets an "

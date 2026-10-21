@@ -399,3 +399,39 @@ async def test_an_unhandled_error_still_carries_cors_headers():
     assert r.status_code == 500
     assert r.json() == {"detail": "Internal server error"}
     assert r.headers.get("access-control-allow-origin") == origin
+
+
+# ── ISS-0029 follow-up: a PO with no PR, and "how does a GR work" ────────────
+
+def test_gr_without_pr_rule_matches_the_code():
+    from app.crud import gr as gr_crud
+
+    answer = _rules("gr")["gr_without_pr"]
+    assert answer.startswith("Nobody") and "System Admins" in answer
+    src = inspect.getsource(gr_crud._auto_complete_requester_steps)
+    assert '"collected" if gr.gr_type == "physical" else "confirmed"' in src
+    assert "no PR" in doc_type_guide.RECEIPT_SERVICE
+
+
+async def test_a_gr_asked_as_a_process_is_answered_from_the_guide(admin_client, monkeypatch):
+    """Asked how a GR works, the planner picked explain_process(gr); a GR has
+    no approval chain and the reply was only the list of processes."""
+    from app.services import assistant_llm
+
+    seen = {}
+
+    async def fake_plan(schema, message, context=None, retry_error=None, history=None):
+        return {"kind": "process", "doc_type": "gr", "usage": {}}
+
+    async def fake_narrate_guide(message, payload):
+        seen.update(payload)
+        return {"text": "guide answer", "usage": {}}
+
+    monkeypatch.setattr(assistant_llm, "plan", fake_plan)
+    monkeypatch.setattr(assistant_llm, "narrate_guide", fake_narrate_guide)
+    r = await admin_client.post("/api/v1/assistant/chat",
+                                json={"message": "who confirms a GR when the PO has no PR?"})
+    assert r.status_code == 200, r.text
+    assert r.json()["answer"] == "guide answer"
+    assert seen["kind"] == "document_types" and seen["doc_type"] == "gr"
+    assert any(x["id"] == "gr_without_pr" for x in seen["rules"])

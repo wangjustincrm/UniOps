@@ -688,6 +688,13 @@ async def _answer_report_lineage(db, scope, token, body, planned, actor) -> dict
 async def _answer_process(db, user, token, body, planned, actor) -> dict:
     """How a kind of document flows, read from the engine's configuration."""
     doc_type = (planned.get("doc_type") or "").lower()
+    if (doc_type not in guide_view.SUPPORTED_PROCESSES
+            and doc_type in doc_type_guide.SUPPORTED):
+        # A goods receipt or an invoice has no approval chain, but asked "how
+        # does a GR work" the planner still reached for this route, and the
+        # reply was only the list of processes (ISS-0029). The document guide
+        # carries how it works, so answer from that.
+        return await _answer_doc_types(db, body, {"doc_type": doc_type}, actor)
     if doc_type not in guide_view.SUPPORTED_PROCESSES:
         return {
             # Derived from what is wired up, so it cannot omit one (it left out
