@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.34
+**Version:** 2.35
 **Date:** 2026-10-21
 **Status:** In Production
+
+> **v2.35 (2026-10-21)** — Create Direct PA has an **Upload Invoice** button (DPA-010): it opens the Invoices page's upload form in Direct PA mode, every invoice saved there is matched for a Direct PA, and the page comes back with them ticked.
 
 > **v2.34 (2026-10-21)** — Claimant skip for OA claims (§3.3.5 item 3): a step whose only holder is the claimant of an OA expense claim / Travel Application is skipped, because OA never lets a claimant approve their own claim (OA.md WF-SELF-001…004). EPMS documents are unchanged.
 
@@ -2521,6 +2523,7 @@ Some vendor invoices have no purchase order or agreement behind them — and nev
 | **DPA-007** | **Visibility.** Unrestricted roles see every Direct PA. A restricted caller sees one they created, one they hold an open task on, one charged to a department they oversee (Department Manager / Dept Admin: own department; GM / OPM: mapped departments; Director: directed departments) and — as Supervisor — one raised by a direct report. They can also open the invoices on a Direct PA they can see. The PA list's Department filter matches its department; Direct PAs carry a **Direct** badge with cost center and budget account. |
 | **DPA-008** | **Payment and NC.** Paid through the standard payment executor as an EPMS PA (its invoices are marked paid); the Payment Batches due list labels it Direct PA. In the NC AP export a Direct invoice takes department, cost center, budget account (revexp) and employee from the Direct PA paying it; one with no live Direct PA yet is reported, not exported. |
 | **DPA-009** | **Pages.** The invoice lists mark Direct invoices **Direct** and *All Invoices* filters Route = Direct PA. The invoice's document chain reads a Direct invoice as matched with no goods receipt to wait for. |
+| **DPA-010** | **Upload from Create Direct PA.** Create Direct PA shows **Upload Invoice** (beside the invoice list, and in the empty state) to whoever may upload invoices (`invoice_upload`). It opens *Invoices → Upload Invoice* (`/invoices?upload=direct`) in Direct PA mode: the form is marked *Direct PA*, a saved invoice is not auto-matched to a PO but matched for a Direct PA (DPA-001), and when the upload — every invoice of a split PDF — is done, Create Direct PA reopens with those invoices ticked. A courier invoice or a credit note keeps its own path and is not matched for a Direct PA. If the match is refused the invoice stays saved and unmatched, and the user is told to use Match → Direct PA on it. |
 
 ---
 

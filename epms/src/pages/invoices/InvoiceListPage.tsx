@@ -1,6 +1,6 @@
-import { useState, useRef, Fragment } from 'react'
+import { useState, useRef, useEffect, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Upload, Search, AlertTriangle, CheckCircle2, Clock,
   X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2, UserPlus,
@@ -16,7 +16,8 @@ import { AiBadge } from '@/components/ui/AiBadge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { dueInfo, type DueTone } from '@/lib/dueDate'
 import { computeSla, type InvoiceStatus } from '@/stores/invoice.store'
-import { useInvoices, useCreateInvoice, useMatchInvoice, useDeleteInvoice } from '@/hooks/useInvoices'
+import { useInvoices, useCreateInvoice, useMatchInvoice, useDeleteInvoice, useMarkInvoiceDirect } from '@/hooks/useInvoices'
+import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import { ResolveExceptionPanel } from '@/components/invoices/ResolveExceptionPanel'
 import { useCreateVendorCredit } from '@/hooks/useVendorCredits'
 import { usePos } from '@/hooks/usePos'
@@ -104,7 +105,12 @@ interface UploadModalProps {
   // found" and pushes the operator into re-uploading a credit that was in fact
   // created (409 duplicate). Defaults to 'invoice' for the many invoice-path
   // call sites below.
-  onUploaded: (id: string, kind?: 'invoice' | 'credit') => void
+  // `ids` = every invoice this upload created (a split PDF makes several).
+  onUploaded: (id: string, kind?: 'invoice' | 'credit', ids?: string[]) => void
+  // Opened from Create Direct PA: each invoice saved here is matched for a
+  // Direct PA (no PO auto-match, no allocation step). Courier invoices and
+  // credit notes keep their own paths — neither can be paid by a Direct PA.
+  forDirectPa?: boolean
 }
 
 /** Display-time sign derivation for the amount fields — NOT a normalisation
@@ -145,7 +151,7 @@ const carrierNameMatches = (carrierVendor: string, read: string): boolean => {
   return x === y ? x.length >= 2 : short.length >= 4 && long.startsWith(short)
 }
 
-function UploadModal({ onClose, onUploaded }: UploadModalProps) {
+function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalProps) {
   const { data: invoicesData } = useInvoices()
   const invoices = invoicesData?.items ?? []
   const { data: posData } = usePos()
@@ -155,6 +161,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const createInvoice = useCreateInvoice()
   const createVendorCredit = useCreateVendorCredit()
   const matchInvoiceMutation = useMatchInvoice()
+  const markDirect = useMarkInvoiceDirect()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [dragging, setDragging] = useState(false)
@@ -407,7 +414,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       void startInvoice(queue[next], selectedVendor)
       return
     }
-    onUploaded(id, kind)
+    onUploaded(id, kind, [...createdIds, id])
   }
 
   const queueTotal     = queue.length
@@ -639,6 +646,20 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       // (AP-oriented) scope. Any residual server-side denial (e.g. an edge
       // case canMatchInvoice doesn't model) is still caught by the
       // onError → manual panel fallback below, so this can't silently fail.
+      // Opened from Create Direct PA: match it to nothing, for a Direct PA. The
+      // uploader may (same rights as a PO match). A refusal leaves the invoice
+      // saved and unmatched — say so, and carry on rather than lose the queue.
+      if (forDirectPa) {
+        try {
+          await markDirect.mutateAsync(inv.id)
+        } catch (e) {
+          alert(`Invoice ${inv.vendor_invoice_number} was saved but could not be matched for a Direct PA: `
+            + (e instanceof Error ? e.message : 'unknown error')
+            + '. Open it on the Invoices page and use Match → Direct PA.')
+        }
+        finishOne(inv.id)
+        return
+      }
       if (matchedPo) {
         const lineAllocs = buildLineLevelAllocations(inv, matchedPo)
         const linkedGr = grs.find((g) => g.po_id === matchedPo.id && g.status !== 'cancelled')
@@ -790,11 +811,13 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               <h2 className="text-sm font-semibold text-neutral-900">
                 {queueTotal > 1 ? `Upload Invoice ${queueIndex + 1} of ${queueTotal}` : 'Upload Invoice'}
                 {courierCarrier && <span className="ml-2 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700">Courier invoice</span>}
+                {forDirectPa && !courierCarrier && <span className="ml-2 rounded-full bg-warning-50 px-2 py-0.5 text-[11px] font-medium text-warning-700">Direct PA</span>}
               </h2>
               <p className="text-xs text-neutral-400">
                 {queueTotal > 1
                   ? `${file?.name ?? ''} · ${createdIds.length} of ${queueTotal} created so far`
                   : courierCarrier ? 'Each line is matched to a registered tracking number and cost center after saving'
+                  : forDirectPa ? 'For a Direct PA — saved and matched to no PO or agreement'
                   : 'New invoice will be queued for PO matching'}
               </p>
             </div>
@@ -1960,9 +1983,21 @@ export default function InvoiceListPage() {
   const { user } = useAuthStore()
   const perms = useRolePermissions().data?.permissions
   const navigate = useNavigate()
+  const { openTab } = useStaticTabNav()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [activeTab, setActiveTab] = useState<Tab>('all')
   const [showUpload, setShowUpload] = useState(false)
+  // Create Direct PA → Upload Invoice lands here with ?upload=direct: open the
+  // upload form in Direct PA mode, then drop the query so a later visit to this
+  // (kept-alive) tab does not reopen it.
+  const [uploadForDirect, setUploadForDirect] = useState(false)
+  useEffect(() => {
+    if (searchParams.get('upload') !== 'direct') return
+    setUploadForDirect(true)
+    setShowUpload(true)
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
 
   const canUpload = user?.role === 'system_admin' || !!perms?.invoice_upload
   // One upload form for every invoice; a carrier's is recognised by its vendor.
@@ -1993,7 +2028,7 @@ export default function InvoiceListPage() {
           </p>
         </div>
         {(canUpload || canCourier) && (
-          <Button onClick={() => setShowUpload(true)} className="gap-2">
+          <Button onClick={() => { setUploadForDirect(false); setShowUpload(true) }} className="gap-2">
             <Upload className="h-4 w-4" />
             Upload Invoice
           </Button>
@@ -2049,10 +2084,14 @@ export default function InvoiceListPage() {
       {/* Upload modal */}
       {showUpload && (
         <UploadModal
+          forDirectPa={uploadForDirect}
           onClose={() => setShowUpload(false)}
-          onUploaded={(id, kind) => {
+          onUploaded={(id, kind, ids) => {
             setShowUpload(false)
-            navigate(kind === 'credit' ? '/vendor-credits' : `/invoices/${id}`)
+            if (kind === 'credit') navigate('/vendor-credits')
+            // Back to Create Direct PA with what was just uploaded ticked.
+            else if (uploadForDirect) openTab('/pa/new', `source=direct&invoice=${(ids ?? [id]).join(',')}`)
+            else navigate(`/invoices/${id}`)
           }}
         />
       )}

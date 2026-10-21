@@ -70,7 +70,9 @@ values:
         approved on the "PA (Direct)" workflow in Portal → Admin → Approval
         Workflows. Its amounts come from the invoices; the title, reason,
         department, cost center and budget account stay editable until it is
-        submitted. OA no longer has Direct PAs.
+        submitted. OA no longer has Direct PAs. If the invoice is not in EPMS
+        yet, Upload Invoice on the Create Direct PA page uploads it and matches
+        it for a Direct PA in one go, then brings you back with it ticked.
 
   - value: prepayment
     label: Prepayment
