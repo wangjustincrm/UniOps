@@ -42,6 +42,8 @@ export interface AssistantSources {
   mapping_rules?: number | null
   /** Recipe levels walked for a "how many can we make" answer. */
   levels_deep?: number
+  /** Documents a requisition-to-payment chain answer names. */
+  documents?: number
   row_count?: number
   truncated?: boolean
   /** When truncated: how many rows the query really matched. */
@@ -62,6 +64,9 @@ export type AssistantKind =
   | 'modules'
   | 'report_lineage'
   | 'producible'
+  | 'document_chain'
+  | 'recall'
+  | 'me'
   | 'cannot_answer'
   | 'denied'
 

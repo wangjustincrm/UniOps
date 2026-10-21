@@ -603,6 +603,9 @@ function Evidence({ reply }: { reply: AssistantReply }) {
               ? plural(s?.modules ?? 0, 'module')
               : reply.kind === 'producible'
                 ? `recipe — ${plural(s?.levels_deep ?? 0, 'level')} deep`
+                : reply.kind === 'document_chain'
+                  ? `${s?.document ?? 'document'} — chain of ${plural(s?.documents ?? 0, 'document')}${
+                      s?.complete === false ? ' (some not visible to you)' : ''}`
                 : `${s?.entity ?? 'query'} — ${
                     // "100 of 486 rows" — 100 alone read as the total (ISS-0013).
                     s?.truncated && s?.total_rows != null

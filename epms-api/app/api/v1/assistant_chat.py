@@ -44,6 +44,7 @@ from app.services import workflow_view
 from app.services import controlled_query as cq
 from app.services import caller_view
 from app.services import page_document
+from app.services import document_chain
 
 log = logging.getLogger(__name__)
 
@@ -270,6 +271,9 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
 
     if planned["kind"] == "me":
         return _answer_who_am_i(me)
+
+    if planned["kind"] == "trace":
+        return await _answer_trace(db, scope, body, planned, context, actor)
 
     if planned["kind"] == "next":
         return await _answer_whats_next(db, user, body, actor, me)
@@ -1032,3 +1036,48 @@ def _answer_who_am_i(me: dict | None) -> dict:
                 "query": None, "sources": None}
     return {"_fixed_text": True, "answer": caller_view.as_text(me),
             "kind": "me", "me": me, "query": None, "sources": None}
+
+
+# ── A purchase from requisition to payment (ISS-0030) ────────────────────────
+
+async def _answer_trace(db, scope, body: ChatRequest, planned: dict, context: dict,
+                        actor) -> dict:
+    """The whole chain around one document, each document within its own
+    entity's scope (services/document_chain)."""
+    doc_type = (planned.get("doc_type") or "").lower()
+    number = (planned.get("doc_number") or "").strip()
+    if not number and context.get("doc_number") and (
+            not doc_type or context.get("doc_type") == doc_type):
+        # "这张单从请购到付款到哪一步了？" on the document's own page.
+        number, doc_type = context["doc_number"], context.get("doc_type") or doc_type
+    if doc_type not in document_chain.SUPPORTED:
+        return {"_fixed_text": True,
+                "answer": "I can follow the chain from a purchase request, purchase "
+                          "order, goods receipt, invoice, payment application or "
+                          "agreement — tell me its number.",
+                "kind": "cannot_answer", "reason": "not_supported",
+                "query": None, "sources": None}
+    if not number:
+        return {"_fixed_text": True,
+                "answer": "Tell me which document you mean — its number works best.",
+                "kind": "cannot_answer", "reason": "document_not_found",
+                "query": None, "sources": None}
+
+    chain = await document_chain.build(db, scope, doc_type, number)
+    if not chain["found"]:
+        return {"_fixed_text": True, "answer": f"I could not find {number}.",
+                "kind": "cannot_answer", "reason": "document_not_found",
+                "query": None, "sources": None}
+    try:
+        told = await assistant_llm.narrate_chain(body.message, chain)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_chain", told.get("usage") or {})
+    hidden = '"not_visible": true' in json.dumps(chain, default=str)
+    return {
+        "answer": told["text"], "kind": "document_chain", "query": None,
+        "document_chain": chain,
+        "sources": {"document": chain["asked_about"]["number"],
+                    "documents": document_chain.count_documents(chain),
+                    "complete": not hidden},
+    }

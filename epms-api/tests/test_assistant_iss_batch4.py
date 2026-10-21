@@ -492,3 +492,155 @@ async def test_the_planner_can_query_what_the_note_names(test_engine, admin_clie
         assert r.status_code == 200, (entity, r.text)
         expected = 0 if entity == "gr_line" else 1
         assert r.json()["matched_rows"] == expected, entity
+
+
+# ── ISS-0030: from requisition to payment ─────────────────────────────────────
+
+import re  # noqa: E402
+
+from app.services import document_chain  # noqa: E402
+
+
+async def _chain_for(test_engine, uid, role, doc_type, number, *, perms=None):
+    from app.core.access_scope import build_scope
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        scope = await build_scope(db, {"sub": str(uid), "role": role})
+        if perms:
+            scope = {**scope, "perms": {**scope["perms"], **perms}}
+        return await document_chain.build(db, scope, doc_type, number)
+
+
+async def test_the_whole_chain_from_the_pr(test_engine, admin_client):
+    """PR-20260928-0001: only the PR's approval was told, then "it has entered
+    the payment stage". Every step with its status."""
+    uid = _uid(admin_client)
+    c = await _seed_chain(test_engine, uid)
+    chain = await _chain_for(test_engine, uid, "system_admin", "pr", c.pr.number)
+    assert chain["found"] and chain["purchase_request"]["number"] == c.pr.number
+    (order,) = chain["orders"]
+    po = order["purchase_order"]
+    assert (po["number"], po["status_label"]) == (c.po.number, "Partially Received")
+    assert po["facts"] == {"anything_received": True, "invoiced": True, "pa_raised": True,
+                           "three_way_matched": True}
+    assert [g["number"] for g in order["goods_receipts"]["items"]] == [c.gr.number], \
+        "the cancelled receipt is left out, as on the Document Chain"
+    (inv,) = order["invoices"]["items"]
+    assert (inv["number"], inv["status_label"], inv["total"], inv["on_payment_applications"]) == (
+        c.inv.internal_ref, "Matched", "7175.17", [c.pa.pa_number])
+    (pa,) = order["payment_applications"]["items"]
+    assert (pa["number"], pa["status_label"], pa["payment"], pa["pays_invoices"]) == (
+        c.pa.pa_number, "Approved", "awaiting payment", [c.inv.internal_ref])
+    assert document_chain.count_documents(chain) == 5
+
+
+async def test_any_document_in_the_chain_leads_to_the_same_chain(test_engine, admin_client):
+    uid = _uid(admin_client)
+    c = await _seed_chain(test_engine, uid)
+    for doc_type, number in (("po", c.po.number), ("gr", c.gr.number),
+                             ("invoice", c.inv.internal_ref), ("pa", c.pa.pa_number)):
+        chain = await _chain_for(test_engine, uid, "system_admin", doc_type, number)
+        assert chain["asked_about"] == {"doc_type": doc_type, "number": number}
+        assert chain["purchase_request"]["number"] == c.pr.number, doc_type
+        assert chain["orders"][0]["purchase_order"]["number"] == c.po.number
+
+
+async def test_a_paid_pa_says_paid_and_when(test_engine, admin_client):
+    from app.models.pa import PaymentApplication
+    uid = _uid(admin_client)
+    c = await _seed_chain(test_engine, uid)
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        pa = await db.get(PaymentApplication, c.pa.id)
+        pa.status, pa.paid_at = "processed", datetime(2026, 10, 19, tzinfo=timezone.utc)
+        await db.commit()
+    chain = await _chain_for(test_engine, uid, "system_admin", "pa", c.pa.pa_number)
+    (pa,) = chain["orders"][0]["payment_applications"]["items"]
+    assert (pa["payment"], pa["paid_on"], pa["status_label"]) == ("paid", "2026-10-19", "Processed")
+
+
+async def test_each_document_stays_inside_its_own_scope(
+        test_engine, admin_client, requester_client):
+    uid = _uid(admin_client)
+    c = await _seed_chain(test_engine, uid)
+    # Someone else's purchase: not found, the same as absent.
+    other = await _chain_for(test_engine, _uid(requester_client), "requester", "po", c.po.number)
+    assert other == {"found": False, "reason": "not_found", "asked": c.po.number}
+    # A kind of document the matrix keeps them out of is "not visible", not "none".
+    chain = await _chain_for(test_engine, uid, "system_admin", "po", c.po.number,
+                             perms={"view_invoice": False, "view_pa": False})
+    order = chain["orders"][0]
+    assert order["invoices"] == {"not_visible": True}
+    assert order["payment_applications"] == {"not_visible": True}
+    assert order["goods_receipts"]["count"] == 1
+
+
+async def test_an_agreement_purchase_follows_the_agreement(test_engine, admin_client):
+    from app.models.invoice import Invoice
+    from app.models.pa import PaymentApplication
+    from tests.test_assistant_iss_fixes import _grant_agreement_read
+    await _grant_agreement_read(test_engine, "system_admin")
+    uid = _uid(admin_client)
+    c = await _seed_chain(test_engine, uid)
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        inv = Invoice(internal_ref=f"INV-AG-{c.tag}", vendor_invoice_number=f"A{c.tag}",
+                      vendor_id=c.vendor.id, vendor_name=c.vendor.name, amount=Decimal("208.48"),
+                      tax_amount=Decimal("0"), total_amount=Decimal("208.48"),
+                      invoice_date=date(2026, 9, 1), due_date=date(2026, 10, 1),
+                      status="matched", line_items=[], uploaded_by=uid,
+                      agreement_id=c.agr.id, agreement_number=c.agr.number)
+        db.add(inv)
+        await db.flush()
+        db.add(PaymentApplication(pa_number=f"PA-AG-{c.tag}", title="p", agreement_id=c.agr.id,
+                                  agreement_number=c.agr.number, vendor_id=c.vendor.id,
+                                  vendor_name=c.vendor.name, invoice_ids=[str(inv.id)],
+                                  gr_ids=[], subtotal=Decimal("208.48"),
+                                  payment_amount=Decimal("208.48"), status="in_review",
+                                  created_by=uid))
+        await db.commit()
+    chain = await _chain_for(test_engine, uid, "system_admin", "pa", f"PA-AG-{c.tag}")
+    assert chain["orders"] == []
+    (agr,) = chain["agreements"]
+    assert agr["agreement"]["number"] == c.agr.number
+    assert [i["number"] for i in agr["invoices"]["items"]] == [f"INV-AG-{c.tag}"]
+    (pa,) = agr["payment_applications"]["items"]
+    assert pa["payment"] == "not yet — still in approval"
+
+
+async def test_the_chat_route_and_the_page_document(test_engine, admin_client, monkeypatch):
+    uid = _uid(admin_client)
+    c = await _seed_chain(test_engine, uid)
+    calls = _stub(monkeypatch, plans=[
+        {"kind": "trace", "doc_type": "pr", "doc_number": c.pr.number},
+        {"kind": "trace", "doc_type": "gr"},
+        {"kind": "trace", "doc_type": "po", "doc_number": "PO-NOPE-1"}])
+    r = await admin_client.post(CHAT, json={"message": f"{c.pr.number} 从请购到付款的完整进度是怎样的？"})
+    body = r.json()
+    assert body["kind"] == "document_chain" and body["sources"]["documents"] == 5
+    assert calls["chain"][0]["chain"]["orders"][0]["purchase_order"]["number"] == c.po.number
+    # On the GR's own page, no number given.
+    r = await admin_client.post(CHAT, json={
+        "message": "这张收货单后面开票付款了吗？",
+        "context": {"app": "epms", "doc_type": "gr", "doc_id": str(c.gr.id)}})
+    assert calls["chain"][1]["chain"]["asked_about"]["number"] == c.gr.number
+    r = await admin_client.post(CHAT, json={"message": "PO-NOPE-1 到哪一步了？"})
+    assert r.json()["kind"] == "cannot_answer" and "PO-NOPE-1" in calls["fixed"][-1]["text"]
+    assert "trace_document" in assistant_llm._PLAN_CHAIN_RULES
+    assert assistant_llm._TRACE_TOOL in assistant_llm._session_tools(None)
+
+
+_TREE = (Path(document_chain.__file__).resolve().parents[3]
+         / "epms" / "src" / "components" / "shared" / "DocumentChainTree.tsx")
+
+
+def test_status_names_match_the_document_chain():
+    import pytest
+    if not _TREE.exists():
+        pytest.skip("epms frontend not mounted in this container")
+    text = _TREE.read_text(encoding="utf-8")
+    for const, kind in (("GR_STATUS_LABELS", "gr"), ("INV_STATUS_LABELS", "invoice"),
+                        ("PA_STATUS_LABELS", "pa"), ("PO_STATUS_LABELS", "po")):
+        block = text.split(f"const {const}")[1].split("\n}")[0]
+        assert dict(re.findall(r"^\s+([a-z_]+):\s*'([^']+)',", block, re.M)) == \
+            document_chain.STATUS_LABELS[kind], const

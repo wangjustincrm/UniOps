@@ -967,7 +967,8 @@ def _context_note(context: dict | None) -> str:
             # A GR page asked "which PO is this for?" was told "I can only
             # track PR / PO / PA approvals" (ISS-0068).
             note += (" It is not a PR, PO or PA, so explain_workflow does not "
-                     "apply to it; questions about it are queries.")
+                     "apply to it: its own data is a query, and where it stands "
+                     "in the purchasing chain is trace_document.")
     return note + session
 
 
@@ -1060,6 +1061,109 @@ _RECALL_TOOL = {
     },
 }
 
+# ── A purchase from requisition to payment (ISS-0030) ────────────────────────
+
+_PLAN_CHAIN_RULES = """\
+- Progress ACROSS documents is trace_document, with the document they named
+  (or the one on screen): "PR-20260928-0001 从请购到付款的完整进度是怎样的？",
+  "has this PO been received, invoiced and paid?", "what happened after this
+  PR was approved?", "which PA pays this invoice, and is it paid?", "where is
+  this purchase up to?". It follows PR → PO → goods receipts → invoices →
+  payment applications → payment. explain_workflow is the approval steps of
+  ONE PR, PO or PA and says nothing about what came after its approval — the
+  answer that used it ended "it has entered the payment stage", which was
+  made up. A query reaches one kind of document only.
+"""
+
+_TRACE_TOOL = {
+    "name": "trace_document",
+    "description": (
+        "Use for where a purchase stands across ALL its documents: the "
+        "requisition, its purchase order(s), goods receipts, invoices, payment "
+        "applications and whether they were paid — '从请购到付款的完整进度', "
+        "'has PO-X been invoiced and paid', 'what happened after this PR'. "
+        "Start from any document in the chain. Each document comes back with "
+        "its status, as the Document Chain on the PO page shows it."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "doc_type": {"type": "string",
+                         "enum": ["pr", "po", "gr", "invoice", "pa", "agreement"]},
+            "doc_number": {
+                "type": "string",
+                "description": (
+                    "The number as written, e.g. PR-20260928-0001, "
+                    "PO-535-2609-02, INV-2026-0631. Omit only when they clearly "
+                    "mean the document on screen."
+                ),
+            },
+        },
+        "required": ["doc_type"],
+    },
+}
+
+_CHAIN_SYSTEM = """\
+You are telling a colleague where a purchase stands, from requisition to
+payment.
+
+You are given the chain of documents around the one they asked about, read
+from the system: the purchase request, each purchase order with its goods
+receipts, invoices and payment applications, and, for agreement purchases, the
+agreement with its invoices and payment applications.
+
+- Answer what they asked. For "the full progress", walk it in order — PR → PO
+  → goods receipts → invoices → payment applications → payment — one line per
+  document: its number, its status (status_label when there is one) and the
+  date or amount that matters for that step. Then say in one sentence where it
+  stands now and what is still outstanding.
+- Report statuses exactly as given. `payment` on a payment application is
+  whether the money has gone out: "paid" (give paid_on), "awaiting payment",
+  "not yet — still in approval". An approved payment application is NOT paid.
+  Never write that a purchase "has entered the payment stage" or the like
+  without naming the payment application and its payment state.
+- `facts` on a purchase order were decided by the system (anything_received,
+  invoiced, pa_raised, three_way_matched). Use them for "has it been
+  received / invoiced"; never re-derive them from the lists.
+- `waiting_on` is the approval step, and the approver, a document still in
+  approval is with.
+- A layer with `not_visible` is one this person may not see: say it cannot be
+  shown to them, never that there are none. A count of 0 means none yet.
+- `listed` means only the first `listed` of `count` documents are given: give
+  the count and say the rest are on the document's page.
+- `no_order_yet`: the requisition has no purchase order yet. `more_orders`:
+  that many further orders are not shown.
+- Every amount with its currency. Do not add amounts up.
+- Never invent a document, a status, a date or a step that is not in what you
+  were given.
+"""
+
+
+async def narrate_chain(message: str, chain: dict) -> dict:
+    """Tell where a purchase stands. Same no-new-facts rule as the others."""
+    import anthropic
+
+    payload = {"question": message, **chain, **reply_language.instructions(message)}
+    try:
+        resp = await _client().messages.create(
+            model=MODEL,
+            max_tokens=_GUIDE_MAX_TOKENS,
+            system=reply_language.LANGUAGE_RULES + _CHAIN_SYSTEM,
+            messages=[{"role": "user",
+                       "content": json.dumps(payload, ensure_ascii=False, default=str)}],
+        )
+    except anthropic.APIConnectionError as exc:
+        raise LlmUnavailable(f"Could not reach the model: {exc}") from exc
+    except anthropic.RateLimitError as exc:
+        raise LlmUnavailable("The shared API quota is exhausted right now") from exc
+    except anthropic.APIStatusError as exc:
+        log.error("chain narration failed %s: %s", exc.status_code, exc.message)
+        raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
+
+    _log_usage("narrate_chain", resp)
+    return {"text": _reply_text(resp, message), "usage": _usage(resp)}
+
+
 _WHO_AM_I_TOOL = {
     "name": "who_am_i",
     "description": (
@@ -1075,12 +1179,13 @@ _WHO_AM_I_TOOL = {
 _SESSION_TOOL_KINDS = {
     "recall_conversation": "recall",
     "who_am_i": "me",
+    "trace_document": "trace",
 }
 
 
 def _session_tools(context: dict | None) -> list[dict]:
     """The planner tools this section adds."""
-    return [_RECALL_TOOL, _WHO_AM_I_TOOL]
+    return [_TRACE_TOOL, _RECALL_TOOL, _WHO_AM_I_TOOL]
 
 
 def _language_note(message: str) -> str:
@@ -1123,7 +1228,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
         )
 
     system = [
-        {"type": "text", "text": _PLAN_SYSTEM + _PLAN_SESSION_RULES},
+        {"type": "text", "text": _PLAN_SYSTEM + _PLAN_SESSION_RULES + _PLAN_CHAIN_RULES},
         # The schema is the stable half of the prompt and by far the larger one,
         # so it sits in its own block for caching.
         {"type": "text", "text": "Schema:\n" + json.dumps(schema, ensure_ascii=False),
