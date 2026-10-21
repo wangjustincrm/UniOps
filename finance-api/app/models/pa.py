@@ -7,6 +7,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base, UUIDPrimaryKey, TimestampMixin
 from datetime import datetime
 
+# epms-api app/models/pa.py EPMS_PO_LESS_SOURCES: EPMS PAs with neither a PO
+# nor an agreement. Anything else with both NULL is OA's retired Direct PA.
+EPMS_PO_LESS_SOURCES = ("freight", "direct")
+
 
 class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "payment_applications"
@@ -24,8 +28,9 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     # crud/payment_execute.py and crud/payment_batch.py: pa_dir means Direct
     # PA specifically, not merely "no PO".
     agreement_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    # po | agreement | freight | direct (epms-api fr01_freight). Read only to
-    # tell a Freight PA apart from a Direct PA — see is_direct.
+    # po | agreement | freight | direct | oa_direct (epms-api fr01_freight,
+    # dp01_direct_pa). Read to tell EPMS's PO-less PAs (freight, direct) apart
+    # from OA's retired Direct PA (oa_direct) — see is_direct.
     source: Mapped[str] = mapped_column(String(20), nullable=False, default="po",
                                         server_default="po")
     vendor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -39,11 +44,15 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cost_center_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     budget_account_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # EPMS Direct PA (source='direct'): the department it is charged to.
+    department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
 
     @property
     def is_direct(self) -> bool:
-        """True only for OA's Direct PA — BOTH po_id AND agreement_id NULL.
+        """True only for OA's retired Direct PA (doc_kind 'pa_dir') — BOTH
+        po_id AND agreement_id NULL, and not one of EPMS's PO-less sources.
+        EPMS's own Direct PA (source='direct') is NOT this: it is a `pa`.
 
         payment_applications has three owners sharing one table: PO-based EPMS
         PAs (po_id set), agreement-based EPMS PAs (agreement_id set, po_id
@@ -55,8 +64,10 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
         (crud/payment_execute.py, crud/payment_batch.py) — do not re-derive
         po_id-is-None inline at a new call site.
         """
-        # A Freight PA (epms-api fr01_freight) has both NULL too but is EPMS
-        # spend paid as `pa`. Test `source` only to exclude it: rows written
-        # before fr01, or by code that never sets source, keep their meaning.
+        # A Freight PA (epms-api fr01_freight) and an EPMS Direct PA
+        # (dp01_direct_pa, source='direct') have both NULL too but are EPMS
+        # spend paid as `pa`: their invoice_ids are EPMS invoices, written back
+        # to paid. Test `source` only to exclude them: rows written by code
+        # that never sets source keep their meaning.
         return (self.po_id is None and self.agreement_id is None
-                and self.source != "freight")
+                and self.source not in EPMS_PO_LESS_SOURCES)

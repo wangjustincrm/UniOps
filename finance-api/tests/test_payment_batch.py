@@ -99,6 +99,25 @@ async def test_due_classifies_freight_pa_as_pa_with_source(client, db_session):
     assert d["doc_kind"] == "pa_dir"
 
 
+async def test_due_classifies_epms_direct_pa_as_pa_with_source(client, db_session):
+    """EPMS's Direct PA (source='direct', epms dp01_direct_pa) pays EPMS
+    invoices: it is a `pa` (the executor writes them back to paid), not OA's
+    pa_dir — which is now source 'oa_direct'."""
+    epms_direct = _pa("1130.00", po_id=None)
+    epms_direct.source = "direct"
+    oa_direct = _pa("10.00", po_id=None)
+    oa_direct.source = "oa_direct"
+    db_session.add_all([epms_direct, oa_direct])
+    await db_session.flush()
+    assert epms_direct.is_direct is False and oa_direct.is_direct is True
+
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    e = next(r for r in rows if r["doc_id"] == str(epms_direct.id))
+    o = next(r for r in rows if r["doc_id"] == str(oa_direct.id))
+    assert (e["doc_kind"], e["pa_source"]) == ("pa", "direct")
+    assert o["doc_kind"] == "pa_dir"
+
+
 async def test_due_surfaces_vendor_invoice_number(client, db_session):
     """A PA's linked invoice(s) surface as vendor_inv_no in the due list;
     multiple invoices join, and PAs/claims without invoices show blank."""
