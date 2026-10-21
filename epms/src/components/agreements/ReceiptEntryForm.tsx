@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Upload, Loader2, Info, X } from 'lucide-react'
+import { Upload, Loader2, Info, X, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { cn, todayISODate } from '@/lib/utils'
+import { receiptDateWarnings } from '@/lib/dateSanity'
 import { useUserDirectory } from '@/hooks/useUsers'
 import { useCreateReceipt, invalidateReceiptViews } from '@/hooks/useAgreementReceipts'
 import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
@@ -30,6 +31,10 @@ interface ReceiptEntryFormProps {
   // visually identical to a failed submit. Optional so this component still
   // works standalone with no caller-visible behavior change.
   onSuccess?: () => void
+  // The agreement's Valid From (YYYY-MM-DD): a receipt dated before it gets a
+  // plausibility warning (ISS-0075). Optional — without it only the
+  // future-date check runs.
+  validFrom?: string | null
 }
 
 // Entry flow: pick a photo → auto OCR → prefill (still fully editable) →
@@ -68,7 +73,7 @@ const TYPE_COPY = {
   },
 } as const
 
-export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', onSuccess }: ReceiptEntryFormProps) {
+export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', onSuccess, validFrom }: ReceiptEntryFormProps) {
   // Only a counter slip runs OCR, demands a photo-or-reason, and routes to AP
   // review when neither is there.
   const isSlip = receiptType === 'counter_slip'
@@ -112,6 +117,12 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
   const [receivedByError, setReceivedByError] = useState<string | null>(null)
   const [reasonError, setReasonError] = useState<string | null>(null)
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false)
+  // The receipt date the user confirmed despite a warning; changing the date
+  // asks again. A slip printed year-first ("26/08/04") read day-first lands in
+  // 2004 — nine of them on one agreement (ISS-0075).
+  const [dateConfirmedFor, setDateConfirmedFor] = useState<string | null>(null)
+  const dateWarnings = receiptDate ? receiptDateWarnings(receiptDate, todayISODate(), validFrom) : []
+  const dateConfirmed = dateConfirmedFor === receiptDate
 
   const resetForm = () => {
     setFile(null)
@@ -130,6 +141,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
     setAmountError(null)
     setReceivedByError(null)
     setReasonError(null)
+    setDateConfirmedFor(null)
   }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -207,6 +219,8 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
       setAmountError(null)
     }
     if (!receiptDate) hasError = true
+    // A warning, not a refusal — confirmed, it goes through (ISS-0075).
+    if (dateWarnings.length > 0 && !dateConfirmed) hasError = true
     if (hasError) return
 
     const receipt = await createReceipt.mutateAsync({
@@ -416,6 +430,21 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <FormField label={copy.dateLabel} required htmlFor="receipt-date">
           <Input id="receipt-date" type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} required />
+          {dateWarnings.length > 0 && (
+            <div className="mt-1.5 rounded-md border border-warning-300 bg-warning-50 px-2.5 py-1.5 text-xs text-warning-800">
+              {dateWarnings.map((w) => (
+                <p key={w.code} className="flex items-start gap-1.5">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{w.message}</span>
+                </p>
+              ))}
+              <label className="mt-1 flex items-center gap-1.5 text-neutral-700">
+                <input type="checkbox" checked={dateConfirmed}
+                       onChange={(e) => setDateConfirmedFor(e.target.checked ? receiptDate : null)} />
+                The date is correct
+              </label>
+            </div>
+          )}
         </FormField>
         <FormField label={copy.refLabel} htmlFor="receipt-ref">
           {/* DB column is String(64) — a paste that overflows it raises a

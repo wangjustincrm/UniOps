@@ -29,6 +29,7 @@ import { poService } from '@/services/po'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
 import type { ApiEvent } from '@/services/pr'
+import { historyLine, isSkipped } from '@/lib/approvalHistory'
 import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
 import { isImportedEditablePo } from '@/lib/importedPoEdit'
@@ -109,10 +110,10 @@ function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: n
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
     }
     const evt = approveEventByStep[i]
-    if (evt?.comment?.includes('Auto-skipped')) {
+    if (isSkipped(evt)) {
       s = 'skipped'
     }
-    return { id: node.id, role: node.label, actorName: evt?.comment?.includes('Auto-skipped') ? undefined : evt?.actor_name ?? undefined, status: s }
+    return { id: node.id, role: node.label, actorName: isSkipped(evt) ? undefined : evt?.actor_name ?? undefined, status: s }
   })
   return [created, ...approvalNodes]
 }
@@ -1076,17 +1077,20 @@ export default function PoDetailPage() {
               <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Audit History</h2>
               {events && events.length > 0 ? (
                 <ul className="flex flex-col gap-3">
-                  {events.map((e) => (
-                    <li key={e.id} className="flex gap-3 text-sm">
-                      <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(e.created_at)}</span>
-                      <div>
-                        <span className="font-medium text-neutral-800 capitalize">{e.action.replace(/_/g, ' ')}</span>
-                        <span className="text-neutral-500 ml-1">by {e.actor_role.replace(/_/g, ' ')}</span>
-                        {e.actor_name && <span className="text-neutral-400 ml-1">— {e.actor_name}</span>}
-                        {e.comment && <p className="text-neutral-400 text-xs mt-0.5 italic">{e.comment}</p>}
-                      </div>
-                    </li>
-                  ))}
+                  {events.map((e) => {
+                    const line = historyLine(e)
+                    return (
+                      <li key={e.id} className="flex gap-3 text-sm">
+                        <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(e.created_at)}</span>
+                        <div>
+                          <span className="font-medium text-neutral-800 capitalize">{line.action}</span>
+                          <span className="text-neutral-500 ml-1">{line.role}</span>
+                          {line.actorName && <span className="text-neutral-400 ml-1">— {line.actorName}</span>}
+                          {line.note && <p className="text-neutral-400 text-xs mt-0.5 italic">{line.note}</p>}
+                        </div>
+                      </li>
+                    )
+                  })}
                 </ul>
               ) : (
                 <div className="text-sm text-neutral-400 text-center py-8">No history yet</div>

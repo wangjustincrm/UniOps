@@ -197,6 +197,11 @@ class PaResponse(BaseModel):
     status: str
     notes: str | None
     submitted_at: datetime | None
+    # When the PA was paid: the payment DATE Finance entered (PAY-005), as a
+    # plain date — paid_at is that date at midnight UTC, which shown as a time
+    # in Toronto reads as the evening before. Not updated_at, which any later
+    # write moves (PRD 3.7.2: event dates, not last-modified).
+    paid_on: date | None = None
     prepayment_pct: Decimal | None
     expected_settlement_date: date | None
     settlement_status: str | None
@@ -215,6 +220,10 @@ class PaResponse(BaseModel):
     receipt_override_reason: str | None = None
     receipt_override_by: uuid.UUID | None = None
     current_step: CurrentStep | None = None
+    # Cancelled because an approver rejected it (a reject event in its
+    # history) — the engine cancels a rejected PA. Set on the list and detail
+    # endpoints (crud.pa.attach_rejected); False elsewhere. ISS-0078.
+    rejected_in_approval: bool = False
     agreement_id: uuid.UUID | None = None
     agreement_number: str | None = None
     # po | agreement | freight (direct never reaches EPMS's endpoints)

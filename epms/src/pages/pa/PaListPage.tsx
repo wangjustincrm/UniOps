@@ -37,6 +37,8 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'approved',  label: 'Approved' },
   { value: 'returned',  label: 'Returned' },
   { value: 'processed', label: 'Processed' },
+  // Rejected = cancelled by a rejection (epms-api crud.pa.status_filter); a
+  // rejected PA's stored status is cancelled, so it also stays under Cancelled.
   { value: 'rejected',  label: 'Rejected' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
@@ -245,7 +247,9 @@ export default function PaListPage() {
                   </td>
                   <td className="px-4 py-3 text-xs text-neutral-500">{formatDate(pa.created_at)}</td>
                   <td className="px-4 py-3">
-                    <PaStatusBadge status={pa.status} />
+                    {/* A rejection cancels a PA; show it as what it was, so
+                        the "Rejected" filter's rows say Rejected (ISS-0078). */}
+                    <PaStatusBadge status={pa.rejected_in_approval ? 'rejected' : pa.status} />
                     <CurrentStepHint current_step={pa.current_step} />
                   </td>
                   <td className="px-4 py-3">

@@ -29,6 +29,7 @@ import {
 import { agreementAttachmentService } from '@/services/agreementAttachments'
 import type { AgreementStatus, AgreementType } from '@/services/agreement'
 import type { ApiEvent } from '@/services/pr'
+import { historyLine, isSkipped } from '@/lib/approvalHistory'
 import type { InvoiceStatus } from '@/services/invoices'
 import { isAgreementAdmissible } from '@/lib/agreements'
 
@@ -115,7 +116,7 @@ function buildWorkflowSteps(
     // Auto-skipped steps carry an approve event with a machine actor; naming
     // it would credit a person for a decision nobody made. Same rule as PR.
     const evt = approveEventByStep[i]
-    const autoSkipped = evt?.comment?.includes('Auto-skipped') ?? false
+    const autoSkipped = isSkipped(evt)
     if (autoSkipped) s = 'skipped'
     return {
       id: node.id, role: node.label, status: s,
@@ -848,17 +849,20 @@ export default function AgreementDetailPage() {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Audit History</h2>
             {events && events.length > 0 ? (
               <ul className="flex flex-col gap-3">
-                {events.map((e) => (
-                  <li key={e.id} className="flex gap-3 text-sm">
-                    <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDateTime(e.created_at)}</span>
-                    <div>
-                      <span className="font-medium text-neutral-800 capitalize">{e.action.replace(/_/g, ' ')}</span>
-                      <span className="text-neutral-500 ml-1">by {e.actor_role.replace(/_/g, ' ')}</span>
-                      {e.actor_name && <span className="text-neutral-400 ml-1">— {e.actor_name}</span>}
-                      {e.comment && <p className="text-neutral-400 text-xs mt-0.5 italic">{e.comment}</p>}
-                    </div>
-                  </li>
-                ))}
+                {events.map((e) => {
+                  const line = historyLine(e)
+                  return (
+                    <li key={e.id} className="flex gap-3 text-sm">
+                      <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDateTime(e.created_at)}</span>
+                      <div>
+                        <span className="font-medium text-neutral-800 capitalize">{line.action}</span>
+                        <span className="text-neutral-500 ml-1">{line.role}</span>
+                        {line.actorName && <span className="text-neutral-400 ml-1">— {line.actorName}</span>}
+                        {line.note && <p className="text-neutral-400 text-xs mt-0.5 italic">{line.note}</p>}
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             ) : (
               <div className="text-sm text-neutral-400 text-center py-8">No history yet</div>

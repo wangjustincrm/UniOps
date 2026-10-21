@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Building2, ShieldCheck, Users, CreditCard, Bell, Landmark,
@@ -10,6 +10,8 @@ import {
 } from 'lucide-react'
 import { SortTh, useSort, useSortableRows, sortParams, type Sort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
+import { useRolePermissions } from '@/hooks/useRolePermissions'
+import { adminPageLinks } from '@/components/layout/navConfig'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
@@ -2319,8 +2321,15 @@ export default function AdminPanel() {
     const wanted = new URLSearchParams(window.location.search).get('section')
     return wanted && SECTIONS.some((s) => s.key === wanted) ? wanted : 'company'
   })
+  // Above the early return (Rules of Hooks).
+  const perms = useRolePermissions().data?.permissions
 
   if (user?.role !== 'system_admin') return <Navigate to="/" replace />
+
+  // Pages that live outside this panel but belong to administration — listed
+  // here too, or an admin who comes in through "Portal → Admin" never finds
+  // Approval Delegation / Routing / Access Control (ISS-0027).
+  const otherPages = adminPageLinks(user?.role ?? null, perms)
 
   const currentSection = SECTIONS.find((s) => s.key === section)
 
@@ -2368,6 +2377,24 @@ export default function AdminPanel() {
               {label}
             </button>
           ))}
+
+          {otherPages.length > 0 && (
+            <div className="mt-3 border-t border-white/10 pt-3 space-y-0.5">
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                More admin pages
+              </p>
+              {otherPages.map(({ label, icon: Icon, href }) => (
+                <Link
+                  key={href}
+                  to={href.slice('portal:'.length)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-white/65 hover:bg-white/10 hover:text-white transition-colors"
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {label}
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </nav>
 

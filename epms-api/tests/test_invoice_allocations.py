@@ -20,7 +20,9 @@ _PO_LINE = {"description": "Widget", "qty": "10", "unit": "EA", "unit_price": "1
 
 async def _make_vendor(client, code):
     r = await client.post(VENDOR_URL, json={
-        "code": code, "name": "Alloc Vendor", "category": "Parts",
+        # A name per vendor: invoice numbers repeat across these tests, and the
+        # server refuses the same vendor name + invoice # twice (INV-004).
+        "code": code, "name": f"Alloc Vendor {code}", "category": "Parts",
         "contact_name": "X", "contact_email": "x@x.com",
         "payment_terms": "net30", "currency": "CAD",
     })
@@ -1025,7 +1027,8 @@ async def test_match_candidates_report_already_allocated_total(admin_client):
     r1 = await admin_client.post(f"{INV_URL}/{inv1['id']}/match", json={"po_id": po["id"]})
     assert r1.status_code == 200, r1.text
     # invoice 2 asks for candidates → sees 600 already allocated on that PO
-    inv2 = (await admin_client.post(INV_URL, json=_inv_payload(v["id"], amount="400.00", tax_amount="0.00",
+    inv2 = (await admin_client.post(INV_URL, json=_inv_payload(v["id"], vendor_invoice_number="INV-ALLOC-002",
+        amount="400.00", tax_amount="0.00",
         line_items=[{"description": "b", "quantity": "1", "unit_price": "400.00", "line_total": "400.00"}]))).json()
     cand = (await admin_client.get(f"{INV_URL}/{inv2['id']}/match-candidates")).json()
     the_po = next(p for p in cand["items"] if p["id"] == po["id"])
@@ -1071,7 +1074,8 @@ async def test_total_value_one_po_two_invoices_cumulative(admin_client):
          "allocated_amount": "600.00", "allocated_tax": "0.00"}]})
     assert r1.status_code == 200, r1.text
     assert r1.json()["status"] == "matched"          # partial (600<1000) still matched
-    inv2 = (await admin_client.post(INV_URL, json=_inv_payload(v["id"], amount="400.00", tax_amount="0.00",
+    inv2 = (await admin_client.post(INV_URL, json=_inv_payload(v["id"], vendor_invoice_number="INV-ALLOC-002",
+        amount="400.00", tax_amount="0.00",
         line_items=[{"description": "b", "quantity": "1", "unit_price": "400.00", "line_total": "400.00"}]))).json()
     r2 = await admin_client.post(f"{INV_URL}/{inv2['id']}/match", json={"allocations": [
         {"invoice_line_id": inv2["line_items"][0]["id"], "po_id": po["id"], "po_line_id": None,
