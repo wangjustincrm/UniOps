@@ -139,11 +139,38 @@ TERMS_ZH: dict[str, str] = {
 }
 
 
+# ── System names are never translated (ISS-0051) ─────────────────────────────
+#
+# "NC" is the company's ERP. Asked "我有哪些待办已经超时了？", the reply put the
+# duplicate-invoice task in 北卡州 — North Carolina — in one answer out of
+# three, and wrote "NC" correctly in the other two. These names were in no
+# protected list: `terms` covers roles and documents only, and "a name that is
+# not in terms is kept in English" did not hold for a two-letter acronym that
+# also happens to be a US state's.
+SYSTEM_NAMES: tuple[str, ...] = (
+    "NC", "EPMS", "OA", "VMS", "WMS", "MRP", "PMS", "MDM", "QuickBooks", "UniOps",
+)
+
+# The place names NC was turned into. Nothing in this system is in North
+# Carolina, so mapping them back cannot change a correct answer. Bare 北卡 is
+# matched only when it is not the start of another word (卡车 = truck, 卡片 =
+# card ...), so 东北卡车 is left alone.
+_NC_AS_A_PLACE = re.compile(
+    r"北卡(?:罗来纳|羅來納|罗莱纳|羅萊納)州?|北卡州|北卡(?![车車片住通位拉特尔爾])")
+
+
+def keep_system_names(text: str) -> str:
+    """The last line of defence for ISS-0051, applied to every reply on its way
+    out: whatever the model wrote, NC comes back as NC."""
+    return _NC_AS_A_PLACE.sub("NC", text) if text else text
+
+
 def instructions(message: str) -> dict:
     """What a narrator payload carries about language. Merged into every payload,
     so each narrator gets the same decision for the same question."""
     language = detect(message)
-    out: dict = {"reply_in": language or "the language of `question` (this question only)"}
+    out: dict = {"reply_in": language or "the language of `question` (this question only)",
+                 "system_names": list(SYSTEM_NAMES)}
     if language == "Chinese (Simplified)":
         out["terms"] = TERMS_ZH
     return out
@@ -162,5 +189,9 @@ Language — this overrides anything below that says otherwise:
   `terms` is kept in English as it appears in the data.
 - Document numbers, codes, people's names and vendor names are identifiers:
   print them exactly as given, never translated.
+- `system_names` are the names of software systems (NC is the company's ERP
+  system). Write each one exactly as given, in every language — never
+  translate, expand or explain it as anything else. NC is never a place: never
+  北卡, 北卡罗来纳 or North Carolina.
 
 """

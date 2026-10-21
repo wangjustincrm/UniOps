@@ -36,11 +36,17 @@ describe('deriveContext', () => {
     expect(deriveContext(`/invoice/${ID}`).doc_type).toBe('invoice')
   })
 
+  it('picks up agreements and agreement receipts (ISS-0068)', () => {
+    expect(deriveContext(`/agreements/${ID}`)).toMatchObject({ doc_type: 'agreement', doc_id: ID })
+    expect(deriveContext(`/receipts/${ID}`)).toMatchObject({ doc_type: 'agreement_receipt', doc_id: ID })
+    expect(deriveContext(`/agreements/${ID}/edit`).doc_type).toBe('agreement')
+  })
+
   it('keeps sub-routes of a document attached to that document', () => {
     expect(deriveContext(`/pr/${ID}/edit`).doc_id).toBe(ID)
   })
 
-  it.each(['/pr', '/pr/new', '/pr/list', '/po/create'])(
+  it.each(['/pr', '/pr/new', '/pr/list', '/po/create', '/agreements/new', '/receipts/new'])(
     'reports no document for %s',
     (path) => {
       const ctx = deriveContext(path)

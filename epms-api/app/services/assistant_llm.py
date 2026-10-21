@@ -460,6 +460,12 @@ results are the only facts you have.
 - Never introduce a number, name, date or status that is not in the results. If
   the question asked for something the results do not contain, say what is
   missing rather than filling it in.
+- If the question ALSO asked about something this query did not look up —
+  another document, another kind of record, how something works, anything
+  outside purchasing — say that this part was not looked up in this answer
+  and can be asked on its own. Never say it does not exist, is not available,
+  or that you have no data or no access for it: it simply was not queried
+  (ISS-0037, ISS-0069).
 """
 
 _QUERY_TOOL = {
@@ -1019,19 +1025,321 @@ def _context_note(context: dict | None) -> str:
     """What the user is looking at, so "this PO" has a referent."""
     if not context:
         return ""
-    bits = [f"{k}={v}" for k, v in context.items() if v]
+    session = _session_note(context)
+    context = {k: v for k, v in context.items() if k not in _SESSION_KEYS}
+    bits = [f"{k}={v}" for k, v in context.items()
+            if v and k not in ("doc_filters", "doc_lines")]
     note = ("\n\nThe person is currently looking at: " + ", ".join(bits) +
             ". Resolve 'this'/'that' against it when it fits the question.") if bits else ""
-    if bits and context.get("doc_number"):
+    if bits and (context.get("doc_number") or context.get("doc_filters")):
         # Without this a question ABOUT the document on screen ("who is the
         # vendor on this one?") went to explain_workflow, the only route that
         # took the document implicitly (ISS-0004).
+        filters = context.get("doc_filters") or [
+            {"field": context.get("doc_number_field") or "number",
+             "value": context["doc_number"]}]
+        entity = context.get("doc_entity")
         note += (f" A question about this document's own data — its vendor, "
-                 f"amount, lines, dates, status — is a query filtered on "
-                 f"{context.get('doc_number_field') or 'number'} = {context['doc_number']}. "
-                 f"explain_workflow is only for "
-                 f"who has approved it and who it is waiting on.")
-    return note
+                 f"amount, lines, dates, status — is a query"
+                 f"{' on ' + entity if entity else ''} filtered on "
+                 + " and ".join(f"{f['field']} = {f['value']}" for f in filters) + ".")
+        if context.get("doc_lines"):
+            note += f" Its lines are {context['doc_lines']}."
+        if context.get("doc_type") in ("pr", "po", "pa"):
+            note += (" explain_workflow is only for "
+                     "who has approved it and who it is waiting on.")
+        else:
+            # A GR page asked "which PO is this for?" was told "I can only
+            # track PR / PO / PA approvals" (ISS-0068).
+            note += (" It is not a PR, PO or PA, so explain_workflow does not "
+                     "apply to it: its own data is a query, and where it stands "
+                     "in the purchasing chain is trace_document.")
+    return note + session
+
+
+# ── The conversation and the caller (ISS-0038, ISS-0067, ISS-0073) ────────────
+#
+# Keys the chat layer adds to the planner's context that are not about the
+# page. _context_note renders them on their own instead of listing them as
+# "currently looking at".
+_SESSION_KEYS = ("conversation", "caller", "question_part")
+
+# Appended to _PLAN_SYSTEM: rules about the conversation itself.
+_PLAN_SESSION_RULES = """\
+- A question about the CONVERSATION itself — what my first / previous / third
+  question was, what you answered then — is recall_conversation. Never answer
+  it from the turns you were shown: a long conversation is cut to its last few
+  exchanges, and the earliest turn you can see is not its first question. One
+  such answer named the 18th question of 20 as the first.
+- A reference to something said EARLIER — "刚才那张单呢？", "that one", "the
+  previous document", "上一张" — needs an earlier turn that names it. When the
+  conversation note says nothing came before this message, and the page being
+  viewed has no document either, call cannot_answer with reason too_ambiguous
+  and ask which document they mean, by number. Never fall back to whats_next
+  or to any query: a new conversation answered with the person's whole task
+  list is an answer to a question nobody asked.
+- "Who am I", "what are my roles", "which department am I in" is who_am_i.
+  The person asking is known (see the note about them below the question);
+  never say they cannot be identified, and never work out their roles from
+  their tasks — a task reaching someone does not make its role theirs, and a
+  System Admin sees every task without holding any of those roles.
+"""
+
+
+def _caller_note(caller) -> str:
+    """Who is asking, so "my", "me" and "I" have a referent (ISS-0073)."""
+    if not isinstance(caller, dict) or not caller.get("name"):
+        return ""
+    roles = caller.get("primary_role") or "none"
+    extra = [r.get("label") for r in caller.get("additional_roles") or [] if r.get("label")]
+    return (f"\n\nThe person asking is {caller['name']}"
+            f"{' (' + caller['department'] + ')' if caller.get('department') else ''}"
+            f"; primary role {roles}"
+            f"{'; additional roles ' + ', '.join(extra) if extra else ''}. "
+            f"\"I\", \"me\" and \"my\" mean them.")
+
+
+def _session_note(context: dict) -> str:
+    """What the planner is told about the conversation it is in, and who is
+    asking."""
+    return (_part_note(context.get("question_part"))
+            + _conversation_note(context.get("conversation"))
+            + _caller_note(context.get("caller")))
+
+
+def _conversation_note(conversation) -> str:
+    if not isinstance(conversation, dict):
+        return ""
+    earlier = int(conversation.get("earlier_questions") or 0)
+    shown = int(conversation.get("shown_questions") or 0)
+    if earlier == 0:
+        return ("\n\nThis is the first message of this conversation: nothing was "
+                "asked or answered before it.")
+    if shown < earlier:
+        return (f"\n\nThis conversation has {earlier} earlier questions; only the "
+                f"last {shown} of them (and their answers) are included above. "
+                f"You cannot see what was asked before those.")
+    return (f"\n\nThe conversation above is complete: {earlier} earlier "
+            f"question(s), all shown.")
+
+
+_RECALL_TOOL = {
+    "name": "recall_conversation",
+    "description": (
+        "Use when someone asks about this conversation itself: what their first "
+        "(or previous, or Nth) question was, or what you answered to it — "
+        "'我在这次对话里问的第一个问题是什么？你当时怎么回答的？', 'what did I "
+        "just ask?'. The server holds the whole conversation; you may only be "
+        "shown its last few turns."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "position": {
+                "type": "integer",
+                "description": (
+                    "Which earlier question: 1 = the first of the conversation, "
+                    "2 = the second, ...; -1 = the one just before this message, "
+                    "-2 = the one before that."
+                ),
+            },
+        },
+        "required": ["position"],
+    },
+}
+
+# ── A purchase from requisition to payment (ISS-0030) ────────────────────────
+
+_PLAN_CHAIN_RULES = """\
+- Progress ACROSS documents is trace_document, with the document they named
+  (or the one on screen): "PR-20260928-0001 从请购到付款的完整进度是怎样的？",
+  "has this PO been received, invoiced and paid?", "what happened after this
+  PR was approved?", "which PA pays this invoice, and is it paid?", "where is
+  this purchase up to?". It follows PR → PO → goods receipts → invoices →
+  payment applications → payment. explain_workflow is the approval steps of
+  ONE PR, PO or PA and says nothing about what came after its approval — the
+  answer that used it ended "it has entered the payment stage", which was
+  made up. A query reaches one kind of document only.
+"""
+
+_TRACE_TOOL = {
+    "name": "trace_document",
+    "description": (
+        "Use for where a purchase stands across ALL its documents: the "
+        "requisition, its purchase order(s), goods receipts, invoices, payment "
+        "applications and whether they were paid — '从请购到付款的完整进度', "
+        "'has PO-X been invoiced and paid', 'what happened after this PR'. "
+        "Start from any document in the chain. Each document comes back with "
+        "its status, as the Document Chain on the PO page shows it."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "doc_type": {"type": "string",
+                         "enum": ["pr", "po", "gr", "invoice", "pa", "agreement"]},
+            "doc_number": {
+                "type": "string",
+                "description": (
+                    "The number as written, e.g. PR-20260928-0001, "
+                    "PO-535-2609-02, INV-2026-0631. Omit only when they clearly "
+                    "mean the document on screen."
+                ),
+            },
+        },
+        "required": ["doc_type"],
+    },
+}
+
+_CHAIN_SYSTEM = """\
+You are telling a colleague where a purchase stands, from requisition to
+payment.
+
+You are given the chain of documents around the one they asked about, read
+from the system: the purchase request, each purchase order with its goods
+receipts, invoices and payment applications, and, for agreement purchases, the
+agreement with its invoices and payment applications.
+
+- Answer what they asked. For "the full progress", walk it in order — PR → PO
+  → goods receipts → invoices → payment applications → payment — one line per
+  document: its number, its status (status_label when there is one) and the
+  date or amount that matters for that step. Then say in one sentence where it
+  stands now and what is still outstanding.
+- Report statuses exactly as given. `payment` on a payment application is
+  whether the money has gone out: "paid" (give paid_on), "awaiting payment",
+  "not yet — still in approval". An approved payment application is NOT paid.
+  Never write that a purchase "has entered the payment stage" or the like
+  without naming the payment application and its payment state.
+- `facts` on a purchase order were decided by the system (anything_received,
+  invoiced, pa_raised, three_way_matched). Use them for "has it been
+  received / invoiced"; never re-derive them from the lists.
+- `waiting_on` is the approval step, and the approver, a document still in
+  approval is with.
+- A layer with `not_visible` is one this person may not see: say it cannot be
+  shown to them, never that there are none. A count of 0 means none yet.
+- `listed` means only the first `listed` of `count` documents are given: give
+  the count and say the rest are on the document's page.
+- `no_order_yet`: the requisition has no purchase order yet. `more_orders`:
+  that many further orders are not shown.
+- Every amount with its currency. Do not add amounts up.
+- Never invent a document, a status, a date or a step that is not in what you
+  were given.
+"""
+
+
+async def narrate_chain(message: str, chain: dict) -> dict:
+    """Tell where a purchase stands. Same no-new-facts rule as the others."""
+    import anthropic
+
+    payload = {"question": message, **chain, **reply_language.instructions(message)}
+    try:
+        resp = await _client().messages.create(
+            model=MODEL,
+            max_tokens=_GUIDE_MAX_TOKENS,
+            system=reply_language.LANGUAGE_RULES + _CHAIN_SYSTEM,
+            messages=[{"role": "user",
+                       "content": json.dumps(payload, ensure_ascii=False, default=str)}],
+        )
+    except anthropic.APIConnectionError as exc:
+        raise LlmUnavailable(f"Could not reach the model: {exc}") from exc
+    except anthropic.RateLimitError as exc:
+        raise LlmUnavailable("The shared API quota is exhausted right now") from exc
+    except anthropic.APIStatusError as exc:
+        log.error("chain narration failed %s: %s", exc.status_code, exc.message)
+        raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
+
+    _log_usage("narrate_chain", resp)
+    return {"text": _reply_text(resp, message), "usage": _usage(resp)}
+
+
+_WHO_AM_I_TOOL = {
+    "name": "who_am_i",
+    "description": (
+        "Use when someone asks who they are in the system: their name, their "
+        "department, their roles — '我是谁？我有哪些角色？', 'what roles do I "
+        "have', 'which department am I in'. Returns their own record and every "
+        "role they hold, as the system resolves it. Takes no arguments."
+    ),
+    "input_schema": {"type": "object", "properties": {}},
+}
+
+# Tool name -> the `kind` plan() returns for it.
+_SESSION_TOOL_KINDS = {
+    "recall_conversation": "recall",
+    "who_am_i": "me",
+    "trace_document": "trace",
+    "split_question": "split",
+}
+
+
+def _session_tools(context: dict | None) -> list[dict]:
+    """The planner tools this section adds. A part of a split message is
+    planned on its own and is never split again."""
+    tools = [_TRACE_TOOL, _RECALL_TOOL, _WHO_AM_I_TOOL]
+    if not (context or {}).get("question_part"):
+        tools.append(_SPLIT_TOOL)
+    return tools
+
+
+# ── One message, several questions (ISS-0037, ISS-0069) ──────────────────────
+#
+# "PO-576-2610-01 的状态、PO-535-2609-02 的金额、供应商 Raise The Standard 的联系人
+# 分别是什么？" ran one query for the first PO and called the other two "not in
+# the query result"; "PO-079 是什么状态，INV-2026-0123 金额多少，怎么催审批人，再
+# 帮我写一首诗" answered the PO and said the invoice amount was unavailable —
+# asked alone, it is answered. The planner was built to run one tool per
+# message and plan() returned the first. A message that asks several things is
+# now split into its parts here, and each part is planned, checked against its
+# own permissions and answered on its own (assistant_chat._answer_parts) — at
+# most MAX_PARTS of them, so the cost of one message stays bounded; any
+# further parts are named as not looked up.
+MAX_PARTS = 3
+
+_PLAN_PARTS_RULES = """\
+- When ONE message asks two or more SEPARATE questions that need different
+  lookups — documents of different kinds, a data question next to a
+  how-does-it-work question, a request outside purchasing — call
+  split_question with each part as a complete question of its own. Never
+  plan only the first part: the others were then reported "not in the query
+  result" although the data was there. Several facts about the same document,
+  the same facts about several documents of one kind (one query with `in`),
+  and every condition on one list are ONE question — do not split those.
+"""
+
+_SPLIT_TOOL = {
+    "name": "split_question",
+    "description": (
+        "Use when one message asks several separate questions that each need "
+        "their own lookup or route, e.g. 'PO-079-2605-03 是什么状态，INV-2026-0123 "
+        "金额多少，怎么催审批人，再帮我写一首诗'. Each part is then planned and "
+        "answered separately, in order."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "parts": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "The separate questions, in the order asked, each written "
+                    "as a complete question in the person's own language and "
+                    "words, with the document numbers or names it needs — "
+                    "e.g. ['PO-079-2605-03 是什么状态？', 'INV-2026-0123 金额多少？', "
+                    "'怎么催审批人？', '帮我写一首诗']."
+                ),
+            },
+        },
+        "required": ["parts"],
+    },
+}
+
+
+def _part_note(part) -> str:
+    if not isinstance(part, dict):
+        return ""
+    return (f"\n\nThis is part {part.get('index')} of {part.get('of')} of a longer "
+            f"message the person sent: «{part.get('whole')}». Plan THIS part only — "
+            f"the other parts are answered separately. Use the whole message only "
+            f"to understand what this part refers to.")
 
 
 def _language_note(message: str) -> str:
@@ -1074,7 +1382,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
         )
 
     system = [
-        {"type": "text", "text": _PLAN_SYSTEM},
+        {"type": "text", "text": (_PLAN_SYSTEM + _PLAN_SESSION_RULES + _PLAN_CHAIN_RULES
+                                  + _PLAN_PARTS_RULES)},
         # The schema is the stable half of the prompt and by far the larger one,
         # so it sits in its own block for caching.
         {"type": "text", "text": "Schema:\n" + json.dumps(schema, ensure_ascii=False),
@@ -1090,7 +1399,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
                    _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
                    _MODULES_TOOL, _PRODUCIBLE_TOOL, _REPORT_TOOL,
                    _BUDGET_VARIANCE_TOOL, _RECEIVING_TOOL, _VENDOR_SUMMARY_TOOL,
-                   _rules_tool(), _DASHBOARD_TOOL, _CANNOT_TOOL],
+                   _rules_tool(), _DASHBOARD_TOOL, *_session_tools(context),
+                   _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
@@ -1112,6 +1422,9 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
     for block in resp.content:
         if block.type != "tool_use":
             continue
+        if block.name in _SESSION_TOOL_KINDS:
+            return {"kind": _SESSION_TOOL_KINDS[block.name], **dict(block.input),
+                    "usage": _usage(resp)}
         if block.name == "run_query":
             return {"kind": "query", "query": dict(block.input), "usage": _usage(resp)}
         if block.name == "whats_next":
@@ -1278,7 +1591,9 @@ sitting right now.
   delegation. Say so; it matters to whoever is chasing it.
 - history is what has already happened, most useful as "approved by X on DATE".
   Include comments when they are there — a returned document's comment is
-  usually the reason.
+  usually the reason. An event with `imported` true was carried over from the
+  old PMS system when the document was migrated; it is not a comment anyone
+  wrote. Each event's actor_role is the role the person acted in.
 - current_step is null when the document is not awaiting approval. Then say what
   its status is instead of inventing a waiting party.
 - If steps_available is false the engine could not be reached, so you have the

@@ -43,6 +43,9 @@ from app.services import budget_variance
 from app.services import report_lineage
 from app.services import workflow_view
 from app.services import controlled_query as cq
+from app.services import caller_view
+from app.services import page_document
+from app.services import document_chain
 
 log = logging.getLogger(__name__)
 
@@ -204,23 +207,34 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
     (ISS-0001). They are marked `_fixed_text` where they are written.
     """
     out = await _chat(body, db, user, token)
+    return await _finish(out, body.message)
+
+
+async def _finish(out: dict, message: str) -> dict:
+    """A reply on its way out: markup stripped, a code-written reply rendered
+    in the language of `message`, system names kept. Applied to the whole
+    reply, and to each part of a split one with that part's own question."""
     if isinstance(out.get("answer"), str):
         out["answer"] = assistant_llm.strip_markup(out["answer"])
     if out.pop("_fixed_text", False) and out.get("answer"):
-        language = reply_language.detect(body.message)
+        language = reply_language.detect(message)
         plainly_english = language == "English" or (
-            language is None and body.message.isascii())
+            language is None and message.isascii())
         if not plainly_english:
             try:
                 said = await assistant_llm.render_fixed_reply(
-                    out["answer"], body.message, language)
+                    out["answer"], message, language)
                 out["answer"] = said["text"] or out["answer"]
             except assistant_llm.LlmUnavailable:
                 pass  # the English sentence is still a correct answer
+    if isinstance(out.get("answer"), str):
+        # Whatever wrote the reply, NC leaves as NC (ISS-0051).
+        out["answer"] = reply_language.keep_system_names(out["answer"])
     return out
 
 
-async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
+async def _chat(body: ChatRequest, db, user: dict, token: str,
+                part: dict | None = None) -> dict:
     schema = (await assistant_schema(db, user))["entities"]
     # Entities this app's assistant does not use (ISS-0015: Finance's AP copy
     # of the invoices is kept out of EPMS).
@@ -236,14 +250,26 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
             "kind": "denied", "query": None, "sources": None,
         }
 
-    context = body.context.model_dump(exclude_none=True) if body.context else None
+    context = body.context.model_dump(exclude_none=True) if body.context else {}
     scope = await build_scope(db, user)
     context = await _with_document_number(db, scope, context)
     actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
+    exchanges = _answered_exchanges(body.history or [])
     history = [
         {"role": t.role, "content": _turn_content(t)}
-        for t in _answered_exchanges(body.history or [])[-_MAX_HISTORY_TURNS:]
+        for t in exchanges[-_MAX_HISTORY_TURNS:]
     ]
+    # Whether anything came before, and how much of it the planner sees
+    # (ISS-0038, ISS-0067).
+    context = {**context, "conversation": {"earlier_questions": len(exchanges) // 2,
+                                           "shown_questions": len(history) // 2}}
+    # Who is asking (ISS-0073).
+    me = await caller_view.describe(db, user)
+    if me:
+        context["caller"] = me
+    if part:
+        # One question of several in the message (ISS-0037, ISS-0069).
+        context["question_part"] = part
 
     try:
         planned = await assistant_llm.plan(schema, body.message, context,
@@ -252,8 +278,20 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "plan", planned.get("usage") or {})
 
+    if planned["kind"] == "split":
+        return await _answer_parts(body, db, user, token, planned, part)
+
+    if planned["kind"] == "recall":
+        return _answer_recall(body, planned, exchanges)
+
+    if planned["kind"] == "me":
+        return _answer_who_am_i(me)
+
+    if planned["kind"] == "trace":
+        return await _answer_trace(db, scope, body, planned, context, actor)
+
     if planned["kind"] == "next":
-        return await _answer_whats_next(db, user, body, actor)
+        return await _answer_whats_next(db, user, body, actor, me)
 
     if planned["kind"] == "process":
         return await _answer_process(db, user, token, body, planned, actor)
@@ -368,18 +406,16 @@ async def _with_document_number(db, scope, context: dict | None) -> dict | None:
     route that accepts "the document on screen" without a number: its approval
     history (ISS-0004). Resolved with the same visibility rule as everything
     else, so a document this person cannot see adds nothing.
+
+    Every detail page, not only PR / PO / PA: GR, invoice, agreement and
+    agreement-receipt pages were not recognised at all (ISS-0068) — see
+    page_document.
     """
     if not context or context.get("doc_number"):
         return context
-    doc_type, doc_id = context.get("doc_type"), context.get("doc_id")
-    if doc_type not in workflow_view.SUPPORTED or not doc_id:
-        return context
-    doc = await workflow_view.resolve(db, scope, doc_type, None, doc_id)
-    if doc is None:
-        return context
-    field = workflow_view.number_attr(doc_type)
-    number = getattr(doc, field, None)
-    return {**context, "doc_number": number, "doc_number_field": field} if number else context
+    found = await page_document.resolve(db, scope, context.get("doc_type"),
+                                        context.get("doc_id"))
+    return {**context, **found} if found else context
 
 
 async def _resolve_pr(db, scope, number: str | None, context: dict | None):
@@ -516,11 +552,18 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
     }
 
 
-async def _answer_whats_next(db, user, body, actor) -> dict:
+async def _answer_whats_next(db, user, body, actor, me: dict | None = None) -> dict:
     """Their own inbox, explained. No arguments — it is always about the asker."""
     tasks = await guide_view.my_tasks(user.get("role", ""), actor) if actor else []
     # Counted here, not by the model — see guide_view.task_summary (ISS-0011).
     payload = {"question": body.message, "kind": "tasks", **guide_view.task_summary(tasks)}
+    if me:
+        # Asked "who am I" and routed here, the reply guessed roles from the
+        # tasks (ISS-0073). The roles are given, so nothing is left to guess.
+        payload["me"] = {**{k: v for k, v in me.items() if k != "email"}, "roles_are": (
+            "the complete list of this person's roles — primary_role plus "
+            "additional_roles. A task's assigned_role is the role the task was "
+            "sent to, not a role of theirs: never name a role from a task.")}
     try:
         told = await assistant_llm.narrate_guide(body.message, payload)
     except assistant_llm.LlmUnavailable as exc:
@@ -1081,3 +1124,186 @@ async def _answer_dashboard(db, user, body, actor) -> dict:
             "dashboard": result,
             "sources": {"entity": "dashboard", "row_count": len(result["kpis"]),
                         "complete": True}}
+
+
+# ── The conversation itself (ISS-0067) ────────────────────────────────────────
+#
+# "我在这次对话里问的第一个问题是什么？" after 20 questions named the 18th: the
+# planner sees only the last _MAX_HISTORY_TURNS turns and took the earliest of
+# those for the first. The panel sends the whole conversation, so the answer
+# is read from that, in code, rather than from what the model was shown.
+
+# How much of an earlier answer is quoted back. The question is "what did you
+# answer", not "answer it again"; a table cut mid-row is avoided by cutting at
+# a line break when one is close enough.
+_RECALL_ANSWER_CHARS = 600
+
+
+def _excerpt(text: str, limit: int = _RECALL_ANSWER_CHARS) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    head, sep, _ = cut.rpartition("\n")
+    return (head if sep and len(head) > limit // 2 else cut).rstrip() + "\n\n…"
+
+
+def _answer_recall(body: ChatRequest, planned: dict, exchanges: list[ChatTurn]) -> dict:
+    pairs = [(exchanges[i], exchanges[i + 1]) for i in range(0, len(exchanges) - 1, 2)]
+    n = len(pairs)
+    try:
+        position = int(planned.get("position") or 1)
+    except (TypeError, ValueError):
+        position = 1
+    index = position - 1 if position > 0 else n + position
+    if n == 0:
+        return {"_fixed_text": True,
+                "answer": "This is the first question of this conversation — "
+                          "nothing was asked before it.",
+                "kind": "cannot_answer", "reason": "nothing_earlier",
+                "query": None, "sources": None}
+    if not 0 <= index < n:
+        return {"_fixed_text": True,
+                "answer": f"This conversation has only {n} earlier question"
+                          f"{'' if n == 1 else 's'}.",
+                "kind": "cannot_answer", "reason": "nothing_earlier",
+                "query": None, "sources": None}
+
+    question, answer = pairs[index]
+    ordinal = index + 1
+    quoted = _excerpt(answer.text)
+    if reply_language.detect(body.message) == "Chinese (Simplified)":
+        which = ("第一个问题" if ordinal == 1 else
+                 "上一个问题" if position == -1 else f"第 {ordinal} 个问题")
+        return {"answer": f"你在这次对话里问的{which}是：「{question.text.strip()}」\n\n"
+                          f"我当时的回答：\n\n{quoted}",
+                "kind": "recall", "query": None, "sources": None}
+    which = ("first question" if ordinal == 1 else
+             "previous question" if position == -1 else f"question {ordinal}")
+    return {"_fixed_text": True,
+            "answer": f"Your {which} in this conversation was: “{question.text.strip()}”\n\n"
+                      f"My answer was:\n\n{quoted}",
+            "kind": "recall", "query": None, "sources": None}
+
+
+# ── Who is asking (ISS-0073) ──────────────────────────────────────────────────
+
+def _answer_who_am_i(me: dict | None) -> dict:
+    """Their own record, written in code: name, department, every role."""
+    if not me:
+        return {"_fixed_text": True, "answer": "I cannot see who is signed in.",
+                "kind": "cannot_answer", "reason": "no_user",
+                "query": None, "sources": None}
+    return {"_fixed_text": True, "answer": caller_view.as_text(me),
+            "kind": "me", "me": me, "query": None, "sources": None}
+
+
+# ── A purchase from requisition to payment (ISS-0030) ────────────────────────
+
+async def _answer_trace(db, scope, body: ChatRequest, planned: dict, context: dict,
+                        actor) -> dict:
+    """The whole chain around one document, each document within its own
+    entity's scope (services/document_chain)."""
+    doc_type = (planned.get("doc_type") or "").lower()
+    number = (planned.get("doc_number") or "").strip()
+    if not number and context.get("doc_number") and (
+            not doc_type or context.get("doc_type") == doc_type):
+        # "这张单从请购到付款到哪一步了？" on the document's own page.
+        number, doc_type = context["doc_number"], context.get("doc_type") or doc_type
+    if doc_type not in document_chain.SUPPORTED:
+        return {"_fixed_text": True,
+                "answer": "I can follow the chain from a purchase request, purchase "
+                          "order, goods receipt, invoice, payment application or "
+                          "agreement — tell me its number.",
+                "kind": "cannot_answer", "reason": "not_supported",
+                "query": None, "sources": None}
+    if not number:
+        return {"_fixed_text": True,
+                "answer": "Tell me which document you mean — its number works best.",
+                "kind": "cannot_answer", "reason": "document_not_found",
+                "query": None, "sources": None}
+
+    chain = await document_chain.build(db, scope, doc_type, number)
+    if not chain["found"]:
+        return {"_fixed_text": True, "answer": f"I could not find {number}.",
+                "kind": "cannot_answer", "reason": "document_not_found",
+                "query": None, "sources": None}
+    try:
+        told = await assistant_llm.narrate_chain(body.message, chain)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_chain", told.get("usage") or {})
+    hidden = '"not_visible": true' in json.dumps(chain, default=str)
+    return {
+        "answer": told["text"], "kind": "document_chain", "query": None,
+        "document_chain": chain,
+        "sources": {"document": chain["asked_about"]["number"],
+                    "documents": document_chain.count_documents(chain),
+                    "complete": not hidden},
+    }
+
+
+# ── One message, several questions (ISS-0037, ISS-0069) ──────────────────────
+
+_NOT_LOOKED_UP = {
+    "Chinese (Simplified)": "以下部分这次没有去查（不代表没有数据），请单独再问一次：",
+}
+_NOT_LOOKED_UP_DEFAULT = ("Not looked up this time (that does not mean there is no "
+                          "data) — please ask these separately:")
+
+
+async def _answer_parts(body: ChatRequest, db, user: dict, token: str, planned: dict,
+                        part: dict | None) -> dict:
+    """Plan and answer each question of the message on its own, in order.
+
+    Each part goes through the whole loop — plan, the schema and row scope of
+    whatever it reaches, narration — exactly as if it had been asked alone, so
+    splitting can neither widen what is read nor skip a check. At most
+    MAX_PARTS are answered: every part costs a plan and a narration.
+    """
+    parts = [str(p).strip() for p in planned.get("parts") or [] if str(p).strip()]
+    if part:
+        # A part is never split again (the tool is not offered for one).
+        return {"_fixed_text": True, "kind": "cannot_answer", "reason": "too_ambiguous",
+                "answer": "I could not tell what this part of the question asks.",
+                "query": None, "sources": None}
+    if len(parts) < 2:
+        # A "split" into one part is just the question.
+        lone = {"index": 1, "of": 1, "whole": body.message}
+        return await _chat(ChatRequest(message=(parts[0] if parts else body.message)[:2000],
+                                       context=body.context, history=body.history),
+                           db, user, token, part=lone)
+
+    answered, rest = parts[:assistant_llm.MAX_PARTS], parts[assistant_llm.MAX_PARTS:]
+    replies = []
+    for i, question in enumerate(answered, start=1):
+        one = ChatRequest(message=question[:2000], context=body.context, history=body.history)
+        try:
+            out = await _chat(one, db, user, token,
+                              part={"index": i, "of": len(parts), "whole": body.message})
+        except HTTPException as exc:
+            # One part failing must not lose the others' answers.
+            out = {"_fixed_text": True, "kind": "cannot_answer", "reason": "unavailable",
+                   "answer": f"This part could not be answered just now ({exc.detail}).",
+                   "query": None, "sources": None}
+        replies.append({"question": question, **await _finish(out, question)})
+
+    sections = [f"**{i}. {r['question']}**\n\n{r.get('answer') or ''}"
+                for i, r in enumerate(replies, start=1)]
+    if rest:
+        language = reply_language.detect(body.message)
+        lead = _NOT_LOOKED_UP.get(language, _NOT_LOOKED_UP_DEFAULT)
+        if language not in (None, "English", "Chinese (Simplified)"):
+            try:
+                lead = (await assistant_llm.render_fixed_reply(
+                    lead, body.message, language))["text"] or lead
+            except assistant_llm.LlmUnavailable:
+                pass
+        sections.append(lead + "\n" + "\n".join(f"- {q}" for q in rest))
+    return {
+        "answer": "\n\n".join(sections),
+        "kind": "parts",
+        "parts": replies,
+        "not_looked_up": rest,
+        "query": None, "sources": None,
+    }
