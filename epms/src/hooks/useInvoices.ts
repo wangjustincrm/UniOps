@@ -182,6 +182,9 @@ export function useMarkInvoiceDirect() {
     mutationFn: (id: string) => invoiceService.markDirect(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['invoices'] })
+      // Create Direct PA lists these (['pas', 'direct-candidates']); its tab
+      // may be kept alive, so its cache must not keep the old list.
+      qc.invalidateQueries({ queryKey: ['pas'] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
     },

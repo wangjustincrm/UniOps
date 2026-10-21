@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Loader2, CreditCard, AlertTriangle, ArrowLeft } from 'lucide-react'
+import { Loader2, CreditCard, AlertTriangle, ArrowLeft, Upload } from 'lucide-react'
 import { BackLink } from '@/components/BackLink'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions } from '@/hooks/useConfig'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useCreateDirectPa, useDirectPaCandidates } from '@/hooks/usePas'
+import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import { SELECT_CLS, TH_CLS, cents, errorMessage, num } from '@/pages/freight/freightUi'
 
 /** Payment Applications → Create Direct PA (/pa/new?source=direct[&invoice=<id>]).
@@ -55,6 +56,13 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
   const ready = data?.items ?? []
   const { data: deptData } = useDepartments()
   const departments = (deptData?.items ?? []).filter((d) => d.is_active)
+  // Upload Invoice → the Invoices page's upload form in Direct PA mode
+  // (?upload=direct): what is saved there is matched for a Direct PA and comes
+  // back here ticked. Same gate as that page's own Upload Invoice button.
+  const perms = useRolePermissions().data?.permissions
+  const canUpload = user?.role === 'system_admin' || !!perms?.invoice_upload
+  const { openTab } = useStaticTabNav()
+  const uploadInvoice = () => openTab('/invoices', 'upload=direct')
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [departmentId, setDepartmentId] = useState<string>(user?.department_id ?? '')
@@ -64,12 +72,17 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  // Arriving from an invoice's "Create Direct PA" button: tick it. Keyed on the
-  // id so a second shortcut into the same (kept-alive) tab applies too.
+  // Arriving from an invoice's "Create Direct PA" button, or back from Upload
+  // Invoice (several ids, comma-separated, when a PDF was split): tick them.
+  // Keyed on the ids so a second shortcut into the same (kept-alive) tab
+  // applies too, and on the offered list so ticks land once it has refetched.
+  const offeredKey = ready.map((i) => i.id).join(',')
   useEffect(() => {
-    if (!preselectInvoiceId || !ready.some((i) => i.id === preselectInvoiceId)) return
-    setSelected(new Set([preselectInvoiceId]))
-  }, [preselectInvoiceId, ready.length]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!preselectInvoiceId) return
+    const offered = new Set(ready.map((i) => i.id))
+    const ids = preselectInvoiceId.split(',').filter((id) => offered.has(id))
+    if (ids.length > 0) setSelected(new Set(ids))
+  }, [preselectInvoiceId, offeredKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Drop selections that are no longer offered (another user put them on a PA).
   const chosen = ready.filter((i) => selected.has(i.id))
@@ -123,6 +136,12 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
           <span className="text-sm text-neutral-400">
             {isPending ? 'Loading…' : `${ready.length} ready to pay · invoices of one vendor go on one PA`}
           </span>
+          {canUpload && (
+            <Button variant="secondary" size="sm" onClick={uploadInvoice} className="ml-auto gap-1.5">
+              <Upload className="h-3.5 w-3.5" />
+              Upload Invoice
+            </Button>
+          )}
         </div>
         {isPending ? (
           <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-neutral-300" /></div>
@@ -130,8 +149,16 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
           <div className="py-16 text-center">
             <p className="text-sm font-medium text-neutral-500">Nothing ready to pay</p>
             <p className="text-xs text-neutral-400 mt-1">
-              Upload the invoice on the Invoices page, then on its Match panel choose <span className="font-medium">Direct PA</span>.
+              {canUpload
+                ? 'Upload the invoice here — it is matched for a Direct PA and comes back ticked.'
+                : <>An invoice is uploaded on the Invoices page, then matched with <span className="font-medium">Match → Direct PA</span>.</>}
             </p>
+            {canUpload && (
+              <Button size="sm" onClick={uploadInvoice} className="mt-4 gap-1.5">
+                <Upload className="h-3.5 w-3.5" />
+                Upload Invoice
+              </Button>
+            )}
           </div>
         ) : (
           <table className="w-full text-sm">

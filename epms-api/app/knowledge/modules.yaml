@@ -52,9 +52,11 @@ modules:
     notes:
       - >-
         An invoice with no purchase order or agreement behind it is paid by a
-        Direct PA, which moved here from OA. Upload the invoice as usual on
-        EPMS → Invoices → Upload Invoice; on its Match panel choose the Direct
-        PA tab and confirm. Then EPMS → Payment Applications → Create Direct PA
+        Direct PA, which moved here from OA. Either upload it from EPMS →
+        Payment Applications → Create Direct PA → Upload Invoice (it is matched
+        for a Direct PA as it is saved and comes back ticked), or upload it as
+        usual on EPMS → Invoices → Upload Invoice and choose the Direct PA tab on
+        its Match panel. Then EPMS → Payment Applications → Create Direct PA
         (or the Create Direct PA button on the invoice) takes one or more such
         invoices of one vendor, with the department it is charged to (your own
         by default), a cost center of that department, a budget account and the
