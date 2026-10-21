@@ -341,12 +341,21 @@ function MessageRow({
   question?: string
 }) {
   if (message.role === 'user') {
+    // A failed mark is reported where it was clicked (ISS-0062): shown only in
+    // the Marked list, clicking an 11th star looked like nothing happened.
+    const markError =
+      marked?.error && marked.errorFor === message.text.trim() ? marked.error : null
     return (
-      <div className="flex items-start justify-end gap-1">
-        {marked && <MarkToggle marked={marked} question={message.text} />}
-        <div className="max-w-[85%] rounded-lg rounded-br-sm bg-primary-600 px-3 py-2 text-sm text-white">
-          {message.text}
+      <div className="space-y-1">
+        <div className="flex items-start justify-end gap-1">
+          {marked && <MarkToggle marked={marked} question={message.text} />}
+          <div className="max-w-[85%] rounded-lg rounded-br-sm bg-primary-600 px-3 py-2 text-sm text-white">
+            {message.text}
+          </div>
         </div>
+        {markError && (
+          <p role="alert" className="text-right text-xs text-danger-600">{markError}</p>
+        )}
       </div>
     )
   }
@@ -646,38 +655,63 @@ function Evidence({ reply }: { reply: AssistantReply }) {
 
 interface Marked {
   list: AssistantSavedList | null
-  /** A mark/unmark/load in flight; every control waits on it. */
+  /** A mark/unmark in flight; every control waits on it. */
   pending: boolean
+  /** The first load of the list is in flight. */
+  loading: boolean
+  /** Why the list could not be loaded, if it could not. */
+  loadError: string | null
+  /** Why the last mark/unmark failed, if it did. */
   error: string | null
+  /** The question whose star that failure belongs to (null: the list's own X). */
+  errorFor: string | null
   find: (question: string) => string | undefined
   add: (question: string) => Promise<void>
-  remove: (id: string) => Promise<void>
+  remove: (id: string, question?: string) => Promise<void>
+  reload: () => void
 }
+
+const messageOf = (err: unknown, fallback: string) =>
+  err instanceof Error && err.message ? err.message : fallback
 
 /** Loaded the first time the panel opens, then kept from each call's reply. */
 function useMarked(api: AssistantSavedApi | undefined, open: boolean): Marked {
   const [list, setList] = React.useState<AssistantSavedList | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
+  const [attempt, setAttempt] = React.useState(0)
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [errorFor, setErrorFor] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     if (!api || !open || list) return
     let live = true
+    setLoading(true)
+    setLoadError(null)
     api.list()
       .then((l) => { if (live) setList(l) })
-      .catch(() => { /* the list is a convenience; asking still works without it */ })
+      // Said, not swallowed (ISS-0062): a silent failure left every star
+      // disabled with nothing to say why, which read as "marking is broken".
+      .catch((err) => {
+        if (live) setLoadError(messageOf(err, 'Could not load your marked questions.'))
+      })
+      .finally(() => { if (live) setLoading(false) })
     return () => { live = false }
-  }, [api, open, list])
+  }, [api, open, list, attempt])
 
   const run = React.useCallback(
-    async (call: () => Promise<AssistantSavedList>) => {
+    async (call: () => Promise<AssistantSavedList>, about: string | null) => {
       if (pending) return
       setPending(true)
       setError(null)
+      setErrorFor(null)
       try {
         setList(await call())
+        setLoadError(null)
       } catch (err) {
-        setError(err instanceof Error && err.message ? err.message : 'Could not update marked questions.')
+        setError(messageOf(err, 'Could not update marked questions.'))
+        setErrorFor(about)
       } finally {
         setPending(false)
       }
@@ -688,12 +722,16 @@ function useMarked(api: AssistantSavedApi | undefined, open: boolean): Marked {
   return {
     list,
     pending,
+    loading,
+    loadError,
     error,
+    errorFor,
     // Same normalisation the server applies, so a question marked with a
     // trailing space still shows as marked.
     find: (q) => list?.items.find((i) => i.question === q.trim())?.id,
-    add: (q) => run(() => api!.add(q.trim())),
-    remove: (id) => run(() => api!.remove(id)),
+    add: (q) => run(() => api!.add(q.trim()), q.trim()),
+    remove: (id, q) => run(() => api!.remove(id), q?.trim() ?? null),
+    reload: () => setAttempt((n) => n + 1),
   }
 }
 
@@ -709,9 +747,11 @@ function MarkToggle({ marked, question }: { marked: Marked; question: string }) 
     <button
       type="button"
       // Not disabled when full: clicking still goes to the server, whose
-      // refusal is the message shown. Disabling would hide why.
-      disabled={marked.pending || !marked.list}
-      onClick={() => (id ? marked.remove(id) : marked.add(question))}
+      // refusal is shown next to this star. Disabling would hide why. Not
+      // disabled when the list failed to load either: marking returns the
+      // whole list, so the first click also repairs it (ISS-0062).
+      disabled={marked.pending || marked.loading}
+      onClick={() => (id ? marked.remove(id, question) : marked.add(question))}
       aria-label={label}
       aria-pressed={!!id}
       title={label}
@@ -731,7 +771,7 @@ function MarkedList({
   hideWhenEmpty?: boolean
 }) {
   const items = marked.list?.items ?? []
-  if (hideWhenEmpty && items.length === 0 && !marked.error) return null
+  if (hideWhenEmpty && items.length === 0 && !marked.error && !marked.loadError) return null
   return (
     <div className="space-y-1.5">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
@@ -742,7 +782,19 @@ function MarkedList({
           </span>
         )}
       </p>
-      {items.length === 0 && !marked.error && (
+      {!marked.list && marked.loadError && (
+        <p className="text-xs text-danger-600">
+          Could not load your marked questions: {marked.loadError}{' '}
+          <button
+            type="button"
+            onClick={marked.reload}
+            className="text-primary-600 underline underline-offset-2"
+          >
+            Try again
+          </button>
+        </p>
+      )}
+      {marked.list && items.length === 0 && !marked.error && (
         <p className="text-xs text-neutral-500">
           None yet. Click the star next to a question you ask often.
         </p>
