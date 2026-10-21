@@ -214,3 +214,23 @@ rules:
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_remittance_is_sent_by_hand_and_not_modelled"
+  - id: recording_a_manual_credit
+    asked_as:
+      - 录入手工贷项需要什么？
+      - what do I need to record a manual credit
+    answer: >
+      A manual vendor credit (recorded from the vendor's email rather than an
+      uploaded credit note) needs the vendor, the vendor's credit-note
+      reference number, the credit date, the amount (and tax, if any) and a
+      note explaining its basis; the server refuses a manual credit without
+      that note. The form also requires the vendor's email or document to be
+      attached, and a manual credit with no attachment cannot be approved
+      from its detail panel — both are rules of the screen, not checks the
+      server makes. The same credit-note number cannot be recorded twice for
+      one vendor (unless the earlier one was voided).
+    enforced_in: "finance-api app/schemas/vendor_credit.py _manual_needs_a_reason; app/crud/vendor_credit.py _find_duplicate; epms/src/pages/vendorcredits/ManualCreditModal.tsx (files required) and CreditDetailDrawer.tsx (needsEvidence)"
+    provenance: pinned
+    test:
+      - "finance-api/tests/test_vendor_credit.py::test_post_manual_credit_requires_notes"
+      - "finance-api/tests/test_vendor_credit.py::test_manual_credit_collides_with_an_uploaded_one_of_the_same_number"
+      - "tests/test_rule_registry.py::test_a_manual_credit_needs_its_email_on_screen"

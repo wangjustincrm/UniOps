@@ -228,9 +228,20 @@ async def process_steps(doc_type: str, token: str) -> dict:
         # could not be read, and saying so beats describing one from memory.
         available = False
 
+    # How every chain behaves — resuming after a return, the same approver on
+    # two steps, an empty post, the System Admin — from approval-api, beside
+    # the code that does it. A process question often carries one of these
+    # ("退回后重新提交会从第一步开始吗？" came here and was answered "yes,
+    # from the top" with only the steps to go on — ISS-0018).
+    from app.services import rule_registry
+    engine = await rule_registry._remote_rules(token) if available else None
+
     return {
         "doc_type": doc_type,
         "label": PROCESS_LABELS.get(doc_type, doc_type.upper()),
+        **({"engine_rules": [{"id": r["id"], "answer": r["answer"]} for r in engine
+                             if r.get("area") == "approval_engine"]}
+           if engine is not None else {}),
         "steps": [{
             "index": i + 1,
             "role": s.get("role"),

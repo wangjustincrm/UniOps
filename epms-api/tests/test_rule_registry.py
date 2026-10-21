@@ -914,3 +914,29 @@ def test_notification_channel_is_a_personal_setting():
 def test_the_signature_is_set_in_my_profile():
     page = _src("epms/src/pages/profile/ProfilePage.tsx")
     assert 'SectionCard title="My Signature"' in page
+
+
+def test_a_manual_credit_needs_its_email_on_screen():
+    modal = _src("epms/src/pages/vendorcredits/ManualCreditModal.tsx")
+    assert "notes: !notes.trim()," in modal and "files: files.length === 0," in modal
+    drawer = _src("epms/src/pages/vendorcredits/CreditDetailDrawer.tsx")
+    assert "credit.source === 'manual' && atts.isSuccess && files.length === 0" in drawer
+
+
+async def test_a_process_answer_carries_the_engines_rules(monkeypatch):
+    """"请购单被退回后重新提交，会从第一步重新审批吗？" often lands on
+    explain_process(pr); it now has the resume rule there too (ISS-0018)."""
+    from app.services import approval_client, guide_view
+
+    async def fake_forward(method, path, token, json=None):
+        if path == "/workflows/rules":
+            return 200, {"rules": [
+                {"id": "returned_document_resumes_at_the_returning_step",
+                 "area": "approval_engine", "answer": "resumes"},
+                {"id": "delegation_is_one_level", "area": "delegation", "answer": "x"}]}
+        return 200, {"doc_type": "pr", "steps": [{"role": "dept_manager"}]}
+
+    monkeypatch.setattr(approval_client, "forward", fake_forward)
+    got = await guide_view.process_steps("pr", "t")
+    assert [r["id"] for r in got["engine_rules"]] == [
+        "returned_document_resumes_at_the_returning_step"]

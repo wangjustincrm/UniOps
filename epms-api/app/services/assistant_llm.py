@@ -1418,7 +1418,10 @@ You are helping a colleague who may never have been trained on this system.
   were given. Never name the last approver as the one who pays: tested on
   "AP Clerk 能执行付款吗？", the reply said the Finance Manager executes the
   payment because that step is last — invented, and wrong.
-- `rules` (document types; for a PR process, the over-budget rules) and
+- `rules` (document types; for a PR process, the over-budget rules),
+  `engine_rules` (processes: how every chain behaves — resuming after a
+  return, one person on two steps, an empty post, the System Admin, who may
+  approve or cancel, cross-department payments) and
   `how_approvals_are_given` (processes) state how
   the system behaves, each one verified against the code. When the question is
   one of them, the rule IS the answer: give it plainly and the same way every
