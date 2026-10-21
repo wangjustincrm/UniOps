@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.current_step import CurrentStep
 
@@ -108,6 +108,27 @@ class PaCreate(BaseModel):
         return self
 
 
+class DirectPaCreate(BaseModel):
+    """EPMS Direct PA: pays invoices matched to no PO and no agreement
+    (invoices.match_route='direct'), charged to the department / cost centre /
+    budget account chosen here. Amounts come from the invoices."""
+    invoice_ids: list[uuid.UUID] = Field(min_length=1)
+    department_id: uuid.UUID
+    cost_center_id: uuid.UUID
+    budget_account_code: str = Field(min_length=1, max_length=100)
+    title: str | None = Field(default=None, max_length=255)
+    # The reason for paying without a PO (事由) — stored in `notes`.
+    notes: str = Field(min_length=1)
+
+    @field_validator("notes", "budget_account_code")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+
+
 class PaUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     # Replaces the PA's whole PO set (draft / returned only, PO route only).
@@ -129,6 +150,10 @@ class PaUpdate(BaseModel):
     prepayment_applied: Decimal | None = Field(default=None, ge=0)
     expected_settlement_date: date | None = None
     line_items: list[PaLineItemIn] | None = None
+    # Direct PA only (source='direct'): what it is charged to.
+    department_id: uuid.UUID | None = None
+    cost_center_id: uuid.UUID | None = None
+    budget_account_code: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class PaActionRequest(BaseModel):
@@ -217,8 +242,15 @@ class PaResponse(BaseModel):
     current_step: CurrentStep | None = None
     agreement_id: uuid.UUID | None = None
     agreement_number: str | None = None
-    # po | agreement | freight (direct never reaches EPMS's endpoints)
+    # po | agreement | freight | direct (OA's oa_direct never reaches EPMS's endpoints)
     source: str = "po"
+    # Direct PA only: what it is charged to (labels resolved on read).
+    department_id: uuid.UUID | None = None
+    department_name: str | None = None
+    cost_center_id: uuid.UUID | None = None
+    cost_center_code: str | None = None
+    cost_center_name: str | None = None
+    budget_account_code: str | None = None
     # Freight PA only, on the detail endpoint: the cost-centre split.
     cost_allocations: list[PaCostAllocationResponse] | None = None
 

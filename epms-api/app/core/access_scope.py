@@ -654,6 +654,66 @@ async def visible_agreement_subquery(
     return select(PurchaseAgreement.id).where(or_(*conds))
 
 
+async def visible_direct_pa_subquery(
+    db: AsyncSession,
+    user: dict,
+    codes: set[str] | None = None,
+    task_user_ids: set[uuid.UUID] | None = None,
+) -> Optional[Select]:
+    """Ids of the EPMS Direct PAs (source='direct') a restricted caller may see,
+    or None (= unrestricted).
+
+    A Direct PA has no PR/PO chain and no agreement to inherit a scope from; it
+    names its own department on the header. Same department-oversight model as
+    `visible_agreement_subquery`, resolved off that column:
+      • any unrestricted role → None
+      • ALWAYS               → its creator; anyone holding an open task on it
+                               (pinned to them or a delegator, or a role pool
+                               they belong to — the pa_dir chain's default
+                               steps are role pools)
+      • dept_manager/dept_admin → PAs charged to their own department
+      • gm / opm                → PAs charged to their mapped departments
+      • director                → PAs charged to their directed departments
+      • supervisor              → PAs raised by a direct report
+    A requester sees only their own (and any they hold a task on).
+    """
+    role = user.get("role", "")
+    user_id = uuid.UUID(user["sub"])
+    if codes is None:
+        codes = await _effective_role_codes(db, role, user_id)
+    if task_user_ids is None:
+        task_user_ids = {user_id} | await active_delegator_ids(db, user_id)
+    if any(c not in _RESTRICTED_ROLES for c in codes):
+        return None
+
+    PA = PaymentApplication
+    conds = [
+        PA.created_by == user_id,
+        PA.id.in_(await _open_task_doc_ids(db, user_id, task_user_ids, "pa")),
+        PA.id.in_(select(Task.document_id).where(
+            Task.document_type == "pa",
+            Task.is_completed.is_(False),
+            Task.assigned_user_id.is_(None),
+            Task.assigned_role.in_(codes),
+        )),
+    ]
+    dept_ids: set[uuid.UUID] = set()
+    if codes & {"dept_manager", "dept_admin"}:
+        own = await _user_dept_id(db, user_id)
+        if own:
+            dept_ids.add(own)
+    for gm_role in ("gm", "opm"):
+        if gm_role in codes:
+            dept_ids.update(await _mapped_dept_ids(db, gm_role))
+    if "director" in codes:
+        dept_ids.update(await _director_dept_ids(db, user_id))
+    if dept_ids:
+        conds.append(PA.department_id.in_(dept_ids))
+    if "supervisor" in codes:
+        conds.append(PA.created_by.in_(select(User.id).where(User.supervisor_id == user_id)))
+    return select(PA.id).where(PA.source == "direct", or_(*conds))
+
+
 async def is_agreement_visible(db: AsyncSession, agreement_id: uuid.UUID, scope: dict) -> bool:
     """True if this agreement falls inside the caller's agr_subq (or the caller
     is unrestricted).
@@ -829,6 +889,23 @@ async def is_pa_visible(db: AsyncSession, pa, scope: dict) -> bool:
     if getattr(pa, "source", None) == "freight":
         return pa.created_by == scope["user_id"] or await sees_all_freight_pas(db, scope)
 
+    # EPMS Direct PA: scoped off its own department (visible_direct_pa_subquery).
+    if getattr(pa, "source", None) == "direct":
+        if pa.created_by == scope["user_id"]:
+            return True
+        direct_subq = scope.get("direct_subq")
+        # None here means "not built", not "unrestricted": unrestricted callers
+        # returned above, and visible_direct_pa_subquery returns None exactly
+        # when visible_pr_subquery does (same _RESTRICTED_ROLES test).
+        if direct_subq is None:
+            return False
+        row = (await db.execute(
+            select(PaymentApplication.id)
+            .where(PaymentApplication.id == pa.id)
+            .where(PaymentApplication.id.in_(direct_subq))
+        )).scalar_one_or_none()
+        return row is not None
+
     # Agreement-sourced PA: scoped off the agreement's own department/owner —
     # there is no PO/PR chain to walk. OA's Direct PAs (both po_id AND
     # agreement_id NULL) never reach here; the endpoint layer 404s those before
@@ -864,6 +941,7 @@ async def build_scope(db: AsyncSession, user: dict) -> dict:
         "pr_subq":  Select | None,  # scalar subquery of visible PR ids
         "po_subq":  Select | None,  # scalar subquery of visible PO ids
         "agr_subq": Select | None,  # scalar subquery of visible agreement ids
+        "direct_subq": Select | None,  # visible EPMS Direct PA ids
         "user_id":  uuid.UUID,
         "role":     str,
         "restrict": bool,           # False = unrestricted (see all)
@@ -892,11 +970,13 @@ async def build_scope(db: AsyncSession, user: dict) -> dict:
     pr_subq = await visible_pr_subquery(db, user, codes=codes, task_user_ids=task_user_ids)
     po_subq = await visible_po_subquery(db, user, pr_subq, task_user_ids=task_user_ids)
     agr_subq = await visible_agreement_subquery(db, user, codes=codes, task_user_ids=task_user_ids)
+    direct_subq = await visible_direct_pa_subquery(db, user, codes=codes, task_user_ids=task_user_ids)
     perms = await _effective_permissions(db, role, user_id)
     return {
         "pr_subq":  pr_subq,
         "po_subq":  po_subq,
         "agr_subq": agr_subq,
+        "direct_subq": direct_subq,
         "user_id":  user_id,
         "role":     role,
         "restrict": pr_subq is not None,

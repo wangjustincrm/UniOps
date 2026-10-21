@@ -54,6 +54,15 @@ export function FreightRouteBadge({ className }: { className?: string }) {
   )
 }
 
+/** Marks an invoice matched for a Direct PA (match_route='direct') in the lists. */
+export function DirectRouteBadge({ className }: { className?: string }) {
+  return (
+    <span className={cn('inline-flex items-center rounded-full border border-warning-200 bg-warning-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning-700', className)}>
+      Direct
+    </span>
+  )
+}
+
 export function MatchBadge({ status, previouslyBilledOn }: { status: MatchStatus | string; previouslyBilledOn?: string | null }) {
   switch (status) {
     case 'auto':

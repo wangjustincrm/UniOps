@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate, formatDateTime, formatUnitPrice } from '@/lib/utils'
 import { usePa, usePaAction, usePaEvents, useConfirmSettlement, usePaWorkflowSteps } from '@/hooks/usePas'
 import { usePosByIds } from '@/hooks/usePos'
-import { useInvoices, useInvoicesForPos } from '@/hooks/useInvoices'
+import { useInvoices, useInvoicesByIds, useInvoicesForPos } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
 import { useAuthStore } from '@/stores/auth.store'
 import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment, useRegeneratePaPdf } from '@/hooks/usePaAttachments'
@@ -395,9 +395,14 @@ export default function PaDetailPage() {
   const poInvoices = useInvoicesForPos(invoicePoIds, invoicePoIds.length > 0)
   const linkedPos = usePosByIds(paPoLinks.map((l) => l.id))
   const allPoLines = linkedPos.items?.flatMap((p) => p.line_items)
-  const invoiceCandidates = agreementInvoiceFilter
-    ? (agreementInvoicesData?.items ?? [])
-    : (poInvoices.items ?? [])
+  // Direct PA: no PO or agreement to list its invoices by — fetch each one.
+  const directInvoiceIds = pa?.source === 'direct' ? pa.invoice_ids : []
+  const directInvoices = useInvoicesByIds(directInvoiceIds, directInvoiceIds.length > 0)
+  const invoiceCandidates = pa?.source === 'direct'
+    ? directInvoices.items
+    : agreementInvoiceFilter
+      ? (agreementInvoicesData?.items ?? [])
+      : (poInvoices.items ?? [])
   const linkedInvoices = invoiceCandidates.filter((inv) => pa?.invoice_ids.includes(inv.id))
   const { user } = useAuthStore()
   // Same hook/pattern InvoiceDetailPage.tsx uses for its 3-way-match tolerance.
@@ -451,7 +456,11 @@ export default function PaDetailPage() {
   // (pa.cost_allocations). Every PO/agreement-shaped block below is swapped
   // for the allocation table rather than left to render empty.
   const isFreight = pa.source === 'freight'
-  const canSubmitFreight = isFreight && (['draft', 'returned'] as PaStatus[]).includes(pa.status)
+  // Direct PA: invoices matched to no PO and no agreement, charged to the
+  // department / cost center / budget account on the PA itself. Like a Freight
+  // PA it is created as a draft and submitted from here (no PO edit flow).
+  const isDirect = pa.source === 'direct'
+  const canSubmitFreight = (isFreight || isDirect) && (['draft', 'returned'] as PaStatus[]).includes(pa.status)
   const handleSubmitFreight = () => {
     if (paAction.isPending) return
     paAction.mutate(
@@ -569,7 +578,7 @@ export default function PaDetailPage() {
               {pa.title}
               <span className="ml-2 text-neutral-400">·</span>
               {(() => {
-                const n = isFreight ? pa.invoice_ids.length : linkedInvoices.length
+                const n = isFreight || isDirect ? pa.invoice_ids.length : linkedInvoices.length
                 return <span className="ml-2 text-neutral-400">{n} invoice{n !== 1 ? 's' : ''}</span>
               })()}
             </p>
@@ -649,8 +658,15 @@ export default function PaDetailPage() {
                   {[
                     { label: 'PA Number',    value: pa.pa_number },
                     { label: 'Vendor',       value: pa.vendor_name },
-                    { label: 'PA Type',      value: isFreight ? 'Freight (courier invoices)' : (PA_TYPE_LABEL[pa.pa_type] ?? 'Regular Payment') },
+                    { label: 'PA Type',      value: isFreight ? 'Freight (courier invoices)'
+                        : isDirect ? 'Direct (no PO or agreement)'
+                        : (PA_TYPE_LABEL[pa.pa_type] ?? 'Regular Payment') },
                     { label: 'Created',      value: formatDate(pa.created_at) },
+                    ...(isDirect ? [
+                      { label: 'Department',     value: pa.department_name ?? '—' },
+                      { label: 'Cost Center',    value: pa.cost_center_code ? `${pa.cost_center_code} — ${pa.cost_center_name ?? ''}` : '—' },
+                      { label: 'Budget Account', value: pa.budget_account_code ?? '—' },
+                    ] : []),
                     ...(pa.pa_type === 'prepayment' && pa.prepayment_pct ? [
                       { label: 'Prepayment %', value: `${pa.prepayment_pct}%` },
                       { label: 'Expected Settlement', value: pa.expected_settlement_date ? formatDate(pa.expected_settlement_date) : '—' },
@@ -665,7 +681,7 @@ export default function PaDetailPage() {
 
                 {pa.notes && (
                   <div className="mt-4 pt-4 border-t border-neutral-100">
-                    <p className="text-xs text-neutral-500 mb-1">Notes</p>
+                    <p className="text-xs text-neutral-500 mb-1">{isDirect ? 'Reason for payment' : 'Notes'}</p>
                     <p className="whitespace-pre-wrap break-words text-sm text-neutral-700">{pa.notes}</p>
                   </div>
                 )}
@@ -963,8 +979,9 @@ export default function PaDetailPage() {
               <TimelineStep key={i} {...step} />
             ))}
             {/* The chain is PO/agreement-pivoted and would render empty for a
-                Freight PA; its documents are in the Cost Allocation table. */}
-            {!isFreight && <DocumentChainTree currentType="pa" id={pa.id} />}
+                Freight PA (its documents are in the Cost Allocation table) or a
+                Direct PA (its invoices are under Linked Documents). */}
+            {!isFreight && !isDirect && <DocumentChainTree currentType="pa" id={pa.id} />}
           </div>
         </div>
       </div>

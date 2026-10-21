@@ -344,13 +344,17 @@ def _ob_step_waived(node: dict, cfg_mode: str) -> str | None:
 def workflow_key(doc_type: str, doc: Any) -> str:
     """Which workflow_defs chain a document walks.
 
-    The chain key is the document type, except for a Freight PA: it stays a
-    `pa` document — its tasks, events, signatories, inbox links and task
-    liveness are all `pa`'s — but walks the `pa_frt` chain (OPM → GM →
-    Finance Manager → Finance BP by default; admins edit it in Portal).
+    The chain key is the document type, except for a Freight PA and an EPMS
+    Direct PA: each stays a `pa` document — its tasks, events, signatories,
+    inbox links and task liveness are all `pa`'s — but walks its own chain:
+    `pa_frt` (OPM → GM → Finance Manager → Finance BP by default) or `pa_dir`
+    (Finance BP → Finance Manager by default — the "PA (Direct)" workflow OA's
+    retired Direct PA used). Admins edit both in Portal.
     """
     if doc_type == "pa" and getattr(doc, "source", None) == "freight":
         return "pa_frt"
+    if doc_type == "pa" and getattr(doc, "source", None) == "direct":
+        return "pa_dir"
     return doc_type
 
 
@@ -814,6 +818,13 @@ async def _routing_department_id(
     # 那步落到了协议 Owner / AP 代建人所在部门的经理身上,而不是协议上填的部门。
     # 口径与协议本身(上面的 "agr" 分支)以及可见性(epms-api crud/pa.py::get_all
     # 按 PurchaseAgreement.department_id 收窄 PA 列表)保持一致。
+    # EPMS Direct PA: no PO, no agreement — it names its department itself.
+    # Same column epms-api's visibility scope reads (visible_direct_pa_subquery).
+    if doc_type == "pa" and getattr(doc, "source", None) == "direct":
+        dept = getattr(doc, "department_id", None)
+        if dept:
+            return dept
+
     if doc_type in ("pa", "pa_dir"):
         agr_id = getattr(doc, "agreement_id", None)
         if agr_id:

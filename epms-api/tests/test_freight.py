@@ -362,7 +362,8 @@ async def test_restricted_chain_approver_can_open_freight_pa(test_engine, admin_
 
 
 async def test_direct_pa_still_hidden(test_engine, admin_client, world):
-    """OA's retired Direct PA (no PO, no agreement, not freight) stays out of EPMS."""
+    """OA's retired Direct PA (no PO, no agreement, source oa_direct since
+    dp01_direct_pa — 'direct' is now EPMS's own Direct PA) stays out of EPMS."""
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     from app.models.pa import PaymentApplication
     async with factory() as db:
@@ -370,7 +371,7 @@ async def test_direct_pa_still_hidden(test_engine, admin_client, world):
         pa = PaymentApplication(pa_number=f"PA-DIR-x{uuid.uuid4().hex[:4]}", title="Direct",
                                 vendor_id=world["ups_vendor"], vendor_name="UPS", invoice_ids=[],
                                 gr_ids=[], subtotal=Decimal("1"), payment_amount=Decimal("1"),
-                                created_by=uid, source="direct")
+                                created_by=uid, source="oa_direct")
         db.add(pa)
         await db.commit()
         pid = pa.id

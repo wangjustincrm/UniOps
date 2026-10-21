@@ -33,7 +33,7 @@ import { PdfSplitPanel } from './PdfSplitPanel'
 import { readPageCount, splitPdf, type PageGroup } from '@/lib/pdf-split'
 import { AssignMatchDialog } from './AssignMatchDialog'
 import { CourierInvoiceReview } from './CourierInvoiceReview'
-import { FreightRouteBadge } from '@/pages/freight/freightUi'
+import { DirectRouteBadge, FreightRouteBadge } from '@/pages/freight/freightUi'
 import { useFreightAccess, useFreightCarriers } from '@/hooks/useFreight'
 import { InvoiceChainDrawer } from './InvoiceChainDrawer'
 
@@ -1687,7 +1687,7 @@ function AllInvoicesTab() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all')
   const [overdueOnly, setOverdueOnly] = useState(false)
-  const [route, setRoute] = useState<'' | 'po' | 'agreement' | 'freight'>('')
+  const [route, setRoute] = useState<'' | 'po' | 'agreement' | 'freight' | 'direct'>('')
   const [chainInvoiceId, setChainInvoiceId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
@@ -1731,6 +1731,7 @@ function AllInvoicesTab() {
           <option value="po">PO</option>
           <option value="agreement">Agreement</option>
           <option value="freight">Freight</option>
+          <option value="direct">Direct PA</option>
         </select>
         <div className="flex flex-wrap gap-1.5">
           {(['all', 'unmatched', 'matched', 'match_review', 'exception', 'approved', 'paid'] as const).map((s) => (
@@ -1783,6 +1784,7 @@ function AllInvoicesTab() {
                   <td className="px-4 py-3 text-neutral-700">
                     {inv.vendor_name}
                     {inv.match_route === 'freight' && <FreightRouteBadge className="ml-2" />}
+                    {inv.match_route === 'direct' && <DirectRouteBadge className="ml-2" />}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-neutral-500">{inv.vendor_invoice_number}</td>
                   <td className="px-4 py-3 font-mono text-xs font-semibold text-neutral-900">

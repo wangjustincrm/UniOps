@@ -544,3 +544,99 @@ async def test_unmatched_freight_invoice_is_reported_not_exported(db_session):
     heads, bodies, errors = await build_export_rows(db_session, [ap.id])
     assert heads == [] and bodies == []
     assert errors[0]["reason"].startswith("courier invoice not matched")
+
+
+async def test_direct_invoice_takes_its_direct_pas_dimensions(db_session):
+    """EPMS Direct PA (match_route='direct'): no PO, no PR — department, cost
+    centre and budget account come from the head of the Direct PA paying it.
+    The PA's own department wins over its cost centre's."""
+    from app.models.mirrors import CostCenter, Department, Invoice, User
+    from app.models.pa import PaymentApplication
+    from app.services.nc_ap_export import build_export_rows
+    src, ops, qa, cc, creator = (uuid.uuid4() for _ in range(5))
+    db_session.add_all([
+        Department(id=ops, code="0104", name="Production", is_active=True),
+        Department(id=qa, code="0105", name="Quality Assurance", is_active=True),
+        CostCenter(id=cc, code="MOH-0104-P01", name="Line 1", department_id=ops),
+        User(id=creator, email="d@x.com", full_name="Dana Direct"),
+        Invoice(id=src, internal_ref="INV-2026-9101", vendor_invoice_number="CAL-77",
+                vendor_id=uuid.uuid4(), vendor_name="Calibration Co", amount=Decimal("1000.00"),
+                tax_amount=Decimal("130.00"), total_amount=Decimal("1130.00"), currency="CAD",
+                invoice_date=date(2026, 10, 15), due_date=date(2026, 11, 15), status="matched",
+                match_route="direct"),
+        # A cancelled earlier attempt must not be the one read.
+        PaymentApplication(
+            id=uuid.uuid4(), pa_number="PA-DIR-OLD", title="t", pa_type="regular",
+            status="cancelled", source="direct", vendor_id=uuid.uuid4(), vendor_name="Calibration Co",
+            payment_amount=Decimal("1130.00"), currency="CAD", invoice_ids=[str(src)],
+            cost_center_id=None, budget_account_code="WRONG", department_id=None,
+            created_by=creator),
+        PaymentApplication(
+            id=uuid.uuid4(), pa_number="PA-DIR-1", title="t", pa_type="regular",
+            status="approved", source="direct", vendor_id=uuid.uuid4(), vendor_name="Calibration Co",
+            payment_amount=Decimal("1130.00"), currency="CAD", invoice_ids=[str(src)],
+            cost_center_id=cc, budget_account_code="CRM0150101", department_id=qa,
+            created_by=creator),
+    ])
+    await db_session.flush()
+    ap = await _mk_ap(db_session, src_id=src, amount="1000.00", tax="130.00",
+                      number="AP-2026-0910", vendor="Calibration Co")
+    await _mk_accrual(db_session, ap)
+
+    heads, bodies, errors = await build_export_rows(db_session, [ap.id])
+    assert errors == [] and len(bodies) == 1
+    b = bodies[0]
+    assert b["revexp"] == "CRM0150101"
+    assert b["department"] == "0105"           # the PA's department, not the CC's 0104
+    assert b["account_path"] == "510101"       # MOH cost centre
+    assert b["employee"] == "Dana Direct"
+    assert b["money"] == "1130.00"
+    assert heads[0]["revexp"] == "CRM0150101"
+
+
+async def test_direct_invoice_without_a_pa_is_reported_not_exported(db_session):
+    from app.models.mirrors import Invoice
+    from app.services.nc_ap_export import build_export_rows
+    src = uuid.uuid4()
+    db_session.add(Invoice(
+        id=src, internal_ref="INV-2026-9102", vendor_invoice_number="CAL-78",
+        vendor_id=uuid.uuid4(), vendor_name="Calibration Co", amount=Decimal("10.00"),
+        tax_amount=Decimal("1.30"), total_amount=Decimal("11.30"), currency="CAD",
+        invoice_date=date(2026, 10, 15), due_date=date(2026, 11, 15), status="matched",
+        match_route="direct"))
+    await db_session.flush()
+    ap = await _mk_ap(db_session, src_id=src, amount="10.00", tax="1.30", number="AP-2026-0911")
+    await _mk_accrual(db_session, ap)
+    heads, bodies, errors = await build_export_rows(db_session, [ap.id])
+    assert heads == [] and bodies == []
+    assert errors[0]["reason"] == "direct invoice not on a Direct PA yet"
+
+
+async def test_direct_invoice_falls_back_to_the_cost_centres_department(db_session):
+    """A Direct PA with no department_id (written before it was required, or by
+    Data Maintenance) still exports its cost centre's department."""
+    from app.models.mirrors import CostCenter, Department, Invoice, User
+    from app.models.pa import PaymentApplication
+    from app.services.nc_ap_export import build_export_rows
+    src, ops, cc, creator = (uuid.uuid4() for _ in range(4))
+    db_session.add_all([
+        Department(id=ops, code="0104", name="Production", is_active=True),
+        CostCenter(id=cc, code="MOH-0104-P01", name="Line 1", department_id=ops),
+        User(id=creator, email="e@x.com", full_name="Eli Direct"),
+        Invoice(id=src, internal_ref="INV-2026-9103", vendor_invoice_number="CAL-79",
+                vendor_id=uuid.uuid4(), vendor_name="Calibration Co", amount=Decimal("50.00"),
+                tax_amount=Decimal("6.50"), total_amount=Decimal("56.50"), currency="CAD",
+                invoice_date=date(2026, 10, 15), due_date=date(2026, 11, 15), status="matched",
+                match_route="direct"),
+        PaymentApplication(
+            id=uuid.uuid4(), pa_number="PA-DIR-2", title="t", pa_type="regular",
+            status="approved", source="direct", vendor_id=uuid.uuid4(), vendor_name="Calibration Co",
+            payment_amount=Decimal("56.50"), currency="CAD", invoice_ids=[str(src)],
+            cost_center_id=cc, budget_account_code="CRM0150101", department_id=None,
+            created_by=creator),
+    ])
+    await db_session.flush()
+    ap = await _mk_ap(db_session, src_id=src, amount="50.00", tax="6.50", number="AP-2026-0912")
+    await _mk_accrual(db_session, ap)
+    _, bodies, errors = await build_export_rows(db_session, [ap.id])
+    assert errors == [] and bodies[0]["department"] == "0104"

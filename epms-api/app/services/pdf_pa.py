@@ -103,6 +103,12 @@ def generate_pa_pdf(
     if getattr(pa, "source", None) == "freight":
         # No PO: say what the payment is instead of printing an empty cell.
         po_label, po_value = "Payment For", "Courier freight (cost split below)"
+    elif getattr(pa, "source", None) == "direct":
+        # Direct PA: no PO either — print what it is charged to.
+        po_label = "Charged To"
+        po_value = " · ".join(v or "—" for v in (
+            getattr(pa, "department_name", None), getattr(pa, "cost_center_code", None),
+            getattr(pa, "budget_account_code", None)))
 
     meta = Table(
         [

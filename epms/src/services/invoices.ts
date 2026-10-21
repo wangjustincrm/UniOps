@@ -118,7 +118,9 @@ export interface ApiInvoice {
   // "po" even after review/exception handling.
   // 'freight' = a courier invoice, matched against shipments on the Freight
   // page (/freight/invoices/:id); epms-api refuses PO/agreement matching on it.
-  match_route?: 'po' | 'agreement' | 'freight' | null
+  // 'direct' = matched to no PO and no agreement (Match → Direct PA); it is
+  // paid by a Direct PA (Payment Applications → Create Direct PA).
+  match_route?: 'po' | 'agreement' | 'freight' | 'direct' | null
   // 1A has no receipt evidence at all: every agreement match is flagged and
   // must carry a reason. This is the escape-hatch health metric Finance watches.
   legacy_settlement?: boolean
@@ -229,8 +231,8 @@ export interface InvoiceFilters {
   // Past the due date and not yet paid, evaluated against the PLANT's calendar
   // day on the server (the API container runs in UTC).
   overdue?: boolean
-  // po | agreement | freight. 'po' includes legacy rows with no route.
-  route?: 'po' | 'agreement' | 'freight'
+  // po | agreement | freight | direct. 'po' includes legacy rows with no route.
+  route?: 'po' | 'agreement' | 'freight' | 'direct'
   page?: number
   page_size?: number
 }
@@ -309,6 +311,14 @@ export const invoiceService = {
 
   unmatchGr: (id: string, reason: string) =>
     api.post<ApiInvoice>(`/invoices/${id}/unmatch-gr`, { reason }),
+
+  // Direct PA route: match to no PO and no agreement (same rights as a PO
+  // match), and its reversal (AP only, refused while a live PA lists it).
+  markDirect: (id: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/mark-direct`, {}),
+
+  unmatchDirect: (id: string, reason: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/unmatch-direct`, { reason }),
 
   // Candidate POs for allocation (same vendor, open statuses) — authorized by
   // the invoice's match rights, NOT the caller's general PO scope, so task

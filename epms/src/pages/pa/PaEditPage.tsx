@@ -20,6 +20,7 @@ import type { ApiPo } from '@/services/po'
 import { DueWindowNotice } from './DueWindowNotice'
 import { DerivedPaLinesTable } from './DerivedPaLinesTable'
 import { FreightPaEditForm } from './FreightPaEditForm'
+import { DirectPaEditForm } from './DirectPaEditForm'
 import { derivePaLines } from '@/lib/paLinesFromInvoices'
 import { dueWindowViolation } from './invoiceDueWindow'
 
@@ -27,7 +28,8 @@ import { dueWindowViolation } from './invoiceDueWindow'
  * A Freight PA takes its amounts, invoices and cost split from the Freight page
  * (epms-api rejects any other field on PATCH), so it gets a title/notes-only
  * form instead of the PO/agreement editor below, which would try to rebuild
- * lines and amounts from a PO it does not have.
+ * lines and amounts from a PO it does not have. A Direct PA likewise takes
+ * its amounts from its invoices and gets its own form (charged-to + reason).
  */
 export default function PaEditPage() {
   const { id } = useParams<{ id: string }>()
@@ -40,6 +42,7 @@ export default function PaEditPage() {
     )
   }
   if (pa?.source === 'freight') return <FreightPaEditForm pa={pa} />
+  if (pa?.source === 'direct') return <DirectPaEditForm pa={pa} />
   return <PoPaEditPage />
 }
 

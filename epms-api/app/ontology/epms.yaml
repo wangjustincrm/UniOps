@@ -439,10 +439,11 @@ entities:
       # Added 2026-10-19 (ISS-0013).
       billed_against:
         kind: enum
-        label: "What the invoice is billed against: purchase_order, agreement, or
+        label: "What the invoice is billed against: purchase_order, agreement,
           freight (a courier invoice, matched to shipments — never to a PO or
-          agreement); none = not matched to a PO or agreement yet"
-        values: [purchase_order, agreement, freight, none]
+          agreement), or direct (matched to no PO and no agreement, paid by a
+          Direct PA); none = not matched yet"
+        values: [purchase_order, agreement, freight, direct, none]
       po_receipt_recorded:
         kind: bool
         label: "PO-route invoices only: whether the PO has any receipt evidence
@@ -476,8 +477,8 @@ entities:
     model: PaymentApplication
     label: "Payment Application (PA) — the request to actually pay a vendor"
     perm_key: view_pa
-    # Also carries an ownership filter, not just visibility: OA's Direct PAs have
-    # both po_id and agreement_id NULL and are not EPMS's rows at all.
+    # Also carries an ownership filter, not just visibility: OA's retired Direct
+    # PAs (source oa_direct) are not EPMS's rows at all.
     scope: pa
     date_field: created_at
     fields:
@@ -496,6 +497,16 @@ entities:
         kind: enum
         label: "Payment type"
         values: [regular, prepayment, settlement, balance]
+      # Added 2026-10-20 with the EPMS Direct PA.
+      source:
+        kind: enum
+        label: "What the payment is raised against: po (purchase orders),
+          agreement, freight (courier invoices), or direct (invoices with no PO
+          and no agreement — a Direct PA, charged to the department, cost center
+          and budget account chosen on it). oa_direct rows are OA's retired
+          Direct PAs and are never returned"
+        values: [po, agreement, freight, direct, oa_direct]
+      budget_account_code: {kind: text, label: "Budget account charged, for Direct PAs"}
       vendor_name: {kind: text, label: "Vendor name"}
       po_number: {kind: text, label: "PO number being paid"}
       agreement_number: {kind: text, label: "Agreement number, for agreement payments"}

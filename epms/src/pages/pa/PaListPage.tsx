@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, FileText, CreditCard, Loader2, Truck } from 'lucide-react'
+import { Plus, Search, FileText, CreditCard, Loader2, Truck, FileInput } from 'lucide-react'
 import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -138,6 +138,14 @@ export default function PaListPage() {
               New Freight PA
             </Button>
           )}
+          {/* Direct PA: invoices matched to no PO and no agreement (Match →
+              Direct PA on the invoice). Same epms.pa.write gate as POST /pa/direct. */}
+          {canCreate && (
+            <Button variant="secondary" onClick={() => openTab('/pa/new', 'source=direct')} className="gap-2">
+              <FileInput className="h-4 w-4" />
+              Create Direct PA
+            </Button>
+          )}
           {canCreate && (
             <Button onClick={() => openTab('/pa/new')} className="gap-2">
               <Plus className="h-4 w-4" />
@@ -229,6 +237,14 @@ export default function PaListPage() {
                         though the other orders were not being paid. */}
                     {pa.source === 'freight' && (
                       <span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">Freight</span>
+                    )}
+                    {pa.source === 'direct' && (
+                      <>
+                        <span className="inline-flex items-center rounded-full border border-warning-200 bg-warning-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning-700">Direct</span>
+                        {pa.cost_center_code && (
+                          <div className="font-mono text-[10px] text-neutral-500 mt-0.5">{pa.cost_center_code} · {pa.budget_account_code}</div>
+                        )}
+                      </>
                     )}
                     {(pa.po_numbers?.length ? pa.po_numbers : (pa.po_number ? [pa.po_number] : [])).map((n) => (
                       <div key={n} className="font-mono text-xs text-neutral-600">{n}</div>

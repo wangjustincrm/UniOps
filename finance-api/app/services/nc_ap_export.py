@@ -11,6 +11,9 @@ billno = UniOps AP number (the JV cross-check anchor). Dimension chains:
   department keyword (classify_expense_account); buysell is per-row (CAD→2, else→4).
 2026-08-05 change: ONE summary body row per invoice (was one row per PO
   allocation) — money = AP head total, dims from the largest allocation.
+2026-10-20: an EPMS Direct PA invoice (match_route='direct') takes its
+  dimensions from the head of the Direct PA that pays it (department / cost
+  centre / budget account chosen on the PA) — not exportable until one does.
 2026-10-19 exception: a courier invoice (invoices.match_route='freight') keeps
   ONE BODY ROW PER COST CENTRE, revexp = the freight budget account. One UPS
   bill routinely carries several departments' shipments, and NC journal lines
@@ -183,12 +186,35 @@ async def build_export_rows(db: AsyncSession, ap_ids: list) -> tuple[list, list,
         # per-source dimension rows:
         # [(notax, tax, cc_code_uniops, dept_code_nc, revexp_code, employee)]
         rows: list[tuple] = []
-        freight = False
+        freight = direct = False
         if ap.source == "epms":
             route = (await db.execute(select(Invoice.match_route).where(
                 Invoice.id == ap.source_invoice_id))).scalar_one_or_none()
             freight = route == "freight"
-        if freight:
+            direct = route == "direct"
+        if direct:
+            # EPMS Direct PA (no PO, no agreement): the dimensions are on the
+            # PA that pays the invoice — department, cost centre and budget
+            # account chosen when it was raised.
+            pa = (await db.execute(select(PaymentApplication).where(
+                PaymentApplication.invoice_ids.contains([str(ap.source_invoice_id)]),
+                PaymentApplication.status != "cancelled").limit(1))).scalars().first()
+            if pa is None:
+                errors.append({"ap_id": str(ap.id), "ap_number": ap.ap_invoice_number,
+                               "reason": "direct invoice not on a Direct PA yet"})
+                continue
+            cc = ccs.get(pa.cost_center_id)
+            dept = depts_by_id.get(pa.department_id) if pa.department_id else None
+            if dept is None and cc is not None and cc.department_id:
+                dept = depts_by_id.get(cc.department_id)
+            creator = await _lookup_map(db, User, [pa.created_by])
+            rows.append((ap.amount, ap.tax_amount,
+                         NC_CC_BY_UNIOPS.get(cc.code, "") if cc else "",
+                         dept.code if dept else _dept_code_from_cc(cc, None),
+                         pa.budget_account_code or "",
+                         next(iter(creator.values())).full_name if creator else "",
+                         cc.code if cc else None, dept.name if dept else None))
+        elif freight:
             split: dict = {}
             for cc_id, amt, tx in (await db.execute(
                     select(FreightInvoiceLine.cost_center_id, FreightInvoiceLine.amount,

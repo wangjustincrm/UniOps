@@ -1,9 +1,13 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.2
-**Date:** 2026-10-19
+**Version:** 2.3
+**Date:** 2026-10-20
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.3** (2026-10-20)
+
+- The **PA (Direct)** workflow (`pa_dir`) is now the chain of EPMS's Direct PA (EPMS.md §3.22): a Payment Application raised from invoices with no PO or agreement stays a `pa` document but walks this chain. Department-based steps added to it route on the department named on the PA.
 
 **What changed in version 2.2** (2026-10-19)
 
@@ -456,7 +460,7 @@ This is the central configuration of approval chains for every module. Changes a
 | `agr` | Purchase Agreement | dept_manager → procurement_manager → finance_manager |
 | `pa` | Payment Application (PO-linked) | dept_manager → director → gm_or_opm → finance_bp → finance_manager (a finance_director step may be added as payment sign-off) |
 | `pa_frt` | Freight PA chain — a Payment Application raised from EPMS → Freight (courier invoices, no PO) stays a `pa` document but walks this chain. Only company-level roles are offered here, since one courier invoice covers several departments | opm → gm → finance_manager → finance_bp |
-| `pa_dir` | Direct Payment Application | finance_bp → finance_manager |
+| `pa_dir` | Direct PA chain — a Payment Application raised in EPMS from invoices with no PO or agreement (EPMS.md §3.22) stays a `pa` document but walks this chain; department-based steps route on the department named on the PA. (OA's retired PA-DIRs used it too.) | finance_bp → finance_manager |
 | `exp`, `mil`, `trv` | Expense, mileage and travel claims | dept_manager → finance_bp |
 | `tra` | Travel Application | dept_manager → finance_manager → gm |
 | `cfm` / `cfm_<code>` | Custom forms (a named form falls back to `cfm`) | dept_manager |
