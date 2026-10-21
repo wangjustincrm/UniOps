@@ -26,7 +26,7 @@ This folder holds the **authoritative, maintained PRD for every UniOps module**.
 |---|---|---|---|
 | Safety (EHS) | [SAFETY.md](SAFETY.md) | 0.5 | In development: built on branch `feature/ehs-safety`, not on `main`, not deployed |
 | VMS visitor self-registration & QR check-in | [VMS-SELF-REGISTRATION.md](VMS-SELF-REGISTRATION.md) | 0.2 | Proposed: stakeholder decisions pending |
-| Order Bridge (migration from Zoho) | [ORDER-BRIDGE.md](ORDER-BRIDGE.md) | 1.0 | Proposed: in team review |
+| Order Bridge (migration from Zoho) | [ORDER-BRIDGE.md](ORDER-BRIDGE.md) | 1.2 | Proposed — decisions applied, awaiting approval |
 | CMMS — maintenance management | [CMMS.md](CMMS.md) | 2.1 | Proposed: not started |
 
 ## Where shared behaviour is specified

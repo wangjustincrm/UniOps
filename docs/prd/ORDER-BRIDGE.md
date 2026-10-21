@@ -1,16 +1,46 @@
 # Order Bridge — Product Requirements Document
 
-- **Version:** 1.0
-- **Date:** 2026-10-16
-- **Status:** Proposed (in team review)
-- **Scope:** Rebuild the Zoho Creator "Order Bridge" order hub (Shopify and retailer EDI orders, Radiant 3PL EDI, retailer invoicing, lot-level inventory) as a new UniOps module, and retire Zoho One.
-- **Source:** Order Bridge PRD (English edition of the trilingual PRD issued 2026-10-09, based on the complete exported Zoho application script), plus the team review comments collected on the PRD review board through 2026-10-15.
+- **Version:** 1.2
+- **Date:** 2026-10-21
+- **Status:** Proposed — decisions applied, awaiting approval
+- **Scope:** Rebuild the Zoho Creator "Order Bridge" order hub (Shopify and retailer EDI orders, Radiant 3PL EDI including transfers, retailer invoicing; shipment lots, expiry dates and transfer receipts recorded, with the inventory ledger in the next version) as a new UniOps module, and retire Zoho One.
+- **Source:** Order Bridge PRD (English edition of the trilingual PRD issued 2026-10-09, based on the complete exported Zoho application script), the 39 team review comments collected on the PRD review board (2026-10-13 to 2026-10-15), the earlier SDM PRD (2026-10-01, reference only), and the product owner's decisions of 2026-10-20.
 
 ### What changed in this version
 
-- First entry of Order Bridge in the UniOps PRD set. The analysis of the current Zoho system and the proposed rebuild are carried over from the 2026-10-09 PRD without change.
-- Requirements are restated as numbered functional requirements (FR-OB-xx).
-- The 39 team review comments received on the review board (2026-10-13 to 2026-10-15) are **not yet applied** to the requirements. They are summarised in **Open Items** together with the open questions from the original PRD, for the product owner to accept or reject.
+**1.2 (2026-10-20)** — completeness pass against the original 2026-10-09 PRD and the earlier SDM PRD, and the product owner's decisions D1–D16 (section 13.1).
+
+- Appendix A records the interface formats (X12 envelope, 940/943/945/944/997 segments, 850 and 810 JSON, file names, Shopify mapping, connection endpoints) that FR-OB-20/21 require to be kept.
+- 945 rules: line matching includes Item_Code; order matching handles 9-digit padding and Shopify numbers; one row per W12 lot; idempotency not keyed on tracking (LTL); 945s with no order are kept (FR-OB-25 to FR-OB-25c, FR-OB-28).
+- File intake: store before parse, sha256 content dedup, 60-second rule, after-read policy, classification by ST01 (section 10.8, FR-OB-70 to FR-OB-76).
+- Shopify API: client-credentials auth, no `customer` field, cursor rules (FR-OB-10). Manual-order lifecycle Draft → Active (FR-OB-19a).
+- Smaller fixes: 997 AK5 reason codes, 2-hour ACK timeout default, one open task per problem, authentication failures not retried, stale runs closed, Operations Health checks and dashboard card definitions, print templates, enumerations, settings-key and partner-name migration maps, permission codes.
+- Old orders: historical = below the cut-off or shipped/completed/cancelled in Zoho; in-flight orders continue (FR-OB-17).
+- Product-owner decisions D1–D16 (2026-10-20) applied; see section 13.1. Inventory and Amazon FBA are out of this version; transfers (943/944) are in it (section 10.9, FR-OB-80 to FR-OB-84).
+- Acceptance criteria AC-OB-01 to AC-OB-74 and replay targets added (section 10.10).
+- 945 validation checks (notify only): over-shipment, extra or substituted item, expiry and minimum shelf life per partner, order state, mismatch with the 940, ship date; an extra item matching no 940 line also goes to review; a 945 before any 997 records ACK status Accepted by 945 (FR-OB-25d, AC-OB-56 to AC-OB-62).
+- **Review fixes (2026-10-21):** delivery worklist requires shipment and requested date (FR-OB-31); Shopify lines to ship (FR-OB-11b); UniOps status model with Zoho mapping (section 9.1); notification gate before the channel switch (section 11); permissions updated; acceptance criteria AC-OB-70 to AC-OB-72; no duplicate Shopify fulfillment for orders migrated from Zoho (FR-OB-11); acceptance criteria listed in numeric order; decisions D17–D20 (On Hold principle, one 945 per order, no NC interface, 940 delay from the paid time).
+- **Fresh build, not SDM:** Order Bridge is built as a new module; the earlier SDM code is not continued and its documents are reference material only. Completing our data from Radiant is planned for the next version (FR-OB-01, section 1.3).
+
+**1.1 (2026-10-16)** — the 39 review-board comments are applied to the requirements. Comment numbers (#n) refer to the review board.
+
+- **Partners and 940 sending:** partners are added and edited in the UI; the 940 delay and the Automatic/Manual sending mode are per-partner configuration set by authorised users, not fixed values in this document; "Send 940 now" is available before the delay elapses and after a 997 rejection (FR-OB-03a to FR-OB-03c; #1, #3, #10).
+- **Historical Shopify orders:** the cut-off is kept — old orders must never be fulfilled (FR-OB-17; #6, #27).
+- **Failed 940s:** no automatic retry; the user is notified and resends manually (FR-OB-24; #17).
+- **PO updates:** applied before the 940 is sent; after it is sent, the order is updated and a user is notified (FR-OB-16; #11).
+- **Warehouse-modified order numbers:** 945 matching tolerates a suffix that Radiant appends to the order number; 997s are matched by the control numbers they echo back, so no tolerance is needed there (FR-OB-28, FR-OB-22a; #7).
+- **Scheduler:** configurable interval (default 5 minutes), background process with a lock, no Zoho-style throughput limits, errors never stop the schedule (FR-OB-07, FR-OB-50; #13 to #16, #24).
+- **Business rules instead of Zoho boolean expressions:** payment-hold release, 940 eligibility, 997 matching, 945 line matching and dashboard counts are stated as explicit business rules, which removes the `A && B || C` precedence question; 940 eligibility must pass an acceptance test in the shadow run before any channel cutover (FR-OB-12, FR-OB-03d, FR-OB-03e, FR-OB-22a, FR-OB-25a, FR-OB-52; #26).
+- **Configuration and master data:** SFTP folders (Radiant production `/prod/in`, `/prod/out`), item master, partners, DC routing and settings are editable in the UI with CSV import/export; the one-time Zoho migration uses the same CSV import, so there is no seed function and no configuration data in code; DC data is mandatory for Walmart only (FR-OB-02, FR-OB-03, FR-OB-09; #8, #20, #28, #32, #33).
+- **Notifications and logs:** notification management page; unmapped items notify with full details; logs detailed enough for root-cause analysis (FR-OB-15, FR-OB-56, FR-OB-53; #4, #5, #18, #19).
+- **Invoicing:** invoice email required for the email method, sent to the retailer with the internal employee in copy; invoices are editable; the delivery date is entered manually with reminders (replaced in 1.2 by delivery confirmation, D3) (FR-OB-31 to FR-OB-35; #2, #23, #29 to #31).
+- **EDI:** country defaults to Canada; outbound EDI is validated before sending; known EDI defects may be corrected after confirming with Radiant (FR-OB-20, FR-OB-29, FR-OB-29a; #9, #22, #36).
+- **Cancellations and returns after shipment** become a requirement (FR-OB-19; #12).
+- **Inventory re-evaluation and ledger** are deferred to the next version (section 10.5; #21, #25).
+- **Credentials:** no immediate password rotation; rotation happens at Zoho retirement; ftp-api.com is dropped (#38, #39).
+- Open items answered by the comments are closed in section 13; the rest stay open.
+
+**1.0 (2026-10-16)** — first entry of Order Bridge in the UniOps PRD set, carried over from the 2026-10-09 PRD and restated as numbered requirements (FR-OB-xx).
 
 ---
 
@@ -31,17 +61,26 @@ The analysis is based on the complete application script exported from Zoho Crea
 ### 1.1 In scope
 
 - Inbound orders: Shopify Admin API (JSON) and retailer 850 purchase orders (via TrueCommerce).
-- Unified order records, line items, status tracking, holds and exception review.
-- EDI with Radiant: 940 shipping order, 943 transfer, 945 shipment confirmation, 944 receipt confirmation, 997 functional acknowledgement.
-- Post-shipment write-back: Shopify fulfillment and tracking; 810 invoices to retailers (EDI, email or PDF).
-- Lot-level inventory: on hand, reserved, in transit, available; manual adjustments and reversals.
-- File register, scheduler run records, logs, operations health page.
+- Unified order records, line items, status tracking, holds and exception review; manual orders.
+- EDI with Radiant: 940 shipping order, 945 shipment confirmation, 997 functional acknowledgement, and transfers (943 out, 997 and 944 in; section 10.9).
+- Post-shipment write-back: Shopify fulfillment, tracking and archiving; invoices to retailers by each partner's method (810 JSON via TrueCommerce, email/PDF, or none).
+- Shipment lots, expiry dates and pallet identifiers recorded from 945s (the basis for the next version's inventory ledger and for recalls).
+- File register, scheduler run records, logs, operations health page and order dashboard.
 
 ### 1.2 Out of scope
 
 - Accounting entries, receivables and cash collection. NC remains the financial source of truth; Order Bridge only produces invoice files (see FINANCE.md).
 - Configuration of Shopify, TrueCommerce and Radiant themselves.
 - Generic Zoho platform features (form builder, Zoho user system). UniOps uses its own framework (see PORTAL.md).
+- Reuse of the earlier SDM implementation (`sdm`, `sdm-api`); see FR-OB-01.
+- Inventory: ledger, balances, adjustments and the inventory dashboard move to the next version (section 10.5). No screen in this version shows an inventory figure.
+- Amazon FBA.
+- An interface to NC: Order Bridge does not push orders or invoices to NC in this version (OB-OI-09); NC remains the financial source of truth (FINANCE.md).
+
+### 1.3 Next version
+
+- Inventory ledger, balances, adjustments, re-evaluation and the inventory dashboard (section 10.5).
+- **Completing our data from Radiant:** Amir will obtain data from Radiant to complete and reconcile Order Bridge's records (OB-OI-38).
 
 ## 2. System overview
 
@@ -108,19 +147,23 @@ Both balance tables hold on hand (labelled "Preparing for Fulfillment" in the UI
 - **Items (5, all 6 cans per case):** CF0092 NIURISS Stage 1, CF0093 NIURISS Stage 3, CF0102 NIURISS Smart 1, CF0103 NIURISS Smart 2, CF0110 Walmart Parents Choice 700 g.
 - **Warehouses (3):** CRM (Canada Royal Milk ULC), CLN02 (Radiant Coleraine, default inventory warehouse), MANUAL.
 - **Connections (3):** Radiant SFTP, TrueCommerce SFTP, Shopify Admin API.
+- **Settings keys (Zoho → UniOps):** ERROR_NOTIFICATION_EMAIL and FINANCE_AR_EMAIL → notification settings (FR-OB-56); SHOPIFY_API_VERSION → Shopify connection; SHOPIFY_LAST_SYNC_DATE → Shopify cursor (handed over at cutover); DEFAULT_INVENTORY_WAREHOUSE_CODE → warehouse configuration; RADIANT_ / TRUECOMMERCE_DELETE_AFTER_DOWNLOAD → after-read policy (FR-OB-74). Not migrated: WORKDRIVE_* (file store replaces WorkDrive), RETRY_MAX_COUNT / RETRY_INTERVAL_MINUTES (never read), INVENTORY_RECALC_LOCK_* (replaced by the scheduler lock).
+- **Connection endpoints:** Radiant SFTP `commhub.wheelsgroup.com` (production `/prod/in`, `/prod/out`); TrueCommerce SFTP `sftp.truecommerce.com` (pull from `Export`, send to `Import`); Shopify Admin API.
 - **DC routing:** 457 rows, all Walmart, covering 57 Walmart DCs; no other retailer has routing data.
+
+The table shows the Zoho seed. In UniOps the 940 delay is per-partner configuration set at go-live (FR-OB-03a); it is not fixed by this document.
 
 ### 3.5 Data-model problems to fix in the rebuild
 
 1. The four order status lines overlap; one must be the source and the rest derived.
 2. Most picklists accept values outside the list.
-3. The file register's partner field is a static list that does not match the partner table.
+3. The file register's partner field is a static list that does not match the partner table (JeanCoutu vs Jean Coutu; no Overwaitea or Manual; code also writes "Radiant"). Migration maps these names to partner records; "Radiant" maps to the system field, not a partner.
 4. Some field names contradict their UI labels (on-hand shown as "Preparing for Fulfillment"; delivered quantity shown as "Quantity In").
 5. Adjustments have no warehouse; line numbers are text (10 sorts before 2); quantities mix integers and decimals.
-6. Re-running the seed overwrites configuration edited in the UI; Radiant's seeded paths point to test directories.
+6. Re-running the seed overwrites configuration edited in the UI; Radiant's seeded paths point to test directories. (The rebuild has no seed-initialisation function; see FR-OB-09.)
 7. Two retry settings are never read; one setting read by code is never seeded.
 8. CF0110's UPC has 11 digits; every item but CF0093 shares the same gross weight (likely a placeholder).
-9. **Security:** SFTP passwords and the Shopify token are stored in plain text in the seed function, the connection table and the export file.
+9. **Security:** SFTP passwords and the Shopify token are stored in plain text in the seed function, the connection table and the export file. Risk accepted until cutover; credentials are rotated at Zoho retirement (OB-OI-20, section 11).
 
 ## 4. Order source 1: Shopify
 
@@ -207,81 +250,174 @@ A normal order passes through eight stages: Received → Preparing Warehouse Req
 | Order status | Received, Preparing Warehouse Request, Waiting for Warehouse ACK, Waiting for Warehouse Confirmation, Waiting for Delivery, Waiting for Invoice, Invoice Queued, Completed, Cancelled |
 | Fulfillment status | Pending, 940 Generated, 940 Sent - Waiting for ACK, Waiting for 945, Confirmed, Rejected, Timeout, On Hold, Review Required, Failed (code also writes Payment Required, Fulfilled, Cancelled) |
 | Invoice status | Not Required, Pending, Waiting for Delivery Date, Ready, Queued, Sent, Failed |
-| Transfer status | Draft → Ready To Send → 943 Generated → Waiting for 997 → Waiting for 944 → Received / Partially Received / Discrepancy; Failed on 997 rejection |
-| File processing / ACK | Pending → Processing → Processed / Failed / Skipped (inbound); Ready To Send → Sent / Failed (outbound); ACK Not Required / Waiting / Accepted / Rejected |
+| Transfer status | Draft → Ready To Send → 943 Generated → Waiting for 997 → Waiting for 944 → Received / Partially Received / Discrepancy; Failed on 997 rejection; Cancelled (UniOps, only before the 943 is sent; FR-OB-80) |
+| File processing / ACK | Processing: Pending → Processing → Processed / Failed / Skipped (inbound); Ready To Send → Sending → Sent / Failed (outbound). File status: Ready, Sent, Processed, Accepted, Rejected, Failed, Cancelled. ACK: Not Required / Waiting / Accepted / Accepted by 945 / Rejected / Timeout |
+| File document type | 850_JSON, 850_EDI, 940_EDI, 943_EDI, 944_EDI, 945_EDI, 997_EDI, 810_JSON, INVOICE_EMAIL, SHOPIFY_ORDER_JSON, OTHER |
+| File system / direction | Radiant, Shopify, TrueCommerce, Email; Inbound / Outbound |
+| Order line status | Zoho: Active, Deleted, Shipped, Partially Shipped, Cancelled, Backordered, Error. UniOps (one 945 per order, D18): Active, Shipped, Short Shipped, Cancelled, Error |
+| Order unit of measure | EA, Case, Can |
 
-Values defined but never written (ACK Timeout, 943 Sent, 997 Accepted, transfer Cancelled) must be implemented or removed. **Proposed for UniOps:** the fulfillment and invoice lines are the source; order state is derived from them.
+Values defined but never written (ACK Timeout, 943 Sent, 997 Accepted, transfer Cancelled) must be implemented or removed: UniOps implements ACK Timeout (FR-OB-23) and transfer Cancelled (FR-OB-80) and drops 943 Sent and 997 Accepted, which Waiting for 997 and Waiting for 944 already cover. The UniOps status model, and how each Zoho value maps to it, is in section 9.1.
+
+### 9.1 UniOps status model
+
+Four status lines are the source; each value has a closed list (FR-OB-08). Order state is **derived**, never stored independently, and Zoho's eight-stage Order status is not carried over (the order screen shows the source lines instead). Historical (FR-OB-17) is a flag on the order, not a status.
+
+**Fulfillment status** (per order)
+
+| Value | Meaning | Next |
+| --- | --- | --- |
+| Draft | Manual order not yet submitted (FR-OB-19a) | Pending (submit), Cancelled |
+| Review | Needs a decision: unmatched item, zero quantity, unknown partner, case-pack mismatch, Walmart order without DC (FR-OB-02, FR-OB-03, FR-OB-15) | Pending (resolved), Cancelled |
+| Payment Hold | PREPAID order not yet paid (FR-OB-12) | Pending (paid), Cancelled |
+| Pending | Waiting for the 940: delay running, or Manual-mode partner waiting for Send 940 now (FR-OB-03d) | 940 Generated, Archive Suppressed, Cancelled |
+| Archive Suppressed | Archived in Shopify before any 940 (FR-OB-03d) | Pending (un-archived), Cancelled |
+| 940 Generated | 940 built and validated (FR-OB-29a) | 940 Sent, 940 Failed |
+| 940 Sent | Sent; waiting for the 997 | 940 Accepted, 940 Rejected, 940 Timeout, Shipped (945 first: ACK Accepted by 945) |
+| 940 Accepted | 997 accepted; waiting for the 945 | Shipped |
+| 940 Rejected / 940 Timeout / 940 Failed | Needs a person (FR-OB-22a, FR-OB-23, FR-OB-24) | 940 Generated (Send 940 now), Cancelled |
+| Shipped | Fulfilment closed by the order's one 945, including a short shipment with its shortfall task (FR-OB-25) | On Hold (a second, different 945 arrives) |
+| On Hold | Cancelled at source after the 940 was sent, waiting for the outcome with Radiant (FR-OB-18) | Cancelled, Shipped, or the status it held before |
+| Cancelled | Cancelled before shipment | — |
+
+**Invoice status** (per order)
+
+| Value | Meaning | Next |
+| --- | --- | --- |
+| Not Required | Invoice method None (Shopify, Manual) | — |
+| Pending | Invoice method set; not shipped yet | Awaiting Requested Date, Waiting for Delivery Confirmation |
+| Awaiting Requested Date | Shipped; requested delivery date not reached | Waiting for Delivery Confirmation |
+| Waiting for Delivery Confirmation | Shipped and requested date reached; on the worklist (FR-OB-31) | Ready |
+| Ready | Delivery and delivered quantity confirmed | Queued (810 JSON), Sent (email) |
+| Queued | 810 JSON generated, waiting to be sent | Sent, Failed |
+| Sent | Invoice delivered; may be edited and resent (FR-OB-35) | Sent |
+| Failed | Generation or sending failed | Queued (resend) |
+| Blocked | Lot exception (FR-OB-25), or cancellation / return after shipment (FR-OB-19) | the status it held before, once cleared |
+
+**Transfer status:** Draft → Ready To Send → 943 Generated → Waiting for 997 → Waiting for 944 → Received / Partially Received / Discrepancy; Failed on 997 rejection; Cancelled only before the 943 is sent (FR-OB-80 to FR-OB-84).
+
+**File and ACK status:** inbound processing Pending → Processing → Processed / Failed / Skipped, plus Duplicate (FR-OB-71); outbound Ready To Send → Sending → Sent / Failed, plus Replaced for a 940 superseded by a confirmed replacement (FR-OB-03c) and Cancelled. ACK: Not Required, Waiting, Accepted, Accepted by 945, Rejected, Timeout.
+
+**On Hold principle (D17):** whenever something is wrong and a person needs to check it, the order's state is On Hold. **Order state (derived):** Draft when fulfillment is Draft; Cancelled when fulfillment is Cancelled; On Hold when fulfillment is Review, Payment Hold, Archive Suppressed, 940 Rejected, 940 Timeout, 940 Failed or On Hold, or invoice is Blocked or Failed; Completed when fulfillment is Shipped and invoice is Sent or Not Required; otherwise Active.
+
+**Zoho → UniOps map (migration)**
+
+| Zoho line | Zoho value | UniOps value |
+| --- | --- | --- |
+| Fulfillment | Pending | Pending |
+| Fulfillment | Payment Required | Payment Hold |
+| Fulfillment | 940 Generated | 940 Generated |
+| Fulfillment | 940 Sent - Waiting for ACK | 940 Sent |
+| Fulfillment | Waiting for 945 | 940 Accepted; for Shopify orders the open fulfillment Zoho created is stored so the 945 adds tracking to it (FR-OB-11) |
+| Fulfillment | Confirmed, Fulfilled | Shipped |
+| Fulfillment | Rejected / Timeout / Failed | 940 Rejected / 940 Timeout / 940 Failed |
+| Fulfillment | Review Required | Review |
+| Fulfillment | On Hold | On Hold |
+| Fulfillment | Cancelled | Cancelled |
+| Invoice | Not Required, Ready, Queued, Sent, Failed | same value |
+| Invoice | Pending | Pending, or Awaiting Requested Date / Waiting for Delivery Confirmation if already shipped (by the FR-OB-31 rule) |
+| Invoice | Waiting for Delivery Date | Awaiting Requested Date or Waiting for Delivery Confirmation, by the FR-OB-31 rule |
+| Order state / Order status | any | not migrated; derived. Completed or Cancelled orders are also flagged historical (FR-OB-17) |
+| Transfer | any | same value (943 Sent and 997 Accepted were never written) |
+| File / ACK | any | same value |
 
 ## 10. Requirements for the UniOps rebuild
 
-Business behaviour follows sections 4–9 1:1 except where a requirement below fixes a defect. Cutover is channel by channel, not all at once.
+Business behaviour follows sections 4–9 1:1 except where a requirement below fixes a defect or applies a review decision. Cutover is channel by channel, not all at once. "(#n)" cites the review-board comment a requirement comes from.
 
-### 10.1 Architecture and placement
+### 10.1 Architecture, configuration and scheduling
 
 | ID | Requirement |
 | --- | --- |
-| FR-OB-01 | Order Bridge is a new standalone UniOps module with its own back-end service and database schema and its own front end, reachable from the Portal (PORTAL.md). |
-| FR-OB-02 | Item data (SKU, UPC, GTIN, case pack, gross weight) comes from UniOps master data; case pack is taken from item-level unit-of-measure conversion, not a hard-coded 6. |
-| FR-OB-03 | Trading partners, DC routing and warehouses are module configuration tables; DC routing references the partner directly (no fuzzy name matching). |
-| FR-OB-04 | SFTP and Shopify credentials are held as server secrets, never in the database or the UI. SFTP is connected directly; the ftp-api.com relay is dropped. |
-| FR-OB-05 | Raw inbound and outbound files are archived in the UniOps file store, replacing WorkDrive. |
-| FR-OB-06 | Exceptions create owned tasks in the UniOps Task Inbox (with email through the shared outbox), not just emails. |
-| FR-OB-07 | Scheduling runs as a background job inside the module, with a mutual-exclusion lock and a run record per cycle; opening a page never triggers processing. |
+| FR-OB-01 | Order Bridge is a **new standalone UniOps module**, built fresh, with its own back-end service and database schema and its own front end, reachable from the Portal (PORTAL.md). The earlier SDM implementation (`sdm`, `sdm-api`) is **not continued or reused**; its documents may be cited as reference material only. |
+| FR-OB-02 | Order Bridge keeps an **Item Master table** that authorised users can add to and edit in the UI (SKU, UPC, GTIN, buyer part numbers per partner, case pack, gross weight per can, unit-of-measure conversions) (#32). A buyer part number matches only lines from the partner it belongs to. Every item has an EA conversion of exactly 1. The **Item Master is authoritative for case pack**: if an 850 line's `ofInnerPacks` differs from the Item Master, the order goes to review and a user is notified; the 850 value is never used silently, because Radiant ships EA exactly as told. Alignment with UniOps master data (EPMS.md, MRP.md) is a later step. |
+| FR-OB-03 | Trading partners, DC routing and warehouses are configuration tables that authorised users can add to and edit in the UI (#3). DC routing references the partner directly (no fuzzy name matching). Each partner has a **settlement mode**: PREPAID (Shopify — payment must be received before a 940) or INVOICE (retailers — billed after delivery, no payment check). Each partner has an optional **minimum remaining shelf life** (days at ship date; empty = no check) used by FR-OB-25d. Each partner has a "DC routing required" flag: **on for Walmart** — a Walmart order with no DC match goes to review and notifies a user; off for others — a missing DC is ignored and the LO reference is left empty (#33). |
+| FR-OB-03a | Each partner has a **940 delay in minutes**, set by authorised users in the partner configuration (FR-OB-03) together with the sending mode (FR-OB-03b). This document does not fix the values: they are configured at go-live. Today's intent is Shopify 3 hours; retailer delays are set per partner (review comment #1 suggests 1 hour; the September decision used 0 — whichever is configured applies) (#1). |
+| FR-OB-03b | Each partner has a 940 sending mode: **Automatic** (the 940 is sent when the delay elapses) or **Manual** (the 940 is only sent when a user triggers it) (#3). |
+| FR-OB-03c | A **Send 940 now** action on an order sends the 940 immediately, before the delay elapses or for a manual-mode partner. The same action is available after a 997 rejection or a send failure to resend (#3, #10, #17). It is permission-controlled (FR-OB-61) and recorded in the audit log. A **live 940** is one that has been sent and is not 997-rejected, failed, timed out or cancelled. Send 940 now is refused while a live 940 exists, except as a **replacement resend** after a source change (FR-OB-16): the user must confirm explicitly, the previous 940 is marked Replaced, and the new 940 gets a new control number. Send 940 now and replacement resend are **refused for historical orders** (FR-OB-17). |
+| FR-OB-03d | **940 eligibility (automatic sending).** An order is queued for a 940 only when **all** of these hold (no OR): order state Active; fulfillment status Pending; **payment satisfied** — for a PREPAID partner the Shopify financial status is `paid` or `partially_refunded` (`refunded`, `authorized`, `partially_paid`, `pending` and `voided` do not qualify), for an INVOICE partner there is no payment check; not fulfilled; **not archived in Shopify during the delay window** (an order archived before any 940 is suppressed and the suppression is recorded on the order; if its payment is satisfied, **one Action Required** task is also raised naming the order, the customer order number, the amount paid and the archive time, so someone confirms the archive was intended or un-archives the order — refunded or voided orders raise no task. An order **un-archived** in Shopify becomes eligible again under these rules with no extra step (the delay has usually elapsed, so it is queued on the next cycle), and the task is **closed automatically** when the order is un-archived, refunded or cancelled, because the condition is gone; archiving after fulfilment is ignored); **not historical** (FR-OB-17); partner sending mode Automatic; the partner's 940 delay has elapsed, measured **from the paid time** (D20): for a PREPAID partner, from when payment became satisfied — at receipt if already paid, otherwise when it is released from Payment Hold — and for an INVOICE partner, from when the order was first received. Later source updates do not restart it. Orders of Manual-mode partners get a 940 only through Send 940 now (FR-OB-03c) (#26). This gate is the second of two independent guards against fulfilling old orders: legacy orders already shipped in Zoho (7,475 of 7,719 imported Shopify orders) fail "not fulfilled" and never qualify even without the cut-off. |
+| FR-OB-03e | **Acceptance test for 940 eligibility.** After implementation, the FR-OB-03d rule is tested with cases covering each condition, and again in the shadow run (section 11 step 2) against Zoho's 940 decisions. A **full-history dry run must queue zero historical orders and queue the in-flight unsent orders exactly as expected**, and Send 940 now must be refused for a historical order. No channel is cut over until all of these pass. |
+| FR-OB-04 | SFTP and Shopify credentials are held as server secrets, never in the database or the UI. SFTP is connected directly; the ftp-api.com relay, which existed only because of a Zoho limitation, is dropped (#39). |
+| FR-OB-05 | Raw inbound and outbound files are archived in the UniOps file store, replacing WorkDrive. Original bytes are kept; nothing is ever deleted (needed for recalls). See section 10.8 for intake rules. |
+| FR-OB-06 | Wherever this document says "notify a user", the notification follows the notification settings (FR-OB-56): email and/or an owned task in the UniOps Task Inbox. Exceptions that need someone to act always create a Task Inbox task. **One open task per problem**: a problem that recurs every cycle updates its open task instead of raising a new one (a source failing every 5 minutes must not raise 288 tasks a day). Each task carries a copy of the identifying context (order number, PO, partner, file, totals) taken when it is raised, so it can be acted on even when no order record exists. |
+| FR-OB-07 | Processing runs as a **background scheduled process** inside the module: the interval is configurable by authorised users in the UI (default **every 5 minutes**, matching today's external call) and can be paused; a lock prevents overlapping runs; every cycle writes a run record. A run left RUNNING by a killed process is closed as FAILED by the next cycle. Opening or refreshing a page never triggers processing (#13, #16, #24). |
 | FR-OB-08 | Unique indexes and closed enumerations replace "look up, then insert" and open picklists. |
+| FR-OB-09 | No configuration data lives in code: there is no seed function and no data files in the repository (#20). Partners, item master, DC routing (457 Walmart rows today), warehouses and settings — including SFTP folder paths (inbound, outbound, archive) per connection (#8), with Radiant production paths **`/prod/in`** and **`/prod/out`** (#28) — are editable in the UI and each table has **CSV import and export** in the UI. The one-time Zoho migration of these tables uses the same CSV import (Zoho export → upload). Credentials are never held in these tables (FR-OB-04). |
 
 ### 10.2 Inbound orders
 
 | ID | Requirement |
 | --- | --- |
-| FR-OB-10 | Pull Shopify orders incrementally with pagination and correct time-zone handling, with no order skipped when many share an update time. |
-| FR-OB-11 | Read Shopify shipping, tax and discounts; use the actual carrier; support multiple fulfillment orders. |
-| FR-OB-12 | Release Shopify orders held for payment automatically once paid. |
+| FR-OB-10 | Pull Shopify orders incrementally through the Admin API (version configurable; `2026-04` today) with pagination and correct time-zone handling. Authentication uses the **client-credentials grant** (permanent `shpat_` tokens are no longer issued since 2026-01-01); the 24-hour token is cached and renewed before expiry. The order query **does not request `customer`** (the app lacks `read_customers`, and Shopify then fails the whole page with ACCESS_DENIED); email and phone are read from the order itself. The `updated_at` cursor is inclusive and never nudged forward (the boundary order returns and is recognised as a duplicate), advances only after the batch is committed, never moves backwards, and is the maximum across the batch rather than the last row seen. No order is skipped when many share an update time. |
+| FR-OB-11 | Read Shopify shipping, tax and discounts; use the actual carrier; support multiple fulfillment orders. The **Shopify fulfillment is created when the 945 arrives**, not at 997 acceptance, with the tracking number where present (the customer is notified); nothing is written to Shopify at 997 acceptance. **Orders migrated from Zoho:** Zoho created the fulfillment (without tracking) at 997 acceptance, so a Shopify order that already has an open fulfillment created by Zoho gets the 945 tracking **added to that fulfillment** (customer notified) instead of a second fulfillment. The existing fulfillment id is stored at migration, and the order's fulfillments are also read from Shopify when the 945 arrives. |
+| FR-OB-11a | **Archive in Shopify.** When Order Bridge completes the fulfilment of a Shopify order, it archives (closes) the order in Shopify, as Zoho did; otherwise every shipped order looks like open work in the store. |
+| FR-OB-11b | **Shopify lines to ship.** The 940 carries only the current quantity of shippable product lines: the ordered quantity less refunded and removed quantity. Gift cards, lines that require no shipping, digital lines and fully refunded lines are excluded. A line refunded or removed after the 940 has been sent is handled as a source change (FR-OB-16). |
+| FR-OB-12 | **Payment hold release (Shopify).** An order is released from hold automatically only when it is On Hold **and** its hold reason is Payment Required **and** its Shopify financial status satisfies payment as defined in FR-OB-03d (`paid` or `partially_refunded`). Orders that are `authorized` or `partially_paid` stay on hold. The same definition applies at creation and at release. A released order then waits the partner's full 940 delay from the payment time (FR-OB-03d, D20). Principle: the rebuild does not translate Zoho's boolean expressions (written as `A && B \|\| C`, with ambiguous precedence); each rule is stated in business terms — this one, FR-OB-03d, FR-OB-22a, FR-OB-25a and FR-OB-52 (#26). |
 | FR-OB-13 | Pull TrueCommerce 850 JSON files directly over SFTP; process every PO in a file, not only the first. |
-| FR-OB-14 | Convert 850 quantities using the actual ordered unit of measure; all internal quantities are held in EA and converted only at message boundaries. |
-| FR-OB-15 | Unmatched items, zero quantities and unknown partners put the order into review and raise a task; nothing is created silently. |
-| FR-OB-16 | Once a 940 has been sent, source updates and cancellations (Shopify or 850) no longer rebuild order lines; they create a "source change to review" task. |
-| FR-OB-17 | Retain the "ignore historical Shopify orders" cut-off only if confirmed (see Open Items OB-OI-25); the original PRD proposed removing it. |
+| FR-OB-14 | Convert 850 quantities using the actual ordered unit of measure and the Item Master conversion (FR-OB-02). All internal quantities and **all messages exchanged with Radiant are in EA** (#35); conversion happens only at the retailer and Shopify boundaries. |
+| FR-OB-15 | Unmatched items, zero quantities and unknown partners: the order **is created and goes to review** (no 940 until resolved) and a notification is sent with the full details needed to fix the mapping — order, partner, source line, the item identifiers received (GTIN/UPC/SKU/buyer part, variant title, unit) and the reason (#4, #5). Nothing is created silently. |
+| FR-OB-16 | Source updates (Shopify or 850 resend): **before the 940 is sent**, the order and its lines are updated. **After the 940 is sent**, the order is updated (#11), but the values the 940 carried (item, quantity, unit, warehouse, ship-to) stay locked on the 940 record; an **Action Required** task is raised and a user is notified with a before/after comparison of the 940 values and the new order values, so they can act with the warehouse (for example send a replacement 940 under FR-OB-03c, after agreeing it with Radiant). The 940 is not resent automatically. Lines that already have 945 shipment data are never rebuilt. |
+| FR-OB-17 | **Old orders are never fulfilled** (#6, #27). An order is **historical** when it is below the Shopify order-number cut-off (configurable, today 9000), or when it was shipped, completed or cancelled in Zoho before cutover. Two independent guards apply, so that either one alone prevents a 940: (1) the cut-off; (2) the eligibility gate of FR-OB-03d. Historical orders may be imported read-only for reporting, but are never eligible for an automatic 940, Send 940 now or a replacement resend (FR-OB-03c). **In-flight orders** migrated at cutover — no 940 yet, or 940 sent and awaiting the 997 or 945 — are **not** historical: they migrate with their status and continue their flow under FR-OB-03d. |
+| FR-OB-18 | **Source cancellation** (Shopify or 850). Before the 940 is sent, the order is cancelled silently: no email and no task; it simply stops qualifying. After the 940 is sent, or after anything has shipped, the order goes on hold, an **Action Required** task is raised, and **one email** is sent to Radiant and the internal owner (recipients per FR-OB-56) stating the shipped quantity, so that "nothing shipped, please do not ship" and "N units already shipped" read differently. |
+| FR-OB-19 | Retailer orders cancelled or returned **after shipment** can be recorded on the order (cancelled after shipment / returned, with quantities and reason), which stops or flags invoicing and notifies a user (#12). Credit-note and inventory handling for returns: see OB-OI-30. |
+| FR-OB-19a | **Manual orders.** An authorised user (FR-OB-61) can create an order by hand (sample, phone order, staff purchase) for the Manual partner. It is created as **Draft**, which is never eligible for a 940; the entry screen previews each line's conversion to EA before saving. On **Submit** it becomes Active and from then on follows the same flows as any other order (eligibility FR-OB-03d, 940, 997, 945, invoicing). Creation, edits and submission are audited (FR-OB-53). |
 
 ### 10.3 Radiant EDI
 
 | ID | Requirement |
 | --- | --- |
-| FR-OB-20 | Reproduce the 940 and 943 envelopes, segment structure and field values exactly (including label, DC, order-type and department references and carrier codes). Before cutover, compare old and new files for the same order byte for byte. |
-| FR-OB-21 | Keep the 810 JSON structure, the 945/944/997 parsing positions and the file-naming rules unchanged. |
-| FR-OB-22 | Allocate control numbers from an incrementing counter per partner and document type, never reused on resend; normalise zero-padding when matching 997s; start above the highest number used by Zoho. |
-| FR-OB-23 | Mark an outbound file Timeout when no 997 arrives within a configured time, and raise a task. |
-| FR-OB-24 | Retry failed sends automatically with a configured count and interval. |
-| FR-OB-25 | Make 945 processing idempotent per shipment/tracking number; partial shipments do not mark the whole order shipped; lot exceptions block invoicing. |
+| FR-OB-20 | Reproduce the 940 and 943 envelopes, segment structure and field values as specified in **Appendix A** (including label, DC, order-type and department references and carrier codes). Before cutover, compare old and new files for the same order segment by segment, except control numbers (FR-OB-22) and corrections confirmed with Radiant (AC-OB-25). Known EDI defects (for example the ISA/GS version mismatch) may be corrected, but only after the correct value is confirmed with Radiant (#36). Where a requirement in this section changes Zoho behaviour (control numbers FR-OB-22, country FR-OB-29), the requirement wins over Appendix A. |
+| FR-OB-21 | Keep the 810 JSON structure, the 850 JSON keys, the 945/944/997 parsing positions and the file-naming rules of **Appendix A** unchanged. Each 940 file carries exactly one order (#34). |
+| FR-OB-22 | Control numbers come from **one shared sequence** for every outbound X12 document (940 and 943), as in Zoho: allocated transactionally, unique, never reused — a resend takes a new number — and starting above the highest number used by Zoho. The same 9-digit zero-padded value is used for ISA13, GS06 and ST02. Leading zeros are normalised when matching 997s. Radiant places no limit on the range (#37). |
+| FR-OB-22a | **997 matching.** A 997 is matched to our outbound file by the control numbers it echoes back — AK1 group control number (= our GS06) **and** AK2 transaction set control number (= our ST02), leading zeros normalised — plus the same partner **and** the same functional group / document type (940 or 943). Order numbers play no part in 997 matching. AK9 (group) and AK5 (transaction) are both read; A or E is accepted, R or anything else is rejected, and a rejection records its AK5 reason code (seen in practice: 4 "transaction set not supported", 5 "one or more segments in error") on the task. A rejected 940 is not resent automatically. No match or more than one match → the 997 goes to review and a user is notified (#26). |
+| FR-OB-23 | Mark an outbound file Timeout when no 997 arrives within a configured time (default **2 hours**), and notify a user per FR-OB-56 (including a Task Inbox task) naming the order, partner and send time. A timed-out 940 is not resent automatically. A 945 that arrives before any accepted 997 stops the clock and records Accepted by 945 (FR-OB-25d). |
+| FR-OB-24 | A failed 940 (generation or sending) is **not retried automatically**; the user is notified with the error details and resends with **Send 940 now** (FR-OB-03c) (#17). Other outbound files follow the same rule and are resent from the file register (FR-OB-62). |
+| FR-OB-25 | **945 idempotency and short shipment.** Applying the same 945 twice changes nothing: shipment rows are keyed on the 945 document identity (content hash, FR-OB-71) plus pallet (LX / SSCC) and W12 position — **not** on tracking number, because LTL pallets carry no tracking number (150 of 1,084 archived W12 lines). A 945 that ships less than ordered **closes the order's fulfilment** with the shipped quantity and raises an **Action Required** task naming the order, the item and the quantity not shipped; no second 940 is raised automatically. Radiant sends **exactly one 945 per 940 order** (D18, #34), so the first 945 always closes the fulfilment. A **second, different 945** for an order already Shipped is stored but **not applied** to quantities (no double counting); the order goes On Hold with an Action Required task showing both 945s, and the FR-OB-25d notification is sent. A byte-identical repeat is a duplicate (FR-OB-71) and raises nothing. Lot exceptions block invoicing. |
+| FR-OB-25a | **945 line matching.** A 945 line matches an order line only when the line belongs to the same order **and** (the LX line number matches **or** the W12 item identifier matches the line's Item_Code, buyer part number, UPC or GTIN). Item_Code is included because it is what we send in `W01 … VN` (Appendix A.3). A 945 line never matches a line of another order; an unmatched line goes to review and a user is notified (#26). |
+| FR-OB-25b | **945 lots.** Every W12 under every LX is read — not only the first (a parser that keeps only the first W12 per LX lost 46 lot codes across the archive in the earlier SDM analysis). Each W12 is stored as one shipment row with its own lot, expiry, pallet SSCC-18 (stored as a string, keeping leading zeros), quantity and weight. The ordered quantity repeats on every W12 of the same item and is counted once; only shipped quantities are summed into the order line. Tracking (N9\*2I), carrier and mode (W27, N9\*MB carrier reference, N9\*BM bill of lading) are kept on the shipment. |
+| FR-OB-25c | **945 with no matching order.** A 945 that matches no order is stored with its pallets and lots (no order-line reference) and raises a task that offers to create an order from it; it is never dropped (these are reships and customer-service sends). |
+| FR-OB-25d | **945 validation checks.** The 945 is applied as received; each check below **only notifies** (event "945 validation", FR-OB-56) with the order, file, line and the values found vs expected. A check never blocks processing or invoicing and never puts the order in review, with **one explicit exception**: an extra or substituted item that matches no 940 line also goes to review under FR-OB-25a, because it cannot be invoiced without a decision; the notification is sent as well. Other existing rules on the same cases (FR-OB-25 short shipment, FR-OB-25c no order, lot exceptions blocking invoicing) apply unchanged. (1) **Over-shipment:** a line's shipped quantity exceeds the quantity on the 940. (2) **Extra or substituted item:** a W12 item that was not on the 940. (3) **Expiry:** a lot is already expired at the ship date, or its remaining shelf life at the ship date is below the partner's minimum (FR-OB-03; no check when empty). (4) **Order state:** the 945 arrives for an order that is cancelled, has no accepted 997 yet, or is already Shipped. For an already Shipped order this check is narrowed by FR-OB-25: the second 945 is not applied and the order goes On Hold (a byte-identical repeat raises nothing). When no 997 has been accepted, the 940's ACK status is recorded as **Accepted by 945** — a value distinct from a 997 acceptance, visible in reports — and the ACK-timeout clock (FR-OB-23) stops for that file. (5) **Mismatch with the 940:** a line's quantity differs from the 940 other than a short shipment (FR-OB-25), or the ship-to or partner differs from the 940. (6) **Ship date:** in the future, or before the 940 was sent. |
 | FR-OB-26 | Read inbound X12 separators from the ISA segment instead of hard-coding them. |
 | FR-OB-27 | Move hard-coded values (company and warehouse addresses, SCAC, label codes, fallback weights, invoice letterhead) into configuration. |
+| FR-OB-28 | **945 order matching.** The order key is read from W06-02, or W06-06 when W06-02 is empty, and looked up by Shopify order id, then internal order number, then source order number. Comparison normalises leading zeros (retailer 940s send the internal number zero-padded to 9 digits) and covers Shopify orders, whose W05 carries the Shopify order number (Appendix A.3). It also tolerates numbers that Radiant has modified by appending characters (for example `1000123a` for an order fulfilled differently): match on the base number, store the warehouse's number as received, and show it on the order. If the base number matches no order or more than one, the file goes to review and a user is notified (#7). 997s need no such tolerance because they are matched by control number (FR-OB-22a). |
+| FR-OB-29 | Ship-to and bill-to country in the 940 is sent as received; when it is empty, it defaults to Canada (#9). |
+| FR-OB-29a | Validate every outbound EDI file before sending (mandatory segments and fields, quantities in EA, addresses, DC reference where required, control numbers). A file that fails validation is not sent and a user is notified. Rationale: wrong EDI data or format can cause large losses (#22). |
 
 ### 10.4 Invoicing
 
 | ID | Requirement |
 | --- | --- |
-| FR-OB-30 | Invoice by each partner's configured invoice method (810 JSON, email/PDF, none), unchanged from today. |
-| FR-OB-31 | Provide a screen to enter delivery dates in bulk and raise to-do tasks for shipped orders awaiting a delivery date (automatic capture only if a source is found). |
-| FR-OB-32 | Keep the finance document email (PO, invoice, packing list) to finance AR and the partner's invoice recipient; all user-supplied text is escaped in emails. |
+| FR-OB-30 | Invoice by each partner's configured invoice method (810 JSON, email/PDF, none), unchanged from today. Invoice lines are priced per case (UOM CA) at the unit price received on the 850, with no price list; payment terms are partner configuration. |
+| FR-OB-31 | **Delivery confirmation gates the invoice** (#23, #29). An order joins the delivery-confirmation worklist only when **both** hold: it has **shipped** (its 945 has been applied) **and** its **requested delivery date** has been reached (Walmart never sends RequestedDeliveryDate; its DoNotDeliverAfter is used instead). A person confirms delivery and records the **delivered quantity**, which may be less than shipped; the confirmed date becomes the invoice date and the invoice states the confirmed quantity. **Nothing is invoiced without this confirmation.** Unconfirmed orders stay on the worklist and age; there is no automatic escalation (the reminder notification in FR-OB-56 may stay). The worklist supports confirming orders in bulk. |
+| FR-OB-32 | Keep the finance document email (PO, invoice, packing list) to finance AR; all user-supplied text is escaped in emails. |
+| FR-OB-33 | When a partner's invoice method is Email, an invoice email address is **mandatory** in the partner configuration (#2). |
+| FR-OB-34 | Where a retailer has an invoice email configured, the invoice is sent **directly to that address with the internal employee in copy** (replacing today's manual forwarding, e.g. Jean Coutu) (#30). |
+| FR-OB-35 | Authorised users can **edit an invoice** (quantities, unit prices, dates) before it is sent, and correct and resend it afterwards; every edit is audited (#31). |
 
-### 10.5 Inventory
+### 10.5 Inventory (deferred to the next version)
+
+Inventory recalculation and the ledger are **postponed to the next version** (#25). In this version, lots, expiry dates and tracking from 945s and receipt lines from 944s continue to be recorded so the ledger can be built from them later. The requirements below define the next version.
 
 | ID | Requirement |
 | --- | --- |
 | FR-OB-40 | Replace balance snapshots with a movement ledger: every receipt, shipment, reservation and adjustment writes a signed movement; balances are summed from the ledger. |
 | FR-OB-41 | Redefine quantities as on hand, allocated, in transit and available; support opening stock. |
 | FR-OB-42 | Manual adjustments carry a warehouse and follow Draft → Posted → Reversed, with reversal creating an offsetting movement. |
-| FR-OB-43 | Allow an authorised user to re-run a full inventory re-evaluation from transfers and Radiant fulfilments (see Open Items regarding deferral). |
+| FR-OB-43 | A re-runnable **inventory re-evaluation** process rebuilds inventory from transfers and Radiant fulfilments, so inventory can be re-checked at any time for auditing; differences against real counts are corrected through adjustments (FR-OB-42) (#21). |
 
 ### 10.6 Reliability, visibility and audit
 
 | ID | Requirement |
 | --- | --- |
-| FR-OB-50 | One failing order or file never blocks others; remove the "2 inbound files per cycle" limit and the "inbound backlog stops outbound" rule. |
-| FR-OB-51 | Every failure (850 / Shopify parse, SFTP fetch, send, 940 generation) creates a task and appears on the health page. |
-| FR-OB-52 | Provide an Operations Health page equivalent to today's diagnostic, plus Order and Inventory dashboards with the same metric definitions. |
-| FR-OB-53 | Record every cycle, every function failure and every user action on orders (status change, hold release, delivery date entry) with user and time. |
-| FR-OB-54 | Replace developer-only functions (recalculation, adjustments, resend file, resend invoice email) with permission-controlled UI actions. |
-| FR-OB-55 | Provide the existing print templates (audit packet, invoice, purchase order, packing list, transfer documents). |
+| FR-OB-50 | Error handling never interrupts the schedule: one failing order, file or step is recorded, notified and skipped, and the cycle continues with the rest (#15). The Zoho throughput limits are not carried over — no 10-unit budget, no "2 inbound files per cycle" limit, no "20 Shopify orders per run" limit, and no "inbound backlog stops outbound" rule (#14). An **authentication failure** (SFTP or Shopify) is reported separately and that connection is not retried on the following cycles until a user clears it, so repeated refused logins do not lock the account. |
+| FR-OB-51 | Every failure (850 / Shopify parse, SFTP fetch, send, 940 generation, validation) notifies a user and appears on the health page. |
+| FR-OB-52 | Provide an Operations Health page equivalent to today's diagnostic, plus an Order dashboard. There is no inventory dashboard in this version (section 1.2). Every count is defined from the same status definitions and business rules as FR-OB-03d, FR-OB-12, FR-OB-22a and FR-OB-25a, never from a condition of its own (#26). |
+| FR-OB-52a | **Operations Health checks.** Result is PASSED, WARNING or FAILED. **FAILED** when: a required setting is missing; a connection (Radiant, TrueCommerce, Shopify) is inactive or failing authentication; more than one cycle is running or a cycle is stuck RUNNING; the scheduler has been paused longer than a configured duration. **WARNING** for: the scheduler paused deliberately by a user (within that duration); failed inbound or outbound files; rejected or timed-out 997s; unmatched 945 or 944 lines; 945s with no order; transfer discrepancies; open tasks older than a configured age. Count cards: critical issues, warnings, failed inbound, failed outbound, waiting ACK, rejected ACK, ACK timeout, 944 exceptions, 945 exceptions, transfer discrepancies. Each check links to the list of records behind it. |
+| FR-OB-52b | **Order dashboard cards**, computed from the UniOps status model (section 9.1): Active; On Hold; Completed; Cancelled (derived order state); Failed Files (file processing Failed, inbound and outbound); Open Retailer / Shopify / Manual (by source, order state not Completed or Cancelled); Warehouse Waiting (fulfillment Pending, 940 Generated, 940 Sent or 940 Accepted); Invoice Work (invoice Waiting for Delivery Confirmation, Ready, Queued or Failed). Each card opens its list; historical orders (FR-OB-17) are excluded from open-work cards. |
+| FR-OB-53 | Logs are detailed enough to find the root cause of any issue (#19): every cycle (start, end, counts), every file and order processing step with its result, every error with full context (file, order, payload reference, message), and every user action on orders and configuration (status change, hold release, Send 940 now, delivery date, invoice edit) with user and time. Logs are searchable in the UI by order, file and date. |
+| FR-OB-54 | Replace developer-only functions (resend file, resend invoice email; recalculation and adjustments in the next version) with permission-controlled UI actions. |
+| FR-OB-55 | Provide the existing print templates: invoice `IN-<internal number>` (date from the confirmed delivery date, amounts from the invoice columns, letterhead from configuration); purchase order `PO-<retailer PO>`; packing list `PL-<internal number>` with ordered, shipped and remaining quantities and a per-lot breakdown; internal audit packet (summary, addresses, PO lines, pick lines, 945 lots, invoice preview, EDI file audit, sign-off block); transfer order (external and internal). The order's "Files" action emails the PO, invoice and packing list to the requesting user, and every file-register row opens its original file. |
+| FR-OB-56 | Provide a **notification management page** where authorised users configure, per event type (unmapped item, parse/fetch/send failure, 997 rejection or timeout, 945 validation (FR-OB-25d), paid order archived before its 940 (FR-OB-03d), transfer partial receipt or discrepancy (FR-OB-84), PO change after 940, cancellation/return after shipment, missing delivery date, invoice emails), the recipients and channel (email, Task Inbox), and see the history of notifications sent (#18). |
 
 ### 10.7 Roles and permissions
 
@@ -289,71 +425,307 @@ Which people hold each permission requires business confirmation.
 
 | ID | Permission | Covers | Suggested holders |
 | --- | --- | --- | --- |
-| FR-OB-60 | Read | View orders, files, inventory, dashboards | Sales, logistics, finance |
-| FR-OB-61 | Order operate | Release holds, enter delivery dates, re-queue 940s, cancel orders | Order operations |
-| FR-OB-62 | File retry | Resend or re-parse files, mark as ignored | Order operations, IT |
-| FR-OB-63 | Transfer manage | Create transfers and send 943s | Logistics |
-| FR-OB-64 | Inventory adjust | Adjustments, posting, reversal, full recalculation | Logistics supervisor |
-| FR-OB-65 | Invoice manage | Invoicing, resending invoice emails | Finance AR |
-| FR-OB-66 | Configuration | Partners, items, DC routing, connections | IT / system administrator |
+| FR-OB-60 | Read (`order_bridge.read`) | View orders, transfers, files, dashboards, logs | Sales, logistics, finance |
+| FR-OB-61 | Order operate (`order_bridge.order.operate`) | Release holds, Send 940 now, confirm delivery and delivered quantity, create and submit manual orders, resolve review items (map an item, confirm a case pack), record cancellations/returns, cancel orders | Order operations |
+| FR-OB-62 | File retry (`order_bridge.file.retry`) | Resend or re-parse files, mark as ignored | Order operations, IT |
+| FR-OB-63 | Transfer manage (`order_bridge.transfer.manage`) | Create, send and cancel transfers (943) and review 944 receipts | Logistics |
+| FR-OB-64 | Inventory adjust (`order_bridge.inventory.adjust`) — **next version** | Adjustments, posting, reversal, inventory re-evaluation (section 10.5) | Logistics supervisor |
+| FR-OB-65 | Invoice manage (`order_bridge.invoice.manage`) | Edit invoices, invoicing, resending invoice emails | Finance AR |
+| FR-OB-66 | Configuration (`order_bridge.config`) | Partners, items, DC routing, connections, folders, schedule, notifications | IT / system administrator |
+
+### 10.8 File intake and document store
+
+| ID | Requirement |
+| --- | --- |
+| FR-OB-70 | **Store before parsing.** Every inbound document is stored in the document store before it is parsed, and a document that cannot be parsed is still stored and raises a task. (37 of 73 archived 850s are not valid JSON because Note1 carries literal CR/LF; a reader that parses first would lose exactly these.) Text is decoded as UTF-8, tolerantly, keeping accented characters. |
+| FR-OB-71 | **Two identities.** (1) A file already downloaded is not downloaded again, matched on filename, size and remote modified time. (2) Identical content is stored once, matched on the **sha256 of the original bytes** with a unique index; a second file with identical bytes under another name is recorded as a duplicate and not applied again. (70 Radiant files — 27 945s and 12 997s among them — arrive byte-identical under different names.) Replaces Zoho's "file name + modified time + system" key. |
+| FR-OB-72 | **Order of operations.** Read, store, commit, and only then apply the connection's after-read action on the partner's server. An after-read action that fails never fails the pass: the document stays stored and is recognised as a duplicate next time. |
+| FR-OB-73 | **Files still arriving.** A file is not read until its modified time is at least 60 seconds old (configurable per connection); younger files are left for the next pass. |
+| FR-OB-74 | **After-read policy per connection:** Leave, Move (to the connection's processed folder) or Delete. A file that could not be stored is moved to the connection's error folder whatever the policy. A path that is a partner's live folder is never moved or deleted from (policy Leave). A connection test lists folders without creating, moving or deleting anything. During the shadow run all policies are Leave, because Zoho must still see the files (section 11). |
+| FR-OB-75 | **Classification by content.** JSON is classified by its top-level key (PurchaseOrder → 850, Invoice → 810); X12 by ST01, never by file name. Each source has a known set of document kinds (Radiant: 945, 944, 997; TrueCommerce: 850; Shopify: orders). Anything else, including our own 940s and 943s reflected back in Radiant's folder, is counted as *not ours* and not read as inbound. |
+| FR-OB-76 | **Pass report and batch size.** Every pass records how many files were listed, too new, already downloaded, not ours, stored, duplicates and failed; listed equals the sum of the other six. There is no fixed per-pass cap (#14). If a batch size is ever configured, files already read are skipped before it is applied, files are taken oldest first, and the remaining files are processed immediately in the next pass so nothing falls behind. |
+
+### 10.9 Transfers (943 / 944)
+
+Transfers to Radiant are in this version, so nothing stays in Zoho at cutover. The inventory ledger stays deferred (section 10.5); the 944 receipt lines stored here are its future input.
+
+| ID | Requirement |
+| --- | --- |
+| FR-OB-80 | **Create and send a transfer.** An authorised user (FR-OB-63) creates a transfer (from and to warehouse, lines of item and quantity in EA) as **Draft**, then sets it **Ready To Send**. Status flow: Draft → Ready To Send → 943 Generated → Waiting for 997 → Waiting for 944 → Received / Partially Received / Discrepancy; Failed on 997 rejection; **Cancelled** is allowed only before the 943 is sent. Every status change is audited (FR-OB-53). |
+| FR-OB-81 | **943.** Generated as in Appendix A.4, with ship-from and ship-to addresses from warehouse configuration (FR-OB-27), a control number from the shared sequence (FR-OB-22) and validation before sending (FR-OB-29a). A failed 943 is not resent automatically; the user resends it (FR-OB-24). |
+| FR-OB-82 | **997 for a 943** is matched as in FR-OB-22a. Accepted → Waiting for 944. Rejected → Failed and an Action Required task carrying the AK5 reason code; not resent automatically. The ACK timeout of FR-OB-23 applies. |
+| FR-OB-83 | **944 receipt.** Matched to its transfer by W17-04; each W07 line is allocated as in Appendix A.7 (line number, then lot, then first line of the same item with remaining quantity). Every 944 is stored as its own receipt with its lines, lots and dates and is **never overwritten or deleted** by a later 944; re-applying the same 944 changes nothing (FR-OB-71). Whether the transfer's received quantity is the latest 944 (cumulative) or the sum of 944s (incremental) follows Radiant's answer to OB-OI-14; until then both are kept and nothing is lost. |
+| FR-OB-84 | **Receipt outcome.** Received when received = requested; **Partially Received** when less, with a user notified; **Discrepancy** when anything is over-received, not on the transfer or unrecognised, with an Action Required task listing the lines. A 944 that matches no transfer is stored and raises a task. |
+
+### 10.10 Acceptance criteria
+
+Each criterion is tested before cutover, preferably by **replaying real archived documents** (Shopify pages, 850s, 945s, 997s, 810s) rather than fixtures; fixtures remain useful for fault injection and concurrency. Adapted from the earlier SDM PRD (2026-10-01) to the decisions in this document.
+
+| ID | Criterion | Verifies |
+| --- | --- | --- |
+| AC-OB-01 | An 850 that is not valid JSON (literal CR/LF in Note1) is stored in its original bytes and raises a task. | FR-OB-70 |
+| AC-OB-02 | An address with an accented character (Montréal) stores and re-reads intact. | FR-OB-70 |
+| AC-OB-03 | Two files with different names and identical bytes produce one stored document and one reported duplicate, and are applied once. | FR-OB-71 |
+| AC-OB-04 | A second pass over an unchanged directory downloads nothing. | FR-OB-71 |
+| AC-OB-05 | An after-read action that fails after a successful store leaves the document recorded; the next pass reports a duplicate and does not re-apply it. | FR-OB-72 |
+| AC-OB-06 | A file modified less than 60 seconds ago is counted as too new and read on a later pass. | FR-OB-73 |
+| AC-OB-07 | A file that cannot be stored is moved to the error folder under every policy; under Leave nothing else on the partner's server changes; a connection test changes nothing. | FR-OB-74 |
+| AC-OB-08 | A pass over Radiant's folder containing our own 940s stores none of them and reports them as not ours. | FR-OB-75 |
+| AC-OB-09 | In every pass report, listed equals the sum of the other six counts. | FR-OB-76 |
+| AC-OB-10 | The Shopify boundary order returns on every fetch and is recognised as a duplicate; a failure part-way through a batch leaves the cursor unchanged; the order query contains no `customer` field. | FR-OB-10 |
+| AC-OB-11 | An 850 file with several POs creates every PO. | FR-OB-13 |
+| AC-OB-12 | Retailer lines resolve by GTIN, UPC or that partner's buyer part; a buyer part of one partner (e.g. CF0092's Loblaws, Sobeys and Walmart codes) never matches another partner's line. | FR-OB-02 |
+| AC-OB-13 | An order with an unrecognised item is created in review, sends no 940, and notifies with the item identifiers received. | FR-OB-15 |
+| AC-OB-14 | 10 cases of an item whose case pack is 6 produce `W01*60*EA`; a conversion set without EA = 1 is refused. | FR-OB-02, FR-OB-14 |
+| AC-OB-15 | An 850 line whose `ofInnerPacks` differs from the Item Master puts the order in review with a notification; no 940 is sent until resolved. | FR-OB-02 |
+| AC-OB-16 | The same order arriving again updates the order held; it never creates a second one. | FR-OB-08, FR-OB-16 |
+| AC-OB-17 | A source update two hours into the delay window does not restart the delay, which runs from the paid time (PREPAID) or the receipt time (INVOICE). | FR-OB-03d |
+| AC-OB-18 | A source change after the 940 updates the order, keeps the 940 values locked, shows the before/after comparison and raises an Action Required task; no 940 is resent. | FR-OB-16 |
+| AC-OB-19 | A manual order in Draft is never queued; after Submit it follows the same 940, 997, 945 and invoice flow as any other order. | FR-OB-19a |
+| AC-OB-20 | An unpaid Shopify order is held; when Shopify reports it paid it is released and later queued. | FR-OB-12 |
+| AC-OB-21 | A **full-history dry run** produces exactly the agreed eligible set, queues zero historical orders and queues the in-flight unsent orders as expected; one extra order is a stop. | FR-OB-03e, FR-OB-17 |
+| AC-OB-22 | A retailer (INVOICE) order with no payment status qualifies; an unpaid Shopify order does not; a `partially_refunded` Shopify order qualifies; a `refunded` one does not. | FR-OB-03d |
+| AC-OB-23 | A Shopify order archived during the delay window gets no 940 and the suppression is recorded; an order archived after fulfilment is ignored. | FR-OB-03d |
+| AC-OB-24 | A Manual-mode partner's order is never sent automatically; Send 940 now sends it; Send 940 now is refused for a historical order and while a live 940 exists (except a confirmed replacement). | FR-OB-03b, FR-OB-03c |
+| AC-OB-25 | For the same order, the generated 940 matches the archived Zoho 940 segment by segment, except control numbers and corrections confirmed with Radiant. | FR-OB-20, Appendix A |
+| AC-OB-26 | Every retailer 940 carries N9\*LO and N9\*DP, empty when there is no value; a Walmart order with no DC match goes to review. | FR-OB-03, Appendix A.3 |
+| AC-OB-27 | Weight is per can × quantity: two cans at 2.03 lb and one at 2.48 lb declare 6.54 lb. | Appendix A.3 |
+| AC-OB-28 | No 940 line is generated for an item the warehouse does not hold. | Appendix A.3 |
+| AC-OB-29 | Two concurrent sends never take the same control number; a resend takes a new one. | FR-OB-22 |
+| AC-OB-30 | A 940 that fails validation is not sent and notifies a user; an empty country is sent as Canada. | FR-OB-29, FR-OB-29a |
+| AC-OB-31 | A 940 sent and not yet acknowledged is shown differently from one accepted. | FR-OB-22a |
+| AC-OB-32 | A 997 is matched by AK1 and AK2; AK9/AK5 R is a rejection carrying its reason code on the task, and the 940 is not resent. | FR-OB-22a |
+| AC-OB-33 | With no 997 after 2 hours, the 940 is marked Timeout and a task names the order, partner and send time. | FR-OB-23 |
+| AC-OB-34 | A pallet with two lots of the same item stores both lots and records 300 ordered once and 298 + 2 shipped. | FR-OB-25b |
+| AC-OB-35 | SSCC `00077777770077782891` keeps its leading zeros. | FR-OB-25b |
+| AC-OB-36 | Re-applying a 945 (same file or same bytes under another name), including an LTL pallet with no tracking, duplicates no pallet and doubles no quantity. | FR-OB-25, FR-OB-71 |
+| AC-OB-37 | A 945 shipping 298 of 300 closes the order's fulfilment and raises one task naming the order, the item and the 2 units; no second 940 is raised. | FR-OB-25 |
+| AC-OB-38 | A 945 whose order number carries a suffix (`1000123a`) or zero-padding matches the order; one matching no order is stored and offers "create order". | FR-OB-28, FR-OB-25c |
+| AC-OB-39 | The Shopify fulfillment is created when the 945 arrives (with tracking), nothing is written at 997 acceptance, and the order is then archived in Shopify. | FR-OB-11, FR-OB-11a |
+| AC-OB-40 | A cancellation before the 940 cancels silently (no email, no task); after the 940, one task and one email to Radiant and the internal owner state the shipped quantity. | FR-OB-18 |
+| AC-OB-41 | An order joins the worklist only when its 945 has been applied **and** its requested delivery date is reached: an unshipped order past its requested date is not on the list, and a shipped order before its requested date is not either. A Walmart order uses DoNotDeliverAfter. Neither is invoiced before confirmation. | FR-OB-31 |
+| AC-OB-42 | No 810 or invoice email is produced for an order with no recorded delivery confirmation; the invoice states the confirmed quantity, which may be less than shipped. | FR-OB-31 |
+| AC-OB-43 | An order unconfirmed for 30 days is still on the worklist and has caused no escalation. | FR-OB-31 |
+| AC-OB-44 | Generated 810s match the archived 810s for the same orders (case UOM, 850 unit price, partner terms). | FR-OB-21, FR-OB-30 |
+| AC-OB-45 | A partner with invoice method Email cannot be saved without an address; the invoice goes to the retailer with the internal employee in copy. | FR-OB-33, FR-OB-34 |
+| AC-OB-46 | Two cycles cannot run at once; a run left RUNNING by a killed process is closed as FAILED by the next cycle. | FR-OB-07 |
+| AC-OB-47 | One unreachable partner or one failing order does not stop the cycle for the others. | FR-OB-50 |
+| AC-OB-48 | An authentication failure is reported once and not retried on later cycles until a user clears it. | FR-OB-50 |
+| AC-OB-49 | A source failing on every cycle has exactly one open task, which identifies the order or document without any lookup. | FR-OB-06 |
+| AC-OB-50 | Every failure type in FR-OB-51 produces a notification or task and appears on the health page; no failure is visible only in a log. | FR-OB-51 |
+| AC-OB-51 | Every action that changes what is sent or invoiced (configuration edit, Send 940 now, delivery confirmation, invoice edit, task resolution) records the user and time. | FR-OB-53 |
+| AC-OB-52 | A fresh deployment sends no email until recipients are configured. | FR-OB-56 |
+| AC-OB-53 | A deliberately paused scheduler shows WARNING, and FAILED after the configured duration. | FR-OB-52a |
+| AC-OB-54 | No screen shows an inventory figure in this version. | Section 1.2 |
+| AC-OB-55 | During the shadow run UniOps writes outbound files only to test folders, and there is no interval in which both systems can send a 940 for the same order. | Section 11 |
+| AC-OB-56 | A 945 shipping 310 against a 940 line of 300 is applied as received and sends one "945 validation" notification showing 310 vs 300; the order is not put in review and invoicing is not blocked by the check. | FR-OB-25d |
+| AC-OB-57 | A 945 with a W12 item that was not on the 940 sends a "945 validation" notification naming the item, and the unmatched line goes to review (FR-OB-25a). | FR-OB-25d, FR-OB-25a |
+| AC-OB-58 | A lot already expired at the ship date, or with less remaining shelf life than the partner's minimum, sends a notification; with no minimum configured only the expired case notifies. | FR-OB-25d, FR-OB-03 |
+| AC-OB-59 | A 945 for a cancelled order or an order with no accepted 997 is applied and sends a notification. | FR-OB-25d |
+| AC-OB-60 | A 945 whose ship-to or partner differs from the 940 sends a notification showing both values. | FR-OB-25d |
+| AC-OB-61 | A 945 with a ship date in the future, or earlier than the 940 send time, sends a notification. | FR-OB-25d |
+| AC-OB-62 | A 945 arriving before any accepted 997 sets the 940's ACK status to Accepted by 945 (not Accepted), no Timeout is raised for that file afterwards, and a "945 validation" notification is sent. | FR-OB-25d, FR-OB-23 |
+| AC-OB-63 | A paid Shopify order archived before its 940 gets no 940, records the suppression and raises exactly one Action Required task with the order, customer order number, amount paid and archive time; a refunded or voided order archived the same way raises no task. When the order is un-archived it is queued on the next cycle and the task closes automatically; refunding or cancelling it also closes the task. | FR-OB-03d |
+| AC-OB-64 | A Draft transfer sends nothing; set Ready To Send, it produces a 943 as in Appendix A.4 with addresses from configuration and a new control number. | FR-OB-80, FR-OB-81 |
+| AC-OB-65 | A 997 accepting the 943 moves the transfer to Waiting for 944; a rejecting 997 marks it Failed and raises a task with the AK5 code; the 943 is not resent. | FR-OB-82 |
+| AC-OB-66 | A 944 matches its 943's transfer by W17-04; receiving exactly the requested quantity marks it Received. | FR-OB-83, FR-OB-84 |
+| AC-OB-67 | A 944 receiving less than requested marks the transfer Partially Received and notifies; an over-receipt or an item not on the transfer marks it Discrepancy with an Action Required task listing the lines. | FR-OB-84 |
+| AC-OB-68 | A second 944 for the same transfer does not erase the first one's receipt lines; re-applying the same 944 changes nothing. | FR-OB-83 |
+| AC-OB-69 | A transfer can be cancelled before its 943 is sent and not after. | FR-OB-80 |
+| AC-OB-70 | A `partially_refunded` Shopify order ships only the remaining quantity; a gift card or non-shipping line never appears on a 940; a line refunded after the 940 raises the FR-OB-16 source-change task. | FR-OB-11b |
+| AC-OB-71 | Before the channel switch (section 11 step 3), each listed event type has configured recipients and a received test notification. | Section 11 |
+| AC-OB-72 | A Shopify order migrated as 940 Accepted, with a Zoho-created fulfillment, gets the 945 tracking added to that fulfillment and the customer notified; no second fulfillment is created. | FR-OB-11 |
+| AC-OB-73 | A second, different 945 for an order already Shipped is stored, changes no quantity, puts the order On Hold with an Action Required task showing both 945s, and sends the 945 validation notification; a byte-identical repeat raises nothing. | FR-OB-25, FR-OB-25d |
+| AC-OB-74 | A PREPAID order paid two days after it was received is released from Payment Hold and waits the partner's full 940 delay from the payment time, not from receipt. | FR-OB-03d, FR-OB-12 |
+
+**Replay targets** (checked against the archive before cutover):
+
+| Target | Evidence | Criteria |
+| --- | --- | --- |
+| Nothing twice | zero duplicate shipments, invoices or quantity applications across the replay | AC-OB-03, AC-OB-29, AC-OB-36 |
+| Nothing lost | every archived document is stored and classified | AC-OB-01, AC-OB-08 |
+| Right quantity | every reviewed order reconciles to the expected EA | AC-OB-14, AC-OB-15 |
+| Traceable | every item-and-lot in the 945 archive is recoverable, including two lots on one pallet | AC-OB-34, AC-OB-35 |
+| Historically safe | no already-fulfilled or historical order raises a 940 on replay | AC-OB-21 |
+| Invoice gated | no invoice without a recorded delivery confirmation | AC-OB-42 |
+| Recoverable | every failure can be investigated and resolved in the application | AC-OB-49, AC-OB-50 |
+| Honest screens | every screen uses real data; deferred areas show none | AC-OB-54 |
 
 ## 11. Cutover plan
 
-1. **Data migration:** export all orders, lines, lots, transfers, file register, partners, DC routing and settings from Zoho; move raw files from WorkDrive into the UniOps file store. Historical orders become read-only; in-flight orders migrate with their status.
-2. **Shadow run:** UniOps pulls the same files and generates 940s and 810s without sending, compared order by order against Zoho until a full week has zero differences.
-3. **Channel-by-channel switch:** Shopify → retailers → transfers. For each channel, stop Zoho's fetch and send so only one system sends 940s; hand over the Shopify cursor; start control numbers in a new range.
+1. **Data migration:** export all orders, lines, lots, transfers and the file register from Zoho; move raw files from WorkDrive into the UniOps file store. Partners, items, DC routing and settings are exported from Zoho as CSV and loaded through the UI's CSV import (FR-OB-09). Orders shipped, completed or cancelled in Zoho are flagged historical and become read-only; they never receive a 940 (FR-OB-17). In-flight orders (no 940 yet, or awaiting the 997 or 945) migrate with their status, mapped by section 9.1, and continue their flow.
+2. **Shadow run:** only Zoho sends. UniOps pulls the same files (after-read policy Leave, FR-OB-74) and generates 940s and 810s that are written only to the partners' **test folders**, never the live ones, and compared order by order and segment by segment against Zoho. The shadow run ends only when **all** of these hold: (a) **one full cycle of every flow** in scope has passed with no difference — an order arrives, a 940 is built, a 997 and a 945 come back, delivery is confirmed and an invoice is issued, for Shopify and for retailers; (b) the **full-history dry run** of FR-OB-03e produces exactly the agreed eligible set and queues no historical order; (c) **one week** has passed with zero unexplained differences. A calendar week alone is not enough, because a week with no retailer order proves nothing.
+   - **Notification gate before step 3:** recipients are configured for every event type in FR-OB-56 — at least authentication failure, 940 failure / rejection / timeout, cancellation after the 940 and paid order archived before its 940 — and a test notification for each has been received. A fresh deployment sends nothing until recipients are set (AC-OB-52), so this gate is what makes failures visible from day one.
+3. **Channel-by-channel switch:** Shopify → retailers → transfers. For each channel, stop Zoho's fetch and send so there is no interval in which both systems can send a 940 for the same order; hand over the Shopify cursor; start control numbers above Zoho's highest.
 4. **Hypercare:** at least one full ship-to-invoice cycle, with Zoho kept read-only for reconciliation.
-5. **Retire Zoho:** rotate SFTP passwords and the Shopify token; remove any credentials the relay may hold.
+5. **Retire Zoho:** rotate SFTP passwords and the Shopify token at this point (no rotation is needed before cutover, #38); remove any credentials the ftp-api.com relay may hold.
 
 Any live file sent to Shopify, retailers or Radiant during testing or shadow running requires explicit approval.
 
 ## 12. Related documents
 
 - FINANCE.md — NC remains the financial source of truth; invoices only.
-- INVENTORY.md — UniOps inventory views (Order Bridge lot ledger is separate until aligned).
+- INVENTORY.md — UniOps inventory views. Order Bridge's inventory ledger is next version (section 10.5); this version records shipment lots and transfer receipts that will feed it.
 - PORTAL.md — module entry, permissions and Task Inbox.
 - EPMS.md, MRP.md — item and unit-of-measure master data.
 
 ## 13. Open Items
 
-Items OB-OI-01 to OB-OI-20 are the open questions from the original PRD. Items OB-OI-21 onwards summarise team review comments (2026-10-13 to 2026-10-15); all are recorded as open on the review board and **have not been applied** to the requirements above. Comments are attributed where the author gave a name.
+Items OB-OI-01 to OB-OI-20 are the open questions from the original PRD; OB-OI-21 onwards came from the review comments. Items resolved in version 1.1 are kept for traceability with the requirement that applies them.
 
 | ID | Item | Status |
 | --- | --- | --- |
-| OB-OI-01 | Who opens the Zoho Scheduler page, with what tool and how often? (Review comment, Amir: it is called externally every 5 minutes.) | Answered in review; to confirm |
-| OB-OI-02 | Since when has incremental inventory recalculation been disabled, when did the full recalculation last run, and is anyone using the inventory figures? | Open |
-| OB-OI-03 | Actual effect of the ambiguous operator precedence in Zoho (A && B \|\| C). (Review comment, Amir: implement as A && (B \|\| C).) | Answered in review; to confirm |
+| OB-OI-01 | Who opens the Zoho Scheduler page, and how often? | Resolved — called externally every 5 minutes; FR-OB-07 |
+| OB-OI-02 | Since when has incremental inventory recalculation been disabled, when did the full recalculation last run, and is anyone using the inventory figures? | Open (inventory deferred to next version) |
+| OB-OI-03 | Actual effect of the ambiguous operator precedence in Zoho (A && B \|\| C). | Resolved — business rules restated in FR-OB-12, FR-OB-03d, FR-OB-22a, FR-OB-25a and FR-OB-52; verified in the shadow run (FR-OB-03e) |
 | OB-OI-04 | Completed count of exactly 8,000: real total or a count cap? | Open |
-| OB-OI-05 | Production Radiant SFTP paths. (Review comment, Amir: /prod/in and /prod/out, to be held in configuration.) | Answered in review; to confirm |
-| OB-OI-06 | Who enters the delivery date today and from what source? (Review comments, Amir: entered manually; no automatic source exists; at minimum notify a user to update it.) | Answered in review; to confirm |
-| OB-OI-07 | Who releases paid Shopify orders from hold today? | Open |
-| OB-OI-08 | Should Jean Coutu's invoice email go directly to the retailer? (Review comment, Amir: where a retailer has an invoice email configured, send to it and copy the internal employee.) | Answered in review; to confirm |
-| OB-OI-09 | How do sales orders and invoices reach NC — manual entry or an interface? Decides whether UniOps must push orders to NC. | Open |
-| OB-OI-10 | Does any retailer order in EA? (Review comment, Amir: all Radiant messages are in EA — retailer 850 units not yet confirmed.) | Partly answered |
-| OB-OI-11 | Difference between unit price and invoice unit price; is the invoice edited by hand? (Review comment, Amir: users need to be able to edit invoices.) | Answered in review; to confirm |
-| OB-OI-12 | Correct CF0110's 11-digit UPC and the placeholder gross weights? (Review comment, Amir: the item master must be a maintainable table — add and edit.) | Open |
-| OB-OI-13 | DC routing for non-Walmart retailers and Overwaitea configuration. (Review comment, Amir: DC data is mandatory for Walmart only; may be ignored otherwise; keep in configuration.) | Answered in review; to confirm |
-| OB-OI-14 | Are Radiant 944s cumulative or incremental? (Review comment, Amir: Radiant sends one file per transaction; each 940 is one order.) | Partly answered |
-| OB-OI-15 | Are 945 quantities in EA or cases, and which date is the authoritative ship date? (Review comment, Amir: all Radiant exchanges are in EA.) | Partly answered |
-| OB-OI-16 | ISA/GS version mismatch and 943 functional-group code: what does Radiant require? (Review comment, Amir: EDI issues may be corrected; EDI accuracy is critical because wrong data or format can cause large losses.) | Open — confirm with Radiant |
+| OB-OI-05 | Production Radiant SFTP paths. | Resolved — `/prod/in`, `/prod/out` in settings; FR-OB-09 |
+| OB-OI-06 | Who enters the delivery date and from what source? | Resolved — manual entry, no automatic source; FR-OB-31 |
+| OB-OI-07 | Who releases paid Shopify orders from hold today? | Open (automatic release in FR-OB-12) |
+| OB-OI-08 | Should Jean Coutu's invoice email go directly to the retailer? | Resolved — to the retailer's invoice email, internal employee in copy; FR-OB-34 |
+| OB-OI-09 | How do sales orders and invoices reach NC — manual entry or an interface? Decides whether UniOps must push orders to NC. | Resolved — no NC interface in this version (D19, section 1.2) |
+| OB-OI-10 | Does any retailer order in EA? | Partly resolved — all Radiant messages are EA (FR-OB-14); retailer 850 units still to confirm |
+| OB-OI-11 | Difference between unit price and invoice unit price; is the invoice edited by hand? | Resolved — invoices are editable; FR-OB-35 |
+| OB-OI-12 | Correct CF0110's 11-digit UPC and the placeholder gross weights. | Resolved — corrected by users in the editable Item Master; FR-OB-02 |
+| OB-OI-13 | DC routing for non-Walmart retailers and Overwaitea configuration. | Resolved — mandatory for Walmart only, per-partner flag; FR-OB-03 |
+| OB-OI-14 | Are Radiant 944s cumulative or incremental? | Partly resolved — Radiant sends one file per transaction and one order per 940 (FR-OB-21); 944 cumulative vs incremental still to confirm; until answered, every 944 is kept (FR-OB-83) |
+| OB-OI-15 | Are 945 quantities in EA or cases, and which date is the authoritative ship date? | Partly resolved — EA (FR-OB-14); authoritative ship date still to confirm |
+| OB-OI-16 | ISA/GS version mismatch and 943 functional-group code: what does Radiant require? | Open — confirm with Radiant; correction allowed once confirmed (FR-OB-20) |
 | OB-OI-17 | Which carrier is actually used (Purolator vs Canada Post)? | Open |
 | OB-OI-18 | Obtain the full 850 and 810 JSON schema and samples from TrueCommerce. | Open |
-| OB-OI-19 | Will Radiant accept a new control-number range? (Review comment, Amir: no limit or issue with control numbers.) | Answered in review; to confirm |
-| OB-OI-20 | Rotate SFTP passwords and Shopify token now; establish who runs ftp-api.com and whether it retains customer data. (Review comments, Amir: no need to change passwords now; ftp-api.com was only used because of a Zoho limitation and can be dropped.) | Decision needed — review comment conflicts with the PRD's security recommendation |
-| OB-OI-21 | 940 delay: review comment (Amir) states Shopify is 3 hours and other partners 1 hour, versus 10 and 0 minutes in the seed data. Confirm production values. | Open |
-| OB-OI-22 | Partner configuration (Amir): partners must be addable and editable; a partner can be switched to manual sending to the warehouse; add a button to send the 940 manually before the delay elapses; also a "send 940" action after a 997 rejection. | Proposed; not yet in requirements |
-| OB-OI-23 | Email invoicing (Amir): an email address is required when the invoice method is email. | Proposed; not yet in requirements |
-| OB-OI-24 | Unmapped items (Amir, plus one unnamed reviewer): send a notification with full details so the mapping can be fixed. | Proposed; aligns with FR-OB-15 |
-| OB-OI-25 | Historical Shopify cut-off (unnamed reviewer; Amir): the "below 9000" rule exists to avoid fulfilling old orders that have no record in the system; old orders must not be fulfilled. Conflicts with the original proposal to drop the rule. | Decision needed |
-| OB-OI-26 | Warehouse-modified order numbers (Amir): Radiant sometimes appends a character (for example "a") to the order number for orders fulfilled differently; 997 and 945 matching must handle this. | Proposed; design needed |
-| OB-OI-27 | Folder locations (Amir): TrueCommerce and Radiant folders to be held in settings tables. | Proposed |
-| OB-OI-28 | Addresses (Amir): country defaults to Canada when empty in the 940. | Proposed |
-| OB-OI-29 | PO updates (Amir): update the order if the 940 has not been sent; if already sent, update and notify a user. Differs slightly from FR-OB-16 (review task instead of update). | Decision needed |
-| OB-OI-30 | Retailer cancellations and returns after shipment (Amir) need handling. | Open — scope to define |
-| OB-OI-31 | Scheduler (Amir): schedule must be user-configurable (currently every 5 minutes); no page refresh needed — run as a process with a lock; Zoho's traffic limits must not be carried over; robust error handling so the schedule is never interrupted. | Proposed; aligns with FR-OB-07 / FR-OB-50 |
-| OB-OI-32 | Failed 940s (Amir): no automatic retry needed, only notify the user — conflicts with FR-OB-24 automatic retry. | Decision needed |
-| OB-OI-33 | Notification management (Amir): a management page for emails and notifications. | Proposed |
-| OB-OI-34 | Logging (Amir): comprehensive logs are required for root-cause analysis. | Proposed; aligns with FR-OB-53 |
-| OB-OI-35 | Seed initialisation (Amir): the first-time seed data can be dropped; it was only for initial Zoho development. | Proposed |
-| OB-OI-36 | Inventory re-evaluation (Amir): a re-runnable process to re-evaluate inventory from transfers and Radiant fulfilments, with adjustments for differences found; but full inventory recalculation may be postponed to the next version. Phase placement of FR-OB-40 to FR-OB-43 to be decided. | Decision needed |
+| OB-OI-19 | Will Radiant accept a new control-number range? | Resolved — no limit or issue; FR-OB-22 |
+| OB-OI-20 | Rotate credentials now; who runs ftp-api.com and does it retain customer data? | Resolved — risk accepted until cutover: plain-text credentials (section 3.5 item 9) stay until Zoho retirement, when they are rotated (section 11); ftp-api.com dropped (FR-OB-04) |
+| OB-OI-21 | Production 940 delays. | Resolved — per-partner configuration set in the UI at go-live, not fixed in the PRD; FR-OB-03a |
+| OB-OI-22 | Partner add/edit, manual sending mode, Send 940 now (before delay and after 997 rejection). | Resolved — FR-OB-03, FR-OB-03b, FR-OB-03c |
+| OB-OI-23 | Email required for the email invoice method. | Resolved — FR-OB-33 |
+| OB-OI-24 | Unmapped items notify with full details. | Resolved — FR-OB-15 |
+| OB-OI-25 | Historical Shopify cut-off. | Resolved — old orders are never fulfilled: cut-off kept plus eligibility gate; orders shipped, completed or cancelled in Zoho are historical, in-flight orders continue; FR-OB-17, FR-OB-03d, FR-OB-03e |
+| OB-OI-26 | Warehouse-modified order numbers in 997/945. | Resolved — 945 only (FR-OB-28); 997s matched by control number (FR-OB-22a); confirm the suffix patterns Radiant uses |
+| OB-OI-27 | Folder locations in settings tables. | Resolved — FR-OB-09 |
+| OB-OI-28 | Country defaults to Canada. | Resolved — FR-OB-29 |
+| OB-OI-29 | PO updates before/after the 940. | Resolved — FR-OB-16 |
+| OB-OI-30 | Retailer cancellations and returns after shipment. | Partly resolved — recorded and notified (FR-OB-19); credit note and inventory return handling still to define |
+| OB-OI-31 | Configurable scheduler, lock, no Zoho limits, robust error handling. | Resolved — FR-OB-07, FR-OB-50 |
+| OB-OI-32 | Failed 940s: notify instead of automatic retry. | Resolved — FR-OB-24 |
+| OB-OI-33 | Notification management page. | Resolved — FR-OB-56 |
+| OB-OI-34 | Comprehensive logs for root-cause analysis. | Resolved — FR-OB-53 |
+| OB-OI-35 | Drop first-time seed data. | Resolved — no seed function or configuration data in code; CSV import/export in the UI; FR-OB-09 |
+| OB-OI-36 | Inventory re-evaluation and phase placement. | Resolved — deferred to next version; section 10.5 |
 | OB-OI-37 | Assignment of people to each permission (section 10.7). | Open |
+| OB-OI-38 | Completing our data from Radiant (next version): which data Radiant provides, in what format, and how it is reconciled with Order Bridge records. | Open — next version (section 1.3) |
+| OB-OI-39 | Transfers (943/944): are they in this version? If they are deferred, how are transfers to Radiant done once Zoho is retired? | Resolved — in this version; section 10.9 |
+
+### 13.1 Decisions (2026-10-20)
+
+The product owner decided the review points below on 2026-10-20 (D1–D16) and 2026-10-21 (D17–D20); they are applied in the requirements shown. None remains open.
+
+| ID | Decision | Applied in |
+| --- | --- | --- |
+| D1 | "Paid" depends on the partner's settlement mode: PREPAID (Shopify) must be paid; INVOICE (retailers) skips the check; `partially_refunded` ships, `refunded` does not | FR-OB-03, FR-OB-03d, FR-OB-12 |
+| D2 | Cancellation after the 940: Action Required plus one email to Radiant and the internal owner stating the shipped quantity | FR-OB-18 |
+| D3 | Requested delivery date → worklist → person confirms delivery and delivered quantity → invoice; Walmart uses DoNotDeliverAfter; no automatic escalation | FR-OB-31 |
+| D4 | 940 delay and sending mode are per-partner configuration | FR-OB-03a, FR-OB-03b |
+| D5 | Archived during the delay window suppresses the 940, and a paid order archived before its 940 also raises one Action Required (refunded or voided: no task); archived after fulfilment is ignored; UniOps archives the order in Shopify after fulfilment | FR-OB-03d, FR-OB-11a |
+| D6 | After the 940, the order is updated and a user notified; the 940 values stay locked on the 940 record for the comparison; Action Required raised | FR-OB-16 |
+| D7 | Unmatched item: the order is created and goes to review, with the detailed notification | FR-OB-15 |
+| D8 | Item Master is authoritative for case pack; a differing 850 `ofInnerPacks` sends the order to review | FR-OB-02, FR-OB-14 |
+| D9 | Short shipment closes the order's fulfilment and raises Action Required for the shortfall | FR-OB-25 |
+| D10 | One shared control-number sequence, unique and never reused | FR-OB-22 |
+| D11 | Inventory (ledger, dashboard) and Amazon FBA are out of this version | Sections 1.1–1.3, FR-OB-52 |
+| D11-transfers | Transfers to Radiant (943 out, 997 and 944 in) are in this version, so nothing stays in Zoho at cutover; inventory stays deferred | Section 1.1, section 10.9 (FR-OB-80 to FR-OB-84), FR-OB-63, section 11 step 3 |
+| D12 | Old orders are never fulfilled: cut-off plus eligibility gate; Zoho-completed orders historical; in-flight orders continue | FR-OB-17, FR-OB-03d, FR-OB-03e |
+| D13 | Shadow-run exit: one full cycle of all flows, test folders, full-history dry run, and one week with zero unexplained differences | Section 11 step 2 |
+| D14 | Fresh build; SDM not reused | FR-OB-01 |
+| D15 | Keep the v1.1 choices: seven permissions, configurable notifications, one schedule, editable connections | FR-OB-07, FR-OB-56, section 10.7 |
+| D16 | Shopify fulfillment is created at the 945, then the order is archived in Shopify | FR-OB-11, FR-OB-11a |
+| D17 (2026-10-21) | On Hold principle: whenever something is wrong and a person must check it, the order is On Hold (Review, Payment Hold, Archive Suppressed, 940 Rejected/Timeout/Failed, invoice Blocked/Failed); Blocked covers lot exceptions and cancellation/return after shipment | Section 9.1 |
+| D18 (2026-10-21) | Exactly one 945 per order: the 945 closes the fulfilment; Partially Shipped is removed; a second, different 945 is stored, not applied, and puts the order On Hold with an Action Required | FR-OB-25, FR-OB-25d, section 9.1 |
+| D19 (2026-10-21) | No NC interface in this version | Section 1.2, OB-OI-09 |
+| D20 (2026-10-21) | The 940 delay runs from the paid time (PREPAID) or the receipt time (INVOICE); source updates do not restart it | FR-OB-03d, FR-OB-12 |
+
+## Appendix A. Interface specification (as built in Zoho)
+
+This appendix records the message formats the Zoho application produces and reads today (from the exported script, 2026-10-09). FR-OB-20 and FR-OB-21 require them to be kept; where a requirement in section 10 changes a value, the requirement wins.
+
+### A.1 Connections
+
+| System | Endpoint | Folders / version |
+| --- | --- | --- |
+| Radiant SFTP | `commhub.wheelsgroup.com` | production `/prod/in` (we send), `/prod/out` (we read); seed pointed to `/test/in`, `/test/out` |
+| TrueCommerce SFTP | `sftp.truecommerce.com` | read from `Export`, send to `Import` |
+| Shopify Admin API | `https://<store>/admin/api/<version>/orders.json?status=any&updated_at_min=<cursor>&order=updated_at asc` | version `2026-04` |
+
+### A.2 X12 envelope (our 940 and 943)
+
+- `ISA*00*          *00*          *ZZ*CANADAROYALMILK*12*9055651212*<date>*<time>*U*00401*<control>*0*P*>` — sender ZZ/CANADAROYALMILK, receiver 12/9055651212, ISA15 = P (production).
+- `GS*OW*CANADAROYALMILK*9055651212*<date>*<time>*<control>*X*006030` — ISA version 00401 vs GS version 006030 mismatch, and the 943 also uses GS01 = OW (standard: AR); both to confirm with Radiant (OB-OI-16).
+- Separators: element `*`, segment `~` followed by a newline, sub-element `>`.
+- Zoho uses one 9-digit zero-padded number for ISA13, GS06 and ST02 (the order number for a 940, the transfer number for a 943). UniOps keeps one shared 9-digit sequence for all outbound X12 but allocates it independently of order and transfer numbers, so resends and equal order/transfer numbers never collide (FR-OB-22). W05 keeps the order number (A.3).
+
+### A.3 940 shipping order
+
+| Segment | Shopify order | Retailer order |
+| --- | --- | --- |
+| W05 | `W05*N*<Shopify order number>` | `W05*N*<9-digit internal number>*<retailer PO>` |
+| N1 | FR = CANADA ROYAL MILK ULC / CRM; WH = RADIANT COLERAINE WAREHOUSE / CLN02; ST and BT from the order; PER contact sent | same, without PER |
+| N9 | `8X*BC`, `E1*<source reference, e.g. SHP-9275>` | `8X*BB`, `E1*CRM-940_…`, `LB*<label code>`, `LO*<DC number>` (sent even when empty), `MR*0020` (Walmart order type 0020 only), `DP*<department>` (sent even when empty) |
+| G62 | 01 = requested delivery date, 10 = today | also 38 = today, 79 = requested delivery date |
+| W66 | `W66*PP*U***GND*****PRLA` or `EXP` when the shipping method contains "express" (Purolator) | `W66*PP*LT********WIFS` |
+| LX / W01 | `W01*<qty EA>*EA**VN*<Item_Code>*BP*<buyer part>` | same, plus line-level N9s with item name, GTIN and buyer part |
+| W76 | total quantity and total gross weight in LB (quantity × gross weight per can) | same |
+
+Label code: `UCC_CRM_WMT` for Walmart, otherwise `UCC_CRM_LBW`. Items the warehouse does not hold (for example the bib CRMMARK002) are left off the 940. The source reference is the partner abbreviation, a hyphen and the source order number.
+
+### A.4 943 transfer
+
+- `W06*F*<5-digit transfer no>*<today>*<5-digit transfer no>`; N1 SF and ST from the transfer's warehouses (addresses hard-coded in Zoho: Kingston, 1680 Venture Dr → Caledon, 12480 Coleraine Drive; moved to configuration by FR-OB-27); W27; lines `W04*<qty>*EA**VN*<Item_Code>` plus `N9*LI*<sequence>` with no lot; W03 totals.
+
+### A.5 997 functional acknowledgement
+
+- AK1 = functional group and group control number (our GS06); AK2 = transaction set and control number (our ST02); AK5 = transaction response and reason code; AK9 = group response.
+- AK9 A or E → accepted; P, R or anything else → rejected. Zoho matches on AK1 only and ignores AK2/AK5; UniOps follows FR-OB-22a.
+- Zoho treats a 940 as acknowledged when its 945 arrives without a 997. UniOps records this as the separate ACK status Accepted by 945 (FR-OB-25d).
+
+### A.6 945 shipment confirmation
+
+- W06-02 (or W06-06) = order key (FR-OB-28). LX opens a pallet; `MAN*GM*<SSCC-18>`; each `W12*<code>*<ordered>*<shipped>*<diff>*EA*<UPC/GTIN>*VN*<Item_Code>` is one item-and-lot; N9 carries lot (and 2I tracking, MB carrier reference, BM bill of lading); G62/DTM carry ship date and expiry; W27 carries carrier and mode.
+- Example: `LX*1  MAN*GM*00077777770077782891  W12*CP*300*298*0*EA*628347940140*VN*CF0092 (lot 26C141125110131, exp 20280519)  W12*CP*300*2*0*EA*628347940140*VN*CF0092 (lot 26E037125110051)` — 300 ordered once, 298 + 2 shipped (FR-OB-25b).
+
+### A.7 944 receipt confirmation
+
+- W17-04 = transfer number. Each W07 receipt line is allocated to transfer lines of the same item with remaining quantity, in priority: LX line number = transfer line number; same lot (N9\*LT); first line of the same item with remaining quantity. Over-receipts, items not on the transfer and unrecognised items become Discrepancy lines.
+- Outcome: lines Open / Partially Received / Received / Discrepancy; transfer Discrepancy if anything is unallocated or over-received, Received if received = requested, Partially Received if less, Waiting for 944 if nothing.
+- Zoho replaces all receipt lines on every 944; UniOps keeps every 944 (FR-OB-83).
+
+### A.8 850 JSON (TrueCommerce, inbound)
+
+- Partner: `PurchaseOrder[0].TradingPartner` = partner code (e.g. Loblaws `AC-9898`).
+- Header: PurchaseOrderNumber (dedup key with partner), PODate, RequestedDeliveryDate (falls back to DoNotDeliverAfter), CancelDate, OrderType, DepartmentNumber, ShipToCode (GLN) / name / address, BillTo\*, buying-party contact, Note1–Note4. Parsed but not used: ShipDate, ShipNoLaterThan, Routing, SCAC, Terms, Agreement ID, EDIMailbox, MarkFor.
+- Lines: Line, VendorPart, BuyerPart, UPC, GTIN#, Quantity, UOM, UnitPrice, ofInnerPacks.
+
+### A.9 810 JSON (TrueCommerce, outbound)
+
+- Shape `{"Invoice":[...]}`; AccountingID = partner code; Invoice = internal order number; InvoiceDate = ShipDate = delivery date; SCAC `WIFS`; CarrierPro `CRM|<number>`; tax, charges and allowances empty.
+- Line QuantityShipped = (shipped − cancelled − backordered), converted back to the order unit by case pack and truncated to an integer.
+
+### A.10 File names
+
+| File | Name |
+| --- | --- |
+| Shopify page archive | `<yyyyMMdd-HHmmss>-<first order>-<last order>-COUNT-<n>.json` |
+| 850 after order creation | `850-<partner abbrev>-<internal number>-<PO>-<time>.json` |
+| 940 | `940-<partner abbrev>-<internal number>-<source number>-<yyyyMMdd_HHmmss>.edi` |
+| 943 | `CRM-943_<control>_TRID_<transfer no>_.EDI` |
+
+### A.11 Shopify order mapping (summary)
+
+- id → source order id (dedup key; a page with a missing id fails); name without `#` (else order_number) → source order number; currency (default CAD); created_at → order date; financial_status and fulfillment_status stored (Zoho also writes financial_status into order type — not carried over); cancelled_at / cancel_reason; shipping_lines[0] code or title → shipping method; shipping address → ship-to (province and country codes preferred); billing address → bill-to (replaced by ship-to when missing or outside Canada); contact email/phone; note plus email, phone, shipping method and cancel reason combined into notes.
+- Lines: line number = Shopify line id; SKU → vendor and source item number; variant title (case-insensitive contains, first match): "Case" → 6, "2-Can" → 2, "Can" → 1. Item matching order: GTIN → UPC → SKU → Item_Code, active items only.
+
+### A.12 Email messages (Zoho)
+
+| Trigger | Subject |
+| --- | --- |
+| Invoicing (PO, invoice and packing-list PDFs) | Order Documents \| partner \| CRM number \| PO number |
+| File failure / 997 rejection | `Order Bridge File Failure - <file name>` (Zoho sends two per failure; UniOps sends one) |
+| Integration error | `Integration Error - <function name>` |
