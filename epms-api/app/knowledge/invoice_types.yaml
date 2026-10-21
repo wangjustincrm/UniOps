@@ -183,4 +183,21 @@ rules:
       invoice an internal reference INV-YYYY-NNNN: the year it was entered, then
       the next free number in that year.
     enforced_in: "epms-api app/crud/invoice.py _next_ref"
+  - id: invoice_duplicate_rule
+    asked_as:
+      - why can't I upload this invoice, it says duplicate
+      - can the same invoice number be uploaded twice
+      - the vendor uses the same invoice number every month
+    answer: >
+      An invoice from the same vendor with the same vendor invoice number is
+      already in EPMS — whatever its status, and even if you cannot open it;
+      the message names it (reference and status). Numbers are compared by
+      letters and digits only, ignoring case, spaces, punctuation and leading
+      zeros, so "INV-00123/A" and "inv 123a" are the same invoice, and so are
+      "000001" and "1". A vendor record with the same name counts as the same
+      vendor. A number with no letter or digit ("-", "0") is refused. There is
+      no override: if the vendor really reuses a number for a different
+      invoice, enter it with a suffix such as "000010-OCT". The same rule
+      applies when an invoice's number is edited and to courier invoices.
+    enforced_in: "epms-api app/crud/invoice_dedup.py (lookup) + unique index uq_invoices_vendor_invoice_key (migration id01); POST/PATCH /invoices, GET /invoices/duplicate-check, crud/freight.py create_invoice; PRD EPMS INV-004…004f"
 

@@ -53,7 +53,7 @@ async def test_allocated_po_reports_unpaid_invoice(admin_client):
         header_po = await _po(db, v, u.id)
         alloc_po = await _po(db, v, u.id)
         inv = Invoice(
-            internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number="X",
+            internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number=f"X-{uuid.uuid4().hex[:6]}",
             vendor_id=v.id, vendor_name="Acme", amount=Decimal("200"),
             tax_amount=Decimal("0"), total_amount=Decimal("200"),
             invoice_date=date(2026, 1, 1), due_date=date(2026, 2, 1),
@@ -108,7 +108,7 @@ async def test_po_whose_only_invoice_is_claimed_reports_nothing_to_pay(admin_cli
         v = await _vendor(db)
         po = await _po(db, v, u.id)
         inv = Invoice(
-            internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number="X",
+            internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number=f"X-{uuid.uuid4().hex[:6]}",
             vendor_id=v.id, vendor_name="Acme", amount=Decimal("200"),
             tax_amount=Decimal("0"), total_amount=Decimal("200"),
             invoice_date=date(2026, 1, 1), due_date=date(2026, 2, 1),
@@ -149,7 +149,7 @@ async def test_cancelled_pa_releases_its_invoice(admin_client):
         v = await _vendor(db)
         po = await _po(db, v, u.id)
         inv = Invoice(
-            internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number="X",
+            internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number=f"X-{uuid.uuid4().hex[:6]}",
             vendor_id=v.id, vendor_name="Acme", amount=Decimal("200"),
             tax_amount=Decimal("0"), total_amount=Decimal("200"),
             invoice_date=date(2026, 1, 1), due_date=date(2026, 2, 1),
@@ -184,7 +184,7 @@ async def test_a_second_unclaimed_invoice_keeps_the_po_payable(admin_client):
         invs = []
         for _ in range(2):
             inv = Invoice(
-                internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number="X",
+                internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number=f"X-{uuid.uuid4().hex[:6]}",
                 vendor_id=v.id, vendor_name="Acme", amount=Decimal("100"),
                 tax_amount=Decimal("0"), total_amount=Decimal("100"),
                 invoice_date=date(2026, 1, 1), due_date=date(2026, 2, 1),

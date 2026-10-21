@@ -10,11 +10,12 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
+from app.crud import invoice_dedup
 from app.models.cost_center import CostCenter
 from app.models.department import Department
 from app.models.freight import (
@@ -331,24 +332,15 @@ async def default_cost_center(db: AsyncSession, department_id: uuid.UUID, balanc
 # ── Invoices ──────────────────────────────────────────────────────────────────
 
 async def find_duplicate_invoice(db: AsyncSession, vendor_id: uuid.UUID, number: str) -> str | None:
-    """Same vendor + invoice number already in EPMS or OA. Returns a reference."""
-    num = number.strip()
-    epms = (await db.execute(select(Invoice.internal_ref).where(
-        Invoice.vendor_id == vendor_id,
-        func.upper(func.trim(Invoice.vendor_invoice_number)) == num.upper()).limit(1)
-    )).scalar_one_or_none()
-    if epms:
-        return f"EPMS invoice {epms}"
-    # expense_invoices is expense-api's table in the same database; absent in
-    # this service's test schema, hence the to_regclass guard.
-    if (await db.execute(text("SELECT to_regclass('expense_invoices')"))).scalar_one() is not None:
-        oa = (await db.execute(text(
-            "SELECT coalesce(pa_number, id::text) FROM expense_invoices "
-            "WHERE vendor_id = :v AND upper(trim(invoice_number)) = :n LIMIT 1"),
-            {"v": vendor_id, "n": num.upper()})).scalar_one_or_none()
-        if oa:
-            return f"OA invoice {oa}"
-    return None
+    """Same vendor + invoice # already in EPMS or OA (PRD INV-004) — the one
+    rule in crud.invoice_dedup, which every invoice path uses. Returns a
+    reference. A number with no letter or digit raises FreightError(422)."""
+    vendor = await db.get(Vendor, vendor_id)
+    try:
+        hit = await invoice_dedup.find_duplicate(db, vendor_id, vendor.name if vendor else "", number)
+    except invoice_dedup.UncheckableInvoiceNumber as e:
+        raise FreightError(422, str(e))
+    return hit.describe() if hit else None
 
 
 def _spread(total: Decimal, weights: list[Decimal]) -> list[Decimal]:
@@ -408,7 +400,11 @@ async def create_invoice(db: AsyncSession, payload, user_id: uuid.UUID) -> Invoi
         match_route="freight", match_route_auto=True, freight_carrier_id=carrier.id,
     )
     db.add(inv)
-    await db.flush()
+    try:
+        async with invoice_dedup.key_violation_as_duplicate(vendor.name, payload.vendor_invoice_number):
+            await db.flush()
+    except invoice_dedup.DuplicateInvoice as e:
+        raise FreightError(409, str(e))
     lines = []
     for i, ln in enumerate(payload.lines):
         lead = normalize_tracking(ln.tracking_no)
