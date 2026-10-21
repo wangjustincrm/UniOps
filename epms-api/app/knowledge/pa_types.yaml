@@ -125,3 +125,16 @@ rules:
       refuses a new one and says to raise the payment against a purchase order
       instead. Ones that already exist can still be opened, approved and paid.
     enforced_in: "expense-api app/api/v1/pa.py DIRECT_PA_RETIRED (create returns 410 Gone)"
+  - id: paid_pa_is_processed
+    asked_as:
+      - how much was paid last week
+      - which PAs have been paid
+      - are the invoices on a paid PA marked paid
+      - 上周付了多少钱
+    answer: >
+      A payment application that has been paid has status Processed — there is
+      no Paid status on a PA. Its payment date is the date Finance recorded when
+      executing the payment. Paying it marks the invoices on it Paid, or
+      Partially paid for a prepayment. A PA in status Approved is fully approved
+      and still waiting to be paid.
+    enforced_in: "finance-api app/crud/payment_execute.py (pa.status = processed, paid_at = payment date; invoices paid / partially_paid for a prepayment)"

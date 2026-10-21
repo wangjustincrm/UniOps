@@ -187,8 +187,8 @@ entities:
       status:
         kind: enum
         label: "Status"
-        values: [draft, submitted, in_review, approved, rejected, issued,
-                 partially_received, fully_received, closed, cancelled,
+        values: [draft, submitted, in_review, approved, rejected, returned,
+                 issued, partially_received, fully_received, closed, cancelled,
                  nc_pending, nc_milk]
         value_labels:
           draft: "Draft"
@@ -196,6 +196,7 @@ entities:
           in_review: "In review"
           approved: "Approved"
           rejected: "Rejected"
+          returned: "Returned to its creator for changes — not rejected"
           issued: "Issued to the vendor and still open. Every open NC raw-material/packaging order sits here whatever has arrived — how much is received is on the lines (po_line.outstanding_qty), not in this status"
           partially_received: "Partially received"
           fully_received: "Fully received"
@@ -489,9 +490,23 @@ entities:
         kind: enum
         label: "Status. A REJECTED payment application has status cancelled —
           the approval engine never writes rejected for a PA. To find rejected
-          PAs, look for cancelled ones; filtering on rejected finds none"
+          PAs, look for cancelled ones; filtering on rejected finds none. A PAID
+          payment application has status processed, never paid"
         values: [draft, submitted, in_review, approved, rejected, returned,
                  processed, cancelled, paid]
+        # ISS-0072 / ISS-0059 / ISS-0042: with bare values the planner matched
+        # "paid" to the legacy value `paid` and "waiting for payment" to
+        # in_review, and every payment question came back empty or wrong.
+        value_labels:
+          draft: "Draft — not submitted yet"
+          submitted: "Submitted — waiting for its first approver"
+          in_review: "In approval — still being approved, not payable yet"
+          approved: "Approved and awaiting payment — fully approved, the payment has not been made yet. \"Waiting to be paid\" means this"
+          rejected: "Legacy value from imported history; a PA rejected today is cancelled"
+          returned: "Returned to its creator for changes"
+          processed: "Paid — the payment was made in Finance (paid_on is the payment date). \"Paid\" and \"how much was paid\" mean this status"
+          cancelled: "Cancelled — includes every PA an approver rejected"
+          paid: "Legacy value from imported history, never written now. A paid PA is processed; use paid only together with processed"
       pa_type:
         kind: enum
         label: "Payment type"
@@ -504,6 +519,13 @@ entities:
       payment_amount: {kind: money, label: "Amount to be paid"}
       currency: {kind: text, label: "Currency", enumerate: true}
       created_at: {kind: datetime, label: "Created at"}
+      submitted_at: {kind: datetime, label: "When it was submitted for approval"}
+      approved_at: {kind: datetime, label: "When it was fully approved"}
+      paid_on:
+        kind: date
+        label: "Payment date — the date Finance recorded the payment (status
+          processed). \"Paid last week\" and \"when was it paid\" filter or read
+          this, never created_at"
     metrics:
       amount: {fn: sum, field: payment_amount, label: "Total requested for payment"}
       count: {fn: count, field: "*", label: "Number of payment applications"}

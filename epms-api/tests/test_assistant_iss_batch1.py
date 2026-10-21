@@ -223,3 +223,92 @@ def test_new_invoices_are_asked_about_by_upload_date():
 
     assert "Upload Date" in REGISTRY["invoice"].fields["created_at"].label
     assert "set period.field\n  to created_at" in assistant_llm._PLAN_SYSTEM
+
+
+# ── ISS-0072 / ISS-0059 / ISS-0042 / ISS-0043: what a paid PA looks like ─────
+
+def test_pa_status_values_say_what_they_mean():
+    from app.core.ontology import REGISTRY
+
+    status = REGISTRY["payment_application"].fields["status"]
+    labels = dict(status.value_labels)
+    # Every declared value has a meaning, and the two that were misread say so.
+    assert set(labels) == set(status.values)
+    assert labels["processed"].startswith("Paid")
+    assert "awaiting payment" in labels["approved"]
+    assert "Legacy" in labels["paid"]
+
+
+def test_pa_carries_its_dates():
+    from app.core.ontology import REGISTRY
+
+    fields = REGISTRY["payment_application"].fields
+    assert fields["paid_on"].kind == "date"
+    assert fields["approved_at"].kind == fields["submitted_at"].kind == "datetime"
+
+
+async def test_paid_on_is_the_date_finance_entered(test_engine, admin_client):
+    """finance-api stores the payment DATE as midnight UTC; read in plant time
+    that is 20:00 the evening before. paid_on must give back the entered date,
+    and "paid on that day" must find the PA."""
+    import uuid
+    from datetime import datetime, timezone
+    from decimal import Decimal
+
+    from jose import jwt
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.core.config import settings
+    from app.models.pa import PaymentApplication
+    from app.models.po import PurchaseOrder
+    from app.models.vendor import Vendor
+
+    token = admin_client.headers["Authorization"].split()[1]
+    uid = uuid.UUID(jwt.decode(token, settings.JWT_SECRET_KEY,
+                               algorithms=[settings.JWT_ALGORITHM])["sub"])
+    tag = uuid.uuid4().hex[:8]
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        vendor = Vendor(code=f"V-{tag[:6]}", name="Paid On Vendor", category="Services",
+                        contact_name="A", contact_email="a@t.test")
+        db.add(vendor)
+        await db.flush()
+        po = PurchaseOrder(number=f"PO-PAID-{tag}", title="p", type=2, status="issued",
+                           subtotal=Decimal("5"), total=Decimal("5"), vendor_id=vendor.id,
+                           vendor_name=vendor.name, created_by=uid)
+        db.add(po)
+        await db.flush()
+        db.add(PaymentApplication(
+            pa_number=f"PA-PAID-{tag}", title="paid", po_id=po.id, po_number=po.number,
+            vendor_id=vendor.id, vendor_name=vendor.name, invoice_ids=[], gr_ids=[],
+            subtotal=Decimal("5"), payment_amount=Decimal("5"), status="processed",
+            created_by=uid, paid_at=datetime(2026, 10, 19, tzinfo=timezone.utc)))
+        await db.commit()
+
+    async def query(day):
+        r = await admin_client.post("/api/v1/assistant/query", json={
+            "entity": "payment_application", "select": ["pa_number", "paid_on"],
+            "where": [{"field": "pa_number", "op": "eq", "value": f"PA-PAID-{tag}"},
+                      {"field": "paid_on", "op": "eq", "value": day}]})
+        assert r.status_code == 200, r.text
+        return r.json()["rows"]
+
+    rows = await query("2026-10-19")
+    assert [row["paid_on"] for row in rows] == ["2026-10-19"]
+    assert await query("2026-10-18") == []
+
+
+def test_po_returned_is_declared():
+    from app.core.ontology import REGISTRY
+
+    status = REGISTRY["purchase_order"].fields["status"]
+    assert "returned" in status.values
+    assert "not rejected" in dict(status.value_labels)["returned"]
+    import inspect
+
+    from app.crud import po as po_crud
+    assert 'po.status = "returned"' in inspect.getsource(po_crud)
+
+
+def test_paid_pa_rule_is_stated():
+    assert "Processed" in _rules("pa")["paid_pa_is_processed"]
