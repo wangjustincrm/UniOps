@@ -13,8 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
 import { AiBadge } from '@/components/ui/AiBadge'
-import { cn, formatAmount, formatDate, todayISODate } from '@/lib/utils'
-import { invoiceDateWarnings } from '@/lib/dateSanity'
+import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { dueInfo, type DueTone } from '@/lib/dueDate'
 import { computeSla, type InvoiceStatus } from '@/stores/invoice.store'
 import { useInvoices, useCreateInvoice, useMatchInvoice, useDeleteInvoice } from '@/hooks/useInvoices'
@@ -170,8 +169,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const { data: carriers = [] } = useFreightCarriers()
   const [vendorInvoiceNumber, setVendorInvoiceNumber] = useState('')
   const [poNumber, setPoNumber] = useState('')
-  // Local date — toISOString() is tomorrow from 20:00 in Toronto (ISS-0075).
-  const [invoiceDate, setInvoiceDate] = useState(todayISODate())
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState('')
   const [amount, setAmount] = useState('')
   const [docType, setDocType] = useState<'invoice' | 'credit_note'>('invoice')
@@ -208,9 +206,6 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   // OCR can misread the grand total itself, and a hand-keyed figure they have
   // verified against the document must not be blocked by that.
   const [totalOverride, setTotalOverride] = useState(false)
-  // The dates the user confirmed despite a plausibility warning (ISS-0075),
-  // as "invoiceDate|dueDate" — changing either date asks again.
-  const [datesConfirmedFor, setDatesConfirmedFor] = useState<string | null>(null)
 
   // ── Multi-invoice PDFs ─────────────────────────────────────────────────────
   // A vendor's monthly PDF is often several complete invoices, one or more
@@ -236,7 +231,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
     setSelectedVendor(keepVendor)
     setVendorQuery(''); setVendorOpen(false)
     setVendorInvoiceNumber(''); setPoNumber('')
-    setInvoiceDate(todayISODate()); setDueDate('')
+    setInvoiceDate(new Date().toISOString().slice(0, 10)); setDueDate('')
     setAmount(''); setTaxAmount(''); setNotes('')
     setSubmitted(false); setSubmitError(null); setCreatedInv(null)
     setParseError(null)
@@ -251,7 +246,6 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
     setRawTax(null)
     setTotalCheck(null)
     setTotalOverride(false)
-    setDatesConfirmedFor(null)
 
     setParsing(true)
     try {
@@ -311,7 +305,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       if (fields.vendorInvoiceNumber) { setVendorInvoiceNumber(fields.vendorInvoiceNumber); filled.add('vendorInvoiceNumber') }
       if (fields.poNumber)            { setPoNumber(fields.poNumber);                        filled.add('poNumber') }
 
-      const resolvedInvoiceDate = fields.invoiceDate ?? todayISODate()
+      const resolvedInvoiceDate = fields.invoiceDate ?? new Date().toISOString().slice(0, 10)
       if (fields.invoiceDate) { setInvoiceDate(fields.invoiceDate); filled.add('invoiceDate') }
 
       // Due date: explicit date takes priority; otherwise compute from NET XX terms.
@@ -502,13 +496,6 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       )
     : undefined
 
-  // Date plausibility (ISS-0075) — a warning to confirm, like the total check
-  // above, never a refusal: real back-dated and post-dated invoices exist.
-  // Invoices only; a credit note's date has no due date and its own review.
-  const dateWarnings = docType === 'invoice' ? invoiceDateWarnings(invoiceDate, dueDate, todayISODate()) : []
-  const datesKey = `${invoiceDate}|${dueDate}`
-  const datesConfirmed = datesConfirmedFor === datesKey
-
   // Duplicate check: same vendor + same vendor invoice number
   const isDuplicate =
     !!selectedVendor &&
@@ -563,13 +550,6 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
         `${formatAmount(docTotal ?? 0, currency)} (difference ${formatAmount(Math.abs(totalDiff ?? 0), currency)}). ` +
         'Check for a line item or a charge (freight, late fee) that was not picked up, ' +
         'or confirm the figures above the line items to upload anyway.',
-      )
-      return
-    }
-    if (dateWarnings.length > 0 && !datesConfirmed) {
-      setSubmitError(
-        'Check the dates: ' + dateWarnings.map((w) => w.message).join(' ') +
-        ' Correct them, or confirm under the dates that they are right.',
       )
       return
     }
@@ -1107,24 +1087,6 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               </div>
             )}
           </div>
-          {dateWarnings.length > 0 && (
-            <div className="rounded-lg border border-warning-300 bg-warning-50 px-3 py-2 text-xs text-warning-800">
-              {dateWarnings.map((w) => (
-                <p key={w.code} className="flex items-start gap-1.5">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>{w.message}</span>
-                </p>
-              ))}
-              {(aiFields.has('invoiceDate') || aiFields.has('dueDate')) && (
-                <p className="mt-1 text-warning-700">The AI read these dates off the document — check them against it.</p>
-              )}
-              <label className="mt-1.5 flex items-center gap-1.5 text-neutral-700">
-                <input type="checkbox" checked={datesConfirmed}
-                       onChange={(e) => setDatesConfirmedFor(e.target.checked ? datesKey : null)} />
-                The dates are correct — upload anyway
-              </label>
-            </div>
-          )}
 
           {/* Amounts */}
           <div className="grid grid-cols-3 gap-3">
