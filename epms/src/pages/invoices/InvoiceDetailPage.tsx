@@ -1407,7 +1407,9 @@ export default function InvoiceDetailPage() {
                     // I1: this entry is the permanent audit trace — the one place a
                     // false "settled without receipt evidence" outlives the page it was
                     // rendered on. Same derived wording as the banner above.
-                    action: isAgreementRoute
+                    action: isDirectRoute
+                      ? 'Matched for a Direct PA — no PO or agreement'
+                      : isAgreementRoute
                       ? `Matched to Agreement ${inv.agreement_number ?? inv.agreement_id?.slice(0, 8) ?? ''} — ${agreementEvidenceSummary}`
                       : `Matched to ${inv.po_number}${hasException ? ' — Exception raised' : ' — 3-way match passed'}`,
                     color: hasException ? 'bg-danger-600' : 'bg-success-600',
