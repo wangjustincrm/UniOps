@@ -162,7 +162,9 @@ Rules:
   pa_status (the payment application an invoice is on).
 - Whether an invoice is over its PO, by how much, and its match result are on
   `invoice` (variance, matched_reference_total, status) — filter by
-  po_number. Never answer them from the PO alone.
+  po_number. Never answer them from the PO alone. Line by line it is
+  `invoice_allocation`: filter order.number, select po_line.description,
+  allocated_amount, variance, variance_pct.
 - Invoices are `invoice` (INV- numbers, the EPMS Invoices list). `ap_invoice`
   is Finance's AP copy (AP- numbers) and is only for questions that name
   Finance AP, AP numbers or AP posting. An INV- number is invoice.internal_ref,

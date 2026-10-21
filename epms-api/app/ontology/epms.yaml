@@ -556,6 +556,12 @@ entities:
       count: {fn: count, field: "*", label: "Number of invoices"}
       avg_total: {fn: avg, field: total_amount, label: "Average invoice value", currency: currency}
     links:
+      allocations:
+        target: invoice_allocation
+        cardinality: one_to_many
+        local: id
+        remote: invoice_id
+        label: "How the invoice is spread over PO lines, with each line's difference"
       order:
         target: purchase_order
         cardinality: many_to_one
@@ -997,4 +1003,52 @@ entities:
     metrics:
       count: {fn: count, field: "*", label: "Number of projects"}
       budget: {fn: sum, field: budget, label: "Total project budget", currency: currency}
+
+  # ISS-0016: "is the invoice over the PO, by how much" is decided per PO line
+  # (INV-3WM-001); the per-line result is stored here and was not available.
+  invoice_allocation:
+    model: InvoicePoAllocation
+    label: "Invoice allocation — one invoice line's amount placed on one PO
+      line (or on the PO header), with that PO line's match result"
+    perm_key: view_invoice
+    scope: invoice_allocation
+    date_field: invoice.invoice_date
+    fields:
+      invoice_id: {kind: uuid, internal: true}
+      po_id: {kind: uuid, internal: true}
+      po_line_id: {kind: uuid, internal: true}
+      allocated_amount: {kind: money, label: "Amount of this invoice placed on the PO line, before tax"}
+      allocated_tax: {kind: money, label: "Tax on that amount"}
+      allocated_total: {kind: money, label: "Amount including tax"}
+      variance:
+        kind: money
+        label: "The PO line's difference: everything ALL invoices have placed
+          on this PO line (before tax) minus the line's pre-tax value. Below 0
+          = not fully invoiced yet (allowed); above 0 = invoiced more than
+          ordered, an exception when beyond the match tolerance. No PO line =
+          compared with the PO's pre-tax total"
+      variance_pct: {kind: money, label: "variance as a percent of the PO line's pre-tax value"}
+      note: {kind: text, label: "Note"}
+    metrics:
+      count: {fn: count, field: "*", label: "Allocation lines"}
+      allocated: {fn: sum, field: allocated_amount, label: "Allocated before tax", currency: invoice.currency}
+    links:
+      invoice:
+        target: invoice
+        cardinality: many_to_one
+        local: invoice_id
+        remote: id
+        label: "The invoice"
+      order:
+        target: purchase_order
+        cardinality: many_to_one
+        local: po_id
+        remote: id
+        label: "The PO"
+      po_line:
+        target: po_line
+        cardinality: many_to_one
+        local: po_line_id
+        remote: id
+        label: "The PO line (empty = placed on the PO header)"
 

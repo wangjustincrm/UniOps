@@ -94,6 +94,7 @@ _MODELS: dict[str, type] = {
     "PoLineItem": PoLineItem,
     "GoodsReceipt": GoodsReceipt,
     "GrLineItem": GrLineItem,
+    "InvoicePoAllocation": InvoicePoAllocation,
     "Vendor": Vendor,
     "Part": Part,
     "AgreementReceipt": AgreementReceipt,
@@ -293,6 +294,12 @@ async def scope_invoice(q: Select, scope: dict, db: AsyncSession) -> Select:
         agreement_visible=restricted and await sees_agreement_invoices(db, scope),
         agr_ids_subq=scope.get("agr_subq"))
     return q.where(or_(*conds)) if conds else q
+
+
+async def scope_invoice_allocation(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """An allocation line is exactly as visible as its invoice."""
+    visible = await scope_invoice(select(Invoice.id), scope, db)
+    return q.where(InvoicePoAllocation.invoice_id.in_(visible))
 
 
 async def sees_freight_invoices(db: AsyncSession, scope: dict) -> bool:
@@ -555,6 +562,7 @@ _SCOPES: dict[str, Callable] = {
     "gr": scope_gr,
     "po_line": scope_po_line,
     "gr_line": scope_gr_line,
+    "invoice_allocation": scope_invoice_allocation,
     "vendor": scope_vendor,
     "agreement_receipt": scope_agreement_receipt,
     "freight_shipment": scope_freight_shipment,

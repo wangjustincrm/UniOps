@@ -845,3 +845,40 @@ def test_a_reply_cut_at_its_limit_says_so_and_drops_the_half_row():
     assert "被截断" in text
     whole = SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="done")])
     assert assistant_llm._reply_text(whole, "x") == "done"
+
+
+# ── ISS-0016: the invoice against the PO, line by line ──────────────────────
+
+async def test_an_invoice_is_compared_with_its_po_line_by_line(test_engine, admin_client):
+    from app.models.invoice_allocation import InvoicePoAllocation
+    from app.models.po import PoLineItem
+
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        po = _po(v, uid, f"PO-LBL-{tag}")
+        db.add(po)
+        await db.flush()
+        goods = PoLineItem(po_id=po.id, description="Gloves", qty=Decimal("1"), unit="ea",
+                           unit_price=Decimal("100"), line_total=Decimal("100"))
+        freight = PoLineItem(po_id=po.id, description="Transport", qty=Decimal("1"), unit="ea",
+                             unit_price=Decimal("20"), line_total=Decimal("20"))
+        db.add_all([goods, freight])
+        await db.flush()
+        inv = _inv(v, uid, f"INV-LBL-{tag}", amount=Decimal("100"), po_id=po.id,
+                   po_number=po.number)
+        db.add(inv)
+        await db.flush()
+        db.add(InvoicePoAllocation(invoice_id=inv.id, invoice_line_id=uuid.uuid4(), po_id=po.id,
+                                   po_line_id=goods.id, allocated_amount=Decimal("100"),
+                                   allocated_tax=Decimal("13"), allocated_total=Decimal("113"),
+                                   variance=Decimal("0"), variance_pct=Decimal("0")))
+        await db.commit()
+    body = await _query(admin_client, entity="invoice_allocation",
+                        select=["po_line.description", "allocated_amount", "variance"],
+                        where=[{"field": "order.number", "op": "eq", "value": f"PO-LBL-{tag}"}])
+    assert body["rows"] == [{"po_line.description": "Gloves", "allocated_amount": "100.00",
+                             "variance": "0.00"}]
+    # The transport line was never invoiced: it has no allocation, and the PO
+    # line itself still shows it outstanding.
