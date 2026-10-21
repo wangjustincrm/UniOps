@@ -1,8 +1,10 @@
 """VMS Admin endpoints (system_admin only).
 
-Quality Manager roster (W10 / S2-B):
-  GET  /api/v1/admin/quality-managers
-  PUT  /api/v1/admin/quality-managers
+Access zones (replaced the Quality Manager roster, 2026-10):
+  GET    /api/v1/admin/zones
+  POST   /api/v1/admin/zones
+  PATCH  /api/v1/admin/zones/{zone_id}
+  DELETE /api/v1/admin/zones/{zone_id}
 
 Notification contacts + health questions (W11 / S2-C):
   GET  /api/v1/admin/notification-contacts
@@ -26,23 +28,27 @@ NOTE: the data-maintenance routes below use path parameters (`{entity}`,
 `{entity}/{record_id}`) and are registered AFTER the static routes above so
 Starlette matches the more specific static paths first.
 """
+import re
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
 from app.admin import service
 from app.admin.registry import REGISTRY
 from app.core.deps import SessionDep, require_roles
 from app.core.request_meta import load_request_meta
 from app.crud import audit as audit_crud
+from app.models.user_mirror import User
+from app.models.visit import Visit
 from app.models.vms_config import VmsConfig
+from app.models.zone import Zone, ZoneManager
+from app.schemas.zone import ZoneCreate, ZoneManagerOut, ZoneOut, ZoneUpdate
 from app.schemas.vms_config import (
     HealthQuestionsUpdate,
     NotificationContactsUpdate,
-    QualityManagerRosterUpdate,
     SmtpSettingsUpdate,
     SmtpTestRequest,
     SmtpTestResponse,
@@ -67,60 +73,174 @@ async def _load_config(db: SessionDep) -> VmsConfig:
     return cfg
 
 
-# ── Quality Manager roster ──────────────────────────────────────────────────-
+# ── Access zones (VMS Admin → Zones) ────────────────────────────────────────
 
-class QualityManagerRosterResponse(QualityManagerRosterUpdate):
-    """Same shape as the update payload."""
-    pass
+async def _zone_out(db, zone: Zone) -> ZoneOut:
+    managers = (await db.execute(
+        select(User.id, User.full_name, User.email, User.is_active)
+        .join(ZoneManager, ZoneManager.user_id == User.id)
+        .where(ZoneManager.zone_id == zone.id)
+        .order_by(ZoneManager.created_at, User.full_name)
+    )).all()
+    visit_count = (await db.execute(
+        select(func.count(Visit.id)).where(Visit.access_area == zone.code)
+    )).scalar_one()
+    return ZoneOut(
+        id=zone.id, code=zone.code, name=zone.name, gmp_grade=zone.gmp_grade,
+        is_active=zone.is_active, sort_order=zone.sort_order,
+        managers=[
+            ZoneManagerOut(id=m.id, name=m.full_name, email=m.email, is_active=m.is_active)
+            for m in managers
+        ],
+        visit_count=visit_count,
+    )
 
 
-@router.get("/quality-managers", response_model=QualityManagerRosterResponse)
-async def get_quality_manager_roster(
-    db: SessionDep,
-    _: AdminDep,
-):
-    """Return the current list of UniOps user UUIDs designated as VMS Quality
-    Managers. Admin-only — the roster controls who can sign off on GMP / Lab
-    visit approvals."""
-    cfg = await _load_config(db)
-    ids = [uuid.UUID(s) for s in (cfg.quality_manager_user_ids or []) if s]
-    return QualityManagerRosterResponse(user_ids=ids)
+def _zone_snapshot(zone: Zone, manager_ids: list[str]) -> dict:
+    return {
+        "code": zone.code, "name": zone.name, "gmp_grade": zone.gmp_grade,
+        "is_active": zone.is_active, "sort_order": zone.sort_order,
+        "manager_ids": manager_ids,
+    }
 
 
-@router.put("/quality-managers", response_model=QualityManagerRosterResponse)
-async def set_quality_manager_roster(
-    payload: QualityManagerRosterUpdate,
-    request: Request,
-    db: SessionDep,
-    user: AdminDep,
-):
-    """Replace the QM roster atomically. Empty list disables the QM step entirely
-    (engine will return None as the assignee → role-broadcast → no one)."""
-    cfg = await _load_config(db)
-    before = list(cfg.quality_manager_user_ids or [])
+async def _current_manager_ids(db, zone_id: uuid.UUID) -> list[str]:
+    return [str(u) for u in (await db.execute(
+        select(ZoneManager.user_id).where(ZoneManager.zone_id == zone_id)
+        .order_by(ZoneManager.created_at, ZoneManager.user_id)
+    )).scalars().all()]
 
-    # Store as strings — JSONB normalizes anyway, but matches existing convention.
-    new_ids = [str(u) for u in payload.user_ids]
-    cfg.quality_manager_user_ids = new_ids
+
+async def _set_managers(db, zone: Zone, manager_ids: list[uuid.UUID]) -> None:
+    wanted = list(dict.fromkeys(manager_ids))  # de-dup, keep order
+    if wanted:
+        found = set((await db.execute(
+            select(User.id).where(User.id.in_(wanted), User.is_active.is_(True))
+        )).scalars().all())
+        missing = [str(u) for u in wanted if u not in found]
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Not active UniOps users: {', '.join(missing)}",
+            )
+    await db.execute(delete(ZoneManager).where(ZoneManager.zone_id == zone.id))
+    for uid in wanted:
+        db.add(ZoneManager(zone_id=zone.id, user_id=uid))
     await db.flush()
 
+
+async def _unique_code(db, name: str) -> str:
+    """The zone's permanent code, made from its name ("Cold Room 2" →
+    "cold_room_2"). Never changes afterwards, even if the zone is renamed."""
+    base = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:32] or "zone"
+    taken = set((await db.execute(
+        select(Zone.code).where(Zone.code.like(f"{base}%"))
+    )).scalars().all())
+    code, n = base, 2
+    while code in taken:
+        code, n = f"{base}_{n}", n + 1
+    return code
+
+
+async def _name_taken(db, name: str, *, exclude: uuid.UUID | None = None) -> bool:
+    stmt = select(Zone.id).where(func.lower(Zone.name) == name.lower())
+    if exclude is not None:
+        stmt = stmt.where(Zone.id != exclude)
+    return (await db.execute(stmt)).first() is not None
+
+
+async def _audit_zone(db, user, request, *, action: str, zone_id, old, new) -> None:
     meta = await load_request_meta(db, user, request)
     await audit_crud.log_event(
         db,
         user_id=meta.user_id,
         user_name=meta.user_name,
-        action_type="admin.quality_managers.update",
-        entity_type="vms_config",
-        entity_id=cfg.id,
+        action_type=action,
+        entity_type="vms_zone",
+        entity_id=zone_id,
         ip_address=meta.ip_address,
         user_agent=meta.user_agent,
-        old_value={"quality_manager_user_ids": before},
-        new_value={"quality_manager_user_ids": new_ids},
+        old_value=old,
+        new_value=new,
     )
 
-    return QualityManagerRosterResponse(
-        user_ids=[uuid.UUID(s) for s in new_ids],
+
+@router.get("/zones", response_model=list[ZoneOut])
+async def list_zones(db: SessionDep, _: AdminDep):
+    """Every zone, retired ones included, in display order."""
+    zones = (await db.execute(
+        select(Zone).order_by(Zone.sort_order, Zone.name)
+    )).scalars().all()
+    return [await _zone_out(db, z) for z in zones]
+
+
+@router.post("/zones", response_model=ZoneOut, status_code=201)
+async def create_zone(payload: ZoneCreate, request: Request, db: SessionDep, user: AdminDep):
+    if await _name_taken(db, payload.name):
+        raise HTTPException(status_code=409, detail=f"A zone named '{payload.name}' already exists")
+    zone = Zone(
+        code=await _unique_code(db, payload.name), name=payload.name,
+        gmp_grade=payload.gmp_grade, sort_order=payload.sort_order,
+        updated_by=uuid.UUID(str(user["sub"])),
     )
+    db.add(zone)
+    await db.flush()
+    await _set_managers(db, zone, payload.manager_ids)
+    await _audit_zone(db, user, request, action="admin.zone.create", zone_id=zone.id,
+                      old=None, new=_zone_snapshot(zone, await _current_manager_ids(db, zone.id)))
+    return await _zone_out(db, zone)
+
+
+@router.patch("/zones/{zone_id}", response_model=ZoneOut)
+async def update_zone(
+    zone_id: uuid.UUID, payload: ZoneUpdate, request: Request, db: SessionDep, user: AdminDep,
+):
+    """Edit a zone. Changing its managers affects visits submitted from now
+    on; a visit already in approval keeps the managers it was routed to."""
+    zone = (await db.execute(select(Zone).where(Zone.id == zone_id))).scalar_one_or_none()
+    if zone is None:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    before = _zone_snapshot(zone, await _current_manager_ids(db, zone.id))
+    if payload.name is not None and payload.name != zone.name:
+        if await _name_taken(db, payload.name, exclude=zone.id):
+            raise HTTPException(status_code=409, detail=f"A zone named '{payload.name}' already exists")
+        zone.name = payload.name
+    if payload.gmp_grade is not None:
+        zone.gmp_grade = payload.gmp_grade
+    if payload.is_active is not None:
+        zone.is_active = payload.is_active
+    if payload.sort_order is not None:
+        zone.sort_order = payload.sort_order
+    zone.updated_by = uuid.UUID(str(user["sub"]))
+    await db.flush()
+    if payload.manager_ids is not None:
+        await _set_managers(db, zone, payload.manager_ids)
+    await _audit_zone(db, user, request, action="admin.zone.update", zone_id=zone.id,
+                      old=before, new=_zone_snapshot(zone, await _current_manager_ids(db, zone.id)))
+    return await _zone_out(db, zone)
+
+
+@router.delete("/zones/{zone_id}", status_code=204)
+async def delete_zone(zone_id: uuid.UUID, request: Request, db: SessionDep, user: AdminDep):
+    """Only a zone no visit has ever used can be deleted; retire the others
+    (is_active = false) so their visits keep their zone."""
+    zone = (await db.execute(select(Zone).where(Zone.id == zone_id))).scalar_one_or_none()
+    if zone is None:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    used = (await db.execute(
+        select(func.count(Visit.id)).where(Visit.access_area == zone.code)
+    )).scalar_one()
+    if used:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{used} visit(s) use this zone — retire it instead of deleting it",
+        )
+    before = _zone_snapshot(zone, await _current_manager_ids(db, zone.id))
+    await db.delete(zone)
+    await db.flush()
+    await _audit_zone(db, user, request, action="admin.zone.delete", zone_id=zone_id,
+                      old=before, new=None)
+    return Response(status_code=204)
 
 
 # ── Notification contacts (PRD §2.1.2.1 VMS-PR-020..023) ────────────────────-

@@ -26,15 +26,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.task_mirror import Task
 from app.models.user_mirror import User
 from app.services import area_rules
-from app.models.visit import AccessArea, Visit
+from app.models.visit import Visit
 from app.models.visitor import Visitor
 
 # 12-month TTL — matches CFIA / food-safety practice. Lives here, not in
 # schema, so we can tune it without a migration.
 COMPLIANCE_TTL = timedelta(days=365)
-
-# Access areas that require both gates. Mirrors the email-dispatch set.
-_NEEDS_COMPLIANCE = area_rules.COMPLIANCE_TASK_AREAS
 
 # Task document type codes — must fit `tasks.document_type varchar(10)`.
 DOC_TYPE_TRAINING = "vms_train"
@@ -63,8 +60,10 @@ def ppe_fresh(visitor: Visitor, *, now: datetime | None = None) -> bool:
     return _is_fresh(visitor.ppe_issued_at, now=now)
 
 
-def visit_requires_compliance(visit: Visit) -> bool:
-    return visit.access_area in _NEEDS_COMPLIANCE
+async def visit_requires_compliance(db: AsyncSession, visit: Visit) -> bool:
+    """GMP-grade zones get training / PPE confirmation at check-in."""
+    rules = await area_rules.rules_for(db, visit.access_area)
+    return rules is not None and rules.compliance_tasks_at_check_in
 
 
 # ── Contact lookup ──────────────────────────────────────────────────────────-
@@ -179,7 +178,7 @@ async def open_compliance_task(
         title=f"{_TASK_TITLE[kind]} — {visitor_label}",
         description=(
             f"Triggered by visit on {triggering_visit.visit_date.isoformat()} "
-            f"({triggering_visit.access_area.value.replace('_', ' ')}). "
+            f"({await area_rules.zone_label(db, triggering_visit.access_area)}). "
             f"Open the visitor compliance page to confirm."
         ),
     )

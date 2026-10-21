@@ -21,7 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.task_mirror import Task
 from app.models.user_mirror import User
 from app.core.list_sort import apply_sort, label_case
-from app.models.visit import AccessArea, Visit, VisitStatus
+from app.models.visit import Visit, VisitStatus
+from app.models.zone import Zone
 from app.models.visitor import Visitor
 from app.schemas.visit import VisitCheckOut, VisitCreate, VisitUpdate
 
@@ -59,13 +60,16 @@ def apply_visibility_scope(
     if role in _FULL_SCOPE_ROLES:
         return stmt
 
-    # Anyone assigned as the visit's Quality Manager (per-visit role, not
-    # tied to UniOps `role` column) gets visibility on that visit. Without
-    # this, a QM clicking the task in their inbox hits 404 on the deep-link.
+    # Anyone the visit was routed to as a Zone Manager (per-visit, not tied to
+    # the UniOps `role` column) gets visibility on that visit. Without this, a
+    # zone manager clicking the task in their inbox hits 404 on the deep-link.
     # Likewise anyone holding a task on the visit (open or done): the Janitor's
     # "Prepare PPE", a department manager approving a visit booked by someone
     # in their department for a Host in another — their task links here.
-    qm_clause = or_(Visit.quality_approver_id == user_id, Visit.id.in_(_task_visit_ids(user_id)))
+    qm_clause = or_(
+        Visit.zone_approver_ids.contains([str(user_id)]),
+        Visit.id.in_(_task_visit_ids(user_id)),
+    )
 
     if role == "dept_manager" and department_id is not None:
         # Manager sees their own visits + every visit whose host is in their dept.
@@ -82,7 +86,7 @@ def apply_visibility_scope(
         )
 
     # Default: own visits only (whether you're the creator or the host)
-    # plus visits where this user is the assigned QM.
+    # plus visits routed to this user as a Zone Manager.
     return stmt.where(
         or_(Visit.created_by == user_id, Visit.host_id == user_id, qm_clause)
     )
@@ -91,18 +95,13 @@ def apply_visibility_scope(
 # ── List ─────────────────────────────────────────────────────────────────────
 
 # Labels the VMS list shows for the coded columns (vms/src/components/StatusBadge.tsx
-# STATUS_LABEL / ACCESS_AREA_LABEL) — the sort follows the label, not the code
-# ("On-Site" for checked_in, "Entire Plant" for all). Keep in step with that file.
+# STATUS_LABEL) — the sort follows the label, not the code ("On-Site" for
+# checked_in). Keep in step with that file. The zone sorts by its name in
+# vms_zones ("Entire Plant" for all).
 _STATUS_LABEL = {
     VisitStatus.pending_approval: "Pending Approval", VisitStatus.confirmed: "Confirmed",
     VisitStatus.checked_in: "On-Site", VisitStatus.checked_out: "Departed",
     VisitStatus.cancelled: "Cancelled", VisitStatus.no_show: "No Show",
-}
-_AREA_LABEL = {
-    AccessArea.office: "Office", AccessArea.warehouse: "Warehouse",
-    AccessArea.production_non_gmp: "Production (Non-GMP)",
-    AccessArea.production_gmp: "Production (GMP)",
-    AccessArea.laboratory: "Laboratory", AccessArea.all: "Entire Plant",
 }
 _main_visitor = lambda col: (  # noqa: E731 — the visit's primary visitor's column
     select(col).where(Visitor.id == Visit.visitor_id).correlate(Visit).scalar_subquery())
@@ -112,7 +111,8 @@ VISIT_SORTABLE = {
     "visitor": _main_visitor(func.lower(Visitor.first_name + " " + Visitor.last_name)),
     "company": _main_visitor(func.lower(Visitor.company_name)),
     "planned_arrival": Visit.planned_arrival,
-    "access_area": label_case(Visit.access_area, _AREA_LABEL),
+    "access_area": select(func.lower(Zone.name)).where(Zone.code == Visit.access_area)
+                   .correlate(Visit).scalar_subquery(),
     "status": label_case(Visit.status, _STATUS_LABEL),
 }
 
@@ -273,10 +273,10 @@ def is_visible(
         return True
     if visit.created_by == user_id or visit.host_id == user_id:
         return True
-    # Assigned Quality Manager — needed so they can open the visit from
+    # Routed to as a Zone Manager — needed so they can open the visit from
     # their task-inbox deep-link even though their UniOps role (e.g. opm)
     # has no dept-scope claim on this visit.
-    if visit.quality_approver_id is not None and visit.quality_approver_id == user_id:
+    if str(user_id) in {str(u) for u in (visit.zone_approver_ids or [])}:
         return True
     if has_task:
         return True

@@ -24,6 +24,15 @@ from tests.conftest import authed_client, make_token, make_user
 
 
 @pytest.fixture(autouse=True)
+async def _zones_need_approval(test_engine, zone_managers):
+    """These tests are about visits that go through approval: give every zone
+    but Office a manager, as before zones were configurable."""
+    approver = await make_user(test_engine, role="requester")
+    for code in ("warehouse", "production_non_gmp", "production_gmp", "laboratory", "all"):
+        await zone_managers(code, [approver.id])
+
+
+@pytest.fixture(autouse=True)
 def _capture_emails(monkeypatch):
     sent: list[dict] = []
 
@@ -138,7 +147,7 @@ async def test_confirmed_office_visit_cannot_be_moved_into_gmp(requester):
 
     resp = await client.patch(f"/api/v1/visits/{v['id']}", json={"access_area": "production_gmp"})
     assert resp.status_code == 409, resp.text
-    assert (await _get(v["id"])).access_area.value == "office"
+    assert (await _get(v["id"])).access_area == "office"
 
 
 async def test_approved_gmp_visit_can_move_down_to_office(requester):
