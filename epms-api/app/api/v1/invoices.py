@@ -573,6 +573,14 @@ async def upload_invoice(body: InvoiceCreate, db: SessionDep, user: InvoiceUploa
         raise HTTPException(status_code=409, detail=(
             f"{vendor.name} is a courier (Freight → Carriers) — its invoices are courier "
             "invoices, read per shipment and matched to tracking numbers"))
+    # INV-004: the form checks this only against what its user can see.
+    existing = await invoice_crud.find_duplicate(
+        db, vendor.id, vendor.name, body.vendor_invoice_number)
+    if existing is not None:
+        raise HTTPException(status_code=409, detail=(
+            f"Duplicate invoice — {body.vendor_invoice_number.strip()} from {vendor.name} "
+            f"already exists in the system ({existing.internal_ref}). Please verify this "
+            "invoice has not already been uploaded"))
     inv = await invoice_crud.create(
         db, body, vendor_name=vendor.name, uploaded_by=uuid.UUID(user["sub"])
     )

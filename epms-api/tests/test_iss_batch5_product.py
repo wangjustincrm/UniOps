@@ -2,6 +2,9 @@
 
 ISS-0077  History showed an engine-skipped step as "Approve by <whoever
           triggered the skip>". Events now carry a derived `kind`.
+ISS-0078  "Rejected" PA filter = cancelled by a rejection.
+PA Detail "Payment Processed" = the payment date (paid_on), not updated_at.
+INV-004   duplicate vendor invoice # refused by the server, not only the form.
 """
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -206,3 +209,49 @@ async def test_pa_detail_gives_the_payment_date_not_last_modified(test_engine, a
 
     unpaid = await _pa(test_engine, uid, tag + "u", status="approved")
     assert (await admin_client.get(f"/api/v1/pa/{unpaid.id}")).json()["paid_on"] is None
+
+
+# ── INV-004 duplicate guard on the server ────────────────────────────────────
+
+async def test_upload_refuses_a_duplicate_vendor_invoice_number(test_engine, admin_client):
+    """The form only compares against the invoices its user can see. The server
+    applies the same rule to every invoice: same vendor + same vendor invoice #
+    (case and surrounding spaces ignored), whatever its status."""
+    from datetime import date
+    from app.models.invoice import Invoice
+
+    uploader = await _user(test_engine, "Someone Else", "requester")
+    tag = uuid.uuid4().hex[:8]
+    async with _factory(test_engine)() as db:
+        vendor = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name=f"Dup Vendor {tag}",
+                        category="Services", contact_name="A", contact_email="a@t.test")
+        other = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name=f"Other Vendor {tag}",
+                       category="Services", contact_name="A", contact_email="a@t.test")
+        db.add_all([vendor, other])
+        await db.flush()
+        db.add(Invoice(
+            internal_ref=f"INV-B5-{tag}", vendor_invoice_number=f"AB-{tag}",
+            vendor_id=vendor.id, vendor_name=vendor.name, amount=Decimal("10"),
+            tax_amount=Decimal("0"), total_amount=Decimal("10"),
+            invoice_date=date(2026, 9, 1), due_date=date(2026, 10, 1),
+            status="paid", line_items=[], uploaded_by=uploader))
+        await db.commit()
+
+    def body(vendor_id, number):
+        return {"vendor_id": str(vendor_id), "vendor_invoice_number": number,
+                "amount": "10.00", "tax_amount": "0", "currency": "CAD",
+                "invoice_date": "2026-09-02", "due_date": "2026-10-02"}
+
+    r = await admin_client.post("/api/v1/invoices", json=body(vendor.id, f"  ab-{tag} "))
+    assert r.status_code == 409, r.text
+    assert f"INV-B5-{tag}" in r.json()["detail"]
+
+    # The same number from a different vendor is not a duplicate.
+    r = await admin_client.post("/api/v1/invoices", json=body(other.id, f"AB-{tag}"))
+    assert r.status_code == 201, r.text
+    # A different number from the same vendor is fine.
+    r = await admin_client.post("/api/v1/invoices", json=body(vendor.id, f"AB-{tag}-2"))
+    assert r.status_code == 201, r.text
+    # And now that one is taken too.
+    r = await admin_client.post("/api/v1/invoices", json=body(vendor.id, f"ab-{tag}-2"))
+    assert r.status_code == 409, r.text
