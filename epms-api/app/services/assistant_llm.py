@@ -431,6 +431,12 @@ results are the only facts you have.
 - Never introduce a number, name, date or status that is not in the results. If
   the question asked for something the results do not contain, say what is
   missing rather than filling it in.
+- If the question ALSO asked about something this query did not look up —
+  another document, another kind of record, how something works, anything
+  outside purchasing — say that this part was not looked up in this answer
+  and can be asked on its own. Never say it does not exist, is not available,
+  or that you have no data or no access for it: it simply was not queried
+  (ISS-0037, ISS-0069).
 """
 
 _QUERY_TOOL = {
@@ -977,7 +983,7 @@ def _context_note(context: dict | None) -> str:
 # Keys the chat layer adds to the planner's context that are not about the
 # page. _context_note renders them on their own instead of listing them as
 # "currently looking at".
-_SESSION_KEYS = ("conversation", "caller")
+_SESSION_KEYS = ("conversation", "caller", "question_part")
 
 # Appended to _PLAN_SYSTEM: rules about the conversation itself.
 _PLAN_SESSION_RULES = """\
@@ -1017,7 +1023,9 @@ def _caller_note(caller) -> str:
 def _session_note(context: dict) -> str:
     """What the planner is told about the conversation it is in, and who is
     asking."""
-    return _conversation_note(context.get("conversation")) + _caller_note(context.get("caller"))
+    return (_part_note(context.get("question_part"))
+            + _conversation_note(context.get("conversation"))
+            + _caller_note(context.get("caller")))
 
 
 def _conversation_note(conversation) -> str:
@@ -1180,12 +1188,79 @@ _SESSION_TOOL_KINDS = {
     "recall_conversation": "recall",
     "who_am_i": "me",
     "trace_document": "trace",
+    "split_question": "split",
 }
 
 
 def _session_tools(context: dict | None) -> list[dict]:
-    """The planner tools this section adds."""
-    return [_TRACE_TOOL, _RECALL_TOOL, _WHO_AM_I_TOOL]
+    """The planner tools this section adds. A part of a split message is
+    planned on its own and is never split again."""
+    tools = [_TRACE_TOOL, _RECALL_TOOL, _WHO_AM_I_TOOL]
+    if not (context or {}).get("question_part"):
+        tools.append(_SPLIT_TOOL)
+    return tools
+
+
+# ── One message, several questions (ISS-0037, ISS-0069) ──────────────────────
+#
+# "PO-576-2610-01 的状态、PO-535-2609-02 的金额、供应商 Raise The Standard 的联系人
+# 分别是什么？" ran one query for the first PO and called the other two "not in
+# the query result"; "PO-079 是什么状态，INV-2026-0123 金额多少，怎么催审批人，再
+# 帮我写一首诗" answered the PO and said the invoice amount was unavailable —
+# asked alone, it is answered. The planner was built to run one tool per
+# message and plan() returned the first. A message that asks several things is
+# now split into its parts here, and each part is planned, checked against its
+# own permissions and answered on its own (assistant_chat._answer_parts) — at
+# most MAX_PARTS of them, so the cost of one message stays bounded; any
+# further parts are named as not looked up.
+MAX_PARTS = 3
+
+_PLAN_PARTS_RULES = """\
+- When ONE message asks two or more SEPARATE questions that need different
+  lookups — documents of different kinds, a data question next to a
+  how-does-it-work question, a request outside purchasing — call
+  split_question with each part as a complete question of its own. Never
+  plan only the first part: the others were then reported "not in the query
+  result" although the data was there. Several facts about the same document,
+  the same facts about several documents of one kind (one query with `in`),
+  and every condition on one list are ONE question — do not split those.
+"""
+
+_SPLIT_TOOL = {
+    "name": "split_question",
+    "description": (
+        "Use when one message asks several separate questions that each need "
+        "their own lookup or route, e.g. 'PO-079-2605-03 是什么状态，INV-2026-0123 "
+        "金额多少，怎么催审批人，再帮我写一首诗'. Each part is then planned and "
+        "answered separately, in order."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "parts": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "The separate questions, in the order asked, each written "
+                    "as a complete question in the person's own language and "
+                    "words, with the document numbers or names it needs — "
+                    "e.g. ['PO-079-2605-03 是什么状态？', 'INV-2026-0123 金额多少？', "
+                    "'怎么催审批人？', '帮我写一首诗']."
+                ),
+            },
+        },
+        "required": ["parts"],
+    },
+}
+
+
+def _part_note(part) -> str:
+    if not isinstance(part, dict):
+        return ""
+    return (f"\n\nThis is part {part.get('index')} of {part.get('of')} of a longer "
+            f"message the person sent: «{part.get('whole')}». Plan THIS part only — "
+            f"the other parts are answered separately. Use the whole message only "
+            f"to understand what this part refers to.")
 
 
 def _language_note(message: str) -> str:
@@ -1228,7 +1303,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
         )
 
     system = [
-        {"type": "text", "text": _PLAN_SYSTEM + _PLAN_SESSION_RULES + _PLAN_CHAIN_RULES},
+        {"type": "text", "text": (_PLAN_SYSTEM + _PLAN_SESSION_RULES + _PLAN_CHAIN_RULES
+                                  + _PLAN_PARTS_RULES)},
         # The schema is the stable half of the prompt and by far the larger one,
         # so it sits in its own block for caching.
         {"type": "text", "text": "Schema:\n" + json.dumps(schema, ensure_ascii=False),

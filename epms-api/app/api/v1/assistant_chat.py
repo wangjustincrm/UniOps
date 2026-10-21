@@ -206,16 +206,23 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
     (ISS-0001). They are marked `_fixed_text` where they are written.
     """
     out = await _chat(body, db, user, token)
+    return await _finish(out, body.message)
+
+
+async def _finish(out: dict, message: str) -> dict:
+    """A reply on its way out: markup stripped, a code-written reply rendered
+    in the language of `message`, system names kept. Applied to the whole
+    reply, and to each part of a split one with that part's own question."""
     if isinstance(out.get("answer"), str):
         out["answer"] = assistant_llm.strip_markup(out["answer"])
     if out.pop("_fixed_text", False) and out.get("answer"):
-        language = reply_language.detect(body.message)
+        language = reply_language.detect(message)
         plainly_english = language == "English" or (
-            language is None and body.message.isascii())
+            language is None and message.isascii())
         if not plainly_english:
             try:
                 said = await assistant_llm.render_fixed_reply(
-                    out["answer"], body.message, language)
+                    out["answer"], message, language)
                 out["answer"] = said["text"] or out["answer"]
             except assistant_llm.LlmUnavailable:
                 pass  # the English sentence is still a correct answer
@@ -225,7 +232,8 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
     return out
 
 
-async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
+async def _chat(body: ChatRequest, db, user: dict, token: str,
+                part: dict | None = None) -> dict:
     schema = (await assistant_schema(db, user))["entities"]
     # Entities this app's assistant does not use (ISS-0015: Finance's AP copy
     # of the invoices is kept out of EPMS).
@@ -258,6 +266,9 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
     me = await caller_view.describe(db, user)
     if me:
         context["caller"] = me
+    if part:
+        # One question of several in the message (ISS-0037, ISS-0069).
+        context["question_part"] = part
 
     try:
         planned = await assistant_llm.plan(schema, body.message, context,
@@ -265,6 +276,9 @@ async def _chat(body: ChatRequest, db, user: dict, token: str) -> dict:
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "plan", planned.get("usage") or {})
+
+    if planned["kind"] == "split":
+        return await _answer_parts(body, db, user, token, planned, part)
 
     if planned["kind"] == "recall":
         return _answer_recall(body, planned, exchanges)
@@ -1080,4 +1094,70 @@ async def _answer_trace(db, scope, body: ChatRequest, planned: dict, context: di
         "sources": {"document": chain["asked_about"]["number"],
                     "documents": document_chain.count_documents(chain),
                     "complete": not hidden},
+    }
+
+
+# ── One message, several questions (ISS-0037, ISS-0069) ──────────────────────
+
+_NOT_LOOKED_UP = {
+    "Chinese (Simplified)": "以下部分这次没有去查（不代表没有数据），请单独再问一次：",
+}
+_NOT_LOOKED_UP_DEFAULT = ("Not looked up this time (that does not mean there is no "
+                          "data) — please ask these separately:")
+
+
+async def _answer_parts(body: ChatRequest, db, user: dict, token: str, planned: dict,
+                        part: dict | None) -> dict:
+    """Plan and answer each question of the message on its own, in order.
+
+    Each part goes through the whole loop — plan, the schema and row scope of
+    whatever it reaches, narration — exactly as if it had been asked alone, so
+    splitting can neither widen what is read nor skip a check. At most
+    MAX_PARTS are answered: every part costs a plan and a narration.
+    """
+    parts = [str(p).strip() for p in planned.get("parts") or [] if str(p).strip()]
+    if part:
+        # A part is never split again (the tool is not offered for one).
+        return {"_fixed_text": True, "kind": "cannot_answer", "reason": "too_ambiguous",
+                "answer": "I could not tell what this part of the question asks.",
+                "query": None, "sources": None}
+    if len(parts) < 2:
+        # A "split" into one part is just the question.
+        lone = {"index": 1, "of": 1, "whole": body.message}
+        return await _chat(ChatRequest(message=(parts[0] if parts else body.message)[:2000],
+                                       context=body.context, history=body.history),
+                           db, user, token, part=lone)
+
+    answered, rest = parts[:assistant_llm.MAX_PARTS], parts[assistant_llm.MAX_PARTS:]
+    replies = []
+    for i, question in enumerate(answered, start=1):
+        one = ChatRequest(message=question[:2000], context=body.context, history=body.history)
+        try:
+            out = await _chat(one, db, user, token,
+                              part={"index": i, "of": len(parts), "whole": body.message})
+        except HTTPException as exc:
+            # One part failing must not lose the others' answers.
+            out = {"_fixed_text": True, "kind": "cannot_answer", "reason": "unavailable",
+                   "answer": f"This part could not be answered just now ({exc.detail}).",
+                   "query": None, "sources": None}
+        replies.append({"question": question, **await _finish(out, question)})
+
+    sections = [f"**{i}. {r['question']}**\n\n{r.get('answer') or ''}"
+                for i, r in enumerate(replies, start=1)]
+    if rest:
+        language = reply_language.detect(body.message)
+        lead = _NOT_LOOKED_UP.get(language, _NOT_LOOKED_UP_DEFAULT)
+        if language not in (None, "English", "Chinese (Simplified)"):
+            try:
+                lead = (await assistant_llm.render_fixed_reply(
+                    lead, body.message, language))["text"] or lead
+            except assistant_llm.LlmUnavailable:
+                pass
+        sections.append(lead + "\n" + "\n".join(f"- {q}" for q in rest))
+    return {
+        "answer": "\n\n".join(sections),
+        "kind": "parts",
+        "parts": replies,
+        "not_looked_up": rest,
+        "query": None, "sources": None,
     }

@@ -67,6 +67,7 @@ export type AssistantKind =
   | 'document_chain'
   | 'recall'
   | 'me'
+  | 'parts'
   | 'cannot_answer'
   | 'denied'
 
@@ -116,6 +117,18 @@ export interface AssistantReply {
   preflight?: AssistantPreflight | null
   workflow?: AssistantWorkflow | null
   sources?: AssistantSources | null
+  /**
+   * A message that asked several things is answered part by part; `answer`
+   * holds all of them, and each part keeps its own query and evidence.
+   */
+  parts?: AssistantReplyPart[] | null
+  /** Parts of the message beyond the ones answered — not looked up. */
+  not_looked_up?: string[] | null
+}
+
+/** One question of a message that asked several. */
+export interface AssistantReplyPart extends AssistantReply {
+  question: string
 }
 
 /** Where the person is, so "this PO" has a referent. */

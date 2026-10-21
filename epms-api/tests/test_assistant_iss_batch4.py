@@ -644,3 +644,101 @@ def test_status_names_match_the_document_chain():
         block = text.split(f"const {const}")[1].split("\n}")[0]
         assert dict(re.findall(r"^\s+([a-z_]+):\s*'([^']+)',", block, re.M)) == \
             document_chain.STATUS_LABELS[kind], const
+
+
+# ── ISS-0037 / ISS-0069: one message, several questions ──────────────────────
+
+_FOUR = "PO 是什么状态，INV 金额多少，再帮我写一首诗，最后供应商联系人是谁"
+
+
+def _q(entity, field, value, select):
+    return {"kind": "query", "query": {"entity": entity, "select": select, "where": [
+        {"field": field, "op": "eq", "value": value, "because": "asked"}]}}
+
+
+async def test_each_part_is_planned_and_answered_on_its_own(test_engine, admin_client, monkeypatch):
+    """Only the PO was queried; the invoice amount was "not in the query
+    result" although, asked alone, it is answered."""
+    c = await _seed_chain(test_engine, _uid(admin_client))
+    parts = [f"{c.po.number} 是什么状态？", f"{c.inv.internal_ref} 金额多少？", "帮我写一首诗",
+             "供应商联系人是谁？"]
+    calls = _stub(monkeypatch, plans=[
+        {"kind": "split", "parts": parts},
+        _q("purchase_order", "number", c.po.number, ["number", "status"]),
+        _q("invoice", "internal_ref", c.inv.internal_ref, ["internal_ref", "total_amount"]),
+        {"kind": "cannot", "reason": "not_a_data_question", "explanation": "写诗不在我能做的范围内。"},
+    ])
+    r = await admin_client.post(CHAT, json={"message": _FOUR})
+    body = r.json()
+    assert body["kind"] == "parts" and len(body["parts"]) == assistant_llm.MAX_PARTS == 3
+    # Each part was planned as itself, knowing it is one of several.
+    assert [p["message"] for p in calls["plan"][1:]] == parts[:3]
+    assert calls["plan"][2]["context"]["question_part"] == {"index": 2, "of": 4, "whole": _FOUR}
+    # ...and narrated with its own question, so nothing reads as "missing".
+    assert [n["message"] for n in calls["narrate"]] == parts[:2]
+    assert calls["narrate"][1]["result"]["rows"][0]["internal_ref"] == c.inv.internal_ref
+    assert [p["kind"] for p in body["parts"]] == ["answer", "answer", "cannot_answer"]
+    assert body["parts"][1]["query"]["entity"] == "invoice", "its own receipt for export"
+    text = body["answer"]
+    assert f"**1. {parts[0]}**" in text and f"**3. {parts[2]}**" in text
+    assert "写诗不在我能做的范围内" in text
+    # The fourth part is named as not looked up — never as having no data.
+    assert body["not_looked_up"] == [parts[3]]
+    assert "这次没有去查" in text and parts[3] in text
+
+
+async def test_a_part_cannot_reach_what_the_person_cannot(
+        test_engine, admin_client, requester_client, monkeypatch):
+    c = await _seed_chain(test_engine, _uid(admin_client))   # someone else's
+    calls = _stub(monkeypatch, plans=[
+        {"kind": "split", "parts": ["a?", "b?"]},
+        _q("purchase_order", "number", c.po.number, ["number", "status"]),
+        _q("invoice", "internal_ref", c.inv.internal_ref, ["internal_ref", "total_amount"]),
+    ])
+    await requester_client.post(CHAT, json={"message": "a? and b?"})
+    assert [n["result"]["rows"] for n in calls["narrate"]] == [[], []]
+
+
+async def test_a_part_is_never_split_again_and_one_part_is_just_the_question(
+        admin_client, monkeypatch):
+    assert assistant_llm._SPLIT_TOOL in assistant_llm._session_tools({})
+    assert assistant_llm._SPLIT_TOOL not in assistant_llm._session_tools(
+        {"question_part": {"index": 1, "of": 2, "whole": "x"}})
+    note = assistant_llm._context_note({"question_part": {"index": 2, "of": 3, "whole": "x y z"}})
+    assert "part 2 of 3" in note and "«x y z»" in note
+
+    calls = _stub(monkeypatch, plans=[
+        {"kind": "split", "parts": ["only one?"]},
+        {"kind": "cannot", "reason": "too_ambiguous", "explanation": "which one?"},
+        {"kind": "split", "parts": ["x?", "y?"]},
+        {"kind": "split", "parts": ["x1?", "x2?"]},       # a part asking to split again
+        {"kind": "cannot", "reason": "too_ambiguous", "explanation": "y?"},
+    ])
+    r = await admin_client.post(CHAT, json={"message": "only one?"})
+    assert r.json()["kind"] == "cannot_answer" and r.json()["answer"] == "which one?"
+    assert calls["plan"][1]["context"]["question_part"]["of"] == 1
+    r = await admin_client.post(CHAT, json={"message": "x? y?"})
+    assert [p["kind"] for p in r.json()["parts"]] == ["cannot_answer", "cannot_answer"]
+    assert len(calls["plan"]) == 5, "no recursion"
+
+
+async def test_one_part_failing_keeps_the_others(admin_client, monkeypatch):
+    calls = _stub(monkeypatch, plans=[
+        {"kind": "split", "parts": ["what is waiting for me?", "who am I?"]},
+        {"kind": "next"}, {"kind": "me"}])
+
+    async def down(message, payload):
+        raise assistant_llm.LlmUnavailable("Could not reach the model")
+    monkeypatch.setattr(assistant_llm, "narrate_guide", down)
+    r = await admin_client.post(CHAT, json={"message": "what is waiting for me, and who am I?"})
+    body = r.json()
+    assert body["parts"][0]["kind"] == "cannot_answer"
+    assert "could not be answered just now" in body["parts"][0]["answer"]
+    assert body["parts"][1]["kind"] == "me" and "System Admin" in body["parts"][1]["answer"]
+    assert len(calls["plan"]) == 3
+
+
+def test_an_unplanned_part_is_said_to_be_not_looked_up():
+    rules = assistant_llm._NARRATE_SYSTEM
+    assert "was not looked up" in rules and "Never say it does not exist" in rules
+    assert "split_question" in assistant_llm._PLAN_PARTS_RULES

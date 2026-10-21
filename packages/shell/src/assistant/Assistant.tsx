@@ -381,6 +381,24 @@ function MessageRow({
         <ExportButton query={reply.query} question={question ?? ''} run={exportQuery} />
       )}
       {reply && <Evidence reply={reply} />}
+      {/* Several questions in one message: each part keeps its own receipt
+          and export (ISS-0037, ISS-0069). */}
+      {reply?.parts
+        ?.map((part, i) => ({ part, i }))
+        .filter(({ part }) => part.query || part.preflight || part.workflow || part.sources)
+        .map(({ part, i }) => (
+          <div key={i} className="space-y-1.5 border-l-2 border-neutral-200 pl-2">
+            <p className="text-[11px] text-neutral-500">
+              {i + 1}. {part.question}
+            </p>
+            {part.preflight && <GateList preflight={part.preflight} />}
+            {part.workflow && <Chain workflow={part.workflow} />}
+            {part.query && exportQuery && (
+              <ExportButton query={part.query} question={part.question} run={exportQuery} />
+            )}
+            <Evidence reply={part} />
+          </div>
+        ))}
     </div>
   )
 }
