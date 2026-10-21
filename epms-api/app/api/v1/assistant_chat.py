@@ -216,6 +216,9 @@ async def chat(body: ChatRequest, db: SessionDep, user: CurrentUserPayload,
                 out["answer"] = said["text"] or out["answer"]
             except assistant_llm.LlmUnavailable:
                 pass  # the English sentence is still a correct answer
+    if isinstance(out.get("answer"), str):
+        # Whatever wrote the reply, NC leaves as NC (ISS-0051).
+        out["answer"] = reply_language.keep_system_names(out["answer"])
     return out
 
 
