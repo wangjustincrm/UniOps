@@ -512,6 +512,83 @@ def _apply_where(stmt, entity: Entity, clauses: list[dict], hops: list):
     return stmt
 
 
+# Calendar periods the planner may name (ISS-0020). "This month" was read as
+# the calendar month one time and as the last 31 days the next, so the same
+# question gave 125 and 201; "this year" became the last 12 months. The
+# planner now names the period and the server works out its dates.
+CALENDAR_PERIODS = ("today", "yesterday", "this_week", "last_week", "this_month",
+                    "last_month", "this_quarter", "last_quarter", "this_year",
+                    "last_year")
+
+
+def _shift_years(day: date, years: int) -> date:
+    try:
+        return day.replace(year=day.year + years)
+    except ValueError:  # 29 February into a year without one
+        return day.replace(year=day.year + years, day=28)
+
+
+def calendar_range(name: str, shift_years: int = 0,
+                   today: date | None = None) -> tuple[date, date]:
+    """(first day, last day) of a named calendar period, in plant-local dates.
+
+    Weeks start on Monday. A current period ("this_month") runs to today, as
+    the dashboard's "this month" does. shift_years moves the whole range, so
+    this_quarter with -1 is the same quarter-to-date a year earlier.
+    """
+    today = today or datetime.now(_PLANT_TZ).date()
+    if name == "today":
+        frm = to = today
+    elif name == "yesterday":
+        frm = to = today - timedelta(days=1)
+    elif name in ("this_week", "last_week"):
+        monday = today - timedelta(days=today.weekday())
+        if name == "this_week":
+            frm, to = monday, today
+        else:
+            frm, to = monday - timedelta(days=7), monday - timedelta(days=1)
+    elif name in ("this_month", "last_month"):
+        first = today.replace(day=1)
+        if name == "this_month":
+            frm, to = first, today
+        else:
+            to = first - timedelta(days=1)
+            frm = to.replace(day=1)
+    elif name in ("this_quarter", "last_quarter"):
+        first = date(today.year, 3 * ((today.month - 1) // 3) + 1, 1)
+        if name == "this_quarter":
+            frm, to = first, today
+        else:
+            to = first - timedelta(days=1)
+            frm = date(to.year, 3 * ((to.month - 1) // 3) + 1, 1)
+    elif name in ("this_year", "last_year"):
+        if name == "this_year":
+            frm, to = date(today.year, 1, 1), today
+        else:
+            frm, to = date(today.year - 1, 1, 1), date(today.year - 1, 12, 31)
+    else:
+        _reject(f"Unknown calendar period '{name}'. Use one of: "
+                f"{', '.join(CALENDAR_PERIODS)}")
+    if shift_years:
+        frm, to = _shift_years(frm, shift_years), _shift_years(to, shift_years)
+    return frm, to
+
+
+def resolved_period(period: dict | None) -> dict | None:
+    """The plant-local dates a period covered, for the answer to state."""
+    if not period:
+        return None
+    if period.get("calendar"):
+        frm, to = calendar_range(period["calendar"], int(period.get("shift_years") or 0))
+        return {"from": frm.isoformat(), "to": to.isoformat(),
+                "calendar": period["calendar"],
+                **({"shift_years": int(period["shift_years"])}
+                   if period.get("shift_years") else {})}
+    if period.get("from") or period.get("to"):
+        return {"from": period.get("from"), "to": period.get("to")}
+    return None
+
+
 def _apply_period(stmt, entity: Entity, period: dict | None, hops: list):
     """Relative time windows, resolved server-side.
 
@@ -526,8 +603,17 @@ def _apply_period(stmt, entity: Entity, period: dict | None, hops: list):
     _refuse_many(entity, name, path, "period")
     hops.extend(path)
 
+    if period.get("calendar"):
+        frm, to = calendar_range(period["calendar"], int(period.get("shift_years") or 0))
+        period = {**period, "from": frm.isoformat(), "to": to.isoformat()}
+    elif period.get("shift_years"):
+        _reject("shift_years goes with calendar, e.g. {calendar: this_quarter, "
+                "shift_years: -1} for the same quarter last year")
+
     months = period.get("last_n_months")
     days = period.get("last_n_days")
+    if period.get("calendar"):
+        months = days = None
     if months is not None:
         months = int(months)
         if not 1 <= months <= 60:
@@ -882,6 +968,9 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
         out["matched_rows"] = matched
     if total_rows is not None:
         out["total_rows"] = total_rows
+    covered = resolved_period(request.get("period"))
+    if covered:
+        out["resolved_period"] = covered
     if totals is not None:
         out["totals"] = totals
     if totals_shown is not None:

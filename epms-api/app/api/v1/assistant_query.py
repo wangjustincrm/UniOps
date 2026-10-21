@@ -30,6 +30,10 @@ class WhereClause(BaseModel):
 
 class Period(BaseModel):
     field: str | None = None
+    # A named calendar period, resolved server-side (controlled_query.
+    # calendar_range); shift_years moves it, -1 = same period last year.
+    calendar: str | None = None
+    shift_years: int | None = None
     last_n_months: int | None = None
     last_n_days: int | None = None
     # `from` is a Python keyword, so the wire name is set via alias.

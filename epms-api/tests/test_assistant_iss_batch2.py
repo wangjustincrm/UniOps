@@ -248,3 +248,75 @@ async def test_vendor_count_is_a_distinct_count(test_engine, admin_client):
                         metrics=["vendor_count", "count"],
                         where=[{"field": "number", "op": "like", "value": f"PO-CUR-{tag}"}])
     assert body["rows"] == [{"vendor_count": 2, "count": 4}]
+
+
+# ── ISS-0020: a calendar word always means the same calendar dates ──────────
+
+def test_calendar_periods_resolve_to_the_dates_the_dashboard_uses():
+    from app.services.controlled_query import calendar_range
+
+    today = date(2026, 10, 20)   # a Tuesday
+    expect = {
+        "today": ("2026-10-20", "2026-10-20"),
+        "yesterday": ("2026-10-19", "2026-10-19"),
+        "this_week": ("2026-10-19", "2026-10-20"),
+        "last_week": ("2026-10-12", "2026-10-18"),   # not 13-19 (ISS-0020 follow-up)
+        "this_month": ("2026-10-01", "2026-10-20"),
+        "last_month": ("2026-09-01", "2026-09-30"),
+        "this_quarter": ("2026-10-01", "2026-10-20"),  # not 1 Jul-30 Sep
+        "last_quarter": ("2026-07-01", "2026-09-30"),
+        "this_year": ("2026-01-01", "2026-10-20"),     # not the last 12 months
+        "last_year": ("2025-01-01", "2025-12-31"),
+    }
+    for name, (frm, to) in expect.items():
+        got = calendar_range(name, today=today)
+        assert (got[0].isoformat(), got[1].isoformat()) == (frm, to), name
+    # 去年同期 for this quarter to date.
+    got = calendar_range("this_quarter", -1, today=today)
+    assert (got[0].isoformat(), got[1].isoformat()) == ("2025-10-01", "2025-10-20")
+    # Across a year boundary.
+    got = calendar_range("last_quarter", today=date(2026, 1, 5))
+    assert (got[0].isoformat(), got[1].isoformat()) == ("2025-10-01", "2025-12-31")
+
+
+async def test_a_calendar_period_filters_and_reports_its_dates(test_engine, admin_client):
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from app.services.controlled_query import calendar_range
+
+    tz = ZoneInfo("America/Toronto")
+    frm, to = calendar_range("this_month")
+    month_start = datetime.combine(frm, datetime.min.time(), tz)
+    tag = uuid.uuid4().hex[:6]
+    uid = _uid(admin_client)
+    async with _factory(test_engine)() as db:
+        v = await _vendor(db)
+        db.add_all([
+            _po(v, uid, f"PO-CAL-{tag}-in", created_at=month_start),
+            # One minute before the month began, plant time.
+            _po(v, uid, f"PO-CAL-{tag}-out", created_at=month_start - timedelta(minutes=1)),
+        ])
+        await db.commit()
+    body = await _query(admin_client, entity="purchase_order", select=["number"],
+                        where=[{"field": "number", "op": "like", "value": f"PO-CAL-{tag}"}],
+                        period={"calendar": "this_month"})
+    assert [r["number"].rsplit("-", 1)[1] for r in body["rows"]] == ["in"]
+    assert body["resolved_period"] == {"from": frm.isoformat(), "to": to.isoformat(),
+                                       "calendar": "this_month"}
+
+
+async def test_shift_years_needs_a_calendar_period(admin_client):
+    r = await admin_client.post(QUERY, json={
+        "entity": "purchase_order", "metrics": ["count"],
+        "period": {"last_n_months": 3, "shift_years": -1}})
+    assert r.status_code == 422
+
+
+def test_the_planner_is_told_calendar_words_are_calendar_periods():
+    from app.services import assistant_llm
+
+    assert "period.calendar, never last_n_months" in assistant_llm._PLAN_SYSTEM
+    enum = assistant_llm._QUERY_TOOL["input_schema"]["properties"]["period"]["properties"]["calendar"]["enum"]
+    from app.services.controlled_query import CALENDAR_PERIODS
+    assert tuple(enum) == CALENDAR_PERIODS

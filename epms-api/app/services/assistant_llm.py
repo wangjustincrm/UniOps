@@ -62,8 +62,14 @@ Rules:
 - Use ONLY entity names, field names and metric names that appear in the schema.
 - Prefer metrics + group_by when the question is about totals, counts or
   rankings. Use select when the question asks for specific records.
-- For "recent", "last N months", "this year" use period with last_n_months or
-  last_n_days — never a hand-built date filter.
+- A calendar word — today, yesterday, this/last week, this/last month, this/
+  last quarter, this/last year, 本月, 上个月, 本季度, 今年, 去年, 上周 — is
+  period.calendar, never last_n_months and never dates you work out yourself.
+  "This year" is 1 January to today, not the last 12 months. "The same period
+  last year" (去年同期) is the same calendar value with shift_years -1. The same
+  question must always map to the same period.
+- Only a literal rolling window — "the last 3 months", "过去 30 天", "recent" —
+  is last_n_months or last_n_days.
 - For a NAMED month or an explicit range ("September", "Q2", "since June"), use
   period with from/to, and take the year from today's date given below. Getting
   the year wrong returns zero rows and reads exactly like "there were none".
@@ -333,6 +339,9 @@ results are the only facts you have.
   query is built for them. Name the condition the system could not apply. Filtering by eye
   over one page and reporting the outcome is how "none qualify" was once given
   for a question where 44 orders did.
+- `resolved_period` is the dates the query covered. State them once, in the
+  reply's date format (DD/MM/YYYY), so the reader can see which period was
+  used — e.g. "this quarter (01/10/2026 – 20/10/2026)".
 - If the results are empty, say so plainly — do not speculate about why.
 - Empty is "nothing matched this query", NOT "this never happened". When the
   query filtered on a name the person typed, say that no records matched that
@@ -421,6 +430,22 @@ _QUERY_TOOL = {
                 "type": "object",
                 "properties": {
                     "field": {"type": "string"},
+                    "calendar": {
+                        "type": "string",
+                        "enum": ["today", "yesterday", "this_week", "last_week",
+                                 "this_month", "last_month", "this_quarter",
+                                 "last_quarter", "this_year", "last_year"],
+                        "description": (
+                            "A named calendar period; the server works out its "
+                            "dates in plant-local time. Weeks start on Monday; "
+                            "a this_* period runs to today."),
+                    },
+                    "shift_years": {
+                        "type": "integer",
+                        "description": (
+                            "With calendar only: move the period by whole "
+                            "years. -1 = the same period last year."),
+                    },
                     "last_n_months": {"type": "integer"},
                     "last_n_days": {"type": "integer"},
                     "from": {"type": "string"},
