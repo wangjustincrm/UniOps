@@ -1,5 +1,6 @@
 """Invoice endpoints."""
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
@@ -14,6 +15,7 @@ from app.core.ontology import sees_agreement_invoices, sees_freight_invoices
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import invoice as invoice_crud
+from app.crud import invoice_dedup
 from app.crud import attach_receipts_task
 from app.crud import vendor as vendor_crud
 from app.crud.pr_owner import owner_id_of
@@ -32,6 +34,7 @@ from app.schemas.invoice import (
     DeclineMatchRequest,
     InvoiceChainResponse,
     InvoiceCreate,
+    InvoiceDuplicateCheckResponse,
     InvoiceExceptionRequest,
     InvoiceListResponse,
     InvoiceMatchRequest,
@@ -568,6 +571,46 @@ async def list_invoices(
     return InvoiceListResponse(items=items, total=total)
 
 
+@contextmanager
+def _dedup_errors():
+    """crud.invoice_dedup's refusals as HTTP errors (PRD INV-004)."""
+    try:
+        yield
+    except invoice_dedup.DuplicateInvoice as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except invoice_dedup.UncheckableInvoiceNumber as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/duplicate-check", response_model=InvoiceDuplicateCheckResponse)
+async def duplicate_check(
+    vendor_id: uuid.UUID,
+    vendor_invoice_number: str,
+    db: SessionDep,
+    user: InvoiceUploadDep,
+    exclude_id: uuid.UUID | None = None,
+):
+    """The upload form's live check — the same rule POST /invoices enforces.
+
+    Against every invoice, so it tells an uploader about a copy they cannot
+    open; it gives away only that copy's reference and status, which the 409
+    on upload would name anyway. Declared before /{invoice_id} so that route
+    does not swallow the path."""
+    vendor = await vendor_crud.get_by_id(db, vendor_id)
+    if vendor is None:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    try:
+        hit = await invoice_dedup.find_duplicate(
+            db, vendor.id, vendor.name, vendor_invoice_number, exclude_id=exclude_id)
+    except invoice_dedup.UncheckableInvoiceNumber as e:
+        return {"duplicate": False, "uncheckable": True, "detail": str(e)}
+    if hit is None:
+        return {"duplicate": False, "uncheckable": False, "detail": None}
+    return {"duplicate": True, "uncheckable": False,
+            "detail": str(invoice_dedup.DuplicateInvoice(vendor.name, vendor_invoice_number, hit)),
+            "existing_ref": hit.ref}
+
+
 @router.post("", response_model=InvoiceResponse, status_code=201)
 async def upload_invoice(body: InvoiceCreate, db: SessionDep, user: InvoiceUploadDep, token: BearerToken):
     vendor = await vendor_crud.get_by_id(db, body.vendor_id)
@@ -584,9 +627,13 @@ async def upload_invoice(body: InvoiceCreate, db: SessionDep, user: InvoiceUploa
         raise HTTPException(status_code=409, detail=(
             f"{vendor.name} is a courier (Freight → Carriers) — its invoices are courier "
             "invoices, read per shipment and matched to tracking numbers"))
-    inv = await invoice_crud.create(
-        db, body, vendor_name=vendor.name, uploaded_by=uuid.UUID(user["sub"])
-    )
+    # INV-004 — against every invoice, not only those this user can see.
+    with _dedup_errors():
+        await invoice_dedup.ensure_unique(db, vendor.id, vendor.name, body.vendor_invoice_number)
+        async with invoice_dedup.key_violation_as_duplicate(vendor.name, body.vendor_invoice_number):
+            inv = await invoice_crud.create(
+                db, body, vendor_name=vendor.name, uploaded_by=uuid.UUID(user["sub"])
+            )
     await tax_prefill.apply_tax_prefill(db, inv, token)   # 新增
     await finance_sync.sync_ap_invoice(db, inv, token)
     return inv
@@ -899,7 +946,21 @@ async def update_invoice(
         else None
     )
 
-    result = await invoice_crud.update(db, inv, body)
+    # INV-004: a new number must not be another invoice's. Compared by key, so
+    # re-saving the form unchanged (or re-casing the number) is not "a change"
+    # — that keeps the pre-existing dedup_exempt duplicates editable.
+    number_changed = (
+        body.vendor_invoice_number is not None
+        and await invoice_dedup.invoice_key(db, body.vendor_invoice_number) != inv.vendor_invoice_key
+    )
+    with _dedup_errors():
+        if number_changed:
+            await invoice_dedup.ensure_unique(
+                db, inv.vendor_id, inv.vendor_name, body.vendor_invoice_number, exclude_id=inv.id)
+        async with invoice_dedup.key_violation_as_duplicate(
+                inv.vendor_name, body.vendor_invoice_number or inv.vendor_invoice_number):
+            result = await invoice_crud.update(db, inv, body)
+            await db.flush()
 
     # Re-run match against current allocations so variance/status reflect edits.
     if prev_po_id is not None or inv.gr_ids:

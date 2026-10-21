@@ -292,6 +292,14 @@ class InvoiceResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class InvoiceDuplicateCheckResponse(BaseModel):
+    """GET /invoices/duplicate-check — PRD INV-004, same rule as POST /invoices."""
+    duplicate: bool
+    uncheckable: bool = False      # the number has no letter or digit: upload will be refused
+    detail: str | None = None
+    existing_ref: str | None = None
+
+
 class InvoiceListResponse(BaseModel):
     items: list[InvoiceResponse]
     total: int

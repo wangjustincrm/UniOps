@@ -58,7 +58,7 @@ async def world(test_engine, admin_client):
         sc_sell = CostCenter(code=f"SELL-{tag}", name="SC Selling", department_id=sc.id)
         sc_ga = CostCenter(code=f"GA-{tag}", name="SC G&A", department_id=sc.id)
         qa_lab = CostCenter(code=f"LAB-{tag}", name="QA Lab", department_id=qa.id)
-        ups = Vendor(code=f"V-UPS-{tag}", name="UPS Canada Ltd.", category="Logistics",
+        ups = Vendor(code=f"V-UPS-{tag}", name=f"UPS Canada Ltd. {tag}", category="Logistics",
                      contact_name="Billing", contact_email="billing@ups.example")
         db.add_all([sc_sell, sc_ga, qa_lab, ups])
         await db.commit()

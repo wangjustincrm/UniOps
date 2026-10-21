@@ -208,9 +208,11 @@ async def duplicate_check(carrier_id: uuid.UUID, vendor_invoice_number: str,
     await _need_upload(db, user)
     try:
         carrier = await crud.get_carrier(db, carrier_id)
+        ref = await crud.find_duplicate_invoice(db, carrier.vendor_id, vendor_invoice_number)
     except FreightError as e:
+        if e.status == 422:   # no letter or digit: not a duplicate; saving refuses it with this reason
+            return {"duplicate": False, "detail": None}
         raise _err(e)
-    ref = await crud.find_duplicate_invoice(db, carrier.vendor_id, vendor_invoice_number)
     return {"duplicate": ref is not None, "detail": ref}
 
 
