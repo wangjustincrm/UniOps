@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.33
+**Version:** 2.34
 **Date:** 2026-10-21
 **Status:** In Production
+
+> **v2.34 (2026-10-21)** — Claimant skip for OA claims (§3.3.5 item 3): a step whose only holder is the claimant of an OA expense claim / Travel Application is skipped, because OA never lets a claimant approve their own claim (OA.md WF-SELF-001…004). EPMS documents are unchanged.
 
 > **v2.33 (2026-10-21)** — New §3.22 Direct Payment Application (Direct PA), moved here from OA: an invoice with no PO and no agreement is matched with **Match → Direct PA** and paid from **Payment Applications → Create Direct PA**, charged to a department (the creator's by default), a cost center of it and a budget account, with a required reason; approved on the `pa_dir` ("PA (Direct)") workflow. PA `source` gains `direct` (EPMS) and `oa_direct` (OA's retired rows, §3.15.1); invoice route gains `direct` (§3.14, Route filter); action-key table (§3.3).
 
@@ -624,7 +626,7 @@ Admins may add, remove, or reorder steps freely in Portal → Admin → Approval
 
 #### 3.3.5 Multi-Role and Conditional Auto-Skip
 
-The engine skips steps automatically in two ways. Every skipped step produces its own `ApprovalEvent` row, so the full history is preserved and visible in the Approval Timeline (shown struck through / with an "Auto-approved" or "Auto-skipped" indicator and the reason).
+The engine skips steps automatically in three ways (the third only on OA claims). Every skipped step produces its own `ApprovalEvent` row, so the full history is preserved and visible in the Approval Timeline (shown struck through / with an "Auto-approved" or "Auto-skipped" indicator and the reason).
 
 1. **Conditional skip** (applied at submit and after each approval): a Supervisor or Director step that does not apply to this document (no active person, or layer switched off); Department Manager and Director steps on a cross-department PA; a VMS Quality Manager step that is not required. Recorded with the reason.
 2. **Same-approver skip** (applied after an approval only):
@@ -633,6 +635,7 @@ The engine skips steps automatically in two ways. Every skipped step produces it
    3. Step 2 repeats until either a step is reached that the actor does not hold, or the final step is passed (→ document moves to `approved`).
 
    The same-approver skip is **not** applied at submit (a requester who is also the step-1 approver must still approve), is **not** applied through delegation (a delegate's approval does not cascade into steps the delegator holds), and System Admin's bypass never cascades.
+3. **Claimant skip — OA claims only** (applied at submit and after each approval, and by in-flight re-sync): on an OA expense claim, Travel Application or custom form, a step whose **only** holder is the claimant is skipped with the comment "Auto-skipped (claimant holds this step — cannot approve own claim)". OA never lets a claimant approve their own claim, so without this the claim would wait at that step for good. Submission is refused when every remaining step would be skipped this way. Details: OA.md §7.1 (WF-SELF-001…004). PR / PO / PA / Agreement / VMS keep the rule in item 2: no skip at submit.
 
 Role resolution for every token is as described in §3.3.2. GM/OPM steps are addressed to the resolved post (all its current holders), not broadcast to both GM and OPM.
 

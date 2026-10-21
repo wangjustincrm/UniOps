@@ -667,6 +667,17 @@ async def _claim_history(db, claim) -> list[ApprovalEventResponse]:
     return sorted(legacy + shared, key=lambda e: e.created_at)
 
 
+# approval-api writes action="approve" rows no person decided — a skipped step
+# (no Director, claimant holds the step, …) or a PMS-migration backfill. Their
+# actor is the submitter, so naming them would show the claimant signing their
+# own claim. Same markers as epms-api app/crud/signatories.py.
+_MACHINE_APPROVAL_MARKERS = ("Auto-skipped", "Auto-approved on behalf of")
+
+
+def is_machine_approval(comment: str | None) -> bool:
+    return any(marker in (comment or "") for marker in _MACHINE_APPROVAL_MARKERS)
+
+
 async def _shared_approval_events(db, claim_id: uuid.UUID) -> list[ApprovalEventResponse]:
     """Events approval-api recorded for the claim, with actor names resolved."""
     from sqlalchemy import bindparam, select as sa_select, text
@@ -688,7 +699,8 @@ async def _shared_approval_events(db, claim_id: uuid.UUID) -> list[ApprovalEvent
     return [
         ApprovalEventResponse(
             id=e.id, actor_id=e.actor_id,
-            actor_name=names.get(e.actor_id) or e.actor_role,
+            actor_name=("System" if e.action == "approve" and is_machine_approval(e.comment)
+                        else names.get(e.actor_id) or e.actor_role),
             action=e.action, comment=e.comment, step_idx=e.step_idx,
             created_at=e.created_at,
         )
@@ -792,6 +804,7 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
     out: list[ApprovalStepOut] = []
     for i, step in enumerate(steps):
         ev = approve_by_step.get(i)
+        machine = ev is not None and is_machine_approval(ev.comment)
         if status == "draft":
             state = "waiting"
         elif status in ("approved", "paid"):
@@ -829,7 +842,7 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
             role=step.get("role", ""),
             label=step.get("label") or step.get("role", f"Step {i + 1}"),
             state=state,
-            actor_name=(names.get(ev.actor_id) if ev else None),
+            actor_name=(names.get(ev.actor_id) if ev and not machine else None),
             actor_role=(ev.actor_role if ev else None),
             acted_at=(ev.created_at.isoformat() if ev else None),
             action=(ev.action if ev else None),

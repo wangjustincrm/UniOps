@@ -1,9 +1,13 @@
 # OA — Product Requirements Document
 
-**Version:** 3.2
-**Date:** 2026-10-20
+**Version:** 3.3
+**Date:** 2026-10-21
 **Status:** In Production
 **Scope:** Employee expense reimbursement and business travel in UniOps — General Expense (EXP), Mileage (MIL), Travel Application (TRA), Travel Expense (TRV) and admin-defined Custom Forms (CFM), with their approvals, attachments, claim PDF, payment hand-off and budget display.
+
+**What changed in version 3.3** (2026-10-21)
+
+- **A claim never waits on its own claimant (WF-SELF-001…004, §7.1).** A step whose only holder is the claimant — typically a Department Manager's own claim at the Department Manager step — is skipped and the next level approves. Before this, such a claim sat at that step for good: the claimant may not approve their own claim and nobody else held the step (TRA-20261020-0001/0002). Skipped steps no longer print the claimant as signer on the claim PDF or the Travel Application form, nor show them as approver in Approval Status.
 
 **What changed in version 3.2** (2026-10-20)
 
@@ -321,6 +325,15 @@ All OA documents are approved by the shared engine (EPMS.md §3.3). Each type ha
 
 Engine behaviour that applies to OA exactly as to EPMS (see EPMS.md §3.3): department-routed approvers from Approval Routing (the claim's department is the claimant's); same-approver auto-skip (recorded as "Auto-approved (same approver holds both roles)"); a chain whose every step is skipped approves on submit; delegation (EPMS.md §1.5); role union and the `gm_or_opm` pseudo-role.
 
+**The claimant never approves their own claim**, so the engine does not leave a claim waiting on them. This differs from EPMS, where a submitter who holds step 1 approves it themselves (EPMS.md §3.3.5).
+
+| ID | Requirement |
+|----|-------------|
+| WF-SELF-001 | When the claimant is the **only** holder of a step (the Department Manager of their own department; the sole holder of a post such as Finance Manager or GM; their own Director or Supervisor), the step is skipped and the claim moves to the next step. It is recorded as an approval event with the comment "Auto-skipped (claimant holds this step — cannot approve own claim)". Applies at submit, at resubmission, and when a later step is reached after an approval. |
+| WF-SELF-002 | A step that someone other than the claimant also holds (a post with two holders, a Finance BP pool) is **not** skipped; the other holder approves it. Delegation does not count: a step is skipped even if the claimant has a delegate today. |
+| WF-SELF-003 | If every remaining step would be skipped this way, submission is refused ("every approval step of this claim would be approved by the claimant themselves…") and the submit preflight reports it, owner Admin. A claim is never approved with no approver other than the claimant. |
+| WF-SELF-004 | Claims already waiting on their claimant are moved on by an in-flight re-sync (Portal → Data Maintenance → the claim's approval state → Re-sync, or any Approval Routing save). On the Approval Status card a skipped step shows Approved with no approver name; the Approval Timeline shows it as "System"; the claim PDF shows "System" with the reason, and the Travel Application form's signature line reads "Skipped". |
+
 **Conditional Finance Manager step for over-budget or over-limit claims — Not implemented.** The engine injects over-budget steps for PRs only (OI-01).
 
 ### 7.2 Status Life-cycle
@@ -349,7 +362,7 @@ draft / returned ──cancel──► cancelled
 |--------|-------------|-----|-------|
 | Save / Edit | draft, returned | Claimant; also System Admin or Finance Manager (primary role) | Save as Draft / Edit → Save Changes |
 | Submit | draft, returned | Claimant (employee or creator); System Admin | Submit (disabled with a hint until an attachment exists for EXP/TRV; not for a TRV of only date-range lines) |
-| Approve / Return / Reject | submitted, in_review | Holder of the current step (task-based), delegate, System Admin; never the claimant | Approve / Return / Reject with comment dialog |
+| Approve / Return / Reject | submitted, in_review | Holder of the current step (task-based), delegate, System Admin; never the claimant (a step only the claimant holds is skipped — WF-SELF-001) | Approve / Return / Reject with comment dialog |
 | Recall | submitted, in_review | Creator or System Admin | **Not exposed** (OI-08) |
 | Cancel | draft, returned | Creator, System Admin, or current step holder | **Not exposed** (OI-08) |
 | Delete | TRA only: draft, returned, submitted, in_review | Applicant or System Admin | Delete (list row and detail) |

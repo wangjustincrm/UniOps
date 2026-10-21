@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.models.config import CompanyConfig
 from app.models.delegation import ApprovalDelegation
 from app.models.event import ApprovalEvent
+from app.models.expense import ExpenseClaim
 from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.posting import PostingEvent, PostingLine
@@ -84,6 +85,8 @@ _ENGINE_TABLES = [
     ApprovalDelegation.__table__,
     # VMS visits (thin mirror) — test_engine_vms_visit.py
     VmsVisit.__table__,
+    # OA claims (thin mirror) — test_engine_claimant_skip.py
+    ExpenseClaim.__table__,
 ]
 
 

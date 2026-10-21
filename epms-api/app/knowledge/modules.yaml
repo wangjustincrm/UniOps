@@ -154,6 +154,14 @@ modules:
         straight back to the approver who returned it — the approvals given
         before that stand and are not asked for again.
       - >-
+        Nobody approves their own claim or travel application. When the
+        person who raised it is the only one who holds an approval step — a
+        Department Manager's own claim at the Department Manager step, for
+        example — that step is skipped and the claim goes straight to the next
+        approver; the step shows as skipped, not as approved by them. If every
+        step would be theirs, Submit is refused and an administrator has to
+        change the approval workflow.
+      - >-
         A submitted claim that is stuck with an approver can be chased from the
         claim itself: Approval Status → Send reminder under the pending step
         emails whoever holds that step (their delegate if they are away) and
