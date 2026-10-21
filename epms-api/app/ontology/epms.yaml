@@ -922,6 +922,70 @@ entities:
         remote: id
         label: "The agreement the receipt is recorded against"
 
+  # ── Added 2026-10-21 (issue review batch 3) ────────────────────────────────
+  # ISS-0022 #1: "协议 AGR-202609-0003 这个月的服务确认了吗？" was refused as
+  # "not something the data holds" while the agreement's Payment Schedule
+  # showed the period confirmed by name and date.
+  agreement_period:
+    model: AgreementPaymentSchedule
+    label: "Agreement billing period — one row of a purchase agreement's
+      Payment Schedule: the period (e.g. 2026-10), its expected date and
+      amount, its status, the invoice that settled it, and who confirmed the
+      service and when. \"Was this month's service confirmed?\" is
+      confirmed_at / confirmed_by_name on the period of that agreement"
+    perm_key: epms.agreement.read
+    scope: agreement_period
+    date_field: expected_date
+    # Set on every billing period (106 of 106 in the reference data); only a
+    # milestone row has none, and milestones are not built yet (Phase 1C).
+    date_field_nullable_ok: true
+    fields:
+      agreement_id: {kind: uuid, internal: true}
+      invoice_id: {kind: uuid, internal: true}
+      schedule_type:
+        kind: enum
+        label: "Period (recurring billing) or milestone"
+        values: [period, milestone]
+        value_labels:
+          period: "Billing period of a recurring agreement"
+          milestone: "Milestone of a milestone agreement"
+      sequence: {kind: int, label: "Position in the schedule (1 = first)"}
+      period_label: {kind: text, label: "The period, as YYYY-MM (e.g. 2026-10)"}
+      expected_date: {kind: date, label: "Date the period's invoice is expected"}
+      expected_amount: {kind: money, label: "Amount expected for the period"}
+      status:
+        kind: enum
+        label: "Status of the period"
+        values: [pending, received, overdue, waived]
+        value_labels:
+          pending: "Pending — no invoice for it yet"
+          received: "Received — its invoice has arrived"
+          overdue: "Overdue — no invoice although the expected date has passed"
+          waived: "Waived — nothing is due for this period"
+      confirmed_by_name:
+        kind: text
+        label: "Who confirmed the service for this period (the agreement
+          owner's Confirm Service Period). Empty = not confirmed"
+      accepted_at:
+        kind: datetime
+        label: "When the service for the period was confirmed. Empty = not
+          confirmed"
+    metrics:
+      count: {fn: count, field: "*", label: "Number of periods"}
+    links:
+      agreement:
+        target: purchase_agreement
+        cardinality: many_to_one
+        local: agreement_id
+        remote: id
+        label: "The agreement the period belongs to (agreement.number = AGR-…)"
+      invoice:
+        target: invoice
+        cardinality: many_to_one
+        local: invoice_id
+        remote: id
+        label: "The invoice matched to the period (invoice.internal_ref = INV-…)"
+
   freight_shipment:
     model: FreightShipment
     label: "Courier shipment — a waybill registered in Freight → Shipments.

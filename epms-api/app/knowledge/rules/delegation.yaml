@@ -1,0 +1,44 @@
+area: delegation
+label: Approval delegation (cover for an absent approver)
+covers: >
+  Who sets up a delegation and where, what a delegate can and cannot do, how
+  long it lasts, whether it can be passed on, Absence Cover and GM/OPM
+  backups.
+remote: approval-api
+# The delegation rules the engine enforces (who may set one up, dates, one
+# level only, what a delegate may decide, backups unused) are served by
+# approval-api app/crud/engine_rules.py. These are the EPMS side.
+rules:
+  - id: where_delegation_is_set_up
+    asked_as:
+      - 我要休假，怎么让同事帮我审批？
+      - Absence Cover 怎么设置？
+      - how do I set up approval delegation
+    answer: >
+      Ask a System Admin. Delegations are set up on the Approval Delegation
+      page, which System Admins find in the left sidebar under ADMIN (it is
+      not in the Admin page's own menu): they choose the person to be
+      covered, who covers them, and the first and last day. There is no
+      separate "Absence Cover" any more — Approval Delegation is the only
+      way to have someone approve for you while you are away.
+    enforced_in: "portal/src/components/layout/navConfig.tsx (ADMIN → Approval Delegation, adminOnly); approval-api app/api/v1/delegations.py (system_admin only)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_the_delegation_page_is_in_the_admin_sidebar"
+      - "approval-api/tests/test_delegation_api.py::test_non_admin_gets_403_on_every_verb"
+  - id: delegate_gets_approval_tasks_only
+    asked_as:
+      - 设置代理后，代理人能处理我哪些任务？
+      - 我休假时代理人能帮我确认收货吗？
+      - which of my tasks can a delegate handle
+    answer: >
+      Only approval tasks. While the delegation runs, the delegate sees the
+      covered person's Approve tasks in their own Task Inbox and can open
+      those documents. Every other task stays with the covered person and
+      waits for them — Create PO, Create PA, goods receipt acknowledgements
+      and confirmations, and PO sign-off (a signature is personal). So no, a
+      delegate cannot confirm your goods receipts.
+    enforced_in: "epms-api app/crud/task.py get_for_role (delegated part: Task.type LIKE 'approve%'); approval-api engine posign task type sign_po (outside approve%)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_a_delegate_sees_approval_tasks_only"

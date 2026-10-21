@@ -1,0 +1,10 @@
+area: budget
+label: Budget checks
+covers: >
+  When a PR is checked against the budget, what over budget leads to, whether
+  budget is reserved, what happens when the Budget service is down, what
+  Committed means.
+# The over-budget rules themselves are PR rules (topic over_budget in pr.yaml)
+# and are listed here through also_in; the over-budget MODE is configuration
+# the approval engine reports (explain_process for a PR).
+rules: []

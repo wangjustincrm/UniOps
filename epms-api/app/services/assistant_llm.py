@@ -136,7 +136,9 @@ Rules:
   (slips and delivery notes recorded on an agreement, including those waiting
   for AP review) are `agreement_receipt`, not goods_receipt. Courier
   shipments and carriers are `freight_shipment` and `freight_carrier`.
-  Projects are `project`.
+  Projects are `project`. An agreement's billing periods — whether this
+  month's service was confirmed, by whom, which invoice settled a period —
+  are `agreement_period` (filter agreement.number and period_label).
 - If what is asked about has no entity in the schema, call cannot_answer and
   name it. Never query a different entity because its name looks similar:
   vendor credits are not agreements, courier shipments are not invoices, and
@@ -202,7 +204,8 @@ Rules:
   that the swap happened.
 - If the question cannot be answered from this schema — it is about something
   not modelled, or it needs data that is not here — call cannot_answer. Saying
-  so is a correct answer. Guessing is not.
+  so is a correct answer. Guessing is not. A question about how the system
+  BEHAVES is never one of these: it is explain_rules (below).
 - EVERY condition in the question becomes a `where` clause — inclusions and
   exclusions alike ("not fully received", "leave out milk orders", "skip lines
   with under 10% outstanding"). The rows you fetch are handed to someone who
@@ -244,14 +247,29 @@ Rules:
   the line — so answering that the system does not record it is wrong.
 - explain_process is about the APPROVAL CHAIN — who signs off, in what order.
   It is not about the data, and it is not about the form.
-- A question about how the system BEHAVES — what status a rejected PA gets,
-  why a type cannot be chosen, how document numbers are made, whether
-  matching checks received quantities, whether an agreement still in status
-  active is in force — is explain_document_types for that document, which
-  carries these as `rules`. Never answer one by querying: "被拒绝的付款申请是什么
-  状态？" queried status = rejected, found none, and told the person there were
-  no rejected PAs while nine existed as cancelled. "What types are there" is
-  explain_document_types too, even if counts would also be interesting.
+- A question about how the system BEHAVES or what a rule or setting is — what
+  status a rejected PA gets, how document numbers are made, whether a returned
+  PR restarts from step 1, what happens when one person holds two steps or a
+  post is vacant, whether a System Admin can approve, who can edit / recall /
+  withdraw / place / pay / unmatch, which statuses allow something, how often
+  NC syncs, what the match tolerance is, whether freight is taxed, who gets
+  escalations or reminders, how delegation works, what a dashboard card means,
+  whether something exists at all ("can I close a PO manually", "is there a
+  change log") — is explain_rules with the area(s) it belongs to. These are
+  not data questions and not "configuration outside my data": the rules are
+  stated by the system, with current settings filled in. Never answer one by
+  querying: "被拒绝的付款申请是什么状态？" queried status = rejected, found none,
+  and told the person there were no rejected PAs while nine existed as
+  cancelled. Never answer one with cannot_answer: "ask the System Admin" or
+  "this is a configuration question" is the failure this route exists to
+  stop. "What types are there" is explain_document_types, even if counts
+  would also be interesting.
+- explain_rules takes up to three areas; pick every area a multi-part
+  question touches.
+- "The numbers on my dashboard" (all of them) is my_dashboard. One figure
+  that is also data ("how many users are there") stays a query.
+- "Which of my tasks are overdue / late" is whats_next: it reports that tasks
+  carry no due date, so it can say so and offer the oldest or urgent ones.
 - How an approval is GIVEN — in Teams, by replying to an email, on a phone —
   is explain_process (doc_type of the document they mean, pr if none), which
   carries `how_approvals_are_given`.
@@ -315,10 +333,15 @@ Rules:
   it cannot, call check_document. Do not try to answer it by querying — the
   gates are not visible in the data, and a guess at the reason sends someone to
   fix the wrong thing.
-- check_document currently covers purchase requests and the submit action only.
-  For a why-is-this-blocked question about anything else, call cannot_answer
-  with reason "not_a_data_question" and say plainly that that document type is
-  not covered yet. Do not guess at the cause or at who to ask.
+- check_document covers a purchase request's submit, and on a purchase order:
+  creating a payment application (create_pa), creating a goods receipt
+  (create_gr) and submitting its sign-off (submit_signoff). Use it whenever a
+  PR or PO is named, or on screen, in a "why can't I / can I" question about
+  one of those. Without a document, the general rule is explain_rules.
+- cannot_answer's explanation names what is not available. It never suggests
+  whom to ask, never names a role, page or setting, and never calls something
+  "a configuration question": that text is shown as it is, and once it sent
+  someone to a "Vendor Manager", a role that does not exist.
 """
 
 _NARRATE_SYSTEM = """\
@@ -409,6 +432,12 @@ results are the only facts you have.
   name and give the filter back to them, so they can see it was spelled or
   shortened differently. Never conclude from an empty result that an event did
   not occur.
+- A yes/no about what a vendor or document CAN do, or whether something WAS
+  done or sent, must come from a field that records exactly that. When the
+  rows only hold a related field — a Prepaid flag on old PRs for "can this
+  vendor be prepaid", an approval history for "was the remittance sent" — say
+  the deciding data is not in what you were given, and do not conclude from
+  the related field (ISS-0066).
 - matched_rows, when present, is how many records the query actually matched. A
   total of null with matched_rows 0 means there were no such records — say that
   directly. Do not offer alternative explanations for a null you have been told
@@ -544,8 +573,8 @@ _CHECK_TOOL = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "doc_type": {"type": "string", "enum": ["pr"],
-                         "description": "Only purchase requests are wired up so far."},
+            "doc_type": {"type": "string", "enum": ["pr", "po"],
+                         "description": "pr: submit. po: create_pa, create_gr, submit_signoff."},
             "doc_number": {
                 "type": "string",
                 "description": (
@@ -554,7 +583,12 @@ _CHECK_TOOL = {
                     "to the document they are currently looking at."
                 ),
             },
-            "action": {"type": "string", "enum": ["submit"]},
+            "action": {"type": "string",
+                       "enum": ["submit", "create_pa", "create_gr", "submit_signoff"],
+                       "description": (
+                           "submit (a PR); create_pa = raise a payment application "
+                           "on the PO; create_gr = record a goods receipt on the "
+                           "PO; submit_signoff = submit the PO's sign-off.")},
         },
         "required": ["doc_type", "action"],
     },
@@ -868,6 +902,51 @@ _VENDOR_SUMMARY_TOOL = {
     },
 }
 
+_DASHBOARD_TOOL = {
+    "name": "my_dashboard",
+    "description": (
+        "Use when someone asks for the numbers on THEIR dashboard — '我的 "
+        "Dashboard 上各个数字是多少？', 'what do my dashboard cards say'. Returns "
+        "every card of their dashboard, computed by the Dashboard page's own "
+        "code, with what the cards mean. Takes no arguments."
+    ),
+    "input_schema": {"type": "object", "properties": {}},
+}
+
+
+def _rules_tool() -> dict:
+    """explain_rules — the areas are the rule registry's files, so an area is
+    offered exactly when there are rules for it (ISS-0022)."""
+    from app.services import rule_registry
+
+    catalogue = rule_registry.catalogue()
+    return {
+        "name": "explain_rules",
+        "description": (
+            "Use when someone asks HOW THE SYSTEM BEHAVES — a rule, a setting, "
+            "who may do something, in which statuses, what happens when…, how "
+            "often, whether a feature exists at all. Returns the system's own "
+            "rules for the area(s), each tied to the code that enforces it, "
+            "with current settings filled in. This is the answer to 'is this a "
+            "configuration question / not in my data' — it is not; call this."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "areas": {
+                    "type": "array",
+                    "minItems": 1, "maxItems": 3,
+                    "items": {"type": "string",
+                              "enum": [c["area"] for c in catalogue]},
+                    "description": " · ".join(
+                        f"{c['area']}: {c['label']} — {c['covers']}" for c in catalogue),
+                },
+            },
+            "required": ["areas"],
+        },
+    }
+
+
 _CANNOT_TOOL = {
     "name": "cannot_answer",
     "description": (
@@ -1011,10 +1090,13 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
                    _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
                    _MODULES_TOOL, _PRODUCIBLE_TOOL, _REPORT_TOOL,
                    _BUDGET_VARIANCE_TOOL, _RECEIVING_TOOL, _VENDOR_SUMMARY_TOOL,
-                   _CANNOT_TOOL],
+                   _rules_tool(), _DASHBOARD_TOOL, _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
+            # The same question must take the same route (ISS-0046, ISS-0061:
+            # asked three times, three different answers). Still Haiku.
+            temperature=0,
             messages=(history or []) + [{"role": "user", "content": user_text}],
         )
     except anthropic.APIConnectionError as exc:
@@ -1042,6 +1124,10 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             return {"kind": "modules", "usage": _usage(resp)}
         if block.name == "explain_document_types":
             return {"kind": "doc_types", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "explain_rules":
+            return {"kind": "rules", "areas": _areas_of(block.input), "usage": _usage(resp)}
+        if block.name == "my_dashboard":
+            return {"kind": "dashboard", "usage": _usage(resp)}
         if block.name == "vendor_summary":
             return {"kind": "vendor_summary", **dict(block.input), "usage": _usage(resp)}
         if block.name == "receiving_report":
@@ -1133,6 +1219,10 @@ crucially whether it is something THIS PERSON can fix.
 - If complete is false, the approval engine could not be reached, so the list is
   partial — say so rather than implying it is the whole picture.
 - Do not invent reasons, next steps, or people. The checks are all you know.
+- The same applies to an action on a purchase order (creating a payment
+  application or a goods receipt, submitting a sign-off): lead with whether
+  it can be done now and list what is in the way. `not_checked` is what was
+  not evaluated — mention it, so passing checks are not read as a promise.
 """
 
 
@@ -1147,6 +1237,8 @@ async def narrate_preflight(message: str, doc_number: str | None,
         "allowed": preflight.get("allowed"),
         "complete": preflight.get("complete"),
         "checks": preflight.get("checks", []),
+        # PO actions (po_action_check) say what they could not evaluate.
+        **({"not_checked": preflight["not_checked"]} if preflight.get("not_checked") else {}),
         **reply_language.instructions(message),
     }
     try:
@@ -1301,6 +1393,20 @@ You are helping a colleague who may never have been trained on this system.
   generalise that, or anything else, from the examples.
 - A task marked assigned_to_me_personally false reached them through a role they
   hold — worth saying, because "why is this mine?" is the next question.
+- Overdue means past its due date, and `overdue_count` is that count. When
+  `with_due_date_count` is 0 no task has a due date, so none is overdue — say
+  so (the tasks `rules` explain why) and offer the urgent ones or the oldest
+  instead. Urgent is a priority, not lateness: never call an urgent task
+  overdue, and never call the rest "on time".
+- For a dashboard (`kind` dashboard): give every card in `kpis` with its value
+  exactly as given (title: value), in the order given, then `users_by_role`
+  when present. Then add, briefly, what `rules` say about any card shown —
+  that a figure is a fixed label, always 0, or not what its title suggests.
+- Answer only what was asked. A question about an escalation, a reminder or
+  any single rule is answered with that, not with the approval chain; walk
+  the steps only when they asked how the chain runs. An approval chain
+  nobody asked about is noise, and twice it was added to an answer about
+  goods-receipt escalation (ISS-0019).
 - For a process: walk the steps in order, in plain sentences. A step with
   `conditional` true does NOT always run — give its `condition` verbatim in your
   own words, because someone told a step is mandatory will wait for an approval
@@ -1318,7 +1424,21 @@ You are helping a colleague who may never have been trained on this system.
   one of them, the rule IS the answer: give it plainly and the same way every
   time, never hedge it, never contradict it, and never answer the opposite
   from general knowledge of how such systems usually work. If no rule covers
-  what was asked, say that the guide does not cover it — do not reason one out.
+  what was asked, say that you have no rule for that part — do not reason one
+  out, and do not tell them to ask an administrator, Finance, IT or anyone
+  else, or name a role, page or setting that is not in what you were given.
+- For system rules (`kind` rules): `areas[].rules` are statements of how the
+  system behaves, each verified against the code, with current settings
+  already filled in. Find the rule(s) that answer the question and give them
+  plainly — the same way every time, never hedged, never contradicted, never
+  replaced by how such systems usually work. A rule that says something does
+  NOT exist or is NOT done is a full answer: say "no" and why. Answer every
+  part of the question that a rule covers, and only those parts; do not add
+  rules nobody asked about. For a part no rule covers, say you have no rule
+  for it — never suggest asking someone, and never name a role, page or
+  setting that is not in the rules. Rule ids are for you, not for the reader:
+  refer to another rule by what it says. `unavailable` names rules or areas
+  that could not be read just now — say that part could not be checked.
 - For a purchase request, `over_budget` is what happens when the PR is over
   budget, as configured right now. Asked about over-budget, lead with it: name
   `mode_label`, then the `added_steps` in order — they come BEFORE the normal
@@ -1455,6 +1575,9 @@ async def narrate_guide(message: str, payload: dict) -> dict:
         resp = await _client().messages.create(
             model=MODEL,
             max_tokens=_GUIDE_MAX_TOKENS,
+            # A rule answered three ways in three tries is not a rule
+            # (ISS-0046, ISS-0028). Still Haiku.
+            temperature=0,
             system=reply_language.LANGUAGE_RULES + _GUIDE_SYSTEM,
             messages=[{"role": "user",
                        "content": json.dumps(payload, ensure_ascii=False, default=str)}],
@@ -1604,3 +1727,69 @@ async def record_usage(db, user_id, stage: str, usage: dict) -> None:
             await own.commit()
     except Exception:  # noqa: BLE001 — bookkeeping must never break the reply
         log.exception("assistant: could not record usage for stage=%s", stage)
+
+# ── Rule questions that reached a refusal (ISS-0022) ─────────────────────────
+#
+# The planner can still decline a question about how the system behaves —
+# "not a data question", a document type outside a tool's enum, "which
+# document do you mean" for a question that names none because it is general.
+# Each of those used to end in text the model or the code wrote: "not in my
+# data, ask the System Admin". Before any of them is said, this asks one
+# narrow question of the same model: is this about a rule, and in which areas?
+# Output is constrained to the registry's areas; no prose is produced.
+
+_PICK_SYSTEM = """\
+You route a colleague's question inside UniOps, a purchasing system.
+
+Decide one thing: is the question about how the system BEHAVES — a rule, a
+setting, who may do something, in which statuses, what happens when, how
+often, whether a feature exists — rather than about specific records?
+
+- If it is, call explain_rules with the area(s) it belongs to (up to three).
+- If it asks about specific data or one specific document's own state
+  ("has this one been approved", "how many POs", "where is PR-…"), call
+  not_a_rule_question.
+"""
+
+_NOT_A_RULE_TOOL = {
+    "name": "not_a_rule_question",
+    "description": "The question is about specific data or a specific document.",
+    "input_schema": {"type": "object", "properties": {}},
+}
+
+
+def _areas_of(tool_input) -> list[str]:
+    """The areas a model asked for, kept to the registry's own."""
+    from app.services import rule_registry
+
+    raw = (tool_input or {}).get("areas")
+    if isinstance(raw, str):
+        raw = [raw]
+    known = set(rule_registry.area_keys())
+    return [a for a in dict.fromkeys(raw or []) if a in known][:3]
+
+
+async def pick_rule_areas(message: str, history: list[dict] | None = None) -> dict:
+    """{"areas": [...], "usage": {...}} — empty areas when it is not a rule
+    question (or the model could not be reached: the caller then says what it
+    would have said anyway)."""
+    try:
+        resp = await _client().messages.create(
+            model=MODEL,
+            max_tokens=256,
+            temperature=0,
+            system=_PICK_SYSTEM,
+            tools=[_rules_tool(), _NOT_A_RULE_TOOL],
+            tool_choice={"type": "any"},
+            messages=(history or []) + [{"role": "user", "content": message}],
+        )
+    except LlmUnavailable:
+        return {"areas": [], "usage": {}}
+    except Exception as exc:  # noqa: BLE001 — a failed rescue is just no rescue
+        log.warning("pick_rule_areas failed: %s", exc)
+        return {"areas": [], "usage": {}}
+    _log_usage("pick_rule_areas", resp)
+    for block in resp.content:
+        if block.type == "tool_use" and block.name == "explain_rules":
+            return {"areas": _areas_of(block.input), "usage": _usage(resp)}
+    return {"areas": [], "usage": _usage(resp)}

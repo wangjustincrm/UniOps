@@ -39,7 +39,7 @@ from app.schemas.invoice import InvoiceCreate
 from app.schemas.pa import PaCreate
 from app.schemas.po import PoCreate
 from app.schemas.pr import PrCreate
-from app.services import report_lineage
+from app.services import report_lineage, rule_registry
 from app.services.doc_preflight import SUBMIT_CHECKS, field_checks_for
 
 _KNOWLEDGE = Path(__file__).resolve().parent.parent / "knowledge"
@@ -227,14 +227,11 @@ def build(doc_type: str) -> dict:
         # How the system behaves where people keep asking — each with where in
         # the code it is enforced. The narrator answers these from here rather
         # than from a guess or a data query (ISS-0008, ISS-0010).
-        "rules": rules_of(doc),
+        # The rules live in the rule registry (knowledge/rules/<doc>.yaml),
+        # shared with explain_rules; derived ones are filled by the caller
+        # (rule_registry.resolve), which has the session.
+        "rules": rule_registry.static_rules(doc_type),
     }
-
-
-def rules_of(doc: dict) -> list[dict]:
-    return [{"id": r["id"], "answer": " ".join((r.get("answer") or "").split()),
-             **({"topic": r["topic"]} if r.get("topic") else {})}
-            for r in doc.get("rules") or []]
 
 
 # ── Modules ──────────────────────────────────────────────────────────────────

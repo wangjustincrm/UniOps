@@ -1,0 +1,41 @@
+area: approval_engine
+label: How approval chains behave
+covers: >
+  Resuming after a return, recalling, the same person on consecutive steps, a vacant post, the System Admin, who may approve/return/reject/cancel, cross-department payments, approving only inside UniOps, approval buttons.
+remote: approval-api
+rules:
+  - id: approve_only_in_the_system
+    asked_as:
+      - can I approve in Teams
+      - can I approve by replying to the email
+      - 能在 Teams 里或者回复邮件来审批吗
+    answer: >
+      No. Approving, returning and rejecting are done only in UniOps itself —
+      from the task in the Task Inbox or on the document's page. Email and
+      Teams messages only tell you that something is waiting: the Teams card's
+      one button opens the document in EPMS, and replying to a notification
+      email does nothing.
+    enforced_in: "epms-api app/services/teams.py (Action.OpenUrl only); no mail-reply handler in any service"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_round2.py::test_teams_card_offers_no_way_to_approve"
+
+  # ── Added 2026-10-21 (issue review batch 3). The engine's own rules —
+  # returns, recalls, the same approver twice, empty posts, the System Admin,
+  # cross-department payments — are served by approval-api (remote above,
+  # app/crud/engine_rules.py there) and are not repeated here.
+  - id: approval_buttons
+    asked_as:
+      - 我打开审批链接时这张单已经被别人批了，会看到什么？
+      - what do I see if someone else already approved it
+    answer: >
+      Approve, Return and Reject appear only for someone who holds an open
+      approval task for the step the document is on now (a System Admin
+      always sees them on a purchase request). If someone else has already
+      approved that step, opening the link shows the document in its
+      current status with no approval buttons — there is nothing left for
+      you to do on it.
+    enforced_in: "epms/src/pages/pr/PrDetailPage.tsx, po/PoDetailPage.tsx, pa/PaDetailPage.tsx canApprove (open approve task for this document)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_approval_buttons_follow_the_open_task"

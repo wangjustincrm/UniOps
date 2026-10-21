@@ -61,26 +61,4 @@ values:
       - A purchase order whose PR never carried a completion date is outside
         that sweep entirely and will never be chased.
 
-# ── Rules people ask about ───────────────────────────────────────────────────
-rules:
-  - id: gr_numbering
-    asked_as:
-      - how are GR numbers generated
-    answer: >
-      GR-YYYYMMDD-NNNN: the date it was recorded, then a 4-digit sequence that
-      restarts each day. The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
-    enforced_in: "epms-api app/crud/gr.py _next_number"
-  - id: gr_without_pr
-    asked_as:
-      - who confirms a GR when the PO has no PR
-      - does the requester confirm a receipt for an imported PO
-      - 没有 PR 的 PO 收货后要申请人确认吗
-    answer: >
-      Nobody. A purchase order with no PR (imported from NC or PMS) has no
-      requester or owner to ask, so when its goods receipt is recorded the
-      acknowledge, collect and confirm steps are skipped: a physical receipt
-      goes straight to Collected and a service one straight to Confirmed, the
-      received quantities are posted, and System Admins get an alert so the
-      missing PR link can be restored. Only someone with the warehouse receive
-      permission can record it, whatever the type.
-    enforced_in: "epms-api app/crud/gr.py _auto_complete_requester_steps; app/api/v1/gr.py (service PO with no PR: warehouse permission only)"
+# The rules people ask about live in rules/gr.yaml (app/services/rule_registry.py).

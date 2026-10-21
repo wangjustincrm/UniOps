@@ -69,13 +69,4 @@ values:
       - Confirmed by the PR's Project Owner (the requester unless the PR names
         someone else), like a service PO.
 
-# ── Rules people ask about ───────────────────────────────────────────────────
-rules:
-  - id: po_numbering
-    asked_as:
-      - how are PO numbers generated
-    answer: >
-      PO-<vendor code>-<YYMM>-NN: the vendor's code, the year and month it was
-      created (UTC), then a 2-digit sequence per vendor per month — PO-332-2610-01
-      is the first order to vendor 332 in October 2026.
-    enforced_in: "epms-api app/crud/po.py _next_number"
+# The rules people ask about live in rules/po.yaml (app/services/rule_registry.py).

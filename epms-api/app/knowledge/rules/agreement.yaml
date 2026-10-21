@@ -1,0 +1,111 @@
+area: agreement
+label: Purchase agreements
+covers: >
+  Agreement numbers, being in force, the grace window, Not to Exceed, receipts on house accounts, confirming service periods.
+rules:
+  - id: agreement_numbering
+    asked_as:
+      - how are agreement numbers generated
+    answer: >
+      AGR-YYYYMM-NNNN: the year and month it was created (UTC), then a 4-digit
+      sequence that restarts each month.
+    enforced_in: "epms-api app/crud/agreement.py _next_number"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_round2.py::test_numbers_have_the_formats_the_guide_states"
+  - id: active_is_not_in_force
+    asked_as:
+      - which agreements are still valid
+      - has this agreement expired
+    answer: >
+      Status Active means the agreement was approved; it does not mean it is
+      still in force. Nothing moves an agreement to Expired when its Valid To
+      date passes, so whether it is in force is read from Valid From / Valid To
+      (plus its grace days for invoices — see grace_window).
+    enforced_in: "epms-api app/crud/agreement.py (no write of expired/closed anywhere)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_nothing_moves_an_agreement_to_expired_or_closed"
+  - id: grace_window
+    asked_as:
+      - can an invoice still be matched to an expired agreement
+      - can I raise a PA on an agreement after Valid To
+      - 过期的协议还能匹配发票吗
+    answer: >
+      Yes, for a while. New invoices can be matched, and payment applications
+      raised, until Valid To plus the agreement's Grace Days (30 unless set
+      otherwise on the agreement), because a period's invoice always arrives
+      after the period ends. After that, both are refused. Valid From is not
+      checked, so invoices dated before it can still be matched to a back-dated
+      agreement. Drafts and agreements still in approval admit nothing.
+    enforced_in: "epms-api app/crud/agreement.py _admissible_predicate / is_admissible (used by invoice matching and app/api/v1/pa.py); models/agreement.py grace_days server_default 30"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_batch1.py::test_grace_window_rule_matches_the_admission_predicate"
+  - id: nte_is_warning_only
+    asked_as:
+      - can we still pay once the Not to Exceed is reached
+      - what happens when an agreement goes over its NTE
+      - 超过协议金额上限还能付款吗
+    answer: >
+      Yes. Not to Exceed is a warning only: going over it never blocks
+      matching, approval or payment, and adds no approval step. Agreement Detail
+      shows how much has been consumed (the tax-inclusive total of the invoices
+      matched to it) against the ceiling, and warns when it is exceeded. An
+      agreement with no NTE has no ceiling at all.
+    enforced_in: "epms-api app/crud/agreement.py (\"NTE ceiling being warn-only by explicit user decision\"); app/api/v1/pa.py agreement route has no NTE check; epms AgreementCreatePage.tsx \"Not to Exceed is a warning only\""
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_batch1.py::test_nte_rule_matches_the_payment_route"
+  - id: who_attaches_house_account_receipts
+    asked_as:
+      - who can attach receipts to an agreement invoice
+      - why can the agreement owner not see the receipts on the invoice
+      - 谁可以给协议发票挂收货凭证
+    answer: >
+      AP, the person who uploaded the invoice, whoever holds the invoice's
+      Match Invoice or Attach Invoice Receipts task, and the agreement's owner.
+      When an invoice is matched to a house account agreement without any
+      receipt attached, an "Attach Invoice Receipts" task goes to the
+      agreement's owner (no owner: a manager of the agreement's department;
+      neither: the AP pool). It closes on its own once receipts are attached or
+      the invoice is settled without receipt evidence, and it moves with the
+      agreement if the owner changes.
+    enforced_in: "epms-api app/api/v1/invoices.py _require_invoice_receipt_access; app/crud/attach_receipts_task.py; PRD EPMS AGR-032"
+    provenance: pinned
+    test:
+      - "tests/test_attach_receipts_task.py::test_matching_to_a_house_account_raises_a_task_for_the_owner"
+      - "tests/test_attach_receipts_task.py::test_someone_unrelated_is_refused_with_receipt_wording"
+  - id: who_records_agreement_receipts
+    asked_as:
+      - who can record agreement receipts
+      - 谁可以录入协议收据
+    answer: >
+      Anyone holding the Record Agreement Receipts permission (together with
+      View Agreements). By default that is System Admin, AP Clerk and
+      Department Admin; it is changed in Portal → Admin → Access Control, and
+      the current grants can be listed from the permission matrix
+      (role_permission, permission epms.agreement.receipt.write). Receipts are
+      recorded by Finance on the employee's behalf. A receipt entered with a
+      missing-receipt reason waits for AP review before it can be used.
+    enforced_in: "epms-api app/api/v1/agreement_receipts.py (epms.agreement.receipt.write); identity-api alembic 0007_receipt_write_perm (default grants)"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_batch2.py::test_who_records_agreement_receipts_is_a_rule"
+
+  # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
+  - id: confirming_service_periods
+    asked_as:
+      - 协议这个月的服务确认了吗？
+      - has this month's service on the agreement been confirmed
+    answer: >
+      On a recurring agreement each billing period is confirmed by the
+      agreement's owner (Confirm Service Period task), and the agreement's
+      Payment Schedule shows each period with its status, its invoice and
+      who confirmed it when. Whether a particular period was confirmed is
+      recorded data: ask about that agreement's periods (agreement_period)
+      and it is looked up.
+    enforced_in: "epms-api app/models/agreement_schedule.py accepted_by / accepted_at; app/ontology/epms.yaml agreement_period"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_agreement_periods_are_queryable"

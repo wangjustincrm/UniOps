@@ -1,0 +1,236 @@
+area: pr
+label: Purchase requests
+covers: >
+  Raising, editing, recalling, withdrawing and copying a purchase request; its lines, department, decomposition factors, list filters, PDF; the budget check on a PR.
+rules:
+  - id: type_1_not_selectable
+    asked_as:
+      - what procurement types are there
+      - 系统里有哪几种采购类型
+      - why can't I pick type 1
+    answer: >
+      There are six procurement types. Type 1 (Raw Materials / Packaging) cannot
+      be chosen when creating a PR in EPMS — its tile is disabled — because raw
+      material and packaging purchasing runs in NC and those orders arrive in
+      EPMS mirrored from it. The other five are chosen on the Create PR form.
+    enforced_in: "epms/src/components/pr/procurementTypes.ts (pinned by procurementTypes.test.ts)"
+    provenance: pinned
+    test:
+      - "epms/src/components/pr/procurementTypes.test.ts"
+  - id: pr_numbering
+    asked_as:
+      - how are PR numbers generated
+      - 请购单编号是怎么生成的
+    answer: >
+      PR-YYYYMMDD-NNNN: the date it was created, then a 4-digit sequence that
+      restarts each day — PR-20261015-0003 is the third PR of 15 Oct 2026.
+      The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
+    enforced_in: "epms-api app/crud/pr.py _next_number"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_round2.py::test_numbers_have_the_formats_the_guide_states"
+  # ── Over-budget (ISS-0025). `topic: over_budget` rules are also handed to
+  # explain_process for a PR, so the answer is the same whichever route the
+  # question takes (guide_view.process_steps).
+  - id: budget_check_applies_to_types_2_to_6
+    also_in: [budget]
+    topic: over_budget
+    asked_as:
+      - do consumables need a budget check
+      - 杂项耗材要做预算检查吗
+      - which PRs are checked against the budget
+    answer: >
+      Every PR of types 2 to 6 must carry a cost center and a budget account
+      before it can be submitted, and every such PR is checked against that
+      account's budget. Type 1 (raw materials / packaging, mirrored from NC)
+      carries no budget. The over-budget mode only decides what happens to a
+      PR found over budget; it never switches the check off.
+    enforced_in: "epms-api app/services/doc_preflight.py budget_account_required (type != 1); app/crud/pr.py compute_budget_check"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_budget_gate_applies_to_every_type_but_1"
+  - id: over_budget_checked_on_save
+    also_in: [budget]
+    topic: over_budget
+    asked_as:
+      - is the budget checked again when I submit
+      - my draft was saved before the budget changed — is it re-checked
+      - 草稿保存后预算变了会重新检查吗
+    answer: >
+      Over budget is decided each time the PR is saved — when it is created and
+      on every edit — from the account's Available balance at that moment.
+      Submitting does not re-check it. Submitting from the edit page saves
+      first, so it uses the current balance; submitting an old draft straight
+      from its detail page uses the result from its last save. When an edit
+      brings a PR back within budget, its justification is cleared.
+    enforced_in: "epms-api app/crud/pr.py create / update (_compute_over_budget); no call on the submit path"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_batch1.py::test_over_budget_is_decided_on_save_not_on_submit"
+  - id: budget_not_reserved
+    also_in: [budget]
+    topic: over_budget
+    asked_as:
+      - do two PRs compete for the same budget
+      - does a submitted PR reserve the budget
+      - 两张请购单会抢同一笔预算吗
+    answer: >
+      No budget is reserved. Available is the balance the Budget service reports
+      for the cost center and budget account; other PRs and POs still in
+      progress are not deducted from it. Two PRs can each pass the check
+      against the same balance. If the Budget service cannot be reached, the PR
+      is treated as within budget.
+    enforced_in: "epms-api app/crud/pr.py compute_budget_check (available from budget_client.get_balance; fail-open when None)"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_batch1.py::test_budget_unreachable_is_treated_as_within_budget"
+
+  # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
+  - id: who_can_edit_a_pr
+    asked_as:
+      - 谁可以编辑我的请购单？什么状态下可以编辑？
+      - who can edit my PR and when
+      - 已经提交的请购单想修改怎么办？
+    answer: >
+      Only the requester who raised a PR, or a System Admin, can edit it, and
+      only while it is draft or returned. A submitted PR cannot be edited as
+      it stands: while it is submitted or in review the requester can press
+      Recall to Edit on the PR page, which takes it back to draft (approval
+      then starts again from the first step when it is resubmitted); or the
+      approver can return it, after which it can be edited and resubmitted.
+    enforced_in: "epms-api app/api/v1/pr.py update_pr (status draft/returned; created_by or system_admin); approval-api engine recall (RECALLABLE_STATUSES)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_only_the_requester_edits_a_draft_or_returned_pr"
+      - "approval-api/tests/test_engine_recall.py::test_recall_by_submitter_succeeds"
+  - id: withdraw_a_pr
+    asked_as:
+      - PR 的撤销（Withdraw）按钮在任何状态都能用吗？
+      - in_review 状态的请购单能撤销吗？
+      - can I withdraw a PR
+    answer: >
+      Withdraw cancels a PR for good. It works while the PR is draft,
+      returned or submitted, for the requester, the approver it is waiting
+      on, or a System Admin. Known defect: the PR page also shows Withdraw on
+      a PR that is in review, but there it fails with an error ("Cannot
+      cancel PR in status 'in_review'"). To stop an in-review PR, use Recall
+      to Edit, or ask the approver to return or reject it.
+    enforced_in: "approval-api app/crud/engine.py _DOC_META['pr']['valid_cancel']; epms/src/pages/pr/PrDetailPage.tsx (Withdraw shown for draft/returned/submitted/in_review)"
+    provenance: pinned
+    test:
+      - "approval-api/tests/test_engine_rules.py::test_cancel_statuses_are_the_engines"
+      - "tests/test_rule_registry.py::test_the_pr_page_offers_withdraw_on_in_review"
+  - id: pr_line_prices
+    asked_as:
+      - 行项目的单价可以填 0 或负数吗？
+      - can a unit price be zero or negative
+    answer: >
+      Yes. A line's unit price is required but may be zero or negative — for
+      a discount, rebate or credit line. The quantity must be more than zero.
+      A PR whose lines add up to exactly zero cannot be submitted from the
+      form ("At least one line must have a price"); a negative total can.
+    enforced_in: "epms-api app/schemas/pr.py PrLineItemIn (qty gt=0, unit_price unconstrained); epms/src/pages/pr/PrCreatePage.tsx / PrEditPage.tsx (estimatedAmount === 0)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_pr_line_prices_may_be_zero_or_negative"
+  - id: changing_the_pr_department
+    asked_as:
+      - 请购单上改了部门会发生什么？
+      - what happens if I change the department on a PR
+    answer: >
+      The department on a PR decides who approves it at the Department
+      Manager, Director and GM/OPM steps — and the same for the purchase
+      orders and payment applications raised from it. So changing it changes
+      who will approve. On the PR form, changing the department also clears
+      the cost centre, the budget account (L1 and L2) and the decomposition
+      factors, because they belong to the old department; pick them again
+      before saving.
+    enforced_in: "approval-api app/crud/engine.py _routing_department_id; epms/src/pages/pr/PrCreatePage.tsx and PrEditPage.tsx department onChange"
+    provenance: pinned
+    test:
+      - "approval-api/tests/test_engine_dept_manager_routing.py::test_pr_department_id_drives_dept_manager_routing"
+      - "tests/test_rule_registry.py::test_changing_the_department_clears_the_budget_fields"
+  - id: decomposition_factors
+    asked_as:
+      - 什么是分解因子？什么时候必须填？
+      - what are decomposition factors
+    answer: >
+      Decomposition factors are extra breakdown codes that some budget
+      accounts ask for. When the budget account chosen on a PR has
+      decomposition switched on, the PR form shows one dropdown per factor
+      the account has (at most 3), and every one must be filled before the
+      PR can be submitted; a draft can be saved without them. Accounts
+      without decomposition show none.
+    enforced_in: "budget-api app/crud/factor.py MAX_FACTORS_PER_ACCOUNT, BudgetAccount.decomposition_enabled; epms/src/pages/pr/PrCreatePage.tsx (accountFactors missing → refuse submit)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_decomposition_factors_are_required_on_submit_only"
+  - id: pr_list_filters
+    asked_as:
+      - 请购单列表能按哪些条件筛选？
+      - what can I filter the PR list by
+    answer: >
+      The PR list has a search box (PR number, title, vendor, budget code)
+      and filters for Status, Department, Requester, Type and Prepaid.
+      Someone who is only a Requester sees only their own PRs: the Requester
+      filter is fixed to themselves and the list is titled My Purchase
+      Requisitions.
+    enforced_in: "epms/src/pages/pr/PrListPage.tsx"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_pr_list_filters"
+  - id: copy_a_pr
+    asked_as:
+      - 怎么基于一张旧的请购单快速建一张新的？
+      - how do I copy a PR
+    answer: >
+      Select the old PR on the PR list and click Copy. A new PR form opens
+      filled in from it — title ("Copy of …"), type, lines, currency, notes,
+      delivery address, cost centre and budget account, and the vendor if it
+      is still active. Dates, decomposition factors, attachments and the
+      Service/Project Owner are not copied.
+    enforced_in: "epms/src/pages/pr/PrListPage.tsx (Copy → /pr/new?copyFrom=); PrCreatePage.tsx copyFrom prefill"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_a_pr_is_copied_from_the_list"
+  - id: approved_pr_pdf
+    asked_as:
+      - 批准后的请购单 PDF 在哪里？
+      - where is the approved PR PDF
+    answer: >
+      When a PR is fully approved its PDF is generated automatically and put
+      on the PR's Attachments tab. On an approved PR that tab also has
+      Regenerate PDF, which rebuilds it.
+    enforced_in: "epms-api app/api/v1/pr.py _generate_pr_pdf_background on approved; app/api/v1/pr_attachments.py regenerate-pdf (_PDF_STATUSES)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_the_pr_pdf_is_made_on_approval"
+  - id: negative_total_is_never_over_budget
+    topic: over_budget
+    also_in: [budget]
+    asked_as:
+      - 总额是负数的请购单会被判定为超预算吗？
+      - is a PR with a negative total over budget
+    answer: >
+      No. A PR whose total is zero or negative is never over budget.
+    enforced_in: "epms-api app/crud/pr.py compute_budget_check (amount <= 0 → not over)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_a_zero_or_negative_pr_is_never_over_budget"
+  - id: budget_service_unreachable
+    topic: over_budget
+    also_in: [budget]
+    asked_as:
+      - 如果预算服务连不上会怎样？
+      - what happens if the budget service is down
+    answer: >
+      The PR is not held up. If the Budget service cannot be reached, the
+      over-budget check treats the PR as within budget, and the check that
+      the budget account exists in the budget catalogue is skipped when a PR,
+      PO or agreement is saved (a code the service does know to be wrong is
+      still refused).
+    enforced_in: "epms-api app/crud/pr.py compute_budget_check (get_balance None → within budget); app/services/budget_client.py ensure_known_budget_code (unreachable → accepted unchecked)"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_batch1.py::test_budget_unreachable_is_treated_as_within_budget"
+      - "tests/test_rule_registry.py::test_an_unreachable_budget_service_skips_the_catalogue_check"
