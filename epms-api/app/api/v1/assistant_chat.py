@@ -29,6 +29,7 @@ from sqlalchemy import select
 from app.api.v1.assistant_preflight import preflight as run_preflight
 from app.api.v1.assistant_query import assistant_schema
 from app.core.access_scope import build_scope, is_pr_visible
+from app.core.delegation import local_today
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.ontology import REGISTRY
 from app.models.pr import PurchaseRequest
@@ -627,6 +628,31 @@ async def _answer_doc_types(db, body, planned, actor) -> dict:
     }
 
 
+async def _answer_account_balance(db, scope, token, body, planned, actor, year) -> dict:
+    """One cost centre × account, from the PR budget widget's own source."""
+    result = await budget_variance.account_balance(
+        db, scope, fiscal_year=year, cost_center=planned["cost_center"],
+        account_code=planned["account_code"], token=token)
+    if not result.get("allowed"):
+        return {
+            "_fixed_text": True, "answer": result.get("why") or "You cannot see budget figures.",
+            "kind": "denied", "query": None, "sources": None,
+        }
+    payload = {"question": body.message, "kind": "budget_account_balance", **result}
+    try:
+        told = await assistant_llm.narrate_guide(body.message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+    return {
+        "answer": told["text"], "kind": "budget_variance", "query": None,
+        "budget_variance": result,
+        "sources": {"entity": "budget balance (cost centre × account)",
+                    "row_count": 1 if result.get("found") else 0,
+                    "complete": "balance_unavailable" not in result},
+    }
+
+
 async def _answer_budget_variance(db, scope, token, body, planned, actor) -> dict:
     """Budget against spending, with the subtraction already done.
 
@@ -634,10 +660,15 @@ async def _answer_budget_variance(db, scope, token, body, planned, actor) -> dic
     hand back through arithmetic what a query would have refused. The row scope
     is the ontology's own department rule for the same reason.
     """
-    year = planned.get("fiscal_year") or _dt.datetime.now(_dt.timezone.utc).year
-    through = planned.get("through_month") or 12
+    today = local_today()
+    year = int(planned.get("fiscal_year") or today.year)
+    if planned.get("cost_center") and planned.get("account_code"):
+        return await _answer_account_balance(db, scope, token, body, planned, actor, year)
+    # Unasked, the current year runs to the current month: "至 12 月" in
+    # October read as though the year were over (ISS-0014).
+    through = planned.get("through_month") or (today.month if year == today.year else 12)
     result = await budget_variance.build(
-        db, scope, fiscal_year=int(year), through_month=int(through), token=token)
+        db, scope, fiscal_year=year, through_month=int(through), token=token)
     if not result.get("allowed"):
         return {
             "_fixed_text": True, "answer": result.get("why") or "You cannot see budget figures.",

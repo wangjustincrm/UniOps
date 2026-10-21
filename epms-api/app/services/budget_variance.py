@@ -35,9 +35,16 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ontology import _own_department_cost_centres, get_entity, may_view
-from app.services import finance_client
+from app.models.cost_center import CostCenter
+from app.services import budget_client, finance_client
 
 _ZERO = Decimal("0")
+
+# Budget plans carry no currency of their own: they are entered against NC's
+# local-currency actuals, which are CAD (finance-api models/journal_voucher.py:
+# "orig + local/CAD"). Said in the answer — without it a Chinese reply wrote
+# 元 and 万元 (ISS-0014).
+BUDGET_CURRENCY = "CAD"
 
 # The gate is the budget entities' own. Someone who cannot query a budget plan
 # must not get the same numbers back through a route that adds them up.
@@ -130,7 +137,8 @@ async def build(db: AsyncSession, scope: dict, *, fiscal_year: int,
 
     plan = await _plan_by_cost_centre(db, fiscal_year, through_month, cc_ids)
     actual_side = await finance_client.nc_actuals_by_cost_center(
-        bearer_token=token, fiscal_year=fiscal_year, through_month=through_month)
+        bearer_token=token, fiscal_year=fiscal_year, through_month=through_month,
+        include_unposted=True)
     if actual_side is None:
         return {"allowed": True, "fiscal_year": fiscal_year,
                 "through_month": through_month, "rows": [],
@@ -178,6 +186,7 @@ async def build(db: AsyncSession, scope: dict, *, fiscal_year: int,
         "allowed": True,
         "fiscal_year": fiscal_year,
         "through_month": through_month,
+        "currency": BUDGET_CURRENCY,
         "rows": rows,
         "totals": {
             "annual_plan": _s(total_plan),
@@ -192,9 +201,66 @@ async def build(db: AsyncSession, scope: dict, *, fiscal_year: int,
         "not_in_the_actual_means": actual_side.get("dropped_means"),
         "how_it_was_worked_out": (
             "Plan is the approved, current budget for the year. Actual is NC "
-            "posted spending — the same basis as the Budget Dashboard — for "
-            f"months 1 to {through_month}. Variance is plan minus actual, so a "
-            "positive number is under budget. Both comparisons are given: "
-            "against the whole year's plan, and against the same months of it."
+            "spending including vouchers entered in NC but not yet tallied "
+            "(discarded and deleted ones never count) — the Budget Dashboard's "
+            "default (\"Include unposted vouchers\" ticked) and the PR budget "
+            f"widget's basis — for months 1 to {through_month}. Amounts are in "
+            f"{BUDGET_CURRENCY}. Variance is plan minus actual, so a positive "
+            "number is under budget. Both comparisons are given: against the "
+            "whole year's plan, and against the same months of it."
         ),
+    }
+
+
+async def account_balance(db: AsyncSession, scope: dict, *, fiscal_year: int,
+                          cost_center: str, account_code: str,
+                          token: str | None) -> dict:
+    """One cost centre × budget account: the PR budget widget's own figure.
+
+    "How much is left on MOH-ENG / CRM0090202" was answered with the whole cost
+    centre, posted vouchers only (ISS-0014). The widget and the PR over-budget
+    check ask budget-api /balance (annual − committed − actual, unposted
+    included); this asks the same endpoint, so the answer is the number the PR
+    form would show and the over-budget check would use.
+    """
+    entity = get_entity(_PLAN_ENTITY)
+    if entity is None or not may_view(entity, scope.get("perms") or {}):
+        return {"allowed": False,
+                "why": "Seeing budget figures needs budget or finance access."}
+    wanted = cost_center.strip().lower()
+    cc = (await db.execute(sa.select(CostCenter).where(sa.or_(
+        sa.func.lower(CostCenter.code) == wanted,
+        sa.func.lower(CostCenter.name) == wanted)))).scalars().first()
+    visible = await _visible_cost_centres(db, scope)
+    if cc is None or (visible is not None and cc.id not in set(visible)):
+        # Not found and not visible read the same: no leak of what exists.
+        return {"allowed": True, "found": False, "cost_center": cost_center,
+                "account_code": account_code, "fiscal_year": fiscal_year}
+    data = await budget_client.get_balance(token, cc.id, fiscal_year,
+                                           account_code=account_code.strip())
+    if data is None:
+        return {"allowed": True, "found": True, "balance_unavailable": (
+            "The budget service could not answer for this cost centre and "
+            "account (unreachable, or the account has no budget there)."),
+            "cost_center_code": cc.code, "cost_center_name": cc.name,
+            "account_code": account_code, "fiscal_year": fiscal_year}
+    annual = Decimal(str(data.get("annual_budget") or 0))
+    committed = Decimal(str(data.get("committed") or 0))
+    actual = Decimal(str(data.get("actual_spent") or 0))
+    available = Decimal(str(data.get("available") or 0))
+    return {
+        "allowed": True, "found": True, "fiscal_year": fiscal_year,
+        "cost_center_code": cc.code, "cost_center_name": cc.name,
+        "account_code": account_code, "currency": BUDGET_CURRENCY,
+        "annual_budget": _s(annual), "committed": _s(committed),
+        "actual_spent": _s(actual), "available": _s(available),
+        "over_budget_by": _s(-available) if available < _ZERO else None,
+        "how_it_was_worked_out": (
+            "From the budget service, exactly as the PR form's Budget Balance "
+            "widget and the PR over-budget check: available = annual budget − "
+            "committed − actual, where actual is NC spending for this cost "
+            "centre and account including vouchers entered but not yet "
+            "tallied. Committed is as the budget service reports it (nothing "
+            "books commitments today, so it is normally 0). A negative "
+            "available is over budget."),
     }

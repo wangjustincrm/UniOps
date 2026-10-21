@@ -72,9 +72,14 @@ async def _plan(db, code: str, monthly: dict[int, str], *, status="approved",
     return str(cc_id)
 
 
+ASKED: dict = {}
+
+
 def _actual(rows, dropped=None):
     """Stand in for finance-api, whose own tests cover what it counts."""
-    async def _call(*, bearer_token=None, fiscal_year, through_month):
+    async def _call(*, bearer_token=None, fiscal_year, through_month,
+                    include_unposted=False):
+        ASKED["include_unposted"] = include_unposted
         return {"fiscal_year": fiscal_year, "through_month": through_month,
                 "cost_centers": rows,
                 "dropped": dropped or {},
@@ -169,7 +174,8 @@ async def test_an_unreachable_actual_is_not_answered_with_the_plan(db, monkeypat
     """
     await _plan(db, "U", {1: "10.00"})
 
-    async def gone(*, bearer_token=None, fiscal_year, through_month):
+    async def gone(*, bearer_token=None, fiscal_year, through_month,
+                   include_unposted=False):
         return None
 
     monkeypatch.setattr(budget_variance.finance_client, "nc_actuals_by_cost_center", gone)
@@ -189,3 +195,18 @@ async def test_what_the_actual_could_not_place_travels_with_the_answer(db, monke
                                       token="t")
     assert out["not_in_the_actual"]["no_cost_center"]["lines"] == 927
     assert out["not_in_the_actual_means"]
+
+
+async def test_the_actual_includes_unposted_vouchers_and_says_so(db, monkeypatch):
+    """The dashboard's default and the PR widget's basis (ISS-0014): posted
+    only, the cost centre showed 591K available where the dashboard said 488K."""
+    cc_id = await _plan(db, "N", {1: "10.00"})
+    monkeypatch.setattr(budget_variance.finance_client, "nc_actuals_by_cost_center",
+                        _actual([{"cost_center_id": cc_id, "cost_center_code": "VAR-TEST-N",
+                                  "cost_center_name": "N", "actual": "1.00"}]))
+    out = await budget_variance.build(db, FULL, fiscal_year=2999, through_month=10,
+                                      token="t")
+    assert ASKED["include_unposted"] is True
+    assert out["currency"] == "CAD"
+    assert "not yet tallied" in out["how_it_was_worked_out"]
+

@@ -292,7 +292,8 @@ async def nc_actuals_monthly(user: CurrentUser, db: AsyncSession = Depends(get_d
 async def nc_actuals_by_cost_center(user: CurrentUser, db: AsyncSession = Depends(get_db),
                                     fiscal_year: int = Query(...),
                                     through_month: int = Query(default=12, ge=1, le=12),
-                                    cost_center_id: uuid.UUID | None = Query(default=None)):
+                                    cost_center_id: uuid.UUID | None = Query(default=None),
+                                    include_unposted: bool = Query(default=False)):
     """NC posted actual per cost centre, year to date through a month.
 
     The dashboard's own figure summed by cost centre instead of by budget
@@ -304,7 +305,8 @@ async def nc_actuals_by_cost_center(user: CurrentUser, db: AsyncSession = Depend
     if kw.get("cost_center_id") is not None:
         cc_ids = [kw["cost_center_id"]]
     return await crud.nc_actuals_by_cost_center(
-        db, fiscal_year, through_month=through_month, cc_ids=cc_ids)
+        db, fiscal_year, through_month=through_month, cc_ids=cc_ids,
+        include_unposted=include_unposted)
 
 
 @router.get("/nc-partner-monthly")

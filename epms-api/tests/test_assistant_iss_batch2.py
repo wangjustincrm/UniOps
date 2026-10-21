@@ -760,3 +760,88 @@ async def test_the_workflow_view_of_a_pa_carries_its_payment_date(monkeypatch):
                          paid_at=datetime(2026, 10, 19, tzinfo=timezone.utc))
     view = await workflow_view.build(None, "pa", pa, "t")
     assert view["milestones"]["paid_on"] == date(2026, 10, 19)
+
+
+# ── ISS-0014: one cost centre × account; current month; cut answers ─────────
+
+async def test_an_account_question_gets_the_pr_widget_figure(test_engine, admin_client, monkeypatch):
+    import sqlalchemy as sa
+
+    from app.models.cost_center import CostCenter
+    from app.models.department import Department
+    from app.services import assistant_llm, budget_variance
+
+    tag = uuid.uuid4().hex[:6]
+    async with _factory(test_engine)() as db:
+        dept = Department(code=f"D{tag}", name=f"Dept {tag}", is_active=True)
+        db.add(dept)
+        await db.flush()
+        db.add(CostCenter(code=f"MOH-{tag}-E01", name=f"ENG-{tag}", department_id=dept.id,
+                          is_active=True))
+        await db.commit()
+
+    asked = {}
+
+    async def balance(token, cc_id, fiscal_year, account_id=None, account_code=None):
+        asked.update(fiscal_year=fiscal_year, account_code=account_code)
+        return {"annual_budget": "950000.00", "committed": "0", "actual_spent": "1004769.43",
+                "available": "-54769.43"}
+
+    async def fake_plan(schema, message, context=None, retry_error=None, history=None):
+        return {"kind": "variance", "fiscal_year": 2026, "cost_center": f"eng-{tag}",
+                "account_code": "CRM0090202", "usage": {}}
+
+    seen = {}
+
+    async def fake_guide(message, payload):
+        seen.update(payload)
+        return {"text": "ok", "usage": {}}
+
+    monkeypatch.setattr(budget_variance.budget_client, "get_balance", balance)
+    monkeypatch.setattr(assistant_llm, "plan", fake_plan)
+    monkeypatch.setattr(assistant_llm, "narrate_guide", fake_guide)
+    r = await admin_client.post("/api/v1/assistant/chat",
+                                json={"message": "MOH-ENG 科目 CRM0090202 今年还有多少预算？"})
+    assert r.status_code == 200, r.text
+    assert asked == {"fiscal_year": 2026, "account_code": "CRM0090202"}
+    assert seen["kind"] == "budget_account_balance"
+    assert seen["cost_center_code"] == f"MOH-{tag}-E01", "found by its name, case-insensitive"
+    assert seen["over_budget_by"] == "54769.43" and seen["currency"] == "CAD"
+
+
+async def test_an_unasked_month_is_this_month_not_december(admin_client, monkeypatch):
+    from app.core.delegation import local_today
+    from app.services import assistant_llm, budget_variance
+
+    got = {}
+
+    async def fake_build(db, scope, *, fiscal_year, through_month, token):
+        got.update(year=fiscal_year, through=through_month)
+        return {"allowed": True, "rows": []}
+
+    async def fake_plan(schema, message, context=None, retry_error=None, history=None):
+        return {"kind": "variance", "fiscal_year": local_today().year, "usage": {}}
+
+    async def fake_guide(message, payload):
+        return {"text": "ok", "usage": {}}
+
+    monkeypatch.setattr(budget_variance, "build", fake_build)
+    monkeypatch.setattr(assistant_llm, "plan", fake_plan)
+    monkeypatch.setattr(assistant_llm, "narrate_guide", fake_guide)
+    r = await admin_client.post("/api/v1/assistant/chat", json={"message": "本财年预算用了多少？"})
+    assert r.status_code == 200, r.text
+    assert got == {"year": local_today().year, "through": local_today().month}
+
+
+def test_a_reply_cut_at_its_limit_says_so_and_drops_the_half_row():
+    from types import SimpleNamespace
+
+    from app.services import assistant_llm
+
+    resp = SimpleNamespace(stop_reason="max_tokens", content=[SimpleNamespace(
+        type="text", text="| 成本中心 | 预算 |\n|---|---|\n| SELL-0112 | 1,000 |\n| SELL-0113 | 754")])
+    text = assistant_llm._reply_text(resp, "按成本中心列出本财年的预算")
+    assert "SELL-0113" not in text and "SELL-0112" in text
+    assert "被截断" in text
+    whole = SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="done")])
+    assert assistant_llm._reply_text(whole, "x") == "done"

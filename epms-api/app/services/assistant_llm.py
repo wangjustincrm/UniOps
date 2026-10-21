@@ -45,6 +45,9 @@ _PLANT_TZ = ZoneInfo(PLANT_TIMEZONE)
 # is prose about at most a few hundred rows of summary.
 _PLAN_MAX_TOKENS = 1024
 _NARRATE_MAX_TOKENS = 1024
+# Guide answers carry whole tables (budget vs actual by ~25 cost centres) and
+# were cut mid-row at 1024 (ISS-0014). Still Haiku; only the ceiling moves.
+_GUIDE_MAX_TOKENS = 2048
 
 _PLAN_SYSTEM = """\
 You turn a colleague's question about purchasing data into ONE query description.
@@ -740,7 +743,24 @@ _BUDGET_VARIANCE_TOOL = {
                 "maximum": 12,
                 "description": (
                     "Count spending up to and including this month, 1-12. '到 "
-                    "8 月为止' is 8. Omit for the whole year."
+                    "8 月为止' is 8. Omit it and the current year runs to the "
+                    "current month (a past year to December)."
+                ),
+            },
+            "cost_center": {
+                "type": "string",
+                "description": (
+                    "With account_code: the ONE cost centre asked about, as its "
+                    "code (MOH-0106-E01) or short name (MOH-ENG)."
+                ),
+            },
+            "account_code": {
+                "type": "string",
+                "description": (
+                    "With cost_center: the budget account asked about, e.g. "
+                    "CRM0090202. A question about one cost centre and one "
+                    "account is answered for that pair — never with the cost "
+                    "centre's total."
                 ),
             },
         },
@@ -1021,7 +1041,7 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate", resp)
-    text = _reply_text(resp)
+    text = _reply_text(resp, message)
     return {"text": text, "usage": _usage(resp)}
 
 
@@ -1076,7 +1096,7 @@ async def narrate_preflight(message: str, doc_number: str | None,
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_preflight", resp)
-    return {"text": _reply_text(resp),
+    return {"text": _reply_text(resp, message),
             "usage": _usage(resp)}
 
 
@@ -1152,7 +1172,7 @@ async def narrate_plan(question: str, explained: list[dict],
             "content": json.dumps(payload, ensure_ascii=False, default=str),
         }],
     )
-    return {"text": _reply_text(resp),
+    return {"text": _reply_text(resp, question),
             "usage": _usage(resp)}
 
 
@@ -1184,7 +1204,7 @@ async def narrate_workflow(message: str, view: dict) -> dict:
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_workflow", resp)
-    return {"text": _reply_text(resp),
+    return {"text": _reply_text(resp, message),
             "usage": _usage(resp)}
 
 
@@ -1300,6 +1320,16 @@ You are helping a colleague who may never have been trained on this system.
   centre doing well. `nothing_visible` and `actual_unavailable` are refusals —
   pass them on as they are, and never fall back to presenting the plan alone as
   though it answered a question about variance.
+  Every amount is in `currency` (CAD): write it with the amounts, never 元,
+  万元 or another unit, and never rescale the numbers. Say which months the
+  actual covers (1 to `through_month` of `fiscal_year`); a current year does
+  not run "to December".
+- For one cost centre × account (`kind` budget_account_balance): lead with
+  `available` — when `over_budget_by` is set, say it is over budget by that
+  amount and nothing is left. Then annual budget, committed and actual spent,
+  in `currency`. This is the figure the PR form's budget widget shows. When
+  `found` is false, say no such cost centre is visible to them (never "it has
+  no budget"); `balance_unavailable` is passed on as it is.
 - For a report's workings: they are looking at the report already, so do not
   describe what the module is for. Answer in the order they asked — usually
   where the number comes from first, then how it was assigned to a cost centre.
@@ -1340,7 +1370,7 @@ async def narrate_guide(message: str, payload: dict) -> dict:
     try:
         resp = await _client().messages.create(
             model=MODEL,
-            max_tokens=_NARRATE_MAX_TOKENS,
+            max_tokens=_GUIDE_MAX_TOKENS,
             system=reply_language.LANGUAGE_RULES + _GUIDE_SYSTEM,
             messages=[{"role": "user",
                        "content": json.dumps(payload, ensure_ascii=False, default=str)}],
@@ -1354,7 +1384,7 @@ async def narrate_guide(message: str, payload: dict) -> dict:
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_guide", resp)
-    return {"text": _reply_text(resp),
+    return {"text": _reply_text(resp, message),
             "usage": _usage(resp)}
 
 
@@ -1395,7 +1425,7 @@ async def render_fixed_reply(text: str, question: str, language: str | None) -> 
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("render_fixed_reply", resp)
-    return {"text": _reply_text(resp),
+    return {"text": _reply_text(resp, question),
             "usage": _usage(resp)}
 
 
@@ -1413,8 +1443,27 @@ def strip_markup(text: str) -> str:
     return _MARKUP.sub("", text or "").strip()
 
 
-def _reply_text(resp: Any) -> str:
-    return strip_markup("".join(b.text for b in resp.content if b.type == "text"))
+# Said when a reply hit its length limit. A cut table used to simply stop
+# mid-row ("... SELL-0113 SELL-ECOM 1,579,249.08 754"), with nothing to say
+# it was incomplete (ISS-0014, PRD AST-003).
+_CUT_NOTE = {
+    "Chinese (Simplified)": "（回答过长，在这里被截断了。可以把问题问得更具体，或少要几行再问；列表类结果可以用下方的 Export to Excel 拿到完整数据。）",
+}
+_CUT_NOTE_DEFAULT = ("(The answer was too long and was cut off here. Ask a narrower "
+                     "question or for fewer rows; for a list, Export to Excel below "
+                     "has all of it.)")
+
+
+def _reply_text(resp: Any, question: str | None = None) -> str:
+    text = strip_markup("".join(b.text for b in resp.content if b.type == "text"))
+    if getattr(resp, "stop_reason", None) == "max_tokens":
+        # Drop the line that was being written when the limit hit — half a
+        # table row or an unclosed **bold** reads as data — and say so.
+        head, sep, _ = text.rstrip().rpartition("\n")
+        text = (head if sep else text).rstrip()
+        note = _CUT_NOTE.get(reply_language.detect(question or ""), _CUT_NOTE_DEFAULT)
+        text = f"{text}\n\n{note}"
+    return text
 
 
 def _usage(resp: Any) -> dict:
