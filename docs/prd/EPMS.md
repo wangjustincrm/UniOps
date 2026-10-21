@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.31
+**Version:** 2.32
 **Date:** 2026-10-20
 **Status:** In Production
+
+> **v2.32 (2026-10-20)** — New §3.22 Direct Payment Application (Direct PA), moved here from OA: an invoice with no PO and no agreement is matched with **Match → Direct PA** and paid from **Payment Applications → Create Direct PA**, charged to a department (the creator's by default), a cost center of it and a budget account, with a required reason; approved on the `pa_dir` ("PA (Direct)") workflow. PA `source` gains `direct` (EPMS) and `oa_direct` (OA's retired rows, §3.15.1); invoice route gains `direct` (§3.14, Route filter); action-key table (§3.3).
 
 > **v2.31 (2026-10-19)** — Every list column header sorts the list, ascending then descending, across all pages for server-paged lists (UI-SORT-001…007, §3.20; shared by all UniOps modules). PR/PO/PA Status keeps its status → step → approver order, now applied by the server. The Vendors Inactive tab filters on the server; Vendor Credits is paginated; the Receiving Report export follows the on-screen sort.
 >
@@ -536,7 +538,7 @@ Every submittable document or form type has a unique action key. Each action key
 | `agr` | Purchase Agreement (§3.17) | EPMS |
 | `pa` | Payment Application (PO-linked) | EPMS / OA |
 | `pa_frt` | Freight PA chain — a `pa` document whose `source` is `freight` walks this chain instead of `pa`'s (§3.21) | EPMS |
-| `pa_dir` | Direct Payment Application (no PO) | OA |
+| `pa_dir` | Direct PA chain — a `pa` document whose `source` is `direct` walks this chain instead of `pa`'s (§3.22). OA's retired PA-DIRs (doc type `pa_dir`) used it too | EPMS |
 | `exp` | General Expense Claim | OA |
 | `trv` | Travel Expense | OA |
 | `tra` | Travel Application | OA |
@@ -1984,7 +1986,7 @@ AP staff (holders of *Match Invoice*) and admins can reverse a match from Invoic
 
 **PA linkage:** Settlement and Balance PAs carry a `prepayment_pa_id` referencing the original Prepayment PA. The backend validates this linkage at creation time — the referenced PA must be of type `prepayment` and belong to the same PO. Prepayment, Settlement and Balance PAs are always raised against exactly one PO; a regular PA may cover several POs. A PA with an agreement and no PO is an **agreement PA** (§3.15.7) and is always `regular`.
 
-**PA source.** Every PA records the flow that raised it: `po`, `agreement`, `freight` (a **Freight PA**, raised from matched courier invoices with New Freight PA on the PA page — no PO and no agreement, §3.21) or `direct` (OA's retired Direct PA). EPMS lists, opens and acts on `po`, `agreement` and `freight` PAs; `direct` PAs are not EPMS documents. A Freight PA is always `regular`; its amounts, invoices and cost split come from its courier invoices and only its title and notes can be edited on the PA.
+**PA source.** Every PA records the flow that raised it: `po`, `agreement`, `freight` (a **Freight PA**, raised from matched courier invoices with New Freight PA on the PA page — no PO and no agreement, §3.21), `direct` (a **Direct PA**, raised from invoices matched to no PO and no agreement with Create Direct PA on the PA page, §3.22) or `oa_direct` (OA's retired Direct PA — its invoice ids are OA expense invoices; migration `dp01_direct_pa` re-tagged those rows from `direct`). EPMS lists, opens and acts on `po`, `agreement`, `freight` and `direct` PAs; `oa_direct` PAs are not EPMS documents. A Freight PA is always `regular`; its amounts, invoices and cost split come from its courier invoices and only its title and notes can be edited on the PA.
 
 #### 3.15.2 Standard PA
 
@@ -2496,6 +2498,24 @@ Courier charges (UPS, FedEx, Purolator…) are paid without PR or PO. Buyers reg
 | **FRT-016** | **A carrier's invoice is a courier invoice.** The upload form reads the PDF as any invoice; when its vendor is an active carrier's — picked by the user, or the vendor name read by AI agreeing with the carrier's vendor name or the carrier's own name (equal once legal suffixes and punctuation are dropped, or one starting with the other over at least 4 characters — an invoice printing just "UPS" is recognised, "Upstate Supplies" is not) — the form becomes the courier review: the same PDF is read again for its shipment lines, the carrier is shown (no carrier picker), and *Different vendor* goes back. Credit notes keep the vendor-credit path. Uploading takes the ordinary invoice-upload permission (or `epms.freight.manage`); the PO invoice upload (`POST /invoices`) refuses an active carrier's vendor. |
 | **FRT-017** | **Assigning the matching.** As with any invoice, AP assigns a courier invoice from the Unmatched Queue (*Assign* / *Reassign*, "Assign Shipment Matching"); the assignee gets a *Match Invoice* task ("Match courier invoice … to shipments") that opens the invoice page, and may — without `epms.freight.manage` — edit the lines, re-run auto-match and finalise. The open task also lets them open the invoice page when their role has no invoice view. Finalising (or deleting) closes the task. Reopen, delete and the Freight PA stay with `epms.freight.manage`. |
 | **FRT-013** | **Payment and NC.** A Freight PA is paid through the standard payment executor as an EPMS PA (its invoices are marked paid); the due list labels it Freight PA. In the NC AP export a courier invoice is **one body row per cost center** with revexp CRM0150102 (all other invoices stay one summary row); a row with no tax is sent with tax rate 0. |
+
+### 3.22 Direct Payment Application (Direct PA)
+
+Some vendor invoices have no purchase order or agreement behind them — and never will (a one-off service, a fee, a bill paid on the department's say-so). They are paid by a **Direct PA**. The feature moved here from OA, where it was retired on 2026-08-07: the invoice is uploaded on the Invoices page like any other, and the Direct PA is raised on the Payment Applications page. There is no 3-way match; the payment names what it is charged to itself.
+
+#### 3.22.1 Requirements
+
+| FR ID | Requirement |
+|---|---|
+| **DPA-001** | **Match → Direct PA.** The invoice Match panel has a third tab, **Direct PA**, beside Purchase Orders and Agreements. *Match for Direct PA* (or *Match & Create Direct PA*, which then opens the create page with the invoice ticked) sets the invoice `matched` with `match_route = direct`, no PO, no agreement, no variance. Allowed to whoever may match the invoice (AP, its uploader, the holder of an open match task); only an `unmatched` invoice with no PO, agreement or allocation can take it; a courier invoice cannot. Open match / exception tasks on the invoice close; the AP mirror is posted as for any matched invoice. |
+| **DPA-002** | **Unmatch.** On the invoice's 3-Way Match tab AP (`epms.invoice.match`) can take it back to `unmatched` with a reason (audited), unless a non-cancelled PA lists it or it is already in payment. While a live PA lists a Direct invoice, the invoice cannot be edited either — the PA copied its amounts. |
+| **DPA-003** | **Create Direct PA.** *Payment Applications → Create Direct PA* (`/pa/new?source=direct`; also *Create Direct PA* on a Direct invoice) is shown to holders of *Create / Edit PAs* (`epms.pa.write`). It lists the Direct invoices the caller can open on the Invoices page that no live PA lists (oldest due first). One or more of **the same vendor and currency** go on one PA, falling due within 7 days of each other (as for PO PAs). The caller must be able to open every invoice on it (a requester can pay what they uploaded; AP anything). |
+| **DPA-004** | **Charged to.** Required: **Department** (defaults to the creator's own), **Cost Center** (an active cost center of that department), **Budget Account** (L1 → L2 from the budget catalog, checked against it), and the **Reason for payment** (stored as the PA's notes). Title is optional (default "Direct Payment — vendor + invoice numbers"). |
+| **DPA-005** | **The PA.** `source = direct`, `pa_type = regular`, no PO, no agreement; subtotal and tax are the invoices' own amounts (no rate re-applied); one line item per invoice. Created as a draft. On a draft or returned Direct PA only the title, reason, department, cost center and budget account can be edited; amounts and invoices follow the invoices (to change them: cancel, fix the invoice, raise a new PA). Submit (from the PA page or *Save & Submit*) is refused unless invoice, department, cost center, budget account and reason are all present. PA detail and PDF show *Charged To* (department · cost center · budget account) in place of PO numbers. |
+| **DPA-006** | **Approval.** A Direct PA is a `pa` document (same tasks, inbox, events, payment) that walks the `pa_dir` chain — the "PA (Direct)" workflow in Portal → Admin → Approval Workflows, default Finance BP → Finance Manager. Department-based steps an admin adds there (Department Manager, Director, GM / OPM) route on the department named on the PA. |
+| **DPA-007** | **Visibility.** Unrestricted roles see every Direct PA. A restricted caller sees one they created, one they hold an open task on, one charged to a department they oversee (Department Manager / Dept Admin: own department; GM / OPM: mapped departments; Director: directed departments) and — as Supervisor — one raised by a direct report. They can also open the invoices on a Direct PA they can see. The PA list's Department filter matches its department; Direct PAs carry a **Direct** badge with cost center and budget account. |
+| **DPA-008** | **Payment and NC.** Paid through the standard payment executor as an EPMS PA (its invoices are marked paid); the Payment Batches due list labels it Direct PA. In the NC AP export a Direct invoice takes department, cost center, budget account (revexp) and employee from the Direct PA paying it; one with no live Direct PA yet is reported, not exported. |
+| **DPA-009** | **Pages.** The invoice lists mark Direct invoices **Direct** and *All Invoices* filters Route = Direct PA. The invoice's document chain reads a Direct invoice as matched with no goods receipt to wait for. |
 
 ---
 

@@ -1,9 +1,13 @@
 # OA — Product Requirements Document
 
-**Version:** 3.1
-**Date:** 2026-10-19
+**Version:** 3.2
+**Date:** 2026-10-20
 **Status:** In Production
 **Scope:** Employee expense reimbursement and business travel in UniOps — General Expense (EXP), Mileage (MIL), Travel Application (TRA), Travel Expense (TRV) and admin-defined Custom Forms (CFM), with their approvals, attachments, claim PDF, payment hand-off and budget display.
+
+**What changed in version 3.2** (2026-10-20)
+
+- The Direct Payment Application now lives in EPMS (EPMS.md §3.22): invoice uploaded on EPMS → Invoices, matched with *Match → Direct PA*, paid from *Payment Applications → Create Direct PA*, approved on the same "PA (Direct)" workflow. OA's own Direct PA stays retired; its old records are tagged `oa_direct` (§15).
 
 **What changed in version 3.1** (2026-10-19)
 
@@ -573,7 +577,7 @@ Approval tasks and approval history are the platform's shared tables (EPMS.md §
 | Item | Current state |
 |------|---------------|
 | Direct PA (PA-DIR) pages and sidebar entry | Removed from the OA app; code kept so it can be restored |
-| Creating a Direct PA | Refused by the server ("gone") |
+| Creating a Direct PA | Refused by OA's server ("gone"). Direct PAs are now raised in EPMS (EPMS.md §3.22); OA's old records carry `source = oa_direct` so EPMS and Finance never take them for EPMS Direct PAs |
 | Existing PA records | Readable, approvable and payable server-side; none existed in production at retirement. The PA list used by EPMS's document chain (by PO) is still served |
 | OA Invoices list / detail pages | Removed with the Direct PA |
 | Shared services kept for EPMS | Unified invoice list (EPMS + OA invoices, role-scoped), invoice attachments (File Server), AI invoice reading (`invoice` mode, with credit-note recognition and printed-total check) and pickup-slip reading (`slip` mode, purchase agreements), vendor search |
