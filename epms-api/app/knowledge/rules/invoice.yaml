@@ -119,18 +119,14 @@ rules:
       No — the upload form refuses an invoice when one with the same vendor
       and the same vendor invoice number (ignoring upper/lower case) already
       exists ("Duplicate invoice — … already exists in the system"). The
-      server refuses it too, against every invoice whatever its status, not
-      only the ones you can see: the same vendor means the same vendor name
-      (ignoring case) or the same vendor record. Invoices already in the
-      system twice are left as they are. Editing an invoice's number is not
-      checked. Vendor credit notes are refused by the server when that vendor
-      already has a credit with the same credit-note number that has not been
-      voided.
-    enforced_in: "epms/src/pages/invoices/InvoiceListPage.tsx duplicate check; epms-api app/crud/invoice.py find_duplicate, app/api/v1/invoices.py upload (409); finance-api app/crud/vendor_credit.py _find_duplicate (409)"
+      check is made by the form against the invoices you can see; the server
+      itself does not refuse a duplicate. Vendor credit notes are refused by
+      the server when that vendor already has a credit with the same
+      credit-note number that has not been voided.
+    enforced_in: "epms/src/pages/invoices/InvoiceListPage.tsx duplicate check; epms-api app/api/v1/invoices.py create has none; finance-api app/crud/vendor_credit.py _find_duplicate (409)"
     provenance: pinned
     test:
-      - "tests/test_rule_registry.py::test_duplicate_invoice_numbers_are_refused_by_form_and_server"
-      - "tests/test_iss_batch5_product.py::test_upload_refuses_a_duplicate_vendor_invoice_number"
+      - "tests/test_rule_registry.py::test_duplicate_invoice_numbers_are_caught_by_the_form_only"
   - id: invoice_due_date
     asked_as:
       - 发票的到期日是怎么算的？

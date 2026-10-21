@@ -744,23 +744,17 @@ async def test_match_tolerance_is_read_and_not_editable():
     assert got == {"pct": "5"}
 
 
-def test_duplicate_invoice_numbers_are_refused_by_form_and_server():
+def test_duplicate_invoice_numbers_are_caught_by_the_form_only():
     from app.api.v1 import invoices
-    from app.crud import invoice as invoice_crud
     from app.models.invoice import Invoice
 
     page = _src("epms/src/pages/invoices/InvoiceListPage.tsx")
     assert "i.vendor_invoice_number.toLowerCase() === vendorInvoiceNumber.trim().toLowerCase()" in page
-    # The server checks in code, not by a constraint: existing duplicates stay.
     assert not Invoice.__table__.c.vendor_invoice_number.unique
     unique_cols = {tuple(c.name for c in con.columns)
                    for con in Invoice.__table__.constraints if hasattr(con, "columns")}
     assert not [cols for cols in unique_cols if "vendor_invoice_number" in cols]
-    upload = inspect.getsource(invoices.upload_invoice)
-    assert "find_duplicate" in upload and "409" in upload
-    # Name or record, as the rule says.
-    finder = inspect.getsource(invoice_crud.find_duplicate)
-    assert "Invoice.vendor_id == vendor_id" in finder and "func.lower(Invoice.vendor_name)" in finder
+    assert "Duplicate" not in inspect.getsource(invoices.upload_invoice)
 
 
 def test_invoice_due_date_rules_are_the_forms():
