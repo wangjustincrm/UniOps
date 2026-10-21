@@ -700,3 +700,14 @@ async def test_an_invoice_knows_its_payment_application(test_engine, admin_clien
     # Matched, on a processed (paid) PA: exactly the mismatch ISS-0059 asked to find.
     assert body["rows"] == [{"pa_number": f"PA-INVPA-{tag}", "pa_status": "processed",
                              "status": "matched"}]
+
+
+# ── ISS-0056: how credits are netted ─────────────────────────────────────────
+
+def test_the_credit_netting_rule_is_stated():
+    from app.services import doc_type_guide
+
+    rules = {r["id"]: r["answer"] for r in doc_type_guide.build("pa")["rules"]}
+    rule = rules["vendor_credit_netting"]
+    assert "oldest credit date first" in rule and "same currency" in rule
+    assert "not entered on the payment application" in rule

@@ -152,4 +152,21 @@ rules:
       vendor.max_prepayment_pct; the system cap is only in Admin Panel →
       Prepayment Config.
     enforced_in: "epms-api app/api/v1/pa.py create (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap)"
+  - id: vendor_credit_netting
+    asked_as:
+      - how are vendor credits used when we pay
+      - how much is actually paid on a PA after credits
+      - 贷项在付款时怎么抵扣
+    answer: >
+      Vendor credits are not entered on the payment application; they are
+      netted when the payment is executed. At that moment every Available
+      credit of the same vendor and the same currency is applied automatically,
+      oldest credit date first, until the payment amount is covered; the person
+      paying can untick credits in the payment dialog, which shows Gross,
+      Vendor credits applied and Net. A credit that is used up becomes
+      Exhausted; one partly used keeps the rest for the next payment. Credits
+      still pending review, void, or in another currency are never applied.
+      The PA keeps its gross amount; the net paid and the credits applied are
+      on the payment record, and the remittance advice lists each credit note.
+    enforced_in: "finance-api app/crud/vendor_credit.py select_credits_for_payment (AVAILABLE, same vendor and currency, ORDER BY credit_date, created_at); app/crud/payment_execute.py (net = base - credit_applied on the PaymentRecord); pinned by finance-api tests/test_vendor_credit_netting.py"
 
