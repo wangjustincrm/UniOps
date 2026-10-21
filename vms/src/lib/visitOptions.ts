@@ -1,13 +1,22 @@
-import type { AccessArea, AreaRule, VisitPurpose } from '@/services/api'
+import type {
+  AccessArea, AreaRule, BadgeAreaStyle, BadgeConfig, Visit, VisitPurpose,
+} from '@/services/api'
 
-export const ACCESS_AREAS: { value: AccessArea; label: string }[] = [
-  { value: 'office',             label: 'Office / Lobby' },
-  { value: 'warehouse',          label: 'Warehouse' },
-  { value: 'production_non_gmp', label: 'Production (Non-GMP)' },
-  { value: 'production_gmp',     label: 'Production (GMP Clean Zone)' },
-  { value: 'laboratory',         label: 'Laboratory' },
-  { value: 'all',                label: 'Entire Plant' },
-]
+/** Zones a visit can be booked for: the active ones, in admin order. A visit
+ *  already in a retired zone keeps it as an option (`keep`). */
+export function zoneOptions(
+  rules: Record<string, AreaRule> | undefined, keep?: AccessArea,
+): { value: AccessArea; label: string }[] {
+  return Object.values(rules ?? {})
+    .filter((r) => r.is_active || r.area === keep)
+    .sort((x, y) => x.sort_order - y.sort_order || x.name.localeCompare(y.name))
+    .map((r) => ({ value: r.area, label: r.is_active ? r.name : `${r.name} (retired)` }))
+}
+
+/** The zone's display name; falls back to the code ("cold_room" → "cold room"). */
+export function zoneName(rules: Record<string, AreaRule> | undefined, area: AccessArea): string {
+  return rules?.[area]?.name ?? area.replace(/_/g, ' ')
+}
 
 export const PURPOSES: { value: VisitPurpose; label: string }[] = [
   { value: 'meeting',     label: 'Business Meeting' },
@@ -19,20 +28,42 @@ export const PURPOSES: { value: VisitPurpose; label: string }[] = [
   { value: 'other',       label: 'Other' },
 ]
 
-/** 0 = no approval, 1 = Department Manager, 2 = + Quality Manager.
- *  Same tiers vms-api uses to decide whether an area change is allowed. */
-export function approvalTier(rule: AreaRule | undefined): number {
-  if (!rule) return 0
-  if (rule.requires_quality_manager) return 2
-  return rule.requires_approval ? 1 : 0
+/** May a confirmed visit move to this zone without new approval? Same rule
+ *  as vms-api: the zone needs no approval, or every active manager of it was
+ *  already among those the visit was routed to. (The server only counts
+ *  active managers; this list may include inactive ones — the server decides.) */
+export function mayMoveConfirmed(visit: Pick<Visit, 'zone_approver_ids'>, rule: AreaRule | undefined): boolean {
+  if (!rule || !rule.requires_approval) return true
+  const routed = new Set(visit.zone_approver_ids ?? [])
+  return rule.managers.length > 0 && rule.managers.every((m) => routed.has(m.id))
 }
 
-/** One-line description of what an area needs, from the server's rules. */
+/** One-line description of what a zone needs, from the server's rules. */
 export function areaRequirementText(rule: AreaRule | undefined): string | null {
-  if (!rule || !rule.requires_approval) return null
-  const parts = [rule.requires_quality_manager
-    ? 'Department Manager and Quality Manager approval'
-    : 'Department Manager approval']
+  if (!rule) return null
+  const parts: string[] = []
+  if (rule.requires_approval) {
+    const who = rule.managers.map((m) => m.name).filter(Boolean).join(', ')
+    parts.push(`approval${who ? ` by its zone manager (${who})` : ''}`)
+  }
   if (rule.requires_health_declaration) parts.push('a passing health declaration for every visitor')
-  return `This area needs ${parts.join(' and ')} before the badge can print.`
+  if (parts.length === 0) return null
+  return `This zone needs ${parts.join(' and ')} before the badge can print.`
+}
+
+/** Badge band colours / label for a zone. Zones added in VMS Admin have no
+ *  entry in the badge config until someone styles them: show the zone's name,
+ *  red for GMP-grade and slate otherwise — never another zone's band. */
+export function badgeAreaStyle(
+  cfg: BadgeConfig, area: AccessArea, rule: AreaRule | undefined,
+): BadgeAreaStyle {
+  const own = cfg.band.areas[area]
+  if (own) return own
+  const gmp = rule?.gmp_grade ?? false
+  return {
+    label: (rule?.name ?? area.replace(/_/g, ' ')).toUpperCase(),
+    bg: gmp ? '#DC2626' : '#475569',
+    fg: '#FFFFFF',
+    risk: gmp ? 'HIGH' : '',
+  }
 }

@@ -1,23 +1,24 @@
 """Bridge between vms-api business logic and approval-api engine.
 
 vms-api delegates the actual approval workflow to approval-api. This module
-decides whether a visit needs approval at all (based on access_area), resolves
-the Quality Manager candidate for GMP / Lab visits, and triggers the engine's
-submit/cancel actions over HTTP.
+decides whether a visit needs approval at all (whether its zone has managers),
+snapshots the zone's managers onto the visit for the workflow's Zone Manager
+step, and triggers the engine's submit/cancel actions over HTTP.
 
 Per S2_ARCHITECTURE_REVIEW.md F1 + locked decision #1, vms-api sets:
   - `Visit.status = pending_approval`  (user-facing VisitStatus enum)
   - `Visit.approval_status = "draft"`  (engine vocabulary, lives on same row)
   - `Visit.visit_title = "VMS Visit — {first} {last} ({company})"`  (Portal label)
-  - `Visit.quality_approver_id = <UUID>` for GMP/Lab (picked from roster)
+  - `Visit.zone_approver_ids = [<UUID>, …]` the zone's active managers
 
 …BEFORE the HTTP POST to approval-api, so the engine's session reads
 consistent state from the shared DB.
 
-Quality Manager strategy: **first-active** per locked decision #7. We pick
-`cfg.quality_manager_user_ids[0]` and verify they're still in `users` and
-`is_active=True`. If the roster is empty or no candidate is active, we
-return None — caller must decide whether to block the visit.
+Which steps the workflow has (Department Manager, Zone Manager, …) is set in
+the approval engine (Portal → Admin → Approval Workflows), not here. The Zone
+Manager step creates one task per manager in `zone_approver_ids`; the first to
+act decides. (Before 2026-10 that step was "Quality Manager", resolved from a
+single VMS-wide roster; the engine still accepts that role name as an alias.)
 """
 from __future__ import annotations
 
@@ -26,33 +27,35 @@ import uuid
 import httpx
 
 from app.core.config import settings
-from app.models.visit import AccessArea, Visit, VisitStatus
+from app.models.visit import Visit, VisitStatus
 from app.services import area_rules
 
-# Areas that trigger approval-api involvement at all.
-_NEEDS_APPROVAL = area_rules.APPROVAL_AREAS
 
-# Areas that additionally require a Quality Manager step.
-_NEEDS_QUALITY_MANAGER = area_rules.QUALITY_MANAGER_AREAS
+class ZoneNotRoutable(Exception):
+    """The zone needs approval but none of its managers is an active user."""
 
 
-def access_requires_approval(area: AccessArea) -> bool:
-    return area in _NEEDS_APPROVAL
+async def access_requires_approval(db, code: str) -> bool:
+    rules = await area_rules.rules_for(db, code)
+    return rules is not None and rules.requires_approval
 
 
-def access_requires_quality_manager(area: AccessArea) -> bool:
-    return area in _NEEDS_QUALITY_MANAGER
+async def may_move_confirmed_visit(db, row: Visit, new_code: str) -> bool:
+    """May an already-approved (or approval-free) visit move to `new_code`
+    without going through approval again?
 
-
-def approval_tier(area: AccessArea) -> int:
-    """How much approval an area needs: 0 none, 1 Department Manager,
-    2 Department Manager + Quality Manager. An approved visit may move to an
-    area of the same or a lower tier without new approval, never higher."""
-    if area in _NEEDS_QUALITY_MANAGER:
-        return 2
-    if area in _NEEDS_APPROVAL:
-        return 1
-    return 0
+    Yes when the new zone needs no approval, or when every active manager of
+    the new zone was already among those the visit was routed to — i.e. the
+    people who now own the zone already had this visit in front of them.
+    Moving into a zone with anyone new in charge needs a new booking.
+    """
+    rules = await area_rules.rules_for(db, new_code)
+    if rules is None or not rules.requires_approval:
+        return True
+    if not rules.active_manager_ids:
+        return False
+    routed = {str(u) for u in (row.zone_approver_ids or [])}
+    return all(str(u) in routed for u in rules.active_manager_ids)
 
 
 # Engine states in which the approval has not finished. "draft" = never
@@ -60,25 +63,6 @@ def approval_tier(area: AccessArea) -> int:
 IN_FLIGHT_STATES = frozenset({"draft", "submitted", "in_review", "returned"})
 # States from which the creator can (re)submit.
 RESUBMITTABLE_STATES = frozenset({"draft", "returned"})
-
-
-def pick_quality_manager(
-    *, roster: list[str] | list[uuid.UUID], active_user_ids: set[uuid.UUID]
-) -> uuid.UUID | None:
-    """First-active strategy. Returns the first UUID in `roster` that is
-    also in `active_user_ids`. Returns None if no candidate qualifies.
-
-    The active set is supplied by the caller (one extra query) to keep this
-    function pure + unit-testable without DB.
-    """
-    for raw in roster:
-        try:
-            uid = uuid.UUID(str(raw))
-        except (ValueError, AttributeError, TypeError):
-            continue
-        if uid in active_user_ids:
-            return uid
-    return None
 
 
 # approval-api copies the title into tasks.document_number and
@@ -101,7 +85,7 @@ async def submit_for_approval(visit_id: uuid.UUID, bearer_token: str) -> dict:
     """POST to approval-api's submit action.
 
     Caller must have already flushed the Visit row's `approval_status="draft"`
-    + `visit_title` + (optional) `quality_approver_id` to the DB so the engine
+    + `visit_title` + `zone_approver_ids` to the DB so the engine
     reads consistent state.
     """
     async with httpx.AsyncClient(timeout=10) as client:
@@ -125,11 +109,7 @@ async def prepare_and_submit(db, row: Visit, bearer_token: str) -> str | None:
     successfully — the creator retries with POST /visits/{id}/submit. It used
     to be reset to `confirmed`, which let a visit print without any approval.
     """
-    from sqlalchemy import select
-
     from app.crud import visitor as visitor_crud
-    from app.models.user_mirror import User
-    from app.models.vms_config import VmsConfig
 
     visitor = await visitor_crud.get_visitor(db, row.visitor_id)
     if visitor is not None:
@@ -142,22 +122,22 @@ async def prepare_and_submit(db, row: Visit, bearer_token: str) -> str | None:
         row.approval_status = "draft"
     row.status = VisitStatus.pending_approval
 
-    # Re-resolved on every submit: the area may have changed since a return.
+    # Re-snapshotted on every submit: the zone, or its managers, may have
+    # changed since a return.
+    rules = await area_rules.rules_for(db, row.access_area)
+    approvers = list(rules.active_manager_ids) if rules else []
+    row.zone_approver_ids = [str(u) for u in approvers]
     row.quality_approver_id = None
-    if access_requires_quality_manager(row.access_area):
-        cfg = (await db.execute(select(VmsConfig).limit(1))).scalar_one_or_none()
-        roster = (cfg.quality_manager_user_ids if cfg else []) or []
-        try:
-            roster_uuids = [uuid.UUID(str(r)) for r in roster]
-        except (ValueError, TypeError):
-            roster_uuids = []
-        if roster_uuids:
-            active = (await db.execute(
-                select(User.id).where(User.id.in_(roster_uuids), User.is_active.is_(True))
-            )).scalars().all()
-            row.quality_approver_id = pick_quality_manager(
-                roster=roster, active_user_ids=set(active),
-            )
+    if not approvers:
+        # Configured managers but none active: nobody to route the Zone Manager
+        # step to. Stop here instead of letting the engine auto-skip the step.
+        await db.commit()
+        await db.refresh(row)
+        name = rules.name if rules else row.access_area
+        return (
+            f"No active manager is set for zone '{name}'. Ask a VMS admin to "
+            f"update the zone's managers (VMS Admin → Zones), then submit again."
+        )
 
     # COMMIT before the HTTP call so approval-api's own session sees the row.
     await db.commit()

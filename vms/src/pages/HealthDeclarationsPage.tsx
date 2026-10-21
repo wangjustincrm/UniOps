@@ -8,14 +8,16 @@ import { useState } from 'react'
 import { SortTh, useSort, sortParams } from '@uniops/shell'
 import { Eye, Search, ShieldCheck, ShieldAlert } from 'lucide-react'
 import {
-  useBrowseHealthDeclarations, type HealthDeclarationListItem,
+  useAreaRules, useBrowseHealthDeclarations, type HealthDeclarationListItem,
 } from '@/services/api'
+import { zoneName } from '@/lib/visitOptions'
 import { HealthDeclView } from '@/components/HealthDeclView'
 import { formatDate, formatDateTime } from '@/lib/utils'
 
 const PAGE_SIZE = 25
 
 export default function HealthDeclarationsPage() {
+  const { data: areaRules } = useAreaRules()
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [q, setQ] = useState('')
@@ -79,7 +81,7 @@ export default function HealthDeclarationsPage() {
               <SortTh label="Visitor" sortKey="visitor_name" sort={sort} onSort={onSort} className="px-3 py-2" />
               <SortTh label="Company" sortKey="company" sort={sort} onSort={onSort} className="px-3 py-2" />
               <SortTh label="Host" sortKey="host_name" sort={sort} onSort={onSort} className="px-3 py-2" />
-              <SortTh label="Area" sortKey="access_area" sort={sort} onSort={onSort} className="px-3 py-2" />
+              <SortTh label="Zone" sortKey="access_area" sort={sort} onSort={onSort} className="px-3 py-2" />
               <SortTh label="Result" sortKey="result" sort={sort} onSort={onSort} className="px-3 py-2" />
               <SortTh label="Submitted" sortKey="updated_at" sort={sort} onSort={onSort} className="px-3 py-2" />
               <th className="px-3 py-2" />
@@ -98,7 +100,7 @@ export default function HealthDeclarationsPage() {
                 <td className="px-3 py-2 font-medium text-neutral-800">{it.visitor_name}</td>
                 <td className="px-3 py-2 text-neutral-600">{it.company}</td>
                 <td className="px-3 py-2 text-neutral-600">{it.host_name}</td>
-                <td className="px-3 py-2 text-neutral-600">{it.access_area.replace(/_/g, ' ')}</td>
+                <td className="px-3 py-2 text-neutral-600">{zoneName(areaRules, it.access_area)}</td>
                 <td className="px-3 py-2">
                   <span className={
                     'inline-flex items-center gap-1 text-xs font-medium ' +

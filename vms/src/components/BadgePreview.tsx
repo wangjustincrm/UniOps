@@ -9,9 +9,10 @@
  */
 import { QRCodeSVG } from 'qrcode.react'
 import type {
-  AccessArea, BadgeConfig, BadgeMetaKey, Visit, Visitor, UserBrief,
+  BadgeConfig, BadgeMetaKey, Visit, Visitor, UserBrief,
 } from '@/services/api'
-import { BADGE_CONFIG_DEFAULTS } from '@/services/api'
+import { BADGE_CONFIG_DEFAULTS, useAreaRules } from '@/services/api'
+import { badgeAreaStyle } from '@/lib/visitOptions'
 import { formatDate } from '@/lib/utils'
 
 const PURPOSE_LABEL: Record<string, string> = {
@@ -56,7 +57,8 @@ export function BadgePreview({
   config?: BadgeConfig
 }) {
   const cfg = config ?? BADGE_CONFIG_DEFAULTS
-  const area = cfg.band.areas[visit.access_area as AccessArea] ?? cfg.band.areas.office
+  const { data: areaRules } = useAreaRules()
+  const area = badgeAreaStyle(cfg, visit.access_area, areaRules?.[visit.access_area])
   const { style } = cfg
 
   const name = cfg.identity.name_uppercase

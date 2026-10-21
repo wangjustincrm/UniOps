@@ -1452,10 +1452,13 @@ const WORKFLOW_ROLES = [
   { value: 'finance_director',    label: 'Finance Director' },
   { value: 'finance_bp',          label: 'Finance BP' },
   { value: 'ap_clerk',            label: 'AP Clerk' },
-  // VMS-local role — vms-api resolves the specific user from
-  // `vms_config.quality_manager_user_ids` (see S2_ARCHITECTURE_REVIEW.md F2).
+  // VMS-local role — goes to the managers of the visit's access zone
+  // (VMS Admin → Zones), one task each; skipped when the zone has none.
   // Only meaningful on the vms_visit workflow.
-  { value: 'quality_manager',     label: 'Quality Manager (VMS-local)' },
+  { value: 'zone_manager',        label: 'Zone Manager (VMS zone managers)' },
+  // Its name before zones were configurable. Same behaviour — kept so a
+  // workflow saved with it still shows its step; switch it to Zone Manager.
+  { value: 'quality_manager',     label: 'Quality Manager (legacy — same as Zone Manager)' },
 ]
 
 const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
@@ -1484,8 +1487,8 @@ const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   tra:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }, { id: 'gm', role: 'gm', label: 'General Manager' }],
   cfm:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }],
   budget_plan: [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
-  // VMS visit: default single-step. Admin adds a `quality_manager` row for
-  // GMP / Lab dual approval (S2_ARCHITECTURE_REVIEW.md §"locked decisions").
+  // VMS visit: default single-step. Admin adds a `zone_manager` row so zones
+  // with managers (VMS Admin → Zones) also need their sign-off.
   vms_visit: [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }],
 }
 

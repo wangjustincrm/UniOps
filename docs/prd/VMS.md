@@ -1,9 +1,17 @@
 # VMS (Visitor Management System) — Product Requirements Document
 
-**Version**: V2.13
-**Date**: 2026-10-20
+**Version**: V2.14
+**Date**: 2026-10-21
 **Status**: As-built. Describes the system on the main line as of 2026-10-16. Everything marked **Implemented** is in production; wanted-but-not-built items are marked **Not implemented** and collected in §13 Open Items.
 **Scope**: Visitor appointments, approval, health and safety checks, badge printing (= check-in), QR check-out, overdue alerts and the compliance audit trail for Canada Royal Milk ULC's plant and offices.
+
+**What changed in V2.14** (2026-10-21)
+
+- **Access zones are configurable.** The six fixed access areas are replaced by zones defined in VMS Admin → **Zones** (the Quality Managers tab is gone). System Admin adds, renames, reorders, retires / reactivates and deletes zones; each zone has a **GMP-grade** flag and any number of **zone managers** (§2.1.5, VMS-PR-050 / 051).
+- **Approval follows the zone's managers.** A zone with managers needs approval; a zone with **no managers needs no approval** and the visit is Confirmed when booked (replaces "Office needs no approval, every other area needs the Department Manager"). A zone whose managers are all inactive blocks the submission until an admin fixes it. The GMP-grade flag drives the health-declaration gate, the training / PPE tasks and the GMP reports, as the fixed GMP / Laboratory / Entire Plant list did before.
+- **Zone Manager step** (`zone_manager`) replaces the Quality Manager step. At every submission VMS copies the zone's active managers onto the visit; each gets an approval task and **any one** of them decides. The single Quality Manager picked from a VMS-wide roster is gone; `quality_manager` stays as a legacy alias with the same behaviour (§3.1, §6.2, PORTAL.md §5.8 / §6.1).
+- **Changing a Confirmed visit's zone** is allowed only to a zone that needs no approval, or one whose active managers were all already approvers of the visit (VMS-PR-016; replaces "same or lower approval tier").
+- Migration `20261021_0015` seeds the six former areas as zones with the same codes and **no managers**: until an admin sets managers in VMS Admin → Zones, every zone books without approval (§11.4). OI-06 (single Quality Manager) is superseded.
 
 **What changed in V2.13** (2026-10-20)
 
@@ -95,7 +103,7 @@ Before VMS, visitors were recorded on paper, outside the UniOps platform. The re
 |---|---|---|---|
 | **Employee (Host)** | Any signed-in UniOps user | Book visits, verify ID, file health declarations, print badges (= check-in), check visitors out | New Visit, visit page, Check Out |
 | **Department Manager** | Primary role `dept_manager` | Host rights; approves the Department Manager step; sees visits whose Host is in their department | Visit approval, department visits |
-| **Quality Manager** *(VMS-local)* | Listed in VMS Admin → Quality Managers | Approves the second step of GMP-grade visits | Visit approval |
+| **Zone Manager** *(VMS-local)* | Set per zone in VMS Admin → Zones | Approves the Zone Manager step of visits to their zone (any one manager of the zone decides) | Visit approval |
 | **HR Training Contact** *(VMS-local)* | Email set in VMS Admin → Notification Contacts → Training | Confirms a visitor's food-safety training (valid 12 months) | Task Inbox → visitor compliance page |
 | **Janitor PPE Contact** *(VMS-local)* | Email set in VMS Admin → Notification Contacts → PPE | Stages requested PPE; confirms PPE issuance (valid 12 months) | Task Inbox → visitor compliance page |
 | **Auditor** | Primary role `auditor` | Sees all visits; audit log, reports, health declarations | Compliance menu, CSV exports |
@@ -120,8 +128,8 @@ Hosts register upcoming visits in advance; on the day, the visit is found in Tod
 | VMS-PR-003 | Visit date, planned arrival, planned departure | P0 | **Implemented** — defaults: today (plant time) / 09:00 / 17:00; departure may be cleared. No check that departure is after arrival |
 | VMS-PR-004 | Visit purpose: Business Meeting, Equipment Maintenance, Factory Tour, Audit / Inspection, Interview, Delivery, Other | P0 | **Implemented** — default Business Meeting |
 | VMS-PR-005 | Host chosen from the employee directory; defaults to the signed-in user, "Change" to pick another | P0 | **Implemented** — Host search needs at least 2 characters |
-| VMS-PR-006 | Access area: Office / Lobby, Warehouse, Production (Non-GMP), Production (GMP Clean Zone), Laboratory, Entire Plant | P0 | **Implemented** — six fixed areas; Admin may rename and recolour them on the badge only |
-| VMS-PR-007 | High-risk areas trigger extra requirements (approval, health declaration, training / PPE confirmation) | P1 | **Implemented** — see the area rule table in §2.1.5. PPE staging is Host opt-in (VMS-PR-040) |
+| VMS-PR-006 | Access area: Office / Lobby, Warehouse, Production (Non-GMP), Production (GMP Clean Zone), Laboratory, Entire Plant | P0 | **Implemented** — since V2.13 the areas are configurable zones (VMS Admin → Zones, §2.1.5); the six listed are the initial set. Only active zones can be chosen. The form defaults to Office (or the first active zone if Office is retired) |
+| VMS-PR-007 | High-risk areas trigger extra requirements (approval, health declaration, training / PPE confirmation) | P1 | **Implemented** — driven by each zone's settings (zone managers → approval; GMP-grade → health declaration and training / PPE tasks), §2.1.5. PPE staging is Host opt-in (VMS-PR-040) |
 | VMS-PR-008 | Attachments (visitor ID, work permit, insurance certificate) | P2 | **Partial** — uploaded from the visit page after the visit is created, not on the New Visit form. Allowed file types are enforced by the file service (PDF, images, Office documents). Attachments open through VMS for anyone who can see the visit. No delete. Auditors cannot upload |
 | VMS-PR-009 | Copy the last appointment for a frequent visitor | P2 | **Not implemented** |
 | VMS-PR-010 | Batch import of appointments from an Excel template | P2 | **Not implemented** |
@@ -143,7 +151,7 @@ Hosts register upcoming visits in advance; on the day, the visit is found in Tod
 |---|---|---|---|
 | VMS-PR-020 | VMS Admin → Notification Contacts: Training Contact email (HR) and PPE Contact email (Janitor) | P0 | **Implemented** — a blank field disables that channel |
 | VMS-PR-021 | Training Contact gets a heads-up email for GMP-grade visits (visitor, date, area, Host) | P0 | **Partial** — sent at the **first badge print (= check-in)**, not after approval, and sent whether or not the visitor's training is still fresh (freshness only governs the confirmation task) |
-| VMS-PR-022 | When the Host requests PPE, the PPE Contact receives the per-visitor gear list | P0 | **Implemented** — Office visits (auto-confirmed): at creation. All other areas: once the visit is approved — the email goes out the first time anyone opens the visit after final approval. A "Prepare PPE" task is opened for the Janitor at the same time and closes itself when the visit is checked in, cancelled or marked No Show |
+| VMS-PR-022 | When the Host requests PPE, the PPE Contact receives the per-visitor gear list | P0 | **Implemented** — visits to a zone that needs no approval (confirmed when booked): at creation. Visits that need approval: once the visit is approved — the email goes out the first time anyone opens the visit after final approval. A "Prepare PPE" task is opened for the Janitor at the same time and closes itself when the visit is checked in, cancelled or marked No Show |
 | VMS-PR-023 | Contacts can be changed at any time, effective immediately | P1 | **Implemented** |
 | VMS-PR-024 | VMS Admin → Email Settings: VMS's own outgoing mail server (host, port, user, password, STARTTLS, from) with "Send test"; falls back to the company mail settings when blank | P0 | **Implemented** — password masked on read; "Send test" uses the *saved* settings |
 
@@ -158,20 +166,38 @@ Hosts register upcoming visits in advance; on the day, the visit is found in Tod
 | VMS-PR-042 | Optional group notes | P1 | **Implemented** — max 500 characters |
 | VMS-PR-043 | One email to the PPE Contact listing each visitor's gear; sent once per visit | P0 | **Implemented** — plus the "Prepare PPE" task |
 
-#### 2.1.5 Access Area Rules
+#### 2.1.5 Access Zones and Their Rules
 
-All area-dependent behaviour (approval routing, health-declaration gate, compliance tasks, reports and the hints shown in the New Visit form) is driven by one rule set, also served to the frontend. Entire Plant includes the GMP clean zone and is held to GMP rules (QA decision, 2026-10-01).
+Since V2.14 the access areas are **zones** defined in VMS Admin → Zones (before, six fixed areas). All zone-dependent behaviour (approval routing, health-declaration gate, compliance tasks, reports, badge band and the hints shown in the New Visit and Edit visit forms) is driven by the zone's settings, also served to the frontend.
 
-| Access area | Approval | Quality Manager step | Health declaration for every visitor before the badge prints | Training / PPE confirmation tasks at check-in | Counted in GMP / Lab reports | Badge band (default) |
-|---|:---:|:---:|:---:|:---:|:---:|---|
-| Office / Lobby | none — auto-confirmed | — | — | — | — | Green, LOW RISK |
-| Warehouse | Department Manager | — | — | — | — | Amber, MEDIUM RISK |
-| Production (Non-GMP) | Department Manager | — | — | — | — | Orange, MEDIUM RISK |
-| Production (GMP Clean Zone) | Department Manager → Quality Manager | ✓ | ✓ | ✓ | ✓ | Red, HIGH RISK |
-| Laboratory | Department Manager → Quality Manager | ✓ | ✓ | ✓ | ✓ | Red, HIGH RISK |
-| Entire Plant | Department Manager → Quality Manager | ✓ | ✓ | ✓ | ✓ | Red, HIGH RISK |
+| ID | Requirement | Priority | Status |
+|---|---|---|---|
+| VMS-PR-050 | VMS Admin → Zones: System Admin adds, renames, reorders (sort order), retires / reactivates and deletes access zones | P0 | **Implemented** (V2.13) — each zone gets a permanent code generated from its name at creation (e.g. "Cold Room 2" → `cold_room_2`); renaming keeps the code. Names are unique (case-insensitive). Delete is allowed only for a zone no visit has ever used; otherwise it is refused and the zone should be retired instead. A retired zone cannot be chosen for a new visit or moved into; existing visits keep showing its name |
+| VMS-PR-051 | Per zone: a GMP-grade flag and zone managers (any number of active UniOps users) | P0 | **Implemented** (V2.14) — effects in the table below |
 
-"GMP-grade" in this document means GMP Clean Zone, Laboratory and Entire Plant. The Quality Manager step only applies where the company's approval chain for VMS visits includes it (§6.2). Per-area confirmations proposed in earlier versions — hard hat / safety shoes for Warehouse, dress code for Non-GMP, lab safety briefing for Laboratory — are **Not implemented**.
+| Zone setting | Effect |
+|---|---|
+| **Zone managers** set | The visit **needs approval**: it is saved as Pending Approval and handed to the approval engine; the Zone Manager step goes to the zone's active managers (§3.1, §6.2). Which steps the chain has (e.g. Department Manager, then Zone Manager) is set in the engine's VMS Visit chain, not on the zone |
+| **No zone managers** | **No approval at all** — the visit is Confirmed when booked |
+| Managers set, but none of them is an active user | The visit is **not** confirmed without approval: it stays Pending Approval (not sent) with the error "No active manager is set for zone '<name>' …" until an admin fixes the zone and the creator uses **Submit for approval** |
+| **GMP-grade** | Passing health declaration for every visitor before the badge prints (VMS-CI-010); training / PPE confirmation tasks at check-in and the HR heads-up email (VMS-CI-022, VMS-PR-021); counted in the GMP / Lab report and the dashboard's GMP indicators (VMS-AU-009, VMS-AU-016) |
+
+The New Visit and Edit visit forms explain the selected zone, e.g. "This zone needs approval by its zone manager (A, B) and a passing health declaration for every visitor before the badge can print."
+
+**Initial zones** (seeded by migration `20261021_0015`, same codes as the former fixed areas, so existing visits keep their value):
+
+| Zone (code) | GMP-grade | Zone managers at go-live | Badge band (default) |
+|---|:---:|---|---|
+| Office (`office`) | — | none | Green, LOW RISK |
+| Warehouse (`warehouse`) | — | none | Amber, MEDIUM RISK |
+| Production (Non-GMP) (`production_non_gmp`) | — | none | Orange, MEDIUM RISK |
+| Production (GMP) (`production_gmp`) | ✓ | none | Red, HIGH RISK |
+| Laboratory (`laboratory`) | ✓ | none | Red, HIGH RISK |
+| Entire Plant (`all`) | ✓ | none | Red, HIGH RISK |
+
+The managers are seeded **empty on purpose** (decision 2026-10-21): an admin must set them in VMS Admin → Zones before or at go-live, otherwise every zone books without approval. Entire Plant includes the GMP clean zone and is seeded GMP-grade (QA decision, 2026-10-01).
+
+"GMP-grade" in this document means every zone flagged GMP-grade. Per-area confirmations proposed in earlier versions — hard hat / safety shoes for Warehouse, dress code for Non-GMP, lab safety briefing for Laboratory — are **Not implemented**.
 
 #### 2.1.6 Notifications to the Host
 
@@ -188,7 +214,7 @@ All area-dependent behaviour (approval routing, health-declaration gate, complia
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
 | VMS-PR-015 | Status lifecycle | P0 | **Implemented** — Pending Approval, Confirmed, On-Site, Departed, Cancelled, No Show; plus a derived red **Overdue** badge. A rejected visit shows as Cancelled (no separate Rejected status) |
-| VMS-PR-016 | Host can modify or cancel an appointment before check-in | P1 | **Implemented** — "Edit visit" (date, times, purpose, area, notes) and "Cancel visit" on the visit page, available to the creator, the **Host**, a Department Manager of the Host's department and System Admin; the buttons are shown only to those users. Rules for changing the access area: locked while approval is in progress; on a Confirmed visit only to an area of the same or a lower approval tier; on a not-yet-submitted or returned visit freely (the next submission routes by the new area) |
+| VMS-PR-016 | Host can modify or cancel an appointment before check-in | P1 | **Implemented** — "Edit visit" (date, times, purpose, area, notes) and "Cancel visit" on the visit page, available to the creator, the **Host**, a Department Manager of the Host's department and System Admin; the buttons are shown only to those users. Rules for changing the access zone: locked while approval is in progress; on a not-yet-submitted or returned visit to any active zone (the next submission routes by the new zone); on a **Confirmed** visit only to a zone that needs no approval, or one whose every active manager was already among the managers the visit was routed to — otherwise cancel the visit and book again |
 | VMS-PR-016a | A visit whose approval hand-off failed can be sent again | P0 | **Implemented** — the visit stays Pending Approval with a banner "Not sent for approval yet" and a **Submit for approval** button; it cannot be badged until submission succeeds |
 | VMS-PR-017 | Host sees own visits; manager sees department visits | P0 | **Implemented** — see visibility rules in §3.2. Lists: Today's Visits, All Visits (**latest 50 only, no paging**), On-Site Now |
 | VMS-PR-018 | Search by visitor name, company, Host, date range | P1 | **Not implemented** — the visit lists have no search or filter |
@@ -217,7 +243,7 @@ VMS has no receptionist. **Check-in is the first badge print**: when the Host op
 
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
-| VMS-CI-007 | Walk-in: create visitor and print badge in one go | P0 | **Partial** — no dedicated entry. Use New Visit with area Office / Lobby (auto-confirmed) → Create visit → ID Verified → Print badge & check in. Any other area waits for approval |
+| VMS-CI-007 | Walk-in: create visitor and print badge in one go | P0 | **Partial** — no dedicated entry. Use New Visit with a zone that has no zone managers (confirmed when booked, e.g. Office as seeded) → Create visit → ID Verified → Print badge & check in. A zone with managers waits for approval |
 | VMS-CI-008 | Same required fields as pre-registration | P0 | **Implemented** — same form |
 | VMS-CI-009 | Signed-in user defaults to Host | P1 | **Implemented** |
 
@@ -225,8 +251,8 @@ VMS has no receptionist. **Check-in is the first badge print**: when the Host op
 
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
-| VMS-CI-010 | Health declaration required before the badge prints for GMP-grade visits | P0 | **Implemented** — **per visitor**, for GMP Clean Zone, Laboratory and Entire Plant. Filed from the visit page ("Declare" / "Re-file") before check-in; the buttons disappear once the visit is checked in, and the server refuses a declaration for a visit that is no longer Pending or Confirmed. Questions come from VMS Admin → Health Questions (built-in defaults: symptoms in the last 24 h, open wounds, contact with infectious disease, carrying food allergens). A "Yes" to any default question = Failed. Submitting requires every question answered and "Food-safety briefing confirmed" ticked. The badge prints only when **every** visitor has passed |
-| VMS-CI-011 | A visitor who fails is restricted / downgraded to office access | P0 | **Partial** — no automatic restricted status. A failed declaration blocks the badge for the whole visit; the page tells the Host to use "Edit visit" to move the visit to Office / Lobby (then it prints) or to cancel it |
+| VMS-CI-010 | Health declaration required before the badge prints for GMP-grade visits | P0 | **Implemented** — **per visitor**, for every GMP-grade zone (initially Production (GMP), Laboratory and Entire Plant). Filed from the visit page ("Declare" / "Re-file") before check-in; the buttons disappear once the visit is checked in, and the server refuses a declaration for a visit that is no longer Pending or Confirmed. Questions come from VMS Admin → Health Questions (built-in defaults: symptoms in the last 24 h, open wounds, contact with infectious disease, carrying food allergens). A "Yes" to any default question = Failed. Submitting requires every question answered and "Food-safety briefing confirmed" ticked. The badge prints only when **every** visitor has passed |
+| VMS-CI-011 | A visitor who fails is restricted / downgraded to office access | P0 | **Partial** — no automatic restricted status. A failed declaration blocks the badge for the whole visit; the page tells the Host to use "Edit visit" to move the visit to a non-GMP zone (e.g. Office; then it prints — on a Confirmed visit only where the zone-change rule in VMS-PR-016 allows it) or to cancel it |
 | VMS-CI-012 | Food-safety training confirmation for GMP visitors | P0 | **Partial** — the "Food-safety briefing confirmed" tick inside the declaration (Host confirmation). The signature pad is optional |
 | VMS-CI-013 | PPE issuance recorded at check-in | P1 | **Not implemented** — PPE is covered by the Janitor's 12-month confirmation (VMS-CI-020..023) and the "PPE returned" tick at check-out |
 | VMS-CI-014 | Re-filing a declaration keeps the earlier one | P0 | **Implemented** — the visit page shows the latest declaration; the replaced answers, result and signature are kept in full in the audit log |
@@ -254,7 +280,7 @@ The badge page lays out the badges for browser printing on an ordinary office pr
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
 | VMS-LB-001 | Name (large), company, visit date, validity, Host, colour-coded access area, QR code identifying the visit | P0 | **Implemented** — default layout: top band "VISITOR" + area + risk level; name (upper case) and company; rows Date / Host / Valid until (Vehicle, Accompanying, Purpose available but hidden by default); QR code captioned "Scan to check out"; footer lines |
-| VMS-LB-002 | Area colour coding | P0 | **Implemented** — Green Office, Amber Warehouse, Orange Non-GMP, Red GMP / Laboratory / Entire Plant |
+| VMS-LB-002 | Area colour coding | P0 | **Implemented** — one band per active zone, set in VMS Admin → Badge (defaults for the seeded zones: Green Office, Amber Warehouse, Orange Non-GMP, Red GMP / Laboratory / Entire Plant). A zone without its own band gets a default — its name in upper case, red with HIGH risk if GMP-grade, slate otherwise — never another zone's band |
 | VMS-LB-003 | Separate "Escort Required" indicator | P1 | **Not implemented** — covered by the footer line |
 | VMS-LB-004 | Footer: "Must be accompanied by Host at all times", "Please return badge when leaving" | P1 | **Implemented** |
 
@@ -273,7 +299,7 @@ The badge page lays out the badges for browser printing on an ordinary office pr
 
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
-| VMS-LB-010 | Admin can change the badge layout | P1 | **Implemented** as a structured configuration (VMS Admin → Badge) with live preview: top band title and toggles; per-area label, background, text colour and risk level; name and company; detail rows (from a fixed list); QR on/off and caption; footer lines; font style. No free-form HTML and no logo. The configuration applies to every user's prints. The older HTML-template endpoints remain but are unused |
+| VMS-LB-010 | Admin can change the badge layout | P1 | **Implemented** as a structured configuration (VMS Admin → Badge) with live preview: top band title and toggles; per-zone label, background, text colour and risk level (the editor lists one band per active zone); name and company; detail rows (from a fixed list); QR on/off and caption; footer lines; font style. No free-form HTML and no logo. The configuration applies to every user's prints. The older HTML-template endpoints remain but are unused |
 | VMS-LB-011 | Several templates (Standard / VIP / Contractor) | P2 | **Not implemented** — one configuration |
 | VMS-LB-012 | Bilingual (EN / FR) badges | P2 | **Not implemented** |
 
@@ -381,7 +407,7 @@ Audit Log page filters: action type and entity type (lists built from what has a
 
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
-| VMS-AU-009 | Pre-built reports: CFIA Visit Log, GMP Area Access Summary, Contractor Access Report, Monthly Visitor Statistics | P0 | **Partial** — **CFIA Visit Log** (one row per visitor per visit; pending and cancelled visits excluded; the health and training columns carry the visit-level value, not each visitor's own) and **GMP / Lab Area Summary** (per GMP-grade area: total, passed, failed, restricted, not required, no declaration, after-hours, unreturned). Contractor and Monthly reports **Not implemented** |
+| VMS-AU-009 | Pre-built reports: CFIA Visit Log, GMP Area Access Summary, Contractor Access Report, Monthly Visitor Statistics | P0 | **Partial** — **CFIA Visit Log** (one row per visitor per visit; pending and cancelled visits excluded; the health and training columns carry the visit-level value, not each visitor's own) and **GMP / Lab Area Summary** (per GMP-grade zone: total, passed, failed, restricted, not required, no declaration, after-hours, unreturned). Contractor and Monthly reports **Not implemented** |
 | VMS-AU-010 | One-click generation for a date range | P0 | **Implemented** — Reports page, From / To (default: first of the month → today) |
 | VMS-AU-011 | Report format | P0 | **Implemented** — CSV, streamed. CSV is the interim format until CFIA confirms the required layout; the date-range filter and one-row-per-visitor rule are final |
 | VMS-AU-012 | Scheduled reports by email | P2 | **Not implemented** |
@@ -406,7 +432,7 @@ Audit Log page filters: action type and entity type (lists built from what has a
 
 ## 3. User Roles and Permissions
 
-Any signed-in UniOps user can act as a Host. Platform tiers come from the user's **primary** role (`auditor`, `system_admin`, `dept_manager`); the three VMS-local roles (Quality Manager, HR Training Contact, Janitor PPE Contact) are configured in VMS Admin. The Portal permission matrix does not apply to VMS (§1.3).
+Any signed-in UniOps user can act as a Host. Platform tiers come from the user's **primary** role (`auditor`, `system_admin`, `dept_manager`); the three VMS-local roles (Zone Manager, HR Training Contact, Janitor PPE Contact) are configured in VMS Admin. The Portal permission matrix does not apply to VMS (§1.3).
 
 ### 3.1 Role Definitions
 
@@ -414,20 +440,20 @@ Any signed-in UniOps user can act as a Host. Platform tiers come from the user's
 |---|---|---|---|
 | Host | Any UniOps user | Book visits; edit / submit / cancel visits they created or host; verify ID, file declarations, print and check out on visits they can see | All employees |
 | Department Manager | Primary role `dept_manager` | Host rights + visits whose Host is in their department + the Department Manager approval step | Line managers |
-| Quality Manager | VMS Admin → Quality Managers roster | Second approval step of GMP-grade visits; sees the visits assigned to them | QA |
+| Zone Manager | VMS Admin → Zones (managers of a zone) | Zone Manager approval step of visits to their zone; opens the visit from their task and sees it in their list | Owners of a zone (e.g. QA for GMP-grade zones) |
 | HR Training Contact | VMS Admin → Notification Contacts (must match an active user) | Confirms food-safety training | HR |
 | Janitor PPE Contact | VMS Admin → Notification Contacts (must match an active user) | Stages PPE; confirms PPE issuance | Janitorial |
 | Auditor | Primary role `auditor` | All visits; Audit Log, Reports, Health Declarations | Compliance |
 | System Admin | Primary role `system_admin` | Everything; VMS Admin; batch check-out; may act on any approval step | IT |
 
-> **Quality Manager assignment**: at each submission VMS picks the **first active user** in the roster (order set with ▲▼ in VMS Admin) and assigns the step to that one person. No round-robin, no "any QM may approve". If the roster is empty or nobody on it is active, the Quality Manager step is **auto-skipped** and a GMP-grade visit needs only the Department Manager.
+> **Zone Manager assignment**: at every submission and resubmission VMS copies the zone's **active** managers onto the visit ("zone managers routed to"). The Zone Manager step gives **each of them** an approval task; **any one** may approve, return or reject — the first to act decides and the other tasks close. Changing the zone's managers later does not move a visit already in approval (the copy stands). If the copied list is empty the step is **auto-skipped**. A zone with managers of whom none is active blocks the submission (§2.1.5). This replaces the single Quality Manager picked from a VMS-wide roster (before V2.13).
 
 ### 3.2 Permission Matrix
 
-| Function | Host (any user) | Dept Manager | Quality Manager | HR / Janitor contact | Auditor | System Admin |
+| Function | Host (any user) | Dept Manager | Zone Manager | HR / Janitor contact | Auditor | System Admin |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
 | Create visit | ✓ | ✓ | ✓ | ✓ | ✓ (not blocked) | ✓ |
-| See visits | created by me, I am Host, or I hold a task on it | + Host in my department | + visits assigned to me | + visits I hold a task on | all | all |
+| See visits | created by me, I am Host, or I hold a task on it | + Host in my department | + visits routed to me | + visits I hold a task on | all | all |
 | Edit / submit / cancel (Pending or Confirmed) | created by me or I am Host | + Host in my department | as Host | as Host | ✗ | ✓ |
 | Verify ID | visits I can see | ✓ | ✓ | ✓ | ✓ (not blocked) | ✓ |
 | File health declaration | visits I can see | ✓ | ✓ | ✓ | ✗ | ✓ |
@@ -435,7 +461,7 @@ Any signed-in UniOps user can act as a Host. Platform tiers come from the user's
 | Check out | created by me or I am Host | + Host in my department | as Host | as Host | ✗ | ✓ |
 | Batch check-out (whole plant) | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
 | Upload attachments | visits I can see | ✓ | ✓ | ✓ | ✗ | ✓ |
-| Approve / return / reject | — | Department Manager step | assigned QM step | — | ✗ | any step |
+| Approve / return / reject | — | Department Manager step | Zone Manager step of visits routed to me | — | ✗ | any step |
 | Confirm training / PPE | ✗ | ✗ | ✗ | own gate only | ✗ | ✓ |
 | Dashboard (plant-wide numbers) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Audit Log, Reports, Health Declarations menu | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
@@ -461,10 +487,11 @@ Notes:
     ↓  (optional) "PPE needed" → sizes per visitor
     ↓  "Create visit" → visit page
     ↓
-[Access area decides the route]
-    ├─ Office / Lobby ─────────────────────────────────────→ Confirmed
-    ├─ Warehouse, Production (Non-GMP) → Dept Manager ─────→ Confirmed
-    └─ GMP, Laboratory, Entire Plant → Dept Manager → Quality Manager → Confirmed
+[Access zone decides the route]
+    ├─ Zone with no zone managers ─────────────────────────→ Confirmed
+    └─ Zone with zone managers → VMS Visit chain (e.g. Dept Manager → Zone Manager) → Confirmed
+    │   Zone Manager step: one task per active zone manager; any one decides
+    │   Managers set but none active: "No active manager is set for zone …"
     │   If the hand-off to approval fails: banner "Not sent for approval yet" → "Submit for approval"
     ↓  Host emailed the result; Janitor emailed + "Prepare PPE" task if PPE was requested
     ↓
@@ -475,7 +502,7 @@ Notes:
     ↓  "ID verification": tick "ID Verified" for every visitor
     ↓  GMP-grade only: "Health declarations" → "Declare" for every visitor
     │     (all questions + "Food-safety briefing confirmed"; signature optional)
-    │     Failed → "Edit visit" to Office / Lobby, or cancel
+    │     Failed → "Edit visit" to a non-GMP zone (e.g. Office), or cancel
     ↓  "Print badge & check in"
     ↓  Badge page opens → CHECK-IN RECORDED → browser print dialog
     ↓  GMP-grade: training / PPE tasks to HR / Janitor for stale visitors; HR heads-up email
@@ -495,14 +522,14 @@ Notes:
 ### 4.2 Walk-In (no appointment)
 
 ```
-[Host: New Visit → area "Office / Lobby"] → "Create visit" (auto-confirmed)
+[Host: New Visit → a zone with no zone managers, e.g. "Office"] → "Create visit" (confirmed at once)
     ↓
 ["ID Verified" for each visitor] → "Print badge & check in"
     ↓
 [Same as the standard flow from here]
 ```
 
-Any other area goes through approval first; there is no instant path for Warehouse, Production, Laboratory or Entire Plant.
+A zone with zone managers goes through approval first; there is no instant path for it.
 
 ### 4.3 Approver Flow
 
@@ -510,19 +537,19 @@ Any other area goes through approval first; there is no instant path for Warehou
 [Task in VMS "Task Inbox" (group "Visits") and Portal "My Task Inbox" (group "Visitor")]
     │  (email only if an admin has enabled VMS approval tasks in Portal notification settings)
     ↓
-[Open task → visit page → panel "This visit needs your approval (dept manager | quality manager)"]
+[Open task → visit page → panel "This visit needs your approval (dept manager | zone manager)"]
     ├─ "Approve"          → optional comment → next step or Confirmed
     ├─ "Return for edit"  → reason required → Host sees who returned it and why,
     │                       uses "Edit visit", then "Submit for approval";
     │                       the visit resumes at the step that returned it
-    │                       (a visit edited down to Office / Lobby is confirmed without approval)
+    │                       (a visit edited to a zone with no zone managers is confirmed without approval)
     └─ "Reject"           → reason required → visit shows as Cancelled; Host emailed
 ```
 
 ### 4.4 HR / Janitor Compliance Flow
 
 ```
-[Janitor: "Prepare PPE — <visitor>" task + email with sizes]   (after approval; Office: at creation)
+[Janitor: "Prepare PPE — <visitor>" task + email with sizes]   (after approval; zone without approval: at creation)
     ↓  stage the gear before the visit; the task closes itself at check-in / cancel / no-show
 [Visitor checked in on a GMP-grade visit]
     ↓
@@ -535,24 +562,27 @@ Any other area goes through approval first; there is no instant path for Warehou
 
 ## 5. Data Model
 
-VMS keeps its own tables (prefixed `vms_`) in the shared UniOps database and reuses the platform's users, tasks, approval events and company configuration. Host, creator and Quality Manager are real references to platform users.
+VMS keeps its own tables (prefixed `vms_`) in the shared UniOps database and reuses the platform's users, tasks, approval events and company configuration. Host, creator and zone managers are real references to platform users.
 
 ### 5.1 Entities
 
 | Entity | Purpose | Key content |
 |---|---|---|
 | **Visitor** | A person who visits; reused across visits | First / last name, company, job title, phone, email, visitor type, ID-verified flag (permanent), training-confirmed date and confirmer, PPE-issued date and confirmer |
-| **Visit** | One appointment | Primary visitor, companion list, Host, creator, visit date, planned and actual arrival / departure, purpose, access area, status, aggregated health-declaration status, briefing-confirmed flag, badge returned, PPE issued / returned, PPE request (per-visitor sizes and notes), accompanying count, vehicle plate, notes; approval fields (engine state, current step, title used as the task's document number, submitted at, assigned Quality Manager); notification markers (approval-result email, PPE email, day-before reminder, last overdue reminder, escalation) |
+| **Visit** | One appointment | Primary visitor, companion list, Host, creator, visit date, planned and actual arrival / departure, purpose, access zone (zone code), status, aggregated health-declaration status, briefing-confirmed flag, badge returned, PPE issued / returned, PPE request (per-visitor sizes and notes), accompanying count, vehicle plate, notes; approval fields (engine state, current step, title used as the task's document number, submitted at, zone managers routed to — the zone's active managers copied at the last submission); notification markers (approval-result email, PPE email, day-before reminder, last overdue reminder, escalation) |
+| **Zone** | An access zone (VMS Admin → Zones) | Code (permanent, from the name at creation), name (unique), GMP-grade flag, active, sort order, zone managers (platform users) |
 | **Badge print** | One row per print | Visit, printed by, printed at, reprint reason |
 | **Health declaration** | One current declaration per visitor per visit | Answers (questionnaire snapshot), result (passed / failed / restricted / not required), optional signature |
 | **Audit log** | Immutable trail | Time, user, IP, browser, action, entity, before / after values, notes |
-| **VMS configuration** (single record) | Admin settings | Quality Manager roster (ordered), notification contacts, health questions, VMS mail settings, badge configuration |
+| **VMS configuration** (single record) | Admin settings | Notification contacts, health questions, VMS mail settings, badge configuration |
 | *Platform:* Users | Employees, reused | Name, email, primary role, department |
 | *Platform:* Tasks | Approval and VMS work items, shared with every module | See §6.3 |
 | *Platform:* Approval events | Approval history | Shared approval engine |
 | *Platform:* Company configuration | Approval chain for VMS visits | Edited in Portal |
 
-Status values: **Visit** — Pending Approval, Confirmed, On-Site (checked in), Departed (checked out), Cancelled, No Show. **Approval state** (engine) — draft, submitted, in review, returned, approved, rejected, cancelled. **Access area** — office, warehouse, production non-GMP, production GMP, laboratory, entire plant. **Visit purpose** — meeting, maintenance, tour, audit, interview, delivery, other. **Visitor type** — supplier, contractor, inspector, auditor, customer, interviewee, other.
+Status values: **Visit** — Pending Approval, Confirmed, On-Site (checked in), Departed (checked out), Cancelled, No Show. **Approval state** (engine) — draft, submitted, in review, returned, approved, rejected, cancelled. **Access zone** — not a fixed list (VMS Admin → Zones); the initial codes are office, warehouse, production_non_gmp, production_gmp, laboratory, all (Entire Plant). **Visit purpose** — meeting, maintenance, tour, audit, interview, delivery, other. **Visitor type** — supplier, contractor, inspector, auditor, customer, interviewee, other.
+
+The former Quality Manager roster and the visit's assigned Quality Manager are no longer used since V2.14 (kept in the database for a later drop).
 
 Companions are stored as a list on the visit rather than a separate link table, so existing reports and lists work unchanged; reports iterate the list explicitly.
 
@@ -576,13 +606,13 @@ Companions are stored as a list on the visit rather than a separate link table, 
 
 ### 6.2 Approval Workflow
 
-VMS visits use the shared approval engine (EPMS.md §3.3). VMS decides **whether** a visit needs approval (by access area, §2.1.5); the engine runs **the chain**.
+VMS visits use the shared approval engine (EPMS.md §3.3). VMS decides **whether** a visit needs approval (by the access zone's managers, §2.1.5); the engine runs **the chain**.
 
-**Chain.** One chain for all VMS visits, edited in Portal → Admin → Approval Workflows → VMS Visit. Engine default: Department Manager only. **Production: Department Manager → Quality Manager.** The Quality Manager step is auto-skipped (and shown struck through with the reason) when the visit's area does not require it or no Quality Manager is available.
+**Chain.** One chain for all VMS visits, edited in Portal → Admin → Approval Workflows → VMS Visit; the product owner decides which steps it has (e.g. Department Manager → Zone Manager). Engine default: Department Manager only. **Production: Department Manager → Quality Manager** (§11.4). The Zone Manager step role is `zone_manager`, shown in the editor as "Zone Manager (VMS zone managers)". It is auto-skipped (shown struck through with the reason "the visit's access zone has no zone managers") when the visit's list of zone managers routed to is empty. `quality_manager` remains accepted as a legacy alias with identical behaviour, shown as "Quality Manager (legacy — same as Zone Manager)", so workflows saved earlier and tasks already open keep working; admins should switch the step to Zone Manager.
 
 **Submission.**
-1. On "Create visit", an Office visit is saved as Confirmed. Any other area is saved as Pending Approval and handed to the engine.
-2. For GMP-grade visits VMS assigns the first active user on the Quality Manager roster (re-resolved on every submission, since the area may have changed after a return).
+1. On "Create visit", a visit to a zone with no zone managers is saved as Confirmed. A visit to a zone with managers is saved as Pending Approval and handed to the engine. If the zone has managers but none of them is active, the hand-off is refused with "No active manager is set for zone '<name>' …" and the visit stays Pending Approval (point 5) until an admin fixes the zone and the creator submits again.
+2. At every submission and resubmission VMS copies the zone's **active** managers onto the visit (re-resolved each time, since the zone or its managers may have changed after a return). The Zone Manager step gives **each of them** an approval task; **any one** may approve, return or reject; the first to act decides and the other tasks close. Changing the zone's managers later does not move a visit already in approval. Delegation and the engine's same-approver skip work as for other steps. Re-sync (EPMS.md §3.3) reissues the step's tasks if the open tasks do not match the copied list.
 3. The visit title "VMS Visit — First Last (Company)" is used as the task's document number. It is limited to **40 characters**; longer titles are shortened with "…".
 4. The Department Manager step goes to the Department Manager of the **creator's** department (not the Host's). If that department has no active Department Manager, the hand-off fails.
 5. If the hand-off fails for any reason, the visit **stays Pending Approval** (it cannot be badged) and the page shows "Not sent for approval yet" with **Submit for approval**.
@@ -590,7 +620,7 @@ VMS visits use the shared approval engine (EPMS.md §3.3). VMS decides **whether
 
 **Approver actions** happen on the VMS visit page (the Portal task row only links there): Approve (optional comment), Return for edit and Reject (comment required in the UI). The engine checks that the actor holds the current step; System Admin may act on any step.
 
-**Return and resubmission.** A returned visit shows who returned it and their comment, with **Edit visit** and **Submit for approval** for the creator, Host, Host's Department Manager and System Admin. On resubmission the visit **resumes at the step that returned it** — earlier approvals stand (company rule for all document types, 2026-10-14). If the visit was edited down to Office / Lobby, it is confirmed without approval and the returned approval is withdrawn. The creator's "Revise" task closes on resubmission or cancellation.
+**Return and resubmission.** A returned visit shows who returned it and their comment, with **Edit visit** and **Submit for approval** for the creator, Host, Host's Department Manager and System Admin. On resubmission the visit **resumes at the step that returned it** — earlier approvals stand (company rule for all document types, 2026-10-14). If the visit was edited to a zone with no zone managers, it is confirmed without approval and the returned approval is withdrawn. The creator's "Revise" task closes on resubmission or cancellation.
 
 **Cancellation.** VMS cancels the in-flight approval and closes all of the visit's open tasks itself, so no stale task is left even when the engine refuses the cancel for a Host or manager who is not the submitter.
 
@@ -604,14 +634,14 @@ All VMS tasks live in the shared task table.
 
 | Task | Document type | Assignee | Opened | Closed | Opens |
 |---|---|---|---|---|---|
-| Approve visitor visit | VMS Visit | Department Manager, then Quality Manager | submission / next step | approval action | visit page |
+| Approve visitor visit | VMS Visit | per the chain, e.g. Department Manager, then each zone manager routed to (any one decides) | submission / next step | approval action (the Zone Manager step's other tasks close when one manager acts) | visit page |
 | Revise visitor visit | VMS Visit | visit creator | Return for edit | resubmission or cancellation | visit page |
 | Confirm food-safety training | VMS training | HR Training Contact | first print, training stale | "Confirm now" | visitor compliance page |
 | Confirm PPE issuance | VMS PPE | Janitor PPE Contact | first print, PPE stale | "Confirm now" | visitor compliance page |
 | Check out visitor | VMS Visit | Host | 1 h overdue | automatically, once the visitor is no longer on site | visit page |
 | Prepare PPE | VMS Visit | Janitor PPE Contact | PPE email sent | automatically, at check-in / cancel / no-show | visit page |
 
-Task titles: "Approve visitor visit: VMS Visit — First Last (Company) — <area>, <date>", "Confirm food-safety training — First Last (Company)", "Confirm PPE issuance — …", "Check out visitor — …", "Prepare PPE — …".
+Task titles: "Approve visitor visit: VMS Visit — First Last (Company) — <zone name>, <date>" (e.g. "Approve visitor visit: VMS Visit — Ada Lovelace (Acme) — Cold Room, 2026-10-02"), "Confirm food-safety training — First Last (Company)", "Confirm PPE issuance — …", "Check out visitor — …", "Prepare PPE — …".
 
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
@@ -652,9 +682,9 @@ All endpoints sit under `/api/v1/` of the VMS service and require the Portal sig
 | GET | `/visits` | List (status, Host, date range; no area or text search) | Any, scoped |
 | GET | `/visits/active` | On-site visits | Any, scoped |
 | GET | `/visits/{id}` | Detail with all visitors | Any, scoped |
-| POST | `/visits` | Create; hands off to approval by area | Any |
+| POST | `/visits` | Create; hands off to approval by zone | Any |
 | POST | `/visits/{id}/submit` | (Re)submit a not-yet-submitted or returned visit | Creator, Host, Host's Dept Manager, System Admin |
-| PATCH | `/visits/{id}` | Edit while Pending / Confirmed (area rules in VMS-PR-016) | Creator, Host, Host's Dept Manager, System Admin |
+| PATCH | `/visits/{id}` | Edit while Pending / Confirmed (zone-change rules in VMS-PR-016) | Creator, Host, Host's Dept Manager, System Admin |
 | POST | `/visits/{id}/cancel` | Cancel; withdraws approval and closes tasks | Creator, Host, Host's Dept Manager, System Admin |
 | POST | `/visits/{id}/action` | Approve / reject / return | Any; the approval engine checks the approver |
 | POST | `/visits/{id}/check-out` | Departure with badge / PPE returned | Creator, Host, Host's Dept Manager, System Admin |
@@ -674,7 +704,7 @@ There is no separate check-in endpoint: check-in happens only through the first 
 | GET | `/health-questions` | Current questionnaire | Any |
 | POST / GET | `/visits/{id}/health-declaration` | File one visitor's declaration / list declarations for the visit | Scoped (auditors cannot file) |
 | GET | `/health-declarations` | Browse declarations across visits | Scoped |
-| GET | `/area-rules` | Area rule table (§2.1.5) | Any |
+| GET | `/area-rules` | Every zone, including retired ones: name, active, sort order, GMP-grade, needs approval, needs health declaration, compliance tasks at check-in, managers (§2.1.5) | Any |
 
 **Audit, dashboard, reports**
 
@@ -684,7 +714,7 @@ There is no separate check-in endpoint: check-in happens only through the first 
 | GET | `/dashboard/overview`, `/dashboard/compliance` | Plant-wide counters | Any |
 | GET | `/reports/cfia-visit-log`, `/reports/gmp-area-summary` | CSV reports | Auditor, System Admin |
 
-**Admin** (System Admin): Quality Manager roster, notification contacts, health questions, mail settings and test, badge configuration, manual scheduler run, and the Portal Data Maintenance entity endpoints (edit-only for VMS records).
+**Admin** (System Admin): zones (`GET` / `POST /admin/zones`, `PATCH` / `DELETE /admin/zones/{id}`; delete of a zone any visit has used is refused with 409 — retire it instead; the former Quality Manager endpoints are removed), notification contacts, health questions, mail settings and test, badge configuration, manual scheduler run, and the Portal Data Maintenance entity endpoints (edit-only for VMS records).
 
 **Cross-service**: the VMS frontend reads the employee directory and the user's open tasks from the platform; the VMS service calls the approval engine (submit / cancel / approve / reject / return) and the file service; the approval engine writes the visit's approval state and, on final approval, its Confirmed status directly.
 
@@ -700,7 +730,7 @@ There is no separate check-in endpoint: check-in happens only through the first 
 | New Visit | yes | everyone |
 | Check Out | yes | everyone |
 | Audit Log, Reports, Health Declarations | "Compliance" group | Auditor, System Admin |
-| VMS Admin — Quality Managers, Notification Contacts, Email Settings, Health Questions, Badge | "Admin" group | System Admin |
+| VMS Admin — Zones, Notification Contacts, Email Settings, Health Questions, Badge | "Admin" group | System Admin |
 | Visit *First Last* | opened from lists / tasks | scoped |
 | Badge *First Last* | opened from "Print badge & check in" | scoped |
 | Compliance *First Last* | opened from training / PPE tasks | everyone; confirmation restricted |
@@ -711,7 +741,7 @@ Without a session the app redirects to Portal sign-in; an expired session return
 
 - **Launcher**: Portal sidebar → Modules → "VMS" and the home-page card "VMS — Visitor appointments, badge printing, on-site tracking"; visible to every user.
 - **Task Inbox**: VMS tasks appear in Portal "My Task Inbox" under **Visitor**; a click opens the visit or the visitor compliance page in VMS. Portal has no approve buttons for VMS — approval happens on the VMS visit page.
-- **Approval chain**: Portal → Admin → Approval Workflows → VMS Visit. The Quality Manager roster itself lives in VMS Admin.
+- **Approval chain**: Portal → Admin → Approval Workflows → VMS Visit. Zones and their managers live in VMS Admin → Zones.
 - **Data Maintenance**: VMS visits and visitors can be edited (not deleted) by System Admin. A visit is rescheduled through Planned arrival / Planned departure, shown in plant time; a time typed without a UTC offset is taken as plant time. Departure must be after arrival. Visit date is read-only and is reset to the planned arrival's plant-local day on save, and the audit entry records it. Saving a visit that was automatically marked No Show undoes the No Show if its planned arrival is no longer overdue (today or later, plant time). The visit gets back the status it had before (Confirmed or Pending Approval), along with its approval state and the Host's approval-result email flag. For a pending visit, the approval tasks the No Show closed are reopened, dated with the new visit date, and queued for the task-notification outbox again. A task a person completed is never reopened. The undo is written to the VMS audit log as "visit.no_show_undone". It does not happen when the schedule is still overdue, the visitor already arrived, the status was set to No Show by hand rather than by the scheduler, or the same save sets another status.
 - **Branding**: company name, logo and tagline come from Portal company settings.
 
@@ -811,7 +841,7 @@ Targets below are product targets; they have not been re-measured in this revisi
 ### 8.4 GMP Area Access — Compliance Chain
 
 ```
-         Approval (Dept Manager → Quality Manager)
+      Approval (VMS Visit chain, e.g. Dept Manager → Zone Manager)
                          │
         ┌────────────────┼──────────────────┐
         v                v                  v
@@ -896,12 +926,14 @@ Targets below are product targets; they have not been re-measured in this revisi
 | Host | The employee being visited, who books and receives the visitor |
 | Check-in | Arrival registration — in VMS, the first badge print |
 | Check-out | Departure registration — by scanning the badge QR |
-| GMP-grade | GMP Clean Zone, Laboratory, Entire Plant |
+| Access zone | An access area defined in VMS Admin → Zones (VMS-PR-050) |
+| GMP-grade | Zones flagged GMP-grade in VMS Admin → Zones (initially Production (GMP), Laboratory, Entire Plant) |
 | CFIA | Canadian Food Inspection Agency |
 | HACCP | Hazard Analysis and Critical Control Points |
 | PPE | Personal Protective Equipment |
 | PIPEDA | Personal Information Protection and Electronic Documents Act |
-| QM | Quality Manager (VMS-local approver) |
+| Zone Manager | A manager of an access zone (VMS-local approver of the Zone Manager step) |
+| QM | Quality Manager — the single VMS-local approver of earlier versions, replaced by Zone Manager in V2.14 (`quality_manager` survives as a legacy alias) |
 
 ### 11.2 References
 
@@ -914,9 +946,9 @@ Targets below are product targets; they have not been re-measured in this revisi
 
 | # | Topic | Decision |
 |:-:|---|---|
-| 1 | Approval by access area | §2.1.5 |
-| 2 | Default chain | Engine default Department Manager only; production Department Manager → Quality Manager |
-| 3 | Quality Manager assignment | First active user on the roster, single approver |
+| 1 | Approval by access zone | A zone with managers needs approval; a zone without managers does not (2026-10-21, §2.1.5) |
+| 2 | Default chain | Engine default Department Manager only; production Department Manager → Quality Manager (now the legacy alias of Zone Manager). The product owner decides the steps |
+| 3 | Zone Manager assignment | Every active manager of the visit's zone, copied at each submission; any one decides (2026-10-21; replaced the single Quality Manager from a VMS-wide roster) |
 | 4 | Entire Plant | GMP-grade: health declaration required (QA, 2026-10-01) |
 | 5 | Self-approval by a booking Department Manager | Kept (2026-10-01) |
 | 6 | Deleting VMS records in Data Maintenance | Not allowed; edit-only (2026-10-01) |
@@ -925,13 +957,14 @@ Targets below are product targets; they have not been re-measured in this revisi
 | 9 | Resubmission after a return | Resumes at the returning step; earlier approvals stand (all document types, 2026-10-14) |
 | 10 | Training / PPE contacts | Configured; both match active users (checked 2026-09-30) |
 | 11 | Health questions | Four built-in defaults in use; editable by Admin; QA sign-off of wording still open (§13) |
+| 12 | Zone managers at go-live | Seeded empty; an admin sets them in VMS Admin → Zones (2026-10-21) |
 
 ### 11.4 Production Snapshot (read-only check, 2026-09-30, plus 2026-10-15 observation)
 
 | Item | Value |
 |---|---|
-| Approval chain | Department Manager → Quality Manager |
-| Quality Manager roster | 1 active user (single point of failure for every GMP-grade visit) |
+| Approval chain | Department Manager → Quality Manager. From V2.14 that step works as the Zone Manager step (legacy alias); it should be switched to Zone Manager |
+| Quality Manager roster | 1 active user at the check. No longer used from V2.14: the zones start with **no managers**, so every zone books without approval (no Department Manager step either) until an admin sets managers in VMS Admin → Zones — to be done before or at go-live |
 | Training / PPE contacts | Both set; both match active users |
 | Mail | VMS mail settings saved |
 | Health questions / badge configuration | Defaults in use |
@@ -983,7 +1016,7 @@ The September 2026 code audit (V2.7) listed defects D-00 to D-22. All except two
 | OI-03 | Any signed-in user can edit any visitor record through the API, including the permanent "ID verified" flag (changes are audit-logged) | Defect |
 | OI-04 | VMS honours only the primary role; no `vms.*` permission keys (D-21) | Open |
 | OI-05 | Should auditors be able to create visits, verify ID and print badges (= check visitors in)? Not blocked today | Open |
-| OI-06 | Quality Manager roster has one active person — single point of failure | Open |
+| OI-06 | Quality Manager roster has one active person — single point of failure | Superseded (V2.14) — the roster is gone; approval goes to every active manager of the visit's zone, and a zone may have several managers |
 | OI-07 | Host approval-result email and post-approval PPE email are triggered by the first read of the visit, not at the moment of approval | Open |
 | OI-08 | VMS task emails through the platform outbox are off by default and link to the VMS home page rather than the visit; enabling "Check out visitor" / "Prepare PPE" would duplicate VMS's own emails | Open |
 | OI-09 | Host email on submission (VMS-PR-011) | Not implemented |
@@ -1035,3 +1068,4 @@ The September 2026 code audit (V2.7) listed defects D-00 to D-22. All except two
 | V2.11 | 20 Oct 2026 | Data Maintenance reschedules visits through planned arrival / departure; Visit date derived (D-24); new open item OI-35 (past planned arrival is no-showed at once) |
 | V2.12 | 20 Oct 2026 | Rescheduling a No Show visit in Data Maintenance undoes the No Show and reopens a pending approval |
 | V2.13 | 20 Oct 2026 | No Show marked after the planned arrival day ends (plant time) instead of 2 hours after arrival; OI-35 closed |
+| V2.14 | 21 Oct 2026 | Configurable access zones (VMS Admin → Zones) with GMP-grade flag and zone managers; approval only for zones with managers; Zone Manager step (any one manager decides) replaces the single Quality Manager; new zone-change rule for Confirmed visits; migration 20261021_0015 seeds the six former areas without managers; OI-06 superseded |

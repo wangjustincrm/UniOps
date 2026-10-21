@@ -235,7 +235,7 @@ async def browse_health_declarations(
             company=vis.company_name,
             visit_date=visit.visit_date,
             host_name=host_name or "",
-            access_area=visit.access_area.value,
+            access_area=visit.access_area,
             result=decl.result,
             questionnaire_data=decl.questionnaire_data,
             signature=decl.signature,

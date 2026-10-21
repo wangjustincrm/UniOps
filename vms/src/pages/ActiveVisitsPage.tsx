@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, UserCheck, Users } from 'lucide-react'
 import { SortTh, useSortableRows } from '@uniops/shell'
-import { useActiveVisits, useBatchCheckOut } from '@/services/api'
+import { useActiveVisits, useAreaRules, useBatchCheckOut } from '@/services/api'
 import { AccessAreaBadge, OverdueBadge, accessAreaLabel, isVisitOverdue } from '@/components/StatusBadge'
 import { formatDateTime, timeAgo } from '@/lib/utils'
 
@@ -19,11 +19,12 @@ function getRole(): string | null {
 
 export default function ActiveVisitsPage() {
   const { data, isLoading } = useActiveVisits()
+  const { data: areaRules } = useAreaRules()
   const items = data ?? []
   // Whole list (/visits/active is not paged) → sorted here.
   const sorted = useSortableRows(data, {
     visit: (v) => (v.visitor ? `${v.visitor.first_name} ${v.visitor.last_name}` : `Visit #${v.id.slice(0, 8)}`),
-    area: (v) => accessAreaLabel(v.access_area),
+    area: (v) => accessAreaLabel(v.access_area, areaRules),
     checked_in: (v) => v.actual_arrival,
     duration: (v) => (v.actual_arrival ? Date.now() - Date.parse(v.actual_arrival) : null),
   })

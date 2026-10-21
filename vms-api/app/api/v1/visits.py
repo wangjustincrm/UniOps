@@ -35,6 +35,7 @@ from app.schemas.visit import (
 )
 from app.schemas.visitor import VisitorResponse
 from app.services import approval as approval_svc
+from app.services import area_rules
 from app.services import attachments as attachments_svc
 from app.services import notifications as notifications_svc
 from app.services import visit_tasks as visit_tasks_svc
@@ -198,16 +199,16 @@ async def create_visit(
     Any UniOps role can host. created_by comes from the JWT, host_id from
     the payload (Hosts can register visits on behalf of someone else).
 
-    When the visit's `access_area` triggers approval (warehouse / non-GMP
-    production / GMP / lab / all-zones), vms-api:
+    When the visit's zone has managers (VMS Admin → Zones), vms-api:
       1. populates `visit_title`, `approval_status="draft"`, and sets
          user-facing `status=pending_approval`;
-      2. for GMP/Lab additionally picks a Quality Manager from
-         `vms_config.quality_manager_user_ids` (first-active strategy) and
-         writes the chosen UUID to `quality_approver_id`;
+      2. snapshots the zone's active managers into `zone_approver_ids` for the
+         workflow's Zone Manager step;
       3. POSTs to the approval engine to start the workflow.
+    A zone without managers needs no approval: the visit is confirmed.
     """
     meta = await load_request_meta(db, user, request)
+    await _require_active_zone(db, payload.access_area)
 
     # Validate companion visitor IDs up front so the FK error doesn't fire
     # for the primary row only. Empty list is the common (single-visitor) case.
@@ -227,11 +228,11 @@ async def create_visit(
     row = await visit_crud.create_visit(db, payload, created_by=meta.user_id)
 
     # Approval branching ---------------------------------------------------
-    # Areas beyond the office go to approval-api (§6.2.1). If the hand-off
+    # Zones with managers go to approval-api (§6.2.1). If the hand-off
     # fails the visit is still saved, but stays Pending Approval ("draft") —
     # it cannot be badged until POST /visits/{id}/submit succeeds.
     submit_error: str | None = None
-    if approval_svc.access_requires_approval(row.access_area):
+    if await approval_svc.access_requires_approval(db, row.access_area):
         submit_error = await approval_svc.prepare_and_submit(db, row, token)
 
     # Compliance gates (training/PPE confirmation tasks) and the HR training
@@ -284,6 +285,17 @@ async def create_visit(
     if submit_error:
         resp = resp.model_copy(update={"approval_submit_error": submit_error})
     return resp
+
+
+async def _require_active_zone(db, code: str) -> None:
+    """A visit may only be booked for (or moved to) a zone that exists and has
+    not been retired in VMS Admin → Zones."""
+    rules = await area_rules.rules_for(db, code)
+    if rules is None or not rules.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown or retired access zone '{code}'",
+        )
 
 
 def _can_manage(row: Visit, meta, host_dept) -> bool:
@@ -354,7 +366,7 @@ async def submit_visit(
 
     before = audit_crud.snapshot(row)
     notes = None
-    if not approval_svc.access_requires_approval(row.access_area):
+    if not await approval_svc.access_requires_approval(db, row.access_area):
         if row.approval_status == "returned":
             try:
                 await approval_svc.cancel_approval(row.id, token)
@@ -366,7 +378,7 @@ async def submit_visit(
         row.status = VisitStatus.confirmed
         row.host_notified_at = datetime.now(timezone.utc)  # no approval-result email
         await db.flush()
-        notes = "no approval needed for this access area — confirmed"
+        notes = "no approval needed for this zone (no zone managers) — confirmed"
         if await _send_ppe_request_if_due(db, row):
             notes += "; notifications: ppe_request"
     else:
@@ -430,6 +442,7 @@ async def patch_visit(
     # sidestep approval (it used to: book Office, then patch to GMP).
     new_area = payload.access_area
     if new_area is not None and new_area != row.access_area:
+        await _require_active_zone(db, new_area)
         if row.approval_status in ("submitted", "in_review"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -441,17 +454,18 @@ async def patch_visit(
             )
         if (
             row.status == VisitStatus.confirmed
-            and approval_svc.approval_tier(new_area) > approval_svc.approval_tier(row.access_area)
+            and not await approval_svc.may_move_confirmed_visit(db, row, new_area)
         ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    "That access area needs approval this visit does not have. "
-                    "Cancel it and book a new visit for that area."
+                    "That zone needs approval from its zone managers, which this "
+                    "visit does not have. Cancel it and book a new visit for that zone."
                 ),
             )
         # Draft / returned visits may change freely — the next submit routes
-        # by the new area. Confirmed visits may only move down.
+        # by the new zone. A confirmed visit may move to a zone that needs no
+        # approval, or whose managers already had this visit for approval.
 
     before = audit_crud.snapshot(row)
     row = await visit_crud.update_visit(db, row, payload)

@@ -12,6 +12,7 @@ from app.models.visit import (  # noqa: F401
     VisitPurpose,
     HealthDeclStatus,
 )
+from app.models.zone import Zone, ZoneManager  # noqa: F401
 from app.models.badge_print import BadgePrint  # noqa: F401
 from app.models.health_declaration import HealthDeclaration  # noqa: F401
 from app.models.audit_log import AuditLog  # noqa: F401

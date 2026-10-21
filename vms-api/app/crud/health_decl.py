@@ -25,6 +25,7 @@ from app.models.health_declaration import HealthDeclaration
 from app.models.user_mirror import User
 from app.models.visit import HealthDeclStatus, Visit, VisitStatus
 from app.models.visitor import Visitor
+from app.models.zone import Zone
 
 
 def compute_result(template_questions: list[dict], answers: list[dict]) -> HealthDeclStatus:
@@ -208,13 +209,14 @@ async def get_all_for_visit(
 
 # Health declarations page headers -> ORDER BY (the ?sort= whitelist). Each
 # sorts by what the cell shows: the visitor's "First Last", the host's name,
-# the area code with "_" shown as " ", the raw result word.
+# the zone's name, the raw result word.
 DECLARATION_SORTABLE = {
     "visit_date": Visit.visit_date,
     "visitor_name": func.lower(func.trim(Visitor.first_name + " " + Visitor.last_name)),
     "company": func.lower(Visitor.company_name),
     "host_name": func.lower(User.full_name),
-    "access_area": func.lower(func.replace(cast(Visit.access_area, String), "_", " ")),
+    "access_area": select(func.lower(Zone.name)).where(Zone.code == Visit.access_area)
+                   .correlate(Visit).scalar_subquery(),
     "result": func.lower(cast(HealthDeclaration.result, String)),
     "updated_at": HealthDeclaration.updated_at,
 }

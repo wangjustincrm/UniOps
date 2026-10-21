@@ -577,7 +577,7 @@ Each workflow is an **ordered list of steps**, configured in Portal Admin Panel 
 | `gm`, `opm`, `procurement_manager`, `finance_manager`, `finance_director`, `vendor_manager` | Current holder(s) of the post (primary or additional role) | Role pool |
 | `finance_bp` | Users assigned Finance BP as an additional role | Role pool |
 | `ap_clerk` | Users with the role | Role pool |
-| `quality_manager` | VMS only — the QM chosen on the visit | That person |
+| `zone_manager` | VMS only — every manager of the visit's access zone, snapshotted at submit (`quality_manager` = legacy alias, same behaviour) | One task each; any one approves; skipped if none |
 
 **Routing department.** Department-scoped steps (Department Manager, Director, GM/OPM) use the department named on the document: the PR's selected department (for a PR and the POs/PAs raised from it) or the agreement's department (for an agreement and its PAs). Only when none is recorded does the engine fall back to the requester's/creator's own department. A PA covering POs from several departments skips Department Manager and Director and goes to the cross-department GM/OPM setting. The Supervisor step always follows the requester personally.
 
@@ -599,7 +599,7 @@ Each workflow is an **ordered list of steps**, configured in Portal Admin Panel 
 | `mil` | `dept_manager → finance_bp` |
 | `cfm` | `dept_manager` |
 | `budget_plan` | `dept_manager → finance_manager` |
-| `vms_visit` | `dept_manager` (+ optional `quality_manager`) |
+| `vms_visit` | `dept_manager` (+ optional `zone_manager`) |
 
 Admins may add, remove, or reorder steps freely in Portal → Admin → Approval Workflows without any code changes or service restart. The workflows actually configured in production may differ from these shipped defaults.
 
@@ -628,7 +628,7 @@ Admins may add, remove, or reorder steps freely in Portal → Admin → Approval
 
 The engine skips steps automatically in three ways (the third only on OA claims). Every skipped step produces its own `ApprovalEvent` row, so the full history is preserved and visible in the Approval Timeline (shown struck through / with an "Auto-approved" or "Auto-skipped" indicator and the reason).
 
-1. **Conditional skip** (applied at submit and after each approval): a Supervisor or Director step that does not apply to this document (no active person, or layer switched off); Department Manager and Director steps on a cross-department PA; a VMS Quality Manager step that is not required. Recorded with the reason.
+1. **Conditional skip** (applied at submit and after each approval): a Supervisor or Director step that does not apply to this document (no active person, or layer switched off); Department Manager and Director steps on a cross-department PA; a VMS Zone Manager step (legacy name: Quality Manager) when the visit's zone has no zone managers. Recorded with the reason.
 2. **Same-approver skip** (applied after an approval only):
    1. Actor approves step N — a normal `ApprovalEvent` is recorded for step N.
    2. Engine checks step N+1: if the actor also holds that step **in their own right** — including being any one holder of a post — it records an additional `ApprovalEvent` (action `"approve"`, comment `"Auto-approved (same approver holds both roles)"`) and advances to N+2.
@@ -710,7 +710,7 @@ Only the last editor and edit time are kept; there is no change history.
 |---|---|
 | **ROUT-001** | Saving Approval Routing re-routes every document already awaiting approval to the approver the new settings resolve to, and reports how many were re-routed. |
 | **ROUT-002** | Changing a user's primary role, department, active status or Supervisor likewise re-routes their in-flight approvals, so tasks never stay with someone who can no longer act. A failed re-sync does not undo the user change; it is reported. System Admin can also trigger a re-sync for all documents or for one document. |
-| **ROUT-003** | Workflow step lists are edited in Portal → Admin → Approval Workflows; available step tokens: Supervisor, Department Manager, Director, GM/OPM, GM, OPM, Procurement Manager, Finance Manager, Finance Director, Finance BP, AP Clerk, Quality Manager (VMS). PO sign-off steps may use only company-wide posts. |
+| **ROUT-003** | Workflow step lists are edited in Portal → Admin → Approval Workflows; available step tokens: Supervisor, Department Manager, Director, GM/OPM, GM, OPM, Procurement Manager, Finance Manager, Finance Director, Finance BP, AP Clerk, Zone Manager (VMS — goes to every manager of the visit's access zone, any one approves; "Quality Manager" is its legacy name with the same behaviour). PO sign-off steps may use only company-wide posts. |
 
 #### 3.3.9 Submit Preflight
 

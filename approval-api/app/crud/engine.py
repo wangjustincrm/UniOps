@@ -453,13 +453,39 @@ _WORKFLOW_DEFAULTS: dict[str, list[dict]] = {
         {"id": "finance_mgr",    "role": "finance_manager", "label": "Finance Manager"},
     ],
     "vms_visit": [
-        # Default single-step. Admin adds a `quality_manager` step (W11 UI)
-        # for GMP / Laboratory zones; vms-api resolves the actual user from
-        # `vms_config.quality_manager_user_ids` and stores the chosen UUID
-        # on `vms_visits.quality_approver_id` at submit time.
+        # Default single-step. Admin adds a `zone_manager` step (Portal →
+        # Approval Workflows); vms-api snapshots the visit's zone managers
+        # onto `vms_visits.zone_approver_ids` at submit time.
         {"id": "dept_manager", "role": "dept_manager", "label": "Department Manager"},
     ],
 }
+
+
+# ── VMS Zone Manager step ─────────────────────────────────────────────────────
+#
+# Routed to every manager of the visit's access zone (VMS Admin → Zones), as
+# snapshotted by vms-api on `vms_visits.zone_approver_ids` at submit: one task
+# each, the first to act decides (_complete_tasks closes the rest). No managers
+# → the step auto-skips. "quality_manager" is the step's pre-2026-10 name (one
+# VMS-wide Quality Manager): workflows saved before then, and tasks already
+# open, still carry it, so it means the same thing.
+_ZONE_ROLES = frozenset({"zone_manager", "quality_manager"})
+
+
+def _zone_approver_ids(doc: Any) -> list[uuid.UUID]:
+    out: list[uuid.UUID] = []
+    for raw in getattr(doc, "zone_approver_ids", None) or []:
+        try:
+            uid = uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            continue
+        if uid not in out:
+            out.append(uid)
+    return out
+
+
+def _is_zone_step(role: str, doc_type: str) -> bool:
+    return role in _ZONE_ROLES and doc_type == "vms_visit"
 
 
 # ── Dept manager lookup ───────────────────────────────────────────────────────
@@ -558,9 +584,8 @@ async def _step_holder_ids(
     Membership in this set is what _actor_is_step_holder answers; the set itself
     is what the claimant skip needs (is the claimant the ONLY one who could act).
     """
-    if step_role == "quality_manager":
-        expected = getattr(doc, "quality_approver_id", None) if doc is not None else None
-        return {expected} if expected is not None else set()
+    if step_role in _ZONE_ROLES:
+        return set(_zone_approver_ids(doc)) if doc is not None else set()
     if step_role == "finance_bp":
         return set(finance_bp_ids)
     if step_role == "dept_manager":
@@ -610,9 +635,9 @@ async def _actor_can_approve(
     """Return True if the actor is authorized to approve the current workflow step.
 
     `doc` is optional for back-compat (callers pre-S2 don't pass it). The
-    VMS Quality Manager step needs it to read `doc.quality_approver_id`
+    VMS Zone Manager step needs it to read `doc.zone_approver_ids`
     (per-visit assignment is VMS-local — no `role_management` mapping for
-    quality_manager). See S2_ARCHITECTURE_REVIEW.md F2.
+    zone_manager). See S2_ARCHITECTURE_REVIEW.md F2.
 
     `routing_dept_id` is the department that drives dept_manager/gm_or_opm
     routing for this document — the PR's selected department_id, falling back
@@ -642,7 +667,7 @@ async def _actor_can_approve(
     # Fallback: actor's own JWT role must match the step role. Only reachable
     # for a step whose post has NO holders at all — with holders configured,
     # membership above is the authority and a non-holder must stay denied.
-    if step_role in ("quality_manager", "finance_bp", "dept_manager",
+    if step_role in ("zone_manager", "quality_manager", "finance_bp", "dept_manager",
                      "gm_or_opm", "director", "supervisor"):
         return False
     return actor_role == step_role and not await post_holder_ids(db, step_role)
@@ -1056,10 +1081,12 @@ async def resolve_step_assignment(
         assigned_user_id = director_uid
     elif role == "supervisor":
         assigned_user_id = supervisor_uid
-    elif role == "quality_manager" and doc_type == "vms_visit":
-        # VMS-local: vms-api pre-selected the QM and stored on the visit.
-        # See S2_ARCHITECTURE_REVIEW.md F2.
-        assigned_user_id = getattr(doc, "quality_approver_id", None)
+    elif _is_zone_step(role, doc_type):
+        # VMS-local: vms-api snapshotted the zone's managers onto the visit.
+        # The first is returned here; _create_approve_task gives each manager
+        # a task. See S2_ARCHITECTURE_REVIEW.md F2.
+        ids = _zone_approver_ids(doc)
+        assigned_user_id = ids[0] if ids else None
 
     return assigned_user_id, assigned_role
 
@@ -1107,19 +1134,23 @@ async def _create_approve_task(
             f"Justification: {just_line}"
         )
 
-    db.add(Task(
-        type=meta["task_approve"],
-        priority="normal",
-        document_type=doc_type,
-        document_id=doc.id,
-        document_number=doc_number,
-        assigned_role=assigned_role,
-        assigned_user_id=assigned_user_id,
-        title=f"{labels.get('approve_verb', 'Approve')} {doc_label}: {doc_number} — {doc.title}",
-        description=description,
-        amount=amount,
-        vendor=vendor,
-    ))
+    # A Zone Manager step goes to every manager of the zone, one task each.
+    assignees = (_zone_approver_ids(doc) or [assigned_user_id]
+                 if _is_zone_step(wf["role"], doc_type) else [assigned_user_id])
+    for uid in assignees:
+        db.add(Task(
+            type=meta["task_approve"],
+            priority="normal",
+            document_type=doc_type,
+            document_id=doc.id,
+            document_number=doc_number,
+            assigned_role=assigned_role,
+            assigned_user_id=uid,
+            title=f"{labels.get('approve_verb', 'Approve')} {doc_label}: {doc_number} — {doc.title}",
+            description=description,
+            amount=amount,
+            vendor=vendor,
+        ))
 
 
 async def _create_revise_task(db: AsyncSession, doc_type: str, doc: Any, meta: dict) -> None:
@@ -1370,8 +1401,10 @@ _POST_APPROVE: dict[str, Any] = {
 CONDITIONAL_ROLES: dict[str, str] = {
     "director": "Only runs when the department has a Director configured.",
     "supervisor": "Only runs when a Supervisor is assigned.",
-    "quality_manager": ("Only runs when the visitor's access area requires "
-                        "Quality Manager review."),
+    "zone_manager": ("Only runs when the visit's access zone has zone "
+                     "managers configured."),
+    "quality_manager": ("Only runs when the visit's access zone has zone "
+                        "managers configured."),
 }
 
 
@@ -1391,9 +1424,8 @@ def _should_skip_step(role, doc_type, doc, director_uid, supervisor_uid,
     if cross_dept_pa and role in ("dept_manager", "director"):
         return True, ("Auto-skipped (payment covers purchase orders from several "
                       "departments — approved at GM/OPM level instead)")
-    if role == "quality_manager" and doc_type == "vms_visit":
-        if getattr(doc, "quality_approver_id", None) is None:
-            return True, "Auto-skipped (access area does not require Quality Manager review)"
+    if _is_zone_step(role, doc_type) and not _zone_approver_ids(doc):
+        return True, "Auto-skipped (the visit's access zone has no zone managers)"
     if role == "director" and director_uid is None:
         reason = ("Auto-skipped ⚠ configured Director is inactive/missing"
                   if dept_has_director else "Auto-skipped (department has no Director)")
@@ -1763,7 +1795,8 @@ async def execute_action(
         while next_step < len(workflow):
             next_role = workflow[next_step]["role"]
             # Conditional skip (per-document) — fires before the same-approver
-            # check so non-GMP visits don't even check who holds the QM role.
+            # check so a visit to a zone without managers doesn't even check
+            # who would hold the Zone Manager step.
             # Includes an over-budget step Budget Config has since stopped
             # requiring (FM approved under fm_gm_opm, mode is now fm_only).
             cond_skip, reason = _step_skip(
@@ -1997,7 +2030,7 @@ _GM_OPM_ROLES = {"gm", "opm", "gm_or_opm"}
 # set) and resync re-points them to the current resolved person. gm_or_opm is
 # NOT here: gm/opm are singleton posts broadcast by role (assigned_user_id=None),
 # handled by the broadcast branch in resync Case C — same as finance_manager etc.
-_USER_SPECIFIC_ROLES = {"dept_manager", "director", "supervisor", "quality_manager"}
+_USER_SPECIFIC_ROLES = {"dept_manager", "director", "supervisor", "zone_manager", "quality_manager"}
 
 
 def _step_index_for_task_role(workflow: list[dict], task_role: str,
@@ -2033,8 +2066,9 @@ async def _resolved_assignee_for_step(
         return role, director_uid
     if role == "supervisor":
         return role, supervisor_uid
-    if role == "quality_manager" and doc_type == "vms_visit":
-        return role, getattr(doc, "quality_approver_id", None)
+    if _is_zone_step(role, doc_type):
+        ids = _zone_approver_ids(doc)
+        return role, ids[0] if ids else None
     return role, None  # broadcast
 
 
@@ -2173,7 +2207,22 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
         supervisor_uid, cross_dept_pa)
     role = workflow[true_step]["role"]
     stray = any(_step_index_for_task_role(workflow, t.assigned_role, true_step) != true_step for t in open_tasks)
-    if role in _USER_SPECIFIC_ROLES:
+    if _is_zone_step(role, doc_type):
+        # One task per zone manager: reissue unless the open tasks are exactly
+        # the snapshotted managers.
+        wanted = set(_zone_approver_ids(doc))
+        have = {t.assigned_user_id for t in open_tasks}
+        if not wanted:
+            actions.append(f"WARN {role} has no zone managers @step{true_step} — re-sync after VMS resubmits")
+        elif stray or have != wanted:
+            await _complete_tasks(db, doc_type, doc.id)
+            await _create_approve_task(
+                db, doc_type, doc, step=true_step, workflow=workflow, meta=meta, rm=rm,
+                dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id,
+                director_uid=director_uid, supervisor_uid=supervisor_uid,
+                cross_dept_pa=cross_dept_pa)
+            actions.append(f"reissue step{true_step} -> {role}/{len(wanted)} zone manager(s)")
+    elif role in _USER_SPECIFIC_ROLES:
         if des_uid is None:
             actions.append(f"WARN {role} unresolved @step{true_step} — assign one in config, then re-sync")
         elif stray or not any(t.assigned_user_id == des_uid for t in open_tasks):

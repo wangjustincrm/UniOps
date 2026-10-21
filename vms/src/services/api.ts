@@ -12,9 +12,9 @@ export type VisitStatus =
   | 'pending_approval' | 'confirmed' | 'checked_in'
   | 'checked_out' | 'cancelled' | 'no_show'
 
-export type AccessArea =
-  | 'office' | 'warehouse' | 'production_non_gmp'
-  | 'production_gmp' | 'laboratory' | 'all'
+/** A zone code (VMS Admin → Zones). Zones are configurable, so any string;
+ *  name and rules come from useAreaRules(). */
+export type AccessArea = string
 
 export type VisitPurpose =
   | 'meeting' | 'maintenance' | 'tour' | 'audit'
@@ -84,7 +84,8 @@ export interface Visit {
   visit_title: string
   approval_step_idx: number | null
   submitted_at: string | null
-  quality_approver_id: string | null
+  /** The zone managers this visit was routed to at its last submit. */
+  zone_approver_ids: string[]
   ppe_requested: PpeRequest | null
   ppe_notified_at: string | null
   created_at: string
@@ -109,14 +110,20 @@ export interface ApprovalNote {
   at: string
 }
 
-/** What each access area requires — served by vms-api, the same rules it enforces. */
+/** Every access zone and what it requires — served by vms-api, the same
+ *  rules it enforces. Retired zones are included (is_active false) so old
+ *  visits keep their label; pickers offer active ones only. */
 export interface AreaRule {
   area: AccessArea
+  name: string
+  is_active: boolean
+  sort_order: number
+  gmp_grade: boolean
+  /** The zone has managers → its visits go through approval. */
   requires_approval: boolean
-  requires_quality_manager: boolean
   requires_health_declaration: boolean
   compliance_tasks_at_check_in: boolean
-  gmp_grade: boolean
+  managers: { id: string; name: string }[]
 }
 
 export function useAreaRules() {
@@ -126,7 +133,7 @@ export function useAreaRules() {
       const rows = await api.get<AreaRule[]>('/api/v1/area-rules')
       return Object.fromEntries(rows.map((r) => [r.area, r]))
     },
-    staleTime: Infinity,
+    staleTime: 5 * 60_000,
   })
 }
 
@@ -874,25 +881,51 @@ export function useUserBrief(userId: string | undefined) {
 
 // ── Admin (system_admin only) ────────────────────────────────────────────────
 
-export interface QualityManagerRoster {
-  user_ids: string[]
+export interface Zone {
+  id: string
+  code: string
+  name: string
+  gmp_grade: boolean
+  is_active: boolean
+  sort_order: number
+  managers: { id: string; name: string; email: string; is_active: boolean }[]
+  visit_count: number
 }
 
-export function useQualityManagerRoster() {
-  return useQuery<QualityManagerRoster>({
-    queryKey: ['vms-admin-qm'],
-    queryFn: () => api.get<QualityManagerRoster>('/api/v1/admin/quality-managers'),
+export interface ZoneInput {
+  name?: string
+  gmp_grade?: boolean
+  is_active?: boolean
+  sort_order?: number
+  manager_ids?: string[]
+}
+
+export function useZones() {
+  return useQuery<Zone[]>({
+    queryKey: ['vms-admin-zones'],
+    queryFn: () => api.get<Zone[]>('/api/v1/admin/zones'),
     staleTime: 30_000,
   })
 }
 
-export function useSetQualityManagerRoster() {
+function useZoneMutation<V>(fn: (v: V) => Promise<unknown>) {
   const qc = useQueryClient()
-  return useMutation<QualityManagerRoster, Error, QualityManagerRoster>({
-    mutationFn: (body) => api.put<QualityManagerRoster>('/api/v1/admin/quality-managers', body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['vms-admin-qm'] }) },
+  return useMutation<unknown, Error, V>({
+    mutationFn: fn,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vms-admin-zones'] })
+      qc.invalidateQueries({ queryKey: ['vms-area-rules'] })
+    },
   })
 }
+
+export const useCreateZone = () =>
+  useZoneMutation((body: ZoneInput & { name: string }) => api.post<Zone>('/api/v1/admin/zones', body))
+export const useUpdateZone = () =>
+  useZoneMutation(({ id, ...body }: ZoneInput & { id: string }) =>
+    api.patch<Zone>(`/api/v1/admin/zones/${id}`, body))
+export const useDeleteZone = () =>
+  useZoneMutation((id: string) => api.delete<void>(`/api/v1/admin/zones/${id}`))
 
 export interface NotificationContacts {
   training_email: string | null
@@ -993,7 +1026,8 @@ export interface BadgeBand {
   show_zone: boolean
   show_risk: boolean
   risk_suffix: string
-  areas: Record<AccessArea, BadgeAreaStyle>
+  /** Per zone code. A zone without an entry uses badgeAreaStyle()'s default. */
+  areas: Record<string, BadgeAreaStyle>
 }
 export interface BadgeIdentity { name_uppercase: boolean; show_company: boolean }
 export type BadgeMetaKey =

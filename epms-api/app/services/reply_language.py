@@ -102,6 +102,7 @@ TERMS_ZH: dict[str, str] = {
     "AP Review": "应付审核",
     "Payment Officer": "付款专员",
     "Quality Manager": "质量经理",
+    "Zone Manager": "区域负责人",
     "System Admin": "系统管理员",
     "Dept Admin": "部门管理员",
     "Over-Budget — Finance Manager": "超预算审批 — 财务经理",

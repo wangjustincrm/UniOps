@@ -31,14 +31,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user_mirror import User
 from app.core.plant_time import fmt_local
 from app.services import area_rules
-from app.models.visit import AccessArea, Visit
+from app.models.visit import Visit
 from app.models.visitor import Visitor
 from app.models.vms_config import VmsConfig
 
 log = logging.getLogger(__name__)
 
-# Areas that trigger training + PPE notifications.
-_NEEDS_TRAINING_AND_PPE = area_rules.COMPLIANCE_TASK_AREAS
+def _area_text(visit: Visit) -> str:
+    """The zone as plain-text emails show it: its code with "_" as " "
+    ("production gmp"). Zone codes are made from the zone's name, so this
+    reads the same for zones added in VMS Admin."""
+    return (visit.access_area or "").replace("_", " ")
 
 
 # ── SMTP config (read from epms-api's company_config, same DB) ──────────────-
@@ -152,7 +155,7 @@ def _format_training_email(visit: Visit, visitor: Visitor, host: User | None) ->
         f"Company:        {visitor.company_name}\n"
         f"Visit date:     {visit.visit_date.isoformat()}\n"
         f"Planned arrival:{visit.planned_arrival.isoformat()}\n"
-        f"Access area:    {visit.access_area.value.replace('_', ' ')}\n"
+        f"Access area:    {_area_text(visit)}\n"
         f"Host:           {host.full_name if host else '—'}\n"
         f"Visit ID:       {visit.id}\n\n"
         f"Please contact the Host to confirm training arrangements.\n"
@@ -171,7 +174,7 @@ def _format_ppe_email(visit: Visit, visitor: Visitor, host: User | None) -> tupl
         f"Company:        {visitor.company_name}\n"
         f"Visit date:     {visit.visit_date.isoformat()}\n"
         f"Planned arrival:{visit.planned_arrival.isoformat()}\n"
-        f"Access area:    {visit.access_area.value.replace('_', ' ')}\n"
+        f"Access area:    {_area_text(visit)}\n"
         f"Host:           {host.full_name if host else '—'}\n"
         f"Visit ID:       {visit.id}\n\n"
         f"Standard kit: hard hat, food-safe smock, hair net, shoe covers.\n"
@@ -265,7 +268,7 @@ async def _format_ppe_request_email(
         f"A visit has been approved and the Host requested PPE staging.\n\n"
         f"Visit date:     {visit.visit_date.isoformat()}\n"
         f"Planned arrival:{visit.planned_arrival.isoformat()}\n"
-        f"Access area:    {visit.access_area.value.replace('_', ' ')}\n"
+        f"Access area:    {_area_text(visit)}\n"
         f"Host:           {host.full_name if host else '—'}\n\n"
         f"PPE requested:\n"
         + "\n".join(lines)
@@ -330,7 +333,7 @@ def _format_host_approval_email(
             f"Visitor:     {name}\n"
             f"Company:     {visitor.company_name}\n"
             f"Visit date:  {visit.visit_date.isoformat()}\n"
-            f"Access area: {visit.access_area.value.replace('_', ' ')}\n"
+            f"Access area: {_area_text(visit)}\n"
             f"Visit ID:    {visit.id}\n\n"
             f"You can now print the visitor badge when the guest arrives.\n"
         )
@@ -341,7 +344,7 @@ def _format_host_approval_email(
             f"Visitor:     {name}\n"
             f"Company:     {visitor.company_name}\n"
             f"Visit date:  {visit.visit_date.isoformat()}\n"
-            f"Access area: {visit.access_area.value.replace('_', ' ')}\n"
+            f"Access area: {_area_text(visit)}\n"
             f"Visit ID:    {visit.id}\n\n"
             f"Please cancel the visit in VMS, or reschedule with a different access area.\n"
         )
@@ -394,7 +397,7 @@ async def notify_host_visit_cancelled(
         f"Visitor:     {name}\n"
         f"Company:     {visitor.company_name}\n"
         f"Visit date:  {visit.visit_date.isoformat()}\n"
-        f"Access area: {visit.access_area.value.replace('_', ' ')}\n"
+        f"Access area: {_area_text(visit)}\n"
         f"Visit ID:    {visit.id}\n"
     )
     smtp_cfg = await _load_smtp_config(db)
@@ -427,7 +430,7 @@ async def notify_host_visit_reminder(
         f"Company:        {visitor.company_name}\n"
         f"Visit date:     {_fmt_dt(visit.visit_date)}\n"
         f"Planned arrival:{_fmt_dt(visit.planned_arrival)}\n"
-        f"Access area:    {visit.access_area.value.replace('_', ' ')}\n"
+        f"Access area:    {_area_text(visit)}\n"
         f"Visit ID:       {visit.id}\n\n"
         f"Print the visitor badge from VMS when the guest arrives.\n"
     )
@@ -464,7 +467,7 @@ async def notify_host_overdue(
         f"Company:          {visitor.company_name}\n"
         f"Planned departure:{_fmt_dt(visit.planned_departure)}\n"
         f"Checked in at:    {_fmt_dt(visit.actual_arrival)}\n"
-        f"Access area:      {visit.access_area.value.replace('_', ' ')}\n"
+        f"Access area:      {_area_text(visit)}\n"
         f"Visit ID:         {visit.id}\n\n"
         f"Please check the visitor out in VMS once they have left.\n"
         f"You will receive this reminder daily until the visitor is checked out.\n"
@@ -498,7 +501,7 @@ async def notify_manager_overdue_escalation(
         f"Host:             {host.full_name if host else '—'}\n"
         f"Planned departure:{_fmt_dt(visit.planned_departure)}\n"
         f"Checked in at:    {_fmt_dt(visit.actual_arrival)}\n"
-        f"Access area:      {visit.access_area.value.replace('_', ' ')}\n"
+        f"Access area:      {_area_text(visit)}\n"
         f"Visit ID:         {visit.id}\n\n"
         f"Please follow up with the Host to confirm the visitor has left and "
         f"check them out in VMS.\n"
@@ -521,7 +524,8 @@ async def maybe_dispatch_visit_notifications(
     Returns the list of channels actually dispatched (`"training"`) for the
     audit log to record.
     """
-    if visit.access_area not in _NEEDS_TRAINING_AND_PPE:
+    rules = await area_rules.rules_for(db, visit.access_area)
+    if rules is None or not rules.compliance_tasks_at_check_in:
         return []
 
     cfg = (await db.execute(
@@ -533,7 +537,7 @@ async def maybe_dispatch_visit_notifications(
     if not training_email:
         log.info(
             "Visit %s in %s requires training but no training contact is configured",
-            visit.id, visit.access_area.value,
+            visit.id, visit.access_area,
         )
         return []
 
