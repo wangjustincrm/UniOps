@@ -122,3 +122,43 @@ async def test_a_chinese_name_is_drawn_rather_than_boxed(hse_manager, course, te
     assert b"FontFile" in got.content, (
         "the face has to be embedded, not merely named — a reference relies on "
         "the reader having the font and does not survive being emailed")
+
+
+PNG = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+       "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+
+
+def _images(pdf: bytes) -> int:
+    return pdf.count(b"/Subtype /Image")
+
+
+async def test_the_certificate_carries_the_company_logo(hse_manager, worker, course, db_session):
+    """★ Round 9: "In-house training certificates should have the CRM logo
+    centered on the top of the page, use the CRM logo found on the admin panel,
+    company settings." """
+    from app.models.mirrors import CompanyConfig
+
+    _, client = hse_manager
+    learner, _ = worker
+    record = await _record(client, course, learner.id)
+    url = f"/api/v1/training/records/{record['id']}/certificate/issued"
+
+    assert _images((await client.get(url)).content) == 0, "no logo set, none drawn"
+
+    db_session.add(CompanyConfig(id=uuid.uuid4(), name="Canada Royal Milk", logo_data_url=PNG))
+    await db_session.flush()
+    got = await client.get(url)
+    assert got.status_code == 200, got.text
+    assert _images(got.content) >= 1  # the picture (and its transparency mask)
+
+
+def test_a_logo_that_cannot_be_drawn_is_left_off():
+    """An SVG or a broken upload: the certificate still prints, without it."""
+    from app.services import certificate_pdf
+
+    for bad in ("data:image/svg+xml;base64,PHN2Zy8+", "data:image/png;base64,bm90IGFuIGltYWdl",
+                "not a data url"):
+        pdf = certificate_pdf.render(
+            person_name="A", course_name="B", course_code=None, completed_on=date(2026, 1, 1),
+            expires_on=None, record_no="X", verify_url=None, logo_data_url=bad)
+        assert pdf.startswith(b"%PDF-") and _images(pdf) == 0

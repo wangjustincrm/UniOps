@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from uniops_authz import has_permission
 from app.models.config import EhsConfig
+from app.models.mirrors import CompanyConfig
 from app.services import certificate_pdf, materials, training_pdf, training_xlsx
 from app.services.http_headers import content_disposition
 
@@ -455,6 +456,9 @@ async def issued_certificate(
         heading=config.certificate_heading if config else None,
         body=config.certificate_body if config else None,
         signatory=config.certificate_signatory if config else None,
+        # Round 9: the logo from Admin → Company Settings.
+        logo_data_url=(await db.execute(
+            select(CompanyConfig.logo_data_url).limit(1))).scalar_one_or_none(),
     )
     # ★ Through the helper: HTTP headers are latin-1, so a name that needed the
     # CJK font cannot go in one — the download 500s for exactly the people this

@@ -118,6 +118,9 @@ class CompanyConfig(Base):
     smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_use_tls: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     smtp_from: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The logo set under Admin → Company Settings, as a data URL. Round 9: the
+    # in-house training certificate carries it.
+    logo_data_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     notification_settings: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
 

@@ -16,6 +16,7 @@ name is the whole point of a certificate. See `pdf_fonts`.
 """
 from __future__ import annotations
 
+import base64
 import io
 from datetime import date
 
@@ -25,6 +26,7 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.lib.colors import HexColor, black
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as pdfcanvas
 
 from app.services import pdf_fonts
@@ -47,6 +49,24 @@ def _centre(c, text: str, y: float, *, size: float, bold: bool = False,
     c.drawCentredString(width / 2, y, text)
 
 
+def _logo(data_url: str | None) -> ImageReader | None:
+    """The company logo from its data URL, or None if there is none or it cannot
+    be drawn (an SVG, a broken upload) — a certificate without a logo is still a
+    certificate; one that fails to print is not."""
+    if not data_url or not data_url.startswith("data:image/") or "," not in data_url:
+        return None
+    try:
+        reader = ImageReader(io.BytesIO(base64.b64decode(data_url.split(",", 1)[1])))
+        reader.getSize()
+        return reader
+    except Exception:  # noqa: BLE001 — any undecodable image means "no logo"
+        return None
+
+
+LOGO_MAX_W = 70 * mm
+LOGO_MAX_H = 20 * mm
+
+
 def render(
     *,
     person_name: str,
@@ -60,6 +80,7 @@ def render(
     body: str | None = None,
     signatory: str | None = None,
     plant_name: str = "Canada Royal Milk",
+    logo_data_url: str | None = None,
 ) -> bytes:
     """One certificate, landscape A4."""
     buffer = io.BytesIO()
@@ -71,21 +92,34 @@ def render(
     c.setLineWidth(1.2)
     c.rect(14 * mm, 14 * mm, width - 28 * mm, height - 28 * mm)
 
-    _centre(c, plant_name, height - 34 * mm, size=11, colour=MUTED)
-    _centre(c, heading or DEFAULT_HEADING, height - 52 * mm, size=24, bold=True)
+    # ★ Round 9: "In-house training certificates should have the CRM logo
+    # centered on the top of the page, use the CRM logo found on the admin
+    # panel, company settings." Scaled to fit 70 × 20 mm, keeping its shape;
+    # everything below moves down to make room.
+    top = height
+    logo = _logo(logo_data_url)
+    if logo is not None:
+        w, h = logo.getSize()
+        scale = min(LOGO_MAX_W / w, LOGO_MAX_H / h)
+        lw, lh = w * scale, h * scale
+        c.drawImage(logo, (width - lw) / 2, height - 20 * mm - lh, lw, lh, mask="auto")
+        top = height - 14 * mm
 
-    _centre(c, "This is to certify that", height - 72 * mm, size=11, colour=MUTED)
-    _centre(c, person_name, height - 90 * mm, size=20, bold=True)
+    _centre(c, plant_name, top - 34 * mm, size=11, colour=MUTED)
+    _centre(c, heading or DEFAULT_HEADING, top - 52 * mm, size=24, bold=True)
 
-    _centre(c, body or DEFAULT_BODY, height - 106 * mm, size=11, colour=MUTED)
+    _centre(c, "This is to certify that", top - 70 * mm, size=11, colour=MUTED)
+    _centre(c, person_name, top - 87 * mm, size=20, bold=True)
+
+    _centre(c, body or DEFAULT_BODY, top - 102 * mm, size=11, colour=MUTED)
 
     course_line = f"{course_name} ({course_code})" if course_code else course_name
-    _centre(c, course_line, height - 124 * mm, size=15, bold=True)
+    _centre(c, course_line, top - 119 * mm, size=15, bold=True)
 
     dated = f"Completed {completed_on:%d %B %Y}"
     if expires_on:
         dated += f"  ·  valid until {expires_on:%d %B %Y}"
-    _centre(c, dated, height - 138 * mm, size=11)
+    _centre(c, dated, top - 132 * mm, size=11)
 
     # ── The part that makes it checkable ────────────────────────────────────
     c.setStrokeColor(RULE)
