@@ -373,8 +373,9 @@ def distribute_residual_tax(invoice_tax: Decimal, lines: list) -> None:
 
 
 async def _next_invoice_ref(db: AsyncSession) -> str:
-    year = datetime.now(timezone.utc).strftime("%Y")
-    return await next_number(db, Invoice.internal_ref, f"INV-{year}-", width=4)
+    # The same INV-YYYY- sequence as every invoice, and the same never-reuse rule.
+    from app.crud.invoice import _next_ref
+    return await _next_ref(db)
 
 
 async def create_invoice(db: AsyncSession, payload, user_id: uuid.UUID) -> Invoice:

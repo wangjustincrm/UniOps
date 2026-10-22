@@ -1661,7 +1661,6 @@ async def delete_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
     _refuse_freight(inv)
     try:
-        await finance_sync.sync_ap_invoice(db, inv, token, void=True)
         # Complete all open match_invoice / review_match / resolve_exception tasks
         # before hard delete so no orphaned tasks reference a non-existent invoice.
         caller_id = uuid.UUID(user["sub"])
@@ -1679,8 +1678,13 @@ async def delete_invoice(
             t.completed_by = caller_id
         await db.flush()
         await invoice_crud.delete(db, inv)
+        # After the delete has flushed (so a refusal above never reaches
+        # Finance), before commit: Finance voids it or nothing is deleted.
+        await finance_sync.void_deleted_invoices(db, token)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    except finance_sync.FinanceVoidFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @router.post("/{invoice_id}/exception", response_model=InvoiceResponse)

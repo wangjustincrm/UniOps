@@ -113,15 +113,12 @@ async def test_upload_invoice_triggers_draft_sync(admin_client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_delete_invoice_triggers_void_sync(admin_client, monkeypatch):
-    import app.api.v1.invoices as invoices_api
-    calls = []
-    async def _spy(db, invoice, bearer_token, *, void=False):
-        calls.append({"void": void})
-    monkeypatch.setattr(invoices_api.finance_sync, "sync_ap_invoice", _spy)
-
+async def test_delete_invoice_triggers_void_sync(admin_client, finance_voids):
+    # A delete's void is no longer fail-open: it goes through
+    # finance_sync.void_deleted_invoices → finance_client.upsert_ap_invoice_strict
+    # (faked by conftest's finance_voids). See test_invoice_delete_voids_finance.py.
     v = await _make_vendor(admin_client, "VND-SYNC-DEL-01")
     inv = (await admin_client.post("/api/v1/invoices", json=_inv_payload(v["id"]))).json()
     r = await admin_client.delete(f"/api/v1/invoices/{inv['id']}")
     assert r.status_code == 204
-    assert any(c["void"] for c in calls)
+    assert [(p["source_invoice_id"], p["status"]) for p in finance_voids] == [(inv["id"], "void")]

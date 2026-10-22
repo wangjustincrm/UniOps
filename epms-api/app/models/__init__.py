@@ -32,3 +32,4 @@ from app.models.task import Task  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.vendor import Vendor  # noqa: F401
 from app.models.admin_audit_log import AdminAuditLog  # noqa: F401
+from app.models.document_counter import DocumentCounter  # noqa: F401
