@@ -1,9 +1,14 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.8
+**Version:** 2.9
 **Date:** 2026-10-21
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.9** (2026-10-21)
+
+- An EPMS invoice deleted in Data Maintenance now voids its AP invoice like any other delete (FIN-AP-03); EPMS refuses the delete when Finance cannot void it. Five AP invoices left behind by earlier Data Maintenance deletes were voided, and the ten EPMS invoices whose AP invoice they blocked were created (FIN-AP-08).
+- New maintenance script `scripts.reconcile_epms_ap` lists — and with `--apply` repairs — AP invoices whose EPMS invoice no longer exists, and EPMS invoices with no AP invoice (FIN-AP-08).
 
 **What changed in version 2.8** (2026-10-21)
 
@@ -317,11 +322,12 @@ Budget planning, the dashboard, catalog, factors and budget settings (including 
 |---|---|
 | FIN-AP-01 | EPMS (procurement) and OA (expense) push their vendor invoices into one AP table, keyed by source + source document. Statuses: draft, posted, partially paid, paid, void. |
 | FIN-AP-02 | A vendor + vendor invoice number is unique. A second one is refused with "duplicate vendor invoice". This is the anchor for reconciling against NC. |
-| FIN-AP-03 | When the source deletes an invoice: an AP row with no postings and no payment is removed; a posted one is voided and its accrual reversed. |
+| FIN-AP-03 | When the source deletes an invoice: an AP row with no postings and no payment is removed; a posted one is voided and its accrual reversed. EPMS sends this on every delete path, Data Maintenance included, and does not delete when Finance does not confirm (EPMS.md INV-DEL-001…003). |
 | FIN-AP-04 | **Accounts Payable page:** paginated list with vendor and vendor-invoice-number search. Exported invoices are hidden by default. Aging tab: vendor × currency, five buckets by due date. |
 | FIN-AP-05 | **Export to NC** (any finance role): select invoices and download the NC payable-module import workbook. One summary row per invoice — except a **courier invoice** (EPMS → Freight), which has one row per cost center from its matched lines, budget item CRM0150102, and tax rate 0 on a row with no tax; a courier invoice whose lines are not all assigned to a cost center is refused with a reason. All enumerations are NC codes. Expense account comes from cost centre / department. Dimensions come from the PR (EPMS), from the Direct PA paying it for an EPMS Direct invoice (refused with a reason while no live Direct PA lists it), or from the PA (OA). Zero tax-excluded amount and tax are written explicitly. The file imports into NC without being re-saved in Excel. NC assigns the document number; the file is named after the AP number. |
 | FIN-AP-06 | Draft or void invoices, and invoices without an accrual, are refused with reasons. Exported invoices are stamped with a batch. The UI asks for confirmation before re-exporting. |
 | FIN-AP-07 | Under the positioning, **AP balances are read from NC** (§9.2–9.5). The UniOps paid amount is not used for balances or cash flow, because NC payments do not flow back. |
+| FIN-AP-08 | **Reconciliation with EPMS** (`python -m scripts.reconcile_epms_ap`, dry run unless `--apply`). Finds AP invoices whose EPMS invoice no longer exists (voided by FIN-AP-03's rule) and EPMS invoices (`INV-YYYY-NNNN`) with no AP invoice (created as the normal flow would have: posted with accrual if matched or later, and, if paid, settled by replaying the paying PA's writeback). Each item is independent; one that still clashes on vendor + invoice number (FIN-AP-02) is reported for a person. Repeat runs change nothing. |
 
 ### 9.2 AP Reconciliation: where each UniOps invoice stands in NC
 

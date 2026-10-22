@@ -30,3 +30,33 @@ async def next_number(db: AsyncSession, column, prefix: str, width: int) -> str:
         if tail.isdigit():
             max_seq = max(max_seq, int(tail))
     return f"{prefix}{max_seq + 1:0{width}d}"
+
+
+async def next_number_never_reused(db: AsyncSession, column, prefix: str, width: int) -> str:
+    """next_number, except a number once issued is never issued again — not
+    even after its document is deleted. Same advisory lock; the highest value
+    ever issued per prefix is kept in document_counters (seeded by migration
+    id02 from the documents, Data Maintenance's delete log and Finance's AP
+    references, so numbers deleted before it existed stay retired too).
+
+    Used for invoice references, which Finance stores on its AP rows: a reused
+    reference made a deleted invoice's payable look like the live one's."""
+    from sqlalchemy.dialects.postgresql import insert
+
+    from app.models.document_counter import DocumentCounter
+
+    await db.execute(select(func.pg_advisory_xact_lock(func.hashtext(prefix))))
+    rows = (await db.execute(
+        select(column).where(column.like(f"{prefix}%"))
+    )).scalars().all()
+    plen = len(prefix)
+    max_seq = max((int(n[plen:]) for n in rows if n[plen:].isdigit()), default=0)
+    remembered = (await db.execute(
+        select(DocumentCounter.last_value).where(DocumentCounter.prefix == prefix)
+    )).scalar_one_or_none() or 0
+    seq = max(max_seq, remembered) + 1
+    await db.execute(
+        insert(DocumentCounter).values(prefix=prefix, last_value=seq)
+        .on_conflict_do_update(index_elements=[DocumentCounter.prefix],
+                               set_={"last_value": seq}))
+    return f"{prefix}{seq:0{width}d}"

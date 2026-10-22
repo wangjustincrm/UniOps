@@ -252,6 +252,20 @@ def _patch_mdm_client(monkeypatch):
     FakeMdmClient.suppliers = {}
     yield
 
+@pytest.fixture(autouse=True)
+def finance_voids(monkeypatch):
+    """No finance-api in tests. Deleting an invoice must have Finance void it
+    (app.services.finance_sync) — by default that succeeds and is recorded
+    here; a test that wants Finance to refuse replaces the function itself."""
+    from app.services import finance_client
+    sent: list[dict] = []
+
+    async def _ok(*, payload, bearer_token):
+        sent.append(payload)
+        return None
+    monkeypatch.setattr(finance_client, "upsert_ap_invoice_strict", _ok)
+    yield sent
+
 # ── Test DB ────────────────────────────────────────────────────────────────────
 # Requires a pre-created database. Run once:
 #   python -m scripts.create_test_db

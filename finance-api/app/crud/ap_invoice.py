@@ -39,6 +39,22 @@ async def delete_invoice(db: AsyncSession, inv: ApInvoice) -> None:
     await db.flush()
 
 
+async def void_for_deleted_source(db: AsyncSession, inv: ApInvoice) -> str:
+    """The source system deleted this invoice. An AP row that never touched
+    the GL and was never paid is just noise — remove it ("deleted"). A posted
+    one stays for the audit trail, voided, with its accrual reversed out of the
+    GL ("voided"). The one rule for POST /ap/invoices status=void and for
+    scripts.reconcile_epms_ap."""
+    from app.crud.ap_accrual import has_postings, reverse_invoice_accrual
+    if not await has_postings(db, inv.id) and inv.paid_amount == Decimal("0"):
+        await delete_invoice(db, inv)
+        return "deleted"
+    inv.status = VOID
+    await reverse_invoice_accrual(db, inv.id)
+    await db.flush()
+    return "voided"
+
+
 async def upsert(db: AsyncSession, *, source: str, source_invoice_id: uuid.UUID,
                  payload: dict, tax_lines: list[dict]) -> ApInvoice:
     """Create or update an AP invoice keyed on (source, source_invoice_id).

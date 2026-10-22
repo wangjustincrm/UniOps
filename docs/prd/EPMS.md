@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.36
+**Version:** 2.37
 **Date:** 2026-10-21
 **Status:** In Production
+
+> **v2.37 (2026-10-21)** — Deleting an invoice — from the Invoices page, Freight, or Data Maintenance (also inside a PO/PR/agreement cascade) — voids its Finance AP record in the same step, or nothing is deleted (INV-DEL-001…003). Data Maintenance used to tell Finance nothing, which left five AP records for deleted invoices. An invoice reference is never issued twice, even after the newest invoice is deleted (INV-005).
 
 > **v2.36 (2026-10-21)** — Duplicate invoices (INV-004, INV-004a…f): the rule is enforced by the server on every path that sets an invoice's vendor or number (upload, edit, courier upload) against **every** invoice — the upload form used to compare only against the invoices its user could see, and nine duplicates got in through PO-scoped requesters. Numbers compare by a key (letters and digits only, case-insensitive, leading zeros ignored); a number with no letter or digit is refused; a database unique index backs the rule. The 5 invoices that were already duplicates stay, exempt from the index only.
 
@@ -1853,7 +1855,10 @@ Variance check (§3.14.3) → `matched` / `exception`
 | **INV-004d** | **Every path.** Upload (PO, agreement and Direct), invoice edit when the number's key changes, and the courier upload all apply INV-004…004c and answer 409 naming the existing invoice (its reference and status). Re-saving an invoice with its own number unchanged is never a duplicate. |
 | **INV-004e** | **The form warns as you type.** Upload Invoice asks the server (`GET /invoices/duplicate-check`) once a vendor and number are entered, shows the reason under the number, and will not submit while the check is running or has found a duplicate. The check covers invoices the user cannot open; it reveals only the existing invoice's reference and status. |
 | **INV-004f** | **Database guard.** A unique index on (vendor, invoice key) makes the rule hold for simultaneous uploads and any writer that bypasses the API. Invoices that were already duplicates when it was introduced (5 in production, 2026-10-21) are marked exempt from the index only — they still block a new upload of their number. |
-| **INV-005** | Invoice reference is system-generated: `INV-YYYY-NNNN` (next number = highest existing suffix + 1, so a deleted invoice can never cause a collision). |
+| **INV-005** | Invoice reference is system-generated: `INV-YYYY-NNNN`, the next number never issued in that year. A number is never issued twice — not even after its invoice is deleted — because Finance keeps it as the AP record's reference. Numbers deleted before 2026-10-21 stay retired too (taken from the invoices, the Data Maintenance delete log and Finance's AP references). |
+| **INV-DEL-001** | Deleting an invoice voids its Finance AP record in the same step: one never posted is removed; one posted (accrued at match) is voided and its accrual reversed (FINANCE.md FIN-AP-03). This holds on every delete path: the Invoices page, Freight, and Data Maintenance — single, bulk, and an invoice removed inside a PO, PR or agreement cascade. |
+| **INV-DEL-002** | If Finance cannot void it, nothing is deleted: the delete is refused (502) naming the invoice, and the record and its audit entry are rolled back. A delete EPMS itself refuses (e.g. an invoice in payment) never reaches Finance. |
+| **INV-DEL-003** | A delete path that does not void in Finance cannot commit: the service refuses the commit, so a future delete path cannot silently leave an AP record behind. |
 | **INV-006** | On create, if the effective tax rate (tax ÷ pre-tax) matches exactly one active tax code within ±0.5 percentage points, a tax line with that code is pre-filled; otherwise the invoice is left uncoded (never guessed). |
 | **INV-007** | Every invoice is mirrored to Finance AP: draft while `unmatched`/`exception`, posted once `matched`, voided on delete. |
 | **INV-008** | *Retired.* An invoice is no longer limited to one PO — see INV-MATCH-002. |

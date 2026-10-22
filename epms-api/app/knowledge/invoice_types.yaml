@@ -181,8 +181,21 @@ rules:
     answer: >
       The vendor's own invoice number is kept as typed. EPMS also gives every
       invoice an internal reference INV-YYYY-NNNN: the year it was entered, then
-      the next free number in that year.
-    enforced_in: "epms-api app/crud/invoice.py _next_ref"
+      the next number never used in that year. A reference is never given out
+      twice, even after its invoice is deleted.
+    enforced_in: "epms-api app/crud/invoice.py _next_ref → crud/_numbering.py next_number_never_reused (table document_counters, migration id02); PRD EPMS INV-005"
+  - id: invoice_delete_and_finance
+    asked_as:
+      - what happens in Finance when an invoice is deleted
+      - why can't I delete this invoice, it says Finance could not void
+    answer: >
+      Deleting an invoice — from the Invoices page, Freight or Data Maintenance,
+      including inside a PO, PR or agreement delete — also voids its record in
+      Finance Accounts Payable in the same step: one never posted is removed,
+      one posted at match is voided and its accrual reversed. If Finance cannot
+      confirm, nothing is deleted and the message names the invoice; try again
+      later. An invoice already in payment cannot be deleted at all.
+    enforced_in: "epms-api app/services/finance_sync.py void_deleted_invoices + before_commit guard; api/v1/invoices.py, api/v1/freight.py, api/v1/admin.py delete endpoints; finance-api crud/ap_invoice.py void_for_deleted_source; PRD EPMS INV-DEL-001…003, FINANCE FIN-AP-03"
   - id: invoice_duplicate_rule
     asked_as:
       - why can't I upload this invoice, it says duplicate
