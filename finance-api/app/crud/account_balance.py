@@ -919,13 +919,18 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
 
 
 async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
-                                 cost_center_id=None, cc_ids=None) -> dict:
+                                 cost_center_id=None, cc_ids=None,
+                                 include_unposted: bool = False) -> dict:
     """Bulk vendor (客商) breakdown for ALL predreal budget accounts in ONE query —
     the export equivalent of calling nc_partner_monthly per account. Same party
     attribution as nc_partner_monthly (line's own party, else the voucher's when
     unambiguous — see `_voucher_party`). Returns {account_id_str: [ {key,
     partner_id, partner_name, source, by_month{month:str}, year_total,
-    inferred_total} ... sorted by year_total desc ]}."""
+    inferred_total} ... sorted by year_total desc ]}.
+
+    `include_unposted` is the dashboard's checkbox, as in nc_actuals_monthly — the
+    vendor rows of an account must add up to that account's NC figure, so they
+    must count the same vouchers."""
     if cc_ids is not None and len(cc_ids) == 0:
         return {}
     from sqlalchemy.orm import aliased
@@ -945,7 +950,7 @@ async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
                     JournalVoucherLine.income_expense_item_id == BudgetAccount.id)
          .outerjoin(vp, vp.c.jv_id == JournalVoucherLine.jv_id))
     q = _budget_account_join(q, fn_codes, by_code)
-    q = q.where(JournalVoucher.status == POSTED,
+    q = q.where(status_filter(include_unposted),
                 JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
                 JournalVoucherLine.account_code.in_(accts),
                 JournalVoucherLine.local_debit != 0)

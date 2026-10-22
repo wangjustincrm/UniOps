@@ -1216,7 +1216,7 @@ OPM and Procurement Manager do not have company-wide budget view (decision 2026-
 
 **Alerts:** accounts whose NC actual for the year reaches the over-budget threshold (red) or the warning threshold (amber) of their annual budget, using the thresholds in Budget Config (`CompanyConfig.budget_admin_config`); clicking an alert scrolls to and highlights the account. Thresholds drive display colours only — no budget alert emails are sent.
 
-**Monthly grid:** accounts grouped by L1 category (each group collapsible, with expand/collapse all), sorted by code; each month shows the plan amount and the NC actual (red when actual exceeds plan), with year totals, a sticky header and a Total row. An account can be expanded to show its NC actual by vendor/customer and month. *Export XLSX* downloads the grid.
+**Monthly grid:** accounts grouped by L1 category (each group collapsible, with expand/collapse all), sorted by code; each month shows the plan amount and the NC actual (red when actual exceeds plan), with year totals, a sticky header and a Total row. An account can be expanded to show its NC actual by vendor/customer and month. *Export XLSX* downloads the grid; ticking *Expand vendor* beside it adds each account's vendor rows to the file (BUDGET.md BDASH-006).
 
 **Exclusions:** Payroll (CRM007), Depreciation (CRM004) and shut-down loss (CRM09912) are not shown — they are tracked at category level only.
 
