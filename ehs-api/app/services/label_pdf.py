@@ -374,11 +374,19 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
 
 
 def _statement(entry) -> str:
-    """One hazard or precautionary statement as a line of text."""
+    """One hazard or precautionary statement as a line of text.
+
+    ★ Round 9, TC-01: "remove the hazard statement and precautionary
+    numberings from the label. they do not need to print … leave the
+    statements as is." The wording only; the code (H302, P210) is printed
+    only for a statement that has no wording, where it is all there is.
+    """
     if isinstance(entry, dict):
-        code = entry.get("code")
-        text = entry.get("text") or ""
-        return f"{code} {text}".strip() if code else str(text)
+        code = (entry.get("code") or "").strip()
+        text = (entry.get("text") or "").strip()
+        if text and code and text.startswith(code):
+            text = text[len(code):].lstrip(" :-—")
+        return text or code
     return str(entry)
 
 

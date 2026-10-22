@@ -255,9 +255,30 @@ class TestTheLabelFitsWhatIsOnIt:
                                                   size=size, sds_available=True)
         drawn = _pdf_text_sizes(pdf)
         body = [(pt, t) for pt, t in drawn
-                if t.startswith(("P2", "PPE", "FIRST AID", "MANUFACTURER", "Acme", "Rinse"))]
+                if t.startswith(("Wear", "PPE", "FIRST AID", "MANUFACTURER", "Acme", "Rinse"))]
         assert body, "the body text was not found"
         assert min(pt for pt, _ in body) == pytest.approx(smallest), body
+
+    def test_the_statements_print_without_their_codes(self):
+        """★ Round 9, TC-01: "remove the hazard statement and precautionary
+        numberings from the label … leave the statements as is." """
+        from app.services import label_pdf
+
+        lbl = self._label(
+            hazard_statements=[{"code": "H302", "text": "Harmful if swallowed."},
+                               {"code": "H272", "text": ""}],
+            precautionary_statements=[
+                {"code": "P301+P310", "text": "IF SWALLOWED: Immediately call a POISON CENTER."},
+                {"code": "P210", "text": "P210 Keep away from heat."}])
+        pdf, _, _ = label_pdf.render_with_omitted(lbl, chemical_id="abc", copies=1,
+                                                  size="sheet", sds_available=True)
+        text = _pdf_text(pdf)
+        assert "Harmful if swallowed." in text and "Keep away from heat." in text
+        assert "IF SWALLOWED" in text
+        for code in ("H302", "P301", "P310", "P210"):
+            assert code not in text, code
+        # A statement with no wording keeps its code: it is all there is.
+        assert "H272" in text
 
     def test_precautions_go_before_hazards(self):
         from app.services import label_pdf
