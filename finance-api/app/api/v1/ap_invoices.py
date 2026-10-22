@@ -14,7 +14,7 @@ from app.core.deps import _FINANCE_ROLES, CurrentUser
 from app.core.list_sort import SortDir, lower, order_by
 from app.crud import ap_invoice as crud
 from app.crud import payment_execute
-from app.crud.ap_accrual import has_postings, post_invoice_accrual, reverse_invoice_accrual
+from app.crud.ap_accrual import post_invoice_accrual, reverse_invoice_accrual
 from app.db.base import get_db
 from app.models.ap_invoice import OPEN_STATUSES, POSTED, VOID, ApInvoice
 
@@ -132,13 +132,10 @@ async def upsert_invoice(body: UpsertIn, user: CurrentUser, db: AsyncSession = D
                                        source_invoice_id=body.source_invoice_id)
         if inv is None:
             return None
-        if not await has_postings(db, inv.id) and inv.paid_amount == Decimal("0"):
-            out = InvoiceOut.model_validate(inv)
-            await crud.delete_invoice(db, inv)
+        out = InvoiceOut.model_validate(inv)
+        if await crud.void_for_deleted_source(db, inv) == "deleted":
             await db.commit()
             return out
-        inv.status = VOID
-        await reverse_invoice_accrual(db, inv.id)
         await db.commit()
         return inv
 
