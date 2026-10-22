@@ -63,6 +63,9 @@ export default function BudgetDashboard() {
   const [includeUnposted, setIncludeUnposted] = useState(true)
   const ncLabel = includeUnposted ? 'NC incl. unposted' : 'NC posted'
   const [exporting, setExporting] = useState(false)
+  // Export only: follow each budget account with its vendor rows (the inline
+  // drill, for every account at once). Does not change what the grid shows.
+  const [exportByVendor, setExportByVendor] = useState(false)
   const handleExport = async () => {
     setExporting(true)
     try {
@@ -72,8 +75,9 @@ export default function BudgetDashboard() {
           fiscal_year: fiscalYear,
           ...(ccId !== 'all' ? { cost_center_id: ccId } : {}),
           ...(includeUnposted ? { include_unposted: true } : {}),
+          ...(exportByVendor ? { expand_vendor: true } : {}),
         },
-        `budget-actual-FY${fiscalYear}.xlsx`,
+        `budget-actual-FY${fiscalYear}${exportByVendor ? '-by-vendor' : ''}.xlsx`,
       )
     } catch {
       alert('Export failed. Please try again.')
@@ -319,6 +323,13 @@ export default function BudgetDashboard() {
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-neutral-900">Monthly Plan vs Actual</h2>
             <div className="flex items-center gap-2 text-xs">
+              <label className="inline-flex cursor-pointer select-none items-center gap-1 text-neutral-600"
+                     title="In the exported file, list each budget account's NC actual by vendor under the account row">
+                <input type="checkbox" checked={exportByVendor} disabled={exporting}
+                       onChange={(e) => setExportByVendor(e.target.checked)}
+                       className="h-3.5 w-3.5 cursor-pointer rounded border-neutral-300 accent-primary-600" />
+                Expand vendor
+              </label>
               <button type="button" onClick={handleExport} disabled={exporting}
                 className="rounded-md border border-primary-300 bg-white px-2.5 py-1 font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-50">
                 {exporting ? 'Exporting…' : 'Export XLSX'}

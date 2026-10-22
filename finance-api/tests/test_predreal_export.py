@@ -71,3 +71,52 @@ def test_grand_total():
     gt = next(r for r in rows if r and r[0] == "Grand Total")
     assert gt[3] == 100.0 and gt[4] == 80.0
     assert gt[27] == 1200.0 and gt[28] == 170.0
+
+
+# ── "Expand vendor": each account followed by its vendor breakdown ───────────
+
+def _build_expanded():
+    accounts, nc_monthly = _sample()
+    partners = {"a1": [
+        {"key": "v1", "partner_id": "v1", "partner_name": "Acme Freight", "source": "voucher",
+         "by_month": {"1": "50.00", "2": "90.00"}, "year_total": "140.00"},
+        {"key": "none", "partner_id": None, "partner_name": None, "source": "none",
+         "by_month": {"1": "30.00"}, "year_total": "30.00"},
+    ]}
+    wb = openpyxl.load_workbook(io.BytesIO(build_budget_actual_xlsx(
+        accounts=accounts, nc_monthly=nc_monthly, fiscal_year=2026,
+        cost_center_label="All Cost Centers", partners=partners)))
+    return wb.active
+
+
+def test_expanded_header_adds_vendor_columns():
+    rows = list(_build_expanded().iter_rows(values_only=True))
+    group = next(r for r in rows if r and r[0] == "Category")
+    assert group[:5] == ("Category", "Account Code", "Account Name", "Vendor", "Vendor Source")
+    assert group[5] == "Jan" and group[29] == "Year" and len(group) == 31
+
+
+def test_expanded_account_followed_by_its_vendors():
+    ws = _build_expanded()
+    rows = list(ws.iter_rows(values_only=True))
+    i = next(k for k, r in enumerate(rows) if r and r[1] == "5101010" and r[3] in (None, ""))
+    acct, v1, v2 = rows[i], rows[i + 1], rows[i + 2]
+    assert acct[5] == 100.0 and acct[6] == 80.0 and acct[30] == 170.0
+    # vendor rows repeat the account labels so an Account Code filter keeps them
+    assert v1[:5] == ("5101", "5101010", "Freight", "Acme Freight", "from voucher")
+    assert v1[5] is None and v1[6] == 50.0 and v1[8] == 90.0   # no plan per vendor
+    assert v1[29] is None and v1[30] == 140.0
+    assert v2[3] == "(no vendor — internal entry)" and v2[4] in (None, "")
+    assert v2[6] == 30.0 and v2[30] == 30.0
+    # collapsible under the account row
+    assert ws.row_dimensions[i + 2].outline_level == 1
+    assert ws.row_dimensions[i + 1].outline_level == 0
+    # an account with no NC actual has no vendor rows
+    assert sum(1 for r in rows if r and r[1] == "6601010") == 1
+
+
+def test_expanded_grand_total_counts_accounts_only():
+    rows = list(_build_expanded().iter_rows(values_only=True))
+    gt = next(r for r in rows if r and r[0] == "Grand Total")
+    assert gt[5] == 100.0 and gt[6] == 80.0
+    assert gt[29] == 1200.0 and gt[30] == 170.0
