@@ -300,6 +300,7 @@ async def _register_for_export(
         "instructor_name": ran.get(r.id, (None, None, None))[1],
         "length_minutes": ran.get(r.id, (None, None, None))[2],
         "recorded_by_name": r.recorded_by_name,
+        "provider": r.provider,
     } for r in rows]
     described = training_pdf.describe(
         search=search, completed_from=completed_from, completed_to=completed_to,

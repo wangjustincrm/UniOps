@@ -23,9 +23,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-HEADINGS = ("Person", "Course", "Completed", "Expires", "Length (minutes)", "Run by",
-            "Instructor", "Entered by")
-WIDTHS = (28, 34, 13, 13, 16, 24, 24, 24)
+HEADINGS = ("Person", "Course", "Completed", "Expires", "Length (minutes)", "Provider",
+            "Run by", "Instructor", "Entered by")
+WIDTHS = (28, 34, 13, 13, 16, 28, 24, 24, 24)
 
 HEADER_FILL = PatternFill("solid", fgColor="1F2937")
 HEADER_FONT = Font(color="FFFFFF", bold=True, size=10)
@@ -100,6 +100,7 @@ def render(*, rows: list[dict], filters: list[str], printed_by: str | None,
             r["completed_on"], r["expires_on"],
             # A number, so it adds up in Excel; empty where it is not known.
             r.get("length_minutes"),
+            r.get("provider") or "—",
             r["run_by_name"] or "—", r["instructor_name"] or "—",
             r["recorded_by_name"] or "—",
         )

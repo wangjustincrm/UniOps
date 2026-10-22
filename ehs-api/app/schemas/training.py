@@ -59,6 +59,8 @@ class TrainingRecordIn(BaseModel):
     # explicitly when the certificate on the desk says something else.
     expires_on: date | None = None
     delivery: str = Field(default="internal", pattern="^(internal|external)$")
+    # Who gave it, for training taken elsewhere (round 9).
+    provider: str | None = Field(default=None, max_length=200)
     certificate_file_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
@@ -79,6 +81,7 @@ class TrainingRecordOut(BaseModel):
     completed_on: date
     expires_on: date | None
     delivery: str
+    provider: str | None = None
     certificate_file_id: uuid.UUID | None
     recorded_by_name: str | None
     created_at: datetime

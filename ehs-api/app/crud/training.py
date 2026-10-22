@@ -116,6 +116,7 @@ async def record_training(
         completed_on=payload.completed_on,
         expires_on=expires_on,
         delivery=payload.delivery,
+        provider=(payload.provider or "").strip() or None,
         certificate_file_id=payload.certificate_file_id,
         recorded_by=recorded_by,
         recorded_by_name=await _name(db, recorded_by),

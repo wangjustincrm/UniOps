@@ -40,7 +40,7 @@ interface Session {
 interface Record_ {
   id: string; user_name: string; course_label: string; completed_on: string
   expires_on: string | null; delivery: string; recorded_by_name: string | null
-  certificate_file_id: string | null
+  certificate_file_id: string | null; provider?: string | null
 }
 
 const TABS = [
@@ -449,6 +449,7 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
                 <p className="mt-1 text-xs text-neutral-500">
                   Completed {formatDate(r.completed_on)}
                   {r.expires_on ? ` · expires ${formatDate(r.expires_on)}` : ' · does not expire'}
+                  {r.provider && ` · by ${r.provider}`}
                   {r.recorded_by_name && ` · entered by ${r.recorded_by_name}`}
                 </p>
                 <Certificate record={r} mayWrite={mayWrite} />
@@ -488,6 +489,8 @@ function NewRecordForm({ onClose, courseCode }: {
   const [completedOn, setCompletedOn] = useState(todayForInput())
   const [expiresOn, setExpiresOn] = useState(() => threeYearsLessADay(todayForInput()))
   const [delivery, setDelivery] = useState('external')
+  // ★ Round 9, TC-07: who gave it, printed and exported with the record.
+  const [provider, setProvider] = useState('')
   // ★ Round 8: the certificate chosen with the record, not afterwards on it.
   const [file, setFile] = useState<File | null>(null)
   // Once the record is saved, a failed upload must not save it a second time
@@ -522,6 +525,7 @@ function NewRecordForm({ onClose, courseCode }: {
           // Left blank, the server derives it from the course's validity period.
           expires_on: expiresOn || null,
           delivery,
+          provider: delivery === 'external' ? provider.trim() || null : null,
         })
         id = made.id
         setSavedId(id)
@@ -583,6 +587,13 @@ function NewRecordForm({ onClose, courseCode }: {
             <option value="internal">In house</option>
           </select>
         </Field>
+        {delivery === 'external' && (
+          <Field label="Provider" hint="Who gave the training">
+            <input className={inputClass} value={provider} disabled={locked} maxLength={200}
+                   onChange={(e) => setProvider(e.target.value)}
+                   placeholder="e.g. Workplace Safety & Prevention Services" />
+          </Field>
+        )}
         <Field label="Certificate" hint="Optional. A PDF or a photo of it">
           <input type="file" className="block min-h-[44px] w-full text-sm"
                  accept="application/pdf,image/png,image/jpeg,image/webp"

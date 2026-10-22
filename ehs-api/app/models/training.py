@@ -72,6 +72,10 @@ class TrainingRecord(UUIDPrimaryKey, TimestampMixin, Base):
     delivery: Mapped[str] = mapped_column(
         String(15), nullable=False, default="internal", server_default="internal",
     )
+    # ★ Round 9, TC-07: "when recording training with an outside provider,
+    # provide a space to enter the providers name and include that on the
+    # printed and exported records."
+    provider: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # ★ Which session produced it, where one did. The link rather than copies of
     # the coordinator and instructor names: both can be corrected after the fact
     # and a snapshot here would print the old spelling forever. A record entered

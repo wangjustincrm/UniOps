@@ -47,15 +47,18 @@ MARGIN = 14 * mm
 # and both come from the session the record points at — a record entered by hand
 # has no session and prints a dash, which is the honest answer rather than a
 # blank that reads as missing data.
+# ★ Round 9, TC-07: the provider of training taken elsewhere, beside who ran a
+# session here. Still adds up to the printable width (269 mm).
 COLUMNS: tuple[tuple[str, float], ...] = (
-    ("Person", 44),
-    ("Course", 54),
-    ("Completed", 23),
-    ("Expires", 23),
-    ("Length", 18),
-    ("Run by", 38),
-    ("Instructor", 38),
-    ("Entered by", 31),
+    ("Person", 42),
+    ("Course", 44),
+    ("Completed", 20),
+    ("Expires", 20),
+    ("Length", 13),
+    ("Provider", 40),
+    ("Run by", 30),
+    ("Instructor", 30),
+    ("Entered by", 30),
 )
 
 
@@ -179,6 +182,7 @@ def render(
             r["completed_on"],
             r["expires_on"],
             length_text(r.get("length_minutes")),
+            r.get("provider"),
             r["run_by_name"],
             r["instructor_name"],
             r["recorded_by_name"],

@@ -1057,3 +1057,37 @@ async def test_a_name_that_makes_a_taken_code_gets_another(hse_manager, courses)
     made = await client.post("/api/v1/training/courses", json={"name": "WHMIS!"})
     assert made.status_code in (200, 201), made.text
     assert made.json()["code"] == "WHMIS 2"
+
+
+async def test_the_provider_of_outside_training_is_kept_printed_and_exported(
+        hse_manager, worker, courses):
+    """★ Round 9, TC-07: "when recording training with an outside provider,
+    provide a space to enter the providers name and include that on the printed
+    and exported records." """
+    import io
+
+    from openpyxl import load_workbook
+    from tests.test_label_revision import _pdf_text
+
+    _, client = hse_manager
+    person, _ = worker
+    made = await client.post("/api/v1/training/records", json={
+        "user_id": str(person.id), "course_id": str(courses["forklift"].id),
+        "completed_on": TODAY.isoformat(), "delivery": "external",
+        "provider": "  Ontario Forklift Academy "})
+    assert made.status_code in (200, 201), made.text
+    assert made.json()["provider"] == "Ontario Forklift Academy"
+
+    listed = (await client.get(f"/api/v1/training/records?user_id={person.id}")).json()
+    assert [r["provider"] for r in listed] == ["Ontario Forklift Academy"]
+
+    sheet = load_workbook(io.BytesIO(
+        (await client.get(f"/api/v1/training/records/export?user_id={person.id}")).content)).active
+    rows = [[c.value for c in row] for row in sheet.iter_rows()]
+    head = next(r for r in rows if r and r[0] == "Person")
+    data = rows[rows.index(head) + 1]
+    assert data[head.index("Provider")] == "Ontario Forklift Academy"
+
+    printed = await client.get(f"/api/v1/training/records/print?user_id={person.id}")
+    text = _pdf_text(printed.content)
+    assert "PROVIDER" in text and "Ontario Forklift Academy" in text
