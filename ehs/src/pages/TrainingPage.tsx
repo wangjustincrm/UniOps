@@ -453,6 +453,9 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
                   {r.recorded_by_name && ` · entered by ${r.recorded_by_name}`}
                 </p>
                 <Certificate record={r} mayWrite={mayWrite} />
+                {/* Round 9: the record's own files, any number. */}
+                <MaterialsList base={`/api/v1/training/records/${r.id}/materials`}
+                               mayWrite={mayWrite} what="this record" />
               </Card>
             </li>
           ))}
@@ -499,8 +502,11 @@ function NewRecordForm({ onClose, courseCode }: {
   const [delivery, setDelivery] = useState('external')
   // ★ Round 9, TC-07: who gave it, printed and exported with the record.
   const [provider, setProvider] = useState('')
-  // ★ Round 8: the certificate chosen with the record, not afterwards on it.
-  const [file, setFile] = useState<File | null>(null)
+  // ★ Round 8: files chosen with the record, not afterwards on it. Round 9,
+  // question 6: "several files on a training record. all kinds of file types."
+  const [files, setFiles] = useState<File[]>([])
+  // Which of them reached the server, so a retry sends only the rest.
+  const [sent, setSent] = useState<string[]>([])
   // Once the record is saved, a failed upload must not save it a second time
   // when Save is pressed again — it retries the file alone.
   const [savedId, setSavedId] = useState<string | null>(null)
@@ -545,10 +551,13 @@ function NewRecordForm({ onClose, courseCode }: {
         id = made.id
         setSavedId(id)
       }
-      if (file) {
+      for (const f of files) {
+        const key = `${f.name}:${f.size}:${f.lastModified}`
+        if (sent.includes(key)) continue
         const body = new FormData()
-        body.append('file', file)
-        await api.upload(`/api/v1/training/records/${id}/certificate`, body)
+        body.append('file', f)
+        await api.upload(`/api/v1/training/records/${id}/materials`, body)
+        setSent((done) => [...done, key])
       }
     },
     onSuccess: () => {
@@ -606,17 +615,18 @@ function NewRecordForm({ onClose, courseCode }: {
                    placeholder="e.g. Workplace Safety & Prevention Services" />
           </Field>
         )}
-        <Field label="Certificate" hint="Optional. A PDF or a photo of it">
-          <input type="file" className="block min-h-[44px] w-full text-sm"
-                 accept="application/pdf,image/png,image/jpeg,image/webp"
-                 onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <Field label="Files"
+               hint="Optional. The certificate and anything else — any number, any document, picture or video">
+          <input type="file" multiple className="block min-h-[44px] w-full text-sm"
+                 onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
         </Field>
       </div>
 
       {locked && create.isError && (
         <p role="alert" className="mt-3 text-sm text-amber-800">
-          The training is saved; the certificate did not upload. Choose the file
-          again or press Attach to retry, or close and attach it from the record.
+          The training is saved; {files.length - sent.length} of {files.length} file
+          {files.length === 1 ? '' : 's'} did not upload. Press Attach to retry them, or close and
+          attach them from the record.
         </p>
       )}
       <ErrorNote error={create.error} />
@@ -625,7 +635,7 @@ function NewRecordForm({ onClose, courseCode }: {
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
         <button type="button" className={primaryButton}
                 disabled={!person.userId || !courseId || !completedOn || create.isPending
-                          || (locked && !file)}
+                          || (locked && files.length === sent.length)}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
           {create.isPending ? 'Saving…' : locked ? 'Attach' : 'Save'}
         </button>
@@ -757,7 +767,9 @@ function Certificate({ record, mayWrite }: { record: Record_; mayWrite: boolean 
   // would be making a claim that is not ours to make.
   const isOurs = record.delivery !== 'external'
 
-  if (!record.certificate_file_id && !mayWrite && !isOurs) return null
+  // ★ Round 9: files on a record taken elsewhere go in its file list below,
+  // any number; this slot stays only for a certificate already in it.
+  if (!record.certificate_file_id && !isOurs) return null
 
   return (
     <p className="mt-1 flex items-center gap-1.5 text-xs">

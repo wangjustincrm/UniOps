@@ -194,3 +194,63 @@ class TestASessionStartsWithACopy:
             assert (await c.post(f"/api/v1/course-sessions/{sid}/materials/link",
                                  json={"url": "https://example.com/v"})).status_code == 403
             assert (await c.get(f"/api/v1/course-sessions/{sid}/materials")).status_code == 403
+
+
+class TestFilesOnATrainingRecord:
+    """★ Round 9, question 6: "allow for several files on a training record.
+    all kinds of file types." """
+
+    async def _record(self, client, course, test_engine):
+        person = await make_user(test_engine, role="requester")
+        made = await client.post("/api/v1/training/records", json={
+            "user_id": str(person.id), "course_id": str(course.id),
+            "completed_on": date.today().isoformat(), "delivery": "external"})
+        assert made.status_code in (200, 201), made.text
+        return made.json()["id"], person
+
+    async def test_several_files_and_a_link(self, hse_manager, course, files, test_engine):
+        _, client = hse_manager
+        rid, _ = await self._record(client, course, test_engine)
+        base = f"/api/v1/training/records/{rid}/materials"
+        for name, ctype in (("certificate.pdf", "application/pdf"),
+                            ("wallet-card.jpg", "image/jpeg"),
+                            ("outline.docx",
+                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document")):
+            got = await client.post(base, files=_file(name, ctype))
+            assert got.status_code == 201, got.text
+        link = await client.post(f"{base}/link", json={"url": "https://example.com/c", "title": "Online"})
+        assert link.status_code == 201, link.text
+        listed = (await client.get(base)).json()
+        assert [m["filename"] for m in listed] == [
+            "certificate.pdf", "wallet-card.jpg", "outline.docx", "Online"]
+
+        # What can run is still refused.
+        assert (await client.post(base, files=_file("x.html", "text/html"))).status_code == 415
+
+        # Removing one leaves the others, and its file goes.
+        first = listed[0]
+        assert (await client.delete(f"{base}/{first['id']}")).status_code == 204
+        assert len((await client.get(base)).json()) == 3
+        assert len(files.deleted) == 1
+
+    async def test_a_file_belongs_to_its_own_record(self, hse_manager, course, files, test_engine):
+        _, client = hse_manager
+        one, _ = await self._record(client, course, test_engine)
+        two, _ = await self._record(client, course, test_engine)
+        made = (await client.post(f"/api/v1/training/records/{one}/materials",
+                                  files=_file("c.pdf", "application/pdf"))).json()
+        assert (await client.get(f"/api/v1/training/records/{two}/materials")).json() == []
+        wrong = await client.delete(f"/api/v1/training/records/{two}/materials/{made['id']}")
+        assert wrong.status_code == 404
+
+    async def test_an_employee_cannot_attach_to_a_record(self, hse_manager, worker, course, files,
+                                                        test_engine):
+        _, hse = hse_manager
+        _, client = worker
+        rid, _ = await self._record(hse, course, test_engine)
+        got = await client.post(f"/api/v1/training/records/{rid}/materials",
+                                files=_file("c.pdf", "application/pdf"))
+        assert got.status_code == 403
+        # The admission half: HSE can.
+        assert (await hse.post(f"/api/v1/training/records/{rid}/materials",
+                               files=_file("c.pdf", "application/pdf"))).status_code == 201

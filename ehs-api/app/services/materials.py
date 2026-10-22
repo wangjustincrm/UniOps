@@ -83,8 +83,8 @@ def _blocked(filename: str, ctype: str) -> bool:
 
 async def add_file(
     db: AsyncSession, file: UploadFile, *, course_id: uuid.UUID | None = None,
-    delivery_id: uuid.UUID | None = None, user_id: uuid.UUID, user_name: str | None,
-    token: str,
+    delivery_id: uuid.UUID | None = None, record_id: uuid.UUID | None = None,
+    user_id: uuid.UUID, user_name: str | None, token: str,
 ) -> CourseMaterial:
     data = await file.read()
     if len(data) > MAX_MATERIAL_SIZE:
@@ -104,9 +104,9 @@ async def add_file(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             f"'{name}' cannot be stored here. Attach {ACCEPTED} — or add a link to it.")
     row = CourseMaterial(
-        id=uuid.uuid4(), course_id=course_id, delivery_id=delivery_id,
+        id=uuid.uuid4(), course_id=course_id, delivery_id=delivery_id, record_id=record_id,
         file_id=await upload_to_file_server(
-            data, name, ctype, "ehs_crs", delivery_id or course_id, token),
+            data, name, ctype, "ehs_crs", delivery_id or course_id or record_id, token),
         filename=name, content_type=ctype, file_size=len(data),
         uploaded_by=user_id, uploaded_by_name=user_name,
     )
@@ -130,11 +130,12 @@ def check_url(url: str) -> str:
 
 async def add_link(
     db: AsyncSession, url: str, title: str | None, *, course_id: uuid.UUID | None = None,
-    delivery_id: uuid.UUID | None = None, user_id: uuid.UUID, user_name: str | None,
+    delivery_id: uuid.UUID | None = None, record_id: uuid.UUID | None = None,
+    user_id: uuid.UUID, user_name: str | None,
 ) -> CourseMaterial:
     url = check_url(url)
     row = CourseMaterial(
-        id=uuid.uuid4(), course_id=course_id, delivery_id=delivery_id,
+        id=uuid.uuid4(), course_id=course_id, delivery_id=delivery_id, record_id=record_id,
         url=url, filename=(title or "").strip()[:255] or urlparse(url).netloc,
         content_type="text/uri-list", file_size=0,
         uploaded_by=user_id, uploaded_by_name=user_name,

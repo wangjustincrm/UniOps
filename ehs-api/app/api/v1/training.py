@@ -599,3 +599,69 @@ async def delete_expiry_rule(
     await db.delete(await _rule(db, rule_id))
     await db.flush()
     return Response(status_code=204)
+
+
+# ── Files on a training record (round 9, question 6) ─────────────────────────
+# "allow for several files on a training record. all kinds of file types." The
+# same list as a course's material — any file but a page or a program, or a
+# link — held by the record. Read and written under the certificate's keys.
+
+
+async def _record_material(db, record_id: uuid.UUID, material_id: uuid.UUID) -> CourseMaterial:
+    row = await db.get(CourseMaterial, material_id)
+    if row is None or row.record_id != record_id:
+        raise HTTPException(404, "No such file on this record")
+    return row
+
+
+@router.get("/records/{record_id}/materials", response_model=list[MaterialOut])
+async def list_record_materials(
+    record_id: uuid.UUID, db: SessionDep, user: CanReadTraining,  # noqa: ARG001
+):
+    await crud.get_training_record(db, record_id)
+    return list((await db.execute(
+        select(CourseMaterial).where(CourseMaterial.record_id == record_id)
+        .order_by(CourseMaterial.created_at))).scalars().all())
+
+
+@router.post("/records/{record_id}/materials", response_model=MaterialOut,
+             status_code=status.HTTP_201_CREATED)
+async def add_record_material(
+    record_id: uuid.UUID, file: UploadFile,
+    db: SessionDep, user: CanWriteTraining, token: BearerToken,
+):
+    record = await crud.get_training_record(db, record_id)
+    return await materials.add_file(
+        db, file, record_id=record.id, user_id=_user_id(user),
+        user_name=await _resolve_name(db, _user_id(user)), token=token)
+
+
+@router.post("/records/{record_id}/materials/link", response_model=MaterialOut,
+             status_code=status.HTTP_201_CREATED)
+async def add_record_link(
+    record_id: uuid.UUID, payload: LinkIn, db: SessionDep, user: CanWriteTraining,
+):
+    record = await crud.get_training_record(db, record_id)
+    return await materials.add_link(
+        db, payload.url, payload.title, record_id=record.id, user_id=_user_id(user),
+        user_name=await _resolve_name(db, _user_id(user)))
+
+
+@router.get("/records/{record_id}/materials/{material_id}")
+async def download_record_material(
+    record_id: uuid.UUID, material_id: uuid.UUID,
+    db: SessionDep, user: CanReadTraining, token: BearerToken,  # noqa: ARG001
+):
+    row = await _record_material(db, record_id, material_id)
+    if row.file_id is None:
+        raise HTTPException(409, f"{row.filename} is a link: {row.url}")
+    return await proxy_download(row.file_id, token)
+
+
+@router.delete("/records/{record_id}/materials/{material_id}",
+               status_code=status.HTTP_204_NO_CONTENT)
+async def remove_record_material(
+    record_id: uuid.UUID, material_id: uuid.UUID,
+    db: SessionDep, user: CanWriteTraining, token: BearerToken,  # noqa: ARG001
+):
+    await materials.remove(db, await _record_material(db, record_id, material_id), token)

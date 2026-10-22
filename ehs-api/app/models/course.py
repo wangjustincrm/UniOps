@@ -145,7 +145,9 @@ class CourseMaterial(UUIDPrimaryKey, Base):
 
     __tablename__ = "ehs_course_materials"
     __table_args__ = (
-        CheckConstraint("num_nonnulls(course_id, delivery_id) = 1",
+        # ★ Round 9, question 6: a training record is the third owner — "allow
+        # for several files on a training record. all kinds of file types."
+        CheckConstraint("num_nonnulls(course_id, delivery_id, record_id) = 1",
                         name="ck_ehs_course_material_owner"),
         CheckConstraint("num_nonnulls(file_id, url) = 1",
                         name="ck_ehs_course_material_kind"),
@@ -157,6 +159,10 @@ class CourseMaterial(UUIDPrimaryKey, Base):
     )
     delivery_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ehs_course_deliveries.id", ondelete="CASCADE"),
+        nullable=True, index=True,
+    )
+    record_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_training_records.id", ondelete="CASCADE"),
         nullable=True, index=True,
     )
     file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
