@@ -102,8 +102,9 @@ def test_expanded_account_followed_by_its_vendors():
     i = next(k for k, r in enumerate(rows) if r and r[1] == "5101010" and r[3] in (None, ""))
     acct, v1, v2 = rows[i], rows[i + 1], rows[i + 2]
     assert acct[5] == 100.0 and acct[6] == 80.0 and acct[30] == 170.0
-    # vendor rows repeat the account labels so an Account Code filter keeps them
-    assert v1[:5] == ("5101", "5101010", "Freight", "Acme Freight", "from voucher")
+    # vendor rows leave the account labels empty: the account reads once above them
+    assert v1[3:5] == ("Acme Freight", "from voucher")
+    assert all(c in (None, "") for c in v1[:3]) and all(c in (None, "") for c in v2[:3])
     assert v1[5] is None and v1[6] == 50.0 and v1[8] == 90.0   # no plan per vendor
     assert v1[29] is None and v1[30] == 140.0
     assert v2[3] == "(no vendor — internal entry)" and v2[4] in (None, "")
@@ -112,7 +113,8 @@ def test_expanded_account_followed_by_its_vendors():
     assert ws.row_dimensions[i + 2].outline_level == 1
     assert ws.row_dimensions[i + 1].outline_level == 0
     # an account with no NC actual has no vendor rows
-    assert sum(1 for r in rows if r and r[1] == "6601010") == 1
+    k = next(k for k, r in enumerate(rows) if r and r[1] == "6601010")
+    assert k + 1 == len(rows) or rows[k + 1][3] in (None, "")
 
 
 def test_expanded_grand_total_counts_accounts_only():

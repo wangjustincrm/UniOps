@@ -14,8 +14,9 @@ Source column are added after Account Name, and every account row is followed by
 one row per vendor carrying that vendor's NC actual — the same breakdown the
 dashboard shows when an account is expanded. Plan is per account, never per
 vendor, so vendor rows leave the Plan columns empty. The vendor rows are an Excel
-outline level under their account (collapsible) and repeat the account's
-category/code/name so a filter on Account Code keeps them. They do not count
+outline level under their account (collapsible) and leave Category / Account
+Code / Account Name empty, so the account reads once with its vendors indented
+under it. They do not count
 toward the Grand Total: the account row above them already holds their sum.
 """
 from __future__ import annotations
@@ -149,7 +150,7 @@ def build_budget_actual_xlsx(*, accounts: list[dict[str, Any]],
             name = p.get("partner_name")
             source = p.get("source", "")
             p_months = [_month(p.get("by_month") or {}, m) for m in range(1, 13)]
-            money_row([*acct_labels,
+            money_row(["", "", "",
                        name or _NO_VENDOR_LABEL.get(source, "(no vendor)"),
                        _SOURCE_LABEL.get(source, "") if name else "",
                        *_interleave([None] * 12, p_months), None, sum(p_months)],
