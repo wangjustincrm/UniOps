@@ -14,10 +14,17 @@ what_it_is: >
   invoices and the receipts that justify the payment, goes through approval,
   and on approval becomes a remittance.
 
+# ISS-0066: this used to say the type is "driven by the purchase order: a PO
+# marked prepayment required needs a prepayment PA first", and the Assistant
+# concluded a vendor cannot be prepaid because its old PRs had the flag off.
+# create_pa never reads is_prepaid; the vendor's cap decides (rule
+# prepayment_cap).
 how_types_are_set: >
-  Set when the PA is created, and driven by the purchase order: a PO marked
-  "prepayment required" is paid before delivery and needs a prepayment PA
-  first, then a settlement once the goods or the invoice arrive.
+  Chosen by the person creating the PA. The form offers Prepayment and
+  Settlement only for a single PO marked Prepaid; otherwise it offers Regular.
+  Whether a prepayment is allowed at all is decided by the vendor's Max
+  Prepayment % (or, when the vendor has none, the system cap in Prepayment
+  Config) — never by the Prepaid flag on past PRs or POs.
 
 question_hints:
   - what types of payment application are there
@@ -33,8 +40,14 @@ values:
       The default. Use it whenever the vendor is paid after delivery against an
       invoice you have already matched.
     notes:
-      - Needs receipt evidence behind it; a PO with nothing received cannot be
-        paid this way.
+      - >-
+        On a PO it needs receipt evidence (a goods receipt, or a received
+        quantity on one of the PO's lines) unless a user with the "Override
+        Receipt on PA" permission overrides that check and gives a reason. On an
+        agreement there is no receipt check or override; the agreement's
+        invoice checks apply instead (receipts attached or settled without
+        evidence for a house account, the period's service confirmed for a
+        recurring agreement).
       - >-
         A PA raised against purchase orders can pay several invoices from the
         same vendor, but only if they fall due within 7 days of each other;
@@ -108,23 +121,5 @@ values:
 # ── Rules people ask about ───────────────────────────────────────────────────
 # "被拒绝的付款申请是什么状态？" searched status = rejected, found nothing and
 # answered that there were no rejected PAs — nine existed (ISS-0008).
-rules:
-  - id: rejected_pa_is_cancelled
-    asked_as:
-      - what status does a rejected payment application have
-      - 被拒绝的付款申请是什么状态
-      - are there rejected PAs
-    answer: >
-      A rejected payment application gets status Cancelled, not Rejected — the
-      approval engine sets cancelled for every PA rejection. So filtering PAs by
-      Rejected finds nothing; to find rejected ones, look for Cancelled PAs whose
-      history has a Reject. (Purchase requests and orders, by contrast, do get
-      status Rejected.)
-    enforced_in: "approval-api app/crud/engine.py execute_action reject: cancelled for pa / pa_dir (pinned by approval-api tests/test_engine_multiholder_approve.py)"
-  - id: pa_numbering
-    asked_as:
-      - how are PA numbers generated
-    answer: >
-      PA-YYYYMMDD-NNNN: the date it was created, then a 4-digit sequence that
-      restarts each day. The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
-    enforced_in: "epms-api app/crud/pa.py _next_number"
+
+# The rules people ask about live in rules/pa.yaml (app/services/rule_registry.py).

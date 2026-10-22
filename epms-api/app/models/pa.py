@@ -1,10 +1,11 @@
 """ORM models for Payment Application (PA) and its line items."""
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, cast, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -102,6 +103,22 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     # Set once when the PA reaches approved (approval engine). Dashboards key
     # "Approved Today" on it rather than the onupdate-bumped updated_at.
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # The payment date as Finance recorded it (ISS-0043, ISS-0072). finance-api
+    # payment_execute stores the chosen payment DATE as midnight UTC, so read
+    # in plant time it falls on the evening before; the UTC calendar date is
+    # the date that was entered. The instance side feeds PaResponse.paid_on
+    # (PA Detail's "Payment Processed"), the expression side the Assistant.
+    @hybrid_property
+    def paid_on(self) -> date | None:
+        if self.paid_at is None:
+            return None
+        return self.paid_at.astimezone(timezone.utc).date()
+
+    @paid_on.inplace.expression
+    @classmethod
+    def _paid_on_expression(cls):
+        return cast(func.timezone("UTC", cls.paid_at), Date)
 
     # Prepayment fields
     prepayment_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)

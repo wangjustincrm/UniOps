@@ -35,8 +35,12 @@ entities:
     perm_key: view_pr
     scope: pr
     date_field: created_at
+    amount_excludes:
+      field: status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out cancelled, rejected and draft requisitions (no status was asked about)"
     fields:
-      number: {kind: text, label: "PR number"}
+      number: {kind: text, doc_number: PR, label: "PR number"}
       title: {kind: text, label: "Title"}
       # The stored code and what it means. Duplicated today in two front-end
       # tables that have already drifted (PrEditPage says "Raw Mat./Pack.",
@@ -54,6 +58,15 @@ entities:
           4: "Service"
           5: "Fixed Asset"
           6: "Project"
+        # Added under every answer that lists the types (ISS-0008); pinned by
+        # the rule-registry card it names.
+        when_listed:
+          rule: type_1_not_selectable
+          note: "Type 1 (Raw Materials / Packaging) cannot be chosen when
+            creating a PR in EPMS: its tile is disabled, because raw-material
+            and packaging purchasing runs in NC and those orders are mirrored
+            into EPMS."
+          zh: "第 1 类（原材料/包装，Raw Materials / Packaging）在 EPMS 创建请购单时不能选择：该选项是禁用的，因为原材料和包装采购在 NC 中进行，相关订单从 NC 镜像到 EPMS。"
 
       # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
       # found values in the data the planner had never been told about.
@@ -81,11 +94,18 @@ entities:
       is_prepaid: {kind: bool, label: "Prepaid purchase"}
       over_budget: {kind: bool, label: "Exceeds its budget account"}
       submitted_at: {kind: datetime, label: "Submitted at"}
+      # ISS-0060: approval time lives only in the approval history.
+      approved_at:
+        kind: datetime
+        label: "When the PR was finally approved (its last approval), approved
+          PRs only. PMS-imported PRs carry a reconstructed history"
+      days_to_approve: {kind: money, label: "Days from submission to final approval (approved PRs with a submission time)"}
       created_at: {kind: datetime, label: "Created at"}
     metrics:
-      amount: {fn: sum, field: amount, label: "Total requested amount"}
+      amount: {fn: sum, field: amount, label: "Total requested amount", currency: currency}
       count: {fn: count, field: "*", label: "Number of PRs"}
-      avg_amount: {fn: avg, field: amount, label: "Average PR amount"}
+      avg_amount: {fn: avg, field: amount, label: "Average PR amount", currency: currency}
+      avg_days_to_approve: {fn: avg, field: days_to_approve, label: "Average days from submission to approval"}
     links:
       orders:
         target: purchase_order
@@ -150,8 +170,12 @@ entities:
     # real order_date column is backfilled, the assistant is told to say what
     # the axis means rather than pretend it means something else.
     date_field: created_at
+    amount_excludes:
+      field: status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out cancelled, rejected and draft purchase orders (no status was asked about)"
     fields:
-      number: {kind: text, label: "PO number"}
+      number: {kind: text, doc_number: PO, label: "PO number"}
       title: {kind: text, label: "Title"}
       # The stored code and what it means. Duplicated today in two front-end
       # tables that have already drifted (PrEditPage says "Raw Mat./Pack.",
@@ -172,6 +196,15 @@ entities:
           4: "Service"
           5: "Fixed Asset"
           6: "Project"
+        # Added under every answer that lists the types (ISS-0008); pinned by
+        # the rule-registry card it names.
+        when_listed:
+          rule: type_1_not_selectable
+          note: "Type 1 (Raw Materials / Packaging) cannot be chosen when
+            creating a PR in EPMS: its tile is disabled, because raw-material
+            and packaging purchasing runs in NC and those orders are mirrored
+            into EPMS."
+          zh: "第 1 类（原材料/包装，Raw Materials / Packaging）在 EPMS 创建请购单时不能选择：该选项是禁用的，因为原材料和包装采购在 NC 中进行，相关订单从 NC 镜像到 EPMS。"
 
       # The list used to be the six statuses of the EPMS approval flow. Orders
       # mirrored from NC — which is nearly all of type 1 — carry four more, and
@@ -187,39 +220,78 @@ entities:
       status:
         kind: enum
         label: "Status"
-        values: [draft, submitted, in_review, approved, rejected, issued,
-                 partially_received, fully_received, closed, cancelled,
+        values: [draft, submitted, in_review, approved, rejected, returned,
+                 issued, partially_received, fully_received, closed, cancelled,
                  nc_pending, nc_milk]
+        # label = the name the PO pages show (epms/src/components/ui/badge.tsx);
+        # note = for the planner and narrator only, never shown (ISS-0013).
         value_labels:
           draft: "Draft"
           submitted: "Submitted"
-          in_review: "In review"
+          in_review: "In Review"
           approved: "Approved"
           rejected: "Rejected"
-          issued: "Issued to the vendor and still open. Every open NC raw-material/packaging order sits here whatever has arrived — how much is received is on the lines (po_line.outstanding_qty), not in this status"
-          partially_received: "Partially received"
-          fully_received: "Fully received"
+          returned: {label: "Returned", note: "Returned to its creator for changes — not rejected"}
+          issued:
+            label: "Issued"
+            note: "The order has gone out and is still open: it was placed
+              (place_order_method email / online, or ordered in NC). For an
+              email order the system records that the email was sent, never
+              that it was delivered or read — say \"status Issued\" and how
+              it was placed, never that the vendor received it. Every open NC
+              raw-material/packaging order sits here whatever has arrived; how
+              much is received is on the lines, not in this status"
+          partially_received: "Partial Receipt"
+          fully_received: "Fully Received"
           closed: "Closed"
           cancelled: "Cancelled"
-          nc_pending: "Not yet approved in NC — of any trade type, milk included; a milk order only becomes nc_milk once NC approves it"
-          nc_milk: "Milk order (\"Milk type\") — an NC order of any trade type other than raw material/packaging; raw cow/goat milk, skim, evaporated milk. Received and stocked in NC by hand, so its received quantities here are not kept up to date"
+          nc_pending: {label: "NC Pending Approval", note: "Not yet approved in NC — of any trade type, milk included; a milk order only becomes nc_milk once NC approves it"}
+          nc_milk: {label: "Milk / NC", note: "Milk order (\"Milk type\") — an NC order of any trade type other than raw material/packaging; raw cow/goat milk, skim, evaporated milk. Received and stocked in NC by hand, so its received quantities here are not kept up to date"}
       total: {kind: money, label: "Total including tax"}
       subtotal: {kind: money, label: "Total before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
       currency: {kind: text, label: "Currency", enumerate: true}
       vendor_name: {kind: text, label: "Vendor name"}
       budget_code: {kind: text, label: "Budget account code"}
-      pr_number: {kind: text, label: "Originating PR number"}
+      pr_number: {kind: text, doc_number: PR, label: "Originating PR number"}
       expected_delivery: {kind: date, label: "Expected delivery date"}
       placed_at: {kind: datetime, label: "Date the order was placed with the vendor"}
+      # ISS-0045: how the order went out was recorded all along, but not here,
+      # so the answer was "EPMS has no record of it".
+      place_order_method:
+        kind: enum
+        label: "How the order was placed"
+        values: [email, online, nc]
+        value_labels:
+          email: "Emailed to the vendor from EPMS"
+          online: "Placed online, confirmed in EPMS"
+          nc: "Ordered in NC (mirrored PO)"
+      place_order_email_to: {kind: text, label: "Who the order email was sent to (email orders). Sending is recorded, delivery is not confirmed"}
+      place_order_reference: {kind: text, label: "Reference recorded when placing the order (portal order ID; the NC number for NC orders)"}
+      # Derived from the code that acts on them (core.po_facts, crud.pa_links);
+      # ISS-0036 / ISS-0060.
+      three_way_matched:
+        kind: bool
+        label: "Whether the PO is three-way matched: a matched invoice and
+          something received against it — the test a payment application
+          needs (INV-3WM-006)"
+      invoiced: {kind: bool, label: "Whether the PO has any invoice that is not cancelled"}
+      has_pa:
+        kind: bool
+        label: "Whether any payment application pays this PO (any status, as the
+          Create Payment Application task counts). \"No PA yet\" is has_pa =
+          false"
       is_prepaid: {kind: bool, label: "Prepaid order"}
       source: {kind: text, label: "Origin system (NC mirror or created here)", enumerate: true}
       created_at: {kind: datetime, label: "Created at"}
     metrics:
-      amount: {fn: sum, field: total, label: "Total ordered amount including tax"}
-      subtotal: {fn: sum, field: subtotal, label: "Total ordered amount before tax"}
+      amount: {fn: sum, field: total, label: "Total ordered amount including tax", currency: currency}
+      subtotal: {fn: sum, field: subtotal, label: "Total ordered amount before tax", currency: currency}
       count: {fn: count, field: "*", label: "Number of POs"}
-      avg_amount: {fn: avg, field: total, label: "Average PO value"}
+      avg_amount: {fn: avg, field: total, label: "Average PO value", currency: currency}
+      # ISS-0054: "how many vendors have orders" is a distinct count, not the
+      # number of order rows.
+      vendor_count: {fn: count_distinct, field: vendor_name, label: "Number of different vendors on these POs"}
     links:
       originating_pr:
         target: purchase_request
@@ -276,6 +348,10 @@ entities:
     # this the only date reachable is the header's, one hop away, and a period
     # filter would be silently dropped.
     date_field: order.created_at
+    amount_excludes:
+      field: order.status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out lines of cancelled, rejected and draft purchase orders (no status was asked about)"
     fields:
       po_id: {kind: uuid, internal: true}
       description: {kind: text, label: "Description"}
@@ -310,7 +386,7 @@ entities:
     metrics:
       count: {fn: count, field: "*", label: "Lines"}
       qty: {fn: sum, field: qty, label: "Quantity"}
-      value: {fn: sum, field: line_total, label: "Line value"}
+      value: {fn: sum, field: line_total, label: "Line value", currency: order.currency}
     links:
       order:
         target: purchase_order
@@ -327,6 +403,10 @@ entities:
     perm_key: view_pr
     scope: pr_line
     date_field: request.created_at
+    amount_excludes:
+      field: request.status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out lines of cancelled, rejected and draft requisitions (no status was asked about)"
     fields:
       pr_id: {kind: uuid, internal: true}
       description: {kind: text, label: "Description"}
@@ -340,7 +420,7 @@ entities:
     metrics:
       count: {fn: count, field: "*", label: "Lines"}
       qty: {fn: sum, field: qty, label: "Quantity"}
-      value: {fn: sum, field: line_total, label: "Line value"}
+      value: {fn: sum, field: line_total, label: "Line value", currency: request.currency}
     links:
       request:
         target: purchase_request
@@ -364,7 +444,7 @@ entities:
     date_field: received_at
     date_field_nullable_ok: true
     fields:
-      number: {kind: text, label: "GR number"}
+      number: {kind: text, doc_number: GR, label: "GR number"}
       title: {kind: text, label: "Title"}
       # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
       # found values in the data the planner had never been told about.
@@ -373,10 +453,25 @@ entities:
         label: "Status"
         values: [pending_ack, acknowledged, collection_pending, collected,
                  confirmed, cancelled]
-      po_number: {kind: text, label: "PO number"}
-      pr_number: {kind: text, label: "PR number"}
+      po_number: {kind: text, doc_number: PO, label: "PO number"}
+      pr_number: {kind: text, doc_number: PR, label: "PR number"}
       vendor_name: {kind: text, label: "Vendor name"}
-      gr_type: {kind: text, label: "Receipt type", enumerate: true}
+      gr_type:
+        kind: enum
+        label: "Receipt type. \"Goods\" means physical; a service confirmation
+          is not a receipt of goods"
+        values: [physical, service]
+        value_labels:
+          physical: "Goods received (physical)"
+          service: "Service confirmation"
+      # ISS-0058: "received more than 30 days ago with no invoice" was rebuilt
+      # from joins each time (1 / 116 / 48, all wrong). Both facts derived.
+      po_invoiced:
+        kind: bool
+        label: "Whether the receipt's PO has any invoice that is not cancelled
+          (on its header or by line allocation). \"Not invoiced yet\" is
+          po_invoiced = false"
+      days_since_received: {kind: int, label: "Days since it was received (plant-local dates)"}
       currency: {kind: text, label: "Currency", enumerate: true}
       storage_location: {kind: text, label: "Storage location"}
       received_by: {kind: text, label: "Received by"}
@@ -403,6 +498,12 @@ entities:
         local: id
         remote: gr_id
         label: "Invoices matched to this receipt"
+      lines:
+        target: gr_line
+        cardinality: one_to_many
+        local: id
+        remote: gr_id
+        label: "The lines of this receipt, with the quantities received"
 
   invoice:
     model: Invoice
@@ -413,8 +514,12 @@ entities:
     # uploaded it, whoever has an open task on it, and whoever matched it.
     scope: invoice
     date_field: invoice_date
+    amount_excludes:
+      field: status
+      values: [cancelled]
+      note: "Amounts leave out cancelled invoices (no status was asked about)"
     fields:
-      internal_ref: {kind: text, label: "Internal reference"}
+      internal_ref: {kind: text, doc_number: INV, label: "EPMS invoice number shown on the Invoices list, INV-YYYY-NNNN (e.g. INV-2026-0631). An INV- number is ALWAYS this field — the vendor's own number is vendor_invoice_number"}
       vendor_invoice_number: {kind: text, label: "Vendor's own invoice number"}
       vendor_name: {kind: text, label: "Vendor name"}
       # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
@@ -422,20 +527,38 @@ entities:
       status:
         kind: enum
         label: "Matching status"
-        values: [unmatched, match_review, matched, exception, paid, cancelled]
+        values: [unmatched, match_review, matched, exception, paid,
+                 partially_paid, cancelled]
+        # The names the Invoices list shows (InvoiceListPage STATUS_CFG), so a
+        # status column reads like the page (ISS-0013).
+        value_labels:
+          unmatched: "Unmatched"
+          match_review: {label: "Pending Review", note: "Matched, but waiting for AP to review the match before it counts as matched"}
+          matched: "Matched"
+          exception: {label: "Exception", note: "Billed more than a PO line's value beyond the match tolerance"}
+          paid: {label: "Paid", note: "Paid — set when Finance pays the payment application the invoice is on"}
+          # ISS-0059. The Invoices list has no name for it; PRD §3.15 / PAY-005.
+          partially_paid: {label: "Partially Paid", note: "Set when Finance pays a PREPAYMENT payment application the invoice is on: the advance is paid and the invoice stays an open item until settled. For an invoice on a paid prepayment PA this is the expected status, not a missing payment"}
+          cancelled: "Cancelled"
       amount: {kind: money, label: "Amount before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
       total_amount: {kind: money, label: "Total including tax"}
       currency: {kind: text, label: "Currency", enumerate: true}
       invoice_date: {kind: date, label: "Invoice date"}
       due_date: {kind: date, label: "Payment due date"}
-      po_number: {kind: text, label: "PO number this invoice bills against"}
+      # Added 2026-10-21 (ISS-0013): the Invoices page's Overdue filter.
+      overdue:
+        kind: bool
+        label: "Overdue and unpaid — exactly the Invoices page's Overdue filter:
+          due date before today (plant time) and status not paid. \"Overdue\",
+          \"逾期\", \"逾期未付\", \"past due\" invoices are overdue = true"
+      po_number: {kind: text, doc_number: PO, label: "PO number this invoice bills against"}
       gr_number:
         kind: text
         label: "Goods receipt number linked to the invoice. Empty does NOT mean
           not received — agreement invoices never have one. For received or not,
           use po_receipt_recorded"
-      agreement_number: {kind: text, label: "Agreement number, for agreement billing"}
+      agreement_number: {kind: text, doc_number: AGR, label: "Agreement number, for agreement billing"}
       # Added 2026-10-19 (ISS-0013).
       billed_against:
         kind: enum
@@ -453,13 +576,47 @@ entities:
           not received\" is status = matched AND billed_against = purchase_order
           AND po_receipt_recorded = false"
       uploaded_by_name: {kind: text, label: "Who uploaded it"}
-      created_at: {kind: datetime, label: "Created at"}
+      # ISS-0016 / ISS-0036: the match result is stored on the invoice; without
+      # these "does the invoice exceed the PO" was answered from the PO alone.
+      matched_at: {kind: datetime, label: "When it was matched"}
+      matched_by_name: {kind: text, label: "Who matched it"}
+      po_total: {kind: money, label: "PO total at the time of matching"}
+      matched_reference_total: {kind: money, label: "Pre-tax PO amount the invoice was matched against (the selected PO lines, or the whole PO)"}
+      variance:
+        kind: money
+        label: "Invoice pre-tax amount (Non-PO fee lines excluded) minus the PO
+          amount it was matched against. Positive = invoiced more than the PO;
+          negative = less (allowed). Each PO line is checked against the match
+          tolerance; over it, the invoice goes to exception"
+      variance_pct: {kind: money, label: "variance as a percent of the matched PO amount"}
+      exception_reason: {kind: text, label: "Why matching put it in exception"}
+      # ISS-0059: the PA an invoice is on (not cancelled), and its status.
+      pa_number: {kind: text, doc_number: PA, label: "The payment application this invoice is on (not cancelled); empty = on none"}
+      pa_status:
+        kind: enum
+        label: "Status of that payment application (processed = paid)"
+        values: [draft, submitted, in_review, approved, rejected, returned, processed, paid]
+      # Added 2026-10-21 (ISS-0059).
+      pa_payment_shown:
+        kind: bool
+        label: "For an invoice on a paid (processed) payment application:
+          whether the invoice's own status shows that payment — paid, or
+          partially_paid when the PA is a prepayment (what the payment
+          writes). Empty while its PA is not paid. \"Invoices of paid PAs
+          that do not show paid\" is pa_payment_shown = false"
+      created_at: {kind: datetime, label: "Uploaded at — when the invoice entered EPMS (the Invoices list's Upload Date); not the vendor's invoice date"}
     metrics:
-      total: {fn: sum, field: total_amount, label: "Total invoiced including tax"}
-      pre_tax: {fn: sum, field: amount, label: "Total invoiced before tax"}
+      total: {fn: sum, field: total_amount, label: "Total invoiced including tax", currency: currency}
+      pre_tax: {fn: sum, field: amount, label: "Total invoiced before tax", currency: currency}
       count: {fn: count, field: "*", label: "Number of invoices"}
-      avg_total: {fn: avg, field: total_amount, label: "Average invoice value"}
+      avg_total: {fn: avg, field: total_amount, label: "Average invoice value", currency: currency}
     links:
+      allocations:
+        target: invoice_allocation
+        cardinality: one_to_many
+        local: id
+        remote: invoice_id
+        label: "How the invoice is spread over PO lines, with each line's difference"
       order:
         target: purchase_order
         cardinality: many_to_one
@@ -481,8 +638,12 @@ entities:
     # PAs (source oa_direct) are not EPMS's rows at all.
     scope: pa
     date_field: created_at
+    amount_excludes:
+      field: status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out cancelled (incl. rejected) and draft payment applications (no status was asked about)"
     fields:
-      pa_number: {kind: text, label: "PA number"}
+      pa_number: {kind: text, doc_number: PA, label: "PA number"}
       title: {kind: text, label: "Title"}
       # Widened 2026-10-02: test_every_enum_value_in_the_database_is_declared
       # found values in the data the planner had never been told about.
@@ -490,9 +651,25 @@ entities:
         kind: enum
         label: "Status. A REJECTED payment application has status cancelled —
           the approval engine never writes rejected for a PA. To find rejected
-          PAs, look for cancelled ones; filtering on rejected finds none"
+          PAs, look for cancelled ones; filtering on rejected finds none. A PAID
+          payment application has status processed, never paid"
         values: [draft, submitted, in_review, approved, rejected, returned,
                  processed, cancelled, paid]
+        # ISS-0072 / ISS-0059 / ISS-0042: with bare values the planner matched
+        # "paid" to the legacy value `paid` and "waiting for payment" to
+        # in_review, and every payment question came back empty or wrong.
+        # label = the name the PA pages show (PaListPage STATUS_CFG); note =
+        # for the planner and narrator only (ISS-0013).
+        value_labels:
+          draft: {label: "Draft", note: "Draft — not submitted yet"}
+          submitted: {label: "Submitted", note: "Submitted — waiting for its first approver"}
+          in_review: {label: "In Review", note: "In approval — still being approved, not payable yet"}
+          approved: {label: "Approved", note: "Approved and awaiting payment — fully approved, the payment has not been made yet. \"Waiting to be paid\" means this"}
+          rejected: {label: "Rejected", note: "Legacy value from imported history; a PA rejected today is cancelled"}
+          returned: {label: "Returned", note: "Returned to its creator for changes"}
+          processed: {label: "Processed", note: "Paid — the payment was made in Finance (paid_on is the payment date). \"Paid\" and \"how much was paid\" mean this status"}
+          cancelled: {label: "Cancelled", note: "Cancelled — includes every PA an approver rejected"}
+          paid: {label: "Paid", note: "Legacy value from imported history, never written now. A paid PA is processed; use paid only together with processed"}
       pa_type:
         kind: enum
         label: "Payment type"
@@ -508,17 +685,24 @@ entities:
         values: [po, agreement, freight, direct, oa_direct]
       budget_account_code: {kind: text, label: "Budget account charged, for Direct PAs"}
       vendor_name: {kind: text, label: "Vendor name"}
-      po_number: {kind: text, label: "PO number being paid"}
-      agreement_number: {kind: text, label: "Agreement number, for agreement payments"}
+      po_number: {kind: text, doc_number: PO, label: "PO number being paid"}
+      agreement_number: {kind: text, doc_number: AGR, label: "Agreement number, for agreement payments"}
       subtotal: {kind: money, label: "Amount before tax"}
       tax_amount: {kind: money, label: "Tax amount"}
       payment_amount: {kind: money, label: "Amount to be paid"}
       currency: {kind: text, label: "Currency", enumerate: true}
       created_at: {kind: datetime, label: "Created at"}
+      submitted_at: {kind: datetime, label: "When it was submitted for approval"}
+      approved_at: {kind: datetime, label: "When it was fully approved"}
+      paid_on:
+        kind: date
+        label: "Payment date — the date Finance recorded the payment (status
+          processed). \"Paid last week\" and \"when was it paid\" filter or read
+          this, never created_at"
     metrics:
-      amount: {fn: sum, field: payment_amount, label: "Total requested for payment"}
+      amount: {fn: sum, field: payment_amount, label: "Total requested for payment", currency: currency}
       count: {fn: count, field: "*", label: "Number of payment applications"}
-      avg_amount: {fn: avg, field: payment_amount, label: "Average payment value"}
+      avg_amount: {fn: avg, field: payment_amount, label: "Average payment value", currency: currency}
     links:
       order:
         target: purchase_order
@@ -532,6 +716,13 @@ entities:
         local: agreement_id
         remote: id
         label: "The purchase agreement this PA pays against, for agreement payments"
+      payments:
+        target: payment_record
+        cardinality: one_to_many
+        local: id
+        remote: pa_id
+        label: "The payment(s) Finance executed for this PA — date, account, net
+          paid. Needs View Finance"
 
   # Added 2026-10-16 (ISS-0002): the Agreement detail page showed validity, NTE
   # and consumed, and the Assistant said none of it existed — one answer even
@@ -544,8 +735,12 @@ entities:
     perm_key: epms.agreement.read
     scope: agreement
     date_field: created_at
+    amount_excludes:
+      field: status
+      values: [cancelled, rejected, draft]
+      note: "Amounts leave out cancelled, rejected and draft agreements (no status was asked about)"
     fields:
-      number: {kind: text, label: "Agreement number, e.g. AGR-202608-0007"}
+      number: {kind: text, doc_number: AGR, label: "Agreement number, e.g. AGR-202608-0007"}
       title: {kind: text, label: "Title"}
       agreement_type:
         kind: enum
@@ -588,4 +783,403 @@ entities:
       created_at: {kind: datetime, label: "Created at"}
     metrics:
       count: {fn: count, field: "*", label: "Number of agreements"}
-      consumed: {fn: sum, field: consumed_amount, label: "Total consumed"}
+      consumed: {fn: sum, field: consumed_amount, label: "Total consumed", currency: currency}
+
+  # ── Added 2026-10-21 (issue review batch 2) ────────────────────────────────
+  # ISS-0031: "how much was received" was answered "GRs have no quantity" —
+  # the quantities are on the lines, which were not modelled.
+  gr_line:
+    model: GrLineItem
+    label: "Goods Receipt line — what was received on one receipt, per PO line:
+      quantity, condition. Reach the receipt (number, date, PO) through
+      `receipt`"
+    perm_key: view_gr
+    scope: gr_line
+    date_field: receipt.received_at
+    date_field_nullable_ok: true
+    fields:
+      gr_id: {kind: uuid, internal: true}
+      po_line_id: {kind: uuid, internal: true}
+      description: {kind: text, label: "Description"}
+      material_id: {kind: text, label: "Material ID"}
+      qty_ordered: {kind: money, label: "Quantity ordered on the PO line"}
+      qty_received: {kind: money, label: "Quantity received as entered on the receipt"}
+      actual_qty: {kind: money, label: "Corrected actual quantity, when one was entered"}
+      qty_counted:
+        kind: money
+        label: "Quantity this line adds to the PO line's received quantity
+          (actual_qty if entered, otherwise qty_received). Use this for \"how
+          much was received\""
+      unit: {kind: text, label: "Unit"}
+      condition:
+        kind: enum
+        label: "Condition on arrival"
+        values: [good, discrepancy, damaged]
+      discrepancy_notes: {kind: text, label: "Notes on a damaged or short line"}
+    metrics:
+      count: {fn: count, field: "*", label: "Receipt lines"}
+      qty: {fn: sum, field: qty_counted, label: "Quantity received"}
+    links:
+      receipt:
+        target: goods_receipt
+        cardinality: many_to_one
+        local: gr_id
+        remote: id
+        label: "The receipt this line is on"
+      po_line:
+        target: po_line
+        cardinality: many_to_one
+        local: po_line_id
+        remote: id
+        label: "The PO line this receives against"
+
+  # ISS-0054: the only vendor master in the schema was Finance's
+  # business_partner (view_finance, vendors and customers), so counting vendors
+  # gave 773, 593 or 7,067. This is the Vendors page: suppliers only, readable
+  # by anyone signed in, as that page is.
+  vendor:
+    model: Vendor
+    label: "Vendor — the Vendor Master (EPMS → Vendors): one row per supplier.
+      \"How many vendors\" counts these"
+    perm_key: signed_in
+    scope: vendor
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "POID — the vendor code used in PO numbers"}
+      erp_id: {kind: text, label: "NC supplier code (ERP ID)"}
+      name: {kind: text, label: "Vendor name"}
+      category: {kind: text, label: "Category", enumerate: true}
+      payment_terms: {kind: text, label: "Payment terms", enumerate: true}
+      max_prepayment_pct:
+        kind: money
+        label: "Max prepayment % set on the vendor. Empty = the system cap in
+          Admin Panel → Prepayment Config applies"
+      currency: {kind: text, label: "Default currency", enumerate: true}
+      is_active: {kind: bool, label: "Active (inactive vendors cannot be used on new PRs or POs)"}
+      contact_name: {kind: text, label: "Contact name"}
+      contact_email: {kind: text, label: "Contact email"}
+      phone: {kind: text, label: "Phone"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of vendors"}
+
+  # ISS-0044: the Parts Catalog was not modelled; asked for a part by code the
+  # answer was "not found", and by name it priced a different item from an old
+  # PO line. Readable by anyone signed in, as the catalog page is.
+  part:
+    model: Part
+    label: "Part — the Parts Catalog (EPMS → Parts Catalog): catalog code,
+      name, supplier and catalog unit price. For what was actually paid on
+      orders use po_line"
+    perm_key: signed_in
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Catalog code"}
+      category: {kind: text, label: "Category", enumerate: true}
+      name: {kind: text, label: "Part name"}
+      description: {kind: text, label: "Description"}
+      supplier: {kind: text, label: "Supplier"}
+      supplier_part_no: {kind: text, label: "Supplier part number"}
+      supplier_item_id: {kind: text, label: "Supplier item ID (ASIN / SKU)"}
+      unit_price: {kind: money, label: "Catalog unit price"}
+      unit: {kind: text, label: "Unit"}
+      is_active: {kind: bool, label: "Active in the catalog"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of parts"}
+
+  # ── ISS-0021: questions that were answered from a look-alike entity ────────
+  # Vendor credits were looked for on agreements, agreement receipts on goods
+  # receipts, courier shipments on invoices, projects on agreements — and
+  # each came back "none". These are the entities those pages read.
+
+  # Owned by finance-api (same database), so declared as a table. The Vendor
+  # Credits page is gated by View Invoices (PRD VC-004), and lists every credit.
+  vendor_credit:
+    table: vendor_credits
+    label: "Vendor credit — money a vendor owes back (credit note, manual
+      credit or import), netted against payments to that vendor. EPMS →
+      Vendor Credits"
+    perm_key: view_invoice
+    scope: permission_only
+    date_field: credit_date
+    amount_excludes:
+      field: status
+      values: [void]
+      note: "Amounts leave out void credits (no status was asked about)"
+    fields:
+      credit_number: {kind: text, label: "Credit number (VC-YYYYMMDD-NNNN)"}
+      vendor_name: {kind: text, label: "Vendor name"}
+      vendor_credit_number: {kind: text, label: "The vendor's own credit note / reference number"}
+      credit_date: {kind: date, label: "Credit date"}
+      currency: {kind: text, label: "Currency", enumerate: true}
+      amount: {kind: money, label: "Amount before tax"}
+      tax_amount: {kind: money, label: "Tax"}
+      total_amount: {kind: money, label: "Total credit including tax"}
+      applied_amount: {kind: money, label: "Already netted against payments"}
+      remaining_amount: {kind: money, label: "Still available to net"}
+      status:
+        kind: enum
+        label: "Status"
+        values: [pending_review, available, exhausted, void]
+        value_labels:
+          pending_review: "Pending Review"
+          available: {label: "Available", note: "Available — will be netted at the next payment to the vendor"}
+          exhausted: {label: "Exhausted", note: "Fully used"}
+          void: {label: "Void", note: "Void (rejected or voided)"}
+      source:
+        kind: enum
+        label: "Where it came from"
+        values: [upload, manual, qbo_import]
+        value_labels:
+          upload: "Credit note uploaded"
+          manual: "Manual credit (vendor email)"
+          qbo_import: "Imported from QuickBooks"
+      uploaded_at: {kind: datetime, label: "Recorded at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of credits"}
+      total: {fn: sum, field: total_amount, label: "Total credit", currency: currency}
+      remaining: {fn: sum, field: remaining_amount, label: "Still available", currency: currency}
+
+  agreement_receipt:
+    model: AgreementReceipt
+    label: "Agreement receipt — a slip, delivery note or service sign-off
+      recorded against a purchase agreement (EPMS → Agreement Receipts). Not a
+      goods receipt"
+    perm_key: epms.agreement.read
+    scope: agreement_receipt
+    date_field: receipt_date
+    fields:
+      agreement_id: {kind: uuid, internal: true}
+      receipt_type:
+        kind: enum
+        label: "Kind of receipt"
+        values: [counter_slip, delivery, service]
+        value_labels:
+          counter_slip: "Counter slip"
+          delivery: "Delivery note"
+          service: "Service sign-off"
+      receipt_date: {kind: date, label: "Receipt date"}
+      receipt_ref: {kind: text, label: "Reference on the receipt"}
+      vendor_name: {kind: text, label: "Merchant on the receipt (may differ from the agreement's vendor)"}
+      amount: {kind: money, label: "Amount before tax"}
+      tax_amount: {kind: money, label: "Tax"}
+      total_amount: {kind: money, label: "Total"}
+      status:
+        kind: enum
+        label: "Status"
+        values: [pending_ap_review, open, reconciled, voided, rejected]
+        value_labels:
+          pending_ap_review: {label: "Pending AP Review", note: "Waiting for AP review (entered with a missing-receipt reason)"}
+          open: {label: "Open", note: "Open — not attached to an invoice yet"}
+          reconciled: {label: "Reconciled", note: "Attached to an invoice"}
+          voided: "Removed"
+          rejected: {label: "Rejected", note: "Rejected by AP"}
+      missing_receipt_reason: {kind: text, label: "Why there is no physical receipt"}
+      created_at: {kind: datetime, label: "Recorded at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of receipts"}
+      total: {fn: sum, field: total_amount, label: "Total", currency: agreement.currency}
+    links:
+      agreement:
+        target: purchase_agreement
+        cardinality: many_to_one
+        local: agreement_id
+        remote: id
+        label: "The agreement the receipt is recorded against"
+
+  # ── Added 2026-10-21 (issue review batch 3) ────────────────────────────────
+  # ISS-0022 #1: "协议 AGR-202609-0003 这个月的服务确认了吗？" was refused as
+  # "not something the data holds" while the agreement's Payment Schedule
+  # showed the period confirmed by name and date.
+  agreement_period:
+    model: AgreementPaymentSchedule
+    label: "Agreement billing period — one row of a purchase agreement's
+      Payment Schedule: the period (e.g. 2026-10), its expected date and
+      amount, its status, the invoice that settled it, and who confirmed the
+      service and when. \"Was this month's service confirmed?\" is
+      accepted_at / confirmed_by_name on the period of that agreement"
+    perm_key: epms.agreement.read
+    scope: agreement_period
+    date_field: expected_date
+    # Set on every billing period (106 of 106 in the reference data); only a
+    # milestone row has none, and milestones are not built yet (Phase 1C).
+    date_field_nullable_ok: true
+    fields:
+      agreement_id: {kind: uuid, internal: true}
+      invoice_id: {kind: uuid, internal: true}
+      schedule_type:
+        kind: enum
+        label: "Period (recurring billing) or milestone"
+        values: [period, milestone]
+        value_labels:
+          period: "Billing period of a recurring agreement"
+          milestone: "Milestone of a milestone agreement"
+      sequence: {kind: int, label: "Position in the schedule (1 = first)"}
+      period_label: {kind: text, label: "The period, as YYYY-MM (e.g. 2026-10)"}
+      expected_date: {kind: date, label: "Date the period's invoice is expected"}
+      expected_amount: {kind: money, label: "Amount expected for the period"}
+      status:
+        kind: enum
+        label: "Status of the period"
+        values: [pending, received, overdue, waived]
+        value_labels:
+          pending: {label: "Pending", note: "Pending — no invoice for it yet"}
+          received: {label: "Received", note: "Received — its invoice has arrived"}
+          overdue: {label: "Overdue", note: "Overdue — no invoice although the expected date has passed"}
+          waived: {label: "Waived", note: "Waived — nothing is due for this period"}
+      confirmed_by_name:
+        kind: text
+        label: "Who confirmed the service for this period (the agreement
+          owner's Confirm Service Period). Empty = not confirmed"
+      accepted_at:
+        kind: datetime
+        label: "When the service for the period was confirmed. Empty = not
+          confirmed"
+    metrics:
+      count: {fn: count, field: "*", label: "Number of periods"}
+    links:
+      agreement:
+        target: purchase_agreement
+        cardinality: many_to_one
+        local: agreement_id
+        remote: id
+        label: "The agreement the period belongs to (agreement.number = AGR-…)"
+      invoice:
+        target: invoice
+        cardinality: many_to_one
+        local: invoice_id
+        remote: id
+        label: "The invoice matched to the period (invoice.internal_ref = INV-…)"
+
+  freight_shipment:
+    model: FreightShipment
+    label: "Courier shipment — a waybill registered in Freight → Shipments.
+      Courier invoices are matched to these"
+    perm_key: [epms.freight.register, epms.freight.manage]
+    scope: freight_shipment
+    date_field: created_at
+    fields:
+      carrier_id: {kind: uuid, internal: true}
+      tracking_no: {kind: text, label: "Tracking number"}
+      direction:
+        kind: enum
+        label: "Direction"
+        values: [outbound, inbound]
+      ship_date: {kind: date, label: "Ship date (filled from the invoice once billed)"}
+      status:
+        kind: enum
+        label: "Status"
+        values: [pending, billed, void]
+        value_labels:
+          pending: {label: "Pending", note: "Not billed yet"}
+          billed: {label: "Billed", note: "Billed on a courier invoice"}
+          void: "Void"
+      source:
+        kind: enum
+        label: "How it was recorded"
+        values: [registered, from_invoice]
+        value_labels:
+          registered: "Registered at ship time"
+          from_invoice: "Added while matching an invoice"
+      note: {kind: text, label: "Note"}
+      created_by_name: {kind: text, label: "Registered by"}
+      created_at: {kind: datetime, label: "Registered at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of shipments"}
+    links:
+      carrier:
+        target: freight_carrier
+        cardinality: many_to_one
+        local: carrier_id
+        remote: id
+        label: "The carrier"
+
+  freight_carrier:
+    model: FreightCarrier
+    label: "Courier carrier (Freight → Carriers), e.g. FedEx, Purolator, UPS"
+    perm_key: [invoice_upload, epms.freight.register, epms.freight.manage, epms.freight.admin]
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Carrier code"}
+      name: {kind: text, label: "Carrier name"}
+      is_active: {kind: bool, label: "Active"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of carriers"}
+
+  # Projects (Master Data → Projects); readable by anyone signed in, as
+  # GET /projects is.
+  project:
+    model: Project
+    label: "Project — the Projects list (Master Data → Projects): code, name,
+      budget, dates and status"
+    perm_key: signed_in
+    scope: permission_only
+    date_field: created_at
+    fields:
+      code: {kind: text, label: "Project code"}
+      name: {kind: text, label: "Project name"}
+      description: {kind: text, label: "Description"}
+      status: {kind: text, label: "Status", enumerate: true}
+      budget: {kind: money, label: "Project budget"}
+      currency: {kind: text, label: "Currency", enumerate: true}
+      start_date: {kind: date, label: "Start date"}
+      end_date: {kind: date, label: "End date"}
+      owner_dept: {kind: text, label: "Owning department"}
+      manager_name: {kind: text, label: "Project manager"}
+      created_at: {kind: datetime, label: "Created at"}
+    metrics:
+      count: {fn: count, field: "*", label: "Number of projects"}
+      budget: {fn: sum, field: budget, label: "Total project budget", currency: currency}
+
+  # ISS-0016: "is the invoice over the PO, by how much" is decided per PO line
+  # (INV-3WM-001); the per-line result is stored here and was not available.
+  invoice_allocation:
+    model: InvoicePoAllocation
+    label: "Invoice allocation — one invoice line's amount placed on one PO
+      line (or on the PO header), with that PO line's match result"
+    perm_key: view_invoice
+    scope: invoice_allocation
+    date_field: invoice.invoice_date
+    fields:
+      invoice_id: {kind: uuid, internal: true}
+      po_id: {kind: uuid, internal: true}
+      po_line_id: {kind: uuid, internal: true}
+      allocated_amount: {kind: money, label: "Amount of this invoice placed on the PO line, before tax"}
+      allocated_tax: {kind: money, label: "Tax on that amount"}
+      allocated_total: {kind: money, label: "Amount including tax"}
+      variance:
+        kind: money
+        label: "The PO line's difference: everything ALL invoices have placed
+          on this PO line (before tax) minus the line's pre-tax value. Below 0
+          = not fully invoiced yet (allowed); above 0 = invoiced more than
+          ordered, an exception when beyond the match tolerance. No PO line =
+          compared with the PO's pre-tax total"
+      variance_pct: {kind: money, label: "variance as a percent of the PO line's pre-tax value"}
+      note: {kind: text, label: "Note"}
+    metrics:
+      count: {fn: count, field: "*", label: "Allocation lines"}
+      allocated: {fn: sum, field: allocated_amount, label: "Allocated before tax", currency: invoice.currency}
+    links:
+      invoice:
+        target: invoice
+        cardinality: many_to_one
+        local: invoice_id
+        remote: id
+        label: "The invoice"
+      order:
+        target: purchase_order
+        cardinality: many_to_one
+        local: po_id
+        remote: id
+        label: "The PO"
+      po_line:
+        target: po_line
+        cardinality: many_to_one
+        local: po_line_id
+        remote: id
+        label: "The PO line (empty = placed on the PO header)"
+

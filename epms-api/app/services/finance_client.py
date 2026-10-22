@@ -210,7 +210,8 @@ async def budget_actual_lineage(*, bearer_token: str | None) -> dict | None:
 
 
 async def nc_actuals_by_cost_center(*, bearer_token: str | None, fiscal_year: int,
-                                    through_month: int) -> dict | None:
+                                    through_month: int,
+                                    include_unposted: bool = True) -> dict | None:
     """NC posted actual per cost centre for a year, through a month.
 
     The actual half of a plan-vs-actual comparison. Asked of finance-api rather
@@ -226,7 +227,10 @@ async def nc_actuals_by_cost_center(*, bearer_token: str | None, fiscal_year: in
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             r = await client.get(
-                url, params={"fiscal_year": fiscal_year, "through_month": through_month},
+                url, params={"fiscal_year": fiscal_year, "through_month": through_month,
+                             # The Budget Dashboard's default and the PR budget
+                             # widget's basis (ISS-0014).
+                             "include_unposted": str(include_unposted).lower()},
                 headers={"Authorization": f"Bearer {bearer_token}"} if bearer_token else {})
             r.raise_for_status()
             return r.json()

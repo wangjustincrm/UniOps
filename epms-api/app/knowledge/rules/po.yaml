@@ -1,0 +1,128 @@
+area: po
+label: Purchase orders
+covers: >
+  Purchase order numbers, editing a PO (raised in EPMS or from NC), placing the order, closing, and PO sign-off.
+rules:
+  - id: po_numbering
+    asked_as:
+      - how are PO numbers generated
+      - PO-ABC-2604-03 这个编号是什么意思？
+      - what does a PO number mean
+    answer: >
+      PO-<vendor code>-<YYMM>-NN: the vendor's code, the year and month it was
+      created (UTC), then a 2-digit sequence per vendor per month — PO-332-2610-01
+      is the first order to vendor 332 in October 2026.
+    enforced_in: "epms-api app/crud/po.py _next_number"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_iss_round2.py::test_numbers_have_the_formats_the_guide_states"
+
+  # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
+  - id: editing_a_po_raised_in_epms
+    asked_as:
+      - 已经下单的 PO 能改交期吗？
+      - can I change the delivery date of an issued PO
+    answer: >
+      A PO raised in EPMS can be edited only while it is draft or returned.
+      Once it is approved — and so once it has been placed (issued) — its
+      details, Expected Delivery included, can no longer be changed in EPMS.
+      A PO that came from NC is different: some of its fields can be changed
+      with Edit Details (see editing_a_po_from_nc), Expected Delivery among
+      them.
+    enforced_in: "epms-api app/api/v1/po.py update_po (status draft/returned); imported-details only for source nc"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_a_local_po_is_edited_only_in_draft_or_returned"
+  - id: editing_a_po_from_nc
+    also_in: [nc_sync]
+    asked_as:
+      - 原材料 PO 能在 EPMS 里修改吗？
+      - can an NC PO be edited in EPMS
+    answer: >
+      Partly. A PO that came from NC (raw materials, milk) can be edited in
+      EPMS with Edit Details on the PO page, in any status, by users with the
+      permission to edit imported POs (epms.po.edit_imported) — by default the ERP PA Officer and System
+      Admin. Editable: {header_fields}; on each NC line, {line_fields}; and
+      lines the buyer adds themselves. Read-only — change these in NC:
+      vendor, currency, budget code, and the NC lines' description,
+      quantity, unit and price. The tax rate and buyer-added lines are
+      locked once the PO has an invoice.
+    provenance: derived
+    derive: po_imported_fields
+    enforced_in: "epms-api app/api/v1/po.py PATCH /po/{id}/imported-details (epms.po.edit_imported, source nc, no status gate); app/schemas/po.py PoImportedDetailsUpdate / PoImportedLineUpdate / PoManualLine; identity-api scripts/seed_phase2_keys.py default holders"
+    test:
+      - "tests/test_rule_registry.py::test_nc_po_edit_fields_come_from_the_schema"
+  - id: placing_an_order
+    asked_as:
+      - 谁可以对 PO 执行 Place Order？
+      - who can place an order on a PO
+    answer: >
+      Place Order is done on an approved PO by someone with PO write
+      permission — by default Procurement Officers, Procurement Managers and
+      System Admins; the PO page shows the button only to users whose main
+      role is one of those three. It moves the PO to Issued. Approving a PO
+      does not place it, and the approvers are not the people who place it.
+    enforced_in: "epms-api app/api/v1/po.py place-order (PoWriteDep = epms.po.write); app/crud/po.py place_order (status approved → issued); epms/src/pages/po/PoDetailPage.tsx canPlaceOrder"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_place_order_needs_po_write_on_an_approved_po"
+  - id: no_manual_po_close
+    asked_as:
+      - 怎么手动关闭一张 PO？
+      - how do I close a PO manually
+    answer: >
+      There is no way to close a PO by hand in EPMS — no Close button and no
+      close action. A PO shows Closed only when NC has closed it (orders
+      mirrored from NC) or after an administrator's data correction.
+    enforced_in: "epms-api app/api/v1/po.py (no close route); app/services/nc_purchase_sync/transform.py (closed from NC)"
+    provenance: not_built
+    test:
+      - "tests/test_rule_registry.py::test_there_is_no_close_po_route"
+  - id: signoff_has_no_reject
+    asked_as:
+      - PO 签署可以被拒绝吗？
+      - can a PO sign-off be rejected
+    answer: >
+      No. A PO sign-off has no Reject: a signer can only Sign, or Return it to
+      the person who raised it, who can fix and resubmit it. Resubmitting
+      clears the signatures already given, so every step signs again.
+    enforced_in: "epms-api app/api/v1/po_signoff.py (submit / sign / return / note routes only); clear_signatures on resubmit after return"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_signoff_offers_sign_and_return_but_no_reject"
+      - "tests/test_po_signoff.py::test_resubmitting_after_a_return_clears_the_earlier_signatures"
+  - id: signoff_does_not_change_the_po_status
+    asked_as:
+      - PO 签署完成后 PO 的状态会变吗？
+      - does the PO status change after sign-off
+    answer: >
+      No. Sign-off is a separate approval with its own status; completing it
+      does not change the PO's own status. When the last step signs, the PO
+      PDF is regenerated with the signatures and a completion email is sent.
+    enforced_in: "approval-api engine _DOC_META['posign'] (signoff_status column, not in _POST_APPROVE); epms-api app/api/v1/po_signoff.py sign (PDF regenerated)"
+    provenance: pinned
+    test:
+      - "tests/test_po_signoff.py::test_signing_never_touches_the_pos_own_status"
+      - "approval-api/tests/test_engine_po_signoff.py::test_signoff_runs_to_completion_without_touching_the_pos_own_columns"
+  - id: what_blocks_a_signoff
+    asked_as:
+      - 为什么我不能提交这张 PO 的签署？
+      - why can't I submit the sign-off
+    answer: >
+      A sign-off can be submitted only on a PO that came from NC and is
+      nc_pending, issued or nc_milk, and only by someone with the PO sign-off
+      permission (epms.po.signoff — the ERP PA Officer's job, set in Access
+      Control). It is refused when no sign-off workflow
+      is configured, when a step's post has no active holder, or when none of
+      a step's holders has saved a signature in My Profile → My Signature.
+      Signing needs your own saved signature. Sign-off tasks are not passed
+      to delegates — a signature is personal.
+    enforced_in: "epms-api app/crud/po_signoff.py SIGNOFF_SOURCES, _SUBMITTABLE_PO_STATUSES, build_step_states; app/api/v1/po_signoff.py submit (PoSignoffDep: epms.po.signoff) / sign"
+    provenance: pinned
+    test:
+      - "tests/test_po_signoff.py::test_submit_is_refused_when_a_signer_has_no_signature"
+      - "tests/test_po_signoff.py::test_submit_is_refused_when_a_step_has_no_holder"
+      - "tests/test_po_signoff.py::test_submit_is_refused_on_a_locally_raised_po"
+      - "tests/test_po_signoff.py::test_signing_without_a_preset_signature_is_refused_before_the_engine_runs"
+      - "tests/test_rule_registry.py::test_signoff_statuses"
+      - "tests/test_rule_registry.py::test_why_no_signoff_checks_the_submit_permission"

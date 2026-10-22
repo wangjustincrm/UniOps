@@ -44,6 +44,14 @@ ROLE_ORDER: dict[str, int] = {
 }
 
 
+# Statuses in which a document is waiting on an approver. `submitted` is the
+# first step: the engine sets it on submit and only moves to in_review after
+# the first approval, so reading in_review alone showed nothing for a PR still
+# waiting on its first approver — the lists left Current Step blank and the
+# Assistant read the empty step as "approval complete" (ISS-0047, ISS-0076).
+AWAITING_APPROVAL = ("submitted", "in_review")
+
+
 # A document whose current step is unknown (no open task, or a role not in
 # ROLE_ORDER) gets a NULL step, so the caller's nulls_last keeps it after every
 # known step in BOTH directions — "no value sorts last" (PRD UI-SORT-003).
@@ -51,13 +59,14 @@ ROLE_ORDER: dict[str, int] = {
 
 def status_step_sort_keys(status_col, id_col, doc_type: str) -> tuple:
     """ORDER BY keys for a list's Status column, in SQL so a paged list sorts
-    across all pages: status, then (in_review only) the current step's place
-    in the approval chain, then that step's approver name (named before the
-    role pool once the caller adds nulls_last).
+    across all pages: status, then (awaiting approval only) the current step's
+    place in the approval chain, then that step's approver name (named before
+    the role pool once the caller adds nulls_last).
 
     The current step is the one enrich_current_step shows: the EARLIEST open
     approve_{doc_type} task of the document — same filter, same order. Outside
-    in_review both step keys are NULL, as the step hint is never shown there.
+    submitted / in_review both step keys are NULL, as the step hint is never
+    shown there.
     """
     def _earliest_open_task(col):
         return (
@@ -76,13 +85,13 @@ def status_step_sort_keys(status_col, id_col, doc_type: str) -> tuple:
             .scalar_subquery()
         )
 
-    in_review = status_col == "in_review"
+    awaiting = status_col.in_(AWAITING_APPROVAL)
     step_order = case(
-        (in_review, case(ROLE_ORDER, value=_earliest_open_task(Task.assigned_role),
+        (awaiting, case(ROLE_ORDER, value=_earliest_open_task(Task.assigned_role),
                          else_=None)),
         else_=None,
     )
-    approver = case((in_review, _earliest_open_task(func.lower(User.full_name))), else_=None)
+    approver = case((awaiting, _earliest_open_task(func.lower(User.full_name))), else_=None)
     return (status_col, step_order, approver)
 
 
@@ -99,17 +108,18 @@ def _approver_label(name: str | None, stand_in: str | None) -> str | None:
 
 
 async def enrich_current_step(db: AsyncSession, doc_type: str, items: list) -> None:
-    """Set `.current_step` on each item: a dict for in_review items with an open
-    approval task, else None. Mutates items in place. One batched task query +
+    """Set `.current_step` on each item: a dict for items awaiting approval
+    (submitted / in_review) with an open approval task, else None. Mutates
+    items in place. One batched task query +
     one batched user-name query (no N+1)."""
     for it in items:
         it.current_step = None
 
-    in_review = [it for it in items if getattr(it, "status", None) == "in_review"]
-    if not in_review:
+    awaiting = [it for it in items if getattr(it, "status", None) in AWAITING_APPROVAL]
+    if not awaiting:
         return
 
-    ids = [it.id for it in in_review]
+    ids = [it.id for it in awaiting]
     task_type = f"approve_{doc_type}"
     rows = (await db.execute(
         select(Task).where(
@@ -152,7 +162,7 @@ async def enrich_current_step(db: AsyncSession, doc_type: str, items: list) -> N
             uid: name_by_stand_in_id.get(sid) for uid, sid in stand_in_id_by_user.items()
         }
 
-    for it in in_review:
+    for it in awaiting:
         t = task_by_doc.get(it.id)
         if t is None:
             continue

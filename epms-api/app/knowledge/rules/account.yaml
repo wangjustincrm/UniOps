@@ -1,0 +1,53 @@
+area: account
+label: Signing in and My Profile
+covers: >
+  The sign-in code, being signed out, how you are notified, your signature.
+rules:
+  - id: sign_in_code_expiry
+    asked_as:
+      - 登录验证码多久过期？
+      - when does the sign-in code expire
+    answer: >
+      The emailed sign-in code expires 10 minutes after it is sent; a
+      resent code gets a fresh 10 minutes.
+    enforced_in: "identity-api app/api/v1/auth.py login / resend (redis setex 600)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_sign_in_codes_last_ten_minutes"
+  - id: idle_sign_out
+    asked_as:
+      - 多久不操作会自动退出？
+      - when does an idle session sign out
+    answer: >
+      EPMS signs you out after 60 minutes without any activity.
+    enforced_in: "epms/src/hooks/useIdleTimeout.ts IDLE_MS"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_idle_sign_out_after_an_hour"
+  - id: how_you_are_notified
+    also_in: [notifications]
+    asked_as:
+      - 怎么改成只收 Teams 通知？
+      - how do I get Teams notifications only
+    answer: >
+      You choose it yourself in EPMS → My Profile → Notification Channel:
+      Teams only, Email only, Both, or None (in-app only). It starts as
+      Email only. An admin does not set it for you; what an admin sets is
+      which kinds of task send anything at all (Notification Settings).
+    enforced_in: "epms/src/pages/profile/ProfilePage.tsx NOTIFICATION_CHANNEL_LABELS; identity-api users.notification_channel (default email_only); epms-api app/services/notification.py"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_notification_channel_is_a_personal_setting"
+  - id: where_the_signature_is_set
+    also_in: [po]
+    asked_as:
+      - PO 签署用的签名在哪里设置？
+      - where do I set my signature
+    answer: >
+      In EPMS → My Profile → My Signature: draw it or upload an image, then
+      save. That saved signature is what PO sign-off stamps on the PO; without
+      one you cannot sign.
+    enforced_in: "epms/src/pages/profile/ProfilePage.tsx SignatureSection; identity-api PATCH /auth/me signature_image; epms-api app/api/v1/po_signoff.py sign"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_the_signature_is_set_in_my_profile"

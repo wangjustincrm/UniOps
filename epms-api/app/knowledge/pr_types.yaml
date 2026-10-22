@@ -89,8 +89,8 @@ values:
     covers: Contracted work — maintenance, consulting, installation, labour.
     when: >
       When you are buying someone's time or work rather than a thing. There is
-      nothing for the warehouse to receive, so you confirm the work is done
-      yourself.
+      nothing for the warehouse to receive; the Service Owner confirms the work
+      is done (you, unless you name someone else).
     notes:
       - The expected completion date is what the system watches; once it
         passes, you are reminded to confirm the work was done.
@@ -105,41 +105,20 @@ values:
     covers: Capitalisable equipment and assets that go on the asset register.
     when: >
       When the purchase becomes an asset rather than an expense. You need the
-      Fixed Asset ID before you can submit — get it from Finance if the asset
-      has not been raised yet.
+      Fixed Asset ID before you can submit.
 
   - value: 6
     label: Project-Related
     covers: Purchases charged to a project rather than to routine operations.
     when: >
       When the cost belongs to a project and has to be traceable to it. Like a
-      service PR you confirm completion yourself, and you also carry the
-      Project No. so the spend lands against the project.
+      service PR, completion is confirmed by the owner (the Project Owner, you
+      unless you name someone else), and you also carry the Project No. so the
+      spend lands against the project.
     notes:
       - Same completion-date reminder as a service PR.
       - >-
         Carries a Project Owner as well, the same way — whoever will confirm the
         work is done, defaulting to you.
 
-# ── Rules people ask about ───────────────────────────────────────────────────
-rules:
-  - id: type_1_not_selectable
-    asked_as:
-      - what procurement types are there
-      - 系统里有哪几种采购类型
-      - why can't I pick type 1
-    answer: >
-      There are six procurement types. Type 1 (Raw Materials / Packaging) cannot
-      be chosen when creating a PR in EPMS — its tile is disabled — because raw
-      material and packaging purchasing runs in NC and those orders arrive in
-      EPMS mirrored from it. The other five are chosen on the Create PR form.
-    enforced_in: "epms/src/components/pr/procurementTypes.ts (pinned by procurementTypes.test.ts)"
-  - id: pr_numbering
-    asked_as:
-      - how are PR numbers generated
-      - 请购单编号是怎么生成的
-    answer: >
-      PR-YYYYMMDD-NNNN: the date it was created, then a 4-digit sequence that
-      restarts each day — PR-20261015-0003 is the third PR of 15 Oct 2026.
-      The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
-    enforced_in: "epms-api app/crud/pr.py _next_number"
+# The rules people ask about live in rules/pr.yaml (app/services/rule_registry.py).

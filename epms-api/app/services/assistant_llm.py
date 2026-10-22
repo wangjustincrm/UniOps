@@ -28,8 +28,10 @@ import re
 import logging
 from datetime import date, datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
+from app.core.delegation import PLANT_TIMEZONE
 from app.services.controlled_query import _OPS_BY_KIND as cq_ops
 
 log = logging.getLogger(__name__)
@@ -37,11 +39,15 @@ log = logging.getLogger(__name__)
 from app.services import guide_view, reply_language
 
 MODEL = "claude-haiku-4-5-20251001"
+_PLANT_TZ = ZoneInfo(PLANT_TIMEZONE)
 
 # The plan call returns a small JSON object; 1024 is generous for it. Narration
 # is prose about at most a few hundred rows of summary.
 _PLAN_MAX_TOKENS = 1024
 _NARRATE_MAX_TOKENS = 1024
+# Guide answers carry whole tables (budget vs actual by ~25 cost centres) and
+# were cut mid-row at 1024 (ISS-0014). Still Haiku; only the ceiling moves.
+_GUIDE_MAX_TOKENS = 2048
 
 _PLAN_SYSTEM = """\
 You turn a colleague's question about purchasing data into ONE query description.
@@ -59,11 +65,27 @@ Rules:
 - Use ONLY entity names, field names and metric names that appear in the schema.
 - Prefer metrics + group_by when the question is about totals, counts or
   rankings. Use select when the question asks for specific records.
-- For "recent", "last N months", "this year" use period with last_n_months or
-  last_n_days — never a hand-built date filter.
+- A calendar word — today, yesterday, this/last week, this/last month, this/
+  last quarter, this/last year, 本月, 上个月, 本季度, 今年, 去年, 上周 — is
+  period.calendar, never last_n_months and never dates you work out yourself.
+  "This year" is 1 January to today, not the last 12 months. "The same period
+  last year" (去年同期) is the same calendar value with shift_years -1. The same
+  question must always map to the same period.
+- Only a literal rolling window — "the last 3 months", "过去 30 天", "recent" —
+  is last_n_months or last_n_days.
+- "Compared with the same period last year" / 同比 / 增长了多少 is ONE query:
+  the totals for the period with compare_previous_year true. Never answer it
+  with budget_vs_actual — that compares budget with spending, not two years.
 - For a NAMED month or an explicit range ("September", "Q2", "since June"), use
   period with from/to, and take the year from today's date given below. Getting
   the year wrong returns zero rows and reads exactly like "there were none".
+  A date range includes the whole of its last day, so a single day is
+  from = to = that day.
+- An invoice has two dates. `invoice_date` is the date the VENDOR put on it
+  and is the default; `created_at` is when it was uploaded into EPMS (the
+  Invoices list's Upload Date). "New", "recent", "uploaded", "received"
+  invoices and "invoices from the last 7 days" mean uploaded: set period.field
+  to created_at. Only "invoices dated …" or "billed in …" mean invoice_date.
 - To COMPARE two things — two versions, two months, two vendors — fetch both in
   ONE query and select the column that tells them apart. Filter with `in` on
   that column and put it in `select`; the comparison is then done from the rows.
@@ -82,7 +104,7 @@ Rules:
   columns you need the same way. Querying the parent alone returns the header
   and none of the detail, which is an answer that describes the question back.
 - A field with `value_labels` stores a code that stands for something: type 4
-  means Service. Filter on the CODE and report the MEANING — a question about
+  means Service (`value_notes`, where present, says more about a code). Filter on the CODE and report the MEANING — a question about
   service purchases becomes type=4, and a result of 4 is read back as "Service",
   never as "4". Asked what the types are, list them from this mapping; it is the
   answer, not a reason to say the system has no such concept.
@@ -110,6 +132,55 @@ Rules:
   import date and that the count is therefore not a count of that year's
   purchasing. Returning 0 for 2023 without saying that reads as "we bought
   nothing", which is false.
+- Vendor credits (贷项, credit notes) are `vendor_credit`. Agreement receipts
+  (slips and delivery notes recorded on an agreement, including those waiting
+  for AP review) are `agreement_receipt`, not goods_receipt. Courier
+  shipments and carriers are `freight_shipment` and `freight_carrier`.
+  Projects are `project`. An agreement's billing periods — whether this
+  month's service was confirmed, by whom, which invoice settled a period —
+  are `agreement_period` (filter agreement.number and period_label).
+- If what is asked about has no entity in the schema, call cannot_answer and
+  name it. Never query a different entity because its name looks similar:
+  vendor credits are not agreements, courier shipments are not invoices, and
+  a query of the wrong thing that finds nothing is reported as "there are
+  none" — which is false.
+- Vendors are `vendor` (the Vendor Master): how many vendors, a vendor's
+  payment terms, category or max prepayment %. "How many vendors have orders"
+  is purchase_order with metric vendor_count, not a count of order rows.
+- The Parts Catalog is `part`: a catalog code, a part's catalog price or
+  supplier. What was actually paid on past orders is po_line.
+- Quantities received are on `gr_line` (qty_counted), not on goods_receipt.
+- How an order was placed (email / online / NC) and when are
+  purchase_order.place_order_method and placed_at; WHO placed it is in the
+  PO's history: explain_workflow.
+- When a payment application was paid and from which account: query
+  payment_record where pa_number = the PA, selecting payment_date,
+  bank_account.name, amount (net of credits) and credit_applied. Without
+  View Finance there is no payment_record; then payment_application.paid_on
+  gives the date and the account cannot be shown — say so.
+- Facts the system already decides are fields — use them instead of rebuilding
+  them from joins: purchase_order.three_way_matched, invoiced, has_pa ("no
+  PA yet" = has_pa false); goods_receipt.po_invoiced and days_since_received
+  ("goods received over 30 days ago with no invoice" = gr_type physical,
+  days_since_received gt 30, po_invoiced false); purchase_request
+  days_to_approve and metric avg_days_to_approve; invoice.pa_number and
+  pa_status (the payment application an invoice is on); "do the invoices of
+  paid PAs all show paid / which do not" is invoice.pa_payment_shown (false =
+  not shown; a prepayment's invoices correctly show partially_paid).
+- Whether an invoice is over its PO, by how much, and its match result are on
+  `invoice` (variance, matched_reference_total, status) — filter by
+  po_number. Never answer them from the PO alone. Line by line it is
+  `invoice_allocation`: filter order.number, select po_line.description,
+  allocated_amount, variance, variance_pct.
+- Overdue invoices — 逾期, 逾期未付, past due, "not paid by the due date" — are
+  `invoice` where `overdue` is true: the same rows as the Invoices page's
+  Overdue filter. Whether an EPMS invoice is paid is its own status, so this
+  is never Finance-only or AP-only data and never a cannot_answer: list them
+  (select number, vendor, due date, total) or count them.
+- Invoices are `invoice` (INV- numbers, the EPMS Invoices list). `ap_invoice`
+  is Finance's AP copy (AP- numbers) and is only for questions that name
+  Finance AP, AP numbers or AP posting. An INV- number is invoice.internal_ref,
+  never vendor_invoice_number.
 - When the question asks for what was ON a document — line items, "包括
   LineItem", "with the line items", what was ordered, what was requested, the
   detail behind the total — query the LINE entity (po_line, pr_line), not the
@@ -127,6 +198,12 @@ Rules:
   Use this whenever the fact lives on the other side. purchase_orders has no
   department of its own — grouping orders by department means going through
   originating_pr, not settling for something else.
+- A link marked one_to_many (a PO's invoices, receipts, payments, lines) has
+  several rows per record. In `where` it means "has at least one": POs with
+  `invoices.status eq matched` are the POs with a matched invoice, each counted
+  once; `invoices.number eq null` means "has none". It cannot be selected,
+  grouped or ordered by — to list or count the children, query the child
+  entity and reach the parent through its link.
 - NEVER substitute a different column for the one that was asked for. If someone
   asks for department and there is no department reachable, say so; do not group
   by budget_code and label the result "department". A near-enough column is not
@@ -134,7 +211,8 @@ Rules:
   that the swap happened.
 - If the question cannot be answered from this schema — it is about something
   not modelled, or it needs data that is not here — call cannot_answer. Saying
-  so is a correct answer. Guessing is not.
+  so is a correct answer. Guessing is not. A question about how the system
+  BEHAVES is never one of these: it is explain_rules (below).
 - EVERY condition in the question becomes a `where` clause — inclusions and
   exclusions alike ("not fully received", "leave out milk orders", "skip lines
   with under 10% outstanding"). The rows you fetch are handed to someone who
@@ -176,14 +254,29 @@ Rules:
   the line — so answering that the system does not record it is wrong.
 - explain_process is about the APPROVAL CHAIN — who signs off, in what order.
   It is not about the data, and it is not about the form.
-- A question about how the system BEHAVES — what status a rejected PA gets,
-  why a type cannot be chosen, how document numbers are made, whether
-  matching checks received quantities, whether an agreement still in status
-  active is in force — is explain_document_types for that document, which
-  carries these as `rules`. Never answer one by querying: "被拒绝的付款申请是什么
-  状态？" queried status = rejected, found none, and told the person there were
-  no rejected PAs while nine existed as cancelled. "What types are there" is
-  explain_document_types too, even if counts would also be interesting.
+- A question about how the system BEHAVES or what a rule or setting is — what
+  status a rejected PA gets, how document numbers are made, whether a returned
+  PR restarts from step 1, what happens when one person holds two steps or a
+  post is vacant, whether a System Admin can approve, who can edit / recall /
+  withdraw / place / pay / unmatch, which statuses allow something, how often
+  NC syncs, what the match tolerance is, whether freight is taxed, who gets
+  escalations or reminders, how delegation works, what a dashboard card means,
+  whether something exists at all ("can I close a PO manually", "is there a
+  change log") — is explain_rules with the area(s) it belongs to. These are
+  not data questions and not "configuration outside my data": the rules are
+  stated by the system, with current settings filled in. Never answer one by
+  querying: "被拒绝的付款申请是什么状态？" queried status = rejected, found none,
+  and told the person there were no rejected PAs while nine existed as
+  cancelled. Never answer one with cannot_answer: "ask the System Admin" or
+  "this is a configuration question" is the failure this route exists to
+  stop. "What types are there" is explain_document_types, even if counts
+  would also be interesting.
+- explain_rules takes up to three areas; pick every area a multi-part
+  question touches.
+- "The numbers on my dashboard" (all of them) is my_dashboard. One figure
+  that is also data ("how many users are there") stays a query.
+- "Which of my tasks are overdue / late" is whats_next: it reports that tasks
+  carry no due date, so it can say so and offer the oldest or urgent ones.
 - How an approval is GIVEN — in Teams, by replying to an email, on a phone —
   is explain_process (doc_type of the document they mean, pr if none), which
   carries `how_approvals_are_given`.
@@ -247,10 +340,15 @@ Rules:
   it cannot, call check_document. Do not try to answer it by querying — the
   gates are not visible in the data, and a guess at the reason sends someone to
   fix the wrong thing.
-- check_document currently covers purchase requests and the submit action only.
-  For a why-is-this-blocked question about anything else, call cannot_answer
-  with reason "not_a_data_question" and say plainly that that document type is
-  not covered yet. Do not guess at the cause or at who to ask.
+- check_document covers a purchase request's submit, and on a purchase order:
+  creating a payment application (create_pa), creating a goods receipt
+  (create_gr) and submitting its sign-off (submit_signoff). Use it whenever a
+  PR or PO is named, or on screen, in a "why can't I / can I" question about
+  one of those. Without a document, the general rule is explain_rules.
+- cannot_answer's explanation names what is not available. It never suggests
+  whom to ask, never names a role, page or setting, and never calls something
+  "a configuration question": that text is shown as it is, and once it sent
+  someone to a "Vendor Manager", a role that does not exist.
 """
 
 _NARRATE_SYSTEM = """\
@@ -259,6 +357,17 @@ You are answering a colleague's question inside UniOps, a purchasing system.
 You are given their question, the query that was run, and its results. The
 results are the only facts you have.
 
+- A `like` search on a name or description matches any text CONTAINING the
+  words. When the matched description is clearly a different, longer item
+  (asked for a spring, matched a valve "with Standard Stainless Steel
+  Spring"), say what was matched instead of presenting it as the thing asked
+  about.
+- `numbers_read_as` lists document numbers that were typed differently from
+  how the system writes them ("pr20260928-0001" looked up as
+  "PR-20260928-0001"). Say once which number was looked up.
+- `near_misses` on a document-number field lists real numbers sharing the
+  digits that were typed. When the exact number matched nothing, ask whether
+  they meant one of those, rather than saying it does not exist.
 - `near_misses` appears only when the query found NOTHING and a name search was
   involved. It lists values that do exist and are close to what they typed. Do
   not report "no records" on its own in that case — say nothing matched the name
@@ -272,9 +381,22 @@ results are the only facts you have.
   they asked about 工程部 and it ran against "Engineering" — name the value that
   was actually used, once, in passing. They are the only one who can tell you
   the mapping was wrong, and they cannot if it is not shown.
-- A coded column (procurement type and the like) comes back as its number. The
-  query that ran carries `value_labels` where one applies — report the meaning,
-  not the code. "4" tells the reader nothing.
+- A coded column (procurement type, a status and the like) comes back as its
+  code. `value_labels` gives the name the page shows for each code — "4" is
+  "Service", "issued" is "Issued". Report that name, never the code, and in a
+  table's status column write exactly that name and nothing else.
+- `value_notes` explains some codes, for YOU only: use it to understand and
+  to answer correctly, never copy it into the reply, never quote it, and never
+  name a field from it (po_line.outstanding_qty and the like mean nothing to
+  the reader). An internal note pasted into a status column was a reported
+  bug (ISS-0013).
+- A status says what the system recorded, nothing more. "Issued" means the
+  order went out (how: place_order_method); for an email order the system
+  records that the email was SENT, never that it was delivered or read — so
+  never say the vendor received it. Say it is Issued and how and when it was
+  placed, if those were returned.
+- `added_below_your_reply` holds sentences the system adds under your reply
+  (in the reply's language). Do not repeat or paraphrase them.
 - An `assumption` means the query was narrowed on the reader's behalf because
   they did not say which one they meant. Say so in the reply, in one clause —
   they are looking at a subset and have no way to tell from the numbers alone.
@@ -312,15 +434,30 @@ results are the only facts you have.
 - Every condition in the question should appear in query_that_ran's `where`.
   If one does not — the question excluded something the query did not — do NOT
   apply it yourself by reading the rows. Say plainly that this condition was
-  not applied, and answer only for what the query did filter. Filtering by eye
+  not applied, and answer only for what the query did filter. Never ask the
+  person to change, update or add to the query or its fields: they cannot, the
+  query is built for them. Name the condition the system could not apply. Filtering by eye
   over one page and reporting the outcome is how "none qualify" was once given
   for a question where 44 orders did.
+- `comparison` (a year-on-year question) holds, per currency and metric, the
+  current figure, the same period last year, the change and the change in
+  percent, all computed for you — report them, never recompute. The two
+  periods are `resolved_period` and `previous_year.resolved_period`.
+- `resolved_period` is the dates the query covered. State them once, in the
+  reply's date format (DD/MM/YYYY), so the reader can see which period was
+  used — e.g. "this quarter (01/10/2026 – 20/10/2026)".
 - If the results are empty, say so plainly — do not speculate about why.
 - Empty is "nothing matched this query", NOT "this never happened". When the
   query filtered on a name the person typed, say that no records matched that
   name and give the filter back to them, so they can see it was spelled or
   shortened differently. Never conclude from an empty result that an event did
   not occur.
+- A yes/no about what a vendor or document CAN do, or whether something WAS
+  done or sent, must come from a field that records exactly that. When the
+  rows only hold a related field — a Prepaid flag on old PRs for "can this
+  vendor be prepaid", an approval history for "was the remittance sent" — say
+  the deciding data is not in what you were given, and do not conclude from
+  the related field (ISS-0066).
 - matched_rows, when present, is how many records the query actually matched. A
   total of null with matched_rows 0 means there were no such records — say that
   directly. Do not offer alternative explanations for a null you have been told
@@ -331,9 +468,24 @@ results are the only facts you have.
   subtotals were once summed to 2,000 over, with nothing in the reply to show
   it. If `totals` is absent, say the total is not available rather than
   supplying one.
+- `totals` covers EVERY group the query matched, not only the rows you were
+  given. `totals_shown`, when present, is the total of the rows you were given.
+  Asked for "the top 10 and their total", the total of those 10 is
+  `totals_shown`; `totals` may be given too, as the total of all groups — say
+  which is which. Never present `totals` as the total of the rows listed.
+- `currency_split` means the amounts were kept apart by currency: each row,
+  and each entry of `totals` / `totals_shown`, belongs to one currency. Give
+  every amount with its currency and keep the currencies separate — never add
+  CAD to USD or combine them into one figure, and do not convert.
 - Never introduce a number, name, date or status that is not in the results. If
   the question asked for something the results do not contain, say what is
   missing rather than filling it in.
+- If the question ALSO asked about something this query did not look up —
+  another document, another kind of record, how something works, anything
+  outside purchasing — say that this part was not looked up in this answer
+  and can be asked on its own. Never say it does not exist, is not available,
+  or that you have no data or no access for it: it simply was not queried
+  (ISS-0037, ISS-0069).
 """
 
 _QUERY_TOOL = {
@@ -381,12 +533,44 @@ _QUERY_TOOL = {
                     "required": ["field", "op", "value", "because"],
                 },
             },
-            "group_by": {"type": "array", "items": {"type": "string"}},
+            "group_by": {"type": "array", "items": {"type": "string"},
+                         "description": (
+                             "Fields to group by. A date or timestamp is grouped "
+                             "by a calendar unit written field:grain — "
+                             "created_at:month, invoice_date:week, "
+                             "created_at:quarter, created_at:year, "
+                             "received_at:day. A timestamp without a grain is "
+                             "rejected.")},
             "metrics": {"type": "array", "items": {"type": "string"}},
             "period": {
                 "type": "object",
                 "properties": {
                     "field": {"type": "string"},
+                    "calendar": {
+                        "type": "string",
+                        "enum": ["today", "yesterday", "this_week", "last_week",
+                                 "this_month", "last_month", "this_quarter",
+                                 "last_quarter", "this_year", "last_year"],
+                        "description": (
+                            "A named calendar period; the server works out its "
+                            "dates in plant-local time. Weeks start on Monday; "
+                            "a this_* period runs to today."),
+                    },
+                    "shift_years": {
+                        "type": "integer",
+                        "description": (
+                            "With calendar only: move the period by whole "
+                            "years. -1 = the same period last year."),
+                    },
+                    "compare_previous_year": {
+                        "type": "boolean",
+                        "description": (
+                            "Also run the same query for the same period one "
+                            "year earlier and return the change — for "
+                            "'compared with the same period last year', "
+                            "'year on year', '同比'. Totals only (metrics, no "
+                            "group_by)."),
+                    },
                     "last_n_months": {"type": "integer"},
                     "last_n_days": {"type": "integer"},
                     "from": {"type": "string"},
@@ -415,8 +599,8 @@ _CHECK_TOOL = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "doc_type": {"type": "string", "enum": ["pr"],
-                         "description": "Only purchase requests are wired up so far."},
+            "doc_type": {"type": "string", "enum": ["pr", "po"],
+                         "description": "pr: submit. po: create_pa, create_gr, submit_signoff."},
             "doc_number": {
                 "type": "string",
                 "description": (
@@ -425,7 +609,12 @@ _CHECK_TOOL = {
                     "to the document they are currently looking at."
                 ),
             },
-            "action": {"type": "string", "enum": ["submit"]},
+            "action": {"type": "string",
+                       "enum": ["submit", "create_pa", "create_gr", "submit_signoff"],
+                       "description": (
+                           "submit (a PR); create_pa = raise a payment application "
+                           "on the PO; create_gr = record a goods receipt on the "
+                           "PO; submit_signoff = submit the PO's sign-off.")},
         },
         "required": ["doc_type", "action"],
     },
@@ -632,7 +821,24 @@ _BUDGET_VARIANCE_TOOL = {
                 "maximum": 12,
                 "description": (
                     "Count spending up to and including this month, 1-12. '到 "
-                    "8 月为止' is 8. Omit for the whole year."
+                    "8 月为止' is 8. Omit it and the current year runs to the "
+                    "current month (a past year to December)."
+                ),
+            },
+            "cost_center": {
+                "type": "string",
+                "description": (
+                    "With account_code: the ONE cost centre asked about, as its "
+                    "code (MOH-0106-E01) or short name (MOH-ENG)."
+                ),
+            },
+            "account_code": {
+                "type": "string",
+                "description": (
+                    "With cost_center: the budget account asked about, e.g. "
+                    "CRM0090202. A question about one cost centre and one "
+                    "account is answered for that pair — never with the cost "
+                    "centre's total."
                 ),
             },
         },
@@ -674,6 +880,98 @@ _EXPLAIN_PLAN_TOOL = {
         "required": [],
     },
 }
+
+_RECEIVING_TOOL = {
+    "name": "receiving_report",
+    "description": (
+        "The Receiving Report's totals for a period: how many lines were "
+        "received, on how many receipts, against how many POs, and the average "
+        "lead time (days from ordering to receipt). Use it for 'how much did we "
+        "receive this month', 'average delivery lead time', '收货报表里本月收了多少"
+        "行、几张收货单、几张 PO、平均交货周期'. It is the Goods Receipt → "
+        "Receiving Report page's own calculation: physical receipts only, "
+        "cancelled/rejected left out, NC-mirrored orders left out."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "calendar": {
+                "type": "string",
+                "enum": ["today", "yesterday", "this_week", "last_week",
+                         "this_month", "last_month", "this_quarter",
+                         "last_quarter", "this_year", "last_year"],
+                "description": "A named calendar period (plant time).",
+            },
+            "from": {"type": "string", "description": "First day, YYYY-MM-DD"},
+            "to": {"type": "string", "description": "Last day, YYYY-MM-DD"},
+        },
+    },
+}
+
+_VENDOR_SUMMARY_TOOL = {
+    "name": "vendor_summary",
+    "description": (
+        "A summary of all business with ONE vendor: purchase orders, "
+        "agreements, invoices, payment applications and available vendor "
+        "credits, each counted and totalled per currency. Use it for '供应商 X "
+        "和我们合作的情况总结一下', 'summarise our business with X', 'everything "
+        "we have with X'. A single query covers one kind of document; this "
+        "covers all of them."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "vendor": {"type": "string",
+                       "description": "The vendor's name, or part of it, as asked."},
+        },
+        "required": ["vendor"],
+    },
+}
+
+_DASHBOARD_TOOL = {
+    "name": "my_dashboard",
+    "description": (
+        "Use when someone asks for the numbers on THEIR dashboard — '我的 "
+        "Dashboard 上各个数字是多少？', 'what do my dashboard cards say'. Returns "
+        "every card of their dashboard, computed by the Dashboard page's own "
+        "code, with what the cards mean. Takes no arguments."
+    ),
+    "input_schema": {"type": "object", "properties": {}},
+}
+
+
+def _rules_tool() -> dict:
+    """explain_rules — the areas are the rule registry's files, so an area is
+    offered exactly when there are rules for it (ISS-0022)."""
+    from app.services import rule_registry
+
+    catalogue = rule_registry.catalogue()
+    return {
+        "name": "explain_rules",
+        "description": (
+            "Use when someone asks HOW THE SYSTEM BEHAVES — a rule, a setting, "
+            "who may do something, in which statuses, what happens when…, how "
+            "often, whether a feature exists at all. Returns the system's own "
+            "rules for the area(s), each tied to the code that enforces it, "
+            "with current settings filled in. This is the answer to 'is this a "
+            "configuration question / not in my data' — it is not; call this."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "areas": {
+                    "type": "array",
+                    "minItems": 1, "maxItems": 3,
+                    "items": {"type": "string",
+                              "enum": [c["area"] for c in catalogue]},
+                    "description": " · ".join(
+                        f"{c['area']}: {c['label']} — {c['covers']}" for c in catalogue),
+                },
+            },
+            "required": ["areas"],
+        },
+    }
+
 
 _CANNOT_TOOL = {
     "name": "cannot_answer",
@@ -726,14 +1024,20 @@ def _today_note() -> str:
 
     Deliberately in the user turn rather than the cached system block, so the
     schema prefix keeps its cache across the day boundary.
+
+    The plant's date, not UTC's: after 20:00 in Toronto UTC is already
+    tomorrow, and "today" pointed at a day that had not started (ISS-0048).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(_PLANT_TZ)
     return (
         f"\n\nToday is {now:%Y-%m-%d} ({now:%A}). Resolve every date against "
         f"this, never against anything you remember. A month or day given "
         f"without a year means the most recent one that has already started — "
         f"normally {now.year}, or {now.year - 1} if {now.year} would put it in "
-        f"the future."
+        f"the future. A date written with slashes is day first, the way EPMS "
+        f"shows dates (DD/MM/YYYY): 10/11 is 10 November, never 11 October. "
+        f"When a slashed date could be read either way, say in the answer which "
+        f"date was used."
     )
 
 
@@ -741,19 +1045,321 @@ def _context_note(context: dict | None) -> str:
     """What the user is looking at, so "this PO" has a referent."""
     if not context:
         return ""
-    bits = [f"{k}={v}" for k, v in context.items() if v]
+    session = _session_note(context)
+    context = {k: v for k, v in context.items() if k not in _SESSION_KEYS}
+    bits = [f"{k}={v}" for k, v in context.items()
+            if v and k not in ("doc_filters", "doc_lines")]
     note = ("\n\nThe person is currently looking at: " + ", ".join(bits) +
             ". Resolve 'this'/'that' against it when it fits the question.") if bits else ""
-    if bits and context.get("doc_number"):
+    if bits and (context.get("doc_number") or context.get("doc_filters")):
         # Without this a question ABOUT the document on screen ("who is the
         # vendor on this one?") went to explain_workflow, the only route that
         # took the document implicitly (ISS-0004).
+        filters = context.get("doc_filters") or [
+            {"field": context.get("doc_number_field") or "number",
+             "value": context["doc_number"]}]
+        entity = context.get("doc_entity")
         note += (f" A question about this document's own data — its vendor, "
-                 f"amount, lines, dates, status — is a query filtered on "
-                 f"{context.get('doc_number_field') or 'number'} = {context['doc_number']}. "
-                 f"explain_workflow is only for "
-                 f"who has approved it and who it is waiting on.")
-    return note
+                 f"amount, lines, dates, status — is a query"
+                 f"{' on ' + entity if entity else ''} filtered on "
+                 + " and ".join(f"{f['field']} = {f['value']}" for f in filters) + ".")
+        if context.get("doc_lines"):
+            note += f" Its lines are {context['doc_lines']}."
+        if context.get("doc_type") in ("pr", "po", "pa"):
+            note += (" explain_workflow is only for "
+                     "who has approved it and who it is waiting on.")
+        else:
+            # A GR page asked "which PO is this for?" was told "I can only
+            # track PR / PO / PA approvals" (ISS-0068).
+            note += (" It is not a PR, PO or PA, so explain_workflow does not "
+                     "apply to it: its own data is a query, and where it stands "
+                     "in the purchasing chain is trace_document.")
+    return note + session
+
+
+# ── The conversation and the caller (ISS-0038, ISS-0067, ISS-0073) ────────────
+#
+# Keys the chat layer adds to the planner's context that are not about the
+# page. _context_note renders them on their own instead of listing them as
+# "currently looking at".
+_SESSION_KEYS = ("conversation", "caller", "question_part")
+
+# Appended to _PLAN_SYSTEM: rules about the conversation itself.
+_PLAN_SESSION_RULES = """\
+- A question about the CONVERSATION itself — what my first / previous / third
+  question was, what you answered then — is recall_conversation. Never answer
+  it from the turns you were shown: a long conversation is cut to its last few
+  exchanges, and the earliest turn you can see is not its first question. One
+  such answer named the 18th question of 20 as the first.
+- A reference to something said EARLIER — "刚才那张单呢？", "that one", "the
+  previous document", "上一张" — needs an earlier turn that names it. When the
+  conversation note says nothing came before this message, and the page being
+  viewed has no document either, call cannot_answer with reason too_ambiguous
+  and ask which document they mean, by number. Never fall back to whats_next
+  or to any query: a new conversation answered with the person's whole task
+  list is an answer to a question nobody asked.
+- "Who am I", "what are my roles", "which department am I in" is who_am_i.
+  The person asking is known (see the note about them below the question);
+  never say they cannot be identified, and never work out their roles from
+  their tasks — a task reaching someone does not make its role theirs, and a
+  System Admin sees every task without holding any of those roles.
+"""
+
+
+def _caller_note(caller) -> str:
+    """Who is asking, so "my", "me" and "I" have a referent (ISS-0073)."""
+    if not isinstance(caller, dict) or not caller.get("name"):
+        return ""
+    roles = caller.get("primary_role") or "none"
+    extra = [r.get("label") for r in caller.get("additional_roles") or [] if r.get("label")]
+    return (f"\n\nThe person asking is {caller['name']}"
+            f"{' (' + caller['department'] + ')' if caller.get('department') else ''}"
+            f"; primary role {roles}"
+            f"{'; additional roles ' + ', '.join(extra) if extra else ''}. "
+            f"\"I\", \"me\" and \"my\" mean them.")
+
+
+def _session_note(context: dict) -> str:
+    """What the planner is told about the conversation it is in, and who is
+    asking."""
+    return (_part_note(context.get("question_part"))
+            + _conversation_note(context.get("conversation"))
+            + _caller_note(context.get("caller")))
+
+
+def _conversation_note(conversation) -> str:
+    if not isinstance(conversation, dict):
+        return ""
+    earlier = int(conversation.get("earlier_questions") or 0)
+    shown = int(conversation.get("shown_questions") or 0)
+    if earlier == 0:
+        return ("\n\nThis is the first message of this conversation: nothing was "
+                "asked or answered before it.")
+    if shown < earlier:
+        return (f"\n\nThis conversation has {earlier} earlier questions; only the "
+                f"last {shown} of them (and their answers) are included above. "
+                f"You cannot see what was asked before those.")
+    return (f"\n\nThe conversation above is complete: {earlier} earlier "
+            f"question(s), all shown.")
+
+
+_RECALL_TOOL = {
+    "name": "recall_conversation",
+    "description": (
+        "Use when someone asks about this conversation itself: what their first "
+        "(or previous, or Nth) question was, or what you answered to it — "
+        "'我在这次对话里问的第一个问题是什么？你当时怎么回答的？', 'what did I "
+        "just ask?'. The server holds the whole conversation; you may only be "
+        "shown its last few turns."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "position": {
+                "type": "integer",
+                "description": (
+                    "Which earlier question: 1 = the first of the conversation, "
+                    "2 = the second, ...; -1 = the one just before this message, "
+                    "-2 = the one before that."
+                ),
+            },
+        },
+        "required": ["position"],
+    },
+}
+
+# ── A purchase from requisition to payment (ISS-0030) ────────────────────────
+
+_PLAN_CHAIN_RULES = """\
+- Progress ACROSS documents is trace_document, with the document they named
+  (or the one on screen): "PR-20260928-0001 从请购到付款的完整进度是怎样的？",
+  "has this PO been received, invoiced and paid?", "what happened after this
+  PR was approved?", "which PA pays this invoice, and is it paid?", "where is
+  this purchase up to?". It follows PR → PO → goods receipts → invoices →
+  payment applications → payment. explain_workflow is the approval steps of
+  ONE PR, PO or PA and says nothing about what came after its approval — the
+  answer that used it ended "it has entered the payment stage", which was
+  made up. A query reaches one kind of document only.
+"""
+
+_TRACE_TOOL = {
+    "name": "trace_document",
+    "description": (
+        "Use for where a purchase stands across ALL its documents: the "
+        "requisition, its purchase order(s), goods receipts, invoices, payment "
+        "applications and whether they were paid — '从请购到付款的完整进度', "
+        "'has PO-X been invoiced and paid', 'what happened after this PR'. "
+        "Start from any document in the chain. Each document comes back with "
+        "its status, as the Document Chain on the PO page shows it."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "doc_type": {"type": "string",
+                         "enum": ["pr", "po", "gr", "invoice", "pa", "agreement"]},
+            "doc_number": {
+                "type": "string",
+                "description": (
+                    "The number as written, e.g. PR-20260928-0001, "
+                    "PO-535-2609-02, INV-2026-0631. Omit only when they clearly "
+                    "mean the document on screen."
+                ),
+            },
+        },
+        "required": ["doc_type"],
+    },
+}
+
+_CHAIN_SYSTEM = """\
+You are telling a colleague where a purchase stands, from requisition to
+payment.
+
+You are given the chain of documents around the one they asked about, read
+from the system: the purchase request, each purchase order with its goods
+receipts, invoices and payment applications, and, for agreement purchases, the
+agreement with its invoices and payment applications.
+
+- Answer what they asked. For "the full progress", walk it in order — PR → PO
+  → goods receipts → invoices → payment applications → payment — one line per
+  document: its number, its status (status_label when there is one) and the
+  date or amount that matters for that step. Then say in one sentence where it
+  stands now and what is still outstanding.
+- Report statuses exactly as given. `payment` on a payment application is
+  whether the money has gone out: "paid" (give paid_on), "awaiting payment",
+  "not yet — still in approval". An approved payment application is NOT paid.
+  Never write that a purchase "has entered the payment stage" or the like
+  without naming the payment application and its payment state.
+- `facts` on a purchase order were decided by the system (anything_received,
+  invoiced, pa_raised, three_way_matched). Use them for "has it been
+  received / invoiced"; never re-derive them from the lists.
+- `waiting_on` is the approval step, and the approver, a document still in
+  approval is with.
+- A layer with `not_visible` is one this person may not see: say it cannot be
+  shown to them, never that there are none. A count of 0 means none yet.
+- `listed` means only the first `listed` of `count` documents are given: give
+  the count and say the rest are on the document's page.
+- `no_order_yet`: the requisition has no purchase order yet. `more_orders`:
+  that many further orders are not shown.
+- Every amount with its currency. Do not add amounts up.
+- Never invent a document, a status, a date or a step that is not in what you
+  were given.
+"""
+
+
+async def narrate_chain(message: str, chain: dict) -> dict:
+    """Tell where a purchase stands. Same no-new-facts rule as the others."""
+    import anthropic
+
+    payload = {"question": message, **chain, **reply_language.instructions(message)}
+    try:
+        resp = await _client().messages.create(
+            model=MODEL,
+            max_tokens=_GUIDE_MAX_TOKENS,
+            system=reply_language.LANGUAGE_RULES + _CHAIN_SYSTEM,
+            messages=[{"role": "user",
+                       "content": json.dumps(payload, ensure_ascii=False, default=str)}],
+        )
+    except anthropic.APIConnectionError as exc:
+        raise LlmUnavailable(f"Could not reach the model: {exc}") from exc
+    except anthropic.RateLimitError as exc:
+        raise LlmUnavailable("The shared API quota is exhausted right now") from exc
+    except anthropic.APIStatusError as exc:
+        log.error("chain narration failed %s: %s", exc.status_code, exc.message)
+        raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
+
+    _log_usage("narrate_chain", resp)
+    return {"text": _reply_text(resp, message), "usage": _usage(resp)}
+
+
+_WHO_AM_I_TOOL = {
+    "name": "who_am_i",
+    "description": (
+        "Use when someone asks who they are in the system: their name, their "
+        "department, their roles — '我是谁？我有哪些角色？', 'what roles do I "
+        "have', 'which department am I in'. Returns their own record and every "
+        "role they hold, as the system resolves it. Takes no arguments."
+    ),
+    "input_schema": {"type": "object", "properties": {}},
+}
+
+# Tool name -> the `kind` plan() returns for it.
+_SESSION_TOOL_KINDS = {
+    "recall_conversation": "recall",
+    "who_am_i": "me",
+    "trace_document": "trace",
+    "split_question": "split",
+}
+
+
+def _session_tools(context: dict | None) -> list[dict]:
+    """The planner tools this section adds. A part of a split message is
+    planned on its own and is never split again."""
+    tools = [_TRACE_TOOL, _RECALL_TOOL, _WHO_AM_I_TOOL]
+    if not (context or {}).get("question_part"):
+        tools.append(_SPLIT_TOOL)
+    return tools
+
+
+# ── One message, several questions (ISS-0037, ISS-0069) ──────────────────────
+#
+# "PO-576-2610-01 的状态、PO-535-2609-02 的金额、供应商 Raise The Standard 的联系人
+# 分别是什么？" ran one query for the first PO and called the other two "not in
+# the query result"; "PO-079 是什么状态，INV-2026-0123 金额多少，怎么催审批人，再
+# 帮我写一首诗" answered the PO and said the invoice amount was unavailable —
+# asked alone, it is answered. The planner was built to run one tool per
+# message and plan() returned the first. A message that asks several things is
+# now split into its parts here, and each part is planned, checked against its
+# own permissions and answered on its own (assistant_chat._answer_parts) — at
+# most MAX_PARTS of them, so the cost of one message stays bounded; any
+# further parts are named as not looked up.
+MAX_PARTS = 3
+
+_PLAN_PARTS_RULES = """\
+- When ONE message asks two or more SEPARATE questions that need different
+  lookups — documents of different kinds, a data question next to a
+  how-does-it-work question, a request outside purchasing — call
+  split_question with each part as a complete question of its own. Never
+  plan only the first part: the others were then reported "not in the query
+  result" although the data was there. Several facts about the same document,
+  the same facts about several documents of one kind (one query with `in`),
+  and every condition on one list are ONE question — do not split those.
+"""
+
+_SPLIT_TOOL = {
+    "name": "split_question",
+    "description": (
+        "Use when one message asks several separate questions that each need "
+        "their own lookup or route, e.g. 'PO-079-2605-03 是什么状态，INV-2026-0123 "
+        "金额多少，怎么催审批人，再帮我写一首诗'. Each part is then planned and "
+        "answered separately, in order."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "parts": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "The separate questions, in the order asked, each written "
+                    "as a complete question in the person's own language and "
+                    "words, with the document numbers or names it needs — "
+                    "e.g. ['PO-079-2605-03 是什么状态？', 'INV-2026-0123 金额多少？', "
+                    "'怎么催审批人？', '帮我写一首诗']."
+                ),
+            },
+        },
+        "required": ["parts"],
+    },
+}
+
+
+def _part_note(part) -> str:
+    if not isinstance(part, dict):
+        return ""
+    return (f"\n\nThis is part {part.get('index')} of {part.get('of')} of a longer "
+            f"message the person sent: «{part.get('whole')}». Plan THIS part only — "
+            f"the other parts are answered separately. Use the whole message only "
+            f"to understand what this part refers to.")
 
 
 def _language_note(message: str) -> str:
@@ -796,7 +1402,8 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
         )
 
     system = [
-        {"type": "text", "text": _PLAN_SYSTEM},
+        {"type": "text", "text": (_PLAN_SYSTEM + _PLAN_SESSION_RULES + _PLAN_CHAIN_RULES
+                                  + _PLAN_PARTS_RULES)},
         # The schema is the stable half of the prompt and by far the larger one,
         # so it sits in its own block for caching.
         {"type": "text", "text": "Schema:\n" + json.dumps(schema, ensure_ascii=False),
@@ -811,10 +1418,15 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             tools=[_QUERY_TOOL, _CHECK_TOOL, _WORKFLOW_TOOL, _NEXT_TOOL,
                    _PROCESS_TOOL, _EXPLAIN_PLAN_TOOL, _DOC_TYPES_TOOL,
                    _MODULES_TOOL, _PRODUCIBLE_TOOL, _REPORT_TOOL,
-                   _BUDGET_VARIANCE_TOOL, _CANNOT_TOOL],
+                   _BUDGET_VARIANCE_TOOL, _RECEIVING_TOOL, _VENDOR_SUMMARY_TOOL,
+                   _rules_tool(), _DASHBOARD_TOOL, *_session_tools(context),
+                   _CANNOT_TOOL],
             # Forcing a tool call removes the third option — prose that sounds
             # like an answer but was never checked against any data.
             tool_choice={"type": "any"},
+            # The same question must take the same route (ISS-0046, ISS-0061:
+            # asked three times, three different answers). Still Haiku.
+            temperature=0,
             messages=(history or []) + [{"role": "user", "content": user_text}],
         )
     except anthropic.APIConnectionError as exc:
@@ -830,6 +1442,9 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
     for block in resp.content:
         if block.type != "tool_use":
             continue
+        if block.name in _SESSION_TOOL_KINDS:
+            return {"kind": _SESSION_TOOL_KINDS[block.name], **dict(block.input),
+                    "usage": _usage(resp)}
         if block.name == "run_query":
             return {"kind": "query", "query": dict(block.input), "usage": _usage(resp)}
         if block.name == "whats_next":
@@ -842,6 +1457,14 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             return {"kind": "modules", "usage": _usage(resp)}
         if block.name == "explain_document_types":
             return {"kind": "doc_types", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "explain_rules":
+            return {"kind": "rules", "areas": _areas_of(block.input), "usage": _usage(resp)}
+        if block.name == "my_dashboard":
+            return {"kind": "dashboard", "usage": _usage(resp)}
+        if block.name == "vendor_summary":
+            return {"kind": "vendor_summary", **dict(block.input), "usage": _usage(resp)}
+        if block.name == "receiving_report":
+            return {"kind": "receiving", **dict(block.input), "usage": _usage(resp)}
         if block.name == "budget_vs_actual":
             return {"kind": "variance", **dict(block.input), "usage": _usage(resp)}
         if block.name == "explain_report":
@@ -884,11 +1507,17 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         payload["totals"] = result["totals"]
     if "assumption" in result:
         payload["assumption"] = result["assumption"]
+    if result.get("said_with_this_list"):
+        # Added under the reply in code (ISS-0008); the narrator only needs to
+        # know not to say them twice.
+        payload["added_below_your_reply"] = [n[1] for n in result["said_with_this_list"]]
     if "value_labels" in result:
         # The payload is a whitelist, so a key added to the query result does
         # not reach this call by itself — which is how the mapping got built,
         # threaded through, and still reported back as "type 2".
         payload["value_labels"] = result["value_labels"]
+    if "value_notes" in result:
+        payload["value_notes"] = result["value_notes"]
     payload.update(reply_language.instructions(message))
     try:
         resp = await _client().messages.create(
@@ -907,7 +1536,7 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate", resp)
-    text = _reply_text(resp)
+    text = _reply_text(resp, message)
     return {"text": text, "usage": _usage(resp)}
 
 
@@ -929,6 +1558,10 @@ crucially whether it is something THIS PERSON can fix.
 - If complete is false, the approval engine could not be reached, so the list is
   partial — say so rather than implying it is the whole picture.
 - Do not invent reasons, next steps, or people. The checks are all you know.
+- The same applies to an action on a purchase order (creating a payment
+  application or a goods receipt, submitting a sign-off): lead with whether
+  it can be done now and list what is in the way. `not_checked` is what was
+  not evaluated — mention it, so passing checks are not read as a promise.
 """
 
 
@@ -943,6 +1576,8 @@ async def narrate_preflight(message: str, doc_number: str | None,
         "allowed": preflight.get("allowed"),
         "complete": preflight.get("complete"),
         "checks": preflight.get("checks", []),
+        # PO actions (po_action_check) say what they could not evaluate.
+        **({"not_checked": preflight["not_checked"]} if preflight.get("not_checked") else {}),
         **reply_language.instructions(message),
     }
     try:
@@ -962,7 +1597,7 @@ async def narrate_preflight(message: str, doc_number: str | None,
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_preflight", resp)
-    return {"text": _reply_text(resp),
+    return {"text": _reply_text(resp, message),
             "usage": _usage(resp)}
 
 
@@ -982,12 +1617,21 @@ sitting right now.
   delegation. Say so; it matters to whoever is chasing it.
 - history is what has already happened, most useful as "approved by X on DATE".
   Include comments when they are there — a returned document's comment is
-  usually the reason.
+  usually the reason. An event with `imported` true was carried over from the
+  old PMS system when the document was migrated; it is not a comment anyone
+  wrote. Each event's actor_role is the role the person acted in.
 - current_step is null when the document is not awaiting approval. Then say what
   its status is instead of inventing a waiting party.
 - If steps_available is false the engine could not be reached, so you have the
   history but not the full chain — say that rather than implying the chain is
   short.
+- For a payment application, `milestones.paid_on` is the payment date Finance
+  recorded (null = not paid yet); submitted_at and approved_at are when it was
+  submitted and fully approved. Payment is not an approval step, so it is not
+  in history.
+- A comment is not a payment account, a bank or a payment date. If what was
+  asked is not in what you were given, say it is not shown here — never read
+  it out of a comment.
 - Never invent a name, a step, a date or a role that is not in what you were
   given.
 """
@@ -1031,7 +1675,7 @@ async def narrate_plan(question: str, explained: list[dict],
             "content": json.dumps(payload, ensure_ascii=False, default=str),
         }],
     )
-    return {"text": _reply_text(resp),
+    return {"text": _reply_text(resp, question),
             "usage": _usage(resp)}
 
 
@@ -1063,7 +1707,7 @@ async def narrate_workflow(message: str, view: dict) -> dict:
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_workflow", resp)
-    return {"text": _reply_text(resp),
+    return {"text": _reply_text(resp, message),
             "usage": _usage(resp)}
 
 
@@ -1083,6 +1727,14 @@ You are helping a colleague who may never have been trained on this system.
   never write "~", "about" or "40+", never re-group them, never add them up
   yourself, and never count `examples`: it is only the first few tasks (urgent
   first, then the oldest), `examples_left_out` were not sent to you at all.
+  `groups` IS the table: one row per entry, in the order given, with its label
+  and count exactly as given — an "Other (N types)" row included, already
+  counted (its `made_of` says what is in it). Never merge rows into an "other"
+  row of your own, never split one, never drop one: the rows add up to
+  `open_task_count` only as given. `not_in_this_inbox` are tasks of other
+  modules (VMS, OA) that the EPMS Task Inbox does not list; they are NOT in
+  `open_task_count` or `groups`. Mention them, if any, in one sentence after
+  the table with their module, and never add them to the total.
   Lead with the total and the urgent one(s), then the groups as a table, then
   name a few `examples` by document number so they can find them. How many
   reached them personally and how many through a role they hold is
@@ -1090,6 +1742,20 @@ You are helping a colleague who may never have been trained on this system.
   generalise that, or anything else, from the examples.
 - A task marked assigned_to_me_personally false reached them through a role they
   hold — worth saying, because "why is this mine?" is the next question.
+- Overdue means past its due date, and `overdue_count` is that count. When
+  `with_due_date_count` is 0 no task has a due date, so none is overdue — say
+  so (the tasks `rules` explain why) and offer the urgent ones or the oldest
+  instead. Urgent is a priority, not lateness: never call an urgent task
+  overdue, and never call the rest "on time".
+- For a dashboard (`kind` dashboard): give every card in `kpis` with its value
+  exactly as given (title: value), in the order given, then `users_by_role`
+  when present. Then add, briefly, what `rules` say about any card shown —
+  that a figure is a fixed label, always 0, or not what its title suggests.
+- Answer only what was asked. A question about an escalation, a reminder or
+  any single rule is answered with that, not with the approval chain; walk
+  the steps only when they asked how the chain runs. An approval chain
+  nobody asked about is noise, and twice it was added to an answer about
+  goods-receipt escalation (ISS-0019).
 - For a process: walk the steps in order, in plain sentences. A step with
   `conditional` true does NOT always run — give its `condition` verbatim in your
   own words, because someone told a step is mandatory will wait for an approval
@@ -1101,22 +1767,53 @@ You are helping a colleague who may never have been trained on this system.
   were given. Never name the last approver as the one who pays: tested on
   "AP Clerk 能执行付款吗？", the reply said the Finance Manager executes the
   payment because that step is last — invented, and wrong.
-- `rules` (document types) and `how_approvals_are_given` (processes) state how
+- `rules` (document types; for a PR process, the over-budget rules),
+  `engine_rules` (processes: how every chain behaves — resuming after a
+  return, one person on two steps, an empty post, the System Admin, who may
+  approve or cancel, cross-department payments) and
+  `how_approvals_are_given` (processes) state how
   the system behaves, each one verified against the code. When the question is
   one of them, the rule IS the answer: give it plainly and the same way every
   time, never hedge it, never contradict it, and never answer the opposite
   from general knowledge of how such systems usually work. If no rule covers
-  what was asked, say that the guide does not cover it — do not reason one out.
+  what was asked, say that you have no rule for that part — do not reason one
+  out, and do not tell them to ask an administrator, Finance, IT or anyone
+  else, or name a role, page or setting that is not in what you were given.
+- A rule's exceptions and alternatives — an "unless", an "or", an override
+  and who may use it, what applies instead — are part of the rule. When you
+  give a rule, give them too; never shorten it to its first half, and never
+  turn "no X check, but Y instead" into "no check" (ISS-0010: four answers in
+  five dropped the receipt override; one said agreement payments need no
+  receipt check at all).
+- For system rules (`kind` rules): `areas[].rules` are statements of how the
+  system behaves, each verified against the code, with current settings
+  already filled in. Find the rule(s) that answer the question and give them
+  plainly — the same way every time, never hedged, never contradicted, never
+  replaced by how such systems usually work. A rule that says something does
+  NOT exist or is NOT done is a full answer: say "no" and why. Answer every
+  part of the question that a rule covers, and only those parts; do not add
+  rules nobody asked about. For a part no rule covers, say you have no rule
+  for it — never suggest asking someone, and never name a role, page or
+  setting that is not in the rules. Rule ids are for you, not for the reader:
+  refer to another rule by what it says. `unavailable` names rules or areas
+  that could not be read just now — say that part could not be checked.
 - For a purchase request, `over_budget` is what happens when the PR is over
   budget, as configured right now. Asked about over-budget, lead with it: name
   `mode_label`, then the `added_steps` in order — they come BEFORE the normal
   chain — or, when `blocks_submission` is true, that such a PR cannot be
-  submitted at all. Give `note`'s point that it only applies to over-budget PRs
-  and is fixed when the PR is submitted. Describe only those steps; never add
-  one, and never call the over-budget step by another role's name.
+  submitted at all. When `justification_required` is true, say that the
+  requester must write a justification on the PR — in every such mode,
+  including one that adds no steps. Give `note` in full: it applies only to
+  over-budget PRs; the mode is read when the PR is submitted and kept for it; a
+  stricter mode set later never adds steps to a PR already submitted, and a
+  looser one skips over-budget steps it has not yet passed. Do not shorten
+  this to "fixed when submitted". Describe only those steps; never
+  add one, and never call the over-budget step by another role's name.
 - If steps_available is false the engine could not be reached; say the chain
   could not be read rather than describing one from memory. You do not know
   this process except from what you were given.
+- The payload was produced by the system, not by the person: never say they
+  provided it or that it is "the data you gave".
 - For document types: this is the form, not the approval chain. Do not describe
   who approves anything — that was not asked and is a different question.
   Give the types as a table when there are more than three, one row each, and
@@ -1171,6 +1868,30 @@ You are helping a colleague who may never have been trained on this system.
   centre doing well. `nothing_visible` and `actual_unavailable` are refusals —
   pass them on as they are, and never fall back to presenting the plan alone as
   though it answered a question about variance.
+  Every amount is in `currency` (CAD): write it with the amounts, never 元,
+  万元 or another unit, and never rescale the numbers. Say which months the
+  actual covers (1 to `through_month` of `fiscal_year`); a current year does
+  not run "to December".
+- For a vendor summary (`kind` vendor_summary): one short section per kind of
+  document in `sections` — counts and totals exactly as given, each amount
+  with its currency, never added across currencies or across sections.
+  Totals leave out cancelled, rejected and draft documents (say so once);
+  `by_status` gives the counts of every status, cancelled included. A section
+  with `not_visible` is one this person may not see: say it is not shown
+  rather than "none". `candidates` means the name matched several vendors:
+  list them and ask which one. Do not add opinions such as "a stable
+  relationship" — report the figures.
+- For the Receiving Report (`kind` receiving_report): give lines, receipts,
+  orders and the average lead time for `period` exactly as given, and say the
+  report counts physical receipts only and leaves out NC-mirrored orders.
+  `avg_lead_days` null means no line in the window has an order date — say
+  that, never 0. Lines are received lines, not receipts.
+- For one cost centre × account (`kind` budget_account_balance): lead with
+  `available` — when `over_budget_by` is set, say it is over budget by that
+  amount and nothing is left. Then annual budget, committed and actual spent,
+  in `currency`. This is the figure the PR form's budget widget shows. When
+  `found` is false, say no such cost centre is visible to them (never "it has
+  no budget"); `balance_unavailable` is passed on as it is.
 - For a report's workings: they are looking at the report already, so do not
   describe what the module is for. Answer in the order they asked — usually
   where the number comes from first, then how it was assigned to a cost centre.
@@ -1211,7 +1932,10 @@ async def narrate_guide(message: str, payload: dict) -> dict:
     try:
         resp = await _client().messages.create(
             model=MODEL,
-            max_tokens=_NARRATE_MAX_TOKENS,
+            max_tokens=_GUIDE_MAX_TOKENS,
+            # A rule answered three ways in three tries is not a rule
+            # (ISS-0046, ISS-0028). Still Haiku.
+            temperature=0,
             system=reply_language.LANGUAGE_RULES + _GUIDE_SYSTEM,
             messages=[{"role": "user",
                        "content": json.dumps(payload, ensure_ascii=False, default=str)}],
@@ -1225,7 +1949,7 @@ async def narrate_guide(message: str, payload: dict) -> dict:
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("narrate_guide", resp)
-    return {"text": _reply_text(resp),
+    return {"text": _reply_text(resp, message),
             "usage": _usage(resp)}
 
 
@@ -1266,7 +1990,7 @@ async def render_fixed_reply(text: str, question: str, language: str | None) -> 
         raise LlmUnavailable(f"Model returned {exc.status_code}") from exc
 
     _log_usage("render_fixed_reply", resp)
-    return {"text": _reply_text(resp),
+    return {"text": _reply_text(resp, question),
             "usage": _usage(resp)}
 
 
@@ -1284,8 +2008,27 @@ def strip_markup(text: str) -> str:
     return _MARKUP.sub("", text or "").strip()
 
 
-def _reply_text(resp: Any) -> str:
-    return strip_markup("".join(b.text for b in resp.content if b.type == "text"))
+# Said when a reply hit its length limit. A cut table used to simply stop
+# mid-row ("... SELL-0113 SELL-ECOM 1,579,249.08 754"), with nothing to say
+# it was incomplete (ISS-0014, PRD AST-003).
+_CUT_NOTE = {
+    "Chinese (Simplified)": "（回答过长，在这里被截断了。可以把问题问得更具体，或少要几行再问；列表类结果可以用下方的 Export to Excel 拿到完整数据。）",
+}
+_CUT_NOTE_DEFAULT = ("(The answer was too long and was cut off here. Ask a narrower "
+                     "question or for fewer rows; for a list, Export to Excel below "
+                     "has all of it.)")
+
+
+def _reply_text(resp: Any, question: str | None = None) -> str:
+    text = strip_markup("".join(b.text for b in resp.content if b.type == "text"))
+    if getattr(resp, "stop_reason", None) == "max_tokens":
+        # Drop the line that was being written when the limit hit — half a
+        # table row or an unclosed **bold** reads as data — and say so.
+        head, sep, _ = text.rstrip().rpartition("\n")
+        text = (head if sep else text).rstrip()
+        note = _CUT_NOTE.get(reply_language.detect(question or ""), _CUT_NOTE_DEFAULT)
+        text = f"{text}\n\n{note}"
+    return text
 
 
 def _usage(resp: Any) -> dict:
@@ -1342,3 +2085,69 @@ async def record_usage(db, user_id, stage: str, usage: dict) -> None:
             await own.commit()
     except Exception:  # noqa: BLE001 — bookkeeping must never break the reply
         log.exception("assistant: could not record usage for stage=%s", stage)
+
+# ── Rule questions that reached a refusal (ISS-0022) ─────────────────────────
+#
+# The planner can still decline a question about how the system behaves —
+# "not a data question", a document type outside a tool's enum, "which
+# document do you mean" for a question that names none because it is general.
+# Each of those used to end in text the model or the code wrote: "not in my
+# data, ask the System Admin". Before any of them is said, this asks one
+# narrow question of the same model: is this about a rule, and in which areas?
+# Output is constrained to the registry's areas; no prose is produced.
+
+_PICK_SYSTEM = """\
+You route a colleague's question inside UniOps, a purchasing system.
+
+Decide one thing: is the question about how the system BEHAVES — a rule, a
+setting, who may do something, in which statuses, what happens when, how
+often, whether a feature exists — rather than about specific records?
+
+- If it is, call explain_rules with the area(s) it belongs to (up to three).
+- If it asks about specific data or one specific document's own state
+  ("has this one been approved", "how many POs", "where is PR-…"), call
+  not_a_rule_question.
+"""
+
+_NOT_A_RULE_TOOL = {
+    "name": "not_a_rule_question",
+    "description": "The question is about specific data or a specific document.",
+    "input_schema": {"type": "object", "properties": {}},
+}
+
+
+def _areas_of(tool_input) -> list[str]:
+    """The areas a model asked for, kept to the registry's own."""
+    from app.services import rule_registry
+
+    raw = (tool_input or {}).get("areas")
+    if isinstance(raw, str):
+        raw = [raw]
+    known = set(rule_registry.area_keys())
+    return [a for a in dict.fromkeys(raw or []) if a in known][:3]
+
+
+async def pick_rule_areas(message: str, history: list[dict] | None = None) -> dict:
+    """{"areas": [...], "usage": {...}} — empty areas when it is not a rule
+    question (or the model could not be reached: the caller then says what it
+    would have said anyway)."""
+    try:
+        resp = await _client().messages.create(
+            model=MODEL,
+            max_tokens=256,
+            temperature=0,
+            system=_PICK_SYSTEM,
+            tools=[_rules_tool(), _NOT_A_RULE_TOOL],
+            tool_choice={"type": "any"},
+            messages=(history or []) + [{"role": "user", "content": message}],
+        )
+    except LlmUnavailable:
+        return {"areas": [], "usage": {}}
+    except Exception as exc:  # noqa: BLE001 — a failed rescue is just no rescue
+        log.warning("pick_rule_areas failed: %s", exc)
+        return {"areas": [], "usage": {}}
+    _log_usage("pick_rule_areas", resp)
+    for block in resp.content:
+        if block.type == "tool_use" and block.name == "explain_rules":
+            return {"areas": _areas_of(block.input), "usage": _usage(resp)}
+    return {"areas": [], "usage": _usage(resp)}

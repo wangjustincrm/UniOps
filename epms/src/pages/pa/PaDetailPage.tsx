@@ -29,6 +29,7 @@ import {
 import { InvoiceMatchVariancePanel } from '@/components/invoices/InvoiceMatchVariancePanel'
 import { useConfig } from '@/hooks/useConfig'
 import type { ApiPa } from '@/services/pa'
+import { historyLine, isSkipped } from '@/lib/approvalHistory'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -52,9 +53,11 @@ function PaStatusBadge({ status }: { status: PaStatus }) {
 // ─── Approval timeline ────────────────────────────────────────────────────────
 
 function TimelineStep({
-  label, actor, date, status, note,
+  label, actor, date, dateOnly, status, note,
 }: {
   label: string; actor?: string; date?: string;
+  /** `date` is a calendar date with no time of day (the payment date). */
+  dateOnly?: boolean;
   status: 'done' | 'active' | 'pending' | 'skipped';
   note?: string;
 }) {
@@ -81,7 +84,7 @@ function TimelineStep({
       </div>
       <div className="pb-5">
         <p className={cn('text-sm font-semibold text-neutral-800', status === 'skipped' && 'line-through text-neutral-400')}>{actor ? `${label} — ${actor}` : label}</p>
-        {date && <p className="text-xs text-neutral-400 mt-0.5">{formatDateTime(date)}</p>}
+        {date && <p className="text-xs text-neutral-400 mt-0.5">{dateOnly ? formatDate(date) : formatDateTime(date)}</p>}
         {isAutoApproved && (
           <span className="inline-flex items-center mt-1 rounded-full bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
             Auto-approved
@@ -523,18 +526,20 @@ export default function PaDetailPage() {
       const isDone = ['approved', 'processed'].includes(pa.status) || i < stepIdx
       const isActive = !isDone && i === stepIdx && ['submitted', 'in_review'].includes(pa.status)
       const evt = approveEventByStep[i]
-      const isAutoSkipped = evt?.comment?.includes('Auto-skipped') ?? false
+      const isAutoSkipped = isSkipped(evt)
       return {
         label: node.label,
         actor: isAutoSkipped ? undefined : evt?.actor_name ?? undefined,
         date: isAutoSkipped ? undefined : evt?.created_at ?? undefined,
         // A skipped step shows WHY it was skipped. The tag alone says a level
         // was bypassed without saying on what grounds, which for a payment
-        // approval is the one thing a reader actually needs.
-        note: evt?.comment?.includes('Auto-approved')
+        // approval is the one thing a reader actually needs. skip_reason is
+        // the server's reading of the comment — it also handles the
+        // "Re-synced (config change): Auto-skipped (...)" form.
+        note: evt?.kind === 'same_approver' || evt?.kind === 'imported'
           ? 'Auto-approved (same approver)'
           : isAutoSkipped
-            ? evt?.comment?.replace(/^Auto-skipped\s*/, '').replace(/^\(|\)$/g, '') || undefined
+            ? evt?.skip_reason || undefined
             : undefined,
         status: isAutoSkipped ? 'skipped' as const : isDone ? 'done' as const : isActive ? 'active' as const : 'pending' as const,
       }
@@ -542,7 +547,11 @@ export default function PaDetailPage() {
     {
       label: 'Payment Processed',
       actor: undefined as string | undefined,
-      date: pa.status === 'processed' ? pa.updated_at : undefined,
+      // The payment date Finance recorded (PAY-005) — a date, so shown
+      // without a time. It used to be updated_at, the last time anything
+      // touched the PA, which is not when it was paid (PRD 3.7.2).
+      date: pa.status === 'processed' ? pa.paid_on ?? undefined : undefined,
+      dateOnly: true,
       note: undefined as string | undefined,
       status: pa.status === 'processed' ? 'done' as const : pa.status === 'approved' ? 'active' as const : 'pending' as const,
     },
@@ -945,19 +954,28 @@ export default function PaDetailPage() {
               <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Activity History</h3>
               <div className="flex flex-col text-sm">
                 {events && events.length > 0 ? (
-                  [...events].reverse().map((evt, i) => (
-                    <div key={i} className="flex gap-4 pb-4 border-b border-neutral-100 last:border-0 last:pb-0">
-                      <div className="text-xs text-neutral-400 w-32 shrink-0 mt-0.5">{formatDateTime(evt.created_at)}</div>
-                      <div>
-                        <p className="text-sm font-medium text-neutral-800 capitalize">{evt.action.replace(/_/g, ' ')}</p>
-                        <p className="text-xs text-neutral-500 mt-0.5">
-                          by {evt.actor_role.replace(/_/g, ' ')}
-                          {evt.actor_name && <span className="text-neutral-400"> — {evt.actor_name}</span>}
-                        </p>
-                        {evt.comment && <p className="text-xs text-neutral-400 mt-0.5 italic">"{evt.comment}"</p>}
+                  [...events].reverse().map((evt, i) => {
+                    const line = historyLine(evt)
+                    return (
+                      <div key={i} className="flex gap-4 pb-4 border-b border-neutral-100 last:border-0 last:pb-0">
+                        <div className="text-xs text-neutral-400 w-32 shrink-0 mt-0.5">{formatDateTime(evt.created_at)}</div>
+                        <div>
+                          <p className="text-sm font-medium text-neutral-800 capitalize">{line.action}</p>
+                          <p className="text-xs text-neutral-500 mt-0.5">
+                            {line.role}
+                            {line.actorName && <span className="text-neutral-400"> — {line.actorName}</span>}
+                          </p>
+                          {/* Quoted for what a person wrote; unquoted for a skip
+                              reason, which is the system explaining itself. */}
+                          {line.note && (
+                            <p className="text-xs text-neutral-400 mt-0.5 italic">
+                              {evt.kind === 'skipped' ? line.note : `"${line.note}"`}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 ) : (
                   <div className="flex gap-4 pb-4">
                     <div className="text-xs text-neutral-400 w-32 shrink-0 mt-0.5">{formatDateTime(pa.created_at)}</div>

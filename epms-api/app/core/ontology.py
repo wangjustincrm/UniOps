@@ -25,16 +25,23 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
-from app.models.gr import GoodsReceipt
+from app.core import doc_numbers
+from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.agreement import PurchaseAgreement
+from app.models.agreement_receipt import AgreementReceipt
+from app.models.agreement_schedule import AgreementPaymentSchedule
+from app.models.freight import FreightCarrier, FreightShipment
 from app.models.pa import PaymentApplication
 from app.models.user import User
 from app.models.department import Department
 from app.models.cost_center import CostCenter
 from app.models.po import PoLineItem, PurchaseOrder
+from app.models.part import Part
+from app.models.project import Project
 from app.models.pr import PrLineItem, PurchaseRequest
+from app.models.vendor import Vendor
 
 _ONTOLOGY_DIR = Path(__file__).resolve().parent.parent / "ontology"
 ONTOLOGY_PATH = _ONTOLOGY_DIR / "epms.yaml"
@@ -67,7 +74,7 @@ _KINDS = frozenset({TEXT, ENUM, MONEY, DATE, DATETIME, BOOL, INT})
 # Tables owned by other services are mapped here, on their own metadata — see
 # _model_for_table. Never the application Base.
 _ExternalBase = declarative_base()
-_AGG_FNS = frozenset({"sum", "count", "avg", "min", "max"})
+_AGG_FNS = frozenset({"sum", "count", "avg", "min", "max", "count_distinct"})
 _CARDINALITIES = frozenset({"one_to_many", "many_to_one"})
 
 # YAML names a model; only these are addressable. Adding an entity means adding
@@ -87,6 +94,15 @@ _MODELS: dict[str, type] = {
     "PurchaseOrder": PurchaseOrder,
     "PoLineItem": PoLineItem,
     "GoodsReceipt": GoodsReceipt,
+    "GrLineItem": GrLineItem,
+    "InvoicePoAllocation": InvoicePoAllocation,
+    "Vendor": Vendor,
+    "Part": Part,
+    "AgreementReceipt": AgreementReceipt,
+    "AgreementPaymentSchedule": AgreementPaymentSchedule,
+    "FreightShipment": FreightShipment,
+    "FreightCarrier": FreightCarrier,
+    "Project": Project,
     "Invoice": Invoice,
     "PaymentApplication": PaymentApplication,
     "PurchaseAgreement": PurchaseAgreement,
@@ -193,6 +209,21 @@ async def scope_po_line(q: Select, scope: dict, db: AsyncSession) -> Select:
     return q if subq is None else q.where(PoLineItem.po_id.in_(subq))
 
 
+async def scope_gr_line(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """A receipt line is exactly as visible as its receipt (through the PO)."""
+    subq = scope.get("po_subq")
+    if subq is None:
+        return q
+    return q.where(GrLineItem.gr_id.in_(
+        select(GoodsReceipt.id).where(GoodsReceipt.po_id.in_(subq))))
+
+
+async def scope_vendor(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """Suppliers only, as the Vendors page lists them (crud.vendor): the same
+    table holds customer-only business partners, which are not vendors."""
+    return q.where(Vendor.is_supplier.is_(True))
+
+
 async def scope_pr_line(q: Select, scope: dict, db: AsyncSession) -> Select:
     """Same reasoning as scope_po_line, through the requisition."""
     subq = scope.get("pr_subq")
@@ -281,6 +312,12 @@ async def scope_invoice(q: Select, scope: dict, db: AsyncSession) -> Select:
         agr_ids_subq=scope.get("agr_subq"),
         direct_subq=scope.get("direct_subq") if restricted else None)
     return q.where(or_(*conds)) if conds else q
+
+
+async def scope_invoice_allocation(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """An allocation line is exactly as visible as its invoice."""
+    visible = await scope_invoice(select(Invoice.id), scope, db)
+    return q.where(InvoicePoAllocation.invoice_id.in_(visible))
 
 
 async def sees_freight_invoices(db: AsyncSession, scope: dict) -> bool:
@@ -373,6 +410,26 @@ async def scope_agreement(q: Select, scope: dict, db: AsyncSession) -> Select:
     unrestricted."""
     agr_subq = scope.get("agr_subq")
     return q if agr_subq is None else q.where(PurchaseAgreement.id.in_(agr_subq))
+
+
+async def scope_agreement_receipt(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """A receipt is exactly as visible as its agreement."""
+    agr_subq = scope.get("agr_subq")
+    return q if agr_subq is None else q.where(AgreementReceipt.agreement_id.in_(agr_subq))
+
+
+async def scope_agreement_period(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """A billing period is exactly as visible as its agreement."""
+    agr_subq = scope.get("agr_subq")
+    return q if agr_subq is None else q.where(AgreementPaymentSchedule.agreement_id.in_(agr_subq))
+
+
+async def scope_freight_shipment(q: Select, scope: dict, db: AsyncSession) -> Select:
+    """As Freight → Shipments lists them (api/v1/freight.list_shipments):
+    a freight manager sees every shipment, a registrar only their own."""
+    if (scope.get("perms") or {}).get("epms.freight.manage"):
+        return q
+    return q.where(FreightShipment.created_by == scope["user_id"])
 
 
 # ── Scopes for tables this service reads but does not own ─────────────────────
@@ -538,6 +595,12 @@ _SCOPES: dict[str, Callable] = {
     "po": scope_po,
     "gr": scope_gr,
     "po_line": scope_po_line,
+    "gr_line": scope_gr_line,
+    "invoice_allocation": scope_invoice_allocation,
+    "vendor": scope_vendor,
+    "agreement_receipt": scope_agreement_receipt,
+    "agreement_period": scope_agreement_period,
+    "freight_shipment": scope_freight_shipment,
     "pr_line": scope_pr_line,
     "invoice": scope_invoice,
     "pa": scope_pa,
@@ -577,6 +640,23 @@ class Field:
     # anything but 4. Asked what procurement types exist, the assistant said the
     # system has none, because all it could see was an integer column.
     value_labels: tuple[tuple[str, str], ...] = ()
+    # What a code means beyond its name, for the planner and the narrator ONLY.
+    # value_labels is the name the page shows ("Issued"); the explanation used
+    # to be in the same string, and a status column printed "Issued to the
+    # vendor and still open … (po_line.outstanding_qty) …" in every row
+    # (ISS-0013). Written in YAML as `code: {label: ..., note: ...}`.
+    value_notes: tuple[tuple[str, str], ...] = ()
+    # The kind of document number this column holds (PR, PO, GR, PA, INV,
+    # AGR). An exact match on it is normalised first (core.doc_numbers), so
+    # "pr20260928-0001" finds PR-20260928-0001 (ISS-0024).
+    doc_number: str | None = None
+    # (rule id, English sentence, Chinese sentence): said under every answer
+    # that lists this field's values (a query grouped by it). "What procurement
+    # types are there?" answered as a count per type left out that Type 1
+    # cannot be chosen in EPMS in 1 of 7 tries — a label the narrator might
+    # repeat is not enough, so the sentence is added in code (ISS-0008). The
+    # rule id names the rule-registry card whose test pins the statement.
+    when_listed: tuple[str, str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -584,6 +664,11 @@ class Metric:
     fn: str
     field: str  # a declared field name, or "*" for count
     label: str
+    # For an amount of money: the field (or many-to-one link path) holding its
+    # currency. The executor splits such a metric by that field, so amounts in
+    # different currencies are never added together (ISS-0035). Declared, not
+    # inferred from the field kind: quantities are stored as `money` too.
+    currency: str | None = None
 
 
 @dataclass(frozen=True)
@@ -638,6 +723,17 @@ class Entity:
     # default must not be applied. Declared rather than inferred: "version" is
     # such a field and shares no prefix with "is_default".
     default_filter_stand_down: tuple[str, ...] = ()
+    # Statuses an AMOUNT leaves out unless the question is about status: a
+    # cancelled, rejected or draft document is not money spent or owed. The
+    # totals that included two cancelled POs (ISS-0057) and the vendor ranking
+    # that counted every status (ISS-0032) are what this answers. (field path,
+    # values, note) — the note is said in the answer, like default_filter's.
+    # Decided by the product owner 2026-10-21.
+    amount_excludes: tuple[str, tuple[str, ...], str] | None = None
+    # Apps (the panel's context.app) whose assistant does not see this entity
+    # at all. Finance's AP copy of the invoices is kept out of EPMS, where it
+    # was picked instead of `invoice` and gave different answers (ISS-0015).
+    hidden_in_apps: tuple[str, ...] = ()
 
 
 # Filled during _build_entity, drained by load() once every entity exists: a
@@ -646,13 +742,20 @@ class Entity:
 _deferred_axis_checks: list[tuple[str, str, str, str]] = []
 
 
+# A perm_key every signed-in caller holds. Only for entities whose own list
+# endpoint is open to any signed-in user — the Vendors list and the Parts
+# Catalog (api/v1/vendors.py, parts.py read with no permission check) — so the
+# Assistant shows exactly what the page already shows.
+SIGNED_IN = "signed_in"
+
+
 def may_view(entity: "Entity", perms: dict) -> bool:
     """Does this caller hold any of the entity's keys?
 
     ANY rather than ALL: the keys on an entity are alternative routes to the
     same data, not a set of requirements.
     """
-    return any(perms.get(k, False) for k in entity.perm_key)
+    return any(k == SIGNED_IN or perms.get(k, False) for k in entity.perm_key)
 
 
 class OntologyError(Exception):
@@ -715,12 +818,32 @@ def _build_entity(name: str, spec: dict) -> Entity:
         raw_labels = fspec.get("value_labels") or {}
         _require(isinstance(raw_labels, dict),
                  f"{where}.{fname}: value_labels must be a mapping")
+        _require(all(not isinstance(v, dict) or v.get("label")
+                     for v in raw_labels.values()),
+                 f"{where}.{fname}: a value_labels entry written as a mapping needs a label")
+        raw_listed = fspec.get("when_listed")
+        _require(raw_listed is None or (
+                     isinstance(raw_listed, dict)
+                     and all(raw_listed.get(k) for k in ("rule", "note", "zh"))),
+                 f"{where}.{fname}: when_listed needs rule, note and zh")
+        doc_number = fspec.get("doc_number")
+        _require(doc_number is None or doc_number in doc_numbers.PREFIXES,
+                 f"{where}.{fname}: doc_number {doc_number!r} is not one of "
+                 f"{doc_numbers.PREFIXES}")
         fields[fname] = Field(
             kind=kind, label=fspec["label"],
             values=tuple(fspec.get("values") or ()),
             enumerate_values=bool(fspec.get("enumerate")),
-            value_labels=tuple((str(k), str(v)) for k, v in raw_labels.items()),
+            value_labels=tuple(
+                (str(k), str(v["label"] if isinstance(v, dict) else v))
+                for k, v in raw_labels.items()),
+            value_notes=tuple(
+                (str(k), " ".join(str(v["note"]).split()))
+                for k, v in raw_labels.items() if isinstance(v, dict) and v.get("note")),
             is_expression=bool(fspec.get("expr")),
+            doc_number=doc_number,
+            when_listed=((raw_listed["rule"], " ".join(str(raw_listed["note"]).split()),
+                          str(raw_listed["zh"]).strip()) if raw_listed else None),
         )
     _require(bool(fields), f"{where}: needs at least one field")
 
@@ -789,6 +912,13 @@ def _build_entity(name: str, spec: dict) -> Entity:
         _df_note = df["note"]
         _df_stand_down = tuple(df.get("stand_down_on") or ())
 
+    ax = spec.get("amount_excludes")
+    _amount_excludes = None
+    if ax:
+        _require(bool(ax.get("field")) and bool(ax.get("values")) and bool(ax.get("note")),
+                 f"{where}.amount_excludes: needs field, values and note")
+        _amount_excludes = (ax["field"], tuple(ax["values"]), ax["note"])
+
     metrics: dict[str, Metric] = {}
     for mname, mspec in (spec.get("metrics") or {}).items():
         fn = mspec.get("fn")
@@ -796,7 +926,16 @@ def _build_entity(name: str, spec: dict) -> Entity:
         target = mspec.get("field")
         _require(target == "*" or target in fields,
                  f"{where}.metrics.{mname}: field {target!r} is not declared")
-        metrics[mname] = Metric(fn=fn, field=target, label=mspec.get("label", mname))
+        currency = mspec.get("currency")
+        if currency:
+            head = currency.split(".")[0]
+            _require(currency in fields or (
+                "." in currency and head in (spec.get("links") or {})
+                and (spec["links"][head].get("cardinality") == "many_to_one")),
+                f"{where}.metrics.{mname}: currency {currency!r} is neither a "
+                f"declared field nor a many-to-one link path")
+        metrics[mname] = Metric(fn=fn, field=target, label=mspec.get("label", mname),
+                                currency=currency)
 
     links: dict[str, Link] = {}
     for lname, lspec in (spec.get("links") or {}).items():
@@ -817,6 +956,8 @@ def _build_entity(name: str, spec: dict) -> Entity:
         nullable_axis_ok=spec.get("date_field_nullable_ok") is True,
         default_filter=_default_filter, default_filter_note=_df_note,
         default_filter_stand_down=_df_stand_down,
+        amount_excludes=_amount_excludes,
+        hidden_in_apps=tuple(spec.get("hidden_in_apps") or ()),
     )
 
 

@@ -232,8 +232,13 @@ entities:
       count: {fn: count, field: "*", label: "Mapping rules"}
 
   ap_invoice:
+    hidden_in_apps: [epms]
     table: ap_invoices
-    label: "AP Invoice — a payable as finance records it"
+    # ISS-0015: with two "invoice" entities in the schema the planner picked
+    # either, and the same question gave different invoices and totals. This
+    # is a copy of EPMS invoices made by finance_sync (fail-open, so it can lag
+    # or miss rows); EPMS's own `invoice` is the one the Invoices list shows.
+    label: "Finance's AP ledger copy of EPMS invoices (AP- numbers, as on Finance → Accounts Payable). It can lag or miss invoices. For invoices, vendors' bills, unpaid or overdue invoices and INV- numbers use `invoice`; use this only when the question is about Finance AP, AP- numbers or AP posting"
     perm_key: view_finance
     scope: permission_only
     date_field: invoice_date
@@ -258,8 +263,8 @@ entities:
       created_at: {kind: datetime, label: "Created"}
     metrics:
       count: {fn: count, field: "*", label: "Invoices"}
-      total: {fn: sum, field: total_amount, label: "Total"}
-      paid: {fn: sum, field: paid_amount, label: "Paid"}
+      total: {fn: sum, field: total_amount, label: "Total", currency: currency}
+      paid: {fn: sum, field: paid_amount, label: "Paid", currency: currency}
 
   bank_account:
     table: bank_accounts
@@ -298,3 +303,39 @@ entities:
       created_at: {kind: datetime, label: "Created"}
     metrics:
       count: {fn: count, field: "*", label: "Partners"}
+
+  # ISS-0043 / ISS-0056 (2026-10-21): when a PA was paid, from which account,
+  # and how much left the bank after vendor credits. Finance's own records,
+  # behind View Finance like bank_account.
+  payment_record:
+    table: payment_records
+    label: "Payment record — one executed payment (Finance → Payments): the
+      payment date, the funding account, the amount that left the bank after
+      vendor credits, and the credits applied"
+    perm_key: view_finance
+    scope: permission_only
+    date_field: payment_date
+    fields:
+      pa_id: {kind: uuid, internal: true}
+      bank_account_id: {kind: uuid, internal: true}
+      pa_number: {kind: text, doc_number: PA, label: "Payment application paid"}
+      doc_number: {kind: text, label: "Document paid (PA or claim number)"}
+      vendor_name: {kind: text, label: "Payee"}
+      payment_date: {kind: date, label: "Payment date"}
+      payment_method: {kind: text, label: "Payment method", enumerate: true}
+      amount: {kind: money, label: "Amount paid (net of vendor credits)"}
+      credit_applied: {kind: money, label: "Vendor credits netted off this payment"}
+      currency: {kind: text, label: "Currency", enumerate: true}
+      status: {kind: text, label: "Status", enumerate: true}
+    metrics:
+      count: {fn: count, field: "*", label: "Payments"}
+      paid: {fn: sum, field: amount, label: "Total paid", currency: currency}
+      credits: {fn: sum, field: credit_applied, label: "Total credits netted", currency: currency}
+    links:
+      bank_account:
+        target: bank_account
+        cardinality: many_to_one
+        local: bank_account_id
+        remote: id
+        label: "The account the payment was made from"
+

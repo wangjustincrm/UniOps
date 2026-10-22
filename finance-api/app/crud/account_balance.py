@@ -729,7 +729,7 @@ def _party_key(pid, pname, source) -> str:
 
 async def nc_actuals_by_cost_center(db: AsyncSession, fiscal_year: int,
                                    through_month: int = 12,
-                                   cc_ids=None) -> dict:
+                                   cc_ids=None, include_unposted: bool = False) -> dict:
     """NC posted actual per cost centre for a year, up to and including a month.
 
     The dashboard's figure summed a different way. Someone comparing a year's
@@ -751,7 +751,7 @@ async def nc_actuals_by_cost_center(db: AsyncSession, fiscal_year: int,
     """
     if cc_ids is not None and len(cc_ids) == 0:
         return {"fiscal_year": fiscal_year, "through_month": through_month,
-                "cost_centers": [], "dropped": {}}
+                "include_unposted": include_unposted, "cost_centers": [], "dropped": {}}
     from sqlalchemy.orm import aliased
 
     from app.models.mirrors import BudgetAccount, CostCenter
@@ -769,7 +769,10 @@ async def nc_actuals_by_cost_center(db: AsyncSession, fiscal_year: int,
              .outerjoin(BudgetAccount,
                         JournalVoucherLine.income_expense_item_id == BudgetAccount.id))
         q = _budget_account_join(q, fn_codes, by_code)
-        return q.where(JournalVoucher.status == POSTED,
+        # The dashboard's own toggle (status_filter): posted only, or also the
+        # vouchers NC still holds as live drafts. The Assistant asks with it on,
+        # as the dashboard and the PR budget widget default to (ISS-0014).
+        return q.where(status_filter(include_unposted),
                        JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
                        # 'MM' is zero-padded, so comparing it as text is the
                        # same order as comparing it as a number — and saves a
@@ -806,6 +809,7 @@ async def nc_actuals_by_cost_center(db: AsyncSession, fiscal_year: int,
     return {
         "fiscal_year": fiscal_year,
         "through_month": through_month,
+        "include_unposted": include_unposted,
         "cost_centers": rows,
         # Disjoint on purpose, and in this order: a payroll line with no cost
         # centre belongs to the policy bucket, not to both. Overlapping buckets
