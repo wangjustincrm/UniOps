@@ -466,16 +466,24 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
 }
 
 /**
- * ★ Round 8: "when entering the completed on date, automatically change the
- * expiry date to 3 years less a day. Still allow for that date to be changed."
- * On the date strings themselves — a date-only value put through local time
- * comes out a day early here (UTC−4). 29 February plus three years lands on
- * 1 March, so less a day is 28 February.
+ * The default expiry: the course's own period, less a day.
+ *
+ * ★ Round 9, question 5: "each course should carry its own expiry date … if I
+ * create a course with a 12 month expiry, have the certificate expire in 12
+ * months minus a day." (Round 8 asked for three years less a day for every
+ * course; this replaces it.) Calendar months, the same rule as the server's
+ * services/validity.py — a month without the day lands on its last day. On the
+ * date strings themselves: a date-only value put through local time comes out
+ * a day early here (UTC−4). Empty for a course that does not expire.
  */
-function threeYearsLessADay(completed: string): string {
+function courseExpiry(completed: string, months: number | null | undefined): string {
   const [y, m, d] = completed.split('-').map(Number)
-  if (!y || !m || !d) return ''
-  const t = new Date(Date.UTC(y + 3, m - 1, d) - 86_400_000)
+  if (!y || !m || !d || !months) return ''
+  const month0 = m - 1 + months
+  const year = y + Math.floor(month0 / 12)
+  const month = month0 % 12
+  const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+  const t = new Date(Date.UTC(year, month, Math.min(d, last)) - 86_400_000)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`
 }
@@ -487,7 +495,7 @@ function NewRecordForm({ onClose, courseCode }: {
   const [person, setPerson] = useState<PersonValue>(EMPTY_PERSON)
   const [courseId, setCourseId] = useState('')
   const [completedOn, setCompletedOn] = useState(todayForInput())
-  const [expiresOn, setExpiresOn] = useState(() => threeYearsLessADay(todayForInput()))
+  const [expiresOn, setExpiresOn] = useState('')
   const [delivery, setDelivery] = useState('external')
   // ★ Round 9, TC-07: who gave it, printed and exported with the record.
   const [provider, setProvider] = useState('')
@@ -513,6 +521,13 @@ function NewRecordForm({ onClose, courseCode }: {
       (c) => c.code.toLowerCase() === courseCode.toLowerCase())
     if (match) setCourseId(match.id)
   }, [courseCode, courseId, courseList])
+
+  // The default is set whenever the course or the completion date changes, and
+  // left alone otherwise — a date typed by hand stays until one of them moves.
+  const months = courseList?.find((c) => c.id === courseId)?.validity_months
+  useEffect(() => {
+    setExpiresOn(courseExpiry(completedOn, months))
+  }, [completedOn, courseId, months])
 
   const create = useMutation({
     mutationFn: async () => {
@@ -570,13 +585,10 @@ function NewRecordForm({ onClose, courseCode }: {
         </Field>
         <Field label="Completed on">
           <input type="date" className={inputClass} value={completedOn} disabled={locked}
-                 onChange={(e) => {
-                   setCompletedOn(e.target.value)
-                   setExpiresOn(threeYearsLessADay(e.target.value))
-                 }} />
+                 onChange={(e) => setCompletedOn(e.target.value)} />
         </Field>
         <Field label="Expires on"
-               hint="Three years less a day after completion; change it if the certificate says otherwise, or clear it to use the course's own validity period">
+               hint="The course's validity period less a day, filled in from the course. Change it if the certificate says otherwise; a course that does not expire leaves it empty">
           <input type="date" className={inputClass} value={expiresOn} disabled={locked}
                  onChange={(e) => setExpiresOn(e.target.value)} />
         </Field>

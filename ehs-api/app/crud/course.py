@@ -327,11 +327,10 @@ async def _issue_record(
 ) -> TrainingRecord:
     """The row that appears in this person's file and in the gap report."""
     course = await db.get(Course, delivery.course_id) if delivery.course_id else None
-    expires_on = None
-    if course and course.validity_months:
-        # A month as thirty days, matching how records entered by hand are
-        # dated. The date is editable afterwards when the certificate differs.
-        expires_on = delivery.session_date + timedelta(days=30 * course.validity_months)
+    # Round 9: the course's own period, less a day, as for a record entered by
+    # hand (services/validity.py). Editable afterwards when the certificate differs.
+    from app.services import validity
+    expires_on = validity.expires_on(delivery.session_date, course.validity_months if course else None)
 
     record = TrainingRecord(
         id=uuid.uuid4(),

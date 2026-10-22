@@ -1091,3 +1091,27 @@ async def test_the_provider_of_outside_training_is_kept_printed_and_exported(
     printed = await client.get(f"/api/v1/training/records/print?user_id={person.id}")
     text = _pdf_text(printed.content)
     assert "PROVIDER" in text and "Ontario Forklift Academy" in text
+
+
+async def test_the_expiry_is_the_course_period_less_a_day(hse_manager, worker, courses):
+    """★ Round 9, question 5: "if I create a course with a 12 month expiry, have
+    the certificate expire in 12 months minus a day." Calendar months."""
+    _, client = hse_manager
+    learner, _ = worker
+    body = (await client.post("/api/v1/training/records", json={
+        "user_id": str(learner.id), "course_id": str(courses["whmis"].id),
+        "completed_on": "2026-01-15"})).json()
+    assert body["expires_on"] == "2027-01-14"
+    body = (await client.post("/api/v1/training/records", json={
+        "user_id": str(learner.id), "course_id": str(courses["forklift"].id),
+        "completed_on": "2026-01-31"})).json()
+    assert body["expires_on"] == "2029-01-30"
+
+
+def test_calendar_months_without_such_a_day():
+    from datetime import date
+
+    from app.services import validity
+    assert validity.expires_on(date(2026, 1, 31), 1) == date(2026, 2, 27)
+    assert validity.expires_on(date(2024, 2, 29), 12) == date(2025, 2, 27)
+    assert validity.expires_on(date(2026, 10, 22), None) is None

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.mirrors import Department, User
 from app.models.training import Course, TrainingRecord, WorkerCertification
 from app.crud import worker as worker_crud
+from app.services import validity
 from app.models.worker import PositionRequirement, WorkerPosition
 from app.schemas.training import (
     CertificationIn, CourseGapSummary, GapReport, GapRow, TrainingRecordIn,
@@ -101,11 +102,9 @@ async def record_training(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Worker not found")
 
     expires_on = payload.expires_on
-    if expires_on is None and course.validity_months:
-        # Approximate a month as 30 days rather than pulling in a date library
-        # for a value that is edited by hand whenever the certificate says
-        # otherwise.
-        expires_on = payload.completed_on + timedelta(days=30 * course.validity_months)
+    if expires_on is None:
+        # Round 9: the course's own period, less a day (services/validity.py).
+        expires_on = validity.expires_on(payload.completed_on, course.validity_months)
 
     record = TrainingRecord(
         id=uuid.uuid4(),
