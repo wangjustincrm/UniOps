@@ -128,7 +128,8 @@ class TestEachChange:
         assert (await client.post(f"/api/v1/incidents/{iid}/close")).status_code == 200
         assert len(await _mail(db_session, iid, "incident_closed")) == 1
 
-        assert (await client.post(f"/api/v1/incidents/{iid}/reopen")).status_code == 200
+        assert (await client.post(f"/api/v1/incidents/{iid}/reopen",
+                                  json={"reason": "Wrong body part recorded"})).status_code == 200
         assert len(await _mail(db_session, iid, "incident_reopened")) == 1
 
     async def test_an_empty_list_sends_nothing(self, hse_manager, db_session):

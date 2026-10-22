@@ -35,7 +35,7 @@ from app.crud import investigation as inv_crud
 from app.schemas.incident import (
     IncidentClassify,
     IncidentEdit,
-    IncidentReclassify,
+    IncidentReclassify, ReopenIn,
     IncidentCreate,
     IncidentListItem,
     IncidentOut,
@@ -147,6 +147,9 @@ async def _to_out(db, incident, user: dict) -> IncidentOut:
     ]
     out.deadlines = [  # type: ignore[assignment]
         d for d in await crud.load_deadlines(db, incident.id)
+    ]
+    out.events = [  # type: ignore[assignment]
+        e for e in await crud.load_events(db, incident.id)
     ]
     out = IncidentOut.model_validate(out.model_dump())
     if incident.is_anonymous:
@@ -427,9 +430,12 @@ async def reclassify_incident(
             t = types.BY_CODE.get(code) if isinstance(code, str) else None
             return t.label.split(" — ")[0] if t else "not recorded"
         me = await db.get(User, _user_id(user))
+        detail = f"From {name(before)} to {name(after)}."
+        # ★ Round 9, TC-04: "log who changed it, and the date in the timeline".
+        await crud.record_event(db, incident, "kind_changed", by_id=_user_id(user), detail=detail)
         await notify.incident_status_changed(
             db, incident, "kind_changed", by_name=me.full_name if me else None,
-            detail=f"From {name(before)} to {name(after)}.")
+            detail=detail)
     return await _to_out(db, incident, user)
 
 
@@ -504,7 +510,7 @@ async def get_investigation(incident_id: uuid.UUID, db: SessionDep, user: CanRep
 
 @router.post("/{incident_id}/reopen", response_model=IncidentOut)
 async def reopen_incident(
-    incident_id: uuid.UUID, db: SessionDep, user: CanCloseIncident,
+    incident_id: uuid.UUID, payload: ReopenIn, db: SessionDep, user: CanCloseIncident,
 ):
     """Put a closed incident back into investigation.
 
@@ -514,9 +520,11 @@ async def reopen_incident(
     the second time.
     """
     incident = await crud.get(db, incident_id)
-    await crud.reopen(db, incident, _user_id(user))
+    # ★ Round 9: a reason is required, kept on the timeline and put in the email.
+    await crud.reopen(db, incident, _user_id(user), reason=payload.reason)
     await notify.incident_status_changed(
-        db, incident, "reopened", by_name=incident.reopened_by_name)
+        db, incident, "reopened", by_name=incident.reopened_by_name,
+        detail=f"Reason: {payload.reason.strip()}")
     return await _to_out(db, incident, user)
 
 

@@ -276,3 +276,27 @@ class IncidentAttachment(UUIDPrimaryKey, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(),
     )
+
+
+class IncidentEvent(UUIDPrimaryKey, Base):
+    """Something done to an incident that its timeline has to show.
+
+    ★ Round 9: "log who changed it, and the date in the timeline" (a change of
+    the kind of incident), and "when reopening an incident, require a mandatory
+    reason … log who reopened it, the date and the reason in the timeline."
+    The timeline's other rows are single columns on the incident (classified,
+    reviewed, closed); these can happen more than once, so they are rows.
+    """
+
+    __tablename__ = "ehs_incident_events"
+
+    incident_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_incidents.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    # kind_changed | reopened
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False)
+    by_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)

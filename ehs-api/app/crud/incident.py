@@ -500,7 +500,29 @@ def withdraw_review(incident: Incident) -> None:
     incident.hse_reviewed_by_name = None
 
 
-async def reopen(db: AsyncSession, incident: Incident, reopener_id: uuid.UUID) -> Incident:
+async def record_event(
+    db: AsyncSession, incident: Incident, kind: str, *, by_id: uuid.UUID | None,
+    detail: str | None = None,
+) -> None:
+    """One row of the incident's timeline: who, when, what (round 9)."""
+    from app.models.incident import IncidentEvent
+    db.add(IncidentEvent(
+        id=uuid.uuid4(), incident_id=incident.id, kind=kind,
+        at=datetime.now(timezone.utc), by_id=by_id,
+        by_name=await _resolve_name(db, by_id) if by_id else None, detail=detail))
+    await db.flush()
+
+
+async def load_events(db: AsyncSession, incident_id: uuid.UUID):
+    from app.models.incident import IncidentEvent
+    return list((await db.execute(
+        select(IncidentEvent).where(IncidentEvent.incident_id == incident_id)
+        .order_by(IncidentEvent.at))).scalars())
+
+
+async def reopen(
+    db: AsyncSession, incident: Incident, reopener_id: uuid.UUID, *, reason: str,
+) -> Incident:
     """Put a closed incident back into investigation, on the record.
 
     The review goes with it: whatever is about to change, the reviewed record
@@ -517,6 +539,7 @@ async def reopen(db: AsyncSession, incident: Incident, reopener_id: uuid.UUID) -
     incident.reopened_by_name = await _resolve_name(db, reopener_id)
     withdraw_review(incident)
     await db.flush()
+    await record_event(db, incident, "reopened", by_id=reopener_id, detail=reason.strip())
     return incident
 
 

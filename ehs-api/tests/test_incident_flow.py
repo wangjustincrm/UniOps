@@ -361,12 +361,20 @@ async def test_reopening_is_recorded_and_costs_the_review(hse_manager, worker):
     await client.post(f"/api/v1/incidents/{inc['id']}/hse-review")
     await client.post(f"/api/v1/incidents/{inc['id']}/close")
 
-    body = (await client.post(f"/api/v1/incidents/{inc['id']}/reopen")).json()
+    # ★ Round 9: a reason is required.
+    bare = await client.post(f"/api/v1/incidents/{inc['id']}/reopen", json={})
+    assert bare.status_code == 422, bare.text
+    body = (await client.post(f"/api/v1/incidents/{inc['id']}/reopen",
+                              json={"reason": "The finger was broken after all"})).json()
     assert body["status"] != "closed"
     assert body["closed_at"] is None
     assert body["reopened_at"] is not None
     assert body["reopened_by_name"], "who reopened it is the point of recording it"
     assert body["hse_reviewed_at"] is None, "the review does not survive the reopening"
+    # On the timeline: who, when, why.
+    [event] = [e for e in body["events"] if e["kind"] == "reopened"]
+    assert event["detail"] == "The finger was broken after all"
+    assert event["by_name"] == body["reopened_by_name"] and event["at"]
 
     edited = await client.put(f"/api/v1/incidents/{inc['id']}/investigation",
                               json={"sequence_of_events": "what actually happened"})

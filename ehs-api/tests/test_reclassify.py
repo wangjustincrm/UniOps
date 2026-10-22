@@ -115,3 +115,19 @@ async def test_a_change_of_kind_is_told_and_filed_on_the_incident(test_engine, d
     assert (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
                            json={"incident_type": "lost_time"})).status_code == 200
     assert len(await told()) == 1
+
+
+async def test_a_change_of_kind_is_on_the_timeline(test_engine, db_session, hse_manager):
+    """★ Round 9, TC-04: "Log who changed it, and the date in the timeline." """
+    user, hse = hse_manager
+    _, iid = await _reported(test_engine, db_session, "first_aid")
+    body = (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
+                           json={"incident_type": "lost_time"})).json()
+    [event] = [e for e in body["events"] if e["kind"] == "kind_changed"]
+    assert event["by_name"] == user.full_name
+    assert event["detail"].startswith("From First Aid Injury to Lost Time")
+    assert event["at"]
+    # Choosing the same kind again is not a change, and is not on the timeline.
+    again = (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
+                            json={"incident_type": "lost_time"})).json()
+    assert len([e for e in again["events"] if e["kind"] == "kind_changed"]) == 1

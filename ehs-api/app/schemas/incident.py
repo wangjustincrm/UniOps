@@ -194,6 +194,23 @@ class MolReportFiledIn(BaseModel):
     evidence_file_id: uuid.UUID | None = None
 
 
+class IncidentEventOut(BaseModel):
+    """A row of the timeline that can happen more than once (round 9)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: str
+    at: datetime
+    by_name: str | None
+    detail: str | None
+
+
+class ReopenIn(BaseModel):
+    """Round 9: "when reopening an incident, require a mandatory reason"."""
+
+    reason: str = Field(min_length=3, max_length=2000)
+
+
 class IncidentPersonOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -264,6 +281,7 @@ class IncidentOut(BaseModel):
     created_at: datetime
     persons: list[IncidentPersonOut] = Field(default_factory=list)
     deadlines: list[DeadlineOut] = Field(default_factory=list)
+    events: list[IncidentEventOut] = Field(default_factory=list)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

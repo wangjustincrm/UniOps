@@ -59,6 +59,7 @@ interface Incident {
   classified_at: string | null; classified_by_name: string | null
   submitted_at: string | null; closed_at: string | null; created_at: string
   persons: Person[]; deadlines: Deadline[]
+  events?: { kind: string; at: string; by_name: string | null; detail: string | null }[]
 }
 interface CauseAction {
   id: string; action_no: string; title: string; description: string | null; status: string
@@ -107,6 +108,11 @@ function asText(v: unknown): string | null {
  *  padded with empty rows reads as though the report itself is empty. */
 function fmt(iso: string | null | undefined): string | null {
   return iso ? formatDateTime(iso) : null
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  kind_changed: 'Kind of incident changed',
+  reopened: 'Reopened',
 }
 
 function Row({ label, value, block = false }: {
@@ -184,6 +190,8 @@ export default function IncidentDetailPage() {
   const { can } = usePermissions()
   const [confirmation, setConfirmation] = useState('')
   const [molReference, setMolReference] = useState('')
+  // Round 9: reopening needs a reason, kept on the timeline.
+  const [reopenReason, setReopenReason] = useState('')
 
 
   const incident = useQuery({
@@ -238,13 +246,16 @@ export default function IncidentDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['deadlines'] })
   }
 
-  const act = (verb: 'hse-review' | 'close' | 'reopen') => ({
+  const act = (verb: 'hse-review' | 'close') => ({
     mutationFn: () => api.post(`/api/v1/incidents/${id}/${verb}`, {}),
     onSuccess: touched,
   })
   const review = useMutation(act('hse-review'))
   const closeIncident = useMutation(act('close'))
-  const reopen = useMutation(act('reopen'))
+  const reopen = useMutation({
+    mutationFn: () => api.post(`/api/v1/incidents/${id}/reopen`, { reason: reopenReason.trim() }),
+    onSuccess: () => { setReopenReason(''); touched() },
+  })
 
   // Stopping the Ministry's clock. It is recorded, not performed: OHSA s.51(1)
   // is discharged by sending the report, and UniOps does not send it.
@@ -455,9 +466,20 @@ export default function IncidentDetailPage() {
                     reviewed again before it closes.
                   </p>
                   {can('ehs.incident.close') && (
+                    <label className="mt-2 block text-xs font-medium text-neutral-700">
+                      Reason for reopening
+                      <textarea
+                        className="mt-1 block min-h-[60px] w-full rounded-lg border border-neutral-300 px-2.5 py-2 text-sm"
+                        value={reopenReason}
+                        onChange={(e) => setReopenReason(e.target.value)}
+                        placeholder="What has to be corrected"
+                      />
+                    </label>
+                  )}
+                  {can('ehs.incident.close') && (
                     <button
                       type="button"
-                      disabled={reopen.isPending}
+                      disabled={reopen.isPending || reopenReason.trim().length < 3}
                       onClick={() => { if (!reopen.isPending) reopen.mutate() }}
                       className="mt-2 min-h-[40px] rounded-lg border border-neutral-300 px-3 text-sm font-semibold text-neutral-700 disabled:opacity-50"
                     >
@@ -540,6 +562,20 @@ export default function IncidentDetailPage() {
                 : null}
             />
             <Row label="Closed" value={fmt(inc.closed_at)} />
+            {/* ★ Round 9: things that can happen more than once — the kind of
+                incident changed, a reopening and why — who and when. */}
+            {(inc.events ?? []).map((e, i) => (
+              <Row key={`${e.kind}-${i}`}
+                   label={EVENT_LABELS[e.kind] ?? e.kind}
+                   value={<>
+                     {fmt(e.at)}{e.by_name ? ` · ${e.by_name}` : ''}
+                     {e.detail ? (
+                       <span className="block text-xs text-neutral-600">{e.detail}</span>
+                     ) : e.kind === 'reopened' ? (
+                       <span className="block text-xs text-neutral-400">No reason recorded</span>
+                     ) : null}
+                   </>} />
+            ))}
           </dl>
 
           <SectionTitle className="mb-2.5">People</SectionTitle>

@@ -26,7 +26,7 @@ from app.models.jhsc import (  # noqa: F401
 )
 from app.models.hours import HoursWorked  # noqa: F401
 from app.models.incident import (  # noqa: F401
-    Cause, Incident, IncidentAttachment, IncidentInvestigation, IncidentPerson,
+    Cause, Incident, IncidentAttachment, IncidentEvent, IncidentInvestigation, IncidentPerson,
 )
 from app.models.label import ChemicalLabel  # noqa: F401
 from app.models.medical import IncidentMedical  # noqa: F401
