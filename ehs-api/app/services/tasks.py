@@ -119,6 +119,9 @@ DOC_PATHS: dict[str, str] = {
 TASK_PATHS: dict[str, str] = {
     TASK_COURSE_ADMIN: "/training/sessions/{id}",
     TASK_COURSE_ATTEND: "/training/mine",
+    # ★ Round 9: "open the recommendation directly". The page is open to the
+    # people it was sent to, who mostly cannot read the committee's pages.
+    TASK_JHSC_REPLY: "/jhsc/recommendations/{id}",
 }
 
 

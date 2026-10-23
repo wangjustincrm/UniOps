@@ -634,8 +634,44 @@ async def jhsc_recommendation_sent(
         doc_type=task_service.DOC_JHSC,
         doc_id=meeting.id,
         template_key="jhsc_recommendation_sent",
-        link=mail.module_link(f"/jhsc/meetings/{meeting.id}"),
-        link_label="Open the meeting",
+        # Round 9: to the recommendation, which the people asked can open.
+        link=mail.module_link(f"/jhsc/recommendations/{recommendation.id}"),
+        link_label="Open the recommendation",
+    )
+
+
+async def jhsc_recommendation_answered(db: AsyncSession, meeting, recommendation, action) -> None:
+    """★ Round 9: the people under Settings → Who is told → JHSC, and whoever
+    sent the recommendation unless that is switched off, when it is answered.
+    Filed against the recommendation itself, so it is listed on it."""
+    cfg = await _config(db)
+    rule = (cfg.jhsc_answered_notify if cfg else None) or {"people": [], "sender": True}
+    ids = [uuid.UUID(str(i)) for i in rule.get("people") or []]
+    if rule.get("sender", True) and recommendation.sent_by:
+        ids.append(recommendation.sent_by)
+    people = await mail.recipients(db, list(dict.fromkeys(ids)))
+    if not people:
+        return
+    lines = [_where(recommendation) + recommendation.recommendation, "",
+             f"Answered by {recommendation.responded_by_name or 'someone'}."]
+    if action is not None:
+        lines += ["", f"What will be done: {action.title}"]
+        if action.description:
+            lines.append(action.description)
+        lines.append(f"Owner: {action.owner_name or '—'} · due {action.due_date.isoformat()}"
+                     f" · {action.priority} priority · {action.action_no}")
+    elif recommendation.response:
+        lines += ["", recommendation.response]
+    await mail.queue(
+        db,
+        to=[u.email for u in people],
+        subject=f"JHSC recommendation {meeting.meeting_no} #{recommendation.seq} answered",
+        body="\n".join(lines),
+        doc_type=task_service.DOC_JHSC,
+        doc_id=recommendation.id,
+        template_key="jhsc_recommendation_answered",
+        link=mail.module_link(f"/jhsc/recommendations/{recommendation.id}"),
+        link_label="Open the recommendation",
     )
 
 

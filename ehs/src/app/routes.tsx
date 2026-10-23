@@ -23,6 +23,7 @@ import FormTemplatesPage from '@/pages/settings/FormTemplatesPage'
 import FormsListPage from '@/pages/FormsListPage'
 import InvestigationPage from '@/pages/InvestigationPage'
 import JhscMeetingPage from '@/pages/JhscMeetingPage'
+import JhscRecommendationPage from '@/pages/JhscRecommendationPage'
 import JhscPage from '@/pages/JhscPage'
 import JsaPage, { JsaDetailPage } from '@/pages/JsaPage'
 import PermitsPage from '@/pages/PermitsPage'
@@ -143,6 +144,12 @@ export const ehsRoutes: RouteDef[] = [
     path: '/jhsc',
     element: <JhscPage />,
     tab: { title: 'JHSC', icon: 'Users', keyStrategy: 'static' },
+  },
+  {
+    // Round 9: opened from the reply task by whoever it was sent to.
+    path: '/jhsc/recommendations/:id',
+    element: <JhscRecommendationPage />,
+    tab: { title: 'Recommendation', icon: 'Users', keyStrategy: 'param', paramName: 'id' },
   },
   {
     path: '/jhsc/meetings/:id',

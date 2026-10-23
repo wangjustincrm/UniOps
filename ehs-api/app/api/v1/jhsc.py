@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.api.v1.incidents import _user_id
-from app.core.deps import SessionDep
+from app.core.deps import CurrentUserPayload, SessionDep
 from app.core.permissions import CanManageJhsc, CanReadJhsc
 from app.crud import form as forms_crud
 from app.crud import jhsc as crud
@@ -301,6 +301,9 @@ class RecommendationOut(BaseModel):
     responded_by_name: str | None
     action_id: uuid.UUID | None
     created_at: datetime
+    # Round 9: when the reply is due, so the list can say which were answered
+    # on time and which late.
+    reply_due_at: datetime | None = None
 
 
 @router.get("/recommendations", response_model=list[RecommendationOut])
@@ -309,8 +312,19 @@ async def list_recommendations(
     meeting_id: uuid.UUID | None = None,
     outstanding: bool = Query(default=False, description="Only ones still owed a reply"),
 ):
-    return await crud.list_recommendations(
+    from app.models.statutory import StatutoryDeadline
+    rows = await crud.list_recommendations(
         db, meeting_id=meeting_id, outstanding_only=outstanding)
+    due = dict((await db.execute(select(
+        StatutoryDeadline.source_id, StatutoryDeadline.due_at).where(
+        StatutoryDeadline.kind == "jhsc_reply_21d",
+        StatutoryDeadline.source_id.in_([r.id for r in rows])))).all()) if rows else {}
+    out = []
+    for r in rows:
+        item = RecommendationOut.model_validate(r)
+        item.reply_due_at = due.get(r.id)
+        out.append(item)
+    return out
 
 
 class MinutesFormStarted(BaseModel):
@@ -571,3 +585,142 @@ async def respond(
     return await crud.respond(
         db, rec, response=payload.response, outcome=payload.outcome,
         user_id=_user_id(user), action_id=payload.action_id)
+
+
+# ── One recommendation, and answering it (round 9) ───────────────────────────
+# "when a worker or a supervisor opens a JHSC recommendation assigned to them
+# from the my actions register, open the recommendation directly", and "when a
+# worker … has a jhsc recommendation assigned to them, they can not open the
+# recommendation and fill in what was completed. give them a root cause
+# corrective action form … once it is submitted, remove it from the workers my
+# actions registry. allow the HSE role edit rights after this is submitted."
+#
+# Whoever it was sent to may open it and answer it, without the committee's own
+# keys: being asked is the permission. Everybody else needs ehs.jhsc.read to see
+# it and ehs.jhsc.manage to answer or correct it.
+
+
+class ActionBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    action_no: str
+    title: str
+    description: str | None
+    owner_name: str | None
+    due_date: date
+    priority: str
+    status: str
+
+
+class RecommendationDetailOut(RecommendationOut):
+    meeting_no: str
+    held_on: date | None = None
+    reply_due_at: datetime | None = None
+    may_answer: bool = False
+    may_manage: bool = False
+    action: ActionBrief | None = None
+
+
+class AnswerIn(BaseModel):
+    """The corrective action form, as on an incident."""
+
+    title: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    owner_id: uuid.UUID
+    due_date: date
+    priority: str = Field(default="normal", pattern="^(low|normal|high)$")
+    hierarchy_of_control: str | None = Field(
+        default=None, pattern="^(elimination|substitution|engineering|administrative|ppe)$")
+
+
+class ResponsePatch(BaseModel):
+    response: str | None = Field(default=None, min_length=1)
+    outcome: str | None = Field(default=None, pattern="^(accepted|declined|deferred)$")
+
+
+def _was_sent_to(rec, user_id: uuid.UUID) -> bool:
+    return any(str(p.get("id")) == str(user_id) for p in (rec.sent_to or []))
+
+
+async def _can(db, user: dict, key: str) -> bool:
+    from uniops_authz import has_permission
+    return await has_permission(db, _user_id(user), user.get("role", ""), key)
+
+
+async def _detail(db, rec, user: dict) -> RecommendationDetailOut:
+    from app.models.action import Action
+    from app.models.statutory import StatutoryDeadline
+    meeting = await crud.get_meeting(db, rec.meeting_id)
+    due = (await db.execute(select(StatutoryDeadline.due_at).where(
+        StatutoryDeadline.source_id == rec.id,
+        StatutoryDeadline.kind == "jhsc_reply_21d"))).scalars().first()
+    action = await db.get(Action, rec.action_id) if rec.action_id else None
+    manage = await _can(db, user, "ehs.jhsc.manage")
+    out = RecommendationDetailOut.model_validate({
+        **RecommendationOut.model_validate(rec).model_dump(),
+        "meeting_no": meeting.meeting_no, "held_on": meeting.held_on,
+        "reply_due_at": due,
+        "may_answer": rec.responded_at is None and (manage or _was_sent_to(rec, _user_id(user))),
+        "may_manage": manage,
+        "action": ActionBrief.model_validate(action) if action else None,
+    })
+    return out
+
+
+@router.get("/recommendations/{rec_id}", response_model=RecommendationDetailOut)
+async def get_recommendation(rec_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    rec = await crud.get_recommendation(db, rec_id)
+    if not (_was_sent_to(rec, _user_id(user)) or await _can(db, user, "ehs.jhsc.read")):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "This recommendation was not sent to you")
+    return await _detail(db, rec, user)
+
+
+@router.post("/recommendations/{rec_id}/answer", response_model=RecommendationDetailOut)
+async def answer_recommendation(
+    rec_id: uuid.UUID, payload: AnswerIn, db: SessionDep, user: CurrentUserPayload,
+):
+    """The corrective action that answers it. Raises the action (in its owner's
+    My Actions), records the reply — which stops the twenty-one days and closes
+    every recipient's task — and tells the JHSC list under Who is told."""
+    from app.crud import action as action_crud
+    from app.schemas.action import ActionCreate
+    rec = await crud.get_recommendation(db, rec_id)
+    uid = _user_id(user)
+    if not (_was_sent_to(rec, uid) or await _can(db, user, "ehs.jhsc.manage")):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "Only the people it was sent to, or HSE, can answer it")
+    if rec.responded_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "This recommendation has already been answered")
+    meeting = await crud.get_meeting(db, rec.meeting_id)
+    action = await action_crud.create(db, ActionCreate(
+        source_type="jhsc", source_id=meeting.id, title=payload.title,
+        description=payload.description, owner_id=payload.owner_id,
+        due_date=payload.due_date, priority=payload.priority,
+        hierarchy_of_control=payload.hierarchy_of_control),
+        source_ref=f"{meeting.meeting_no} #{rec.seq}")
+    response = payload.title + (f"\n\n{payload.description}" if payload.description else "")
+    rec = await crud.respond(db, rec, response=response, outcome="accepted",
+                             user_id=uid, action_id=action.id)
+    await notify.jhsc_recommendation_answered(db, meeting, rec, action)
+    return await _detail(db, rec, user)
+
+
+@router.patch("/recommendations/{rec_id}/response", response_model=RecommendationDetailOut)
+async def correct_response(
+    rec_id: uuid.UUID, payload: ResponsePatch, db: SessionDep, user: CanManageJhsc,
+):
+    """HSE correcting an answer after it is in. Every change is in the record's
+    change history; the corrective action itself is edited on its own page."""
+    rec = await crud.get_recommendation(db, rec_id)
+    if rec.responded_at is None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "It has not been answered yet; answer it instead")
+    if payload.response is not None:
+        rec.response = payload.response
+    if payload.outcome is not None:
+        rec.outcome = payload.outcome
+    await db.flush()
+    return await _detail(db, rec, user)

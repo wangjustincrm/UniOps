@@ -47,6 +47,8 @@ export interface Recommendation {
   sent_at: string | null; sent_by_name: string | null
   sent_to: { id: string; name: string }[]
   action_id: string | null; created_at: string
+  /** Round 9: when the written reply is due (21 days). */
+  reply_due_at?: string | null
 }
 
 const TABS = [
@@ -441,6 +443,21 @@ function RecommendationsTab({ mayManage, highlight }: {
   const meetingNo = (id: string) =>
     meetings.data?.find((m) => m.id === id)?.meeting_no ?? ''
 
+  // ★ Round 9: "create a couple buttons on the top to show the total number of
+  // recommendations, number closed on time, number closed late, number
+  // currently open." On time means the written reply was recorded by the day
+  // OHSA s.9(20)'s twenty-one days ran out. Each figure narrows the list to
+  // the recommendations behind it.
+  const [show, setShow] = useState<RecFilter>('all')
+  const rows = all.data ?? []
+  const counts: Record<RecFilter, number> = {
+    all: rows.length,
+    on_time: rows.filter((r) => recState(r) === 'on_time').length,
+    late: rows.filter((r) => recState(r) === 'late').length,
+    open: rows.filter((r) => recState(r) === 'open').length,
+  }
+  const shown = show === 'all' ? rows : rows.filter((r) => recState(r) === show)
+
   if (all.data?.length === 0) {
     return (
       <Empty>
@@ -451,8 +468,23 @@ function RecommendationsTab({ mayManage, highlight }: {
   }
 
   return (
+    <>
+    <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Recommendation figures">
+      {REC_FILTERS.map(([key, label]) => (
+        <button key={key} type="button" aria-pressed={show === key}
+                onClick={() => setShow(show === key && key !== 'all' ? 'all' : key)}
+                className={`rounded-lg border px-3 py-2 text-left ${show === key
+                  ? 'border-primary-400 bg-primary-50' : 'border-neutral-200 bg-white hover:border-primary-300'}`}>
+          <span className="block text-xl font-semibold tabular-nums text-primary-700">{counts[key]}</span>
+          <span className="text-xs text-neutral-500">{label}</span>
+        </button>
+      ))}
+    </div>
+    {shown.length === 0 && rows.length > 0 && (
+      <p className="text-sm text-neutral-500">None.</p>
+    )}
     <ul className="flex flex-col gap-2">
-      {[...(all.data ?? [])]
+      {[...shown]
         .sort((a, b) => (a.id === highlight ? -1 : b.id === highlight ? 1 : 0))
         .map((r) => (
         <li key={r.id}>
@@ -471,6 +503,10 @@ function RecommendationsTab({ mayManage, highlight }: {
                 </span>
               )}</span>
               <ReplyBadge rec={r} />
+              <button type="button" onClick={() => navigate(`/jhsc/recommendations/${r.id}`)}
+                      className="text-xs font-medium text-primary-700 hover:underline">
+                Open
+              </button>
             </div>
             {r.response && (
               <p className="mt-2 border-l-2 border-neutral-200 pl-2.5 text-sm text-neutral-700">
@@ -489,7 +525,22 @@ function RecommendationsTab({ mayManage, highlight }: {
         </li>
       ))}
     </ul>
+    </>
   )
+}
+
+type RecFilter = 'all' | 'on_time' | 'late' | 'open'
+const REC_FILTERS: [RecFilter, string][] = [
+  ['all', 'Recommendations'],
+  ['on_time', 'Closed on time'],
+  ['late', 'Closed late'],
+  ['open', 'Open'],
+]
+
+function recState(r: Recommendation): 'on_time' | 'late' | 'open' {
+  if (!r.responded_at) return 'open'
+  if (r.reply_due_at && new Date(r.responded_at) > new Date(r.reply_due_at)) return 'late'
+  return 'on_time'
 }
 
 export function ReplyBadge({ rec }: { rec: Recommendation }) {

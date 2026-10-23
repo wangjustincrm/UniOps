@@ -71,6 +71,7 @@ class ConfigOut(BaseModel):
     incident_notify_groups: dict
     incident_status_notify: dict = Field(default_factory=dict)
     incident_notify_include: dict = Field(default_factory=dict)
+    jhsc_answered_notify: dict = Field(default_factory=lambda: {"people": [], "sender": True})
     email_templates: dict
     lost_time_rules: dict
     # Null until somebody picks one — every meeting before that used the
@@ -94,6 +95,7 @@ class ConfigUpdate(BaseModel):
     incident_notify_groups: dict | None = None
     incident_status_notify: dict | None = None
     incident_notify_include: dict | None = None
+    jhsc_answered_notify: dict | None = None
     email_templates: dict | None = None
     lost_time_rules: dict | None = None
     # The form the JHSC minutes are written on. Empty string clears it back to
@@ -123,6 +125,20 @@ class ConfigUpdate(BaseModel):
                 raise ValueError(f"The list for '{event}' must be a list of people")
             out[event] = [str(uuid.UUID(str(i))) for i in dict.fromkeys(ids)]
         return out
+
+    @field_validator("jhsc_answered_notify")
+    @classmethod
+    def _people_and_the_sender(cls, v):
+        """Round 9: real user ids, and one flag."""
+        if v is None:
+            return v
+        if not isinstance(v, dict) or set(v) - {"people", "sender"}:
+            raise ValueError("The JHSC list takes people and sender, nothing else")
+        people = v.get("people") or []
+        if not isinstance(people, list):
+            raise ValueError("people must be a list")
+        return {"people": [str(uuid.UUID(str(i))) for i in dict.fromkeys(people)],
+                "sender": bool(v.get("sender", True))}
 
     @field_validator("incident_notify_include")
     @classmethod

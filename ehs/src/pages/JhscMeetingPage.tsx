@@ -474,6 +474,7 @@ function RecommendationList({
 }: {
   meetingId: string; rows: Recommendation[]; mayManage: boolean; onChanged: () => void
 }) {
+  const navigate = useNavigate()
   const [adding, setAdding] = useState(false)
   const [replyTo, setReplyTo] = useState<string | null>(null)
   // Who it was put in front of. Without it the committee could see that
@@ -494,7 +495,8 @@ function RecommendationList({
           <li key={r.id}>
             <Card>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <span className="font-mono text-xs text-neutral-400">#{r.seq}</span>
+                <button type="button" onClick={() => navigate(`/jhsc/recommendations/${r.id}`)}
+                        className="font-mono text-xs text-primary-700 hover:underline">#{r.seq}</button>
                 <span className="min-w-0 flex-1 text-sm text-neutral-900">{r.recommendation}{r.location_path && (
                   <span className="block text-xs text-neutral-500">
                     Where: {r.location_path.split('/').join(' › ')}

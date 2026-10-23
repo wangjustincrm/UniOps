@@ -51,7 +51,11 @@ interface Config {
   incident_notify_groups: Record<string, string[]>
   incident_status_notify: Record<string, string[]>
   incident_notify_include: Record<string, Include>
+  jhsc_answered_notify?: JhscAnswered
 }
+
+/** Round 9: who is told a JHSC recommendation was answered. */
+interface JhscAnswered { people: string[]; sender: boolean }
 
 /** Round 6, TC-07: "a checkbox on all 'who is told' items to include the
  * requester and the requester's supervisor." Keyed like the lists: a type,
@@ -82,6 +86,7 @@ export default function NotifyGroupsPage() {
   const [groups, setGroups] = useState<Record<string, string[]> | null>(null)
   const [onStatus, setOnStatus] = useState<Record<string, string[]> | null>(null)
   const [include, setInclude] = useState<Record<string, Include>>({})
+  const [jhsc, setJhsc] = useState<JhscAnswered>({ people: [], sender: true })
 
   const config = useQuery({
     queryKey: ['settings', 'config'],
@@ -118,6 +123,7 @@ export default function NotifyGroupsPage() {
       setGroups(config.data.incident_notify_groups ?? {})
       setOnStatus(config.data.incident_status_notify ?? {})
       setInclude(config.data.incident_notify_include ?? {})
+      setJhsc(config.data.jhsc_answered_notify ?? { people: [], sender: true })
     }
   }, [config.data, groups])
 
@@ -126,6 +132,7 @@ export default function NotifyGroupsPage() {
       incident_notify_groups: groups ?? {},
       incident_status_notify: onStatus ?? {},
       incident_notify_include: include,
+      jhsc_answered_notify: jhsc,
     }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'config'] }),
   })
@@ -168,7 +175,7 @@ export default function NotifyGroupsPage() {
   return (
     <div className="p-4">
       <PageHeader
-        title="Who is told about an incident"
+        title="Who is told"
         subtitle="One list for the plant, rather than a field on every form."
       />
 
@@ -216,6 +223,18 @@ export default function NotifyGroupsPage() {
                   onChange={(ids) => setStatusFor(row.key, ids)} />
       ))}
 
+      {/* ★ Round 9: "create a 'who is told' for the JHSC recommendation when a
+          root cause corrective action form is completed. log this
+          communication on the jhsc recommendation." */}
+      <SectionTitle className="mb-1 mt-6">JHSC</SectionTitle>
+      <ListCard label="Recommendation answered"
+                hint="When whoever a recommendation was sent to submits the corrective action that answers it. The email is listed on the recommendation."
+                ids={jhsc.people} nameOf={nameOf}
+                checks={[{ label: 'Whoever sent the recommendation', checked: jhsc.sender,
+                           onChange: (v) => setJhsc({ ...jhsc, sender: v }) }]}
+                empty="Nobody named — only the box ticked below is told."
+                onChange={(ids) => setJhsc({ ...jhsc, people: ids })} />
+
       <ErrorNote error={save.error} />
       <div className="mt-3 flex items-center justify-end gap-3">
         {save.isSuccess && (
@@ -231,11 +250,19 @@ export default function NotifyGroupsPage() {
 }
 
 /** One list: who is on it, a way to take somebody off, and a way to add. */
-function ListCard({ label, hint, ids, nameOf, empty, onChange, include, onInclude }: {
+function ListCard({ label, hint, ids, nameOf, empty, onChange, include, onInclude, checks }: {
   label: string; hint: string; ids: string[]; nameOf: (id: string) => string
   empty: string; onChange: (ids: string[]) => void
-  include: Include; onInclude: (next: Include) => void
+  include?: Include; onInclude?: (next: Include) => void
+  /** Boxes of the list's own, in place of the reporter and their supervisor. */
+  checks?: { label: string; checked: boolean; onChange: (v: boolean) => void }[]
 }) {
+  const boxes = checks ?? (include && onInclude ? [
+    { label: 'The person who reported it', checked: include.reporter,
+      onChange: (v: boolean) => onInclude({ ...include, reporter: v }) },
+    { label: 'Their supervisor', checked: include.supervisor,
+      onChange: (v: boolean) => onInclude({ ...include, supervisor: v }) },
+  ] : [])
   const [adding, setAdding] = useState<PersonValue>(EMPTY_PERSON)
   return (
     <Card className="mb-2">
@@ -264,16 +291,13 @@ function ListCard({ label, hint, ids, nameOf, empty, onChange, include, onInclud
       )}
 
       <div className="mb-2 flex flex-wrap gap-x-5 gap-y-1">
-        <label className="flex min-h-[36px] items-center gap-2 text-sm text-neutral-800">
-          <input type="checkbox" checked={include.reporter}
-                 onChange={(e) => onInclude({ ...include, reporter: e.target.checked })} />
-          The person who reported it
-        </label>
-        <label className="flex min-h-[36px] items-center gap-2 text-sm text-neutral-800">
-          <input type="checkbox" checked={include.supervisor}
-                 onChange={(e) => onInclude({ ...include, supervisor: e.target.checked })} />
-          Their supervisor
-        </label>
+        {boxes.map((b) => (
+          <label key={b.label} className="flex min-h-[36px] items-center gap-2 text-sm text-neutral-800">
+            <input type="checkbox" checked={b.checked}
+                   onChange={(e) => b.onChange(e.target.checked)} />
+            {b.label}
+          </label>
+        ))}
       </div>
 
       <PersonPicker

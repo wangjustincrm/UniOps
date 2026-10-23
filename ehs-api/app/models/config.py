@@ -81,6 +81,14 @@ class EhsConfig(TimestampMixin, Base):
     incident_notify_include: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}",
     )
+    # ★ Round 9: "create a 'who is told' for the JHSC recommendation when a
+    # root cause corrective action form is completed." {"people": [user_id],
+    # "sender": bool} — the people named, and whether whoever sent the
+    # recommendation is told too (on unless HSE turns it off).
+    jhsc_answered_notify: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=lambda: {"people": [], "sender": True},
+        server_default='{"people": [], "sender": true}',
+    )
     email_templates: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}",
     )
