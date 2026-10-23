@@ -25,6 +25,9 @@ export interface Question {
   label: string
   help?: string
   required?: boolean
+  /** Round 9: bold and larger wherever the form is shown — filling it in,
+   *  reading it back, and printed. Set per question in the form builder. */
+  emphasis?: boolean
   options?: string[]
   vocabulary?: string
   fail_on?: Record<string, unknown>
@@ -58,7 +61,9 @@ export function looksLikeFailure(q: Question, value: unknown): boolean {
 function Label({ q }: { q: Question }) {
   return (
     <>
-      <label className="mb-1 block text-sm font-medium text-neutral-800">
+      <label className={q.emphasis
+        ? 'mb-1 block text-base font-bold text-neutral-900'
+        : 'mb-1 block text-sm font-medium text-neutral-800'}>
         {q.label}
         {q.required && <span className="ml-1 text-danger-600">*</span>}
       </label>

@@ -41,6 +41,9 @@ class Row:
     text: str | None
     # A section heading on the form rather than a question.
     heading: bool = False
+    # ★ Round 9: a question the form builder marked to stand out — "Bold and
+    # increase the font size by 2" — printed two points larger, in bold.
+    emphasis: bool = False
 
 
 def _text(answer: FormAnswer, question: dict) -> str | None:
@@ -89,7 +92,8 @@ async def rows_for(db: AsyncSession, submission_id: uuid.UUID | None) -> list[Ro
         if qtype == "instruction":
             continue
         a = answers.get(q.get("key"))
-        out.append(Row(q.get("label") or q.get("key") or "", _text(a, q) if a else None))
+        out.append(Row(q.get("label") or q.get("key") or "", _text(a, q) if a else None,
+                       emphasis=bool(q.get("emphasis"))))
     return out
 
 
@@ -198,6 +202,9 @@ def render(*, meeting, attendance, recommendations, rows: list[Row],
             if r.heading:
                 story.append(Spacer(1, 2 * mm))
                 story.append(_p(r.label, _style(10, bold=True)))
+            elif r.emphasis:
+                story.append(_p(r.label, _style(10.5, bold=True, after=0)))
+                story.append(_p(r.text or "Not answered", _style(11.5, bold=True)))
             else:
                 story.append(_p(r.label, _style(8.5, bold=True, colour=MUTED, after=0)))
                 story.append(_p(r.text or "Not answered", body))

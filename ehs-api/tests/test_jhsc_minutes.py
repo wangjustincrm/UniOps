@@ -127,7 +127,8 @@ async def test_the_minutes_written_on_the_form_are_read_back_onto_the_meeting(
     rows = await client.get(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-answers")
     assert rows.status_code == 200, rows.text
     assert rows.json() == [{"label": "Who was there",
-                            "text": "Kirk, Marie and the night crew", "heading": False}]
+                            "text": "Kirk, Marie and the night crew", "heading": False,
+                            "emphasis": False}]
 
 
 async def test_a_meeting_with_no_form_has_no_form_rows(hse_manager):
@@ -185,3 +186,44 @@ async def test_the_printed_minutes_number_their_pages_and_say_who_owes_a_reply(
     assert "Page 1 of 1" in text
     assert "Sent to Pat Plantmanager on" in text and "Reply due" in text
     assert "Not yet sent, so not yet assigned" in text
+
+
+
+async def test_a_question_marked_to_stand_out_does_so_read_back_and_printed(hse_manager, db_session):
+    """★ Round 9: "change the area to be inspected, photos, and inspection
+    results to be Bold and increase the font size by 2" — on the form, read
+    back, and printed. Marked per question in the form builder."""
+    from tests.test_label_revision import _pdf_text_sizes
+
+    _, client = hse_manager
+    created = (await client.post("/api/v1/forms/templates", json={
+        "code": f"jhsc-em-{uuid.uuid4().hex[:5]}", "name": "Minutes", "category": "jhsc"})).json()
+    bad = await client.put(f"/api/v1/forms/templates/{created['id']}/schema", json={
+        "schema": [{"key": "a", "type": "text", "label": "A", "emphasis": "yes"}]})
+    assert bad.status_code == 422, bad.text
+    saved = await client.put(f"/api/v1/forms/templates/{created['id']}/schema", json={
+        "schema": [{"key": "area", "type": "text", "label": "Plant area to be inspected",
+                    "emphasis": True},
+                   {"key": "notes", "type": "text", "label": "Other notes"}]})
+    assert saved.status_code in (200, 201), saved.text
+    await client.post(f"/api/v1/forms/templates/{created['id']}/publish", json={"change_note": "v1"})
+    config = await db_session.get(EhsConfig, 1)
+    if config is None:
+        config = EhsConfig(id=1)
+        db_session.add(config)
+    config.jhsc_minutes_template_code = created["code"]
+    await db_session.commit()
+
+    meeting = await _a_meeting(client)
+    sid = (await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")).json()["submission_id"]
+    await client.put(f"/api/v1/forms/submissions/{sid}/answers",
+                     json={"values": {"area": "Dryer floor", "notes": "Quiet month"}})
+
+    rows = (await client.get(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-answers")).json()
+    assert [(r["label"], r["emphasis"]) for r in rows] == [
+        ("Plant area to be inspected", True), ("Other notes", False)]
+
+    pdf = (await client.get(f"/api/v1/jhsc/meetings/{meeting['id']}/print")).content
+    sizes = {t: pt for pt, t in _pdf_text_sizes(pdf)}
+    assert sizes["Dryer floor"] == 11.5 and sizes["Plant area to be inspected"] == 10.5
+    assert sizes["Quiet month"] == 9.5 and sizes["Other notes"] == 8.5

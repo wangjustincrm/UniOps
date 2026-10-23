@@ -621,7 +621,7 @@ function ReplyForm(
 function FormMinutes({ meeting }: { meeting: Meeting }) {
   const rows = useQuery({
     queryKey: ['jhsc-minutes', meeting.id, meeting.minutes_submission_id],
-    queryFn: () => api.get<{ label: string; text: string | null; heading: boolean }[]>(
+    queryFn: () => api.get<{ label: string; text: string | null; heading: boolean; emphasis?: boolean }[]>(
       `/api/v1/jhsc/meetings/${meeting.id}/minutes-answers`),
     enabled: Boolean(meeting.minutes_submission_id),
   })
@@ -633,8 +633,9 @@ function FormMinutes({ meeting }: { meeting: Meeting }) {
         <dt key={i} className="mt-1 text-sm font-semibold text-neutral-900">{r.label}</dt>
       ) : (
         <div key={i}>
-          <dt className="text-xs font-medium text-neutral-500">{r.label}</dt>
-          <dd className="whitespace-pre-wrap text-sm text-neutral-900">
+          {/* Round 9: a question marked to stand out, two sizes up and bold. */}
+          <dt className={r.emphasis ? 'text-sm font-bold text-neutral-900' : 'text-xs font-medium text-neutral-500'}>{r.label}</dt>
+          <dd className={`whitespace-pre-wrap ${r.emphasis ? 'text-base font-bold' : 'text-sm'} text-neutral-900`}>
             {r.text ?? <span className="text-neutral-400">Not answered</span>}
           </dd>
         </div>

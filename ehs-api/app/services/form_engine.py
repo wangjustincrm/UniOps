@@ -116,6 +116,8 @@ def validate_schema(schema: list[dict]) -> None:
         spec = BY_CODE[qtype]
         if q.get("fail_on") is not None and not spec.can_fail:
             raise SchemaError(f"{where}: a {qtype} question cannot have a fail condition")
+        if "emphasis" in q and not isinstance(q["emphasis"], bool):
+            raise SchemaError(f"{where}: emphasis is true or false")
         if q.get("required") and not spec.answerable:
             raise SchemaError(f"{where}: a {qtype} holds no answer, so it cannot be required")
         if qtype in ("select", "multi_select") and not q.get("options"):

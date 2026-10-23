@@ -31,6 +31,7 @@ interface Question {
   label: string
   help?: string
   required?: boolean
+  emphasis?: boolean
   options?: string[]
   vocabulary?: string
   fail_on?: Record<string, unknown> | null
@@ -265,6 +266,14 @@ export default function FormBuilderPage() {
                     <input type="checkbox" checked={Boolean(q.required)}
                            onChange={(e) => update(i, { required: e.target.checked || undefined })} />
                     Required
+                  </label>
+                  {/* ★ Round 9: "change the area to be inspected, photos, and
+                      inspection results to be Bold and increase the font size
+                      by 2" — on the form, read back, and printed. */}
+                  <label className="flex items-center gap-1.5 text-xs text-neutral-700">
+                    <input type="checkbox" checked={Boolean(q.emphasis)}
+                           onChange={(e) => update(i, { emphasis: e.target.checked || undefined })} />
+                    Emphasise (bold, larger)
                   </label>
 
                   {/* ★ Round 5, TC-09: "minutes are a documentation of a

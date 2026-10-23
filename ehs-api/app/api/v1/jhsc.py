@@ -192,6 +192,7 @@ class MinutesRowOut(BaseModel):
     label: str
     text: str | None
     heading: bool = False
+    emphasis: bool = False
 
 
 @router.get("/meetings/{meeting_id}/minutes-answers", response_model=list[MinutesRowOut])
@@ -202,7 +203,7 @@ async def minutes_answers(meeting_id: uuid.UUID, db: SessionDep, user: CanReadJh
     meeting." It was attached; nothing read it back.
     """
     meeting = await crud.get_meeting(db, meeting_id)
-    return [MinutesRowOut(label=r.label, text=r.text, heading=r.heading)
+    return [MinutesRowOut(label=r.label, text=r.text, heading=r.heading, emphasis=r.emphasis)
             for r in await minutes_service.rows_for(db, meeting.minutes_submission_id)]
 
 
