@@ -1,12 +1,16 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.8
-**Date**: 2026-10-20
+**Version**: 0.9
+**Date**: 2026-10-23
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.7 → 0.8)**
+**What changed in this version (0.8 → 0.9)**
+- §1.6 "Round 9": UAT round 9 (2026-10-20, 7 pass / 4 fail) — the four failures and HSE's six answers, and the open box's clear requests, built: labels without H/P codes, kind changes and reopenings (with a mandatory reason) on the incident timeline, training provider, expiry as the course's period less a day, several files on a training record, the logo on certificates, a JHSC recommendation page answered with a corrective action, JHSC and training-expiry figures, emphasised form questions.
+- §10: SF-15 updated: what still waits on HSE (the dashboard redesign and its formulas).
+
+**What changed in version 0.8 (0.7 → 0.8)**
 - §1.6 "Round 8": the requests from round 8's open box that were clear are built — training courses by name only with no "everyone must take it" box, a certificate and a three-years-less-a-day expiry when recording training taken elsewhere, certificate expiry notice rules, a location on JHSC recommendations and their email, "JHSC" as the menu name, back to the document after its quiz, and a read-only injury and medical summary on the incident.
 - §10: SF-15 narrowed to the three requests that still need HSE's answer.
 
@@ -134,12 +138,25 @@ Round 8 (answers of 2026-10-19/20)
 
 Round 8, open box (built)
 - A training course is its name. It is added by name alone, and a second course of the same name is refused; the code other pages link by is made from the name and not shown. No course is required of everyone any longer: the "everyone must take it" box is gone, and who has to take a course is set on the position (Settings → Positions). The four courses seeded as "everyone" were cleared once.
-- Recording training taken elsewhere: the certificate (a PDF or an image) can be chosen on the same form. The expiry date is filled in as three years less a day after the completion date, again whenever the completion date changes, and can still be changed; left empty, the course's own validity period applies. If the certificate fails to upload, the training stays recorded and only the file is retried.
+- Recording training taken elsewhere: the certificate (a PDF or an image) can be chosen on the same form. The expiry date is filled in as three years less a day after the completion date, again whenever the completion date changes, and can still be changed; left empty, the course's own validity period applies. If the certificate fails to upload, the training stays recorded and only the file is retried. (Both changed in round 9, below: any number of files, and the course's own period less a day.)
 - Certificate expiry notices (Settings → Expiry notices, HSE only): a rule is an email address and a number of days (1–365). On each scan, one email per rule lists every certificate expiring within that many days that the rule has not listed before: training records with an expiry date and certifications on worker profiles. A certificate renewed to a new date is listed again when the new date comes near. Not listed: training replaced by a later record of the same course, and anything held by someone no longer active. A new rule's first email lists everything already inside its window.
 - A JHSC recommendation can say where it happened, picked as on an incident. It is shown under the recommendation and leads its email ("Where: …"), in the preview as well.
 - The menu and tab say "JHSC"; the page heading reads "JHSC — Joint Health and Safety Committee", and its roster tab is "Members".
 - Passing a document's quiz returns to the document, closing the quiz tab.
 - The incident page has a read-only "Injury and medical summary" on the right, under People: what happened, the kind of incident, where, each injured person's part of the body, kind of injury, treatment, whether sent off site and anything owed afterwards, who gave treatment, what else we should know, and the whole medical section. It is shown only to holders of the medical-information permission (HSE and the first-aider role).
+
+Round 9 (results and answers of 2026-10-20/22; built)
+- Printed chemical labels show the hazard and precautionary statements without their codes (H302, P210); a statement with no wording keeps its code. The record and the label editor keep the codes.
+- The incident timeline lists each change of the kind of incident (from what to what) and each reopening, with who and when. Reopening requires a reason, which is on the timeline and in the reopened email. Reopenings from before this show "No reason recorded".
+- Training taken elsewhere records its provider; it is shown on the record and is a column of the printed register and the spreadsheet.
+- A training record's expiry is the course's validity period, in calendar months, less a day — for records entered by hand and for records written by a completed session. The form fills it in when the course or the completion date changes and leaves a typed date alone otherwise; a course that does not expire leaves it empty.
+- A training record holds any number of files (any document, picture, video or sound file, or a link; pages and programs are refused), chosen on the form or added later. If some fail to upload, only those are retried.
+- The in-house training certificate carries the company logo from Admin → Company Settings, centred at the top.
+- A JHSC recommendation has its own page, which the reply task and the emails open. Whoever it was sent to may open and answer it without the committee's permissions; the answer is the corrective action form (what will be done, detail, owner, due date, priority, type of control). Submitting it raises the action, records the reply (stopping the 21 days) and removes the reply task from everybody's My Actions. HSE can correct the reply afterwards. Settings → Who is told → JHSC names who is emailed when one is answered, and whoever sent it (on by default); the email is listed on the recommendation.
+- The recommendations list opens with four figures — total, closed on time, closed late, open — each narrowing the list. On time means the reply was recorded by the end of the 21 days.
+- The compliance screen opens with four training expiry figures — expired, within 30 days, within 6 months, within a year (each including the shorter ones). Each opens the records behind it; the print and export take the same filter. Counted like the expiry emails: each person's latest record of a course, held by somebody still active.
+- A form question can be marked "Emphasise (bold, larger)" in the form builder: its label is bold and two sizes larger when the form is filled in, and its label and answer when the JHSC minutes are read back and printed. HSE marks the three inspection questions on the JHSC Minutes Form.
+- Left as HSE answered: the injury and medical summary stays visible to HSE and first aiders; HSE's "close everything outstanding" was for clearing test records on the test server, not a feature.
 
 ---
 
@@ -316,12 +333,13 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.6 | 2026-10-16 | UAT rounds 6–7 decisions recorded (§1.6); status and open items brought up to the branch. |
 | 0.7 | 2026-10-20 | UAT round 8 answers recorded; label type, risk assessment and the incident register built. |
 | 0.8 | 2026-10-20 | Round 8's clear open-box requests built (§1.6); SF-15 narrowed. |
+| 0.9 | 2026-10-23 | UAT round 9 fixes and requests built (§1.6); SF-15 now the dashboard redesign. |
 
 ---
 
 ## 9. Implementation Status
 
-**Branch `feature/ehs-safety`**, local HEAD as of this version (2026-10-20), last checked against `cbbd78c5`. `origin/main` was merged into the branch locally on 2026-10-08 (`6cb8c00b`, plus migration merge `8e033cec`). About 180 commits are ahead of `origin/main`. **None of this is on main or deployed.** The remote `origin/feature/ehs-safety` is stale: it stops at `6a0acc16` (2026-08-30, 21 commits, early Phase 1 only). Eight rounds of HSE UAT have been run on dev; round 8 (2026-10-20) recorded 11 pass / 4 fail, and every defect it reported has since been fixed on the branch, with the decisions in §1.6. Code: `ehs-api` (about 33 routers, 72 migrations) and the `ehs` front end (about 43 pages). The branch also carries identity, mdm, epms, file-api and portal changes that must ship with it.
+**Branch `feature/ehs-safety`**, local HEAD as of this version (2026-10-23), last checked against `be4fcfda`. `origin/main` was merged into the branch locally on 2026-10-08 (`6cb8c00b`, plus migration merge `8e033cec`). About 180 commits are ahead of `origin/main`. **None of this is on main or deployed.** The remote `origin/feature/ehs-safety` is stale: it stops at `6a0acc16` (2026-08-30, 21 commits, early Phase 1 only). Nine rounds of HSE UAT have been run on dev; round 9 (2026-10-20) recorded 7 pass / 4 fail, and every defect it reported has since been fixed on the branch, with the decisions in §1.6 (one, TC-08, was the test server sending no email at all: Safety there has no mail server configured). Code: `ehs-api` (about 33 routers, 76 migrations) and the `ehs` front end (about 43 pages). The branch also carries identity, mdm, epms, file-api and portal changes that must ship with it.
 
 | Status | Requirements |
 |---|---|
@@ -344,7 +362,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | SF-07 | Contractor management via VMS (E43–E45) not designed or built. | Open |
 | SF-08 | UAT round 7 answers (2026-10-15): passing the document quiz stays mandatory; a new document version requires the quiz again. | Done (§1.6) |
 | SF-09 | UAT round 7 free-text requirements. **Built**: return-to-work and legal clocks hold the close, statutory/return-to-work sections on medical incidents, reclassification, default lead investigator, injury questions after a name, editable permit checks; the permit end-time defect is fixed. **For HSE in round 8**: "investigation completed" as a status (3); removing a stopped clock from My Actions and the calendar (4 — completed clocks already leave both; the request may mean a clock that no longer applies, now covered by "not required"); notification content with injury detail (9 — health information would go to the whole notification list, PHIPA); and the risk-assessment redesign. Round 8 answers: no new status (3), "not required" was meant (4), email content unchanged (9); the risk assessment is built as confirmed. | Done (§1.6) |
-| SF-15 | UAT round 8 open-box requests still needing HSE's answer: HSE closing "all outstanding work permits, overdue tasks, CAPAs, training and courses" at once (which records, and closed as what); the inspection's area, photos and results in bold and larger (which screen: the form, the printout, or both); lost-time and cost-per-incident figures with an editable hourly-wage rule (the formula: hours from what, cost from what). The rest of round 8's open box is built (§1.6). | Open — for HSE |
+| SF-15 | Waiting on HSE: the dashboard redesign from round 9's open box — five figures across the top (days since the last medical incident, medical incidents this year, first aid, medical aid and lost time injuries), colours by configurable thresholds, chart types that can be switched, a body diagram for where people are hurt, average days to resolve an incident by month, corrective actions raised and closed by month, near misses, hazard assessments by month, a stacked column of near misses, hazard assessments and toolbox talks by supervisor (this month and last), and the injury rate chart moved from Reports. Needs HSE's formulas for lost time and cost per incident (with an editable hourly wage), and how supervisors and team leads are configured for the by-supervisor chart. | Open — for HSE |
 | SF-13 | Label body text size. HSE chose 10 pt on the small label only (round 8); of 10 approved labels on dev, the standard size prints 9 again and "fit automatically" picks standard for 7. | Done (§1.6) |
 | SF-14 | After merging with main, the Task Inbox email sender may also email corrective-action tasks, depending on its per-type setting; Safety already emails the owner of an action raised on an incident. Check the setting for the corrective-action task type at release, or owners receive two emails. | Open — release check |
 | SF-10 | Before go-live: HSE must configure area owners (Settings → Area responsibility) and load the reference lists; the label and certificate PDF fonts need CJK-capable embedding checked in the production image. | Open |
