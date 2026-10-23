@@ -200,7 +200,7 @@ def render(
 
 def describe(
     *, search: str | None, completed_from: date | None, completed_to: date | None,
-    person: str | None, course: str | None,
+    person: str | None, course: str | None, expiry: str | None = None,
 ) -> list[str]:
     """The filter, in the words the screen uses for it.
 
@@ -221,4 +221,16 @@ def describe(
         out.append(f"Completed on or after {completed_from.isoformat()}")
     elif completed_to:
         out.append(f"Completed on or before {completed_to.isoformat()}")
+    if expiry:
+        out.append(EXPIRY_WORDS[expiry]
+                   + " — each person's latest record of a course, people still here")
     return out
+
+
+# Round 9: the compliance screen's figures, as a filter in words.
+EXPIRY_WORDS = {
+    "expired": "Expired",
+    "30d": "Expiring within 30 days",
+    "6m": "Expiring within 6 months",
+    "1y": "Expiring within a year",
+}

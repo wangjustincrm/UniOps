@@ -60,6 +60,8 @@ export default function TrainingPage() {
   const [params, setParams] = useSearchParams()
   const recordCourse = params.get('record')
   const [tab, setTab] = useState<TabKey>(recordCourse ? 'records' : 'compliance')
+  // Round 9: a figure on the compliance tab opens the records behind it.
+  const [expiry, setExpiry] = useState<ExpiryWindow | null>(null)
   const { can } = usePermissions()
   const mayWrite = can('ehs.training.write')
 
@@ -67,16 +69,69 @@ export default function TrainingPage() {
     <div className="p-4">
       <PageHeader title="Training" />
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
-      {tab === 'compliance' && <TrainingGapsPanel />}
+      {tab === 'compliance' && (
+        <>
+          <ExpiryFigures onOpen={(w) => { setExpiry(w); setTab('records') }} />
+          <TrainingGapsPanel />
+        </>
+      )}
       {tab === 'courses' && <CoursesTab mayWrite={mayWrite} />}
       {tab === 'sessions' && <SessionsTab mayWrite={mayWrite} />}
       {tab === 'records' && (
         <RecordsTab
           mayWrite={mayWrite}
+          expiry={expiry}
+          onClearExpiry={() => setExpiry(null)}
           openForCourse={recordCourse}
           onConsumed={() => setParams({}, { replace: true })}
         />
       )}
+    </div>
+  )
+}
+
+// ── Expiry figures (round 9) ─────────────────────────────────────────────────
+
+/**
+ * ★ Round 9: "on the compliance screen, create a dashboard listing the total
+ * number of trainings that are going to expire in the next year, in 6 months,
+ * in 30 days and expired. Use the course records as the data source. Like
+ * always, each graph shall allow the user to click on the number and be shown
+ * the records that make up that value." Each window includes the shorter ones;
+ * the server counts what its own list returns for the same window.
+ */
+type ExpiryWindow = 'expired' | '30d' | '6m' | '1y'
+const EXPIRY_LABELS: Record<ExpiryWindow, string> = {
+  expired: 'Expired',
+  '30d': 'Expiring within 30 days',
+  '6m': 'Expiring within 6 months',
+  '1y': 'Expiring within a year',
+}
+interface ExpirySummary {
+  expired: number; within_30_days: number; within_6_months: number; within_a_year: number
+}
+
+function ExpiryFigures({ onOpen }: { onOpen: (w: ExpiryWindow) => void }) {
+  const summary = useQuery({
+    queryKey: ['training-records', 'expiry-summary'],
+    queryFn: () => api.get<ExpirySummary>('/api/v1/training/records/expiry-summary'),
+  })
+  const d = summary.data
+  const tiles: [ExpiryWindow, number | undefined, string][] = [
+    ['1y', d?.within_a_year, 'text-primary-700'],
+    ['6m', d?.within_6_months, 'text-primary-700'],
+    ['30d', d?.within_30_days, 'text-warning-700'],
+    ['expired', d?.expired, 'text-danger-700'],
+  ]
+  return (
+    <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Training expiry figures">
+      {tiles.map(([w, n, tone]) => (
+        <button key={w} type="button" onClick={() => onOpen(w)}
+                className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-left hover:border-primary-300 hover:bg-primary-50">
+          <span className={`block text-xl font-semibold tabular-nums ${tone}`}>{n ?? '—'}</span>
+          <span className="text-xs text-neutral-500">{EXPIRY_LABELS[w]}</span>
+        </button>
+      ))}
     </div>
   )
 }
@@ -325,8 +380,9 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
 
 // ── Records ──────────────────────────────────────────────────────────────────
 
-function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
+function RecordsTab({ mayWrite, openForCourse, onConsumed, expiry, onClearExpiry }: {
   mayWrite: boolean; openForCourse?: string | null; onConsumed?: () => void
+  expiry?: ExpiryWindow | null; onClearExpiry?: () => void
 }) {
   // Opened straight from the link, not from the button on this page. The
   // parameter is cleared as it is consumed so that closing the form and
@@ -348,10 +404,11 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
     order !== 'date' ? `order=${order}` : '',
     from ? `completed_from=${from}` : '',
     to ? `completed_to=${to}` : '',
+    expiry ? `expiry=${expiry}` : '',
   ].filter(Boolean).join('&')
 
   const records = useQuery({
-    queryKey: ['training-records', search.trim(), order, from, to],
+    queryKey: ['training-records', search.trim(), order, from, to, expiry ?? ''],
     queryFn: () => api.get<Record_[]>(
       `/api/v1/training/records${query ? `?${query}` : ''}`),
   })
@@ -371,6 +428,14 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed }: {
 
   return (
     <>
+      {expiry && (
+        <p className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-primary-50 px-3 py-2 text-sm text-primary-800">
+          Showing records {EXPIRY_LABELS[expiry].toLowerCase()} — each person&rsquo;s latest
+          record of a course, people still here.
+          <button type="button" onClick={onClearExpiry}
+                  className="font-semibold text-primary-700 underline">Show all records</button>
+        </p>
+      )}
       <div className="mb-3 flex flex-wrap justify-end gap-2">
         <button type="button" className={secondaryButton} disabled={printer.busy}
                 onClick={() => printer.open(

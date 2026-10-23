@@ -1115,3 +1115,55 @@ def test_calendar_months_without_such_a_day():
     assert validity.expires_on(date(2026, 1, 31), 1) == date(2026, 2, 27)
     assert validity.expires_on(date(2024, 2, 29), 12) == date(2025, 2, 27)
     assert validity.expires_on(date(2026, 10, 22), None) is None
+
+
+async def test_the_expiry_figures_and_the_records_behind_them(hse_manager, worker, courses, db_session):
+    """★ Round 9: "create a dashboard listing the total number of trainings that
+    are going to expire in the next year, in 6 months, in 30 days and expired …
+    each graph shall allow the user to click on the number and be shown the
+    records that make up that value." Counted as the expiry emails count: a
+    record renewed by a later one is not expiring, nor one held by a leaver."""
+    from app.models.mirrors import User
+    from app.models.training import TrainingRecord
+
+    _, client = hse_manager
+    person, _ = worker
+
+    def rec(user, course, completed_ago, expires_in, name=None):
+        return TrainingRecord(
+            id=uuid.uuid4(), user_id=user.id, user_name=name or user.full_name,
+            course_id=course.id, course_label=course.name,
+            completed_on=TODAY - timedelta(days=completed_ago),
+            expires_on=TODAY + timedelta(days=expires_in), delivery="external")
+
+    gone = User(id=uuid.uuid4(), full_name="Left Already", email=f"g-{uuid.uuid4().hex[:6]}@x.com",
+                role="requester", is_active=False)
+    db_session.add(gone)
+    await db_session.flush()
+    db_session.add_all([
+        rec(person, courses["whmis"], 400, -5),        # expired
+        rec(person, courses["forklift"], 900, 20),     # within 30 days
+        rec(gone, courses["forklift"], 900, 10),       # a leaver: not counted
+    ])
+    await db_session.flush()
+    before = (await client.get("/api/v1/training/records/expiry-summary")).json()
+
+    # A later forklift record renews the one expiring in 20 days.
+    db_session.add(rec(person, courses["forklift"], 1, 1000))
+    await db_session.flush()
+    after = (await client.get("/api/v1/training/records/expiry-summary")).json()
+    assert after["within_30_days"] == before["within_30_days"] - 1
+
+    for key, window in (("expired", "expired"), ("within_30_days", "30d"),
+                        ("within_6_months", "6m"), ("within_a_year", "1y")):
+        listed = (await client.get(f"/api/v1/training/records?expiry={window}")).json()
+        assert len(listed) == after[key], key
+        assert "Left Already" not in {r["user_name"] for r in listed}
+    expired = (await client.get("/api/v1/training/records?expiry=expired")).json()
+    assert person.full_name in {r["user_name"] for r in expired}
+    assert after["within_6_months"] >= after["within_30_days"]
+    assert after["within_a_year"] >= after["within_6_months"]
+
+    printed = await client.get("/api/v1/training/records/print?expiry=30d")
+    from tests.test_label_revision import _pdf_text
+    assert "Expiring within 30 days" in _pdf_text(printed.content)

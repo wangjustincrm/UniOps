@@ -125,6 +125,61 @@ async def record_training(
     return record
 
 
+# ── Expiry (round 9) ─────────────────────────────────────────────────────────
+# "on the compliance screen, create a dashboard listing the total number of
+# trainings that are going to expire in the next year, in 6 months, in 30 days
+# and expired. Use the course records as the data source." Counted the way the
+# expiry emails count (services/expiry_notice.py): a record somebody has since
+# renewed with a later one of the same course is not expiring, and nor is one
+# held by somebody no longer here.
+
+EXPIRY_WINDOWS = ("expired", "30d", "6m", "1y")
+
+
+def current_record_conditions():
+    """A record that is still the one that counts: not replaced by a later record
+    of the same course for the same person, and not held by somebody inactive."""
+    from sqlalchemy import and_, exists
+    from sqlalchemy.orm import aliased
+    later = aliased(TrainingRecord)
+    return [
+        or_(TrainingRecord.user_id.is_(None), exists().where(
+            and_(User.id == TrainingRecord.user_id, User.is_active.is_(True)))),
+        ~exists().where(and_(
+            later.user_id == TrainingRecord.user_id,
+            later.course_id == TrainingRecord.course_id,
+            later.completed_on > TrainingRecord.completed_on)),
+    ]
+
+
+def expiry_window(window: str, today: date):
+    """(from, to) for a window; `from` None means "before today"."""
+    if window == "expired":
+        return None, today - timedelta(days=1)
+    if window == "30d":
+        return today, today + timedelta(days=30)
+    months = {"6m": 6, "1y": 12}[window]
+    return today, validity.add_months(today, months)
+
+
+def _in_window(window: str, today: date):
+    start, end = expiry_window(window, today)
+    conds = [TrainingRecord.expires_on.is_not(None), TrainingRecord.expires_on <= end]
+    if start is not None:
+        conds.append(TrainingRecord.expires_on >= start)
+    return conds + current_record_conditions()
+
+
+async def expiry_summary(db: AsyncSession, *, today: date | None = None) -> dict[str, int]:
+    today = today or date.today()
+    out = {}
+    for w in EXPIRY_WINDOWS:
+        out[w] = (await db.execute(
+            select(func.count()).select_from(TrainingRecord).where(*_in_window(w, today))
+        )).scalar() or 0
+    return out
+
+
 async def list_training(
     db: AsyncSession, *,
     user_id: uuid.UUID | None = None,
@@ -133,6 +188,8 @@ async def list_training(
     completed_from: date | None = None,
     completed_to: date | None = None,
     order: str = "date",
+    expiry: str | None = None,
+    today: date | None = None,
 ) -> list[TrainingRecord]:
     """The register, narrowed and ordered the way somebody is reading it.
 
@@ -156,6 +213,8 @@ async def list_training(
         stmt = stmt.where(TrainingRecord.completed_on >= completed_from)
     if completed_to:
         stmt = stmt.where(TrainingRecord.completed_on <= completed_to)
+    if expiry:
+        stmt = stmt.where(*_in_window(expiry, today or date.today()))
 
     # Grouping on a list this size is ordering: the rows sit under the heading
     # the reader is scanning for, without a second shape to build and test.

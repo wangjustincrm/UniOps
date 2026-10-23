@@ -19,7 +19,6 @@ from datetime import date, timedelta
 
 from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
 from app.models.expiry_notice import CertExpiryNotice, CertExpiryRule
 from app.models.mirrors import User
@@ -43,14 +42,11 @@ def _still_here(user_id_col):
 
 
 async def expiring(db: AsyncSession, *, today: date, until: date) -> list[Expiring]:
-    later = aliased(TrainingRecord)
+    # The same "still the one that counts" as the compliance figures.
+    from app.crud.training import current_record_conditions
     records = (await db.execute(select(TrainingRecord).where(
         TrainingRecord.expires_on >= today, TrainingRecord.expires_on <= until,
-        _still_here(TrainingRecord.user_id),
-        ~exists().where(and_(
-            later.user_id == TrainingRecord.user_id,
-            later.course_id == TrainingRecord.course_id,
-            later.completed_on > TrainingRecord.completed_on)),
+        *current_record_conditions(),
     ))).scalars().all()
     certs = (await db.execute(select(WorkerCertification).where(
         WorkerCertification.expires_on >= today, WorkerCertification.expires_on <= until,

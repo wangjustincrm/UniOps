@@ -261,16 +261,37 @@ async def list_records(
     completed_from: date | None = None,
     completed_to: date | None = None,
     order: str = Query(default="date", pattern="^(date|person|topic)$"),
+    expiry: str | None = Query(
+        default=None, pattern="^(expired|30d|6m|1y)$",
+        description="Round 9: only records expired, or expiring within 30 days, 6 months or a year"),
 ):
     """The register. "Who has done this course", "what has this person done"
     and "what happened in March" are three questions of the same list."""
     return await _with_who_ran_them(db, await crud.list_training(
         db, user_id=user_id, course_id=course_id, search=search,
-        completed_from=completed_from, completed_to=completed_to, order=order))
+        completed_from=completed_from, completed_to=completed_to, order=order,
+        expiry=expiry))
+
+
+class ExpirySummaryOut(BaseModel):
+    expired: int
+    within_30_days: int
+    within_6_months: int
+    within_a_year: int
+
+
+@router.get("/records/expiry-summary", response_model=ExpirySummaryOut)
+async def expiry_summary(db: SessionDep, user: CanReadTraining):  # noqa: ARG001
+    """Round 9: the figures on the compliance screen. Each one is the count of
+    what GET /records?expiry=… lists, so a figure and its list cannot differ."""
+    got = await crud.expiry_summary(db)
+    return ExpirySummaryOut(expired=got["expired"], within_30_days=got["30d"],
+                            within_6_months=got["6m"], within_a_year=got["1y"])
 
 
 async def _register_for_export(
     db, user, *, user_id, course_id, search, completed_from, completed_to, order,
+    expiry=None,
 ) -> tuple[list[dict], list[str], str | None]:
     """The rows, the filter in words, and who asked for them.
 
@@ -280,7 +301,8 @@ async def _register_for_export(
     """
     rows = await crud.list_training(
         db, user_id=user_id, course_id=course_id, search=search,
-        completed_from=completed_from, completed_to=completed_to, order=order)
+        completed_from=completed_from, completed_to=completed_to, order=order,
+        expiry=expiry)
     ran = await crud.who_ran_them(db, rows)
 
     # ★ The names from their own tables, not off the first row: filtered to one
@@ -305,7 +327,7 @@ async def _register_for_export(
     } for r in rows]
     described = training_pdf.describe(
         search=search, completed_from=completed_from, completed_to=completed_to,
-        person=person, course=course)
+        person=person, course=course, expiry=expiry)
     return out, described, await _resolve_name(db, _user_id(user))
 
 
@@ -319,6 +341,9 @@ async def export_records(
     completed_from: date | None = None,
     completed_to: date | None = None,
     order: str = Query(default="date", pattern="^(date|person|topic)$"),
+    expiry: str | None = Query(
+        default=None, pattern="^(expired|30d|6m|1y)$",
+        description="Round 9: only records expired, or expiring within 30 days, 6 months or a year"),
 ):
     """The same register as a spreadsheet. Round 5, TC-08.
 
@@ -327,7 +352,8 @@ async def export_records(
     """
     rows, described, by = await _register_for_export(
         db, user, user_id=user_id, course_id=course_id, search=search,
-        completed_from=completed_from, completed_to=completed_to, order=order)
+        completed_from=completed_from, completed_to=completed_to, order=order,
+        expiry=expiry)
     book = training_xlsx.render(rows=rows, filters=described, printed_by=by)
     return Response(
         content=book,
@@ -346,6 +372,9 @@ async def print_records(
     completed_from: date | None = None,
     completed_to: date | None = None,
     order: str = Query(default="date", pattern="^(date|person|topic)$"),
+    expiry: str | None = Query(
+        default=None, pattern="^(expired|30d|6m|1y)$",
+        description="Round 9: only records expired, or expiring within 30 days, 6 months or a year"),
 ):
     """The same list, as a page somebody can hand over.
 
@@ -360,7 +389,8 @@ async def print_records(
     """
     rows, described, by = await _register_for_export(
         db, user, user_id=user_id, course_id=course_id, search=search,
-        completed_from=completed_from, completed_to=completed_to, order=order)
+        completed_from=completed_from, completed_to=completed_to, order=order,
+        expiry=expiry)
     pdf = training_pdf.render(
         # Dates as text for the page; the spreadsheet keeps them as dates so the
         # column sorts.
