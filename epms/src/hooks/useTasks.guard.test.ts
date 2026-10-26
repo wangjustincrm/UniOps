@@ -51,12 +51,12 @@ describe("the ['tasks'] query key", () => {
     expect(src).toMatch(/export function useTasks\(/)
   })
 
-  it('still hides the document types EPMS has no page for', () => {
+  it('filters through the EPMS allow-list, not a hand-kept deny-list', () => {
+    // The deny-list (VMS + pa_dir) let every later module leak in by default —
+    // OA travel / claim approvals did. The sets themselves are tested in
+    // lib/taskTypes.test.ts.
     const src = fs.readFileSync(OWNER, 'utf8')
-    // pa_dir is the one that mattered: HREF_MAP has no entry, so its card
-    // deep-links to "/<uuid>" and dead-ends.
-    for (const docType of ['vms_visit', 'vms_train', 'vms_ppe', 'pa_dir']) {
-      expect(src).toContain(`'${docType}'`)
-    }
+    expect(src).toMatch(/EPMS_PAGE_DOC_TYPES\.has\(/)
+    expect(src).not.toMatch(/NON_EPMS_DOC_TYPES/)
   })
 })

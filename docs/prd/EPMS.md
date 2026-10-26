@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.38
-**Date:** 2026-10-23
+**Version:** 2.39
+**Date:** 2026-10-26
 **Status:** In Production
+
+> **v2.39 (2026-10-26)** — The EPMS Task Inbox shows EPMS work only (§3.7.1, DSH-023): the inbox page, the header bell and the dashboard task list leave out OA, Finance and VMS tasks. Only Portal's home inbox gathers every module's tasks; OA, Finance and VMS work is done from those modules. OA travel and claim approvals used to reach a Finance Manager's EPMS inbox with no label and a card link that opened nothing.
 
 > **v2.38 (2026-10-23)** — New §3.23 PO Fee Invoices: a freight or customs invoice from a forwarder/broker can be linked to the NC raw-material PO **arrivals** it belongs to (a freight bill to several arrivals, a customs invoice line by line), still paid by a Direct PA; the PO page gets a **Freight & Customs** panel and the PO list a **Fees** column. Incoterms on Edit Details becomes a **required code picker** on raw-material orders plus an optional named place (PO-IMP-001, PO-IMP-007); codes and whether each expects freight / customs invoices are set in the new Admin **Incoterms Settings** (§3.6.4). NC full reload keeps POs that carry fee links or an Incoterms code (NC-003).
 
@@ -1121,7 +1123,7 @@ The dashboard shown is decided **by the server** from the user's roles; the fron
 
 #### 3.7.1 Task Inbox — Task Types
 
-The Task Inbox lists every open task the current user can act on. Tasks live in one shared table written by EPMS, the approval engine, Finance and VMS, so the EPMS inbox also carries OA, Finance and VMS work; each card opens the page where the work is done (EPMS, Finance, VMS or Portal). This table is the canonical task-type list.
+The Task Inbox lists the open **EPMS** tasks the current user can act on. Tasks live in one shared table written by EPMS, the approval engine, Finance and VMS. **Only Portal's home inbox gathers every module's tasks** (PORTAL.md §3.3); the EPMS inbox shows EPMS work only (DSH-023), and OA, Finance and VMS tasks are done from those modules. Each card opens the page where the work is done (EPMS, or Portal for NC sync errors). This table is the canonical list of EPMS task types.
 
 | Task type | Label | Assigned to | Raised when | Closes when |
 |---|---|---|---|---|
@@ -1145,8 +1147,7 @@ The Task Inbox lists every open task the current user can act on. Tasks live in 
 | `process_pa` | Process Payment Application | Payment Officer pool | PA fully approved | PA processed (paid) or leaves approved |
 | `confirm_period` / `chase_agreement_invoice` | Confirm Service Period / Chase Missing Invoice | Agreement owner | Agreement billing period due / overdue (§3.17) | Period accepted / no overdue period |
 | `import_erp_vendor` / `resolve_nc_sync_error` | Import ERP Vendor / Resolve NC Sync Error | System Admin | NC purchase sync could not import a document (§3.12.6) | Next sync succeeds |
-| `resolve_jv_validation`, `resolve_ap_duplicate_invoice` | Resolve JV Validation Findings / Resolve Duplicate NC Invoices | System Admin / AP Clerk | Finance sync finds issues | Findings cleared |
-| `approve_budget_plan` / `revise_budget_plan`, OA `approve_<claim>` / `revise_<claim>` / `process_expense`, VMS tasks | (other modules) | per module | per module | closed by the owning module |
+| Not in the EPMS inbox: Finance `approve_budget_plan` / `revise_budget_plan` / `resolve_jv_validation` / `resolve_ap_duplicate_invoice`; OA `approve_<claim>` / `revise_<claim>` / `process_expense` (expense, mileage, travel expense, travel application, custom forms); VMS tasks | (other modules — Portal inbox and the owning module) | per module | per module | closed by the owning module |
 
 **Inbox layout:** tabs **All / Urgent / Normal / Completed** (Completed = tasks completed today); stat cards Urgent / Normal / Completed today; tasks grouped by type in a fixed order; each card shows type, document number, vendor, amount and due date when known; NC-sync, JV-validation and duplicate-invoice cards also show the reason text. A **Refresh** button re-reads the inbox. There is no "Mark Done" button.
 
@@ -1162,6 +1163,7 @@ The Task Inbox lists every open task the current user can act on. Tasks live in 
 - **DSH-009** — The header task badge displays the real-time count of open tasks assigned to the current user, polling every 60 seconds. Clicking navigates to the Task Inbox page.
 - **DSH-020** — **Self-healing:** each inbox load closes tasks whose document no longer needs that action (status-based rules declared per task type — e.g. approve_* only while submitted/in_review, revise_* only while draft/returned, match_invoice only while unmatched/exception, process_pa only while approved; plus the create_po / place_order / create_pa / create_prepayment_pa rules in the table) and creates missing `create_po` / `place_order` / `create_pa` tasks for documents created on or after 2026-06-01. Concurrent loads cannot create duplicate tasks. Every new task type must declare its liveness rule (enforced by an automated test).
 - **DSH-021** — A **Refresh** button re-reads the inbox immediately (changes made in Portal, e.g. Data Maintenance, are otherwise picked up by the 60-second poll).
+- **DSH-023** — **Scope:** the EPMS Task Inbox page, the header task badge (DSH-009) and the dashboard task list show only tasks on EPMS documents — PR, PO, goods receipt, invoice, Payment Application (incl. Direct PA), Purchase Agreement, PO sign-off — and NC purchase-sync errors. Tasks of any other module, including a module added later, are left out by default; Portal's inbox shows them. EPMS detail pages still read their own approval tasks (DSH-007), including the Budget Plan editor that Finance embeds.
 - **DSH-022** — When the approver behind a department role changes (user edit, role grant, Approval Routing save), open approval tasks are re-pointed to the new holder automatically (§3.6.3, §3.3.8).
 
 #### 3.7.2 Role Dashboard Layouts

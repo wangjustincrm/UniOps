@@ -1,13 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { taskService, type TaskFilters } from '@/services/tasks'
+import { EPMS_PAGE_DOC_TYPES } from '@/lib/taskTypes'
 
 // epms-api `/tasks` is shared across modules (Portal aggregates all of them,
-// VMS pulls vms_* only). EPMS task pages should never show VMS rows, nor Direct
-// PAs (`pa_dir`) which belong to OA and have no EPMS detail page — filter them
-// client-side at the hook so all consumers (dashboard, inbox, etc.) inherit the
-// exclusion without each having to remember. The shared API stays unfiltered so
-// the Portal still receives `pa_dir` and deep-links it into OA.
-const NON_EPMS_DOC_TYPES = new Set(['vms_visit', 'vms_train', 'vms_ppe', 'pa_dir'])
+// VMS pulls vms_* only). Keep only the doc types an EPMS page acts on
+// (EPMS_PAGE_DOC_TYPES — an allow-list, see taskTypes.ts) here at the hook so
+// every consumer inherits it. That set still includes budget_plan for the
+// embedded plan editor's Approve gate; the inbox surfaces (Task Inbox page,
+// header bell, dashboard list) narrow further with isEpmsInboxTask. The shared
+// API stays unfiltered so Portal still receives everything.
 
 interface UseTasksOptions {
   /** Poll interval in ms. Only the Header sets this — see the note below. */
@@ -33,11 +34,8 @@ export function useTasks(filters?: TaskFilters, options?: UseTasksOptions) {
     refetchInterval: options?.refetchInterval,
     queryFn: async () => {
       const resp = await taskService.list(filters)
-      return {
-        ...resp,
-        items: resp.items.filter((t) => !NON_EPMS_DOC_TYPES.has(t.document_type)),
-        total: resp.items.filter((t) => !NON_EPMS_DOC_TYPES.has(t.document_type)).length,
-      }
+      const items = resp.items.filter((t) => EPMS_PAGE_DOC_TYPES.has(t.document_type.toLowerCase()))
+      return { ...resp, items, total: items.length }
     },
   })
 }

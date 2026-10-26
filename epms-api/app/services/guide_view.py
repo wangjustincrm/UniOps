@@ -88,15 +88,37 @@ TASK_TYPE_LABELS: dict[str, str] = {
     "resolve_ap_duplicate_invoice": "Resolve Duplicate NC Invoices",
 }
 
-# Tasks the EPMS Task Inbox does not show. /tasks is shared by every module
-# (Portal aggregates them all, VMS pulls its own); the EPMS inbox reads it
-# through useTasks, which drops these document types — copied from
-# epms/src/hooks/useTasks.ts NON_EPMS_DOC_TYPES, and
-# tests/test_assistant_iss_batch6.py fails when the two drift. Counted in, the
-# Assistant's total was the inbox's plus 6 VMS training tasks (ISS-0011).
-NOT_IN_EPMS_INBOX: dict[str, str] = {
-    "vms_visit": "VMS", "vms_train": "VMS", "vms_ppe": "VMS", "pa_dir": "OA",
+# The only document types the EPMS Task Inbox lists. /tasks is shared by every
+# module and only Portal's inbox aggregates them all; the EPMS inbox shows EPMS
+# work (PRD EPMS §3.7.1) — an allow-list copied from epms/src/lib/taskTypes.ts
+# EPMS_INBOX_DOC_TYPES, and tests/test_assistant_iss_batch6.py fails when the
+# two drift. Counted in, the Assistant's total was the inbox's plus 6 VMS
+# training tasks (ISS-0011).
+EPMS_INBOX_DOC_TYPES: frozenset[str] = frozenset({
+    "pr", "po", "gr", "invoice", "pa", "agr", "posign", "nc_sync",
+})
+
+# Where a task the EPMS inbox leaves out is worked, to name it in the answer.
+# cfm_<code> are OA custom forms; pa_dir is OA's retired Direct PA.
+_OTHER_MODULE_BY_DOC_TYPE: dict[str, str] = {
+    "exp": "OA", "mil": "OA", "trv": "OA", "tra": "OA", "pa_dir": "OA",
+    "budget_plan": "Finance", "jv_validation": "Finance",
+    "ap_duplicate_invoice": "Finance",
 }
+
+
+def owning_module(doc_type: str) -> str:
+    """The module a task of a non-EPMS document type belongs to."""
+    dt = (doc_type or "").lower()
+    if dt.startswith("cfm"):
+        return "OA"
+    if dt.startswith("vms_"):
+        return "VMS"
+    return _OTHER_MODULE_BY_DOC_TYPE.get(dt, "Other")
+
+
+def in_epms_inbox(task: dict) -> bool:
+    return (task.get("document_type") or "").lower() in EPMS_INBOX_DOC_TYPES
 
 # More task types than this and the smallest are given as one "Other" row,
 # counted here: left to the narrator, a merged row read "其他（7 项）| 4" and
@@ -107,8 +129,8 @@ _MAX_TASK_GROUPS = 12
 def split_epms_inbox(tasks: list[dict]) -> tuple[list[dict], list[dict]]:
     """(what the EPMS Task Inbox lists, what it leaves out) — the inbox's own
     filter, so the Assistant's total and groups are the inbox's."""
-    inbox = [t for t in tasks if t.get("document_type") not in NOT_IN_EPMS_INBOX]
-    elsewhere = [t for t in tasks if t.get("document_type") in NOT_IN_EPMS_INBOX]
+    inbox = [t for t in tasks if in_epms_inbox(t)]
+    elsewhere = [t for t in tasks if not in_epms_inbox(t)]
     return inbox, elsewhere
 
 
@@ -175,8 +197,8 @@ def task_summary(tasks: list[dict], elsewhere: list[dict] | None = None) -> dict
         "examples_shown": len(examples),
         # Other modules' tasks, which the EPMS Task Inbox does not list.
         "not_in_this_inbox": [
-            {**g, "module": NOT_IN_EPMS_INBOX[next(
-                t["document_type"] for t in elsewhere if t["type"] == g["type"])]}
+            {**g, "module": owning_module(next(
+                t["document_type"] for t in elsewhere if t["type"] == g["type"]))}
             for g in _groups(elsewhere or [])],
         "examples_left_out": len(tasks) - len(examples),
         # Overdue, urgent, closing a task — the registry's tasks rules.

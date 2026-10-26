@@ -37,14 +37,19 @@ rules:
     asked_as:
       - 为什么助手说的待办数和 Task Inbox 不一样？
       - are VMS tasks in the EPMS Task Inbox
+      - 为什么 EPMS 的 Task Inbox 里看不到报销 / 出差审批？
     answer: >
-      The EPMS Task Inbox lists your open tasks, except those of VMS
-      (visits, training confirmations, PPE) and of OA Direct Payment
-      Applications: those are worked in VMS and OA, and Portal's inbox shows
-      them. The task counts given here are the EPMS Task Inbox's, worked
-      out the same way; tasks of those other modules are named separately and
-      not counted in.
-    enforced_in: "epms/src/hooks/useTasks.ts NON_EPMS_DOC_TYPES; epms-api app/services/guide_view.py NOT_IN_EPMS_INBOX + split_epms_inbox, used by app/api/v1/assistant_chat.py _answer_whats_next"
+      The EPMS Task Inbox lists only EPMS work: Purchase Requests, Purchase
+      Orders, goods receipts, invoices, Payment Applications, Purchase
+      Agreements, PO sign-offs and NC purchase-sync errors. Tasks of other
+      modules — OA (expense, mileage and travel expense claims, travel
+      applications, custom forms), Finance (budget plans, JV validation,
+      duplicate NC invoices) and VMS — are worked in those modules; each has
+      its own Task Inbox, and only Portal's home inbox gathers every module's
+      tasks. The task counts given here are the EPMS Task Inbox's, worked out
+      the same way; tasks of other modules are named separately and not
+      counted in.
+    enforced_in: "epms/src/lib/taskTypes.ts EPMS_INBOX_DOC_TYPES + isEpmsInboxTask (Task Inbox page, header bell, dashboard list); epms-api app/services/guide_view.py EPMS_INBOX_DOC_TYPES + split_epms_inbox, used by app/api/v1/assistant_chat.py _answer_whats_next"
     provenance: pinned
     test:
       - "tests/test_assistant_iss_batch6.py::test_task_counts_leave_out_what_the_epms_inbox_leaves_out"

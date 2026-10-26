@@ -102,8 +102,11 @@ async def test_chat_exit_cleans_any_answer(admin_client, monkeypatch):
 
 # ── ISS-0011: task counts are counted in code, grouped like the Task Inbox ────
 
-def _task(t, priority="normal", n=0):
+def _task(t, priority="normal", n=0, document_type="po"):
+    # document_type: the EPMS inbox keeps EPMS document types only (guide_view.
+    # EPMS_INBOX_DOC_TYPES), so a task without one would be left out.
     return {"type": t, "priority": priority, "document_number": f"D-{t}-{n}",
+            "document_type": document_type,
             "due_date": None, "created_at": f"2026-10-{1 + n % 28:02d}"}
 
 
