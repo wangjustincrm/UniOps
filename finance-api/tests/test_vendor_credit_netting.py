@@ -904,6 +904,39 @@ async def test_applications_endpoint_reports_where_a_credit_went(client, db_sess
     assert row["doc_kind"] == "pa_dir"
     assert row["payment_record_id"] == str(res.payment_record_id)
     assert row["applied_by"] == str(actor)
+    # The payment beside the credit: cash that left the bank is gross − credit.
+    assert row["cash_paid"] == "50.00"
+    assert row["payment_status"] == "completed"
+    assert row["payment_date"] is not None
+    assert row["batch_number"] is None      # executed directly, not via a batch
+
+
+@pytest.mark.anyio
+async def test_applications_name_the_batch_the_payment_went_out_in(client, db_session):
+    """AP asks "which batch?" first; the row carries the batch NUMBER, not
+    just the id the table stores."""
+    from datetime import date as _date
+    from sqlalchemy import update
+    from app.models.payment_batch import PaymentBatch
+    from app.models.vendor_credit import VendorCreditApplication
+    pa = _pa(payment_amount=Decimal("80.00"))
+    credit = _credit(vendor_id=pa.vendor_id, amount=Decimal("30.00"),
+                     total_amount=Decimal("30.00"), remaining_amount=Decimal("30.00"))
+    batch = PaymentBatch(batch_number="BP-20261006-0013", batch_date=_date(2026, 10, 6),
+                         status="executed", currency="CAD", total=Decimal("50.00"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add_all([pa, credit, batch])
+    await db_session.flush()
+    await _run_execute(db_session, pa, user_id=uuid.uuid4())
+    await db_session.execute(update(VendorCreditApplication)
+                             .where(VendorCreditApplication.credit_id == credit.id)
+                             .values(batch_id=batch.id))
+    await db_session.flush()
+
+    row = (await client.get(f"/finance/v1/vendor-credits/{credit.id}/applications",
+                            headers=_h())).json()["items"][0]
+    assert row["batch_id"] == str(batch.id)
+    assert row["batch_number"] == "BP-20261006-0013"
 
 
 @pytest.mark.anyio

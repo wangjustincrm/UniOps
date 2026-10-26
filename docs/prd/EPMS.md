@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.39
+**Version:** 2.40
 **Date:** 2026-10-26
 **Status:** In Production
+
+> **v2.40 (2026-10-26)** — Vendor credit usage history (§3.18.2, VC-006): the credit detail drawer lists every payment a credit was netted against — PA, payment date, batch, amount netted and cash paid — with the total; shown to finance roles.
 
 > **v2.39 (2026-10-26)** — The EPMS Task Inbox shows EPMS work only (§3.7.1, DSH-023): the inbox page, the header bell and the dashboard task list leave out OA, Finance and VMS tasks. Only Portal's home inbox gathers every module's tasks; OA, Finance and VMS work is done from those modules. OA travel and claim approvals used to reach a Finance Manager's EPMS inbox with no label and a card link that opened nothing.
 
@@ -2419,8 +2421,9 @@ Payment of an approved PA is executed in Finance; EPMS PA Detail offers the same
 | **VC-001** | A vendor credit is money the vendor owes back. Sources: a **credit-note document** uploaded through Upload Invoice (§3.14.1, INV-003c), a **manual credit** (Vendor Credits → *Record Manual Credit*) when the vendor will not issue a credit note, or a QuickBooks import. Number `VC-YYYYMMDD-NNNN`; amounts are stored positive regardless of the document's sign. |
 | **VC-002** | Duplicate guard: one live (non-void) credit per vendor + vendor credit-note number. |
 | **VC-003** | A manual credit requires the reference number the vendor quoted (shown on the remittance), amount/tax, and a **basis** note (who at the vendor confirmed it, and when); the vendor's email (.msg/.eml/PDF) is attached as evidence and the UI will not approve a manual credit without an attachment. |
-| **VC-004** | New credits are `pending_review`. Holders of *Manage Vendor Credits* (`epms.vendor_credit.manage`) approve (→ `available`) or reject with a reason (→ `void`); an `available` credit not yet applied can be voided. The Vendor Credits page (menu gated by `view_invoice`) lists credits with a detail drawer (fields, files, review actions, applications). |
+| **VC-004** | New credits are `pending_review`. Holders of *Manage Vendor Credits* (`epms.vendor_credit.manage`) approve (→ `available`) or reject with a reason (→ `void`); an `available` credit not yet applied can be voided. The Vendor Credits page (menu gated by `view_invoice`) lists credits with a detail drawer (fields, files, review actions, usage — VC-006). |
 | **VC-005** | At payment, available credits of the same vendor and currency are netted automatically, **oldest first**, up to the payment amount; the operator can untick individual credits in the dialog. A fully used credit becomes `exhausted`. |
+| **VC-006** | **Usage history.** The detail drawer of an `available`, `exhausted` or `void` credit lists every payment it was netted against: PA number (opens the PA), payment date, payment batch, amount netted, cash paid to the vendor on that payment, and who executed it, with a count and total that equal the credit's *Applied*. A payment not in `completed` status is labelled. Usage is payment data: viewers without a finance role (System Admin, Finance Manager, Finance BP, AP Clerk, Payment Officer) see a notice instead of the list. |
 
 #### 3.18.3 Remittance Advice
 

@@ -1,8 +1,11 @@
 import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import { AlertTriangle, Download, ExternalLink, Paperclip, X } from 'lucide-react'
 
-import { useCreditAttachments, useUploadCreditAttachment } from '@/hooks/useVendorCredits'
+import {
+  useCreditAttachments, useUploadCreditAttachment, useVendorCreditApplications,
+} from '@/hooks/useVendorCredits'
 import { formatAmount, formatDate } from '@/lib/utils'
 import {
   CREDIT_EVIDENCE_ACCEPT, creditAttachmentService, type CreditAttachment, type VendorCredit,
@@ -40,6 +43,8 @@ export function CreditDetailDrawer({
   credit, canManage, reviewPending, approveError, onClose, onApprove, onReject, onVoid,
 }: Props) {
   const atts = useCreditAttachments(credit.id)
+  // A credit still in review cannot have been used yet — nothing to fetch.
+  const usage = useVendorCreditApplications(credit.status === 'pending_review' ? null : credit.id)
   const upload = useUploadCreditAttachment(credit.id)
   const [fileError, setFileError] = useState<string | null>(null)
 
@@ -114,6 +119,58 @@ export function CreditDetailDrawer({
             <div className="mt-4">
               <h3 className="text-xs font-semibold uppercase text-neutral-500">Review note</h3>
               <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-800">{credit.review_note}</p>
+            </div>
+          )}
+
+          {credit.status !== 'pending_review' && (
+            <div className="mt-5">
+              <h3 className="text-xs font-semibold uppercase text-neutral-500">Usage</h3>
+              {usage.isLoading ? (
+                <p className="mt-2 text-xs text-neutral-400">Loading…</p>
+              ) : usage.isError ? (
+                <p className="mt-2 text-xs text-neutral-500">
+                  {(usage.error as Error & { status?: number }).status === 403
+                    ? 'Usage history is visible to finance roles only.'
+                    : (usage.error as Error).message}
+                </p>
+              ) : !usage.data || usage.data.items.length === 0 ? (
+                <p className="mt-2 text-xs text-neutral-400">Not applied to any payment yet.</p>
+              ) : (
+                <>
+                  <ul className="mt-2 flex flex-col gap-1.5">
+                    {usage.data.items.map((a) => (
+                      <li key={a.id} className="rounded bg-neutral-50 px-2.5 py-2 text-xs">
+                        <div className="flex items-center justify-between gap-3">
+                          <Link to={`/pa/${a.doc_id}`} onClick={onClose}
+                                className="font-mono font-medium text-primary-700 hover:underline">
+                            {a.doc_number ?? 'Payment application'}
+                          </Link>
+                          <span className="font-mono font-semibold text-neutral-900">−{money(a.applied_amount)}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-neutral-500">
+                          <span>{formatDate(a.payment_date ?? a.applied_at)}</span>
+                          {a.batch_number && <span className="font-mono">{a.batch_number}</span>}
+                          {a.cash_paid != null && (
+                            <span title="Cash paid to the vendor on this payment, after the credit">
+                              Paid <span className="font-mono">{money(a.cash_paid)}</span>
+                            </span>
+                          )}
+                          {a.applied_by_name && <span>by {a.applied_by_name}</span>}
+                          {a.payment_status && a.payment_status !== 'completed' && (
+                            <span className="text-warning-700">{a.payment_status}</span>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-2 flex justify-between border-t border-neutral-100 pt-2 text-xs">
+                    <span className="text-neutral-500">
+                      {usage.data.total} payment{usage.data.total === 1 ? '' : 's'}
+                    </span>
+                    <span className="font-mono font-semibold text-neutral-900">{money(usage.data.total_applied)}</span>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
