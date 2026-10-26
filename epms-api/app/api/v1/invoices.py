@@ -15,6 +15,8 @@ from app.core.ontology import sees_agreement_invoices, sees_freight_invoices
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import invoice as invoice_crud
+from app.crud import po_fee as po_fee_crud
+from app.schemas.po_fee import FeeLinkOut, FeeLinksPut
 from app.crud import invoice_dedup
 from app.crud import attach_receipts_task
 from app.crud import vendor as vendor_crud
@@ -637,6 +639,57 @@ async def upload_invoice(body: InvoiceCreate, db: SessionDep, user: InvoiceUploa
     await tax_prefill.apply_tax_prefill(db, inv, token)   # 新增
     await finance_sync.sync_ap_invoice(db, inv, token)
     return inv
+
+
+@router.get("/fee-link-candidates")
+async def fee_link_candidates(
+    db: SessionDep, _: ApDep,
+    q: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    """Raw-material POs (with their arrivals) a freight / customs invoice can be
+    linked to, latest arrival first, plus the total that match — searched by
+    PO number, vendor or arrival number, never filtered by the invoice's own
+    vendor (a forwarder, not the PO's supplier)."""
+    return await po_fee_crud.search_candidate_pos(db, q, limit)
+
+
+@router.get("/{invoice_id}/fee-links", response_model=list[FeeLinkOut])
+async def get_fee_links(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None or not await _can_read_invoice(db, user, inv, await build_scope(db, user)):
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return await po_fee_crud.list_for_invoice(db, invoice_id)
+
+
+@router.put("/{invoice_id}/fee-links", response_model=list[FeeLinkOut])
+async def put_fee_links(invoice_id: uuid.UUID, body: FeeLinksPut, db: SessionDep, user: ApDep):
+    """Replace which raw-material PO arrivals this fee invoice belongs to.
+    Only a record of where the cost came from: the invoice's status, route and
+    payment are untouched (design: 2026-10-23-po-fee-invoices)."""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    links = [po_fee_crud.LinkIn(fee_type=l.fee_type, po_id=l.po_id, gr_id=l.gr_id,
+                                invoice_line_id=l.invoice_line_id) for l in body.links]
+    try:
+        before, after = await po_fee_crud.replace_for_invoice(
+            db, inv, links, actor_id=uuid.UUID(user["sub"]))
+    except po_fee_crud.FeeLinkInvalid as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    def _brief(rows: list[dict]) -> list[str]:
+        return sorted(f"{r['fee_type']}:{r['po_number']}/{r['gr_number'] or '-'}"
+                      + (f"@{r['invoice_line_id']}" if r["invoice_line_id"] else "") for r in rows)
+    if _brief(before) != _brief(after):
+        db.add(AdminAuditLog(
+            actor_id=uuid.UUID(user["sub"]), actor_email=user.get("email", ""),
+            action="edit", system="epms", entity="invoice",
+            record_id=inv.id, record_number=inv.internal_ref,
+            before={"fee_links": _brief(before)}, after={"fee_links": _brief(after)},
+        ))
+    await db.commit()
+    return after
 
 
 @router.get("/{invoice_id}", response_model=InvoiceResponse)

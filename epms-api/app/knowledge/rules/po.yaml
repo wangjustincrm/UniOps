@@ -1,7 +1,7 @@
 area: po
 label: Purchase orders
 covers: >
-  Purchase order numbers, editing a PO (raised in EPMS or from NC), placing the order, closing, and PO sign-off.
+  Purchase order numbers, editing a PO (raised in EPMS or from NC), Incoterms, placing the order, closing, PO sign-off, and whether a raw-material PO's freight / customs invoices are in.
 rules:
   - id: po_numbering
     asked_as:
@@ -126,3 +126,47 @@ rules:
       - "tests/test_po_signoff.py::test_signing_without_a_preset_signature_is_refused_before_the_engine_runs"
       - "tests/test_rule_registry.py::test_signoff_statuses"
       - "tests/test_rule_registry.py::test_why_no_signoff_checks_the_submit_permission"
+
+  # ── Added 2026-10-23 (PO Fee Invoices) ───────────────────────────────────
+  - id: are_a_pos_fee_invoices_in
+    asked_as:
+      - 这张原料 PO 的运费和清关费发票到齐了吗？
+      - have the freight and customs invoices for this PO come in
+      - what does Fees Missing mean on the PO list
+    answer: >
+      On an NC raw-material / packaging order (not milk), the PO page's
+      Freight & Customs panel lists every arrival with the freight and customs
+      invoices linked to it. Whether each is expected comes from the order's
+      Incoterms, as set in Incoterms Settings — for example FOB expects both,
+      DAP only customs, DDP neither. The PO list's Fees column rolls this up:
+      Complete (every arrival has each expected invoice), Missing (at least
+      one does not), No arrivals yet, Not required (the Incoterms expect
+      neither), or Incoterms not set (it cannot be judged until Incoterms is
+      filled in on Edit Details). Changing a code's settings re-rates every
+      order that uses it at once.
+    enforced_in: "epms-api app/crud/po_fee.py _rollup / fee_detail_for_po / fee_status_for_pos (read live from company_config.incoterms_terms); app/api/v1/po.py GET /po/{id}/fee-status, fee_status on GET /po and GET /po/{id}"
+    provenance: pinned
+    test:
+      - "tests/test_po_fee.py::test_freight_per_arrival_and_customs_per_line_complete_the_po"
+      - "tests/test_po_fee.py::test_status_follows_the_incoterms_term"
+      - "tests/test_po_fee.py::test_deleting_an_arrival_keeps_the_link_as_unassigned"
+  - id: incoterms_is_required_on_raw_material_orders
+    asked_as:
+      - 为什么 Edit Details 保存不了，提示 Incoterms is required？
+      - is Incoterms required on a PO
+      - where are the Incoterms codes set up
+    answer: >
+      Yes on an NC raw-material / packaging order: Edit Details cannot be
+      saved without an Incoterms code, because it decides whether freight and
+      customs invoices are expected. Milk orders do not need one. The code is
+      picked from the list in Admin → Incoterms Settings, where a System Admin
+      sets for each code whether it needs freight and customs; a code can be
+      deactivated there but not removed. The named place (e.g. "Arbuckle,
+      CA") is a separate, optional field. NC has no Incoterms field, so it is
+      always filled in by hand in EPMS.
+    enforced_in: "epms-api app/api/v1/po.py update_imported_details (422 when a raw-material NC PO would be left without incoterms_code; code must be active); app/api/v1/config.py update_config (normalise_terms, removed_codes)"
+    provenance: pinned
+    test:
+      - "tests/test_po_fee.py::test_raw_material_po_cannot_be_saved_without_incoterms"
+      - "tests/test_po_fee.py::test_milk_orders_do_not_require_incoterms"
+      - "tests/test_po_fee.py::test_config_serves_the_defaults_and_refuses_removing_a_code"

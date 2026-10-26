@@ -15,6 +15,7 @@ from app.models.gr import GoodsReceipt, GrLineItem  # noqa: F401
 from app.models.freight import FreightCarrier, FreightInvoiceLine, FreightShipment, PaCostAllocation  # noqa: F401
 from app.models.invoice import Invoice  # noqa: F401
 from app.models.invoice_allocation import InvoicePoAllocation  # noqa: F401
+from app.models.invoice_fee_link import InvoiceFeeLink  # noqa: F401
 from app.models.invoice_tax_line import InvoiceTaxLine  # noqa: F401
 from app.models.nc_purchase_sync import NcPurchaseRefetchRequest, NcPurchaseSyncRun  # noqa: F401
 from app.models.pa import PaLineItem, PaymentApplication  # noqa: F401
