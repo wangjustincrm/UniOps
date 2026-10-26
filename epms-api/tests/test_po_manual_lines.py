@@ -71,6 +71,8 @@ async def _nc_po(db, *, tax_rate=Decimal("0"), creator_id=None):
         subtotal=Decimal("100.00"), tax_rate=tax_rate, tax_amount=tax,
         total=Decimal("100.00") + tax, source="nc", nc_source_pk=uuid.uuid4().hex,
         notes="nc memo", created_by=creator_id,
+        # Edit Details refuses a raw-material order without one (test_po_fee).
+        incoterms_code="FOB",
     )
     db.add(po)
     await db.flush()

@@ -428,7 +428,7 @@ async def update_imported_details(
         after[field] = str(value) if value is not None else None
         setattr(po, field, value)
 
-    for field in ("expected_delivery", "delivery_address", "incoterms",
+    for field in ("expected_delivery", "delivery_address", "incoterms_code", "incoterms",
                   "tax_code", "buyer_notes"):
         _set(field, getattr(payload, field))
     _set("is_prepaid", payload.is_prepaid, nullable=False)

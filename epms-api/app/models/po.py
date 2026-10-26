@@ -46,6 +46,12 @@ class PurchaseOrder(UUIDPrimaryKey, TimestampMixin, Base):
     # [NC Closed] markers), so buyer text needs a column of its own.
     # nc_purchase_sync/writer.py must never add these to its UPDATE lists.
     buyer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Incoterms = a code (picked from Admin → Incoterms Settings, which also
+    # says whether the term leaves freight / customs clearance to us) plus a
+    # named place. `incoterms` is the PLACE ("CRM", "Arbuckle, CA"); before
+    # migration pf01 it held both as free text. Required on a raw-material NC
+    # PO's Edit Details save (api.v1.po.update_imported_details).
+    incoterms_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
     incoterms: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Set only when a buyer-initiated edit changes tax_rate (see crud.po.
     # update_imported_details). nc_purchase_sync/writer.py reads this as "the

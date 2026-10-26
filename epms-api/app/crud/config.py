@@ -500,7 +500,7 @@ _JSONB_FIELDS = frozenset({
     "gr_notification_sla", "prepayment_config", "budget_admin_config",
     "collection_config", "remittance_config", "role_management", "workflow_defs",
     "role_permissions", "custom_roles", "email_templates", "notification_settings",
-    "vendor_categories",
+    "vendor_categories", "incoterms_terms",
 })
 
 

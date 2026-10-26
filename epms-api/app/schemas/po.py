@@ -155,6 +155,10 @@ class PoImportedDetailsUpdate(BaseModel):
     """
     expected_delivery: date | None = None
     delivery_address: str | None = None
+    # Code from Incoterms Settings; `incoterms` is the named place. The code is
+    # required on a raw-material NC PO — the endpoint refuses a save that
+    # leaves it empty (crud.po_fee decides whether fees are expected from it).
+    incoterms_code: str | None = Field(default=None, max_length=10)
     incoterms: str | None = Field(default=None, max_length=100)
     tax_code: str | None = Field(default=None, max_length=20)
     tax_rate: Decimal | None = Field(default=None, ge=0, le=1)
@@ -216,7 +220,8 @@ class PoResponse(BaseModel):
     notes: str | None
     # Buyer-supplied detail (NC-imported POs). `notes` stays NC-owned.
     buyer_notes: str | None = None
-    incoterms: str | None = None
+    incoterms_code: str | None = None
+    incoterms: str | None = None   # the named place
     buyer_edited_at: datetime | None = None
     approval_step_idx: int
     pr_id: uuid.UUID | None
@@ -238,6 +243,10 @@ class PoResponse(BaseModel):
     # Filled in by BOTH the list and the detail endpoint (api/v1/po.py), off one
     # definition in crud.po::payable_invoice_po_ids.
     has_unpaid_invoice: bool = False
+    # Raw-material NC POs only (None otherwise): are this PO's freight / customs
+    # invoices in — complete | missing | no_arrivals | not_required | not_set.
+    # Filled in by the list and detail endpoints off crud.po_fee.fee_status_for_pos.
+    fee_status: str | None = None
     # Computed (detail view): created_by of the linked PR — who RAISED it.
     # None for direct POs.
     pr_requester_id: uuid.UUID | None = None

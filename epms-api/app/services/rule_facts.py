@@ -61,7 +61,8 @@ def nc_statuses(db) -> dict:
 IMPORTED_HEADER_WORDS = {
     "expected_delivery": "Expected Delivery",
     "delivery_address": "Delivery Address",
-    "incoterms": "Incoterms",
+    "incoterms_code": "Incoterms (required on raw-material orders)",
+    "incoterms": "Incoterms named place",
     "tax_code": "Tax Code",
     "tax_rate": "Tax Rate (CAD orders only)",
     "is_prepaid": "the Prepaid flag",

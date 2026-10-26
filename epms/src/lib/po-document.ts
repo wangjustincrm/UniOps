@@ -175,7 +175,7 @@ ${headerNoteHtml}
     <div class="meta-row"><span class="label">Vendor</span><span class="value">${escHtml(po.vendor_name)}</span></div>
     <div class="meta-row"><span class="label">Expected Delivery</span><span class="value">${po.expected_delivery ? formatDate(po.expected_delivery) : '—'}</span></div>
     <div class="meta-row"><span class="label">Delivery Address</span><span class="value">${escHtml(deliveryAddr)}</span></div>
-    ${po.incoterms ? `<div class="meta-row"><span class="label">Incoterms</span><span class="value">${escHtml(po.incoterms)}</span></div>` : ''}
+    ${po.incoterms_code || po.incoterms ? `<div class="meta-row"><span class="label">Incoterms</span><span class="value">${escHtml([po.incoterms_code, po.incoterms].filter(Boolean).join(' '))}</span></div>` : ''}
   </div>
 </div>
 

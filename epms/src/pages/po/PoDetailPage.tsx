@@ -16,6 +16,7 @@ import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { PoSignoffPanel } from '@/components/po/PoSignoffPanel'
+import { PoFeePanel } from '@/components/po/PoFeePanel'
 import { generatePoHtml } from '@/lib/po-document'
 import { buildEmailVars, renderTemplate } from '@/lib/email-template'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
@@ -32,7 +33,7 @@ import type { ApiEvent } from '@/services/pr'
 import { historyLine, isSkipped } from '@/lib/approvalHistory'
 import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
-import { isImportedEditablePo } from '@/lib/importedPoEdit'
+import { isImportedEditablePo, isRawMaterialPo } from '@/lib/importedPoEdit'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
@@ -806,6 +807,13 @@ export default function PoDetailPage() {
             <PoSignoffPanel poId={po.id} source={po.source ?? null} />
           )}
 
+          {/* Freight & Customs — NC raw-material orders only. Right under the
+              sign-off, above the order details: "are this order's fee invoices
+              in?" is what a raw-material PO is opened to find out. */}
+          {activeTab === 'Details' && isRawMaterialPo(po) && (
+            <PoFeePanel poId={po.id} canEditDetails={canEditImported} />
+          )}
+
           {/* Details Tab */}
           {activeTab === 'Details' && (
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-6">
@@ -827,10 +835,12 @@ export default function PoDetailPage() {
                       <dd className="text-neutral-900">{value}</dd>
                     </div>
                   ))}
-                  {po.incoterms && (
+                  {(po.incoterms_code || po.incoterms) && (
                     <div className="flex flex-col gap-0.5">
                       <dt className="text-xs font-medium text-neutral-500">Incoterms</dt>
-                      <dd className="text-neutral-900">{po.incoterms}</dd>
+                      <dd className="text-neutral-900">
+                        {[po.incoterms_code, po.incoterms].filter(Boolean).join(' ')}
+                      </dd>
                     </div>
                   )}
                   {/* purchase_orders.notes means two different things depending on origin:

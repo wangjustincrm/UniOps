@@ -139,6 +139,9 @@ class ConfigUpdate(BaseModel):
     custom_currencies: list[dict[str, Any]] | None = None
 
     vendor_categories: list[str] | None = None
+    # Incoterms Settings — the complete list (validated and normalised in
+    # api.v1.config.update_config; a code may be deactivated, never removed).
+    incoterms_terms: list[dict[str, Any]] | None = None
 
     mfa_enabled: bool | None = None
     password_expiry_days: int | None = None
@@ -230,6 +233,9 @@ class ConfigResponse(BaseModel):
     custom_currencies: list[dict[str, Any]]
 
     vendor_categories: list[str]
+    # Effective list: the stored one, or the Incoterms 2020 defaults while
+    # nothing has been stored (crud.po_fee.effective_terms).
+    incoterms_terms: list[dict[str, Any]] = []
 
     mfa_enabled: bool
     password_expiry_days: int | None

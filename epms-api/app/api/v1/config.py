@@ -12,6 +12,7 @@ from uniops_authz import effective_permissions, role_matrix, user_role_codes
 from app.core.config import settings
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
 from app.crud import config as config_crud
+from app.crud import po_fee as po_fee_crud
 from app.services import approval_client
 from app.schemas.config import ConfigResponse, ConfigUpdate
 from app.crud.config import BUILT_IN_ROLES, LOCKED_PERMISSIONS, PERMISSION_KEYS
@@ -72,7 +73,9 @@ async def _forward_identity(
 
 async def _full_response(db, user_payload: dict) -> ConfigResponse:
     cfg = await config_crud.get_or_create(db)
-    return ConfigResponse.model_validate(cfg)
+    resp = ConfigResponse.model_validate(cfg)
+    resp.incoterms_terms = po_fee_crud.effective_terms(cfg)
+    return resp
 
 
 # ── Config endpoints ─────────────────────────────────────────────────────────
@@ -153,6 +156,18 @@ async def test_smtp(body: TestSmtpRequest, db: SessionDep, _: AdminDep):
 async def update_config(body: ConfigUpdate, db: SessionDep, user: AdminDep, token: BearerToken):
     """Update company config (system_admin only)."""
     cfg = await config_crud.get_or_create(db)
+    if body.incoterms_terms is not None:
+        try:
+            new_terms = po_fee_crud.normalise_terms(body.incoterms_terms)
+        except po_fee_crud.FeeLinkInvalid as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        gone = po_fee_crud.removed_codes(po_fee_crud.effective_terms(cfg), new_terms)
+        if gone:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Incoterms {', '.join(gone)} cannot be removed — deactivate them "
+                       "instead, so purchase orders that use them keep their meaning.")
+        body.incoterms_terms = new_terms
     await config_crud.update(db, cfg, body, uuid.UUID(user["sub"]))
     await db.commit()
     resp = await _full_response(db, user)
