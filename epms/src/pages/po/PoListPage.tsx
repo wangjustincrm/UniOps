@@ -16,6 +16,7 @@ import { useDepartments } from '@/hooks/useDepartments'
 import { useAuthStore } from '@/stores/auth.store'
 import type { DocumentStatus } from '@/types'
 import type { PoStatus } from '@/services/po'
+import { FeeStatusBadge } from '@/components/po/PoFeePanel'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
@@ -205,6 +206,11 @@ export default function PoListPage() {
                 <SortTh label="Total (CAD)" sortKey="total" sort={sort} onSort={onSort} align="right"
                   className="px-4 py-3 text-right text-xs font-semibold text-neutral-500" />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                {/* Freight / customs invoices of an NC raw-material order; blank for every other PO. */}
+                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500"
+                    title="Freight & customs invoices against what the PO's Incoterms expect (raw-material orders only)">
+                  Fees
+                </th>
                 <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
                 <SortTh label="Prepaid" sortKey="is_prepaid" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
                 <SortTh label="Exp. Delivery" sortKey="expected_delivery" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
@@ -212,10 +218,10 @@ export default function PoListPage() {
               </tr>
             </thead>
             <tbody>
-              {isLoading && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={10} />)}
+              {isLoading && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={11} />)}
               {!isLoading && pos.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-16 text-center">
+                  <td colSpan={11} className="px-4 py-16 text-center">
                     <div className="flex flex-col items-center gap-2 text-neutral-400">
                       <span className="text-3xl">📦</span>
                       <p className="text-sm font-medium">No purchase orders found</p>
@@ -260,6 +266,9 @@ export default function PoListPage() {
                   <td className="px-4 py-3">
                     <StatusBadge status={po.status as DocumentStatus} />
                     <CurrentStepHint current_step={po.current_step} />
+                  </td>
+                  <td className="px-4 py-3">
+                    {po.fee_status && <FeeStatusBadge status={po.fee_status} />}
                   </td>
                   <td className="px-4 py-3 text-xs text-neutral-500">{formatDate(po.created_at)}</td>
                   <td className="px-4 py-3">

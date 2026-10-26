@@ -144,12 +144,28 @@ export interface UpdateRolePermissionsBody {
   permissions: RolePermissionMatrix
 }
 
+/**
+ * One Incoterms code in Admin → Incoterms Settings. `needs_freight` /
+ * `needs_customs` say whether a raw-material PO on this term expects a freight /
+ * customs invoice per arrival (epms-api crud/po_fee.py). Codes are deactivated,
+ * never removed — the server refuses a list that drops one.
+ */
+export interface IncotermDef {
+  code: string
+  label: string
+  needs_freight: boolean
+  needs_customs: boolean
+  active: boolean
+}
+
 export interface CompanyConfig {
   role_permissions: RolePermissionMatrix
   custom_roles: CustomRole[]
   email_templates: Record<string, EmailTemplate>
   notification_settings: NotificationSettings
   vendor_categories: string[]
+  /** Effective list — the server fills in the Incoterms 2020 defaults while none is stored. */
+  incoterms_terms: IncotermDef[]
   name: string
   tagline: string
   // 3-way match variance tolerance as a percent (e.g. 5 = 5%). Invoices whose

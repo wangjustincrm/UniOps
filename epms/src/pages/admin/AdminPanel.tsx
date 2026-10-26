@@ -8,7 +8,7 @@ import {
   Users, Workflow, Building2, Clock, Bell, Send, CreditCard,
   PiggyBank, PackageCheck, ShieldCheck,
   Plus, Pencil, Trash2, X, Check, Search, ImagePlus, Landmark, KeyRound, Eye, EyeOff, Mail, FileText,
-  Download, Upload, ChevronDown,
+  Download, Upload, ChevronDown, Ship,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,7 +25,7 @@ import {
   type PdfTemplateSettings,
   type ServiceGrSlaConfig, type GrNotificationSlaConfig,
   type PrepaymentConfig, type CollectionConfig,
-  type NotificationSettings, type EmailTemplate,
+  type NotificationSettings, type EmailTemplate, type IncotermDef,
 } from '@/services/config'
 import { ROLE_LABELS } from '@/stores/user.store'
 import { TEMPLATE_VARIABLE_DOCS } from '@/lib/email-template'
@@ -65,7 +65,7 @@ function primaryRoleLabels(roles: CustomRole[] | undefined): Record<string, stri
 
 type Section =
   | 'company' | 'security' | 'currency' | 'email_templates' | 'pdf_templates'
-  | 'users' | 'vendor_settings'
+  | 'users' | 'vendor_settings' | 'incoterms'
   | 'workflows' | 'service_gr_sla' | 'gr_notification_sla'
   | 'prepayment' | 'budget' | 'collection'
   | 'notifications' | 'pms_import'
@@ -80,6 +80,7 @@ const NAV: NavEntry[] = [
   { id: 'pdf_templates',       label: 'PDF Templates',          icon: FileText },
   { id: 'users',               label: 'User Management',        icon: Users },
   { id: 'vendor_settings',    label: 'Vendor Settings',        icon: Building2 },
+  { id: 'incoterms',           label: 'Incoterms Settings',     icon: Ship },
   { id: 'workflows',           label: 'Approval Workflows',     icon: Workflow },
   { id: 'service_gr_sla',        label: 'Service GR SLA',         icon: Clock },
   { id: 'gr_notification_sla', label: 'GR Notification SLA',    icon: Bell },
@@ -1736,6 +1737,143 @@ function VendorSettingsSection() {
   )
 }
 
+// ─── Incoterms Settings ──────────────────────────────────────────────────────
+// The PO Edit Details picker, and — per code — whether a raw-material PO on
+// that term expects a freight / customs invoice for every arrival (the PO page's
+// Freight & Customs panel and the PO list's Fees column read it live). Codes
+// can be deactivated but never removed: the server refuses a list that drops a
+// code, so a PO that carries one keeps its meaning.
+
+function IncotermsSettingsSection() {
+  const { data: config } = useConfig()
+  const updateConfig = useUpdateConfig()
+  const [terms, setTerms] = useState<IncotermDef[]>([])
+  const [newCode, setNewCode] = useState('')
+  const [newLabel, setNewLabel] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (config?.incoterms_terms) setTerms(config.incoterms_terms)
+  }, [config?.incoterms_terms])
+
+  const setTerm = (code: string, patch: Partial<IncotermDef>) =>
+    setTerms((prev) => prev.map((t) => (t.code === code ? { ...t, ...patch } : t)))
+
+  const code = newCode.trim().toUpperCase()
+  const codeTaken = terms.some((t) => t.code === code)
+  const canAdd = /^[A-Z0-9]{1,10}$/.test(code) && !codeTaken
+
+  const addTerm = () => {
+    if (!canAdd) return
+    setTerms((prev) => [...prev, {
+      code, label: newLabel.trim(), needs_freight: false, needs_customs: false, active: true,
+    }])
+    setNewCode('')
+    setNewLabel('')
+  }
+
+  const handleSave = async () => {
+    if (updateConfig.isPending) return
+    setError(null)
+    try {
+      await updateConfig.mutateAsync({ incoterms_terms: terms })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save Incoterms')
+    }
+  }
+
+  const check = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600'
+
+  return (
+    <div className="flex flex-col gap-6 max-w-3xl">
+      <section className="flex flex-col gap-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Incoterms</h3>
+        <p className="text-sm text-neutral-500">
+          These codes are offered in PO Edit Details, where an Incoterms code is required on NC raw-material /
+          packaging orders. Tick what each term leaves to us: a raw-material PO then expects a freight and/or
+          customs invoice for every arrival, shown on the PO&apos;s Freight &amp; Customs panel and in the PO
+          list&apos;s Fees column. Changes apply to every PO at once. A code in use cannot be removed — untick
+          Active to hide it from the picker.
+        </p>
+
+        <div className="overflow-x-auto rounded-lg border border-neutral-200">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+              <tr>
+                <th className="px-3 py-2 text-left font-semibold">Code</th>
+                <th className="px-3 py-2 text-left font-semibold">Name</th>
+                <th className="px-3 py-2 text-center font-semibold">Freight invoice</th>
+                <th className="px-3 py-2 text-center font-semibold">Customs invoice</th>
+                <th className="px-3 py-2 text-center font-semibold">Active</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {terms.map((t) => (
+                <tr key={t.code} className={cn(!t.active && 'text-neutral-400')}>
+                  <td className="px-3 py-2 font-mono font-medium">{t.code}</td>
+                  <td className="px-3 py-2">
+                    <input
+                      className="h-8 w-full rounded border border-neutral-200 bg-white px-2 text-sm focus:outline-none focus:border-primary-600"
+                      value={t.label}
+                      maxLength={100}
+                      onChange={(e) => setTerm(t.code, { label: e.target.value })}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input type="checkbox" className={check} checked={t.needs_freight}
+                           aria-label={`${t.code} needs a freight invoice`}
+                           onChange={(e) => setTerm(t.code, { needs_freight: e.target.checked })} />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input type="checkbox" className={check} checked={t.needs_customs}
+                           aria-label={`${t.code} needs a customs invoice`}
+                           onChange={(e) => setTerm(t.code, { needs_customs: e.target.checked })} />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input type="checkbox" className={check} checked={t.active}
+                           aria-label={`${t.code} active`}
+                           onChange={(e) => setTerm(t.code, { active: e.target.checked })} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <input
+            className={cn(inputCls(!!code && !canAdd), 'w-28 font-mono uppercase')}
+            placeholder="Code"
+            value={newCode}
+            maxLength={10}
+            onChange={(e) => setNewCode(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTerm() } }}
+          />
+          <input
+            className={cn(inputCls(), 'flex-1 min-w-[12rem]')}
+            placeholder="Name (e.g. Free On Board)"
+            value={newLabel}
+            maxLength={100}
+            onChange={(e) => setNewLabel(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTerm() } }}
+          />
+          <Button type="button" variant="secondary" onClick={addTerm} disabled={!canAdd}>
+            <Plus className="h-4 w-4" />
+            Add
+          </Button>
+        </div>
+        {codeTaken && <p className="text-xs text-danger-600">{code} is already in the list.</p>}
+        {error && <p className="text-sm text-danger-600">{error}</p>}
+      </section>
+
+      <SaveBar saved={saved} onSave={handleSave} />
+    </div>
+  )
+}
+
 function PrepaymentConfigSection() {
   const { data: config } = useConfig()
   const updateConfig = useUpdateConfig()
@@ -2067,6 +2205,7 @@ export default function AdminPanel() {
       case 'service_gr_sla':        return <ServiceGrSla />
       case 'gr_notification_sla': return <GrNotificationSla />
       case 'vendor_settings':     return <VendorSettingsSection />
+      case 'incoterms':           return <IncotermsSettingsSection />
       case 'prepayment':          return <PrepaymentConfigSection />
       case 'budget':              return (
         <MovedToPortal

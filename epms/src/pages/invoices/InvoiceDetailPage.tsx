@@ -18,6 +18,7 @@ import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
 import { InvoiceReceiptsPanel } from '@/components/invoices/InvoiceReceiptsPanel'
 import { InvoiceBillingPeriodPanel } from '@/components/invoices/InvoiceBillingPeriodPanel'
 import { ResolveExceptionPanel } from '@/components/invoices/ResolveExceptionPanel'
+import { InvoiceFeeLinksPanel } from '@/components/invoices/InvoiceFeeLinksPanel'
 import { useGr, useGrs } from '@/hooks/useGrs'
 import { useAgreement } from '@/hooks/useAgreements'
 import { useAuthStore } from '@/stores/auth.store'
@@ -849,6 +850,19 @@ export default function InvoiceDetailPage() {
                   pretaxAmount={Number(inv.amount)}
                   headerTax={Number(inv.tax_amount)}
                   editable={hasInvoiceUpload && inv.status !== 'paid'}
+                />
+              </div>
+
+              {/* Freight / customs fee → the raw-material PO arrival it belongs
+                  to. Direct-route and not-yet-matched invoices only (the
+                  component hides itself otherwise unless links exist). */}
+              <div className="sm:col-span-2">
+                <InvoiceFeeLinksPanel
+                  invoiceId={inv.id}
+                  matchRoute={inv.match_route}
+                  lineItems={inv.line_items ?? []}
+                  currency={inv.currency}
+                  canEdit={isAp}
                 />
               </div>
 
