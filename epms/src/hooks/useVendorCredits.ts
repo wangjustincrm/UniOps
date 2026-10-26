@@ -69,3 +69,14 @@ export function useUploadCreditAttachment(creditId: string) {
     onSettled: () => { void qc.invalidateQueries({ queryKey: creditAttachmentsKey(creditId) }) },
   })
 }
+
+/** Usage history of one credit. Under the ['vendor-credits'] prefix so review
+ * mutations refresh it too. */
+export function useVendorCreditApplications(creditId: string | null) {
+  return useQuery({
+    queryKey: ['vendor-credits', 'applications', creditId],
+    queryFn: () => vendorCreditsService.applications(creditId as string),
+    enabled: !!creditId,
+    retry: false,
+  })
+}
