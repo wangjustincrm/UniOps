@@ -646,12 +646,13 @@ async def fee_link_candidates(
     db: SessionDep, _: ApDep,
     q: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=50, ge=1, le=500),
+    fee_type: str | None = Query(default=None, pattern="^(freight|customs|other)$"),
 ):
     """Raw-material POs (with their arrivals) a freight / customs invoice can be
     linked to, latest arrival first, plus the total that match — searched by
     PO number, vendor or arrival number, never filtered by the invoice's own
     vendor (a forwarder, not the PO's supplier)."""
-    return await po_fee_crud.search_candidate_pos(db, q, limit)
+    return await po_fee_crud.search_candidate_pos(db, q, limit, fee_type)
 
 
 @router.get("/{invoice_id}/fee-links", response_model=list[FeeLinkOut])
@@ -671,7 +672,7 @@ async def put_fee_links(invoice_id: uuid.UUID, body: FeeLinksPut, db: SessionDep
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
     links = [po_fee_crud.LinkIn(fee_type=l.fee_type, po_id=l.po_id, gr_id=l.gr_id,
-                                invoice_line_id=l.invoice_line_id) for l in body.links]
+                                invoice_line_id=l.invoice_line_id, note=l.note) for l in body.links]
     try:
         before, after = await po_fee_crud.replace_for_invoice(
             db, inv, links, actor_id=uuid.UUID(user["sub"]))
@@ -680,7 +681,8 @@ async def put_fee_links(invoice_id: uuid.UUID, body: FeeLinksPut, db: SessionDep
 
     def _brief(rows: list[dict]) -> list[str]:
         return sorted(f"{r['fee_type']}:{r['po_number']}/{r['gr_number'] or '-'}"
-                      + (f"@{r['invoice_line_id']}" if r["invoice_line_id"] else "") for r in rows)
+                      + (f"@{r['invoice_line_id']}" if r["invoice_line_id"] else "")
+                      + (f" ({r['note']})" if r.get("note") else "") for r in rows)
     if _brief(before) != _brief(after):
         db.add(AdminAuditLog(
             actor_id=uuid.UUID(user["sub"]), actor_email=user.get("email", ""),

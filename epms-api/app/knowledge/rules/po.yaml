@@ -134,22 +134,26 @@ rules:
       - have the freight and customs invoices for this PO come in
       - what does Fees Missing mean on the PO list
     answer: >
-      On an NC raw-material / packaging order (not milk), the PO page's
-      Freight & Customs panel lists every arrival with the freight and customs
-      invoices linked to it. Whether each is expected comes from the order's
+      On an order from NC, the PO page's Freight & Customs panel lists every
+      arrival with the freight and customs invoices linked to it. It always
+      shows on raw-material / packaging orders; on a milk order (where
+      Incoterms is optional) it shows once the order has Incoterms or a linked
+      fee, and without Incoterms the fees are listed but not checked. Whether each is expected comes from the order's
       Incoterms, as set in Incoterms Settings — for example FOB expects both,
       DAP only customs, DDP neither. The PO list's Fees column rolls this up:
       Complete (every arrival has each expected invoice), Missing (at least
       one does not), No arrivals yet, Not required (the Incoterms expect
       neither), or Incoterms not set (it cannot be judged until Incoterms is
-      filled in on Edit Details). Changing a code's settings re-rates every
-      order that uses it at once.
+      filled in on Edit Details). Milk orders appear in that column only once
+      they have Incoterms. Changing a code's settings re-rates every order
+      that uses it at once.
     enforced_in: "epms-api app/crud/po_fee.py _rollup / fee_detail_for_po / fee_status_for_pos (read live from company_config.incoterms_terms); app/api/v1/po.py GET /po/{id}/fee-status, fee_status on GET /po and GET /po/{id}"
     provenance: pinned
     test:
       - "tests/test_po_fee.py::test_freight_per_arrival_and_customs_per_line_complete_the_po"
       - "tests/test_po_fee.py::test_status_follows_the_incoterms_term"
       - "tests/test_po_fee.py::test_deleting_an_arrival_keeps_the_link_as_unassigned"
+      - "tests/test_po_fee.py::test_milk_orders_take_fee_links_too"
   - id: incoterms_is_required_on_raw_material_orders
     asked_as:
       - 为什么 Edit Details 保存不了，提示 Incoterms is required？
