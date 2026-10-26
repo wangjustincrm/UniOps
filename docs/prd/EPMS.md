@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.37
-**Date:** 2026-10-21
+**Version:** 2.38
+**Date:** 2026-10-23
 **Status:** In Production
+
+> **v2.38 (2026-10-23)** — New §3.23 PO Fee Invoices: a freight or customs invoice from a forwarder/broker can be linked to the NC raw-material PO **arrivals** it belongs to (a freight bill to several arrivals, a customs invoice line by line), still paid by a Direct PA; the PO page gets a **Freight & Customs** panel and the PO list a **Fees** column. Incoterms on Edit Details becomes a **required code picker** on raw-material orders plus an optional named place (PO-IMP-001, PO-IMP-007); codes and whether each expects freight / customs invoices are set in the new Admin **Incoterms Settings** (§3.6.4). NC full reload keeps POs that carry fee links or an Incoterms code (NC-003).
 
 > **v2.37 (2026-10-21)** — Deleting an invoice — from the Invoices page, Freight, or Data Maintenance (also inside a PO/PR/agreement cascade) — voids its Finance AP record in the same step, or nothing is deleted (INV-DEL-001…003). Data Maintenance used to tell Finance nothing, which left five AP records for deleted invoices. An invoice reference is never issued twice, even after the newest invoice is deleted (INV-005).
 
@@ -912,6 +914,7 @@ As of 2026-05-27 ownership of Cost Centers has moved to **mdm-api** and the mana
 - **Email Settings** — PO-to-vendor SMTP profile and PO email template (§3.6.5)
 - **PDF Templates** — header/footer/logo/terms per document type (§3.6.6)
 - **Vendor Settings** — the vendor category list offered when adding or editing a vendor
+- **Incoterms Settings** — the Incoterms codes offered in PO Edit Details, each with a name and two ticks: whether a raw-material PO on that term expects a **freight** invoice and a **customs** invoice for every arrival (§3.23). Seeded with the eleven Incoterms 2020 codes (EXW/FCA/FAS/FOB: both; CPT/CIP/CFR/CIF/DAP/DPU: customs only; DDP: neither). Codes can be added and deactivated but never removed (the server refuses a list that drops one). Read live — a change re-rates every PO at once. Stored in `CompanyConfig.incoterms_terms`
 - **Service GR SLA** — reminder and manager-escalation days for the Service/Project PO completion-date reminder (two rungs; see §3.13.3)
 - **GR Notification SLA** — stored, but **no scheduler reads it**: there is no GR acknowledgement reminder/escalation ladder (**Not implemented** — see §11). Open GR tasks are re-mailed only through the per-task-type notification policy and daily digest (§3.9.4)
 - **Prepayment Config** — global prepayment cap (% of PO value, overridable per vendor category) and related prepayment rules (§3.15.4)
@@ -1597,7 +1600,7 @@ Only one run executes at a time; a second trigger is refused with "already runni
 |---|---|
 | **NC-001** | A mirrored PO cannot be edited through the normal PO edit, submitted to the PO approval workflow or placed with a vendor. The only edits are Edit Details (§3.12.7) and sign-off (§3.12.8). |
 | **NC-002** | **Freeze once invoiced.** When any invoice references a mirrored PO (any invoice status), the sync stops rewriting that PO, its lines and its GRs. |
-| **NC-003** | **Buyer-owned fields survive re-sync.** Incoterms, Buyer Notes, line Supplier Item ID, line Sample and buyer-added lines are never overwritten. If the buyer changed the tax rate, the sync keeps it and recomputes tax and total from NC's fresh subtotal. The value of buyer-added lines stays in the header subtotal. |
+| **NC-003** | **Buyer-owned fields survive re-sync.** Incoterms, Buyer Notes, line Supplier Item ID, line Sample and buyer-added lines are never overwritten. A **full reload** (which rebuilds the mirror) keeps every PO that an invoice points at, that has buyer-added lines, that carries fee-invoice links (§3.23) or that has an Incoterms code. If the buyer changed the tax rate, the sync keeps it and recomputes tax and total from NC's fresh subtotal. The value of buyer-added lines stays in the header subtotal. |
 | **NC-004** | **Withdrawn orders.** A mirrored `nc_pending` PO that NC no longer lists (rejected or deleted) is cancelled and tagged `[NC Pending Withdrawn]`, unless an invoice references it. Any open sign-off on it is cancelled and its `sign_po` tasks are closed. If NC later re-creates an order under the same number, the cancelled mirror is renamed `<number>-VOID<n>` so the live order gets its real number. |
 | **NC-005** | **Number collisions.** If the NC number is already used by a different EPMS PO (a legacy PMS import or another NC order with the same number), the order is mirrored as `<number>-2`, `-3` and so on, up to 50. Past that it is skipped and reported (NC-006). The order that holds the number is never renamed. |
 | **NC-006** | **Import errors raise Admin tasks.** These tasks go to the System Admin pool and also appear in the Portal inbox. Each one names the order and the reason, and closes itself only on evidence: the order is now mirrored, or NC no longer lists it. |
@@ -1616,12 +1619,13 @@ NC carries no Supplier Item IDs, sample requirements, Incoterms, delivery addres
 
 | FR ID | Requirement |
 |---|---|
-| **PO-IMP-001** | **Editable fields:** Expected Delivery, Incoterms (≤100 chars), Delivery Address, Tax Code / Tax Rate (CAD orders only; non-CAD orders keep NC's tax untouched), Prepaid flag, Buyer Notes / Terms & Conditions, and per NC line the Supplier Item ID and Sample. **Read-only:** vendor, currency, budget code, NC line description, quantity, unit and price. |
+| **PO-IMP-001** | **Editable fields:** Expected Delivery, Incoterms — a **code** picked from Incoterms Settings plus an optional **named place** (≤100 chars) —, Delivery Address, Tax Code / Tax Rate (CAD orders only; non-CAD orders keep NC's tax untouched), Prepaid flag, Buyer Notes / Terms & Conditions, and per NC line the Supplier Item ID and Sample. **Read-only:** vendor, currency, budget code, NC line description, quantity, unit and price. |
 | **PO-IMP-002** | **Delivery and address defaults.** If the PO has no header Expected Delivery, the earliest NC line planned-arrival date is shown read-only ("Tracks NC automatically"). Otherwise the date is editable. Delivery Address defaults to the company delivery address until the buyer edits it. |
 | **PO-IMP-003** | **Buyer-added lines.** The buyer can add, edit and remove extra lines (description, qty > 0, unit, unit price, Supplier Item ID, Sample) for charges NC cannot hold, such as moulds or tooling. These lines sort after NC's lines and add to the header subtotal, tax and total. NC-sourced lines can never be edited here. |
 | **PO-IMP-004** | **Invoice guard.** Once any invoice references the PO, changing the tax rate or the buyer-added lines is refused ("…cannot be changed once an invoice has been raised against this PO. Every other field is still editable."). The tax control is shown locked. |
 | **PO-IMP-005** | Each save writes an audit-log entry containing only the fields that changed. A tax-rate change marks the PO as buyer-edited (see NC-003). |
 | **PO-IMP-006** | The page shows where the PO's sign-off stands (§3.12.8). |
+| **PO-IMP-007** | **Incoterms is required on raw-material orders.** On an NC type 1 order that is not milk (status not `nc_milk` and no `[Milk / …]` tag), Edit Details cannot be saved without an Incoterms code (422 "Incoterms is required…"), and the code cannot be cleared. Only active codes are offered; a code the PO already carries stays selectable after being deactivated. Milk orders may leave it empty. NC has no Incoterms field, so it is always entered here — there is no vendor default (one vendor's terms differ by what is bought). Existing free-text values were split by migration `pf01` (e.g. "DAP CRM" → DAP + "CRM"); text with no recognisable code stays as the place with no code. PDF and PO Detail show code + place. |
 
 #### 3.12.8 PO Sign-off (NC-imported POs)
 
@@ -2539,6 +2543,22 @@ Some vendor invoices have no purchase order or agreement behind them — and nev
 | **DPA-010** | **Upload from Create Direct PA.** Create Direct PA shows **Upload Invoice** (beside the invoice list, and in the empty state) to whoever may upload invoices (`invoice_upload`). It opens *Invoices → Upload Invoice* (`/invoices?upload=direct`) in Direct PA mode: the form is marked *Direct PA*, a saved invoice is not auto-matched to a PO but matched for a Direct PA (DPA-001), and when the upload — every invoice of a split PDF — is done, Create Direct PA reopens with those invoices ticked. A courier invoice or a credit note keeps its own path and is not matched for a Direct PA. If the match is refused the invoice stays saved and unmatched, and the user is told to use Match → Direct PA on it. |
 
 ---
+
+### 3.23 PO Fee Invoices (freight & customs on raw-material POs)
+
+NC raw-material / packaging orders (§3.12.6; type 1, not milk) bring separate **freight** and **customs-clearance** invoices from forwarders and brokers. They used to be paid by Direct PA with no tie to the order, so the material's landed cost was incomplete and nobody could tell whether a PO's fee invoices had all arrived. Design: `docs/superpowers/specs/2026-10-23-po-fee-invoices-design.md`.
+
+| FR ID | Requirement |
+|---|---|
+| **FEE-001** | **Payment is unchanged.** A fee invoice is matched for a Direct PA (§3.22) and paid to the forwarder/broker. Its link to a PO is a separate record (`invoice_fee_links`), never `invoices.po_id`, and never changes the invoice's match, status, route or any PA. No amounts are compared or split. |
+| **FEE-002** | **Linking.** On the invoice page, **Link to raw-material PO** (users with `epms.invoice.match`), available on invoices matched for a Direct PA or not yet matched. Pick the part of the invoice (whole invoice or one line), the fee type (Freight / Customs / Other), then search raw-material POs by PO number, supplier or arrival number — any supplier, since the invoice's own vendor is the forwarder — and tick arrivals. The list puts the most recent arrival first (orders with no arrival yet last), shows 50 at a time with "Showing N of M" and a **Show more** button, so no PO is cut off silently. A freight bill the carrier combined is ticked against several arrivals, across POs if needed; a customs invoice is linked line by line, each line to its PO's arrival. The saved set replaces the previous one; each change is audit-logged. |
+| **FEE-003** | **Arrival required when there is one.** A PO that already has arrivals (GRs) must have the arrival chosen; a PO with none yet can be linked as a whole and shows as "linked before any arrival existed" until the link is edited. Milk orders, EPMS-raised POs and other types are refused. |
+| **FEE-004** | **Expected fees come from Incoterms.** The PO's Incoterms code (PO-IMP-007) and Incoterms Settings (§3.6.4) say whether each arrival needs a freight invoice, a customs invoice, both or neither. Read live, never snapshotted. |
+| **FEE-005** | **PO Detail — Freight & Customs panel** (raw-material orders only): Incoterms and what it expects; one row per arrival with its linked freight and customs invoices (✓ with links to the invoices, **Missing**, or — when not expected); other-type fees; arrival-less links. If Incoterms is not set the panel says so and links to Edit Details. |
+| **FEE-006** | **Fee status** on raw-material POs (PO list **Fees** column, PO detail): **Complete** — every arrival has each expected invoice; **Missing** — at least one does not; **No arrivals yet**; **Not required** — the term expects neither; **Incoterms not set**. Blank for every other PO. |
+| **FEE-007** | **Data safety.** Deleting an invoice removes its links; Data Maintenance deleting a PO removes the PO's links; deleting an arrival turns its links into arrival-less ones (still shown on the PO). The NC full reload never deletes a PO that has links (NC-003). Invoices later re-matched to another route keep their links, which can still be removed. |
+
+**Not in scope (phase 2):** cost-allocation export for NC landed-cost adjustment; AI suggestion of the PO from the invoice text; reminders for missing fee invoices.
 
 ## 4. Non-Functional Requirements
 
