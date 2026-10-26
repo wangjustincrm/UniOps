@@ -1,7 +1,9 @@
 /**
- * Freight & Customs — on an NC raw-material / packaging PO, every arrival with
- * the freight / customs invoices linked to it, against what the PO's Incoterms
- * say is expected (Admin → Incoterms Settings).
+ * Freight & Customs — on an NC PO, every arrival with the freight / customs
+ * invoices linked to it, against what the PO's Incoterms say is expected
+ * (Admin → Incoterms Settings). Raw-material orders always show it; a milk
+ * order shows it once it has an Incoterms code or a linked fee — Incoterms is
+ * optional there, so an empty panel would only be noise.
  *
  * Read-only. Links are made from the fee invoice's own page (InvoiceFeeLinksPanel):
  * the invoice is the thing that arrives, and one freight bill or customs invoice
@@ -38,7 +40,7 @@ function InvoiceChip({ inv }: { inv: PoFeeInvoice }) {
   return (
     <Link
       to={`/invoices/${inv.invoice_id}`}
-      title={`${inv.vendor_name} · ${inv.vendor_invoice_number}${inv.line_description ? ` · ${inv.line_description}` : ''}`}
+      title={`${inv.vendor_name} · ${inv.vendor_invoice_number}${inv.line_description ? ` · ${inv.line_description}` : ''}${inv.note ? ` · ${inv.note}` : ''}`}
       className="inline-flex items-center gap-1 rounded border border-neutral-200 bg-white px-1.5 py-0.5 font-mono text-xs text-primary-700 hover:border-primary-300 hover:bg-primary-50"
     >
       {inv.internal_ref}
@@ -80,6 +82,12 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
   if (!data || !data.applies) return null
 
   const { term } = data
+  const hasLinks = data.unassigned.length > 0
+    || data.arrivals.some((a) => a.freight.length + a.customs.length + a.other.length > 0)
+  if (!data.incoterms_required && !term && !hasLinks) return null
+  // Without Incoterms there is nothing to judge: on a raw-material order that
+  // is something to fix; on a milk order it is the normal case.
+  const judged = !!term
   const needsFreight = !!term?.needs_freight
   const needsCustoms = !!term?.needs_customs
   const others = data.arrivals.flatMap((a) => a.other)
@@ -92,7 +100,7 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
           <Truck className="h-4 w-4" />
           Freight &amp; Customs
         </h2>
-        <FeeStatusBadge status={data.status} />
+        {(judged || data.incoterms_required) && <FeeStatusBadge status={data.status} />}
       </div>
 
       {term ? (
@@ -102,6 +110,16 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
           {needsFreight || needsCustoms
             ? `expects ${[needsFreight && 'a freight', needsCustoms && 'a customs'].filter(Boolean).join(' and ')} invoice for every arrival.`
             : 'no freight or customs invoice is expected.'}
+        </p>
+      ) : !data.incoterms_required ? (
+        <p className="text-sm text-neutral-500">
+          No Incoterms on this order (optional on milk orders), so linked fees are listed but not checked
+          for completeness.{' '}
+          {canEditDetails && (
+            <BackLink to={`/po/${poId}/edit-imported`} className="font-medium text-primary-700 underline">
+              Set Incoterms
+            </BackLink>
+          )}
         </p>
       ) : (
         <p className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700">
@@ -148,14 +166,19 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
       {others.length > 0 && (
         <div className={cn('flex flex-wrap items-center gap-1.5 text-sm text-neutral-600')}>
           <span>Other fees:</span>
-          {others.map((i) => <InvoiceChip key={i.link_id} inv={i} />)}
+          {others.map((i) => (
+            <span key={i.link_id} className="inline-flex items-center gap-1">
+              <InvoiceChip inv={i} />
+              {i.note && <span className="text-xs text-neutral-600">{i.note}</span>}
+            </span>
+          ))}
         </div>
       )}
 
       {data.unassigned.length > 0 && (
         <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
           <p className="text-neutral-600">
-            Linked before any arrival existed — open the invoice to choose its arrival:
+            Linked to an arrival that has since been deleted — open the invoice to choose another:
           </p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {data.unassigned.map((i) => (
@@ -168,7 +191,7 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
       )}
 
       <p className="text-xs text-neutral-400">
-        Freight and customs invoices are linked from the invoice&apos;s own page (Link to raw-material PO).
+        Freight and customs invoices are linked from the invoice&apos;s own page (Link to NC PO).
       </p>
     </div>
   )

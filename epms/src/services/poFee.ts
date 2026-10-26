@@ -2,7 +2,7 @@ import { api } from '@/lib/api'
 
 /**
  * PO Fee Invoices — freight / customs invoices from forwarders and brokers,
- * linked to the NC raw-material PO (and arrival) they belong to. Paid by a
+ * linked to the NC PO arrival they belong to (raw material, packaging or milk). Paid by a
  * Direct PA as before; the link is a record of where the cost came from and
  * never changes the invoice's match, status or payment.
  * Backend: epms-api app/crud/po_fee.py.
@@ -30,6 +30,8 @@ export const FEE_TYPE_LABEL: Record<FeeType, string> = {
 export interface PoFeeInvoice {
   link_id: string
   fee_type: FeeType
+  /** What an Other fee is — required for that type, null otherwise. */
+  note: string | null
   invoice_id: string
   internal_ref: string
   vendor_invoice_number: string
@@ -53,8 +55,10 @@ export interface PoFeeArrival {
 }
 
 export interface PoFeeDetail {
-  /** False for anything but an NC raw-material / packaging order (milk excluded). */
+  /** True for any order mirrored from NC, milk included. */
   applies: boolean
+  /** Raw-material / packaging orders must carry Incoterms; on milk it is optional. */
+  incoterms_required: boolean
   incoterms_code: string | null
   incoterms_place: string | null
   term: { code: string; label: string; needs_freight: boolean; needs_customs: boolean; active: boolean } | null
@@ -68,6 +72,7 @@ export interface FeeLink {
   id: string
   invoice_line_id: string | null
   fee_type: FeeType
+  note: string | null
   po_id: string
   po_number: string
   po_vendor_name: string
@@ -78,6 +83,8 @@ export interface FeeLink {
 
 export interface FeeLinkBody {
   fee_type: FeeType
+  /** Required when fee_type is 'other' (the server refuses it otherwise). */
+  note?: string | null
   po_id: string
   gr_id?: string | null
   invoice_line_id?: string | null
@@ -88,6 +95,8 @@ export interface FeeCandidatePo {
   number: string
   vendor_name: string
   status: string
+  /** Milk orders are linkable too (no Incoterms requirement on them). */
+  is_milk: boolean
   incoterms_code: string | null
   arrivals: { id: string; number: string; received_at: string | null }[]
 }
@@ -105,6 +114,9 @@ export const poFeeService = {
   /** Replaces the invoice's COMPLETE link set — an empty list removes them all. */
   saveInvoiceLinks: (invoiceId: string, links: FeeLinkBody[]) =>
     api.put<FeeLink[]>(`/invoices/${invoiceId}/fee-links`, { links }),
-  candidates: (q: string, limit: number) =>
-    api.get<FeeCandidatePage>('/invoices/fee-link-candidates', q ? { q, limit } : { limit }),
+  /** `fee_type` freight / customs leaves out milk orders with no Incoterms —
+   *  those can only be linked as Other (the server refuses it too). */
+  candidates: (q: string, limit: number, feeType: FeeType) =>
+    api.get<FeeCandidatePage>('/invoices/fee-link-candidates',
+      q ? { q, limit, fee_type: feeType } : { limit, fee_type: feeType }),
 }

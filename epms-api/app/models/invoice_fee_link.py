@@ -45,5 +45,9 @@ class InvoiceFeeLink(UUIDPrimaryKey, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("goods_receipts.id", ondelete="SET NULL"),
         nullable=True, index=True)
 
+    # What an "other" fee is (inspection, storage, …) — required for that type,
+    # empty for freight / customs (crud.po_fee.replace_for_invoice).
+    note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

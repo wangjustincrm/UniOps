@@ -12,6 +12,8 @@ class FeeLinkItem(BaseModel):
     gr_id: uuid.UUID | None = None
     # invoices.line_items[].id; omitted = the whole invoice.
     invoice_line_id: uuid.UUID | None = None
+    # Required when fee_type is "other": what the fee is. Ignored otherwise.
+    note: str | None = Field(default=None, max_length=200)
 
 
 class FeeLinksPut(BaseModel):
@@ -23,6 +25,7 @@ class FeeLinkOut(BaseModel):
     id: uuid.UUID
     invoice_line_id: uuid.UUID | None
     fee_type: str
+    note: str | None = None
     po_id: uuid.UUID
     po_number: str
     po_vendor_name: str

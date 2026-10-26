@@ -121,6 +121,26 @@ def raw_material_po_clause():
                 ~func.coalesce(PurchaseOrder.notes, "").contains(_MILK_TAG))
 
 
+# Fee types whose presence is judged against Incoterms. A milk order with no
+# Incoterms cannot take them (user 2026-10-26): it is linked as "other" until
+# someone sets its Incoterms in Edit Details.
+JUDGED_FEE_TYPES = ("freight", "customs")
+
+
+def takes_fee_type(po: PurchaseOrder, fee_type: str) -> bool:
+    return (fee_type not in JUDGED_FEE_TYPES or is_raw_material_po(po)
+            or po.incoterms_code is not None)
+
+
+def is_fee_linkable_po(po: PurchaseOrder) -> bool:
+    """Any order mirrored from NC — milk included (user 2026-10-26). Fees are
+    linked to an ARRIVAL, so in practice only orders that have one; that half
+    is checked where the arrivals are loaded. The Incoterms requirement stays
+    on raw-material orders only (is_raw_material_po)."""
+    return po.source == "nc" and po.status != "cancelled"
+
+
+
 # ── Links on an invoice ──────────────────────────────────────────────────────
 
 @dataclass
@@ -129,6 +149,7 @@ class LinkIn:
     po_id: uuid.UUID
     gr_id: uuid.UUID | None = None
     invoice_line_id: uuid.UUID | None = None
+    note: str | None = None
 
 
 async def list_for_invoice(db: AsyncSession, invoice_id: uuid.UUID) -> list[dict]:
@@ -141,7 +162,7 @@ async def list_for_invoice(db: AsyncSession, invoice_id: uuid.UUID) -> list[dict
         .order_by(PurchaseOrder.number, GoodsReceipt.received_at)
     )).all()
     return [{
-        "id": l.id, "invoice_line_id": l.invoice_line_id, "fee_type": l.fee_type,
+        "id": l.id, "invoice_line_id": l.invoice_line_id, "fee_type": l.fee_type, "note": l.note,
         "po_id": l.po_id, "po_number": po_no, "po_vendor_name": po_vendor,
         "gr_id": l.gr_id, "gr_number": gr_no, "gr_received_at": gr_at,
     } for l, po_no, po_vendor, gr_no, gr_at in rows]
@@ -174,22 +195,31 @@ async def replace_for_invoice(
     for l in links:
         if l.fee_type not in FEE_TYPES:
             raise FeeLinkInvalid(f"Unknown fee type '{l.fee_type}'")
+        # "Other" says nothing by itself, so it must say what it is; the two
+        # named types carry no note (their type is the description).
+        l.note = ((l.note or "").strip() or None) if l.fee_type == "other" else None
+        if l.fee_type == "other" and not l.note:
+            raise FeeLinkInvalid("Add a note saying what this Other fee is (e.g. inspection, storage).")
         po = pos.get(l.po_id)
         if po is None:
             raise FeeLinkInvalid("Purchase order not found")
-        if not is_raw_material_po(po):
+        if not is_fee_linkable_po(po):
             raise FeeLinkInvalid(
-                f"{po.number} is not an NC raw-material / packaging order. "
-                "Fees can only be linked to those (milk orders excluded).")
+                f"{po.number} is not an order from NC. Fees can only be linked to those.")
+        if not takes_fee_type(po, l.fee_type):
+            raise FeeLinkInvalid(
+                f"{po.number} is a milk order with no Incoterms, so it can only be linked as "
+                "Other. Set its Incoterms in Edit Details to link freight or customs.")
         if l.invoice_line_id is not None and str(l.invoice_line_id) not in line_ids:
             raise FeeLinkInvalid("That invoice line does not belong to this invoice")
-        if l.gr_id is not None and l.gr_id not in grs_by_po[l.po_id]:
-            raise FeeLinkInvalid(f"That arrival does not belong to {po.number}")
-        # An arrival-less link counts toward no arrival, so it is only allowed
-        # while the PO has none to pick — otherwise the panel would say
-        # "missing" for an arrival that has its invoice.
-        if l.gr_id is None and grs_by_po[l.po_id]:
+        # Every link names an arrival: a fee follows a delivery, and an
+        # arrival-less link would count toward none. (Links can still LOSE
+        # their arrival when Data Maintenance deletes it — gr_id is SET NULL —
+        # and are shown on the PO as such; re-saving them asks for one.)
+        if l.gr_id is None:
             raise FeeLinkInvalid(f"Choose which arrival(s) of {po.number} this fee is for")
+        if l.gr_id not in grs_by_po[l.po_id]:
+            raise FeeLinkInvalid(f"That arrival does not belong to {po.number}")
         key = (l.invoice_line_id, l.fee_type, l.po_id, l.gr_id)
         if key in seen:
             continue
@@ -200,30 +230,32 @@ async def replace_for_invoice(
     await db.execute(delete(InvoiceFeeLink).where(InvoiceFeeLink.invoice_id == invoice.id))
     for l in clean:
         db.add(InvoiceFeeLink(invoice_id=invoice.id, invoice_line_id=l.invoice_line_id,
-                              fee_type=l.fee_type, po_id=l.po_id, gr_id=l.gr_id,
+                              fee_type=l.fee_type, note=l.note, po_id=l.po_id, gr_id=l.gr_id,
                               created_by=actor_id))
     await db.flush()
     after = await list_for_invoice(db, invoice.id)
     return before, after
 
 
-async def search_candidate_pos(db: AsyncSession, q: str | None, limit: int = 50) -> dict:
-    """Raw-material POs for the link picker, with their arrivals, and how many
-    match in all — the picker says "showing N of M" rather than cutting the
-    list off silently.
+async def search_candidate_pos(db: AsyncSession, q: str | None, limit: int = 50,
+                               fee_type: str | None = None) -> dict:
+    """NC orders that have at least one arrival — raw material, packaging and
+    milk alike — for the link picker, with their arrivals and how many match in
+    all (the picker says "showing N of M" rather than cutting off silently).
 
     Searched by PO number, vendor or arrival number — never filtered by the fee
-    invoice's own vendor (a forwarder, not the PO's supplier). Ordered by the
-    latest arrival first: a freight or customs invoice follows a delivery, so
-    the orders that just received goods are the ones being looked for; orders
-    with no arrival yet come last."""
+    invoice's own vendor (a forwarder, not the PO's supplier). Latest arrival
+    first: a freight or customs invoice follows a delivery. For a freight or
+    customs fee, milk orders without Incoterms are left out (takes_fee_type)."""
     latest_arrival = (
         select(GoodsReceipt.po_id, func.max(GoodsReceipt.received_at).label("last_at"))
         .where(GoodsReceipt.status != "cancelled")
         .group_by(GoodsReceipt.po_id).subquery())
     stmt = (select(PurchaseOrder)
-            .outerjoin(latest_arrival, latest_arrival.c.po_id == PurchaseOrder.id)
-            .where(raw_material_po_clause(), PurchaseOrder.status != "cancelled"))
+            .join(latest_arrival, latest_arrival.c.po_id == PurchaseOrder.id)
+            .where(PurchaseOrder.source == "nc", PurchaseOrder.status != "cancelled"))
+    if fee_type in JUDGED_FEE_TYPES:
+        stmt = stmt.where(or_(raw_material_po_clause(), PurchaseOrder.incoterms_code.is_not(None)))
     if q and q.strip():
         like = f"%{q.strip()}%"
         by_arrival = select(GoodsReceipt.po_id).where(GoodsReceipt.number.ilike(like))
@@ -238,6 +270,7 @@ async def search_candidate_pos(db: AsyncSession, q: str | None, limit: int = 50)
     grs = await _arrivals(db, [p.id for p in pos])
     return {"total": total, "items": [{
         "id": p.id, "number": p.number, "vendor_name": p.vendor_name, "status": p.status,
+        "is_milk": not is_raw_material_po(p),
         "incoterms_code": p.incoterms_code,
         "arrivals": [{"id": g.id, "number": g.number, "received_at": g.received_at}
                      for g in grs.get(p.id, [])],
@@ -276,9 +309,13 @@ def _rollup(term: dict | None, arrivals: list, covered: dict) -> str:
 
 
 async def fee_status_for_pos(db: AsyncSession, pos: list[PurchaseOrder]) -> dict[uuid.UUID, str]:
-    """PO id → roll-up status, for the raw-material POs among `pos`. One query
-    for arrivals and one for links whatever the page size."""
-    raw = [p for p in pos if is_raw_material_po(p)]
+    """PO id → roll-up status. Raw-material orders always get one (Incoterms is
+    required on them). A milk order gets one only once someone has given it an
+    Incoterms code — otherwise there is nothing to judge, and the list would
+    say "Incoterms not set" on every milk order. One query for arrivals and
+    one for links whatever the page size."""
+    raw = [p for p in pos if is_raw_material_po(p)
+           or (is_fee_linkable_po(p) and p.incoterms_code)]
     if not raw:
         return {}
     cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
@@ -312,7 +349,7 @@ async def fee_detail_for_po(db: AsyncSession, po: PurchaseOrder) -> dict:
             line = next((li for li in (inv.line_items or [])
                          if str(li.get("id")) == str(link.invoice_line_id)), None)
         return {
-            "link_id": link.id, "fee_type": link.fee_type,
+            "link_id": link.id, "fee_type": link.fee_type, "note": link.note,
             "invoice_id": inv.id, "internal_ref": inv.internal_ref,
             "vendor_invoice_number": inv.vendor_invoice_number, "vendor_name": inv.vendor_name,
             "invoice_date": inv.invoice_date, "status": inv.status, "currency": inv.currency,
@@ -332,7 +369,10 @@ async def fee_detail_for_po(db: AsyncSession, po: PurchaseOrder) -> dict:
             covered[(link.gr_id, link.fee_type)] = True
 
     return {
-        "applies": is_raw_material_po(po),
+        "applies": is_fee_linkable_po(po),
+        # Raw-material orders must carry Incoterms; on a milk order it is
+        # optional, so "not set" there is not something to fix.
+        "incoterms_required": is_raw_material_po(po),
         "incoterms_code": po.incoterms_code,
         "incoterms_place": po.incoterms,
         "term": term,
