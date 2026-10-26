@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { poFeeService, type FeeLinkBody } from '@/services/poFee'
+import { poFeeService, type FeeLinkBody, type FeeType } from '@/services/poFee'
 
 export function usePoFeeStatus(poId: string, enabled = true) {
   return useQuery({
@@ -31,10 +31,10 @@ export function useSaveInvoiceFeeLinks(invoiceId: string) {
   })
 }
 
-export function useFeeLinkCandidates(q: string, limit: number, enabled = true) {
+export function useFeeLinkCandidates(q: string, limit: number, feeType: FeeType, enabled = true) {
   return useQuery({
-    queryKey: ['fee-link-candidates', q, limit],
-    queryFn: () => poFeeService.candidates(q, limit),
+    queryKey: ['fee-link-candidates', q, limit, feeType],
+    queryFn: () => poFeeService.candidates(q, limit, feeType),
     enabled,
     placeholderData: keepPreviousData,
     staleTime: 30_000,

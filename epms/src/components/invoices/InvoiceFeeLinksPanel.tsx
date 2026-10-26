@@ -1,6 +1,8 @@
 /**
- * Link to raw-material PO — records which NC raw-material / packaging order,
- * and which of its arrivals, a freight or customs invoice belongs to.
+ * Link to NC PO — records which NC order (raw material, packaging or milk)
+ * and which of its arrivals a freight or customs invoice belongs to. Only
+ * orders with an arrival are offered: a fee follows a delivery, and every
+ * link names one.
  *
  * The invoice is still paid by a Direct PA, to the forwarder / broker; this is
  * only a record of where the cost came from. It never changes the invoice's
@@ -25,6 +27,8 @@ import type { InvoiceLineItem } from '@/services/invoices'
 
 interface DraftLink {
   fee_type: FeeType
+  /** What an Other fee is; required for that type. */
+  note: string | null
   po_id: string
   po_number: string
   gr_id: string | null
@@ -64,12 +68,18 @@ export function InvoiceFeeLinksPanel({
   const [debouncedQ, setDebouncedQ] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [limit, setLimit] = useState(PAGE)
+  // Note given to the Other links ticked next; each one stays editable in
+  // the list above once added.
+  const [otherNote, setOtherNote] = useState('')
+  const needsNote = feeType === 'other' && !otherNote.trim()
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(q.trim()); setLimit(PAGE) }, 250)
     return () => clearTimeout(t)
   }, [q])
-  const { data: page, isFetching } = useFeeLinkCandidates(debouncedQ, limit, editing)
+  // The list depends on the fee type: a milk order with no Incoterms is
+  // offered for Other only.
+  const { data: page, isFetching } = useFeeLinkCandidates(debouncedQ, limit, feeType, editing)
   const candidates = page?.items
 
   const lineById = useMemo(
@@ -77,11 +87,12 @@ export function InvoiceFeeLinksPanel({
 
   const startEditing = () => {
     setDraft((links ?? []).map((l) => ({
-      fee_type: l.fee_type, po_id: l.po_id, po_number: l.po_number,
+      fee_type: l.fee_type, note: l.note, po_id: l.po_id, po_number: l.po_number,
       gr_id: l.gr_id, gr_number: l.gr_number, invoice_line_id: l.invoice_line_id,
     })))
     setFeeType(guessFeeType(lineItems.map((l) => l.description).join(' ')))
     setApplyTo('*')
+    setOtherNote('')
     setError(null)
     setEditing(true)
   }
@@ -95,7 +106,8 @@ export function InvoiceFeeLinksPanel({
   }
 
   const current = (po_id: string, gr_id: string | null): DraftLink => ({
-    fee_type: feeType, po_id, po_number: '', gr_id, gr_number: null,
+    fee_type: feeType, note: feeType === 'other' ? otherNote.trim() : null,
+    po_id, po_number: '', gr_id, gr_number: null,
     invoice_line_id: applyTo === '*' ? null : applyTo,
   })
   const isTicked = (po_id: string, gr_id: string | null) =>
@@ -107,12 +119,20 @@ export function InvoiceFeeLinksPanel({
       : [...prev, link])
   }
 
+  const setNote = (key: string, note: string) =>
+    setDraft((prev) => prev.map((d) => (keyOf(d) === key ? { ...d, note } : d)))
+
   const handleSave = async () => {
     if (save.isPending) return
     setError(null)
+    if (draft.some((d) => d.fee_type === 'other' && !(d.note ?? '').trim())) {
+      setError('Every Other fee needs a note saying what it is.')
+      return
+    }
     try {
       await save.mutateAsync(draft.map((d) => ({
-        fee_type: d.fee_type, po_id: d.po_id, gr_id: d.gr_id, invoice_line_id: d.invoice_line_id,
+        fee_type: d.fee_type, note: d.fee_type === 'other' ? (d.note ?? '').trim() : null,
+        po_id: d.po_id, gr_id: d.gr_id, invoice_line_id: d.invoice_line_id,
       })))
       setEditing(false)
     } catch (e) {
@@ -131,7 +151,7 @@ export function InvoiceFeeLinksPanel({
   if (!linkable && !(links && links.length)) return null
 
   const shown: DraftLink[] = editing ? draft : (links ?? []).map((l) => ({
-    fee_type: l.fee_type, po_id: l.po_id, po_number: l.po_number,
+    fee_type: l.fee_type, note: l.note, po_id: l.po_id, po_number: l.po_number,
     gr_id: l.gr_id, gr_number: l.gr_number, invoice_line_id: l.invoice_line_id,
   }))
 
@@ -140,7 +160,7 @@ export function InvoiceFeeLinksPanel({
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
           <Link2 className="h-3.5 w-3.5" />
-          Link to raw-material PO
+          Link to NC PO
         </h3>
         {canEdit && !editing && (
           <Button variant="secondary" size="sm" onClick={startEditing} disabled={!linkable && !links?.length}>
@@ -151,8 +171,9 @@ export function InvoiceFeeLinksPanel({
       </div>
 
       <p className="mb-3 text-xs text-neutral-500">
-        For a freight or customs invoice that belongs to an NC raw-material / packaging order. Shows on that
-        PO&apos;s Freight &amp; Customs panel. Payment is unchanged — this invoice is still paid by a Direct PA.
+        For a freight or customs invoice that belongs to an arrival of an NC order (raw material, packaging or
+        milk). Shows on that PO&apos;s Freight &amp; Customs panel. Payment is unchanged — this invoice is still
+        paid by a Direct PA.
         {!linkable && ' This invoice is matched on another route, so links can only be removed here.'}
       </p>
 
@@ -173,6 +194,17 @@ export function InvoiceFeeLinksPanel({
                 {l.gr_number ? `arrival ${l.gr_number}` : 'no arrival chosen'}
               </span>
               <span className="text-xs text-neutral-400">· {lineLabel(l.invoice_line_id)}</span>
+              {l.fee_type === 'other' && (editing ? (
+                <input
+                  className={`h-7 min-w-[12rem] flex-1 rounded border bg-white px-2 text-xs ${(l.note ?? '').trim() ? 'border-neutral-300' : 'border-danger-500'}`}
+                  placeholder="What is this fee? (required)"
+                  maxLength={200}
+                  value={l.note ?? ''}
+                  onChange={(e) => setNote(keyOf(l), e.target.value)}
+                />
+              ) : l.note && (
+                <span className="text-xs text-neutral-700">— {l.note}</span>
+              ))}
               {editing && (
                 <button
                   type="button"
@@ -222,11 +254,24 @@ export function InvoiceFeeLinksPanel({
                 </label>
               </div>
 
+              {feeType === 'other' && (
+                <label className="flex flex-col gap-1 text-xs text-neutral-500">
+                  Note — what is this fee? <span className="sr-only">(required)</span>
+                  <Input
+                    value={otherNote}
+                    maxLength={200}
+                    placeholder="e.g. inspection, cold storage, demurrage (required)"
+                    onChange={(e) => setOtherNote(e.target.value)}
+                  />
+                  {needsNote && <span className="text-danger-600">Enter a note before ticking arrivals.</span>}
+                </label>
+              )}
+
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                 <Input
                   className="pl-9"
-                  placeholder="Search raw-material POs by PO number, supplier or arrival number…"
+                  placeholder="Search NC POs with arrivals by PO number, supplier or arrival number…"
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                 />
@@ -236,7 +281,7 @@ export function InvoiceFeeLinksPanel({
                 {isFetching && !candidates ? (
                   <div className="flex justify-center py-6 text-neutral-400"><Loader2 className="h-4 w-4 animate-spin" /></div>
                 ) : !candidates?.length ? (
-                  <p className="px-3 py-4 text-sm text-neutral-400">No raw-material POs match.</p>
+                  <p className="px-3 py-4 text-sm text-neutral-400">No NC POs with an arrival match.</p>
                 ) : (
                   <ul className="divide-y divide-neutral-100">
                     {candidates.map((po) => (
@@ -244,18 +289,16 @@ export function InvoiceFeeLinksPanel({
                         <div className="flex flex-wrap items-baseline gap-2 text-sm">
                           <span className="font-mono text-xs font-semibold text-neutral-800">{po.number}</span>
                           <span className="text-neutral-600">{po.vendor_name}</span>
+                          {po.is_milk && (
+                            <span className="rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">Milk</span>
+                          )}
                           {po.incoterms_code && <span className="text-xs text-neutral-400">{po.incoterms_code}</span>}
                         </div>
                         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                          {po.arrivals.length === 0 ? (
-                            <label className="flex items-center gap-1.5 text-xs text-neutral-600">
-                              <input type="checkbox" checked={isTicked(po.id, null)}
-                                     onChange={() => toggle(po.id, po.number, null, null)} />
-                              Whole PO (no arrival yet)
-                            </label>
-                          ) : po.arrivals.map((a) => (
+                          {po.arrivals.map((a) => (
                             <label key={a.id} className="flex items-center gap-1.5 text-xs text-neutral-600">
                               <input type="checkbox" checked={isTicked(po.id, a.id)}
+                                     disabled={needsNote && !isTicked(po.id, a.id)}
                                      onChange={() => toggle(po.id, po.number, a.id, a.number)} />
                               <span className="font-mono">{a.number}</span>
                               <span className="text-neutral-400">{formatDate(a.received_at)}</span>
@@ -278,6 +321,12 @@ export function InvoiceFeeLinksPanel({
                   </div>
                 )}
               </div>
+              {feeType !== 'other' && (
+                <p className="text-xs text-neutral-500">
+                  Milk orders without Incoterms are listed under fee type Other only — set the order&apos;s Incoterms
+                  in Edit Details to link freight or customs to it.
+                </p>
+              )}
               <p className="text-xs text-neutral-400">
                 Ticks apply to the part of the invoice and fee type chosen above. A freight bill the carrier
                 combined can tick several arrivals; for a customs invoice, pick each line in turn and tick its PO.

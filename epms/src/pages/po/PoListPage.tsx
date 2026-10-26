@@ -206,9 +206,10 @@ export default function PoListPage() {
                 <SortTh label="Total (CAD)" sortKey="total" sort={sort} onSort={onSort} align="right"
                   className="px-4 py-3 text-right text-xs font-semibold text-neutral-500" />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                {/* Freight / customs invoices of an NC raw-material order; blank for every other PO. */}
+                {/* Freight / customs invoices of an NC order against its Incoterms: every
+                    raw-material order, a milk order once it has Incoterms; blank otherwise. */}
                 <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500"
-                    title="Freight & customs invoices against what the PO's Incoterms expect (raw-material orders only)">
+                    title="Freight & customs invoices against what the PO's Incoterms expect (NC orders; milk orders only once they have Incoterms)">
                   Fees
                 </th>
                 <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />

@@ -33,7 +33,7 @@ import type { ApiEvent } from '@/services/pr'
 import { historyLine, isSkipped } from '@/lib/approvalHistory'
 import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
-import { isImportedEditablePo, isRawMaterialPo } from '@/lib/importedPoEdit'
+import { isImportedEditablePo } from '@/lib/importedPoEdit'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
@@ -807,10 +807,11 @@ export default function PoDetailPage() {
             <PoSignoffPanel poId={po.id} source={po.source ?? null} />
           )}
 
-          {/* Freight & Customs — NC raw-material orders only. Right under the
+          {/* Freight & Customs — every NC order (the panel hides itself on a
+              milk order with no Incoterms and nothing linked). Right under the
               sign-off, above the order details: "are this order's fee invoices
               in?" is what a raw-material PO is opened to find out. */}
-          {activeTab === 'Details' && isRawMaterialPo(po) && (
+          {activeTab === 'Details' && po.source === 'nc' && (
             <PoFeePanel poId={po.id} canEditDetails={canEditImported} />
           )}
 
