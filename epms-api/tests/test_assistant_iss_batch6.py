@@ -224,14 +224,17 @@ def _task(t, doc_type="po", priority="normal", n=0):
 
 
 async def test_task_counts_leave_out_what_the_epms_inbox_leaves_out(admin_client, monkeypatch):
-    """403 against the inbox's 397: the six were vms_confirm_training."""
+    """403 against the inbox's 397: the six were vms_confirm_training. OA claim
+    tasks are left out too — the EPMS inbox shows EPMS work only."""
     from app.services import guide_view
 
     async def fake_tasks(role, user_id):
         return ([_task("confirm_receipt", n=i) for i in range(5)]
                 + [_task("approve_exp", "exp", n=i) for i in range(2)]
                 + [_task("vms_confirm_training", "vms_train", n=i) for i in range(6)]
-                + [_task("check_out_visitor", "vms_visit")])
+                + [_task("check_out_visitor", "vms_visit")]
+                + [_task("approve_tra", "tra")]
+                + [_task("approve_budget_plan", "budget_plan")])
 
     seen: list = []
 
@@ -247,11 +250,13 @@ async def test_task_counts_leave_out_what_the_epms_inbox_leaves_out(admin_client
     monkeypatch.setattr(assistant_llm, "narrate_guide", fake_guide)
     r = await admin_client.post(CHAT, json={"message": "我现在有几条待办？"})
     p = seen[0]
-    assert p["open_task_count"] == 7 == p["groups_add_up_to"]
-    assert {g["type"] for g in p["groups"]} == {"confirm_receipt", "approve_exp"}
+    assert p["open_task_count"] == 5 == p["groups_add_up_to"]
+    assert {g["type"] for g in p["groups"]} == {"confirm_receipt"}
     assert {(g["type"], g["count"], g["module"]) for g in p["not_in_this_inbox"]} == {
-        ("vms_confirm_training", 6, "VMS"), ("check_out_visitor", 1, "VMS")}
-    assert r.json()["sources"]["open_tasks"] == 7
+        ("vms_confirm_training", 6, "VMS"), ("check_out_visitor", 1, "VMS"),
+        ("approve_exp", 2, "OA"), ("approve_tra", 1, "OA"),
+        ("approve_budget_plan", 1, "Finance")}
+    assert r.json()["sources"]["open_tasks"] == 5
 
 
 async def test_groups_add_up_to_the_total_with_an_other_row():
@@ -282,11 +287,12 @@ async def test_the_inbox_filter_is_the_frontends():
 
     from app.services import guide_view
 
-    hook = Path(__file__).resolve().parents[2] / "epms" / "src" / "hooks" / "useTasks.ts"
-    if not hook.exists():
+    src = Path(__file__).resolve().parents[2] / "epms" / "src" / "lib" / "taskTypes.ts"
+    if not src.exists():
         pytest.skip("epms frontend not mounted in this container")
-    line = re.search(r"NON_EPMS_DOC_TYPES = new Set\(\[([^\]]*)\]\)", hook.read_text()).group(1)
-    assert set(re.findall(r"'([a-z_]+)'", line)) == set(guide_view.NOT_IN_EPMS_INBOX)
+    line = re.search(r"EPMS_INBOX_DOC_TYPES[^=]*= new Set\(\[([^\]]*)\]\)",
+                     src.read_text()).group(1)
+    assert set(re.findall(r"'([a-z_]+)'", line)) == set(guide_view.EPMS_INBOX_DOC_TYPES)
     assert "not_in_this_inbox" in assistant_llm._GUIDE_SYSTEM
     assert "never merge rows" in " ".join(assistant_llm._GUIDE_SYSTEM.split()).lower() or \
         "Never merge rows" in " ".join(assistant_llm._GUIDE_SYSTEM.split())
