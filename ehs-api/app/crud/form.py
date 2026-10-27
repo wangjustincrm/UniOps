@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.action import create as create_action
@@ -380,10 +380,24 @@ def _is_blank(answer: FormAnswer | None) -> bool:
 async def list_submissions(
     db: AsyncSession, *, template_id: uuid.UUID | None = None,
     status_in: list[str] | None = None, limit: int = 50, offset: int = 0,
+    search: str | None = None,
 ) -> list[FormSubmission]:
     q = select(FormSubmission)
     if template_id:
         q = q.where(FormSubmission.template_id == template_id)
+    if search and search.strip():
+        # ★ Round 10 (open box): "entering a form called JHSC does not return
+        # results and it should. make the field searchable by name, number,
+        # area, or who filed it." The form's name was not among what the
+        # register matched, and it only ever matched the rows already loaded.
+        like = f"%{search.strip()}%"
+        q = q.where(or_(
+            FormSubmission.submission_no.ilike(like),
+            FormSubmission.location_path.ilike(like),
+            FormSubmission.submitted_by_name.ilike(like),
+            select(FormTemplate.id).where(FormTemplate.id == FormSubmission.template_id,
+                                          FormTemplate.name.ilike(like)).exists(),
+        ))
     if status_in:
         q = q.where(FormSubmission.status.in_(status_in))
     return list((await db.execute(

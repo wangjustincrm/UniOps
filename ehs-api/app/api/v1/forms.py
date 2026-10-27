@@ -333,9 +333,11 @@ async def list_submissions(
     template_id: uuid.UUID | None = None,
     status_in: list[str] | None = Query(default=None, alias="status"),
     limit: int = Query(default=50, le=200), offset: int = 0,
+    search: str | None = Query(default=None, description="Form name, number, area or who filed it"),
 ):
     return await crud.list_submissions(
-        db, template_id=template_id, status_in=status_in, limit=limit, offset=offset)
+        db, template_id=template_id, status_in=status_in, limit=limit, offset=offset,
+        search=search)
 
 
 @router.get("/submissions/{submission_id}", response_model=SubmissionOut)

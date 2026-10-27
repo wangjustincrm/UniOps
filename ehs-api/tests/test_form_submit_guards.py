@@ -773,3 +773,28 @@ async def test_a_bad_date_says_which_question(hse_manager, dated_template):
     assert bad.status_code == 422, bad.text
     assert "Date of inspection" in bad.text, bad.text
     assert "next Tuesday" in bad.text
+
+
+async def test_the_form_register_searches_by_name_number_area_and_filer(hse_manager):
+    """★ Round 10 (open box): "entering a form called JHSC does not return
+    results and it should. make the field searchable by name, number, area, or
+    who filed it." """
+    import uuid as _uuid
+    user, client = hse_manager
+    tpl = (await client.post("/api/v1/forms/templates", json={
+        "code": f"jhsc-s-{_uuid.uuid4().hex[:5]}", "name": "JHSC Monthly Inspection",
+        "category": "jhsc"})).json()
+    await client.put(f"/api/v1/forms/templates/{tpl['id']}/schema", json={
+        "schema": [{"key": "a", "type": "text", "label": "A"}]})
+    await client.post(f"/api/v1/forms/templates/{tpl['id']}/publish", json={"change_note": "v1"})
+    sub = (await client.post(f"/api/v1/forms/templates/{tpl['id']}/submissions", json={})).json()
+    assert "submission_no" in sub, sub
+
+    async def found(term):
+        rows = (await client.get("/api/v1/forms/submissions",
+                                 params={"search": term, "limit": 200})).json()
+        return sub["id"] in {r["id"] for r in rows}
+
+    assert await found("jhsc"), "by the form's name"
+    assert await found(sub["submission_no"]), "by its number"
+    assert not await found("no-such-form-anywhere")

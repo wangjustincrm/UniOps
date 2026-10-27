@@ -5,7 +5,7 @@
  * last month's was done are the same errand, and a supervisor doing one
  * usually wants to see the other.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ClipboardList, Plus } from 'lucide-react'
@@ -77,21 +77,30 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
     onSuccess: (sub) => navigate(`/forms/submissions/${sub.id}`),
   })
 
+  // ★ Round 10 (open box): "entering a form called JHSC does not return
+  // results … make the field searchable by name, number, area, or who filed
+  // it." What is typed is also sent to the server, after a pause, so a search
+  // reaches filings older than the latest two hundred.
+  const [serverTerm, setServerTerm] = useState('')
   const submissions = useQuery({
-    queryKey: ['form-submissions'],
+    queryKey: ['form-submissions', serverTerm],
     queryFn: () => api.get<SubmissionItem[]>(
-      `/api/v1/forms/submissions?limit=${SUBMISSIONS_LIMIT}`),
+      `/api/v1/forms/submissions?limit=${SUBMISSIONS_LIMIT}${
+        serverTerm ? `&search=${encodeURIComponent(serverTerm)}` : ''}`),
   })
+  const names = new Map((templates.data ?? []).map((t) => [t.id, t.name]))
   // Two lists on this page grow: what is owed and what has been filed. The
   // template list is a handful of forms and stays one screen.
   const dueList = useListView(runs.data, (r) => [
     r.department_name, r.status, r.due_on,
   ], { dateOf: (r) => r.due_on })
   const filedList = useListView(submissions.data, (x) => [
-    x.submission_no, x.location_path, x.submitted_by_name, x.status,
+    names.get(x.template_id), x.submission_no, x.location_path, x.submitted_by_name, x.status,
   ], { dateOf: (x) => x.occurred_at })
-
-  const names = new Map((templates.data ?? []).map((t) => [t.id, t.name]))
+  useEffect(() => {
+    const t = setTimeout(() => setServerTerm(filedList.query.trim()), 350)
+    return () => clearTimeout(t)
+  }, [filedList.query])
 
   const tabCls = (on: boolean) =>
     `min-h-[40px] flex-1 rounded-md px-3 text-sm font-medium ${
@@ -203,7 +212,7 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
       {tab === 'done' && (
         <>
           <SearchBox value={filedList.query} onChange={filedList.setQuery}
-                     placeholder="Search by number, area or who filed it">
+                     placeholder="Search by form name, number, area or who filed it">
             <DateRangeFilter {...filedList.dateFilter} />
           </SearchBox>
 
