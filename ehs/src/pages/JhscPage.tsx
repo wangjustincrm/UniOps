@@ -20,7 +20,8 @@ import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
-  Card, Empty, ErrorNote, Field, PageHeader, Tabs, inputClass, primaryButton, secondaryButton,
+  Card, Empty, ErrorNote, Field, LoadFailedNote, PageHeader, Tabs, inputClass, primaryButton,
+  secondaryButton,
 } from '@/components/ui'
 
 interface Member {
@@ -459,6 +460,14 @@ function RecommendationsTab({ mayManage, highlight }: {
     k, k === 'all' ? rows.length : rows.filter((r) => matches(r, k)).length])) as Record<RecFilter, number>
   const shown = show === 'all' ? rows : rows.filter((r) => matches(r, show))
 
+  // ★ Review: while loading, or when the request failed, the figures read
+  // "0 Open" and the list was empty — which says there is no statutory reply
+  // outstanding. A figure is shown only once there is one to show.
+  const known = all.isSuccess
+  if (all.isError) {
+    return <LoadFailedNote what="the recommendations" />
+  }
+
   if (all.data?.length === 0) {
     return (
       <Empty>
@@ -476,7 +485,7 @@ function RecommendationsTab({ mayManage, highlight }: {
                 onClick={() => setShow(show === key && key !== 'all' ? 'all' : key)}
                 className={`rounded-lg border px-3 py-2 text-left ${show === key
                   ? 'border-primary-400 bg-primary-50' : 'border-neutral-200 bg-white hover:border-primary-300'}`}>
-          <span className="block text-xl font-semibold tabular-nums text-primary-700">{counts[key]}</span>
+          <span className="block text-xl font-semibold tabular-nums text-primary-700">{known ? counts[key] : '—'}</span>
           <span className="text-xs text-neutral-500">{label}</span>
         </button>
       ))}
@@ -493,7 +502,7 @@ function RecommendationsTab({ mayManage, highlight }: {
             ? 'ring-2 ring-primary-400 ring-offset-1'
             : undefined}>
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <button type="button"
+              <button type="button" data-print="keep"
                       onClick={() => navigate(`/jhsc/meetings/${r.meeting_id}`)}
                       className="font-mono text-xs text-primary-700 hover:underline">
                 {meetingNo(r.meeting_id)} #{r.seq}
