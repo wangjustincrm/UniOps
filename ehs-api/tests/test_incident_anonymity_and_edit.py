@@ -419,3 +419,44 @@ class TestTheInjuredReporterStaysAnonymous:
         async with sup as c:
             got = (await c.get(f"/api/v1/incidents/{iid}")).json()
         assert any(p["person_name"] == "Dana Reporter" for p in got["persons"])
+
+
+class TestWhoRecordedTheMedicalSection:
+    """★ Review (uniops-8b): a first aider reporting anonymously fills in
+    Section B straight after sending; "recorded by" then named them to every
+    other first aider."""
+
+    async def _anonymous_by_a_first_aider(self, test_engine, db):
+        aider = await make_user(test_engine, role="first_aider", full_name="Ari Aider")
+        async with authed_client(make_token(aider.id, aider.role), db) as c:
+            made = await c.post("/api/v1/incidents", json={
+                "form_kind": "medical", "title": "Cut on the slicer",
+                "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                "incident_type": "first_aid", "is_anonymous": True,
+                "signature": SIGNATURE, "description": "Cut."})
+            iid = made.json()["id"]
+            assert (await c.post(f"/api/v1/incidents/{iid}/submit")).status_code == 200
+            put = await c.put(f"/api/v1/incidents/{iid}/medical", json={"allergies": "none"})
+            assert put.status_code == 200, put.text
+            # Their own answer may name them: they know who they are.
+        return aider, iid
+
+    async def test_another_first_aider_is_not_told(self, test_engine, db_session, hse_manager):
+        _, iid = await self._anonymous_by_a_first_aider(test_engine, db_session)
+        _, other = await _client_as(test_engine, db_session, "first_aider")
+        async with other as c:
+            got = (await c.get(f"/api/v1/incidents/{iid}/medical")).json()
+        assert got["allergies"] == "none"
+        assert got["recorded_by_name"] == "Withheld — anonymous report"
+        # HSE alone may know.
+        _, hse = hse_manager
+        assert (await hse.get(f"/api/v1/incidents/{iid}/medical")).json()["recorded_by_name"] == "Ari Aider"
+
+    async def test_someone_else_who_records_it_is_named(self, test_engine, db_session):
+        _, iid = await self._anonymous_by_a_first_aider(test_engine, db_session)
+        second, other = await _client_as(test_engine, db_session, "first_aider")
+        async with other as c:
+            assert (await c.put(f"/api/v1/incidents/{iid}/medical",
+                                json={"allergies": "latex"})).status_code == 200
+            got = (await c.get(f"/api/v1/incidents/{iid}/medical")).json()
+        assert got["recorded_by_name"] == second.full_name

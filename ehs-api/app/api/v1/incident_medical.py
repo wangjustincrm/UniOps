@@ -94,12 +94,27 @@ class MedicalOut(MedicalIn):
     recorded_by_name: str | None
 
 
+async def _out(db, incident, row: IncidentMedical | None, user: dict) -> MedicalOut | None:
+    """★ Review (uniops-8b): on an anonymous report the reporter often fills in
+    this section right after sending it, so "recorded by" named them to every
+    first aider who opened the incident. Withheld as on the other parts of the
+    report, from everyone but HSE."""
+    from app.api.v1.incidents import WITHHELD, withheld_reporter
+    if row is None:
+        return None
+    out = MedicalOut.model_validate(row)
+    hidden = await withheld_reporter(db, incident, user)
+    if hidden is not None and row.recorded_by == hidden[0]:
+        out.recorded_by_name = WITHHELD
+    return out
+
+
 @router.get("", response_model=MedicalOut | None)
-async def get_medical(incident_id: uuid.UUID, db: SessionDep, user: CanReadMedical):  # noqa: ARG001
-    await crud.get(db, incident_id)  # 404s on an unknown incident
-    return (await db.execute(
+async def get_medical(incident_id: uuid.UUID, db: SessionDep, user: CanReadMedical):
+    incident = await crud.get(db, incident_id)  # 404s on an unknown incident
+    return await _out(db, incident, (await db.execute(
         select(IncidentMedical).where(IncidentMedical.incident_id == incident_id)
-    )).scalar_one_or_none()
+    )).scalar_one_or_none(), user)
 
 
 @router.put("", response_model=MedicalOut)
@@ -136,4 +151,4 @@ async def upsert_medical(
     row.recorded_by_name = await _resolve_name(db, row.recorded_by)
     await db.flush()
     await db.refresh(row)
-    return row
+    return await _out(db, incident, row, user)
