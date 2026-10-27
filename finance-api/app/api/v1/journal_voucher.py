@@ -144,8 +144,15 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
 
     `period` (exact) is kept because existing callers and saved links use it.
     fiscal_period is a zero-padded 'YYYY-MM' string, so a plain string BETWEEN
-    orders correctly — no date casting needed."""
-    base = select(JournalVoucher)
+    orders correctly — no date casting needed.
+
+    NC vouchers only (nc_source_pk set). The drafts generate_from_event writes
+    for AP accruals / payments never reach NC, and their max+1 numbers collide
+    with the vouchers NC books later in the same period: JV-202609-0601 was both
+    an internal Sulzer accrual draft and NC's real Amazon voucher, and finance
+    looked for the draft in NC and found nothing (user, 2026-10-27). NC is the
+    book of record — this list is its mirror. Detail by id is unchanged."""
+    base = select(JournalVoucher).where(JournalVoucher.nc_source_pk.is_not(None))
     if period:
         base = base.where(JournalVoucher.fiscal_period == period)
     if period_from:

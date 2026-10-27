@@ -1,9 +1,13 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.9
-**Date:** 2026-10-21
+**Version:** 2.10
+**Date:** 2026-10-27
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.10** (2026-10-27)
+
+- The Journal Voucher Center lists NC vouchers only. The draft vouchers UniOps generated internally from AP invoices and payments never reach NC, and their numbers collided with vouchers NC booked later in the same period (JV-202609-0601 was both a Sulzer accrual draft and NC's own voucher), so finance looked them up in NC and found nothing (FIN-JV-01, FIN-JV-05).
 
 **What changed in version 2.9** (2026-10-21)
 
@@ -260,11 +264,11 @@ A failed permission load shows "Couldn't load your Finance permissions" with a r
 
 | FR ID | Requirement |
 |---|---|
-| FIN-JV-01 | The list shows what NC's voucher list shows: number, date, period, summary, preparer / checker / tallier, NC system, voucher kind, status, NC state, amounts. Columns sort on the server. |
+| FIN-JV-01 | The list shows **NC vouchers only** — the ones mirrored from NC, including NC vouchers not yet tallied — and what NC's voucher list shows for them: number, date, period, summary, preparer / checker / tallier, NC system, voucher kind, status, NC state, amounts. Columns sort on the server. |
 | FIN-JV-02 | Query filters: period or period range, date range, number range, status, NC voucher state, voucher kind, preparer, checker, manager, account, contra account, currency, amount range, auxiliary type + value, source document type, source subsystem, free text. |
 | FIN-JV-03 | The detail modal shows lines with account, debit / credit (original and CAD), currency, rate and resolved dimension names. |
 | FIN-JV-04 | **NC-mirrored vouchers are read-only.** Their status follows NC. Review, post and reverse are refused for them, including in batch actions. |
-| FIN-JV-05 | UniOps-originated vouchers (from the internal posting records, §14) follow draft → reviewed → posted, with unreview, unpost and red-entry reversal. The reversal is a new negative voucher; the original is marked reversed. All of these need `finance.jv.post` and an open period. If the SoD rule *jv_self_review* is enabled, the preparer cannot review their own voucher. Batch review and post are available. |
+| FIN-JV-05 | UniOps-originated vouchers (from the internal posting records, §14) are **not listed** in the Journal Voucher Center: they never reach NC, and their numbers are drawn from the same JV-YYYYMM- sequence NC fills later, so the same number can name a different NC voucher. They open only by link from other pages. They follow draft → reviewed → posted, with unreview, unpost and red-entry reversal. The reversal is a new negative voucher; the original is marked reversed. All of these need `finance.jv.post` and an open period. If the SoD rule *jv_self_review* is enabled, the preparer cannot review their own voucher. Batch review and post are available. |
 
 ### 6.2 Account Balance (NC 科目余额表 parity)
 

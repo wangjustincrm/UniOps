@@ -290,7 +290,7 @@ async def test_journal_voucher_sort_nulls_last_and_new_keys(client, db_session):
                               summary=summary, status="posted", total_debit=Decimal(0),
                               total_credit=Decimal(0), total_local_debit=Decimal(0),
                               total_local_credit=Decimal(0), source_doc_number=doc,
-                              nc_prepared_name=prepared)
+                              nc_prepared_name=prepared, nc_source_pk=f"NCPK{n}")
     a, b, c_, d = (jv(1, "beta", "AP-2", "zoe"), jv(2, "Alpha", "ap-1", None),
                    jv(3, None, None, "Adam"), jv(4, "gamma", "AP-3", "mia"))
     db_session.add_all([a, b, c_, d])
