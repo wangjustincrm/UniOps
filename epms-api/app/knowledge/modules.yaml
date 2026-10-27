@@ -229,7 +229,7 @@ modules:
       - Execute approved payments and issue remittance advice
       - Reconcile accounts payable against what EPMS says is owed
       - Find an invoice keyed into NC more than once, before the extra copy is approved or paid
-      - Post and review journal vouchers
+      - Look up NC's journal vouchers and their lines (the list shows NC's vouchers only — UniOps does not book its own)
       - Find a voucher across several months, or by the item, project or party it was booked against
       - See who prepared, checked and posted a voucher in NC, and whether it was cancelled
       - Reconcile a bank statement against the ledger and sign the period off (a USD or CNY account reconciles in its own currency, not in CAD)
