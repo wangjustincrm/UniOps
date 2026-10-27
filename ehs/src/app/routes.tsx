@@ -44,6 +44,7 @@ import AreaOwnersPage from '@/pages/settings/AreaOwnersPage'
 import RulesPage from '@/pages/settings/RulesPage'
 import PermitChecksPage from '@/pages/settings/PermitChecksPage'
 import ExpiryNoticesPage from '@/pages/settings/ExpiryNoticesPage'
+import UndeliveredEmailPage from '@/pages/settings/UndeliveredEmailPage'
 import NotifyGroupsPage from '@/pages/settings/NotifyGroupsPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
 
@@ -313,5 +314,10 @@ export const ehsRoutes: RouteDef[] = [
     path: '/settings/expiry-notices',
     element: <ExpiryNoticesPage />,
     tab: { title: 'Expiry notices', icon: 'Mail', keyStrategy: 'static' },
+  },
+  {
+    path: '/settings/undelivered-email',
+    element: <UndeliveredEmailPage />,
+    tab: { title: 'Undelivered email', icon: 'Mail', keyStrategy: 'static' },
   },
 ]

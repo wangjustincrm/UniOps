@@ -105,3 +105,34 @@ async def undelivered(db: SessionDep, user: CurrentUserPayload):
         .where(Communication.direction == "out", Communication.sent_at.is_(None))
         .order_by(Communication.created_at.desc()).limit(100)
     )).scalars())
+
+
+class SendAgainOut(BaseModel):
+    sent: bool
+    message: str
+
+
+@router.post("/{communication_id}/send-again", response_model=SendAgainOut)
+async def send_again(communication_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """Try once more to send a message that was filed but never left.
+
+    ★ Review (uniops-8b): nothing ever retried one — a process stopped between
+    saving and sending, a mail server that refused, or no mail server set up.
+    By hand rather than on a timer, on purpose: once the mail server is fixed,
+    a timer would send a fortnight of stale notices at once; HSE chooses which
+    are still worth sending. Sent at most once (`deliver` checks `sent_at`).
+    """
+    if not await has_permission(
+        db, _user_id(user), user.get("role", ""), "ehs.settings.manage"
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Insufficient permissions")
+    row = await db.get(Communication, communication_id)
+    if row is None or row.direction != "out":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such outgoing message")
+    if row.sent_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This message has already been sent")
+    if await mail.deliver(row.id):
+        return SendAgainOut(sent=True, message="Sent.")
+    return SendAgainOut(sent=False, message=(
+        "Still not sent. Check the mail server under Admin → Company Settings; "
+        "the server log has the reason."))
