@@ -142,6 +142,10 @@ class JhscRecommendation(UUIDPrimaryKey, TimestampMixin, Base):
     # a snapshot, as on an incident; no FK, as locations belong to mdm-api.
     location_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     location_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Round 10, TC-11: where the work stands, from the "JHSC recommendation
+    # status" list HSE keeps under Settings → Lists. The label is a snapshot.
+    status_item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    status_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # Who it was put in front of, and when. The committee could see that
     # nobody had answered and not who had failed to.

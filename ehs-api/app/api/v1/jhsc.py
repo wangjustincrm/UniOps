@@ -291,6 +291,8 @@ class RecommendationOut(BaseModel):
     raised_by_name: str | None
     location_id: uuid.UUID | None = None
     location_path: str | None = None
+    status_item_id: uuid.UUID | None = None
+    status_label: str | None = None
     response: str | None
     outcome: str | None
     # Who it was put in front of, and when. Without it the committee could see
@@ -628,6 +630,8 @@ class RecommendationDetailOut(RecommendationOut):
     reply_due_at: datetime | None = None
     may_answer: bool = False
     may_manage: bool = False
+    # Round 10: HSE, and whoever it was sent to, move it along the list.
+    may_set_status: bool = False
     action: ActionBrief | None = None
 
 
@@ -672,6 +676,7 @@ async def _detail(db, rec, user: dict) -> RecommendationDetailOut:
         "reply_due_at": due,
         "may_answer": rec.responded_at is None and (manage or _was_sent_to(rec, _user_id(user))),
         "may_manage": manage,
+        "may_set_status": manage or _was_sent_to(rec, _user_id(user)),
         "action": ActionBrief.model_validate(action) if action else None,
     })
     return out
@@ -732,4 +737,22 @@ async def correct_response(
     if payload.outcome is not None:
         rec.outcome = payload.outcome
     await db.flush()
+    return await _detail(db, rec, user)
+
+
+class StatusIn(BaseModel):
+    item_id: uuid.UUID
+
+
+@router.put("/recommendations/{rec_id}/status", response_model=RecommendationDetailOut)
+async def set_recommendation_status(
+    rec_id: uuid.UUID, payload: StatusIn, db: SessionDep, user: CurrentUserPayload,
+):
+    """Round 10, TC-11: where the work stands — "new request", "reviewed by
+    maintenance" … from the list HSE keeps under Settings → Lists."""
+    rec = await crud.get_recommendation(db, rec_id)
+    if not (_was_sent_to(rec, _user_id(user)) or await _can(db, user, "ehs.jhsc.manage")):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "Only the people it was sent to, or HSE, can change its state")
+    await crud.set_status(db, rec, payload.item_id)
     return await _detail(db, rec, user)

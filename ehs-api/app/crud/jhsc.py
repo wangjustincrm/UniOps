@@ -286,6 +286,28 @@ async def location_path_of(db: AsyncSession, location_id: uuid.UUID | None) -> s
     return path
 
 
+STATUS_VOCABULARY = "jhsc_rec_status"
+
+
+async def first_status(db: AsyncSession):
+    from app.models.vocabulary import VocabularyItem
+    return (await db.execute(select(VocabularyItem).where(
+        VocabularyItem.vocabulary_code == STATUS_VOCABULARY,
+        VocabularyItem.is_active.is_(True)).order_by(VocabularyItem.sort_order))).scalars().first()
+
+
+async def set_status(db: AsyncSession, rec: JhscRecommendation, item_id: uuid.UUID):
+    """Round 10, TC-11: the recommendation's current state, from HSE's list."""
+    from app.models.vocabulary import VocabularyItem
+    item = await db.get(VocabularyItem, item_id)
+    if item is None or item.vocabulary_code != STATUS_VOCABULARY or not item.is_active:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "That is not a state on the JHSC recommendation status list")
+    rec.status_item_id, rec.status_label = item.id, item.label
+    await db.flush()
+    return rec
+
+
 async def add_recommendation(
     db: AsyncSession, meeting: JhscMeeting, *, text: str, raised_by_name: str | None,
     location_id: uuid.UUID | None = None,
@@ -298,6 +320,11 @@ async def add_recommendation(
         recommendation=text, raised_by_name=raised_by_name,
         location_id=location_id, location_path=await location_path_of(db, location_id),
     )
+    # Round 10: starts at the first state on HSE's list ("New request"), once;
+    # whoever works on it moves it on from there.
+    first = await first_status(db)
+    if first is not None:
+        rec.status_item_id, rec.status_label = first.id, first.label
     db.add(rec)
     await db.flush()
 

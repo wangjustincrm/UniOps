@@ -203,3 +203,61 @@ async def test_the_list_carries_the_state_of_each_corrective_action(hse_manager,
     await db_session.commit()
     listed = {r["id"]: r for r in (await hse.get("/api/v1/jhsc/recommendations")).json()}
     assert listed[rec["id"]]["action_status"] == "closed"
+
+
+@pytest.fixture
+async def states(db_session):
+    """The four states, as the migration seeds them (the test schema is built
+    from the models, not the migrations)."""
+    from app.models.vocabulary import Vocabulary, VocabularyItem
+    if await db_session.get(Vocabulary, "jhsc_rec_status") is None:
+        db_session.add(Vocabulary(code="jhsc_rec_status", name="JHSC recommendation status"))
+        await db_session.flush()
+    items = []
+    for sort, (code, label) in enumerate([("new_request", "New request"),
+                                          ("maintenance_review", "Under review by maintenance"),
+                                          ("in_progress", "Work in progress"),
+                                          ("completed", "Completed")], start=1):
+        item = VocabularyItem(id=uuid.uuid4(), vocabulary_code="jhsc_rec_status", code=f"{code}-{uuid.uuid4().hex[:4]}",
+                              label=label, sort_order=sort, is_active=True, attrs={}, path=label)
+        db_session.add(item)
+        items.append(item)
+    await db_session.flush()
+    return items
+
+
+async def test_a_recommendation_has_a_state_from_hses_list(hse_manager, asked, worker, states, db_session):
+    """★ Round 10, TC-11: "add jhsc task list in the settings/lists registry for
+    picking the current state of recommendations. add 4 states." """
+    from app.models.vocabulary import VocabularyItem
+    _, hse = hse_manager
+    person, client = asked
+    _, other = worker
+    _, rec = await _sent(hse, [person])
+    assert rec["status_label"] == "New request", "starts at the first state on the list"
+
+    moved = await client.put(f"/api/v1/jhsc/recommendations/{rec['id']}/status",
+                             json={"item_id": str(states[1].id)})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["status_label"] == "Under review by maintenance"
+    assert moved.json()["may_set_status"] is True
+
+    assert (await other.put(f"/api/v1/jhsc/recommendations/{rec['id']}/status",
+                            json={"item_id": str(states[2].id)})).status_code == 403
+    assert (await hse.put(f"/api/v1/jhsc/recommendations/{rec['id']}/status",
+                          json={"item_id": str(states[2].id)})).status_code == 200
+
+    # Something from another list is refused.
+    from app.models.vocabulary import Vocabulary
+    if await db_session.get(Vocabulary, "body_part") is None:
+        db_session.add(Vocabulary(code="body_part", name="Body part"))
+        await db_session.flush()
+    stranger = VocabularyItem(id=uuid.uuid4(), vocabulary_code="body_part", code=f"x-{uuid.uuid4().hex[:4]}",
+                              label="Knee", sort_order=1, is_active=True, attrs={}, path="Knee")
+    db_session.add(stranger)
+    await db_session.flush()
+    assert (await hse.put(f"/api/v1/jhsc/recommendations/{rec['id']}/status",
+                          json={"item_id": str(stranger.id)})).status_code == 422
+
+    listed = {r["id"]: r for r in (await hse.get("/api/v1/jhsc/recommendations")).json()}
+    assert listed[rec["id"]]["status_label"] == "Work in progress"

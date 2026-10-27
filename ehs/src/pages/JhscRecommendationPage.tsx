@@ -33,6 +33,7 @@ import {
   ActionFields, actionIsComplete, emptyActionDraft, type ActionDraft,
 } from '@/components/ActionFields'
 import { CommunicationLog } from '@/components/CommunicationLog'
+import { VocabularySelect } from '@/components/VocabularyPicker'
 import { ReplyBadge, type Recommendation } from '@/pages/JhscPage'
 
 interface Detail extends Recommendation {
@@ -40,6 +41,7 @@ interface Detail extends Recommendation {
   held_on: string | null
   may_answer: boolean
   may_manage: boolean
+  may_set_status: boolean
   action: {
     id: string; action_no: string; title: string; description: string | null
     owner_name: string | null; due_date: string; priority: string; status: string
@@ -93,6 +95,10 @@ export default function JhscRecommendationPage() {
                 {' · '}{formatDate(r.sent_at)}{r.sent_by_name ? ` by ${r.sent_by_name}` : ''}
               </dd></div>
           )}
+          <div><dt className="text-neutral-500">Status</dt>
+            <dd className="text-neutral-800">
+              {r.may_set_status ? <StatusPicker rec={r} /> : (r.status_label ?? '—')}
+            </dd></div>
           {r.reply_due_at && (
             <div><dt className="text-neutral-500">Written reply due</dt>
               <dd className="text-neutral-800">{formatDateTime(r.reply_due_at)} (OHSA s.9(20), 21 days)</dd></div>
@@ -111,6 +117,28 @@ export default function JhscRecommendationPage() {
           <CommunicationLog docType="ehs_jhsc" docId={r.id} />
         </section>
       )}
+    </div>
+  )
+}
+
+/** ★ Round 10, TC-11: "picking the current state of recommendations" from
+ *  the list HSE keeps under Settings → Lists → JHSC recommendation status. */
+function StatusPicker({ rec }: { rec: Detail }) {
+  const queryClient = useQueryClient()
+  const save = useMutation({
+    mutationFn: (itemId: string) =>
+      api.put(`/api/v1/jhsc/recommendations/${rec.id}/status`, { item_id: itemId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jhsc-recommendation', rec.id] })
+      queryClient.invalidateQueries({ queryKey: ['jhsc-recommendations'] })
+    },
+  })
+  return (
+    <div className="max-w-xs">
+      <VocabularySelect vocabulary="jhsc_rec_status" value={rec.status_item_id ?? null}
+                        onChange={(item) => { if (item && !save.isPending) save.mutate(item.id) }}
+                        placeholder="Not set" />
+      <ErrorNote error={save.error} />
     </div>
   )
 }
