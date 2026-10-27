@@ -418,6 +418,11 @@ def assert_open(incident: Incident, what: str) -> None:
         )
 
 
+# How reclassify closes a clock the new kind does not owe — and so how it
+# knows, if the kind changes back, which closed clocks are its own to reopen.
+NO_LONGER_APPLIES = "Not required: no longer applies — incident type changed"
+
+
 async def reclassify(db: AsyncSession, incident: Incident, code: str,
                      injury_class: str | None, *, user_id: uuid.UUID) -> Incident:
     """Change what kind of incident this was, before it closes.
@@ -456,14 +461,28 @@ async def reclassify(db: AsyncSession, incident: Incident, code: str,
             "report and refer to this one in it.")
     old_code = (incident.extra or {}).get("incident_type")
     old = incident_type.BY_CODE.get(old_code) if isinstance(old_code, str) else None
-    if old_code == code and injury_class is None:
+    wanted = None if injury_class == "none" else injury_class
+    if old_code == code and (injury_class is None or wanted == incident.injury_class):
         return incident
 
     incident.extra = {**(incident.extra or {}), "incident_type": new.code}
-    if injury_class == "none":
-        incident.injury_class = None
+    # ★ Review (uniops-8b): the dialog sends only the kind, so this used to
+    # take the new kind's default every time — an occupational illness with
+    # lost time became no class at all, WSIB's Form 7 stopped being owed and
+    # was closed as "no longer applies". What was chosen is kept unless the
+    # new kind fixes the class, or the class was only the old kind's own.
+    if injury_class is not None:
+        chosen = injury_class
+    elif new.injury_class:
+        chosen = new.injury_class
+    elif incident.injury_class and (old is None or incident.injury_class not in (
+            old.injury_class, old.default_injury_class)):
+        chosen = incident.injury_class
     else:
-        incident.injury_class = injury_class or new.injury_class or new.default_injury_class
+        chosen = new.default_injury_class
+    # "none" is how the picker says no injury; it is stored as no class, as
+    # `create` does — stored literally it counted as an injury.
+    incident.injury_class = None if chosen == "none" else chosen
     # A Ministry flag HSE set by classifying, with its reason, stays theirs.
     incident.mol_reportable = new.mol_reportable or bool(incident.mol_reportable_reason)
     if new.category_code:
@@ -479,14 +498,25 @@ async def reclassify(db: AsyncSession, incident: Incident, code: str,
     name = await _resolve_name(db, user_id)
     for d in (await db.execute(select(StatutoryDeadline).where(
             StatutoryDeadline.source_type == "incident",
-            StatutoryDeadline.source_id == incident.id,
-            StatutoryDeadline.satisfied_at.is_(None)))).scalars().all():
-        if d.kind not in owed:
+            StatutoryDeadline.source_id == incident.id))).scalars().all():
+        if d.satisfied_at is None and d.kind not in owed:
             await deadline_service.satisfy(
                 db, d, user_id=user_id, user_name=name,
-                evidence_note=f"Not required: no longer applies — incident type changed "
-                              f"from {was} to {now_label}",
+                evidence_note=f"{NO_LONGER_APPLIES} from {was} to {now_label}",
                 when=datetime.now(timezone.utc))
+        elif (d.satisfied_at is not None and d.kind in owed
+              and (d.evidence_note or "").startswith(NO_LONGER_APPLIES)):
+            # ★ Review (uniops-8b): changed back. A clock this function closed
+            # is owed again, and ensure_incident_deadlines never recreates a
+            # kind it has seen — so Unconscious → First Aid → Unconscious left
+            # the Ministry's 48 hours closed and the incident free to close.
+            # Reopened as it was, from when it started; the sweep raises its
+            # task again. One HSE closed by hand as not required stays closed.
+            d.satisfied_at = None
+            d.satisfied_by = None
+            d.satisfied_by_name = None
+            d.evidence_note = None
+            d.escalation_level = 0
     await db.flush()
     return incident
 

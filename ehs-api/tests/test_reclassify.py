@@ -12,13 +12,15 @@ from tests.conftest import authed_client, make_token, make_user
 SIGNATURE = "data:image/png;base64,iVBORw0KGgo="
 
 
-async def _reported(test_engine, db, kind: str, form_kind: str = "medical"):
+async def _reported(test_engine, db, kind: str, form_kind: str = "medical",
+                    injury_class: str | None = None):
     reporter = await make_user(test_engine, role="requester")
     async with authed_client(make_token(reporter.id, reporter.role), db) as c:
         made = await c.post("/api/v1/incidents", json={
             "form_kind": form_kind, "title": "Hurt on the line",
             "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
-            "incident_type": kind, "signature": SIGNATURE, "description": "Hurt."})
+            "incident_type": kind, "signature": SIGNATURE, "description": "Hurt.",
+            **({"injury_class": injury_class} if injury_class else {})})
         assert made.status_code in (200, 201), made.text
         iid = made.json()["id"]
         assert (await c.post(f"/api/v1/incidents/{iid}/submit")).status_code == 200
@@ -130,4 +132,82 @@ async def test_a_change_of_kind_is_on_the_timeline(test_engine, db_session, hse_
     # Choosing the same kind again is not a change, and is not on the timeline.
     again = (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
                             json={"incident_type": "lost_time"})).json()
+    assert len([e for e in again["events"] if e["kind"] == "kind_changed"]) == 1
+
+
+async def test_changed_back_reopens_the_clock_it_closed(test_engine, db_session, hse_manager):
+    """★ Review (uniops-8b): Unconscious → First Aid closed the Ministry's 48
+    hours as no longer applying; changing back left it closed, so the incident
+    could close with no report to the Ministry."""
+    _, hse = hse_manager
+    _, iid = await _reported(test_engine, db_session, "unconscious")
+    for kind in ("first_aid", "unconscious"):
+        assert (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
+                               json={"incident_type": kind})).status_code == 200
+    body = (await hse.get(f"/api/v1/incidents/{iid}")).json()
+    [mol] = [d for d in body["deadlines"] if d["kind"] == "mol_48h"]
+    assert mol["satisfied_at"] is None and mol["evidence_note"] is None
+    assert body["mol_reportable"] is True
+    # And it holds the incident again, as it did before the detour.
+    assert (await hse.post(f"/api/v1/incidents/{iid}/hse-review")).status_code == 409
+    assert (await hse.post(f"/api/v1/incidents/{iid}/close")).status_code == 409
+
+
+async def test_a_clock_hse_said_was_not_required_stays_closed(test_engine, db_session, hse_manager):
+    _, hse = hse_manager
+    _, iid = await _reported(test_engine, db_session, "unconscious")
+    [mol] = [d for d in (await hse.get(f"/api/v1/incidents/{iid}")).json()["deadlines"]
+             if d["kind"] == "mol_48h"]
+    assert (await hse.post(f"/api/v1/deadlines/{mol['id']}/not-required",
+                           json={"reason": "no longer applies, MOL said not reportable"})).status_code == 200
+    for kind in ("first_aid", "unconscious"):
+        assert (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
+                               json={"incident_type": kind})).status_code == 200
+    [mol] = [d for d in (await hse.get(f"/api/v1/incidents/{iid}")).json()["deadlines"]
+             if d["kind"] == "mol_48h"]
+    assert mol["satisfied_at"] is not None
+    assert mol["evidence_note"] == "Not required: no longer applies, MOL said not reportable"
+
+
+async def test_the_injury_class_chosen_survives_a_change_of_kind(test_engine, db_session, hse_manager):
+    """★ Review (uniops-8b): the dialog sends only the kind, and lost time on an
+    occupational illness was replaced by the new kind's default (none) — so
+    WSIB's Form 7 was closed as no longer applying."""
+    _, hse = hse_manager
+    _, iid = await _reported(test_engine, db_session, "occupational_illness",
+                             injury_class="lost_time")
+    got = (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
+                          json={"incident_type": "security"})).json()
+    assert got["injury_class"] == "lost_time"
+    assert any(d["kind"] == "wsib_form7" and d["satisfied_at"] is None for d in got["deadlines"])
+    # A kind that is the severity still sets it; a class sent with it wins.
+    assert (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
+                           json={"incident_type": "first_aid"})).json()["injury_class"] == "first_aid"
+    assert (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
+                           json={"incident_type": "drug_alcohol", "injury_class": "medical_aid"})
+            ).json()["injury_class"] == "medical_aid"
+
+
+async def test_report_only_stores_no_class(test_engine, db_session, hse_manager):
+    """★ Review: "none" was stored literally and counted as an injury."""
+    _, hse = hse_manager
+    _, iid = await _reported(test_engine, db_session, "first_aid")
+    got = (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
+                          json={"incident_type": "report_only"})).json()
+    assert got["injury_class"] is None
+
+
+async def test_a_change_of_class_alone_is_on_the_timeline(test_engine, db_session, hse_manager):
+    _, hse = hse_manager
+    _, iid = await _reported(test_engine, db_session, "occupational_illness",
+                             injury_class="medical_aid")
+    body = (await hse.post(f"/api/v1/incidents/{iid}/reclassify", json={
+        "incident_type": "occupational_illness", "injury_class": "lost_time"})).json()
+    assert body["injury_class"] == "lost_time"
+    [event] = [e for e in body["events"] if e["kind"] == "kind_changed"]
+    assert event["detail"] == ("Occupational Illness. How badly hurt: from medical aid "
+                               "to lost time.")
+    # The same again is no change.
+    again = (await hse.post(f"/api/v1/incidents/{iid}/reclassify", json={
+        "incident_type": "occupational_illness", "injury_class": "lost_time"})).json()
     assert len([e for e in again["events"] if e["kind"] == "kind_changed"]) == 1

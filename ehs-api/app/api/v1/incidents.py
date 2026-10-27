@@ -431,18 +431,27 @@ async def reclassify_incident(
     from app.services import incident_type as types
     incident = await crud.get(db, incident_id)
     before = (incident.extra or {}).get("incident_type")
+    class_before = incident.injury_class
     incident = await crud.reclassify(
         db, incident, payload.incident_type, payload.injury_class, user_id=_user_id(user))
     after = (incident.extra or {}).get("incident_type")
+    class_after = incident.injury_class
     # ★ Round 8, TC-13: emailed to the list for this change under Settings → Who
     # is told, and filed with the incident under Notifications sent. Only when
-    # the kind really changed.
-    if after != before:
+    # the kind, or how badly the person was hurt, really changed — the class
+    # is now chosen in the same dialog, and it is what WSIB's clock turns on.
+    if after != before or class_after != class_before:
         def name(code):
             t = types.BY_CODE.get(code) if isinstance(code, str) else None
             return t.label.split(" — ")[0] if t else "not recorded"
+
+        def hurt(c):
+            return (c or "nobody hurt").replace("_", " ")
         me = await db.get(User, _user_id(user))
-        detail = f"From {name(before)} to {name(after)}."
+        detail = (f"From {name(before)} to {name(after)}." if after != before
+                  else f"{name(after)}.")
+        if class_after != class_before:
+            detail += f" How badly hurt: from {hurt(class_before)} to {hurt(class_after)}."
         # ★ Round 9, TC-04: "log who changed it, and the date in the timeline".
         await crud.record_event(db, incident, "kind_changed", by_id=_user_id(user), detail=detail)
         await notify.incident_status_changed(
