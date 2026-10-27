@@ -264,7 +264,10 @@ export default function IncidentReportPage() {
       // ★ A row of its own rather than a column on the injured person: more than
       // one responder is normal, and the register answers "who treated this"
       // with all of them.
-      if (form.kind === 'medical' && form.firstAider.name.trim()) {
+      // ★ Review (uniops-8b): only while somebody is named as hurt — the
+      // treatment block, first aider included, is hidden once the injured
+      // person is cleared, and a hidden answer is not one the reporter gave.
+      if (form.kind === 'medical' && namedInjured && form.firstAider.name.trim()) {
         body.persons = [...((body.persons as unknown[]) ?? []), {
           role: 'first_aider',
           person_name: form.firstAider.name.trim(),
