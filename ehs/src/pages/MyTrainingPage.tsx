@@ -17,6 +17,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { CalendarDays, ChevronRight, GraduationCap } from 'lucide-react'
 import { api, useFileOpener } from '@/lib/api'
+import MaterialsList from '@/components/MaterialsList'
 import { Card, Empty, LoadFailedNote, PageHeader, SectionTitle } from '@/components/ui'
 import { formatDate } from '@/lib/formatDate'
 import { daysOverdue } from '@/lib/formatDate'
@@ -124,19 +125,24 @@ export default function MyTrainingPage() {
                 </p>
                 <div className="mt-2">
                   {r.delivery === 'external' ? (
-                    r.certificate_file_id ? (
-                      <button type="button" disabled={opener.busy}
-                              onClick={() => opener.open(
-                                `/api/v1/training/records/${r.id}/certificate`,
-                                `certificate-${r.course_label}.pdf`)}
-                              className="text-xs font-semibold text-primary-700 hover:underline disabled:opacity-40">
-                        {opener.busy ? 'Opening…' : 'Open the certificate you gave us'}
-                      </button>
-                    ) : (
-                      <span className="text-xs text-neutral-500">
-                        No certificate on file for this one.
-                      </span>
-                    )
+                    // ★ Since round 9 the certificate HSE files for an outside
+                    // course is one of the record's files, not certificate_file_id
+                    // (kept for records entered before). The reviewer found the
+                    // page still read only the old field: "No certificate on file".
+                    <div className="flex flex-col gap-1">
+                      {r.certificate_file_id && (
+                        <button type="button" disabled={opener.busy}
+                                onClick={() => opener.open(
+                                  `/api/v1/training/records/${r.id}/certificate`,
+                                  `certificate-${r.course_label}.pdf`)}
+                                className="self-start text-xs font-semibold text-primary-700 hover:underline disabled:opacity-40">
+                          {opener.busy ? 'Opening…' : 'Open the certificate you gave us'}
+                        </button>
+                      )}
+                      <MaterialsList base={`/api/v1/training/records/${r.id}/materials`}
+                                     mayWrite={false} what="this record"
+                                     emptyText={r.certificate_file_id ? undefined : 'No certificate on file for this one.'} />
+                    </div>
                   ) : (
                     <button type="button" disabled={opener.busy}
                             onClick={() => opener.open(

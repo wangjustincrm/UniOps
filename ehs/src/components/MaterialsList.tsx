@@ -21,11 +21,13 @@ export interface Material {
   url: string | null; uploaded_by_name: string | null; created_at: string
 }
 
-export default function MaterialsList({ base, mayWrite, what = 'this course' }: {
+export default function MaterialsList({ base, mayWrite, what = 'this course', emptyText }: {
   /** e.g. /api/v1/training/courses/{id}/materials */
   base: string
   mayWrite: boolean
   what?: string
+  /** Read-only and nothing on file: say this instead of showing nothing. */
+  emptyText?: string
 }) {
   const queryClient = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -60,7 +62,9 @@ export default function MaterialsList({ base, mayWrite, what = 'this course' }: 
   // ★ A failure to load must not look the same as there being none — the
   // third round reported exactly that as "the instructor cannot open the files".
   const items = materials.data ?? []
-  if (!mayWrite && items.length === 0 && !materials.isError && !materials.isPending) return null
+  if (!mayWrite && items.length === 0 && !materials.isError && !materials.isPending) {
+    return emptyText ? <span className="text-xs text-neutral-500">{emptyText}</span> : null
+  }
 
   return (
     <div className="flex flex-col gap-1 text-xs text-neutral-600">

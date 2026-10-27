@@ -639,7 +639,19 @@ async def delete_expiry_rule(
 # ── Files on a training record (round 9, question 6) ─────────────────────────
 # "allow for several files on a training record. all kinds of file types." The
 # same list as a course's material — any file but a page or a program, or a
-# link — held by the record. Read and written under the certificate's keys.
+# link — held by the record. Written under the register's keys; read by them
+# or by the person the record is about (★ as the issued certificate is: an
+# ordinary worker holds no training permission, and an outside course's
+# certificate HSE filed for them is theirs to open from My Training).
+
+
+async def _readable_record(db, record_id: uuid.UUID, user):
+    record = await crud.get_training_record(db, record_id)
+    me = _user_id(user)
+    if record.user_id != me and not await has_permission(
+            db, me, user.get("role", ""), "ehs.training.read"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You can only open your own training files")
+    return record
 
 
 async def _record_material(db, record_id: uuid.UUID, material_id: uuid.UUID) -> CourseMaterial:
@@ -651,9 +663,9 @@ async def _record_material(db, record_id: uuid.UUID, material_id: uuid.UUID) -> 
 
 @router.get("/records/{record_id}/materials", response_model=list[MaterialOut])
 async def list_record_materials(
-    record_id: uuid.UUID, db: SessionDep, user: CanReadTraining,  # noqa: ARG001
+    record_id: uuid.UUID, db: SessionDep, user: CanReportIncident,
 ):
-    await crud.get_training_record(db, record_id)
+    await _readable_record(db, record_id, user)
     return list((await db.execute(
         select(CourseMaterial).where(CourseMaterial.record_id == record_id)
         .order_by(CourseMaterial.created_at))).scalars().all())
@@ -685,8 +697,9 @@ async def add_record_link(
 @router.get("/records/{record_id}/materials/{material_id}")
 async def download_record_material(
     record_id: uuid.UUID, material_id: uuid.UUID,
-    db: SessionDep, user: CanReadTraining, token: BearerToken,  # noqa: ARG001
+    db: SessionDep, user: CanReportIncident, token: BearerToken,
 ):
+    await _readable_record(db, record_id, user)
     row = await _record_material(db, record_id, material_id)
     if row.file_id is None:
         raise HTTPException(409, f"{row.filename} is a link: {row.url}")

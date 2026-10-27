@@ -254,3 +254,37 @@ class TestFilesOnATrainingRecord:
         # The admission half: HSE can.
         assert (await hse.post(f"/api/v1/training/records/{rid}/materials",
                                files=_file("c.pdf", "application/pdf"))).status_code == 201
+
+    async def test_the_person_it_is_about_can_open_its_files(
+            self, hse_manager, course, files, test_engine, db_session, monkeypatch):
+        """★ Review of round 9: HSE filed an outside course's certificate as a
+        record file, and the employee — who holds no training permission —
+        could not list or open it from My Training."""
+        from fastapi import Response as _R
+        from app.api.v1 import training as training_api
+
+        async def fake_download(file_id, token):
+            return _R(content=b"pdf", media_type="application/pdf")
+        monkeypatch.setattr(training_api, "proxy_download", fake_download)
+
+        _, hse = hse_manager
+        rid, person = await self._record(hse, course, test_engine)
+        base = f"/api/v1/training/records/{rid}/materials"
+        made = (await hse.post(base, files=_file("certificate.pdf", "application/pdf"))).json()
+
+        async with authed_client(make_token(person.id, person.role), db_session) as mine:
+            listed = await mine.get(base)
+            assert listed.status_code == 200, listed.text
+            assert [m["filename"] for m in listed.json()] == ["certificate.pdf"]
+            got = await mine.get(f"{base}/{made['id']}")
+            assert got.status_code == 200 and got.content == b"pdf"
+            # Reading is all: still not theirs to change.
+            assert (await mine.delete(f"{base}/{made['id']}")).status_code == 403
+
+        # Somebody else, with no training permission, is refused.
+        other = await make_user(test_engine, role="requester")
+        async with authed_client(make_token(other.id, other.role), db_session) as theirs:
+            assert (await theirs.get(base)).status_code == 403
+            assert (await theirs.get(f"{base}/{made['id']}")).status_code == 403
+        # And the register's holders still can.
+        assert (await hse.get(base)).status_code == 200
