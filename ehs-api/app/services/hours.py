@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.hours import HoursWorked
+from app.services.day_range import plant_today
 
 MONTH_NAMES = ("January", "February", "March", "April", "May", "June", "July",
                "August", "September", "October", "November", "December")
@@ -108,7 +109,7 @@ async def hours_for_year(db: AsyncSession, year: int) -> HoursTotal:
     because it has not finished yet, and reporting September as absent in
     March would make the note useless.
     """
-    today = date.today()
+    today = plant_today()
     end = date(year + 1, 1, 1)
     if year == today.year:
         end = date(today.year, today.month, 1)

@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.incident import Incident, IncidentPerson
 from app.models.mirrors import User
 from app.models.rtw import RtwCheckin, RtwPlan
+from app.services.day_range import plant_today
 
 
 async def plans_for(db: AsyncSession, incident_id: uuid.UUID) -> list[RtwPlan]:
@@ -79,7 +80,7 @@ async def create_plan(db: AsyncSession, incident: Incident, payload: dict) -> Rt
         restrictions=payload.get("restrictions"),
         modified_duties=payload.get("modified_duties"),
         at_regular_pay=payload.get("at_regular_pay"),
-        start_date=payload.get("start_date") or date.today(),
+        start_date=payload.get("start_date") or plant_today(),
         expected_end_date=payload.get("expected_end_date"),
     )
     db.add(plan)
@@ -98,7 +99,7 @@ async def close_plan(
     db: AsyncSession, plan: RtwPlan, *, on: date | None = None, outcome: str = "completed"
 ) -> RtwPlan:
     """The worker is back on full duties, or the plan ended some other way."""
-    plan.actual_end_date = on or date.today()
+    plan.actual_end_date = on or plant_today()
     plan.status = outcome
     await db.flush()
     return plan
@@ -116,7 +117,7 @@ async def add_checkin(
 ) -> RtwCheckin:
     checkin = RtwCheckin(
         id=uuid.uuid4(), plan_id=plan.id,
-        checkin_date=on or date.today(),
+        checkin_date=on or plant_today(),
         notes=notes, by_user_id=by_user_id,
         # Name snapshot, like every other users FK in this module: the
         # check-in is evidence somebody looked, and it has to keep saying who

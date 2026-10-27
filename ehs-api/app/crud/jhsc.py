@@ -23,6 +23,7 @@ from app.services import deadlines as deadline_service
 from app.services import notify
 from app.services import tasks as task_service
 from app.services.numbering import next_number
+from app.services.day_range import plant_today
 
 DOC_JHSC = task_service.DOC_JHSC
 
@@ -83,7 +84,7 @@ async def retire_member(db: AsyncSession, member: JhscMember, *, on: date | None
     quorum has to stay checkable.
     """
     member.is_active = False
-    member.term_end = on or date.today()
+    member.term_end = on or plant_today()
     await db.flush()
     return member
 

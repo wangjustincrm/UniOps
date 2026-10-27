@@ -22,6 +22,7 @@ from app.core.permissions import CanManageSettings, CanReadIncident
 from app.crud.incident import _resolve_name
 from app.models.hours import HoursWorked
 from app.services import hours as svc
+from app.services.day_range import plant_today
 
 router = APIRouter(prefix="/hours-worked")
 
@@ -61,7 +62,7 @@ async def get_year(
     year: int = Query(default=None, ge=2000, le=2100),
 ):
     """One year's figures, with whichever months have not been entered."""
-    year = year or date.today().year
+    year = year or plant_today().year
     rows = list((await db.execute(
         select(HoursWorked).where(HoursWorked.year == year)
         .order_by(HoursWorked.month))).scalars())

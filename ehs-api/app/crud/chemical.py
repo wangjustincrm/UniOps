@@ -27,6 +27,7 @@ from app.models.statutory import StatutoryDeadline
 from app.services import statutory
 from app.services import deadlines as deadline_service
 from app.services.numbering import next_number
+from app.services.day_range import plant_today
 
 
 def _new_qr_token() -> str:
@@ -275,7 +276,7 @@ async def add_sheet(
         chemical_id=chemical.id,
         revision=payload.get("revision"),
         revision_date=revision_date,
-        received_on=payload.get("received_on") or date.today(),
+        received_on=payload.get("received_on") or plant_today(),
         language=payload.get("language") or "en",
         file_id=payload.get("file_id"),
         filename=payload.get("filename"),
@@ -298,7 +299,7 @@ async def ensure_review_clock(
     not, it runs from the day the sheet was received — earlier than the
     regulation strictly requires, which is the safe direction to be wrong in.
     """
-    starts_from = sheet.revision_date or sheet.received_on or date.today()
+    starts_from = sheet.revision_date or sheet.received_on or plant_today()
     starts_at = datetime.combine(starts_from, datetime.min.time(),
                                  tzinfo=statutory.ONTARIO)
     due_at = statutory.compute_due("sds_3y", starts_at)
@@ -364,7 +365,7 @@ async def compliance_gaps(db: AsyncSession, *, today: date | None = None) -> dic
     WHMIS programme in order" — and answering it in two round trips invites a
     screen that shows one and forgets the other.
     """
-    today = today or date.today()
+    today = today or plant_today()
 
     active = list((await db.execute(
         select(Chemical).where(Chemical.is_active.is_(True))

@@ -24,6 +24,7 @@ from app.schemas.training import (
     CertificationIn, CourseGapSummary, GapReport, GapRow, TrainingRecordIn,
 )
 from app.services import deadlines as deadline_service
+from app.services.day_range import plant_today
 
 
 async def _name(db: AsyncSession, user_id: uuid.UUID | None) -> str | None:
@@ -171,7 +172,7 @@ def _in_window(window: str, today: date):
 
 
 async def expiry_summary(db: AsyncSession, *, today: date | None = None) -> dict[str, int]:
-    today = today or date.today()
+    today = today or plant_today()
     out = {}
     for w in EXPIRY_WINDOWS:
         out[w] = (await db.execute(
@@ -214,7 +215,7 @@ async def list_training(
     if completed_to:
         stmt = stmt.where(TrainingRecord.completed_on <= completed_to)
     if expiry:
-        stmt = stmt.where(*_in_window(expiry, today or date.today()))
+        stmt = stmt.where(*_in_window(expiry, today or plant_today()))
 
     # Grouping on a list this size is ordering: the rows sit under the heading
     # the reader is scanning for, without a second shape to build and test.

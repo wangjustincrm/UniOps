@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import hours as hours_service
 from app.services import incident_type
+from app.services.day_range import plant_today
 
 # OSHA's constant: 100 employees × 50 weeks × 40 hours. HSE confirmed TRIR and
 # RIR are the same metric under two names, so there is one figure, not two.
@@ -354,7 +355,7 @@ async def injury_rates(
     else:
         # Default the window to the calendar year so the rates mean something
         # without the caller having to pass dates as well.
-        today = date.today()
+        today = plant_today()
         entered = await hours_service.hours_for(
             db,
             date_from=date_from or date(today.year, 1, 1),

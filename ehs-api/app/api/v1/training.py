@@ -37,6 +37,7 @@ from app.schemas.training import (
     TrainingRecordIn,
     TrainingRecordOut,
 )
+from app.services.day_range import plant_today
 
 COURSE_MATERIAL_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
 
@@ -515,7 +516,7 @@ async def list_certifications(
         default=None, ge=0, le=365,
         description="Certifications expiring within this many days, expired ones included."),
 ):
-    today = date.today()
+    today = plant_today()
     rows = await crud.list_certifications(
         db, user_id=user_id, expiring_within_days=expiring_within_days, today=today)
     return [_cert_out(c, today) for c in rows]
@@ -525,7 +526,7 @@ async def list_certifications(
              status_code=status.HTTP_201_CREATED)
 async def add_certification(payload: CertificationIn, db: SessionDep, user: CanWriteTraining):  # noqa: ARG001
     cert = await crud.add_certification(db, payload)
-    return _cert_out(cert, date.today())
+    return _cert_out(cert, plant_today())
 
 
 @router.post("/certifications/{cert_id}/renew", response_model=CertificationOut)
@@ -542,7 +543,7 @@ async def renew_certification(
         )
     await crud.renew_certification(
         db, cert, issued_on=payload.issued_on, expires_on=payload.expires_on)
-    return _cert_out(cert, date.today())
+    return _cert_out(cert, plant_today())
 
 
 @router.get("/gaps", response_model=GapReport)

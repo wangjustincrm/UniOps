@@ -27,6 +27,7 @@ from app.models.mirrors import Department, Location, User
 from app.services import tasks as task_service
 from app.services.numbering import next_number
 from app.services.recurrence import next_due
+from app.services.day_range import plant_today
 
 DOC_ASSET = task_service.DOC_ASSET
 
@@ -59,7 +60,7 @@ async def list_assets(
         stmt = stmt.where(SafetyAsset.location_id == location_id)
     if due_only:
         stmt = stmt.where(SafetyAsset.next_due_on.is_not(None),
-                          SafetyAsset.next_due_on <= (today or date.today()))
+                          SafetyAsset.next_due_on <= (today or plant_today()))
     return list((await db.execute(
         stmt.order_by(SafetyAsset.location_path, SafetyAsset.name).limit(limit))).scalars())
 
@@ -115,7 +116,7 @@ async def create_asset(db: AsyncSession, payload: dict) -> SafetyAsset:
     # tasks the same afternoon.
     if asset.inspection_frequency:
         asset.next_due_on = payload.get("next_due_on") or next_due(
-            date.today(), asset.inspection_frequency)
+            plant_today(), asset.inspection_frequency)
     db.add(asset)
     await db.flush()
     return asset
@@ -135,7 +136,7 @@ async def update_asset(db: AsyncSession, asset: SafetyAsset, fields: dict) -> Sa
         setattr(asset, key, value)
 
     if asset.inspection_frequency and asset.next_due_on is None:
-        asset.next_due_on = next_due(date.today(), asset.inspection_frequency)
+        asset.next_due_on = next_due(plant_today(), asset.inspection_frequency)
     elif cycle_changed and asset.inspection_frequency and "next_due_on" not in fields:
         # Putting an item on a shorter cycle has to bring its next check
         # forward, or the change is cosmetic: an extinguisher moved from
@@ -143,7 +144,7 @@ async def update_asset(db: AsyncSession, asset: SafetyAsset, fields: dict) -> Sa
         # miss two checks. Counted from the last check that actually happened,
         # because that is what the new interval is an interval from.
         asset.next_due_on = next_due(
-            asset.last_inspected_on or date.today(), asset.inspection_frequency)
+            asset.last_inspected_on or plant_today(), asset.inspection_frequency)
     elif cycle_changed and not asset.inspection_frequency:
         # Taken off a cycle entirely — nothing is owed, and a date left behind
         # would keep raising checks for an item nobody schedules any more.
@@ -273,7 +274,7 @@ async def record_inspection(
     inspection.result = result
     inspection.notes = notes
     inspection.submission_id = submission_id
-    inspection.performed_on = performed_on or date.today()
+    inspection.performed_on = performed_on or plant_today()
     inspection.performed_by = user_id
     inspection.performed_by_name = (await db.execute(
         select(User.full_name).where(User.id == user_id))).scalar()
@@ -372,7 +373,7 @@ async def record_ad_hoc(
     takes it out of service, and the next due date is measured from today
     rather than from the date somebody missed.
     """
-    when = performed_on or date.today()
+    when = performed_on or plant_today()
 
     # One row per asset per day, enforced by the database. A second check on
     # the same item on the same day therefore cannot be a second row, and
@@ -428,7 +429,7 @@ async def return_to_service(db: AsyncSession, asset: SafetyAsset) -> SafetyAsset
             status.HTTP_409_CONFLICT, "A retired item is not returned to service")
     asset.status = "in_service"
     if asset.inspection_frequency:
-        asset.next_due_on = next_due(date.today(), asset.inspection_frequency)
+        asset.next_due_on = next_due(plant_today(), asset.inspection_frequency)
     await db.flush()
     return asset
 

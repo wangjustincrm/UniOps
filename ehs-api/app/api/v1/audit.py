@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from app.core.deps import SessionDep
 from app.core.permissions import CanReadIncident
 from app.services import audit as svc
+from app.services.day_range import plant_today
 
 router = APIRouter(prefix="/audit")
 
@@ -54,7 +55,7 @@ async def evidence_pack(
     compliance, and showing it as 100% is the most common way a compliance
     dashboard lies.
     """
-    today = date.today()
+    today = plant_today()
     return await svc.build_pack(
         db,
         date_from=date_from or date(today.year, 1, 1),

@@ -27,6 +27,7 @@ from app.models.hazard import Hazard, Jsa, JsaSignoff, JsaStep
 from app.models.mirrors import Department, Location, User
 from app.models.risk import RiskAssessment
 from app.services.numbering import next_number
+from app.services.day_range import plant_today
 
 # Worst first. The register is read top-down, so the order is the point — and
 # it is the matrix's order, not the alphabet's, which would put "Acceptable"
@@ -116,7 +117,7 @@ async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUI
         control_level=payload.get("control_level"),
         owner_id=owner_id,
         owner_name=await _name(db, owner_id),
-        identified_on=payload.get("identified_on") or date.today(),
+        identified_on=payload.get("identified_on") or plant_today(),
         review_due_on=payload.get("review_due_on"),
         source_type=payload.get("source_type"),
         source_id=payload.get("source_id"),

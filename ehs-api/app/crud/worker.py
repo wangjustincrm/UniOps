@@ -27,6 +27,7 @@ from app.models.training import Course
 from app.models.worker import (
     JobPosition, PositionRequirement, WorkerPosition, WorkerProfile,
 )
+from app.services.day_range import plant_today
 
 
 # ── Profiles ─────────────────────────────────────────────────────────────────
@@ -178,7 +179,7 @@ async def holders_of(
 ) -> list[tuple[WorkerPosition, str]]:
     """Current holders, with their names. Past holders are excluded here but
     kept in the table — the gap report needs to know who held what when."""
-    today = today or date.today()
+    today = today or plant_today()
     rows = list((await db.execute(
         select(WorkerPosition).where(WorkerPosition.position_id == position_id))).scalars())
     out: list[tuple[WorkerPosition, str]] = []
@@ -195,7 +196,7 @@ async def holders_of(
 async def positions_of(
     db: AsyncSession, user_id: uuid.UUID, *, today: date | None = None
 ) -> list[WorkerPosition]:
-    today = today or date.today()
+    today = today or plant_today()
     rows = list((await db.execute(
         select(WorkerPosition).where(WorkerPosition.user_id == user_id))).scalars())
     return [r for r in rows if holds_on(r, today)]
@@ -209,7 +210,7 @@ async def assign(
     if await db.get(User, user_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such person")
 
-    effective_from = effective_from or date.today()
+    effective_from = effective_from or plant_today()
     for held in await positions_of(db, user_id):
         if held.position_id == position_id:
             return held
@@ -258,6 +259,6 @@ async def unassign(
     row = await db.get(WorkerPosition, assignment_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assignment not found")
-    row.effective_to = on or date.today()
+    row.effective_to = on or plant_today()
     await db.flush()
     return row

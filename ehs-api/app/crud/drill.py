@@ -28,6 +28,7 @@ from app.models.mirrors import Location, User
 from app.models.training import Course, TrainingRecord
 from app.models.worker import WorkerProfile
 from app.services.numbering import next_number
+from app.services.day_range import plant_today
 
 # The course whose holders are first aiders. Matched on code rather than name
 # so renaming the course in Settings does not empty the roster.
@@ -234,7 +235,7 @@ async def responders(db: AsyncSession, *, today: date | None = None) -> list[dic
     — in the direction of listing somebody whose ticket expired, which is the
     worst way for this particular list to be wrong.
     """
-    today = today or date.today()
+    today = today or plant_today()
 
     course_id = (await db.execute(
         select(Course.id).where(Course.code == FIRST_AID_COURSE_CODE))).scalar()

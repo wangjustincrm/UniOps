@@ -27,3 +27,10 @@ def day_bounds(
     end = (datetime.combine(to_day + timedelta(days=1), time.min, ONTARIO)
            .astimezone(timezone.utc) if to_day else None)
     return start, end
+
+
+def plant_today() -> date:
+    """Today at the plant. The server's clock is UTC: after 8pm in Ontario
+    (EDT) `date.today()` is already tomorrow, so something due today read as
+    overdue and anything stamped "today" carried the next day's date."""
+    return datetime.now(ONTARIO).date()

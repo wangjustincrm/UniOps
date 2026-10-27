@@ -30,6 +30,7 @@ from app.models.permit import Permit, PermitGasReading, PermitSignature, PermitT
 from app.services import permit as rules
 from app.services import tasks as task_service
 from app.services.numbering import next_number
+from app.services.day_range import plant_today
 
 DOC_PERMIT = "ehs_ptw"
 
@@ -228,7 +229,7 @@ async def sign(
         person_role=payload.get("person_role"),
         external_company=payload.get("external_company"),
         signature=payload.get("signature"),
-        signed_on=date.today(),
+        signed_on=plant_today(),
     )
     db.add(row)
     await db.flush()
