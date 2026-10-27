@@ -5,7 +5,7 @@ import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, FileText, ExternalLink, CheckCircle2,
   AlertTriangle, GitMerge, Paperclip, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus,
-  Unlink,
+  Unlink, Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -363,6 +363,10 @@ export default function InvoiceDetailPage() {
   // An accepted exception leaves "exception" for "matched" — the variance is
   // still there, a person signed it off. Must not read as "within tolerance".
   const exceptionAccepted = !hasException && inv.exception_resolution === 'accepted'
+  // Billing less than the PO always passes (a line may be invoiced in parts) —
+  // tolerance never applies to it, so "within 5% tolerance" was wrong for, say,
+  // -23%. Not an exception either: nothing to review, no justification.
+  const partiallyInvoiced = !hasException && !exceptionAccepted && Number(inv.variance ?? 0) < 0
   const resolutionNoteLabel = inv.exception_resolution === 'accepted' ? 'Justification' : 'Instructions'
   // Agreement route: no PO/GR, so the PO-vs-GR-vs-Invoice 3-way table doesn't
   // apply — there is nothing to reconcile against but the agreement itself.
@@ -1265,19 +1269,30 @@ export default function InvoiceDetailPage() {
                   <div className={cn('rounded-xl border p-5 flex items-center gap-4',
                     hasException ? 'border-danger-200 bg-danger-50'
                       : exceptionAccepted ? 'border-warning-200 bg-warning-50'
+                      : partiallyInvoiced ? 'border-primary-200 bg-primary-50'
                       : 'border-success-200 bg-success-50')}>
                     {hasException || exceptionAccepted
                       ? <AlertTriangle className={cn('h-8 w-8 flex-shrink-0', hasException ? 'text-danger-600' : 'text-warning-600')} />
+                      : partiallyInvoiced
+                      ? <Info className="h-8 w-8 text-primary-600 flex-shrink-0" />
                       : <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />
                     }
                     <div>
                       <p className={cn('text-sm font-semibold',
-                        hasException ? 'text-danger-700' : exceptionAccepted ? 'text-warning-700' : 'text-success-700')}>
+                        hasException ? 'text-danger-700' : exceptionAccepted ? 'text-warning-700'
+                          : partiallyInvoiced ? 'text-primary-700' : 'text-success-700')}>
                         {hasException || exceptionAccepted
                           ? `3-Way Match: ${hasException ? 'Exception' : 'Exception accepted'} — Variance ${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% (${inv.currency} ${formatAmount(Number(inv.variance ?? 0), inv.currency)})`
+                          : partiallyInvoiced
+                          ? `3-Way Match: Partially invoiced — ${inv.currency} ${formatAmount(varianceAbs, inv.currency)} (${variancePctAbs.toFixed(1)}%) below PO`
                           : `3-Way Match: ✓ Passed — Invoice within ${matchTolerancePct}% tolerance of PO`
                         }
                       </p>
+                      {partiallyInvoiced && (
+                        <p className="text-xs text-primary-700 mt-0.5">
+                          Billing less than the PO always passes — the rest may be billed on later invoices. No review is required.
+                        </p>
+                      )}
                       {inv.matched_at && (
                         <p className="text-xs text-neutral-500 mt-0.5">
                           Matched by {inv.matched_by_name ?? inv.matched_by} on {formatDateTime(inv.matched_at)}
@@ -1344,6 +1359,8 @@ export default function InvoiceDetailPage() {
                           currency={inv.currency}
                           note={hasException || exceptionAccepted
                             ? `${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% vs PO${exceptionAccepted ? ' (accepted)' : ''}`
+                            : partiallyInvoiced
+                            ? `-${variancePctAbs.toFixed(1)}% vs PO (partial)`
                             : 'Within tolerance'}
                           ok={!hasException}
                         />
@@ -1443,7 +1460,7 @@ export default function InvoiceDetailPage() {
                       ? 'Matched for a Direct PA — no PO or agreement'
                       : isAgreementRoute
                       ? `Matched to Agreement ${inv.agreement_number ?? inv.agreement_id?.slice(0, 8) ?? ''} — ${agreementEvidenceSummary}`
-                      : `Matched to ${inv.po_number}${hasException || exceptionAccepted ? ' — Exception raised' : ' — 3-way match passed'}`,
+                      : `Matched to ${inv.po_number}${hasException || exceptionAccepted ? ' — Exception raised' : partiallyInvoiced ? ' — partially invoiced' : ' — 3-way match passed'}`,
                     color: hasException || exceptionAccepted ? 'bg-danger-600' : 'bg-success-600',
                   },
                   {
