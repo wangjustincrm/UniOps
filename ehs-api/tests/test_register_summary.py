@@ -77,3 +77,39 @@ async def test_each_figure_opens_the_incidents_behind_it(test_engine, db_session
         ids = {i["id"] for i in (await hse.get(
             "/api/v1/incidents", params={flag: "true", "limit": 200})).json()}
         assert with_both in ids and plain not in ids, flag
+
+
+async def test_corrective_actions_raised_completed_and_outstanding(test_engine, db_session, hse_manager):
+    """★ Round 10, TC-10: "a capa counter tracking all the capa created,
+    completed and outstanding" on the incident register, each opening the
+    incidents behind it."""
+    import uuid as _uuid
+    from app.models.action import Action
+
+    _, hse = hse_manager
+    before = (await hse.get("/api/v1/incidents/summary")).json()
+    _, done = await _report(test_engine, db_session, anonymous=False, kind="near_miss")
+    _, waiting = await _report(test_engine, db_session, anonymous=False, kind="near_miss")
+    owner = await make_user(test_engine, role="area_supervisor")
+    made = {}
+    for iid in (done, waiting):
+        r = await hse.post("/api/v1/actions", json={
+            "source_type": "incident", "source_id": iid, "title": "Fix it",
+            "owner_id": str(owner.id), "due_date": (date.today() + timedelta(days=7)).isoformat()})
+        assert r.status_code == 201, r.text
+        made[iid] = r.json()["id"]
+    row = await db_session.get(Action, _uuid.UUID(made[done]))
+    row.status = "closed"
+    await db_session.commit()
+
+    after = (await hse.get("/api/v1/incidents/summary")).json()
+    assert after["corrective_actions"] == before["corrective_actions"] + 2
+    assert after["actions_completed"] == before["actions_completed"] + 1
+    assert after["actions_outstanding"] == before["actions_outstanding"] + 1
+
+    def ids(state):
+        return hse.get("/api/v1/incidents", params={"actions_state": state, "limit": 200})
+    completed = {i["id"] for i in (await ids("completed")).json()}
+    outstanding = {i["id"] for i in (await ids("outstanding")).json()}
+    assert done in completed and waiting not in completed
+    assert waiting in outstanding and done not in outstanding

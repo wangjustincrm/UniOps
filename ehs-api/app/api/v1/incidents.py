@@ -215,6 +215,9 @@ async def list_incidents(
     order: str = Query(default="newest", pattern="^(newest|oldest|status)$"),
     has_root_causes: bool = Query(default=False, description="Only those with a root cause identified"),
     has_actions: bool = Query(default=False, description="Only those with a corrective action not cancelled"),
+    actions_state: str | None = Query(
+        default=None, pattern="^(completed|outstanding)$",
+        description="Round 10: only those with a corrective action completed, or one outstanding"),
 ):
     # Without ehs.incident.read the register is not browsable, but a person's
     # own reports are: the list narrows rather than refusing outright.
@@ -229,6 +232,7 @@ async def list_incidents(
         injured_only=injured_only, recordable_only=recordable_only,
         reported_by=_user_id(user) if mine_only else None, order=order,
         has_root_causes=has_root_causes, has_actions=has_actions,
+        actions_state=actions_state,
     )
     return [IncidentListItem.model_validate(r) for r in rows]
 
@@ -239,6 +243,10 @@ class RegisterSummary(BaseModel):
     closed: int
     root_causes: int
     corrective_actions: int
+    # ★ Round 10, TC-10: "a capa counter tracking all the capa created,
+    # completed and outstanding". `corrective_actions` is the created count.
+    actions_completed: int = 0
+    actions_outstanding: int = 0
 
 
 @router.get("/summary", response_model=RegisterSummary)
@@ -271,14 +279,18 @@ async def register_summary(db: SessionDep, user: CanReportIncident):
     roots = (await db.execute(
         select(func.count()).select_from(Cause)
         .where(Cause.incident_id.in_(seen), Cause.cause_type == "root"))).scalar() or 0
-    actions = (await db.execute(
-        select(func.count()).select_from(Action)
-        .where(Action.source_id.in_(seen), Action.status != "cancelled"))).scalar() or 0
+    from app.crud.action import OPEN_STATUSES
+    action_states = dict((await db.execute(
+        select(Action.status, func.count()).where(Action.source_id.in_(seen))
+        .group_by(Action.status))).all())
     return RegisterSummary(
         open=sum(n for st, n in by_status.items() if st != "closed"),
         under_investigation=by_status.get("under_investigation", 0),
         closed=by_status.get("closed", 0),
-        root_causes=roots, corrective_actions=actions)
+        root_causes=roots,
+        corrective_actions=sum(n for st, n in action_states.items() if st != "cancelled"),
+        actions_completed=action_states.get("closed", 0),
+        actions_outstanding=sum(action_states.get(st, 0) for st in OPEN_STATUSES))
 
 
 class IncidentTypeOption(BaseModel):

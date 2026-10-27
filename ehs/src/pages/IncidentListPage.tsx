@@ -28,7 +28,7 @@ const DRILL_KEYS = [
   'injury_class', 'injured_only', 'recordable_only', 'form_kind',
   'department_id', 'no_department', 'body_part_label', 'location_id',
   // Round 8, TC-08: the register's own figures open the incidents behind them.
-  'status', 'has_root_causes', 'has_actions',
+  'status', 'has_root_causes', 'has_actions', 'actions_state',
 ] as const
 
 export default function IncidentListPage() {
@@ -198,6 +198,7 @@ export default function IncidentListPage() {
 interface Summary {
   open: number; under_investigation: number; closed: number
   root_causes: number; corrective_actions: number
+  actions_completed?: number; actions_outstanding?: number
 }
 
 /**
@@ -237,15 +238,22 @@ function RegisterFigures() {
     ['Under investigation', d?.under_investigation, q(['under_investigation'])],
     ['Closed incidents', d?.closed, q(['closed'])],
     ['Root causes identified', d?.root_causes, q(SENT, '&has_root_causes=true')],
-    ['Corrective actions recorded', d?.corrective_actions, q(SENT, '&has_actions=true')],
+    // ★ Round 10, TC-10: "a capa counter tracking all the capa created,
+    // completed and outstanding" — each opens the incidents with such an action.
+    ['Corrective actions raised', d?.corrective_actions, q(SENT, '&has_actions=true')],
+    ['Corrective actions completed', d?.actions_completed, q(SENT, '&actions_state=completed')],
+    ['Corrective actions outstanding', d?.actions_outstanding, q(SENT, '&actions_state=outstanding')],
   ]
   return (
-    <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5" aria-label="Register figures">
+    <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7" aria-label="Register figures">
       {tiles.map(([label, n, filter]) => (
         <Link key={label}
               to={`/incidents?${filter}&via=${encodeURIComponent(
                 label.startsWith('Root') ? 'incidents with root causes identified'
-                  : label.startsWith('Corrective') ? 'incidents with corrective actions recorded'
+                  // The box counts actions; the list shows the incidents they
+                  // were raised on, which can be fewer — so the line says both.
+                  : label.startsWith('Corrective')
+                    ? `the incidents with the ${n ?? ''} corrective actions ${label.split(' ').pop()}`
                   : label.toLowerCase())}`}
               className="rounded-lg border border-neutral-200 bg-white px-3 py-2 hover:border-primary-300 hover:bg-primary-50">
           <p className="text-xl font-semibold tabular-nums text-primary-700 underline-offset-2 hover:underline">{n ?? '—'}</p>

@@ -205,6 +205,7 @@ async def list_(
     order: str = "newest",
     has_root_causes: bool = False,
     has_actions: bool = False,
+    actions_state: str | None = None,
 ) -> list[Incident]:
     stmt = select(Incident)
     if reported_by:
@@ -216,10 +217,15 @@ async def list_(
         from app.models.incident import Cause
         stmt = stmt.where(select(Cause.id).where(
             Cause.incident_id == Incident.id, Cause.cause_type == "root").exists())
-    if has_actions:
+    if has_actions or actions_state:
         from app.models.action import Action
+        from app.crud.action import OPEN_STATUSES
+        # ★ Round 10, TC-10: completed and outstanding as well as raised.
+        wanted = {"completed": [Action.status == "closed"],
+                  "outstanding": [Action.status.in_(OPEN_STATUSES)]}.get(
+                      actions_state or "", [Action.status != "cancelled"])
         stmt = stmt.where(select(Action.id).where(
-            Action.source_id == Incident.id, Action.status != "cancelled").exists())
+            Action.source_id == Incident.id, *wanted).exists())
     # ★ These four exist so a figure on the dashboard can be opened and show
     # the records it was counted from. A drill-down that lands on a list
     # filtered by something *near* the figure is worse than none: the reader

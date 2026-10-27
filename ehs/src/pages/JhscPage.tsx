@@ -49,6 +49,8 @@ export interface Recommendation {
   action_id: string | null; created_at: string
   /** Round 9: when the written reply is due (21 days). */
   reply_due_at?: string | null
+  /** Round 10: the state of the corrective action that answered it. */
+  action_status?: string | null
 }
 
 const TABS = [
@@ -450,13 +452,9 @@ function RecommendationsTab({ mayManage, highlight }: {
   // the recommendations behind it.
   const [show, setShow] = useState<RecFilter>('all')
   const rows = all.data ?? []
-  const counts: Record<RecFilter, number> = {
-    all: rows.length,
-    on_time: rows.filter((r) => recState(r) === 'on_time').length,
-    late: rows.filter((r) => recState(r) === 'late').length,
-    open: rows.filter((r) => recState(r) === 'open').length,
-  }
-  const shown = show === 'all' ? rows : rows.filter((r) => recState(r) === show)
+  const counts = Object.fromEntries(REC_FILTERS.map(([k]) => [
+    k, k === 'all' ? rows.length : rows.filter((r) => matches(r, k)).length])) as Record<RecFilter, number>
+  const shown = show === 'all' ? rows : rows.filter((r) => matches(r, show))
 
   if (all.data?.length === 0) {
     return (
@@ -469,7 +467,7 @@ function RecommendationsTab({ mayManage, highlight }: {
 
   return (
     <>
-    <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Recommendation figures">
+    <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7" aria-label="Recommendation figures">
       {REC_FILTERS.map(([key, label]) => (
         <button key={key} type="button" aria-pressed={show === key}
                 onClick={() => setShow(show === key && key !== 'all' ? 'all' : key)}
@@ -529,13 +527,29 @@ function RecommendationsTab({ mayManage, highlight }: {
   )
 }
 
-type RecFilter = 'all' | 'on_time' | 'late' | 'open'
+type RecFilter = 'all' | 'on_time' | 'late' | 'open' | 'capa' | 'capa_done' | 'capa_open'
 const REC_FILTERS: [RecFilter, string][] = [
   ['all', 'Recommendations'],
   ['on_time', 'Closed on time'],
   ['late', 'Closed late'],
   ['open', 'Open'],
+  // ★ Round 10, TC-10: "on jhsc add it to the recommendations tab on the top
+  // inline with the metrics" — the corrective actions raised in answer.
+  ['capa', 'Corrective actions raised'],
+  ['capa_done', 'Corrective actions completed'],
+  ['capa_open', 'Corrective actions outstanding'],
 ]
+const ACTION_OPEN = ['open', 'in_progress', 'pending_verification']
+
+function matches(r: Recommendation, f: RecFilter): boolean {
+  switch (f) {
+    case 'capa': return Boolean(r.action_status) && r.action_status !== 'cancelled'
+    case 'capa_done': return r.action_status === 'closed'
+    case 'capa_open': return ACTION_OPEN.includes(r.action_status ?? '')
+    case 'all': return true
+    default: return recState(r) === f
+  }
+}
 
 function recState(r: Recommendation): 'on_time' | 'late' | 'open' {
   if (!r.responded_at) return 'open'

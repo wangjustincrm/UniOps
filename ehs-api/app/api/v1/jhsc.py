@@ -305,6 +305,9 @@ class RecommendationOut(BaseModel):
     # Round 9: when the reply is due, so the list can say which were answered
     # on time and which late.
     reply_due_at: datetime | None = None
+    # Round 10, TC-10: the state of the corrective action that answered it,
+    # for the CAPA figures on the recommendations tab.
+    action_status: str | None = None
 
 
 @router.get("/recommendations", response_model=list[RecommendationOut])
@@ -320,10 +323,15 @@ async def list_recommendations(
         StatutoryDeadline.source_id, StatutoryDeadline.due_at).where(
         StatutoryDeadline.kind == "jhsc_reply_21d",
         StatutoryDeadline.source_id.in_([r.id for r in rows])))).all()) if rows else {}
+    from app.models.action import Action
+    action_ids = [r.action_id for r in rows if r.action_id]
+    states = dict((await db.execute(select(Action.id, Action.status).where(
+        Action.id.in_(action_ids)))).all()) if action_ids else {}
     out = []
     for r in rows:
         item = RecommendationOut.model_validate(r)
         item.reply_due_at = due.get(r.id)
+        item.action_status = states.get(r.action_id) if r.action_id else None
         out.append(item)
     return out
 

@@ -183,3 +183,23 @@ async def test_the_list_says_when_each_reply_is_due(hse_manager, asked):
     listed = (await hse.get("/api/v1/jhsc/recommendations")).json()
     [mine] = [r for r in listed if r["id"] == rec["id"]]
     assert mine["reply_due_at"]
+
+
+async def test_the_list_carries_the_state_of_each_corrective_action(hse_manager, asked, db_session):
+    """★ Round 10, TC-10: CAPA figures on the recommendations tab — raised,
+    completed, outstanding — counted from what the list carries."""
+    import uuid as _uuid
+    from app.models.action import Action
+
+    _, hse = hse_manager
+    person, client = asked
+    _, rec = await _sent(hse, [person])
+    answered = (await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/answer",
+                                  json=_answer(person))).json()
+    listed = {r["id"]: r for r in (await hse.get("/api/v1/jhsc/recommendations")).json()}
+    assert listed[rec["id"]]["action_status"] == "open"
+    row = await db_session.get(Action, _uuid.UUID(answered["action"]["id"]))
+    row.status = "closed"
+    await db_session.commit()
+    listed = {r["id"]: r for r in (await hse.get("/api/v1/jhsc/recommendations")).json()}
+    assert listed[rec["id"]]["action_status"] == "closed"
