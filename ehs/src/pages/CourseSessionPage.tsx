@@ -36,6 +36,7 @@ interface Session {
   enrolled: number; passed: number
   quiz_id: string | null; quiz_title: string | null; quiz_qr_token: string | null
   length_minutes: number | null
+  reopened_at: string | null; reopened_by_name: string | null; reopen_reason: string | null
   /** The end was taken from the first quiz pass, not typed by anybody. */
   end_time_from_quiz: boolean
 }
@@ -582,9 +583,13 @@ function RosterPanel({
         </p>
       )}
       {!open && session.status === 'completed' && (
-        <p className="mt-2 text-right text-xs text-neutral-500">
-          Closed and certificates issued — read only. Correct a result on the person&rsquo;s
-          training record.
+        <ReopenBox session={session} onDone={onChanged} />
+      )}
+      {open && session.reopen_reason && (
+        <p className="mt-2 text-right text-xs text-warning-700">
+          Reopened {session.reopened_at && formatDateTime(session.reopened_at)}
+          {session.reopened_by_name && ` by ${session.reopened_by_name}`}: {session.reopen_reason}.
+          Closing it again withdraws the certificate of anyone no longer marked Passed.
         </p>
       )}
       {open && (
@@ -594,5 +599,54 @@ function RosterPanel({
         </p>
       )}
     </>
+  )
+}
+
+/**
+ * ★ Review (uniops-8b): a closed session is read only, and the way to correct
+ * one used to point at the training record, where nothing can be changed. HSE
+ * reopens it saying why; closing it again issues what is now owed and
+ * withdraws what this session issued to anyone no longer marked Passed.
+ */
+function ReopenBox({ session, onDone }: { session: Session; onDone: () => void }) {
+  const { can } = usePermissions()
+  const [asking, setAsking] = useState(false)
+  const [reason, setReason] = useState('')
+  const reopen = useMutation({
+    mutationFn: () => api.post(`/api/v1/course-sessions/${session.id}/reopen`, { reason: reason.trim() }),
+    onSuccess: () => { setAsking(false); setReason(''); onDone() },
+  })
+  const mayReopen = can('ehs.training.write')
+  return (
+    <div className="mt-2 flex flex-col items-end gap-2 text-xs text-neutral-500">
+      <p className="text-right">
+        Closed and certificates issued — read only.
+        {mayReopen ? ' To correct a result, reopen it.' : ' HSE can reopen it to correct a result.'}
+      </p>
+      {mayReopen && !asking && (
+        <button type="button" className={secondaryButton} onClick={() => setAsking(true)}>
+          Reopen to correct
+        </button>
+      )}
+      {mayReopen && asking && (
+        <div className="w-full max-w-md rounded-lg border border-neutral-200 bg-neutral-50 p-2.5 text-left">
+          <label className="block font-medium text-neutral-700">
+            Why is it being reopened?
+            <textarea rows={2} className={`${inputClass} mt-1 py-2`} value={reason}
+                      onChange={(e) => setReason(e.target.value)} />
+          </label>
+          <ErrorNote error={reopen.error} />
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" className={secondaryButton} disabled={reopen.isPending}
+                    onClick={() => setAsking(false)}>Cancel</button>
+            <button type="button" className={primaryButton}
+                    disabled={reason.trim().length < 5 || reopen.isPending}
+                    onClick={() => { if (!reopen.isPending) reopen.mutate() }}>
+              {reopen.isPending ? 'Reopening…' : 'Reopen the session'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

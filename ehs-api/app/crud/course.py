@@ -357,7 +357,26 @@ def assert_not_closed(delivery: CourseDelivery) -> None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"{delivery.delivery_no} has been closed and its certificates issued, so it "
-            "is read only. Correct a result on the person's training record instead.")
+            "is read only. To correct a result, HSE reopens the session saying why, "
+            "and closes it again.")
+
+
+async def reopen(db: AsyncSession, delivery: CourseDelivery, *, reason: str,
+                 user_id: uuid.UUID) -> CourseDelivery:
+    """★ Review (uniops-8b): the way to correct a closed session.
+
+    The refusal above used to send HSE to the training record, where nothing
+    can be changed. Reopened, the session takes marks again; closing it again
+    issues what is now owed and withdraws what is not (see complete())."""
+    if delivery.status != "completed":
+        raise HTTPException(status.HTTP_409_CONFLICT, f"{delivery.delivery_no} is not closed")
+    delivery.status = "scheduled"
+    delivery.completed_at = None
+    delivery.reopened_at = datetime.now(timezone.utc)
+    delivery.reopened_by_name = await _name(db, user_id)
+    delivery.reopen_reason = reason.strip()
+    await db.flush()
+    return delivery
 
 
 async def complete(db: AsyncSession, delivery: CourseDelivery, *,
@@ -388,6 +407,27 @@ async def complete(db: AsyncSession, delivery: CourseDelivery, *,
             "message": f"{', '.join(waiting)} passed the quiz and "
                        f"{'is' if len(waiting) == 1 else 'are'} not marked yet. "
                        "Mark them, or close anyway to record them as not attended."})
+    # ★ Review (uniops-8b): after a reopening, somebody marked passed by
+    # mistake — whose record and certificate this session issued — may now be
+    # failed or absent. The record is this session's own, so it goes: their
+    # certificate is rendered from it, and the expiry figures and notices read
+    # it. Its files are evidence, so one that has any is refused rather than
+    # taken with it.
+    from app.models.course import CourseMaterial
+    for enrolment in rows:
+        if enrolment.result == "passed" or enrolment.training_record_id is None:
+            continue
+        record = await db.get(TrainingRecord, enrolment.training_record_id)
+        if record is not None and record.delivery_id == delivery.id:
+            if (await db.execute(select(CourseMaterial.id).where(
+                    CourseMaterial.record_id == record.id).limit(1))).first():
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    f"{enrolment.user_name} is no longer marked passed, and the training "
+                    "record this session issued them has files on it. Move or remove "
+                    "those files first.")
+            await db.delete(record)
+        enrolment.training_record_id = None
     for enrolment in rows:
         if enrolment.result == "enrolled":
             enrolment.result = "absent"

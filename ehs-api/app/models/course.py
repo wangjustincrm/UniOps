@@ -79,6 +79,10 @@ class CourseDelivery(UUIDPrimaryKey, TimestampMixin, Base):
     # many times a day — sends it once rather than on every tick of that day.
     reminded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The last time HSE reopened it after closing, and why (review of round 10).
+    reopened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reopened_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reopen_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

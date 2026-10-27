@@ -8,6 +8,8 @@ import uuid
 from datetime import date, timedelta
 
 import pytest
+
+from tests.conftest import authed_client, make_token
 import sqlalchemy
 
 from app.models.training import Course
@@ -590,6 +592,54 @@ class TestWhoeverIsRunningItCanRunIt:
                              else getattr(client, method)(url))
                 assert got.status_code == 409, (method, url, got.status_code, got.text)
                 assert "read only" in got.text
+
+    async def test_hse_reopens_it_and_a_mistaken_pass_is_withdrawn(
+            self, worker, hse_manager, session_run_by_a_worker, test_engine, db_session):
+        """★ Review (uniops-8b): marked passed by mistake and closed, the
+        certificate was out and nothing could take it back. HSE reopens the
+        session saying why; closed again, the record it issued is gone."""
+        from tests.conftest import make_user
+        _, wc = worker
+        _, hse = hse_manager
+        sid = session_run_by_a_worker["id"]
+        wrong = await make_user(test_engine, role="requester")
+        right = await make_user(test_engine, role="requester")
+        roster = (await wc.post(f"/api/v1/course-sessions/{sid}/roster",
+                                json={"user_ids": [str(wrong.id), str(right.id)]})).json()
+        ids = {e["user_id"]: e["id"] for e in roster}
+        assert (await wc.post(f"/api/v1/course-sessions/{sid}/results", json={
+            "results": [{"enrolment_id": ids[str(wrong.id)], "result": "passed"},
+                        {"enrolment_id": ids[str(right.id)], "result": "passed"}],
+            "complete": True})).status_code == 200
+
+        async def records_of(person):
+            async with authed_client(make_token(person.id, person.role), db_session) as c:
+                return (await c.get("/api/v1/training/records/mine")).json()
+        assert len(await records_of(wrong)) == 1
+
+        # Only HSE reopens, and only saying why.
+        assert (await wc.post(f"/api/v1/course-sessions/{sid}/reopen",
+                              json={"reason": "Marked the wrong person"})).status_code == 403
+        assert (await hse.post(f"/api/v1/course-sessions/{sid}/reopen",
+                               json={"reason": ""})).status_code == 422
+        got = await hse.post(f"/api/v1/course-sessions/{sid}/reopen",
+                             json={"reason": "Marked the wrong person passed"})
+        assert got.status_code == 200, got.text
+        assert got.json()["status"] == "scheduled"
+        assert got.json()["reopen_reason"] == "Marked the wrong person passed"
+
+        # The coordinator corrects it and closes it again.
+        assert (await wc.post(f"/api/v1/course-sessions/{sid}/results", json={
+            "results": [{"enrolment_id": ids[str(wrong.id)], "result": "absent"}],
+            "complete": True})).status_code == 200
+        assert await records_of(wrong) == []
+        # The one rightly passed keeps theirs, once.
+        assert len(await records_of(right)) == 1
+        # And reopening something not closed is refused.
+        assert (await hse.post(f"/api/v1/course-sessions/{sid}/reopen",
+                               json={"reason": "again please"})).status_code == 200
+        assert (await hse.post(f"/api/v1/course-sessions/{sid}/reopen",
+                               json={"reason": "again please"})).status_code == 409
 
     async def test_the_coordinator_opens_and_marks_their_own_session(
             self, worker, hse_manager, session_run_by_a_worker, test_engine):

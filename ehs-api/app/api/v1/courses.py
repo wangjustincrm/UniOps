@@ -84,6 +84,9 @@ class DeliveryOut(BaseModel):
     material_filename: str | None
     status: str
     notes: str | None
+    reopened_at: datetime | None = None
+    reopened_by_name: str | None = None
+    reopen_reason: str | None = None
     enrolled: int = 0
     passed: int = 0
     # The quiz this session is tested on, when its course has one. Round 6:
@@ -420,6 +423,21 @@ async def complete_session(
     # coordinator's job.
     await _require_roster_rights(db, user, delivery)
     delivery = await crud.complete(db, delivery, absent_ok=close_anyway)
+    return (await _with_counts(db, [delivery]))[0]
+
+
+class ReopenIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.post("/{delivery_id}/reopen", response_model=DeliveryOut)
+async def reopen_session(
+    delivery_id: uuid.UUID, payload: ReopenIn, db: SessionDep, user: CanWriteTraining,
+):
+    """HSE reopens a closed session to correct it, saying why (review of round
+    10). The coordinator may then mark and close it again as before."""
+    delivery = await crud.reopen(db, await crud.get_delivery(db, delivery_id),
+                                 reason=payload.reason, user_id=_user_id(user))
     return (await _with_counts(db, [delivery]))[0]
 
 
