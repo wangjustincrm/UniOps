@@ -182,3 +182,42 @@ async def test_the_register_and_the_minutes_carry_the_logo_too(hse_manager, db_s
     await db_session.flush()
     for url in urls:
         assert _images((await client.get(url)).content) >= 1, url
+
+
+def _truncated_png() -> str:
+    """A real PNG whose header (and so its size) is intact and whose image
+    data is cut off — what a broken upload looks like."""
+    import base64
+    import io
+    from PIL import Image as PILImage
+    buf = io.BytesIO()
+    PILImage.effect_noise((64, 64), 80).convert("RGB").save(buf, format="PNG")
+    raw = buf.getvalue()
+    return "data:image/png;base64," + base64.b64encode(raw[: len(raw) // 2]).decode()
+
+
+async def test_a_truncated_logo_is_left_off_every_printout(hse_manager, worker, course, db_session):
+    """★ Review (uniops-8b): only the header was read, so a truncated image
+    passed and failed when drawn — a 500 on all three printouts."""
+    from datetime import date as _date
+    from app.models.mirrors import CompanyConfig
+    from app.services import certificate_pdf
+
+    pdf = certificate_pdf.render(
+        person_name="A", course_name="B", course_code=None, completed_on=date(2026, 1, 1),
+        expires_on=None, record_no="X", verify_url=None, logo_data_url=_truncated_png())
+    assert pdf.startswith(b"%PDF-") and _images(pdf) == 0
+
+    _, client = hse_manager
+    learner, _ = worker
+    record = await _record(client, course, learner.id)
+    meeting = (await client.post("/api/v1/jhsc/meetings", json={
+        "held_on": _date.today().isoformat(), "title": "Monthly"})).json()
+    db_session.add(CompanyConfig(id=uuid.uuid4(), name="Canada Royal Milk",
+                                 logo_data_url=_truncated_png()))
+    await db_session.flush()
+    for url in (f"/api/v1/training/records/{record['id']}/certificate/issued",
+                "/api/v1/training/records/print", f"/api/v1/jhsc/meetings/{meeting['id']}/print"):
+        got = await client.get(url)
+        assert got.status_code == 200, (url, got.text[:200])
+        assert _images(got.content) == 0, url

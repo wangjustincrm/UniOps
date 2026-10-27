@@ -27,9 +27,18 @@ def logo_reader(data_url: str | None) -> ImageReader | None:
     if not data_url or not data_url.startswith("data:image/") or "," not in data_url:
         return None
     try:
-        reader = ImageReader(io.BytesIO(base64.b64decode(data_url.split(",", 1)[1])))
+        raw = base64.b64decode(data_url.split(",", 1)[1])
+        reader = ImageReader(io.BytesIO(raw))
         reader.getSize()
-        return reader
+        # ★ Review (uniops-8b): the size is in the header, so a truncated
+        # upload passed the check above and failed only when drawn — a 500 on
+        # the certificate, the register and the minutes. Drawn once here, on a
+        # canvas that is thrown away, so what passes is what can be printed.
+        from reportlab.pdfgen.canvas import Canvas
+        trial = Canvas(io.BytesIO())
+        trial.drawImage(reader, 0, 0, width=10, height=10, mask="auto")
+        trial.save()
+        return ImageReader(io.BytesIO(raw))
     except Exception:  # noqa: BLE001 — any undecodable image means "no logo"
         return None
 
