@@ -1,12 +1,16 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.10
+**Version**: 0.11
 **Date**: 2026-10-27
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.9 → 0.10)**
+**What changed in this version (0.10 → 0.11)**
+- §1.6 "Review of round 10": the faults a code review of the branch found, fixed — a change of incident kind and back now restarts the legal clocks it had closed, and keeps the injury class; the investigation no longer saves an empty Section B; the medical section no longer names an anonymous reporter; HSE can reopen a closed course session to correct it; a month without the day now expires on its last day; employees can open the files on their own training records.
+- §1.6: two questions for HSE from the review (how "everyone must take" courses are now held, and who may see the injury details on the people named on an incident).
+
+**What changed in version 0.10 (0.9 → 0.10)**
 - §1.6 "Round 10": the email-sending fault behind round 10's TC-04, the five other failures, the form register search and the company logo on printouts, built.
 - §10: SF-15 lists the rest of round 10's requests.
 
@@ -153,7 +157,7 @@ Round 9 (results and answers of 2026-10-20/22; built)
 - Printed chemical labels show the hazard and precautionary statements without their codes (H302, P210); a statement with no wording keeps its code. The record and the label editor keep the codes.
 - The incident timeline lists each change of the kind of incident (from what to what) and each reopening, with who and when. Reopening requires a reason, which is on the timeline and in the reopened email. Reopenings from before this show "No reason recorded".
 - Training taken elsewhere records its provider; it is shown on the record and is a column of the printed register and the spreadsheet.
-- A training record's expiry is the course's validity period, in calendar months, less a day — for records entered by hand and for records written by a completed session. The form fills it in when the course or the completion date changes and leaves a typed date alone otherwise; a course that does not expire leaves it empty.
+- A training record's expiry is the course's validity period, in calendar months, less a day — for records entered by hand and for records written by a completed session. Where the month has no such day (31 January plus one month; 29 February plus a year), the expiry is that month's last day, as round 8 put it: "29 February plus three years falls on 1 March; less a day is 28 February". The form fills it in when the course or the completion date changes and leaves a typed date alone otherwise; a course that does not expire leaves it empty. The rule applies to records written from now on; expiry dates already recorded are not recalculated (the test server holds records from the earlier thirty-day rule; there are none in production).
 - A training record holds any number of files (any document, picture, video or sound file, or a link; pages and programs are refused), chosen on the form or added later. If some fail to upload, only those are retried.
 - The in-house training certificate carries the company logo from Admin → Company Settings, centred at the top.
 - A JHSC recommendation has its own page, which the reply task and the emails open. Whoever it was sent to may open and answer it without the committee's permissions; the answer is the corrective action form (what will be done, detail, owner, due date, priority, type of control). Submitting it raises the action, records the reply (stopping the 21 days) and removes the reply task from everybody's My Actions. HSE can correct the reply afterwards. Settings → Who is told → JHSC names who is emailed when one is answered, and whoever sent it (on by default); the email is listed on the recommendation.
@@ -164,7 +168,7 @@ Round 9 (results and answers of 2026-10-20/22; built)
 
 Round 10 (results of 2026-10-27; first batch built)
 - Email is sent only after the record it is about has been saved. It used to be handed to the sender before then, and the sender, reading from a connection of its own, found nothing: every email the scheduled check produced (expiry notices, toolbox talk reminders) was filed and never sent, and some made by people's actions went the same way. Emails filed before this are not resent.
-- A closed course session is read only for everybody, HSE included; a result is corrected on the person's training record.
+- A closed course session is read only for everybody, HSE included. To correct a result, HSE reopens it (below).
 - The printed minutes list who attended under Present and who did not under Absent, three names to a row, without roles; regrets are under Absent, marked so.
 - Every HSE review and every close is a row on the incident timeline, so a review and a close after a reopening appear as well as the first ones.
 - The incident register and the JHSC recommendations tab count corrective actions raised, completed and outstanding; each figure opens what is behind it. A figure counts actions while the incident list shows incidents, and says both.
@@ -172,6 +176,16 @@ Round 10 (results of 2026-10-27; first batch built)
 - The form register searches by form name, number, area and who filed it, on the server, beyond the latest two hundred.
 - The company logo is on the printed training register, the JHSC minutes, and incidents and permits printed from the browser (each has a Print button; a permit prints on its own). Printing no longer drops page headings, and buttons, tabs and filters stay off the paper.
 - HSE's answers on the dashboard (thresholds and chart styles set by HSE in Settings; supervisors from the reporting lines in Admin; the body diagram; the cost formula, still to be confirmed) and the other round 10 requests are in SF-15.
+
+Review of round 10 (code review of the branch, 2026-10-27; fixed)
+- Changing the kind of incident and changing it back restarts what the first change closed: a legal clock it closed as "no longer applies" is reopened, from when it first started, and again holds the review and the close. A clock HSE closed by hand as not required stays closed.
+- Changing the kind of incident keeps how badly the person was hurt, unless the new kind is itself the severity (First Aid, Medical Aid, Lost Time, Report Only). The dialog shows it and it can be changed there; a change to it alone is on the timeline and notified like a change of kind. Report Only records no injury.
+- The investigation form appears only once everything it is filled from has loaded, Section B included; if Section B fails to load the page stops, as for the investigation itself. Someone without the medical permission sees the form without Section B.
+- On an anonymous report, who recorded the medical section is withheld from everyone but HSE, as for the reporter's photos and risk assessments.
+- HSE can reopen a closed course session, saying why; the reason, who and when are shown on it. When it closes again, the training record (and so the certificate) it issued to anyone no longer marked passed is withdrawn; one that has files attached is refused until they are moved.
+- An employee can list and open the files on their own training records from My Training — the certificate HSE filed for training taken elsewhere is one of them.
+- The JHSC recommendation figures show a dash while loading and a note if the list fails to load, rather than zeros.
+- Questions for HSE: (1) Since round 8 removed "everyone must take it", the four courses every worker needs (WHMIS, LOTO, Worker/Supervisor Awareness, Working at Heights) count as owed only where each position lists them; a position that misses one shows nobody in it as overdue, and nothing warns of it. Should the compliance screen list positions missing any of the four? (2) The injury details on the people named on an incident (body part, nature of injury) are visible to everyone who can open the incident; only Section B is limited to HSE and first aiders. Is that the intended line?
 
 ---
 
@@ -350,12 +364,13 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.8 | 2026-10-20 | Round 8's clear open-box requests built (§1.6); SF-15 narrowed. |
 | 0.9 | 2026-10-23 | UAT round 9 fixes and requests built (§1.6); SF-15 now the dashboard redesign. |
 | 0.10 | 2026-10-27 | UAT round 10 first batch built (§1.6); SF-15 extended. |
+| 0.11 | 2026-10-27 | Code review fixes (§1.6, "Review of round 10"); two questions for HSE. |
 
 ---
 
 ## 9. Implementation Status
 
-**Branch `feature/ehs-safety`**, local HEAD as of this version (2026-10-27), last checked against `d070879d`. `origin/main` was merged into the branch locally on 2026-10-08 (`6cb8c00b`, plus migration merge `8e033cec`). About 180 commits are ahead of `origin/main`. **None of this is on main or deployed.** The remote `origin/feature/ehs-safety` is stale: it stops at `6a0acc16` (2026-08-30, 21 commits, early Phase 1 only). Ten rounds of HSE UAT have been run on dev; round 10 (2026-10-27) recorded 6 pass / 6 fail, and every defect it reported has since been fixed on the branch, with the decisions in §1.6. Code: `ehs-api` (about 33 routers, 78 migrations) and the `ehs` front end (about 43 pages). The branch also carries identity, mdm, epms, file-api and portal changes that must ship with it.
+**Branch `feature/ehs-safety`**, local HEAD as of this version (2026-10-27), last checked against `180ddea6`. `origin/main` was merged into the branch locally on 2026-10-08 (`6cb8c00b`, plus migration merge `8e033cec`). About 180 commits are ahead of `origin/main`. **None of this is on main or deployed.** The remote `origin/feature/ehs-safety` is stale: it stops at `6a0acc16` (2026-08-30, 21 commits, early Phase 1 only). Ten rounds of HSE UAT have been run on dev; round 10 (2026-10-27) recorded 6 pass / 6 fail, and every defect it reported has since been fixed on the branch, with the decisions in §1.6. Code: `ehs-api` (about 33 routers, 79 migrations) and the `ehs` front end (about 43 pages). The branch also carries identity, mdm, epms, file-api and portal changes that must ship with it.
 
 | Status | Requirements |
 |---|---|
