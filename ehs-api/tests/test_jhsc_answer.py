@@ -261,3 +261,26 @@ async def test_a_recommendation_has_a_state_from_hses_list(hse_manager, asked, w
 
     listed = {r["id"]: r for r in (await hse.get("/api/v1/jhsc/recommendations")).json()}
     assert listed[rec["id"]]["status_label"] == "Work in progress"
+
+
+async def test_answering_locks_the_recommendation_first(hse_manager, asked, test_engine):
+    """★ Review (uniops-8b): two recipients answering together both passed the
+    "already answered" check. The row is locked before it, so the second waits
+    for the first and is refused. (Two real transactions cannot be run inside
+    the test's one; this checks the lock is taken.)"""
+    from sqlalchemy import event
+    _, hse = hse_manager
+    person, client = asked
+    _, rec = await _sent(hse, [person])
+    seen: list[str] = []
+
+    def grab(conn, cursor, statement, params, context, executemany):
+        seen.append(statement)
+    event.listen(test_engine.sync_engine, "before_cursor_execute", grab)
+    try:
+        got = await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/answer",
+                                json=_answer(person))
+    finally:
+        event.remove(test_engine.sync_engine, "before_cursor_execute", grab)
+    assert got.status_code == 200, got.text
+    assert any("ehs_jhsc_recommendations" in s and "FOR UPDATE" in s for s in seen)

@@ -255,8 +255,12 @@ async def list_recommendations(
         stmt.order_by(JhscRecommendation.created_at, JhscRecommendation.seq))).scalars())
 
 
-async def get_recommendation(db: AsyncSession, rec_id: uuid.UUID) -> JhscRecommendation:
-    rec = await db.get(JhscRecommendation, rec_id)
+async def get_recommendation(db: AsyncSession, rec_id: uuid.UUID, *,
+                             for_update: bool = False) -> JhscRecommendation:
+    # for_update: held until the request commits, so two people answering at
+    # once are taken one after the other and the second sees the first.
+    rec = await db.get(JhscRecommendation, rec_id, with_for_update=for_update,
+                       populate_existing=for_update)
     if rec is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Recommendation not found")
     return rec

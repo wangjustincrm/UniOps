@@ -706,6 +706,10 @@ async def answer_recommendation(
     if not (_was_sent_to(rec, uid) or await _can(db, user, "ehs.jhsc.manage")):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             "Only the people it was sent to, or HSE, can answer it")
+    # ★ Review (uniops-8b): two recipients submitting together both passed
+    # the check below — two corrective actions, the deadline met twice, two
+    # emails. Locked first, so the second waits for the first and is refused.
+    rec = await crud.get_recommendation(db, rec_id, for_update=True)
     if rec.responded_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             "This recommendation has already been answered")
