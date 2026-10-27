@@ -445,6 +445,7 @@ async def reclassify(db: AsyncSession, incident: Incident, code: str,
     already met is left as it is. Every field change is in the change log.
     """
     from app.services import deadlines as deadline_service
+    from app.services import statutory
     from app.models.statutory import StatutoryDeadline
 
     assert_open(incident, "the kind of incident")
@@ -491,7 +492,18 @@ async def reclassify(db: AsyncSession, incident: Incident, code: str,
     withdraw_review(incident)
     await db.flush()
 
-    await deadline_service.ensure_incident_deadlines(db, incident)
+    created = await deadline_service.ensure_incident_deadlines(db, incident)
+    # ★ Review (uniops-8b): WSIB's three business days run from when the
+    # employer learned of what makes it reportable. A first aid injury found
+    # two weeks later to have cost time started its new clock from the
+    # occurrence (or the first classification) — overdue the moment it
+    # existed. As `classify` says, it starts when the class is changed to one
+    # that owes it. The Ministry's clock runs from the occurrence regardless.
+    now = datetime.now(timezone.utc)
+    for d in created:
+        if d.kind == "wsib_form7" and d.starts_at < now:
+            d.starts_at = now
+            d.due_at = statutory.compute_due(d.kind, now, await deadline_service.load_holidays(db))
     owed = {kind for kind, _ in deadline_service.clocks_for_incident(incident)}
     was = old.label.split(" — ")[0] if old else "unrecorded"
     now_label = new.label.split(" — ")[0]

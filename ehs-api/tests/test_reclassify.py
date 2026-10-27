@@ -211,3 +211,24 @@ async def test_a_change_of_class_alone_is_on_the_timeline(test_engine, db_sessio
     again = (await hse.post(f"/api/v1/incidents/{iid}/reclassify", json={
         "incident_type": "occupational_illness", "injury_class": "lost_time"})).json()
     assert len([e for e in again["events"] if e["kind"] == "kind_changed"]) == 1
+
+
+async def test_a_new_wsib_clock_starts_when_the_class_changes(test_engine, db_session, hse_manager):
+    """★ Review (uniops-8b): two weeks on, first aid becomes lost time. The new
+    WSIB clock ran from the occurrence and was overdue the moment it existed."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    from sqlalchemy import update
+    from app.models.incident import Incident
+    _, hse = hse_manager
+    _, iid = await _reported(test_engine, db_session, "first_aid")
+    weeks_ago = _dt.now(_tz.utc) - _td(days=14)
+    await db_session.execute(update(Incident).where(Incident.id == iid).values(
+        occurred_at=weeks_ago, employer_aware_at=weeks_ago))
+    await db_session.flush()
+    before = _dt.now(_tz.utc)
+    body = (await hse.post(f"/api/v1/incidents/{iid}/reclassify",
+                           json={"incident_type": "lost_time"})).json()
+    [wsib] = [d for d in body["deadlines"] if d["kind"] == "wsib_form7"]
+    assert _dt.fromisoformat(wsib["starts_at"]) >= before - _td(seconds=5)
+    assert _dt.fromisoformat(wsib["due_at"]) > _dt.now(_tz.utc), "overdue on creation"
+    # The Ministry's clock is not this one's business: it runs from the occurrence.
