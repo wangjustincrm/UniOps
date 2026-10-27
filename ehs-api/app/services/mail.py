@@ -36,8 +36,9 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import make_msgid
 
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.core import background
 from app.core.config import settings
@@ -183,10 +184,35 @@ async def queue(
     db.add(record)
     await db.flush()
 
-    # Tracked rather than a bare create_task: a discarded task takes its
-    # database session down with it, still holding a transaction.
-    background.spawn(deliver(record.id), name=f"ehs-mail-{record.id}")
+    # ★ Round 10, TC-04: sent only once the caller's transaction commits.
+    #
+    # It was spawned here, straight after the flush. `deliver` reads the row in
+    # a session of its own, which cannot see a row not yet committed — so it
+    # found nothing and returned without a word. A web request commits within
+    # milliseconds and usually won that race; the scheduler commits once, at
+    # the end of a whole tick, and lost it every time. Every expiry notice and
+    # every toolbox chase since they were built was filed and never sent, and
+    # a few request emails (a close, a recommendation) went the same way.
+    # Held on the session and handed over by `_after_commit`; dropped on a
+    # rollback, because the row they would have read no longer exists.
+    db.sync_session.info.setdefault(_PENDING, []).append(record.id)
     return record
+
+
+_PENDING = "ehs_mail_pending"
+
+
+@event.listens_for(Session, "after_commit")
+def _after_commit(session: Session) -> None:
+    for communication_id in session.info.pop(_PENDING, []):
+        # Tracked rather than a bare create_task: a discarded task takes its
+        # database session down with it, still holding a transaction.
+        background.spawn(deliver(communication_id), name=f"ehs-mail-{communication_id}")
+
+
+@event.listens_for(Session, "after_rollback")
+def _after_rollback(session: Session) -> None:
+    session.info.pop(_PENDING, None)
 
 
 async def deliver(communication_id: uuid.UUID) -> bool:
