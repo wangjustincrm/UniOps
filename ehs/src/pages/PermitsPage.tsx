@@ -291,9 +291,14 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
       <div className="mb-2 flex justify-end" data-print="hide">
         <button type="button" className="text-xs font-semibold text-primary-700 hover:underline"
                 onClick={() => {
+                  // ★ Review (uniops-8b): cleared on `afterprint`, not straight
+                  // after print() — where printing does not block (Safari on a
+                  // phone, some Chromium builds) the flag was gone before the
+                  // page was laid out, and the whole list was printed.
                   document.body.dataset.printing = 'one'
+                  window.addEventListener('afterprint',
+                    () => { delete document.body.dataset.printing }, { once: true })
                   window.print()
-                  delete document.body.dataset.printing
                 }}>
           Print this permit
         </button>
