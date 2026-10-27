@@ -17,7 +17,7 @@ from sqlalchemy import select
 from uniops_authz import has_permission
 from app.models.config import EhsConfig
 from app.models.mirrors import CompanyConfig
-from app.services import certificate_pdf, materials, training_pdf, training_xlsx
+from app.services import branding, certificate_pdf, materials, training_pdf, training_xlsx
 from app.services.http_headers import content_disposition
 
 from app.crud.incident import _resolve_name
@@ -399,7 +399,8 @@ async def print_records(
                "expires_on": (r["expires_on"].isoformat() if r["expires_on"]
                               else "Does not expire")}
               for r in rows],
-        filters=described, printed_by=by)
+        filters=described, printed_by=by,
+        logo_data_url=await branding.logo_data_url(db))
     return Response(
         content=pdf, media_type="application/pdf",
         headers={"Content-Disposition": content_disposition("training-records")})

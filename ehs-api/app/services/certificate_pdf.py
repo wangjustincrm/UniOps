@@ -49,18 +49,10 @@ def _centre(c, text: str, y: float, *, size: float, bold: bool = False,
     c.drawCentredString(width / 2, y, text)
 
 
-def _logo(data_url: str | None) -> ImageReader | None:
-    """The company logo from its data URL, or None if there is none or it cannot
-    be drawn (an SVG, a broken upload) — a certificate without a logo is still a
-    certificate; one that fails to print is not."""
-    if not data_url or not data_url.startswith("data:image/") or "," not in data_url:
-        return None
-    try:
-        reader = ImageReader(io.BytesIO(base64.b64decode(data_url.split(",", 1)[1])))
-        reader.getSize()
-        return reader
-    except Exception:  # noqa: BLE001 — any undecodable image means "no logo"
-        return None
+def _logo(data_url: str | None):
+    """See services/branding.py."""
+    from app.services.branding import logo_reader
+    return logo_reader(data_url)
 
 
 LOGO_MAX_W = 70 * mm

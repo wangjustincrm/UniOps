@@ -18,7 +18,7 @@ from app.crud import jhsc as crud
 from app.models.config import EhsConfig
 from app.models.form import FormTemplate
 from app.models.mirrors import User
-from app.services import mail, notify
+from app.services import branding, mail, notify
 from app.services import minutes as minutes_service
 from app.services.http_headers import content_disposition
 
@@ -230,6 +230,7 @@ async def print_minutes(meeting_id: uuid.UUID, db: SessionDep, user: CanReadJhsc
         rows=await minutes_service.rows_for(db, meeting.minutes_submission_id),
         printed_by=printer.full_name if printer else None,
         reply_due=reply_due,
+        logo_data_url=await branding.logo_data_url(db),
     )
     return Response(content=pdf, media_type="application/pdf", headers={
         "Content-Disposition": content_disposition(f"minutes-{meeting.meeting_no}")})

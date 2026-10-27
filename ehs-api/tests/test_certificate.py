@@ -162,3 +162,23 @@ def test_a_logo_that_cannot_be_drawn_is_left_off():
             person_name="A", course_name="B", course_code=None, completed_on=date(2026, 1, 1),
             expires_on=None, record_no="X", verify_url=None, logo_data_url=bad)
         assert pdf.startswith(b"%PDF-") and _images(pdf) == 0
+
+
+async def test_the_register_and_the_minutes_carry_the_logo_too(hse_manager, db_session):
+    """★ Round 10, question 7: "the logo should also go on the other printouts —
+    the printed training register, the JHSC minutes …" """
+    from datetime import date as _date
+    from app.models.mirrors import CompanyConfig
+
+    _, client = hse_manager
+    meeting = (await client.post("/api/v1/jhsc/meetings", json={
+        "held_on": _date.today().isoformat(), "title": "Monthly"})).json()
+    urls = ("/api/v1/training/records/print", f"/api/v1/jhsc/meetings/{meeting['id']}/print")
+    for url in urls:
+        got = await client.get(url)
+        assert got.status_code == 200, (url, got.text)
+        assert _images(got.content) == 0, url
+    db_session.add(CompanyConfig(id=uuid.uuid4(), name="Canada Royal Milk", logo_data_url=PNG))
+    await db_session.flush()
+    for url in urls:
+        assert _images((await client.get(url)).content) >= 1, url

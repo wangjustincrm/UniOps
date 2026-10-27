@@ -27,7 +27,7 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas as pdfcanvas
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -164,7 +164,8 @@ def _due(d) -> str:
 
 
 def render(*, meeting, attendance, recommendations, rows: list[Row],
-           printed_by: str | None, reply_due: dict | None = None) -> bytes:
+           printed_by: str | None, reply_due: dict | None = None,
+           logo_data_url: str | None = None) -> bytes:
     """`reply_due`: recommendation id → its 21-day reply deadline, if any."""
     reply_due = reply_due or {}
     """Attendance, agenda, minutes and recommendations, in that order."""
@@ -175,6 +176,13 @@ def render(*, meeting, attendance, recommendations, rows: list[Row],
                             topMargin=16 * mm, bottomMargin=16 * mm,
                             title=f"Minutes {meeting.meeting_no}")
     story: list = []
+    # ★ Round 10, question 7: the company logo, centred at the top.
+    from app.services.branding import fit, logo_reader, logo_stream
+    logo = logo_reader(logo_data_url)
+    if logo is not None:
+        lw, lh = fit(logo, 60 * mm, 14 * mm)
+        story.append(Image(logo_stream(logo_data_url), width=lw, height=lh, hAlign="CENTER"))
+        story.append(Spacer(1, 3 * mm))
 
     title = meeting.title or "Joint Health and Safety Committee"
     story.append(_p(f"{title} — minutes", h1))

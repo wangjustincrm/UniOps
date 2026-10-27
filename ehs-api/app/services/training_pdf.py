@@ -100,9 +100,15 @@ def _cell(c: pdfcanvas.Canvas, text: str, x: float, y: float, width: float,
 
 
 def _header(c: pdfcanvas.Canvas, *, title: str, filters: list[str],
-            count: int, printed_by: str | None, page: int) -> float:
+            count: int, printed_by: str | None, page: int, logo=None) -> float:
     """The heading block, returning the y the table starts at."""
     y = PAGE_H - MARGIN
+    # ★ Round 10, question 7: the company logo, centred at the top of each page.
+    if logo is not None:
+        from app.services.branding import fit
+        lw, lh = fit(logo, 60 * mm, 14 * mm)
+        c.drawImage(logo, (PAGE_W - lw) / 2, y - lh, lw, lh, mask="auto")
+        y -= lh + 3 * mm
     c.setFont("Helvetica-Bold", 13)
     c.setFillColor(INK)
     c.drawString(MARGIN, y - 4 * mm, title)
@@ -151,14 +157,17 @@ def render(
     filters: list[str],
     printed_by: str | None,
     title: str = "Training records",
+    logo_data_url: str | None = None,
 ) -> bytes:
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=landscape(A4))
     c.setTitle(title)
+    from app.services.branding import logo_reader
+    logo = logo_reader(logo_data_url)
 
     page = 1
     y = _header(c, title=title, filters=filters, count=len(rows),
-                printed_by=printed_by, page=page)
+                printed_by=printed_by, page=page, logo=logo)
 
     if not rows:
         c.setFont("Helvetica", 9)
@@ -170,7 +179,7 @@ def render(
             c.showPage()
             page += 1
             y = _header(c, title=title, filters=filters, count=len(rows),
-                        printed_by=printed_by, page=page)
+                        printed_by=printed_by, page=page, logo=logo)
         if i % 2 == 1:
             c.setFillColor(ZEBRA)
             c.rect(MARGIN - 1.5 * mm, y - 1.8 * mm,
