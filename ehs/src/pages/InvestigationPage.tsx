@@ -166,8 +166,19 @@ export default function InvestigationPage() {
     setInjurySeeded(true)
   }, [injurySeeded, injuredPerson])
 
+  // ★ Review (uniops-8b): the load waited for the investigation and its causes
+  // but not for Section B. On a cold load /medical often answered last, after
+  // `loaded` was set, and its data never reached the form — which still showed
+  // the section, empty, and saving wrote every PHIPA field (vitals, allergies,
+  // what was done) as null. Now the form waits for it as for the others. A 403
+  // is no permission, and the section is simply not there; any other failure
+  // stops the page like theirs does.
+  const wantsMedical = incident.data?.form_kind === 'medical'
+  const medicalDenied = medical.isError && (medical.error as ApiError)?.status === 403
+  const medicalFailed = wantsMedical && medical.isError && !medicalDenied
   useEffect(() => {
     if (loaded || existing.isLoading || tree.isLoading || existing.isError || tree.isError) return
+    if (incident.isLoading || (wantsMedical && (medical.isLoading || medicalFailed))) return
     const inv = existing.data
     if (inv) {
       setLead(inv.investigator_id
@@ -190,13 +201,13 @@ export default function InvestigationPage() {
     if (t) setCauses([...(t.immediate ?? []), ...(t.root ?? [])])
     if (medical.data) setMed({ ...medical.data, timeline: medical.data.timeline ?? [] })
     setLoaded(true)
-  }, [loaded, existing.isLoading, existing.data, tree.isLoading, tree.data])
+  }, [loaded, existing.isLoading, existing.data, tree.isLoading, tree.data,
+      incident.isLoading, wantsMedical, medical.isLoading, medical.data, medicalFailed])
 
   // Section B is filled only where there was an injury, and only by someone the
   // medical permission covers — the query 403s for everyone else, and the
   // section then simply is not there.
-  const showMedical =
-    incident.data?.form_kind === 'medical' && !medical.isError
+  const showMedical = wantsMedical && medical.isSuccess
 
   const save = useMutation({
     mutationFn: async (opts: { sign: boolean }) => {
@@ -272,10 +283,11 @@ export default function InvestigationPage() {
   // causes came back as no data, which this page took for a new one — the
   // lead set to whoever opened it and every box empty — and saving would
   // have written that over what was there. So a failure stops the page.
-  if (existing.isError || tree.isError) {
+  if (existing.isError || tree.isError || medicalFailed) {
     return (
       <div className="p-4">
-        <LoadFailedNote what={existing.isError ? 'The investigation' : 'Its causes'} />
+        <LoadFailedNote what={existing.isError ? 'The investigation'
+          : tree.isError ? 'Its causes' : 'The medical record (Section B)'} />
         <p className="mt-2 text-sm text-neutral-600">
           Nothing can be edited until it loads, so nothing already recorded is overwritten.
           Reload the page to try again.
@@ -285,6 +297,12 @@ export default function InvestigationPage() {
   }
   if (incident.isError) {
     return <p className="p-4 text-sm text-danger-700">{(incident.error as ApiError).message}</p>
+  }
+  // Until everything the form is seeded from has arrived, there is no form:
+  // the causes or Section B arriving after it was shown were never filled in,
+  // and saving wrote them back empty.
+  if (!loaded) {
+    return <p className="p-4 text-sm text-neutral-500">Loading…</p>
   }
 
   const causeRows = (type: 'immediate' | 'root', vocabulary: string, help: string) => (
