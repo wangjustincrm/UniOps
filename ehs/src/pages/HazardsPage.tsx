@@ -20,7 +20,6 @@ import {
   CausesEditor, causesPayload, spendActionDrafts, type CauseDraft,
 } from '@/components/CausesEditor'
 import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
-import { consequenceLabel, describedConsequenceTypes } from '@/lib/riskMatrix'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { LocationSelect } from '@/components/LocationSelect'
@@ -50,7 +49,11 @@ interface Severity {
   level: number; people: string | null; downtime: string | null
   reputation: string | null; environmental: string | null; asset_damage: string | null
 }
-interface Matrix { likelihood: Likelihood[]; severity: Severity[]; consequence_types: string[] }
+interface Consequence { code: string; label: string; severity: Record<string, string> }
+interface Matrix {
+  likelihood: Likelihood[]; severity: Severity[]; consequence_types: string[]
+  consequences?: Consequence[]
+}
 
 export const CONTROL_LEVELS = [
   { key: 'elimination', label: 'Elimination' },
@@ -459,7 +462,7 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
  */
 function AssessDialog({ hazard, onClose }: { hazard: Hazard; onClose: () => void }) {
   const queryClient = useQueryClient()
-  const [consequence, setConsequence] = useState('people')
+  const [chosen, setChosen] = useState<string | null>(null)
   const [likelihood, setLikelihood] = useState('')
   const [severity, setSeverity] = useState('')
   const [controls, setControls] = useState(hazard.existing_controls ?? '')
@@ -471,6 +474,17 @@ function AssessDialog({ hazard, onClose }: { hazard: Hazard; onClose: () => void
     queryFn: () => api.get<Matrix>('/api/v1/risk/matrix'),
     staleTime: 30 * 60_000,
   })
+  // ★ Review (uniops-8b): "Judged on" and the wording of each level come from
+  // the list HSE keeps (Settings → Lists → Judged on), as in the incident's
+  // risk assessment and on the server — this dialog read the old severity
+  // table, so the two drifted once HSE edited the list, and retiring People
+  // left its default refused. An entry with no wording cannot be scored.
+  const consequences = (matrix.data?.consequences ?? [])
+    .filter((c) => Object.keys(c.severity).length > 0)
+  const consequence = chosen ?? consequences.find((c) => c.code === 'people')?.code
+    ?? consequences[0]?.code ?? ''
+  const judged = consequences.find((c) => c.code === consequence) ?? null
+  const levels = Object.keys(judged?.severity ?? {}).map(Number).sort((a, b) => b - a)
 
   const assess = useMutation({
     mutationFn: () => api.post(`/api/v1/hazards/${hazard.id}/assess`, {
@@ -488,8 +502,6 @@ function AssessDialog({ hazard, onClose }: { hazard: Hazard; onClose: () => void
     },
   })
 
-  const severityText = (s: Severity) =>
-    (s[consequence as keyof Severity] as string | null) ?? '—'
 
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
@@ -509,11 +521,8 @@ function AssessDialog({ hazard, onClose }: { hazard: Hazard; onClose: () => void
         <Field label="Judged on"
                hint="The matrix scores severity differently for each of these, so it has to be said which">
           <select className={inputClass} value={consequence}
-                  onChange={(e) => setConsequence(e.target.value)}>
-            {describedConsequenceTypes(
-              matrix.data?.consequence_types, matrix.data?.severity).map((c) => (
-              <option key={c} value={c}>{consequenceLabel(c)}</option>
-            ))}
+                  onChange={(e) => { setChosen(e.target.value); setSeverity(''); setResidualSeverity('') }}>
+            {consequences.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </Field>
 
@@ -534,8 +543,8 @@ function AssessDialog({ hazard, onClose }: { hazard: Hazard; onClose: () => void
             <select className={inputClass} value={severity}
                     onChange={(e) => setSeverity(e.target.value)}>
               <option value="">Select…</option>
-              {matrix.data?.severity.map((s) => (
-                <option key={s.level} value={s.level}>{s.level} — {severityText(s)}</option>
+              {levels.map((lv) => (
+                <option key={lv} value={lv}>{lv} — {judged?.severity[String(lv)]}</option>
               ))}
             </select>
           </Field>
@@ -563,8 +572,8 @@ function AssessDialog({ hazard, onClose }: { hazard: Hazard; onClose: () => void
             <select className={inputClass} value={residualSeverity}
                     onChange={(e) => setResidualSeverity(e.target.value)}>
               <option value="">Not assessed</option>
-              {matrix.data?.severity.map((s) => (
-                <option key={s.level} value={s.level}>{s.level} — {severityText(s)}</option>
+              {levels.map((lv) => (
+                <option key={lv} value={lv}>{lv} — {judged?.severity[String(lv)]}</option>
               ))}
             </select>
           </Field>
