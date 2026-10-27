@@ -557,6 +557,40 @@ class TestWhoeverIsRunningItCanRunIt:
         idle = await wc.post(f"/api/v1/course-sessions/{sid}/results", json={"results": []})
         assert idle.status_code == 422
 
+    async def test_a_closed_session_is_read_only(
+            self, worker, hse_manager, session_run_by_a_worker, test_engine):
+        """★ Round 10, TC-05: "once a course has completed and the run by person
+        has pressed the save and close the session button, make the course and all
+        buttons read only" — for HSE too."""
+        from tests.conftest import make_user
+        _, wc = worker
+        _, hse = hse_manager
+        sid = session_run_by_a_worker["id"]
+        attendee = await make_user(test_engine, role="requester")
+        eid = (await wc.post(f"/api/v1/course-sessions/{sid}/roster",
+                             json={"user_ids": [str(attendee.id)]})).json()[0]["id"]
+        # Open: HSE can change a result (the admission half).
+        assert (await hse.post(f"/api/v1/course-sessions/{sid}/results", json={
+            "results": [{"enrolment_id": eid, "result": "failed"}]})).status_code == 200
+        assert (await wc.post(f"/api/v1/course-sessions/{sid}/results", json={
+            "results": [{"enrolment_id": eid, "result": "passed"}], "complete": True})).status_code == 200
+
+        other = await make_user(test_engine, role="requester")
+        for client in (hse, wc):
+            for method, url, body in (
+                ("post", f"/api/v1/course-sessions/{sid}/results",
+                 {"results": [{"enrolment_id": eid, "result": "failed"}]}),
+                ("post", f"/api/v1/course-sessions/{sid}/roster", {"user_ids": [str(other.id)]}),
+                ("delete", f"/api/v1/course-sessions/{sid}/roster/{eid}", None),
+                ("patch", f"/api/v1/course-sessions/{sid}", {"title": "Renamed"}),
+                ("post", f"/api/v1/course-sessions/{sid}/materials/link",
+                 {"url": "https://example.com", "title": "x"}),
+            ):
+                got = await (getattr(client, method)(url, json=body) if body is not None
+                             else getattr(client, method)(url))
+                assert got.status_code == 409, (method, url, got.status_code, got.text)
+                assert "read only" in got.text
+
     async def test_the_coordinator_opens_and_marks_their_own_session(
             self, worker, hse_manager, session_run_by_a_worker, test_engine):
         from tests.conftest import make_user

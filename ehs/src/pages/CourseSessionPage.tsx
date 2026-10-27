@@ -158,7 +158,7 @@ export default function CourseSessionPage() {
       <Card className="mb-4">
         <SectionTitle className="mb-1.5">Material</SectionTitle>
         <MaterialsList base={`/api/v1/course-sessions/${s.id}/materials`}
-                       mayWrite={mayRun} what="this session" />
+                       mayWrite={mayRun && open} what="this session" />
       </Card>
 
       {s.quiz_id && <QuizCard session={s} mayRun={mayRun} />}
@@ -170,7 +170,9 @@ export default function CourseSessionPage() {
         <Card className="mt-4"><LoadFailedNote what="The roster" /></Card>
       ) : (
         <RosterPanel
-          session={s} roster={roster.data ?? []} mayWrite={mayRun}
+          // ★ Round 10, TC-05: closed means read only — for HSE too. A result
+          // is corrected on the person's training record instead.
+          session={s} roster={roster.data ?? []} mayWrite={mayRun && open}
           onChanged={invalidate}
         />
       )}
@@ -577,6 +579,12 @@ function RosterPanel({
       {open && waiting > 0 && (
         <p className="mt-2 text-right text-xs font-medium text-warning-700">
           {waiting} {waiting === 1 ? 'person has' : 'people have'} passed the quiz but {waiting === 1 ? 'is' : 'are'} not marked yet.
+        </p>
+      )}
+      {!open && session.status === 'completed' && (
+        <p className="mt-2 text-right text-xs text-neutral-500">
+          Closed and certificates issued — read only. Correct a result on the person&rsquo;s
+          training record.
         </p>
       )}
       {open && (

@@ -255,9 +255,9 @@ async def mark_results(
     before saving and closing the session and generating a training
     certificate." So a pass needs the quiz mark where the course has a quiz, and
     the record is issued when the session closes — see complete() — not here.
-    A session already closed issues it straight away, there being no close to
-    wait for.
+    A closed session is read only (round 10).
     """
+    assert_not_closed(delivery)
     marker_name = await _name(db, marker_id)
     now = datetime.now(timezone.utc)
     rows = await roster(db, delivery.id)
@@ -282,12 +282,6 @@ async def mark_results(
         enrolment.marked_by_name = marker_name
         enrolment.marked_at = now
         changed.append(enrolment)
-
-        if (result == "passed" and enrolment.training_record_id is None
-                and delivery.status == "completed"):
-            record = await _issue_record(db, delivery, enrolment, recorded_by=marker_id,
-                                         recorded_by_name=marker_name)
-            enrolment.training_record_id = record.id
 
     await db.flush()
     return changed
@@ -350,6 +344,20 @@ async def _issue_record(
     db.add(record)
     await db.flush()
     return record
+
+
+def assert_not_closed(delivery: CourseDelivery) -> None:
+    """★ Round 10, TC-05: "once a course has completed and the run by person has
+    pressed the save and close the session button, make the course and all
+    buttons read only. currently when viewing a held course, the HSE role can
+    still click and change the passed, fail, did not attend buttons and save the
+    record." A closed session is the record its certificates were issued from;
+    a correction is made on the training record itself."""
+    if delivery.status == "completed":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{delivery.delivery_no} has been closed and its certificates issued, so it "
+            "is read only. Correct a result on the person's training record instead.")
 
 
 async def complete(db: AsyncSession, delivery: CourseDelivery, *,

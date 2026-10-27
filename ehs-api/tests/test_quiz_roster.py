@@ -334,7 +334,12 @@ class TestTheResult:
         record = await db_session.get(TrainingRecord, row.training_record_id)
         assert record.delivery_id == s.id and record.completed_on == s.session_date
 
-        await course_crud.mark_results(db_session, s, {row.id: "passed"}, marker_id=runner.id)
+        # ★ Round 10, TC-05: once closed it is read only — marking again is
+        # refused, and no second certificate can come of it.
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as refused:
+            await course_crud.mark_results(db_session, s, {row.id: "failed"}, marker_id=runner.id)
+        assert refused.value.status_code == 409
         assert await _records(db_session, me) == 1
 
     async def test_a_paper_quiz_can_be_marked_by_hand(self, test_engine, db_session):

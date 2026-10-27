@@ -283,6 +283,7 @@ async def update_session(
     the only field that does.
     """
     delivery = await crud.get_delivery(db, delivery_id)
+    crud.assert_not_closed(delivery)
     # ★★ The *write* gate, not `_require_session_access`. That one admits anybody
     # holding `ehs.training.read` — which includes `auditor`, a role that exists
     # to read and nothing else, and `area_supervisor` for sessions that are not
@@ -325,6 +326,7 @@ async def add_to_roster(
     delivery_id: uuid.UUID, payload: EnrolIn, db: SessionDep, user: CanReportIncident,
 ):
     delivery = await crud.get_delivery(db, delivery_id)
+    crud.assert_not_closed(delivery)
     await _require_roster_rights(db, user, delivery)
     return await crud.enrol(db, delivery, payload.user_ids)
 
@@ -334,6 +336,7 @@ async def remove_from_roster(
     delivery_id: uuid.UUID, enrolment_id: uuid.UUID, db: SessionDep, user: CanReportIncident,
 ):
     delivery = await crud.get_delivery(db, delivery_id)
+    crud.assert_not_closed(delivery)
     await _require_roster_rights(db, user, delivery)
     await crud.withdraw(db, delivery, enrolment_id)
 
@@ -351,6 +354,7 @@ async def mark_quiz(
     that indicates that the quiz has been passed by the attendee." An online pass
     sets the same mark by itself."""
     delivery = await crud.get_delivery(db, delivery_id)
+    crud.assert_not_closed(delivery)
     await _require_roster_rights(db, user, delivery)
     return await crud.set_quiz_passed(
         db, delivery, enrolment_id, payload.passed, marker_id=_user_id(user))
@@ -394,6 +398,7 @@ async def mark_results(
     to somebody else to type in.
     """
     delivery = await crud.get_delivery(db, delivery_id)
+    crud.assert_not_closed(delivery)
     await _require_roster_rights(db, user, delivery)
     if delivery.status == "cancelled":
         raise HTTPException(status.HTTP_409_CONFLICT, "This session was cancelled")
@@ -468,6 +473,7 @@ async def add_session_file(
     token: BearerToken,
 ):
     delivery = await crud.get_delivery(db, delivery_id)
+    crud.assert_not_closed(delivery)
     await _require_roster_rights(db, user, delivery)
     uid = _user_id(user)
     return await materials.add_file(
@@ -481,6 +487,7 @@ async def add_session_link(
     delivery_id: uuid.UUID, payload: SessionLinkIn, db: SessionDep, user: CanReportIncident,
 ):
     delivery = await crud.get_delivery(db, delivery_id)
+    crud.assert_not_closed(delivery)
     await _require_roster_rights(db, user, delivery)
     uid = _user_id(user)
     return await materials.add_link(
@@ -507,6 +514,7 @@ async def remove_session_material(
     token: BearerToken,
 ):
     delivery = await crud.get_delivery(db, delivery_id)
+    crud.assert_not_closed(delivery)
     await _require_roster_rights(db, user, delivery)
     # ★ The course and other sessions may hold the same file.
     await materials.remove(db, await _material_on(db, delivery.id, material_id), token)
