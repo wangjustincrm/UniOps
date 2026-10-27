@@ -137,7 +137,7 @@ function StatusPicker({ rec }: { rec: Detail }) {
     <div className="max-w-xs">
       <VocabularySelect vocabulary="jhsc_rec_status" value={rec.status_item_id ?? null}
                         onChange={(item) => { if (item && !save.isPending) save.mutate(item.id) }}
-                        placeholder="Not set" />
+                        placeholder="Not set" currentLabel={rec.status_label} />
       <ErrorNote error={save.error} />
     </div>
   )

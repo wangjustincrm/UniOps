@@ -252,12 +252,16 @@ export function VocabularyMultiSelect({
  * which shape it is getting.
  */
 export function VocabularySelect({
-  vocabulary, value, onChange, placeholder = 'Select…',
+  vocabulary, value, onChange, placeholder = 'Select…', currentLabel,
 }: {
   vocabulary: string
   value: string | null
   onChange: (item: VocabItem | null) => void
   placeholder?: string
+  /** The label saved with `value`. ★ Review (uniops-8b): an entry HSE has
+   *  since retired is not in the list, and the field read "Not set" while the
+   *  record still said otherwise. Shown as itself, marked retired. */
+  currentLabel?: string | null
 }) {
   const { data, isError } = useVocabulary(vocabulary)
   const groups = useMemo(() => group(data ?? []), [data])
@@ -292,6 +296,9 @@ export function VocabularySelect({
       <select className={selectCls} value={value ?? ''}
               onChange={(e) => onChange(all.find((o) => o.id === e.target.value) ?? null)}>
         <option value="">{placeholder}</option>
+        {value && !selected && data && (
+          <option value={value} disabled>{currentLabel ?? 'An entry no longer in the list'} (retired)</option>
+        )}
         {groups[0].items.map((o) => (
           <option key={o.id} value={o.id}>{o.label}</option>
         ))}
