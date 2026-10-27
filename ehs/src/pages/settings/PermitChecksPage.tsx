@@ -29,7 +29,8 @@ export default function PermitChecksPage() {
                   subtitle="What has to be confirmed before each kind of permit is issued." />
       <p className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
         A change applies to permits still being prepared. A permit already issued keeps the
-        wording it was issued against.
+        wording it was issued against. A check whose wording is changed has to be confirmed
+        again on permits being prepared; changing only its help text does not.
       </p>
       {types.isError && <LoadFailedNote what="The permit types" />}
       {types.isPending && <p className="text-sm text-neutral-500">Loading…</p>}
