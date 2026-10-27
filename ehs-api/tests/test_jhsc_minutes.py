@@ -227,3 +227,45 @@ async def test_a_question_marked_to_stand_out_does_so_read_back_and_printed(hse_
     sizes = {t: pt for pt, t in _pdf_text_sizes(pdf)}
     assert sizes["Dryer floor"] == 11.5 and sizes["Plant area to be inspected"] == 10.5
     assert sizes["Quiet month"] == 9.5 and sizes["Other notes"] == 8.5
+
+
+async def test_the_printed_attendance_lists_present_then_absent_without_roles(
+        hse_manager, test_engine):
+    """★ Round 10, TC-07: "remove the role and the absent/present columns. create
+    a 3 column view listing those who attended under the Present heading. under
+    that, place a 3 column list titled Absent … their roles do not need to be
+    listed on the printed form." """
+    from tests.conftest import make_user
+    from tests.test_label_revision import _pdf_text
+
+    _, client = hse_manager
+    people = {}
+    for name, rep in (("Ann Present", "worker"), ("Bob Present", "management"),
+                      ("Cy Regrets", "worker"), ("Dee Absent", "management")):
+        u = await make_user(test_engine, role="requester", full_name=name)
+        added = await client.post("/api/v1/jhsc/members",
+                                  json={"user_id": str(u.id), "representation": rep})
+        assert added.status_code in (200, 201), added.text
+        people[name] = u
+    meeting = await _a_meeting(client)
+    rows = (await client.get(f"/api/v1/jhsc/meetings/{meeting['id']}/attendance")).json()
+    marks = {"Ann Present": "present", "Bob Present": "present",
+             "Cy Regrets": "regrets", "Dee Absent": "absent"}
+    saved = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/attendance", json={
+        "marks": [{"id": r["id"], "attendance": marks[r["user_name"]]}
+                  for r in rows if r["user_name"] in marks]})
+    assert saved.status_code == 200, saved.text
+
+    text = _pdf_text((await client.get(f"/api/v1/jhsc/meetings/{meeting['id']}/print")).content)
+    at = {k: text.find(k) for k in ("Present", "Ann Present", "Bob Present", "Absent",
+                                     "Cy Regrets", "Dee Absent")}
+    missing = [k for k, v in at.items() if v < 0]
+    assert not missing, (missing, text[text.find("Attendance"):text.find("Agenda")].split(chr(10)))
+    assert at["Present"] < at["Ann Present"] < at["Absent"] < at["Dee Absent"]
+    assert at["Bob Present"] < at["Absent"] < at["Cy Regrets"]
+    assert "regrets" in text[at["Cy Regrets"]:at["Cy Regrets"] + 30]
+    assert "\\227" not in text[at["Present"]:at["Absent"]], "an empty cell printed as a dash"
+    # No roles, and no per-row status column.
+    att = text[text.find("Attendance"):text.find("Agenda")]
+    for word in ("worker", "management", "Worker", "Management"):
+        assert word not in att, word

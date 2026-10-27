@@ -148,6 +148,17 @@ class _NumberedCanvas(pdfcanvas.Canvas):
         super().save()
 
 
+def _three_columns(names: list[str], style) -> Table:
+    """Names across three columns, filled row by row."""
+    rows = [names[i:i + 3] for i in range(0, len(names), 3)]
+    rows[-1] = rows[-1] + [""] * (3 - len(rows[-1]))
+    # An empty cell is empty; `_p` would print a dash for it.
+    t = Table([[_p(n, style) if n else "" for n in row] for row in rows], colWidths=[58 * mm] * 3)
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
+                           ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+    return t
+
+
 def _due(d) -> str:
     return d.astimezone(statutory.ONTARIO).strftime("%-d %b %Y")
 
@@ -178,14 +189,21 @@ def render(*, meeting, attendance, recommendations, rows: list[Row],
 
     story.append(_p("Attendance", h2))
     if attendance:
-        data = [[_p(a.user_name, body), _p(a.representation or "", body),
-                 _p({"present": "Present", "absent": "Absent",
-                     "regrets": "Regrets"}.get(a.attendance, a.attendance), body)]
-                for a in attendance]
-        t = Table(data, colWidths=[70 * mm, 55 * mm, 45 * mm])
-        t.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.25, RULE),
-                               ("VALIGN", (0, 0), (-1, -1), "TOP")]))
-        story.append(t)
+        # ★ Round 10, TC-07: "remove the role and the absent/present columns.
+        # create a 3 column view listing those who attended under the Present
+        # heading. under that, place a 3 column list titled Absent, of those who
+        # did not attend. their roles do not need to be listed." Regrets did not
+        # attend either; they are under Absent, marked so.
+        present = [a.user_name for a in attendance if a.attendance == "present"]
+        absent = [a.user_name + (" (regrets)" if a.attendance == "regrets" else "")
+                  for a in attendance if a.attendance != "present"]
+        for heading, names in (("Present", present), ("Absent", absent)):
+            story.append(_p(heading, _style(9.5, bold=True, after=1)))
+            if names:
+                story.append(_three_columns(names, body))
+            else:
+                story.append(_p("Nobody.", body))
+            story.append(Spacer(1, 2 * mm))
     else:
         story.append(_p("Not recorded.", body))
     story.append(Spacer(1, 4 * mm))
