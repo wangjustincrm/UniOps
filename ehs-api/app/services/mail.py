@@ -202,8 +202,17 @@ async def queue(
 _PENDING = "ehs_mail_pending"
 
 
+# ★ Review (uniops-8b), confirmed on SQLAlchemy 2.0.36: both events also fire
+# for a SAVEPOINT — released, it would send before the request commits (the
+# race again); rolled back, it would drop mail the request still commits. Only
+# the outermost transaction decides. A message queued inside a savepoint that
+# is rolled back finds no row and is not sent (`deliver`).
+
+
 @event.listens_for(Session, "after_commit")
 def _after_commit(session: Session) -> None:
+    if session.in_nested_transaction():
+        return
     for communication_id in session.info.pop(_PENDING, []):
         # Tracked rather than a bare create_task: a discarded task takes its
         # database session down with it, still holding a transaction.
@@ -212,6 +221,8 @@ def _after_commit(session: Session) -> None:
 
 @event.listens_for(Session, "after_rollback")
 def _after_rollback(session: Session) -> None:
+    if session.in_nested_transaction():
+        return
     session.info.pop(_PENDING, None)
 
 

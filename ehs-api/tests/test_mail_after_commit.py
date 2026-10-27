@@ -67,3 +67,21 @@ async def test_the_sender_finds_the_row_once_committed(test_engine, monkeypatch,
     async with factory() as db:
         await db.delete(await db.get(mail.Communication, row.id))
         await db.commit()
+
+
+async def test_a_savepoint_neither_sends_nor_drops(test_engine, spawned):
+    """★ Review (uniops-8b): the events fire for a SAVEPOINT too. Released, it
+    used to send before the request committed; rolled back, it dropped mail
+    the request then committed."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        row = await mail.queue(db, to=["a@example.com"], subject="Hello", body="Body")
+        async with db.begin_nested():
+            pass
+        assert spawned == [], "sent on a savepoint's release"
+        sp = await db.begin_nested()
+        await sp.rollback()
+        await db.commit()
+        assert spawned == [f"ehs-mail-{row.id}"], "dropped by a savepoint's rollback"
+        await db.delete(row)
+        await db.commit()
