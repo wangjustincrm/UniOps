@@ -1196,8 +1196,16 @@ def test_calendar_months_without_such_a_day():
     from datetime import date
 
     from app.services import validity
-    assert validity.expires_on(date(2026, 1, 31), 1) == date(2026, 2, 27)
-    assert validity.expires_on(date(2024, 2, 29), 12) == date(2025, 2, 27)
+    # No such day in the month: the day before the 1st it would roll to — the
+    # month's last (round 8: 29 Feb + 3 years → 1 Mar, less a day → 28 Feb).
+    assert validity.expires_on(date(2026, 1, 31), 1) == date(2026, 2, 28)
+    assert validity.expires_on(date(2026, 1, 29), 1) == date(2026, 2, 28)
+    assert validity.expires_on(date(2026, 1, 28), 1) == date(2026, 2, 27)
+    assert validity.expires_on(date(2024, 2, 29), 12) == date(2025, 2, 28)
+    assert validity.expires_on(date(2024, 2, 29), 36) == date(2027, 2, 28)
+    assert validity.expires_on(date(2024, 2, 29), 48) == date(2028, 2, 28)
+    assert validity.expires_on(date(2026, 3, 31), 1) == date(2026, 4, 30)
+    assert validity.expires_on(date(2026, 10, 27), 12) == date(2027, 10, 26)
     assert validity.expires_on(date(2026, 10, 22), None) is None
 
 

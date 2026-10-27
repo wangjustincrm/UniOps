@@ -540,7 +540,7 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed, expiry, onClearExpiry
  * create a course with a 12 month expiry, have the certificate expire in 12
  * months minus a day." (Round 8 asked for three years less a day for every
  * course; this replaces it.) Calendar months, the same rule as the server's
- * services/validity.py — a month without the day lands on its last day. On the
+ * services/validity.py — a month without the day expires on its last day. On the
  * date strings themselves: a date-only value put through local time comes out
  * a day early here (UTC−4). Empty for a course that does not expire.
  */
@@ -551,7 +551,11 @@ function courseExpiry(completed: string, months: number | null | undefined): str
   const year = y + Math.floor(month0 / 12)
   const month = month0 % 12
   const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
-  const t = new Date(Date.UTC(year, month, Math.min(d, last)) - 86_400_000)
+  // No such day that month: the month's last, which is the day before the 1st
+  // it would roll to (round 8: 29 Feb + 3 years → 28 Feb). Otherwise less a day.
+  const t = d > last
+    ? new Date(Date.UTC(year, month, last))
+    : new Date(Date.UTC(year, month, d) - 86_400_000)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`
 }
