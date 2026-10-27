@@ -28,7 +28,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DELETE FROM ehs_course_materials WHERE record_id IS NOT NULL")
+    # Files on a training record are the training's evidence; going back would
+    # delete them and orphan them in storage. Refuse rather than lose them.
+    n = op.get_bind().exec_driver_sql(
+        "SELECT count(*) FROM ehs_course_materials WHERE record_id IS NOT NULL").scalar()
+    if n:
+        raise RuntimeError(
+            f"{n} file(s) are attached to training records; downgrading past 0075 "
+            "would delete that evidence. Move or export them first.")
     op.drop_constraint("ck_ehs_course_material_owner", "ehs_course_materials", type_="check")
     op.create_check_constraint(
         "ck_ehs_course_material_owner", "ehs_course_materials",

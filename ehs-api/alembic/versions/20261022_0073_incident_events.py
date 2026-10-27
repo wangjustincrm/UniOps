@@ -40,5 +40,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # The timeline holds what the incident row does not: every reopen's
+    # required reason, every change of kind, each review and close. Refuse to
+    # drop it while it holds any of that beyond the reopens backfilled here.
+    n = op.get_bind().exec_driver_sql(
+        "SELECT count(*) FROM ehs_incident_events WHERE kind <> 'reopened' OR detail IS NOT NULL"
+    ).scalar()
+    if n:
+        raise RuntimeError(
+            f"ehs_incident_events holds {n} recorded event(s) the incident rows do not "
+            "keep; downgrading past 0073 would lose them.")
     op.drop_index("ix_ehs_incident_events_incident_id", table_name="ehs_incident_events")
     op.drop_table("ehs_incident_events")
