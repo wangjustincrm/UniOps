@@ -276,11 +276,15 @@ async def list_(
             {"draft": 0, "submitted": 1, "under_investigation": 2,
              "pending_closure": 3, "closed": 4},
             value=Incident.status, else_=5)
-        stmt = stmt.order_by(stage, Incident.occurred_at.desc().nullslast())
+        stmt = stmt.order_by(stage, Incident.occurred_at.desc().nullslast(),
+                               Incident.id)
     elif order == "oldest":
-        stmt = stmt.order_by(Incident.occurred_at.asc().nullslast())
+        stmt = stmt.order_by(Incident.occurred_at.asc().nullslast(), Incident.id)
     else:
-        stmt = stmt.order_by(Incident.occurred_at.desc().nullslast())
+        # ★ Review (uniops-8b): the register is read 200 at a time with an
+        # OFFSET, and two incidents at the same instant had no fixed order —
+        # one could appear on two pages and another on none. The id settles it.
+        stmt = stmt.order_by(Incident.occurred_at.desc().nullslast(), Incident.id)
     stmt = stmt.limit(limit).offset(offset)
     return list((await db.execute(stmt)).scalars())
 
