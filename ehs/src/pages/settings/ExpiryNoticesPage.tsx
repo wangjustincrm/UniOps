@@ -105,16 +105,42 @@ function RuleRow({ rule }: { rule: Rule }) {
     onSuccess: done,
   })
   const busy = patch.isPending || remove.isPending
+  // ★ Review (uniops-8b): the number of days could be set only when adding a
+  // rule; changing it meant removing the rule and adding it again.
+  const [days, setDays] = useState<string | null>(null)
+  const daysValid = days !== null && /^\d+$/.test(days) && Number(days) >= 1 && Number(days) <= 365
   return (
     <li>
       <Card>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <span className="min-w-0 flex-1">
             <span className="block break-all text-sm font-semibold text-neutral-900">{rule.email}</span>
-            <span className="mt-0.5 block text-xs text-neutral-500">
-              {rule.days_before} day{rule.days_before === 1 ? '' : 's'} before a certificate expires
-              {!rule.is_active && ' · switched off'}
-            </span>
+            {days === null ? (
+              <span className="mt-0.5 block text-xs text-neutral-500">
+                {rule.days_before} day{rule.days_before === 1 ? '' : 's'} before a certificate expires
+                {!rule.is_active && ' · switched off'}{' · '}
+                <button type="button" className="font-semibold text-primary-700 hover:underline"
+                        onClick={() => setDays(String(rule.days_before))}>
+                  Change
+                </button>
+              </span>
+            ) : (
+              <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-neutral-600">
+                <input type="number" min={1} max={365} value={days} aria-label="Days before"
+                       onChange={(e) => setDays(e.target.value)} className={`${inputClass} w-24`} />
+                days before
+                <button type="button" className={secondaryButton} disabled={busy}
+                        onClick={() => setDays(null)}>Cancel</button>
+                <button type="button" className={primaryButton} disabled={!daysValid || busy}
+                        onClick={() => {
+                          if (!busy && daysValid) {
+                            patch.mutate({ days_before: Number(days) }, { onSuccess: () => setDays(null) })
+                          }
+                        }}>
+                  Save
+                </button>
+              </span>
+            )}
           </span>
           <label className="flex min-h-[44px] items-center gap-2 text-sm text-neutral-700">
             <input type="checkbox" checked={rule.is_active} disabled={busy}
