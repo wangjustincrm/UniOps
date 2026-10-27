@@ -342,6 +342,18 @@ class TestTheResult:
         assert refused.value.status_code == 409
         assert await _records(db_session, me) == 1
 
+    async def test_a_pass_after_the_session_closed_leaves_its_roster_alone(
+            self, test_engine, db_session):
+        """★ Review (uniops-8b): recorded absent when the session closed, a pass
+        sent in afterwards still stamped the closed roster."""
+        me, quiz, s = await self._on_roster(test_engine, db_session)
+        await course_crud.complete(db_session, s, absent_ok=True)
+        row = await _enrolment(db_session, s, me)
+        assert row.result == "absent"
+        attempt = await _answer(db_session, quiz, me, right=True, delivery=s)
+        assert attempt.passed
+        assert row.quiz_passed_at is None and row.result == "absent"
+
     async def test_a_paper_quiz_can_be_marked_by_hand(self, test_engine, db_session):
         me = await make_user(test_engine)
         course = await _course(db_session)

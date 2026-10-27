@@ -354,7 +354,10 @@ async def _enrolment_for(
         .where(CourseEnrolment.delivery_id == delivery_id,
                CourseEnrolment.user_id == user_id,
                CourseDelivery.course_id == quiz.course_id,
-               CourseDelivery.status != "cancelled"))).scalar_one_or_none()
+               # ★ Review (uniops-8b): only a session still open. A closed
+               # roster is the record its certificates came from: a pass sent
+               # in afterwards by somebody recorded absent stamped it anyway.
+               CourseDelivery.status == "scheduled"))).scalar_one_or_none()
 
 
 async def _end_from_first_finish(
