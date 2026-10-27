@@ -20,6 +20,9 @@
    `h-screen`, the tab host's `absolute inset-0` layers, `<aside>`, `<header>`)
    rather than a guess at nesting depth, because this machine has no browser to
    render-check the result against. */
+/* Shown only on paper; see the print rules below. */
+[data-print="only"] { display: none }
+
 @media print {
   html, body {
     height: auto !important;
@@ -48,10 +51,18 @@
   /* Navigation, tabs and the controls that produced the document are not part
      of what is being handed over. */
   aside,
-  header,
   [data-print="hide"] {
     display: none !important;
   }
+
+  /* Round 10: buttons are what you do to a record, not part of it. */
+  main button:not([data-print="keep"]) { display: none !important }
+
+  /* Round 10, question 7: the company logo at the top of a printed page. */
+  [data-print="only"] { display: block !important }
+
+  /* Printing one permit: the others in the list stay off the paper. */
+  body[data-printing="one"] [data-print-row]:not([data-print-target]) { display: none !important }
 
   /* A table split across pages repeats its head, and a row is not torn in
      half — an audit trail read across a page break has to stay legible. */

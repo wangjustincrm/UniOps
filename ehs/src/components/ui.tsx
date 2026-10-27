@@ -73,7 +73,7 @@ export function Tabs<T extends string>(
   },
 ) {
   return (
-    <div className="mb-4 flex gap-1 overflow-x-auto border-b border-neutral-200">
+    <div data-print="hide" className="mb-4 flex gap-1 overflow-x-auto border-b border-neutral-200">
       {tabs.map((tab) => (
         <button
           key={tab.key}

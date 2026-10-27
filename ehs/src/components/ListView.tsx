@@ -285,7 +285,8 @@ export function SearchBox({ value, onChange, placeholder, children }: {
   children?: ReactNode
 }) {
   return (
-    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+    // Controls, not content: off the paper when a page is printed (round 10).
+    <div data-print="hide" className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
       <div className="relative min-w-0 flex-1">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400"
                 aria-hidden />

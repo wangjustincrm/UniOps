@@ -185,10 +185,10 @@ export default function PermitsPage() {
       ) : (
         <ul className="flex flex-col gap-2">
           {list.pageRows.map((p) => (
-            <li key={p.id}>
+            <li key={p.id} data-print-row="" {...(open === p.id ? { 'data-print-target': '' } : {})}>
               <Card className={'!p-0 ' + (p.status === 'expired' && !p.closed_at
                 ? '!border-danger-400' : p.status === 'suspended' ? '!border-warning-400' : '')}>
-                <button type="button" onClick={() => setOpen(open === p.id ? null : p.id)}
+                <button type="button" data-print="keep" onClick={() => setOpen(open === p.id ? null : p.id)}
                         className="flex w-full items-start gap-3 p-3.5 text-left">
                   <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-neutral-400" aria-hidden />
                   <span className="min-w-0 flex-1">
@@ -287,6 +287,17 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
 
   return (
     <div className="border-t border-neutral-100 p-3.5">
+      {/* Round 10: this permit printed on its own, with the company logo. */}
+      <div className="mb-2 flex justify-end" data-print="hide">
+        <button type="button" className="text-xs font-semibold text-primary-700 hover:underline"
+                onClick={() => {
+                  document.body.dataset.printing = 'one'
+                  window.print()
+                  delete document.body.dataset.printing
+                }}>
+          Print this permit
+        </button>
+      </div>
       {permit.blockers.length > 0 && (
         <div className="mb-4 rounded-lg border-l-3 border-warning-500 bg-warning-50 p-3">
           <p className="text-sm font-semibold text-warning-700">

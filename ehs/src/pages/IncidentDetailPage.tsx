@@ -293,12 +293,19 @@ export default function IncidentDetailPage() {
             {' '}— shown to HSE only, for a private conversation.
           </p>
         )}
-        {canInvestigate && inc.status !== 'draft' && inc.status !== 'closed' && !editing && (
-          <button type="button" className="mt-2 text-xs font-semibold text-primary-700 hover:underline"
-                  onClick={() => setEditing(true)}>
-            Edit the report
+        <div className="mt-2 flex flex-wrap gap-4" data-print="hide">
+          {canInvestigate && inc.status !== 'draft' && inc.status !== 'closed' && !editing && (
+            <button type="button" className="text-xs font-semibold text-primary-700 hover:underline"
+                    onClick={() => setEditing(true)}>
+              Edit the report
+            </button>
+          )}
+          {/* Round 10: the incident report printed, with the company logo. */}
+          <button type="button" className="text-xs font-semibold text-primary-700 hover:underline"
+                  onClick={() => window.print()}>
+            Print
           </button>
-        )}
+        </div>
         {editing && <EditReport incident={inc} isHse={canClose} onDone={() => { setEditing(false); touched() }}
                                 onCancel={() => setEditing(false)} />}
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">

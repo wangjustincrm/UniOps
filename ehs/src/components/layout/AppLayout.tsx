@@ -386,7 +386,10 @@ function Header({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
   }, [menuOpen])
 
   return (
-    <header className="flex h-[60px] shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-4 md:px-6">
+    // ★ Marked rather than matched as `header` in the print rules: pages have
+    // <header>s of their own (an incident's number and title), which the rule
+    // for this bar was taking off the paper with it.
+    <header data-print="hide" className="flex h-[60px] shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-4 md:px-6">
       <button
         className="rounded-md p-2 text-neutral-500 hover:bg-neutral-50 md:hidden"
         aria-label="Open menu"
@@ -459,6 +462,9 @@ function detectIframeEmbed(): boolean {
 const IS_EMBEDDED = detectIframeEmbed()
 
 export default function AppLayout() {
+  const { data: branding } = useBranding()
+  const brandLogo = branding?.logo_data_url || null
+  const brandName = branding?.name || 'UniOps'
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const { token, user } = getStoredSession()
@@ -516,6 +522,14 @@ export default function AppLayout() {
           <TabRouterSync routes={ehsRoutes} />
           <div className="shrink-0" data-print="hide"><TabBar /></div>
           <main className="relative flex-1 overflow-hidden">
+            {/* ★ Round 10, question 7: "the logo should also go on the other
+                printouts — … the incident report, permits." Printed pages carry
+                the company logo from Admin → Company Settings, centred. */}
+            {brandLogo && (
+              <div data-print="only" className="pb-3 text-center">
+                <img src={brandLogo} alt={brandName} className="mx-auto h-12 object-contain" />
+              </div>
+            )}
             <TabHost routes={ehsRoutes} pageClassName="mx-auto max-w-[1440px]" />
           </main>
         </div>
