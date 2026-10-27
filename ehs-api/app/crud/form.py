@@ -390,13 +390,21 @@ async def list_submissions(
         # results and it should. make the field searchable by name, number,
         # area, or who filed it." The form's name was not among what the
         # register matched, and it only ever matched the rows already loaded.
-        like = f"%{search.strip()}%"
+        # ★ Review (uniops-8b): % and _ typed in are literal, not wildcards;
+        # and the status is matched too, as the page's own filter did before
+        # the search moved to the server ("draft" found nothing).
+        term = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{term}%"
+
+        def m(col):
+            return col.ilike(like, escape="\\")
         q = q.where(or_(
-            FormSubmission.submission_no.ilike(like),
-            FormSubmission.location_path.ilike(like),
-            FormSubmission.submitted_by_name.ilike(like),
+            m(FormSubmission.submission_no),
+            m(FormSubmission.location_path),
+            m(FormSubmission.submitted_by_name),
+            m(FormSubmission.status),
             select(FormTemplate.id).where(FormTemplate.id == FormSubmission.template_id,
-                                          FormTemplate.name.ilike(like)).exists(),
+                                          m(FormTemplate.name)).exists(),
         ))
     if status_in:
         q = q.where(FormSubmission.status.in_(status_in))

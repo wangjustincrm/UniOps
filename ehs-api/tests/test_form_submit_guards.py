@@ -798,3 +798,7 @@ async def test_the_form_register_searches_by_name_number_area_and_filer(hse_mana
     assert await found("jhsc"), "by the form's name"
     assert await found(sub["submission_no"]), "by its number"
     assert not await found("no-such-form-anywhere")
+    # ★ Review: the status is searched, and % and _ are not wildcards.
+    assert await found(sub["status"]), "by its status"
+    assert not await found("%"), "a % matched everything"
+    assert not await found("JHSC_Monthly"), "an _ matched any character"
