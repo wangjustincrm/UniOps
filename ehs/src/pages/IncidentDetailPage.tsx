@@ -113,6 +113,8 @@ function fmt(iso: string | null | undefined): string | null {
 const EVENT_LABELS: Record<string, string> = {
   kind_changed: 'Kind of incident changed',
   reopened: 'Reopened',
+  hse_reviewed: 'HSE reviewed',
+  closed: 'Closed',
 }
 
 function Row({ label, value, block = false }: {
@@ -555,13 +557,9 @@ export default function IncidentDetailPage() {
                 ? `${fmt(inc.classified_at)}${inc.classified_by_name ? ` · ${inc.classified_by_name}` : ''}`
                 : null}
             />
-            <Row
-              label="HSE reviewed"
-              value={inc.hse_reviewed_at
-                ? `${fmt(inc.hse_reviewed_at)}${inc.hse_reviewed_by_name ? ` · ${inc.hse_reviewed_by_name}` : ''}`
-                : null}
-            />
-            <Row label="Closed" value={fmt(inc.closed_at)} />
+            {/* ★ Round 10, TC-08: every review and every close is a timeline
+                event, so one done again after a reopening is a second row
+                rather than overwriting the first. */}
             {/* ★ Round 9: things that can happen more than once — the kind of
                 incident changed, a reopening and why — who and when. */}
             {(inc.events ?? []).map((e, i) => (

@@ -1203,3 +1203,29 @@ async def test_nobody_was_hurt_beats_the_type_default(hse_manager):
     })
     assert unanswered.status_code in (200, 201), unanswered.text
     assert unanswered.json()["injury_class"] == "first_aid"
+
+
+async def test_every_review_and_close_is_on_the_timeline(hse_manager, worker):
+    """★ Round 10, TC-08: "when the reopened incident has the HSE review
+    completed, or the incident is closed again, record both under the
+    timeline." """
+    user, client = hse_manager
+    injured, _ = worker
+    inc = (await client.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Twisted an ankle", "incident_type": "first_aid",
+        "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),
+        "description": "On the stairs.", "injured_user_id": str(injured.id),
+    })).json()
+    iid = inc["id"]
+    await client.post(f"/api/v1/incidents/{iid}/submit")
+    assert (await client.post(f"/api/v1/incidents/{iid}/hse-review")).status_code == 200
+    # Reviewing again changes nothing, and is not a second row.
+    await client.post(f"/api/v1/incidents/{iid}/hse-review")
+    assert (await client.post(f"/api/v1/incidents/{iid}/close")).status_code == 200
+    await client.post(f"/api/v1/incidents/{iid}/reopen", json={"reason": "Wrong ankle"})
+    assert (await client.post(f"/api/v1/incidents/{iid}/hse-review")).status_code == 200
+    body = (await client.post(f"/api/v1/incidents/{iid}/close")).json()
+
+    kinds = [e["kind"] for e in body["events"]]
+    assert kinds == ["hse_reviewed", "closed", "reopened", "hse_reviewed", "closed"], kinds
+    assert all(e["by_name"] == user.full_name for e in body["events"])

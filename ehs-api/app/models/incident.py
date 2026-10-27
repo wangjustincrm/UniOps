@@ -293,7 +293,7 @@ class IncidentEvent(UUIDPrimaryKey, Base):
     incident_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ehs_incidents.id", ondelete="CASCADE"),
         nullable=False, index=True)
-    # kind_changed | reopened
+    # kind_changed | reopened | hse_reviewed | closed
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
     at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -479,7 +479,13 @@ async def hse_review_incident(
     supervisor may investigate; the review is deliberately somebody else.
     """
     incident = await crud.get(db, incident_id)
+    before = incident.hse_reviewed_at
     await crud.hse_review(db, incident, _user_id(user))
+    # ★ Round 10, TC-08: "when the reopened incident has the HSE review
+    # completed, or the incident is closed again, record both under the
+    # timeline." Every review and every close is a row, not just the latest.
+    if before is None and incident.hse_reviewed_at is not None:
+        await crud.record_event(db, incident, "hse_reviewed", by_id=_user_id(user))
     await notify.incident_status_changed(
         db, incident, "hse_reviewed", by_name=incident.hse_reviewed_by_name)
     return await _to_out(db, incident, user)
@@ -493,6 +499,7 @@ async def close_incident(incident_id: uuid.UUID, db: SessionDep, user: CanCloseI
     await crud.close(db, incident)
     # Closing an already-closed incident is a no-op, and says nothing twice.
     if was != incident.status:
+        await crud.record_event(db, incident, "closed", by_id=_user_id(user))
         await notify.incident_status_changed(
             db, incident, "closed",
             by_name=await crud._resolve_name(db, _user_id(user)))
