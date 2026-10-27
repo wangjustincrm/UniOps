@@ -191,7 +191,10 @@ async def test_the_checklist_is_hses_to_edit_and_an_issued_permit_keeps_its_own(
         {"label": "Fire watch for 60 minutes after"}]})
     assert edited.status_code == 200, edited.text
     keys = [p["key"] for p in edited.json()["precautions"]]
-    assert keys[0] == "extinguisher" and keys[1] == "fire_watch_for_60_minutes_after"
+    # ★ Review (uniops-8b): reworded, it is a new check with a new key — a
+    # tick on "Extinguisher to hand" is not a tick on "Two extinguishers".
+    assert keys[0].startswith("two_extinguishers_to_hand_") and keys[0] != "extinguisher"
+    assert keys[1].startswith("fire_watch_for_60_minutes_after_")
 
     # The issued permit still says what it was issued against.
     after = (await client.get(f"/api/v1/permits/{pid}")).json()
@@ -202,3 +205,18 @@ async def test_the_checklist_is_hses_to_edit_and_an_issued_permit_keeps_its_own(
     await client.patch(f"/api/v1/permits/{fresh}", json={"precautions_confirmed": {"extinguisher": True}})
     blockers = (await client.get(f"/api/v1/permits/{fresh}")).json()["blockers"]
     assert any("Fire watch for 60 minutes after" in b for b in blockers)
+    assert any("Two extinguishers to hand" in b for b in blockers), (
+        "the old tick counted for the new wording")
+
+    # Wording unchanged, help changed: the same check, the same key.
+    again = await hse.put(f"/api/v1/permit-types/{tid}/precautions", json={"precautions": [
+        {"key": keys[0], "label": "Two extinguishers to hand", "help": "CO2 and dry powder"},
+        {"key": keys[1], "label": "Fire watch for 60 minutes after"},
+        # A new item whose words make an old key: it must not take it over.
+        {"label": "Extinguisher"}]})
+    again_keys = [p["key"] for p in again.json()["precautions"]]
+    assert again_keys[:2] == keys
+    assert again_keys[2] != "extinguisher", "an old key was given to a new check"
+    # So the draft's old tick still counts for nothing.
+    blockers = (await client.get(f"/api/v1/permits/{fresh}")).json()["blockers"]
+    assert any(b.startswith("Extinguisher") or "Extinguisher" in b for b in blockers), blockers

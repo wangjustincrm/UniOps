@@ -196,13 +196,25 @@ async def set_precautions(
     """
     import re
     permit_type = await crud.get_type(db, type_id)
-    items, seen = [], set()
+    # ★ Review (uniops-8b): a key is kept only while its wording is. A draft
+    # that ticked "Isolate the pump" would otherwise count as having confirmed
+    # whatever HSE reworded it to; reworded, it is a new check, and the old
+    # key is not reused for anything. (The help text is guidance, not what
+    # is confirmed: changing it keeps the key.)
+    was = {i.get("key"): (i.get("label") or "").strip() for i in (permit_type.precautions or [])}
+    kept = {p.key for p in payload.precautions if p.key and was.get(p.key) == p.label.strip()}
+    items, used = [], set()
     for p in payload.precautions:
-        key = p.key or re.sub(r"[^a-z0-9]+", "_", p.label.lower()).strip("_")[:40] or "item"
-        base, n = key, 2
-        while key in seen:
-            key, n = f"{base}_{n}", n + 1
-        seen.add(key)
+        if p.key in kept and p.key not in used:
+            key = p.key
+        else:
+            # A new check, or a reworded one: a key no check has had before.
+            # Reserving only the last list's keys was not enough — reworded
+            # once, an old key was free again next time, and a draft still
+            # ticking it would count for whatever took it.
+            slug = re.sub(r"[^a-z0-9]+", "_", p.label.lower()).strip("_")[:32] or "item"
+            key = f"{slug}_{uuid.uuid4().hex[:6]}"
+        used.add(key)
         item = {"key": key, "label": p.label.strip()}
         if p.help and p.help.strip():
             item["help"] = p.help.strip()
