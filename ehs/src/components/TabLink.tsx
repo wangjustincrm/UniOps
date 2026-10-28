@@ -17,6 +17,13 @@ export default function TabLink({ to, onClick, ...rest }: ComponentProps<typeof 
   const retarget = useRetargetTab()
   return (
     <Link to={to} {...rest}
-          onClick={(e) => { retarget(to); onClick?.(e) }} />
+          onClick={(e) => {
+            // ★ Review (uniops-8b): a modified or middle click opens a browser
+            // tab and this page does not move — the app's own open tab must
+            // not be repointed behind the reader's back.
+            if (!(e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey
+                  || e.shiftKey || e.altKey)) retarget(to)
+            onClick?.(e)
+          }} />
   )
 }
