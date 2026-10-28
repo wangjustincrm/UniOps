@@ -28,9 +28,9 @@
  * Charts are divs. All of them are bars, a charting library would be the
  * largest dependency in the app, and these print.
  */
+import TabLink from '@/components/TabLink'
 import { Fragment, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
 import { CalendarClock, TrendingUp } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatAreaPath } from '@/lib/areaPath'
@@ -127,10 +127,10 @@ function DrillLink({ to, children, className = '' }: {
   to: string; children: React.ReactNode; className?: string
 }) {
   return (
-    <Link to={to}
+    <TabLink to={to}
           className={`rounded-sm underline decoration-transparent underline-offset-2 transition-colors hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500 ${className}`}>
       {children}
-    </Link>
+    </TabLink>
   )
 }
 
@@ -254,7 +254,7 @@ export default function DashboardPage() {
             {data.medical_events.map((r, i) => {
               const total = r.first_aid + r.medical_aid + r.lost_time
               return (
-                <Link key={r.month}
+                <TabLink key={r.month}
                       to={monthDrill(data.headline.year, i, `injuries in ${MONTH_NAMES[i]}`,
                                      { injured_only: 'true' })}
                       className="flex flex-1 flex-col items-center gap-1.5 rounded-sm hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
@@ -269,7 +269,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <span className="text-[11px] text-neutral-400">{MONTHS[i]}</span>
-                </Link>
+                </TabLink>
               )
             })}
           </div>
@@ -281,7 +281,7 @@ export default function DashboardPage() {
                note="A rising line here is good — it means people are reporting what nearly happened.">
           <div className="flex h-28 items-stretch gap-1.5">
             {data.near_misses.map((r, i) => (
-              <Link key={r.month}
+              <TabLink key={r.month}
                     to={monthDrill(data.headline.year, i,
                                    `near misses in ${MONTH_NAMES[i]}`,
                                    { form_kind: 'near_miss' })}
@@ -294,7 +294,7 @@ export default function DashboardPage() {
                        style={{ height: `${(r.this_year / nearMax) * 100}%` }} />
                 </div>
                 <span className="text-[11px] text-neutral-400">{MONTHS[i]}</span>
-              </Link>
+              </TabLink>
             ))}
           </div>
           <Legend items={[{ label: 'This year', cls: 'bg-primary-500' },
@@ -497,14 +497,14 @@ export default function DashboardPage() {
                 {SEVERITY.map(({ key, cls, label }) => {
                   const n = h[key === 'medical_aid' ? 'medical' : key] as number
                   return n > 0 && (
-                    <Link key={key}
+                    <TabLink key={key}
                           to={drillTo(h.year, `${label.toLowerCase()} injuries in ${h.year}`,
                                       { injury_class: key })}
                           className={`${cls} flex items-center justify-center`}
                           style={{ width: `${(n / h.injuries) * 100}%` }}
                           title={`${label}: ${n} — open these`}>
                       <span className="text-[11px] font-bold text-white">{n}</span>
-                    </Link>
+                    </TabLink>
                   )
                 })}
               </div>
@@ -539,7 +539,7 @@ export default function DashboardPage() {
       </div>
 
       {(unowned.data?.count ?? 0) > 0 && (
-        <Link to="/settings/area-owners"
+        <TabLink to="/settings/area-owners"
               className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-warning-50 px-3 py-2 transition-colors hover:bg-warning-100">
           <p className="min-w-0 flex-1 text-xs text-warning-800">
             <span className="font-bold tabular-nums">{unowned.data!.count}</span>{' '}
@@ -550,7 +550,7 @@ export default function DashboardPage() {
           <span className="shrink-0 text-xs font-semibold text-warning-800 underline">
             Assign the areas
           </span>
-        </Link>
+        </TabLink>
       )}
 
       {h.rir_note && (
@@ -652,11 +652,11 @@ function Bars({ rows, linkFor }: {
         return (
           <li key={r.label}>
             {linkFor ? (
-              <Link to={linkFor(r)}
+              <TabLink to={linkFor(r)}
                     className="flex items-center gap-2 rounded-sm py-0.5 hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
                     title={`${r.label}: ${r.count} — open these`}>
                 {bar}
-              </Link>
+              </TabLink>
             ) : (
               <span className="flex items-center gap-2 py-0.5">{bar}</span>
             )}

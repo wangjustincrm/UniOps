@@ -11,7 +11,8 @@
  * because they need to report something should land on the report form with the
  * area already filled in, not on a menu.
  */
-import { useEffect, useState } from 'react'
+import { useRetargetTab } from '@/hooks/useRetargetTab'
+import { useCallback, useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Check, ClipboardCheck, FileText, MapPin, TriangleAlert, Wrench } from 'lucide-react'
@@ -47,7 +48,13 @@ const KIND_LABELS: Record<string, string> = {
 
 export default function QrLandingPage() {
   const { token = '' } = useParams()
-  const navigate = useNavigate()
+  const retarget = useRetargetTab()
+  // A scan lands on a static tab told what to show by its query (an asset, a
+  // location); one already open would otherwise keep showing the last scan.
+  const navigate0 = useNavigate()
+  const navigate = useCallback((to: string, opts?: { replace?: boolean }) => {
+    retarget(to); navigate0(to, opts)
+  }, [retarget, navigate0])
 
   const target = useQuery({
     queryKey: ['qr', token],

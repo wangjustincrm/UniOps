@@ -5,7 +5,7 @@
  * the same kind of object in this system, which is why they can share a screen
  * — and why the regulation each one comes from is shown beside it.
  */
-import { Link } from 'react-router-dom'
+import TabLink from '@/components/TabLink'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import {
@@ -101,12 +101,12 @@ function DeadlineRow({ d }: { d: CalendarDeadline }) {
 
   if (d.path) {
     return (
-      <Link
+      <TabLink
         to={d.path}
         className={`${card} transition-colors hover:border-primary-300 hover:bg-primary-50/40`}
       >
         {body}
-      </Link>
+      </TabLink>
     )
   }
   return <div className={card}>{body}</div>

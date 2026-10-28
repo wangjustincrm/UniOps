@@ -8,17 +8,20 @@
  * before navigating moves the open tab to the new link. Outside the tab shell
  * (an iframe embed) there is no store and the plain navigation is enough.
  */
+import { useCallback } from 'react'
 import { deriveTabMeta, useOptionalTabStoreApi } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
 
 export function useRetargetTab() {
   const tabs = useOptionalTabStoreApi()
-  return (href: string) => {
+  // Stable, so a caller may list it (or a function built on it) as an effect's
+  // dependency without the effect running on every render.
+  return useCallback((href: string) => {
     const q = href.indexOf('?')
     if (!tabs || q < 0) return
     const meta = deriveTabMeta(ehsRoutes, href.slice(0, q), href.slice(q))
     if (meta && tabs.getState().tabs.some((t) => t.key === meta.key)) {
       tabs.getState().setTabPath(meta.key, meta.path!)
     }
-  }
+  }, [tabs])
 }

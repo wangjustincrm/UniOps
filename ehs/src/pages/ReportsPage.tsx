@@ -15,10 +15,9 @@
  * opening one narrows the report to it and lists the records behind it, and
  * the narrowing stacks — first aid, then by area, then that area's records.
  */
-import { useRetargetTab } from '@/hooks/useRetargetTab'
+import TabLink from '@/components/TabLink'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
 import { ChevronRight, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/formatDate'
@@ -140,7 +139,6 @@ export default function ReportsPage() {
 
   // Opened by narrowing to something, or asked for outright.
   const listing = Boolean(current?.listable) && !compare && (filters.length > 0 || showRecords)
-  const retarget = useRetargetTab()
   const records = useQuery({
     queryKey: ['report-records', entity, filters, dated],
     queryFn: () => api.get<Records>(
@@ -339,10 +337,10 @@ export default function ReportsPage() {
                     return (
                       <li key={row.id}>
                         {row.path ? (
-                          <Link to={row.path} onClick={() => retarget(row.path!)}
-                                className="flex items-center gap-3 py-2 hover:bg-neutral-50">
+                          <TabLink to={row.path}
+                                   className="flex items-center gap-3 py-2 hover:bg-neutral-50">
                             {body}
-                          </Link>
+                          </TabLink>
                         ) : (
                           <div className="flex items-center gap-3 py-2">{body}</div>
                         )}

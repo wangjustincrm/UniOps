@@ -4,7 +4,7 @@
  * Card list rather than a table: this is read one-handed on a phone, and a
  * table hides the one thing that matters, which is how late something is.
  */
-import { Link } from 'react-router-dom'
+import TabLink from '@/components/TabLink'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ClipboardList } from 'lucide-react'
@@ -79,7 +79,7 @@ function Group({ title, count, tone = 'plain', children }: {
 
 function ActionCard({ action: a }: { action: ActionListItem }) {
   return (
-    <Link
+    <TabLink
       to={`/actions/${a.id}`}
       className="block rounded-xl border border-neutral-200 bg-white p-3.5 transition-colors hover:border-primary-300 hover:bg-primary-50/40"
     >
@@ -101,7 +101,7 @@ function ActionCard({ action: a }: { action: ActionListItem }) {
       <div className="mt-2.5">
         <StatusBadge status={a.status} />
       </div>
-    </Link>
+    </TabLink>
   )
 }
 
@@ -281,7 +281,7 @@ export default function MyActionsPage() {
 
       <Group title="Waiting on you to verify" count={showing('To verify') ? verifying.length : 0} tone="warn">
         {verifying.map((a) => (
-          <Link
+          <TabLink
             key={a.id}
             to={`/actions/${a.id}`}
             className="block rounded-xl border border-warning-500/40 bg-warning-50/40 p-3.5 transition-colors hover:border-warning-500"
@@ -295,7 +295,7 @@ export default function MyActionsPage() {
               The work is reported done. Confirm the control is effective —
               or that it is not, which sends it back.
             </p>
-          </Link>
+          </TabLink>
         ))}
       </Group>
 
@@ -308,7 +308,7 @@ export default function MyActionsPage() {
           unlabelled, above a heading that belonged to the block underneath. */}
       <Group title="Other work assigned to you" count={showing('Other work') ? other.length : 0}>
         {other.map((t) => (
-          <Link
+          <TabLink
             key={t.id}
             to={t.path || '/actions/mine'}
             className="block rounded-xl border border-neutral-200 bg-white p-3.5 transition-colors hover:border-primary-300 hover:bg-primary-50/40"
@@ -323,7 +323,7 @@ export default function MyActionsPage() {
                 )}
               </div>
             </div>
-          </Link>
+          </TabLink>
         ))}
       </Group>
     </div>
@@ -383,7 +383,7 @@ function MonthPanel({ query }: {
             <ul className="flex flex-col gap-1.5">
               {m.items.map((it) => (
                 <li key={it.key}>
-                  <Link to={it.path}
+                  <TabLink to={it.path}
                         className="flex items-start gap-2 rounded-lg px-1.5 py-1 hover:bg-neutral-50">
                     {it.done
                       ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success-600" aria-hidden />
@@ -396,7 +396,7 @@ function MonthPanel({ query }: {
                       </span>
                       <span className="block text-xs text-neutral-500">{it.detail}</span>
                     </span>
-                  </Link>
+                  </TabLink>
                 </li>
               ))}
             </ul>

@@ -5,8 +5,9 @@
  * Reporting progress and verifying are separate acts by separate people, so
  * they are separate controls here rather than one "complete" button.
  */
+import TabLink from '@/components/TabLink'
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
@@ -119,10 +120,10 @@ export default function ActionDetailPage() {
                 no reference at all until recently, and "Raised from" followed
                 by nothing is not worth printing. */}
             {sourceHref ? (
-              <Link to={sourceHref}
+              <TabLink to={sourceHref}
                     className="font-semibold text-neutral-900 underline underline-offset-2 hover:text-primary-700">
                 {a.source_ref ?? SOURCE_NOUN[a.source_type] ?? 'the source record'}
-              </Link>
+              </TabLink>
             ) : (
               <span className="font-semibold text-neutral-900">{a.source_ref}</span>
             )}
