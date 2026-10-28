@@ -530,7 +530,8 @@ def render_xml(plan: BillPlan, *, facts: NcFacts, maker: str, now: datetime) -> 
     # 2 = domestic purchase, 4 = import. Import bills may carry no tax in
     # XChange ("组织本币无税金额不等于价税合计" — proven on the NC test server
     # 2026-10-27), so a foreign supplier that charges Canadian tax is booked
-    # as domestic: the tax is a Canadian input tax either way.
+    # as domestic: the tax is a Canadian input tax either way (user confirmed
+    # 2026-10-28; the check is ArapExpPfxxValidater.checkTaxByOut, XChange only).
     taxed = any(r.tax != _ZERO for r in plan.rows)
     buysell = "2" if (facts.supplier_country == COUNTRY or taxed) else "4"
     billdate = now.astimezone(NC_TZ).strftime("%Y-%m-%d %H:%M:%S")

@@ -64,7 +64,7 @@ server; 10 were created, 3 were refused by UniOps for data reasons. Four rules c
 
 | Finding | Rule |
 |---|---|
-| An **import** bill (buysellflag 4) may carry no tax in XChange: "组织本币无税金额不等于价税合计". Clerks key 73 such rows a year by hand (a US supplier charging HST). | A foreign supplier that charges Canadian tax is booked as **domestic (2)**; untaxed foreign bills stay 4. **To confirm with finance.** |
+| An **import** bill (buysellflag 4) may carry no tax in XChange: "组织本币无税金额不等于价税合计". Clerks key 73 such rows a year by hand (a US supplier charging HST). | A foreign supplier that charges Canadian tax is booked as **domestic (2)**; untaxed foreign bills stay 4. **Confirmed by the user 2026-10-28** ("保持2"; NC's tax reports are hardly used). The check is XChange-only — `nc.bs.arap.plugin.ArapExpPfxxValidater.checkTaxByOut` requires untaxed = total (org, group and global) for buy/sell 3 and 4; the NC screen does not apply it, which is why clerks could key 4 with HST. Keeping 4 would mean folding the HST into cost and losing the input tax credit. |
 | **CNY is quoted inversely** in NC (`bd_currinfo.convmode = 1`: 1 CAD = x CNY), and NC re-derives local amounts with zero tolerance: "本币变动超过最大折算误差". | Rate sent = 1 / BoC rate (8 dp); local = amount ÷ rate. USD / EUR / GBP multiply. |
 | 11 of 642 tax lines carry the tax but a **0 taxable base**. | The base is the pre-tax amount less the other lines' bases (two such lines → refused). |
 | An EPMS PO **imported from NC** (raw material / packaging, `purchase_orders.source = 'nc'`) gets its payable in NC from the purchase invoice (D1). | Refused: an F1 on top would book it twice. |
