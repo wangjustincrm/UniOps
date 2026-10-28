@@ -9,14 +9,19 @@
  * AP invoices are created/matched in EPMS/OA and paid via Payment Applications —
  * this page is a finance-side viewer, not an editor. Styling follows
  * AccountsReceivablePage / CoaConfigPage.
+ *
+ * Push to NC (2026-10-27, replaces the Excel "Export to NC"): the selected AP
+ * invoices go to NC as SAVED payable bills through NC's XChange; the clicker
+ * is the NC bill maker. "NC AP Doc" shows the NC bill(s) holding each AP —
+ * our push result, or the NC AP mirror match for bills entered by hand.
  */
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, FileDown } from 'lucide-react'
+import { Loader2, Upload, AlertTriangle } from 'lucide-react'
 import { SortTh, sortParams, useSort, useSortableRows, useTabStoreApi } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
-import { financeApi, financePostDownload, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
+import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
@@ -32,7 +37,20 @@ interface ApInvoice {
   status: string; source_status: string | null
   po_id: string | null; po_number: string | null
   nc_exported_at: string | null
+  nc_bill_no: string | null
+  nc_push_status: 'pushed' | 'failed' | null
+  nc_push_error: string | null
+  nc_docs: NcDoc[]
 }
+interface NcDoc {
+  bill_no: string
+  state: 'saved' | 'approved' | 'pushed'
+  pushed: boolean
+  bill_date: string | null
+  money: string | null
+  currency: string | null
+}
+interface PushResult { ap_id: string; ap_number: string; ok: boolean; message: string; nc_bill_no: string | null }
 interface ApListResp {
   total: number
   items: ApInvoice[]
@@ -44,7 +62,7 @@ interface AgingRow {
 
 /** GET /ap/invoices sort keys (finance-api ap_invoices._INVOICE_SORT). */
 type ApSortKey = 'ap_invoice_number' | 'source' | 'vendor_name' | 'vendor_invoice_number'
-  | 'invoice_date' | 'due_date' | 'total_amount' | 'outstanding' | 'status' | 'nc_exported_at'
+  | 'invoice_date' | 'due_date' | 'total_amount' | 'outstanding' | 'status' | 'nc_bill_no'
 
 const STATUSES = ['draft', 'posted', 'partially_paid', 'paid', 'void'] as const
 const SOURCES = ['epms', 'oa'] as const
@@ -62,55 +80,104 @@ function StatusPill({ status }: { status: string }) {
   return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-neutral-100 text-neutral-600')}>{status.replace('_', ' ')}</span>
 }
 
+const NC_STATE: Record<NcDoc['state'], { label: string; cls: string; tip: string }> = {
+  saved: { label: 'Saved', cls: 'bg-amber-50 text-amber-700', tip: 'In NC, not yet approved' },
+  approved: { label: 'Approved', cls: 'bg-green-50 text-green-700', tip: 'Approved in NC' },
+  pushed: { label: 'Pushed', cls: 'bg-blue-50 text-blue-700', tip: 'Pushed by UniOps; NC state shows after the next NC sync (hourly)' },
+}
+
+function NcDocCell({ inv }: { inv: ApInvoice }) {
+  const docs = inv.nc_docs ?? []
+  if (docs.length === 0) {
+    if (inv.nc_push_status === 'failed') {
+      return <span className="flex items-center gap-1 text-xs text-red-600" title={inv.nc_push_error ?? ''}>
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Push failed
+      </span>
+    }
+    return <span className="text-xs text-neutral-400">—</span>
+  }
+  return (
+    <div className="flex flex-col gap-0.5">
+      {docs.map((d) => {
+        const st = NC_STATE[d.state]
+        const tip = [st.tip, d.pushed ? 'Created by Push to NC' : 'Entered in NC by hand',
+                     d.bill_date ? `Bill date ${d.bill_date.slice(0, 10)}` : null,
+                     d.money ? `${fmtMoney(d.money, d.currency ?? undefined)}` : null].filter(Boolean).join(' · ')
+        return (
+          <span key={d.bill_no} className="flex items-center gap-1" title={tip}>
+            <span className="font-mono text-xs text-neutral-700">{d.bill_no}</span>
+            <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium', st.cls)}>{st.label}</span>
+          </span>
+        )
+      })}
+      {inv.nc_push_error && (
+        <span className="flex items-center gap-1 text-[11px] text-red-600" title={inv.nc_push_error}>
+          <AlertTriangle className="h-3 w-3 shrink-0" /> Last push failed
+        </span>
+      )}
+    </div>
+  )
+}
+
 export default function AccountsPayablePage() {
   const { user, token, refreshToken } = useAuthStore()
   const [tab, setTab] = useState<'invoices' | 'aging'>('invoices')
   const [source, setSource] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
-  const [hideExported, setHideExported] = useState(true)
+  const [hideInNc, setHideInNc] = useState(true)
   const [q, setQ] = useState('')
   const [qInput, setQInput] = useState('')
   const [page, setPage] = useState(0)
 
   const qc = useQueryClient()
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [exporting, setExporting] = useState(false)
-  const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [pushing, setPushing] = useState(false)
+  const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string; lines?: string[] } | null>(null)
 
   const resetPage = () => { setPage(0); setSelected(new Set()) }
   // Server-sorted: the API pages this list, so it must also order it.
   const [sort, onSort] = useSort<ApSortKey>(null, resetPage)
   const gotoPage = (n: number) => { setPage(n); setSelected(new Set()) }
 
-  const exportable = (inv: ApInvoice) => inv.status !== 'draft' && inv.status !== 'void'
+  const pushable = (inv: ApInvoice) => inv.status !== 'draft' && inv.status !== 'void'
   const toggle = (id: string) => setSelected((p) => {
     const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
-  const runExport = async () => {
+  const runPush = async () => {
+    if (pushing) return                       // second click while the first is in flight
     const picked = invoices.filter((i) => selected.has(i.id))
     if (picked.length === 0) return
-    const already = picked.filter((i) => i.nc_exported_at).length
-    if (already && !window.confirm(`${already} of ${picked.length} selected were already exported. Export again?`)) return
-    setExporting(true); setBanner(null)
+    const again = picked.filter((i) => i.nc_bill_no).length
+    const msg = `Push ${picked.length} invoice${picked.length === 1 ? '' : 's'} to NC as saved payable bills?\n`
+      + `You will be the bill maker in NC.`
+      + (again ? `\n\n${again} already pushed: NC replaces a bill that is still saved; an approved bill is refused.` : '')
+    if (!window.confirm(msg)) return
+    setPushing(true); setBanner(null)
     try {
-      await financePostDownload('/ap/nc-export', { ap_ids: picked.map((i) => i.id) })
-      setBanner({ kind: 'ok', text: `Exported ${picked.length} invoice${picked.length === 1 ? '' : 's'} to NC file.` })
+      const r = await financeApi.post<{ results: PushResult[] }>('/ap/nc-push', { ap_ids: picked.map((i) => i.id) })
+      const ok = r.results.filter((x) => x.ok)
+      const bad = r.results.filter((x) => !x.ok)
+      setBanner({
+        kind: bad.length ? 'err' : 'ok',
+        text: `${ok.length} pushed to NC${bad.length ? `, ${bad.length} not pushed` : ''}.`,
+        lines: [...ok.map((x) => `${x.ap_number}: ${x.message}`), ...bad.map((x) => `${x.ap_number}: ${x.message}`)],
+      })
       setSelected(new Set())
       qc.invalidateQueries({ queryKey: ['ap-invoices'] })
     } catch (e) {
       setBanner({ kind: 'err', text: (e as Error).message })
-    } finally { setExporting(false) }
+    } finally { setPushing(false) }
   }
 
   const { data, isFetching } = useQuery({
-    queryKey: ['ap-invoices', source, statusFilter, q, hideExported, page, sort],
+    queryKey: ['ap-invoices', source, statusFilter, q, hideInNc, page, sort],
     queryFn: () => {
       const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE),
                                        ...sortParams(sort) })
       if (source) qs.set('source', source)
       if (statusFilter) qs.set('status', statusFilter)
       if (q) qs.set('q', q)
-      if (hideExported) qs.set('exported', 'false')
+      if (hideInNc) qs.set('in_nc', 'false')
       return financeApi.get<ApListResp>(`/ap/invoices?${qs.toString()}`)
     },
   })
@@ -194,21 +261,27 @@ export default function AccountsPayablePage() {
                 <button type="submit" className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Search</button>
               </form>
               <label className="flex items-center gap-1.5 text-sm text-neutral-600">
-                <input type="checkbox" checked={hideExported}
-                       onChange={(e) => { setHideExported(e.target.checked); resetPage() }} />
-                Hide exported
+                <input type="checkbox" checked={hideInNc}
+                       onChange={(e) => { setHideInNc(e.target.checked); resetPage() }} />
+                Hide in NC
               </label>
-              <button onClick={runExport} disabled={exporting || pickedCount === 0}
+              <button onClick={runPush} disabled={pushing || pickedCount === 0}
+                      title="Create saved payable bills in NC for the selected invoices"
                       className="ml-auto flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50">
-                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-                Export to NC{pickedCount > 0 ? ` (${pickedCount})` : ''}
+                {pushing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                Push to NC{pickedCount > 0 ? ` (${pickedCount})` : ''}
               </button>
             </div>
 
             {banner && (
               <div className={cn('mb-3 rounded-md px-3 py-2 text-sm',
                 banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
-                {banner.text}
+                <div>{banner.text}</div>
+                {banner.lines && banner.lines.length > 0 && (
+                  <ul className="mt-1 list-disc pl-5 text-xs">
+                    {banner.lines.map((l) => <li key={l}>{l}</li>)}
+                  </ul>
+                )}
               </div>
             )}
 
@@ -226,7 +299,7 @@ export default function AccountsPayablePage() {
                     <SortTh label="Total" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
                     <SortTh label="Outstanding" sortKey="outstanding" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
                     <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
-                    <SortTh label="NC Export" sortKey="nc_exported_at" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
+                    <SortTh label="NC AP Doc" sortKey="nc_bill_no" sort={sort} onSort={onSort} className="px-3 py-2 w-48" />
                   </tr>
                 </thead>
                 <tbody>
@@ -246,7 +319,7 @@ export default function AccountsPayablePage() {
                           title="Open invoice detail in a tab"
                           className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-100', i % 2 && 'bg-neutral-50/40')}>
                         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                          {exportable(inv) && (
+                          {pushable(inv) && (
                             <input type="checkbox" checked={selected.has(inv.id)}
                                    onChange={() => toggle(inv.id)} />
                           )}
@@ -260,8 +333,8 @@ export default function AccountsPayablePage() {
                         <td className="px-3 py-2 text-right font-mono">{fmtMoney(inv.total_amount, inv.currency)}</td>
                         <td className="px-3 py-2 text-right font-mono">{open ? fmtMoney(String(outstanding)) : '—'}</td>
                         <td className="px-3 py-2"><StatusPill status={inv.status} /></td>
-                        <td className="px-3 py-2 text-xs text-neutral-500">
-                          {inv.nc_exported_at ? inv.nc_exported_at.slice(0, 10) : '—'}
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                          <NcDocCell inv={inv} />
                         </td>
                       </tr>
                     )
