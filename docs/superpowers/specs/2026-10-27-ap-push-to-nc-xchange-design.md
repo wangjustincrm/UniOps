@@ -229,7 +229,8 @@ AP with "Check the invoice date" until it is corrected.
    NC user; bills are still made by the clicking clerk's own NC user, D9).
 2. Raise scomment `maxLength` to 250 in both pfxx F1 billdefine files (back them up first). A
    script that does exactly the test-server edit, and refuses if it would change anything else, is
-   kept with the release notes.
+   kept with the release notes. **Done on production 2026-10-28** (files were byte-identical to the
+   test originals before, and to the test edit after; backups `*.bak_202610281405`).
 3. Make sure every AP clerk's ERP ID resolves to an enabled NC user (§6.1; Alex Ji currently does not).
 4. ~~Restrict network access to XChangeServlet~~ — not done, user decision 2026-10-28 (§7).
 5. Clean up vendor `erp_id` mismatches before go-live (Thermo Fisher 0000391 vs NC 0000153, plus
