@@ -6,7 +6,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Lock, Plus } from 'lucide-react'
+import { ChevronRight, Lock, Plus, X } from 'lucide-react'
 import { api, apiBlob, ApiError } from '@/lib/api'
 import { PageHeader } from '@/components/ui'
 
@@ -17,7 +17,7 @@ interface Vocabulary {
 }
 interface Item {
   id: string; code: string; label: string; sort_order: number
-  is_active: boolean; parent_id: string | null; path: string | null
+  is_active: boolean; parent_id: string | null; path: string | null; trail?: string | null
   attrs?: { pictogram_file_id?: string; pictogram_filename?: string; severity?: Record<string, string> }
 }
 
@@ -31,6 +31,76 @@ interface Item {
  * that class prints it; until then, labels claiming it cannot be approved.
  */
 const PICTOGRAM_VOCABULARY = 'ghs_hazard_class' 
+
+/** The server's limit (crud/vocabulary.py MAX_DEPTH). */
+const MAX_DEPTH = 4
+
+/** Entries in tree order, each with its depth — sorted within a parent,
+ *  never across the list. An entry whose parent is not in the list (hidden
+ *  as retired) sits at the top rather than disappearing. */
+function asTree(items: Item[]) {
+  const ids = new Set(items.map((i) => i.id))
+  const kids = new Map<string, Item[]>()
+  for (const i of items) {
+    const key = i.parent_id && ids.has(i.parent_id) ? i.parent_id : ''
+    kids.set(key, [...(kids.get(key) ?? []), i])
+  }
+  for (const list of kids.values()) {
+    list.sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label))
+  }
+  const ordered: { item: Item; depth: number }[] = []
+  const walk = (key: string, depth: number) => {
+    for (const i of kids.get(key) ?? []) {
+      ordered.push({ item: i, depth })
+      walk(i.id, depth + 1)
+    }
+  }
+  walk('', 0)
+  const trail = new Map(items.map((i) => [i.id, i.trail ?? i.label]))
+  return { ordered, kids, trail }
+}
+
+/**
+ * Where the next entry goes, and what that does to an entry already in use.
+ *
+ * ★ Review (uniops-8b): an entry with something inside it is a heading and
+ * can no longer be chosen. Records already on it keep it, but HSE should know
+ * they are about to change what the pickers offer before they do it.
+ */
+function UnderNote({ code, item, trail, hasChildren, onClear }: {
+  code: string; item: Item; trail: string; hasChildren: boolean; onClear: () => void
+}) {
+  const usage = useQuery({
+    queryKey: ['vocabulary-usage', code, item.id],
+    queryFn: () => api.get<{ total: number; by: { what: string; count: number }[] }>(
+      `/api/v1/settings/vocabularies/${code}/items/${item.id}/usage`),
+    enabled: !hasChildren,
+  })
+  return (
+    <div className="mb-2 rounded-lg border border-primary-200 bg-primary-50/50 px-3 py-2 text-xs text-neutral-700">
+      <p className="flex items-center gap-2">
+        <span className="min-w-0 flex-1">Adding inside <span className="font-semibold">{trail}</span></span>
+        <button type="button" onClick={onClear}
+                className="flex items-center gap-1 rounded px-1.5 py-1 text-neutral-500 hover:text-neutral-800">
+          <X className="h-3.5 w-3.5" aria-hidden />
+          Add at the top instead
+        </button>
+      </p>
+      {!hasChildren && (
+        <p className="mt-1 text-neutral-600">
+          {item.label} becomes a heading: forms will offer what is inside it, not {item.label} itself.
+          {usage.data && usage.data.total > 0 && (
+            <span className="mt-1 block font-medium text-warning-800">
+              {usage.data.total} {usage.data.total === 1 ? 'record names' : 'records name'} {item.label} (
+              {usage.data.by.map((u) => `${u.what}: ${u.count}`).join('; ')}). They keep it; it just
+              cannot be chosen again.
+            </span>
+          )}
+        </p>
+      )}
+    </div>
+  )
+}
 
 export default function VocabulariesPage() {
   const queryClient = useQueryClient()
@@ -57,11 +127,21 @@ export default function VocabulariesPage() {
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['vocabularies'] })
+    // The pickers' own copy, so a new entry is offered without a reload.
+    queryClient.invalidateQueries({ queryKey: ['vocabulary'] })
   }
+  // Under which entry the next one goes; null is the top.
+  const [under, setUnder] = useState<Item | null>(null)
   const add = useMutation({
-    mutationFn: () => api.post(`/api/v1/settings/vocabularies/${active}/items`, draft),
+    mutationFn: () => api.post(`/api/v1/settings/vocabularies/${active}/items`, {
+      label: draft.label.trim(),
+      // Left out, the server derives it from the wording.
+      ...(draft.code.trim() ? { code: draft.code.trim() } : {}),
+      parent_id: under?.id ?? null,
+    }),
     onSuccess: () => { setDraft({ code: '', label: '' }); invalidate() },
   })
+  const tree = current?.is_hierarchical ? asTree(items.data ?? []) : null
   const toggle = useMutation({
     mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) =>
       api.patch(`/api/v1/settings/vocabularies/${active}/items/${id}`, { is_active }),
@@ -77,7 +157,7 @@ export default function VocabulariesPage() {
           <button
             key={v.code}
             type="button"
-            onClick={() => setSelected(v.code)}
+            onClick={() => { setSelected(v.code); setUnder(null) }}
             className={`min-h-[36px] rounded-lg border px-3 text-xs font-medium ${
               v.code === active
                 ? 'border-primary-400 bg-primary-50 text-primary-700'
@@ -98,6 +178,17 @@ export default function VocabulariesPage() {
         </p>
       )}
 
+      {current && !current.is_system_locked && under && (
+        <UnderNote code={active!} item={under} trail={tree?.trail.get(under.id) ?? under.label}
+                   hasChildren={Boolean(tree?.kids.get(under.id)?.length)}
+                   onClear={() => setUnder(null)} />
+      )}
+      {current?.is_hierarchical && !current.is_system_locked && !under && (
+        <p className="mb-2 text-xs text-neutral-500">
+          Adding at the top of the list. To add an entry inside another one, press
+          “Add inside” on that entry.
+        </p>
+      )}
       {current && !current.is_system_locked && (
         <form
           className="mb-3 flex flex-wrap gap-2"
@@ -105,21 +196,22 @@ export default function VocabulariesPage() {
         >
           <input
             className="min-h-[44px] w-28 rounded-lg border border-neutral-300 px-2.5 text-sm"
-            placeholder="CODE" value={draft.code}
+            placeholder="Code (optional)" value={draft.code} aria-label="Code (optional)"
             onChange={(e) => setDraft({ ...draft, code: e.target.value.toUpperCase() })}
           />
           <input
             className="min-h-[44px] flex-1 rounded-lg border border-neutral-300 px-2.5 text-sm"
-            placeholder="What it says on the form" value={draft.label}
+            placeholder={under ? `Inside ${under.label}: what it says on the form` : 'What it says on the form'}
+            aria-label="What it says on the form" value={draft.label}
             onChange={(e) => setDraft({ ...draft, label: e.target.value })}
           />
           <button
             type="submit"
-            disabled={add.isPending || !draft.code.trim() || !draft.label.trim()}
+            disabled={add.isPending || !draft.label.trim()}
             className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-primary-600 px-3.5 text-sm font-semibold text-white disabled:opacity-50"
           >
             <Plus className="h-4 w-4" aria-hidden />
-            Add
+            {under ? `Add inside ${under.label}` : 'Add'}
           </button>
         </form>
       )}
@@ -129,6 +221,11 @@ export default function VocabulariesPage() {
         </p>
       )}
 
+      {toggle.isError && (
+        <p role="alert" className="mb-2 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">
+          {(toggle.error as ApiError).message}
+        </p>
+      )}
       <label className="mb-2 flex min-h-[36px] items-center gap-2 text-xs text-neutral-600">
         <input type="checkbox" className="h-3.5 w-3.5" checked={showRetired}
                onChange={(e) => setShowRetired(e.target.checked)} />
@@ -136,16 +233,20 @@ export default function VocabulariesPage() {
       </label>
 
       <ul className="divide-y divide-neutral-100 rounded-xl border border-neutral-200 bg-white">
-        {items.data?.map((i) => (
-          <li key={i.id} className={`flex items-center gap-3 px-3.5 py-2.5 ${i.is_active ? '' : 'opacity-50'}`}>
+        {(tree ? tree.ordered : (items.data ?? []).map((item) => ({ item, depth: 0 }))).map(({ item: i, depth }) => (
+          <li key={i.id} className={`flex flex-wrap items-center gap-3 py-2.5 pr-3.5 ${i.is_active ? '' : 'opacity-50'}`}
+              style={{ paddingLeft: `${14 + depth * 22}px` }}>
             {renaming === i.id ? (
               <RenameField item={i} code={active!} onDone={() => setRenaming(null)} />
             ) : (
-            <span className="min-w-0 flex-1 text-sm text-neutral-800">
-              {i.path && i.path !== i.label ? (
-                <span className="text-neutral-400">{i.path.replace(/\/[^/]*$/, '/')}</span>
-              ) : null}
+            <span className={`min-w-0 flex-1 text-sm text-neutral-800 ${
+              tree?.kids.get(i.id)?.length ? 'font-semibold' : ''}`}>
               {i.label}
+              {tree?.kids.get(i.id)?.length ? (
+                <span className="ml-1.5 text-xs font-normal text-neutral-400">
+                  {tree.kids.get(i.id)!.length} inside
+                </span>
+              ) : null}
               {!current?.is_system_locked && (
                 <button type="button" onClick={() => setRenaming(i.id)}
                         className="ml-2 text-xs text-primary-700 hover:underline">
@@ -155,6 +256,14 @@ export default function VocabulariesPage() {
             </span>
             )}
             <span className="font-mono text-xs text-neutral-400">{i.code}</span>
+            {current?.is_hierarchical && !current.is_system_locked && i.is_active && depth < MAX_DEPTH - 1 && (
+              <button type="button" onClick={() => { setUnder(i); setDraft({ code: '', label: '' }) }}
+                      title={`Add an entry inside ${i.label}`}
+                      className="flex min-h-[32px] items-center gap-1 rounded-md px-1.5 text-xs font-medium text-primary-700 hover:bg-primary-50">
+                <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                Add inside
+              </button>
+            )}
             {active === PICTOGRAM_VOCABULARY && <PictogramSlot code={active} item={i} />}
             {active === 'consequence_type' && <SeverityWording code={active} item={i} />}
             <button
@@ -163,7 +272,7 @@ export default function VocabulariesPage() {
               onClick={() => { if (!toggle.isPending) toggle.mutate({ id: i.id, is_active: !i.is_active }) }}
               className="min-h-[32px] rounded-md px-2 text-xs font-medium text-neutral-600 disabled:opacity-30"
             >
-              {i.is_active ? 'Retire' : 'Restore'}
+              {i.is_active ? (tree?.kids.get(i.id)?.length ? 'Retire with what is inside' : 'Retire') : 'Restore'}
             </button>
           </li>
         ))}
@@ -183,7 +292,11 @@ function PictogramSlot({ code, item }: { code: string; item: Item }) {
   const fileId = item.attrs?.pictogram_file_id
   const path = `/api/v1/settings/vocabularies/${code}/items/${item.id}/pictogram`
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['vocab-items'] })
+  // ★ Was ['vocab-items'], which no query uses: a new pictogram did not show.
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['vocabularies'] })
+    queryClient.invalidateQueries({ queryKey: ['vocabulary'] })
+  }
 
   // The artwork is proxied by ehs-api and needs the session token, which an
   // `<img src>` cannot send — so it is fetched as a blob. Keyed on the file id
@@ -268,12 +381,14 @@ function RenameField({ item, code, onDone }: { item: Item; code: string; onDone:
     mutationFn: () => api.patch(
       `/api/v1/settings/vocabularies/${code}/items/${item.id}`, { label: label.trim() }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['vocab-items'] })
+      // ★ Was ['vocab-items'], which no query uses: a rename did not show.
+      queryClient.invalidateQueries({ queryKey: ['vocabularies'] })
+      queryClient.invalidateQueries({ queryKey: ['vocabulary'] })
       onDone()
     },
   })
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-2">
+    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
       <input
         autoFocus
         className="min-h-[32px] min-w-0 flex-1 rounded border border-neutral-300 px-2 text-sm"
@@ -293,6 +408,9 @@ function RenameField({ item, code, onDone }: { item: Item; code: string; onDone:
               className="min-h-[32px] rounded-md px-2 text-xs text-neutral-500">
         Cancel
       </button>
+      {save.isError && (
+        <span role="alert" className="basis-full text-xs text-danger-700">{(save.error as Error).message}</span>
+      )}
     </span>
   )
 }
