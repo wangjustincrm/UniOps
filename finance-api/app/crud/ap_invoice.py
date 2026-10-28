@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete as sa_delete, func, or_, select
+from sqlalchemy import delete as sa_delete, func, literal_column, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
@@ -102,9 +102,44 @@ async def upsert(db: AsyncSession, *, source: str, source_invoice_id: uuid.UUID,
     return inv
 
 
+_IN_NC_SQL = r"""exists (
+    select 1 from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+      join vendors v on v.id = ap_invoices.vendor_id
+     where replace(l.invoice_no_norm, '-', '') = nullif(replace(upper(regexp_replace(
+               coalesce(ap_invoices.vendor_invoice_number, ''), '\s', '', 'g')), '-', ''), '')
+       and l.supplier_code = v.erp_id
+       and (b.src_syscode is distinct from 17 or b.bill_no = ap_invoices.nc_bill_no))"""
+
+
+# An EPMS AP on a PO imported from NC (type 1, raw material / packaging): NC
+# makes that payable itself from its purchase invoice, so UniOps never pushes
+# it (nc_push refuses it too). Covers the invoice's own PO and multi-PO
+# allocations — the same POs nc_push.plan_bill looks at.
+NC_FLOW_SQL = """ap_invoices.source = 'epms' and exists (
+    select 1 from invoices i
+      join purchase_orders p on p.source = 'nc'
+       and (p.id = i.po_id or p.id in (select al.po_id from invoice_po_allocations al
+                                        where al.invoice_id = i.id))
+     where i.id = ap_invoices.source_invoice_id)"""
+
+
+# Sort key for the NC AP Doc column: our pushed bill, else the first mirror bill
+# that _IN_NC_SQL would match — so hand-entered bills sort with the rest.
+NC_DOC_SORT = literal_column(r"""coalesce(ap_invoices.nc_bill_no, (
+    select min(b.bill_no) from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+      join vendors v on v.id = ap_invoices.vendor_id
+     where replace(l.invoice_no_norm, '-', '') = nullif(replace(upper(regexp_replace(
+               coalesce(ap_invoices.vendor_invoice_number, ''), '\s', '', 'g')), '-', ''), '')
+       and l.supplier_code = v.erp_id
+       and (b.src_syscode is distinct from 17 or b.bill_no = ap_invoices.nc_bill_no)))""")
+
+
 async def list_invoices(db: AsyncSession, *, source: str | None = None,
                         vendor_id: uuid.UUID | None = None, status: str | None = None,
                         q: str | None = None, exported: bool | None = None,
+                        in_nc: bool | None = None,
                         limit: int = 50, offset: int = 0,
                         order: list | None = None) -> tuple[int, list[ApInvoice]]:
     """Paginated envelope (total, page). `q` matches vendor_invoice_number /
@@ -125,6 +160,15 @@ async def list_invoices(db: AsyncSession, *, source: str | None = None,
         base = base.where(ApInvoice.nc_exported_at.is_not(None))
     elif exported is False:
         base = base.where(ApInvoice.nc_exported_at.is_(None))
+    if in_nc is not None:
+        # "Hide in NC": an AP is in NC when UniOps pushed it, or the NC AP
+        # mirror holds its invoice number for its supplier (any approval
+        # state; our own replaced bills excluded) — same match as the list's
+        # NC AP Doc column (services/nc_push.nc_docs_for). An NC-flow AP is
+        # hidden too: NC books it itself, there is nothing to push.
+        has = or_(ApInvoice.nc_bill_no.is_not(None), text(_IN_NC_SQL),
+                  text(f"({NC_FLOW_SQL})"))
+        base = base.where(has if in_nc else ~has)
     total = (await db.execute(
         select(func.count()).select_from(base.subquery()))).scalar_one()
     rows = list((await db.execute(
@@ -132,6 +176,13 @@ async def list_invoices(db: AsyncSession, *, source: str | None = None,
                                   ApInvoice.ap_invoice_number.desc())))
         .offset(offset).limit(limit))).scalars().all())
     return total, rows
+
+
+async def nc_flow_ids(db: AsyncSession, ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    if not ids:
+        return set()
+    return set((await db.execute(select(ApInvoice.id).where(
+        ApInvoice.id.in_(ids), text(f"({NC_FLOW_SQL})")))).scalars().all())
 
 
 async def get(db: AsyncSession, invoice_id: uuid.UUID) -> ApInvoice | None:

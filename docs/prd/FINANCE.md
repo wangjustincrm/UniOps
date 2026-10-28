@@ -1,9 +1,17 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.10
-**Date:** 2026-10-27
+**Version:** 2.11
+**Date:** 2026-10-28
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.11** (2026-10-28)
+
+- **Push to NC replaces Export to NC** (FIN-AP-05, FIN-AP-06, FIN-AP-09). Finance → Accounts Payable sends the selected invoices straight to NC through NC's external exchange platform (XChange): each AP invoice becomes its own NC payable bill in saved state, with the person who pushed as bill maker; the AP clerk approves it in NC. The Excel workbook and its download are removed. The mapping is corrected along the way: manufacturing overhead defaults to 510102, zero tax goes as Zero-Rated (006), buy/sell type follows the supplier's country, the NC cost centre (DEF5) is filled, agreement invoices carry the agreement's dimensions, an invoice with several tax rates is split into one row per rate, and the summary is the PO / agreement / Direct PA number and title.
+- The list column **NC Export** becomes **NC AP Doc**: the NC bill number(s) holding each invoice and their state, from the push result or the NC AP mirror; "Hide exported" becomes **Hide in NC** (FIN-AP-04).
+- New page **Finance → Exchange Rates** (FIN-FX-01…05): Bank of Canada daily rates are fetched every business day into one history; a document takes its own date's rate, a weekend or holiday the previous business day. Internal payment postings now find a rate there too, instead of 1 (FIN-FX-05).
+- FIN-OI-26 is closed: NC itself refuses to overwrite a bill once approved.
+- Invoices on a PO imported from NC (type 1, raw material / packaging) are tagged **NC flow** on the list, cannot be ticked, and are hidden by Hide in NC: NC makes that payable from its own purchase invoice (FIN-AP-04).
 
 **What changed in version 2.10** (2026-10-27)
 
@@ -152,7 +160,7 @@ All four use the system every day. None of them is a dashboard audience, so chec
 | Finance role set: System Admin, Finance Manager, Finance BP, AP Clerk, Payment Officer (primary or additional role) | Payments hub reads, vendor-credit netting preview, NC AP export, AP check judgements (dismiss / duplicate review) |
 | `view_finance` | Finance menu entries (navigation only, see §15) |
 | `view_budget_dashboard`, `view_budget_plans` | Budget menu entries |
-| `finance.coa.manage` | COA edits and CSV import, NC COA sync, account mappings, GL opening balance and year close, AR writes, FX rates, AP invoice void |
+| `finance.coa.manage` | COA edits and CSV import, NC COA sync, account mappings, GL opening balance and year close, AR writes, manual FX rates (set / remove), AP invoice void |
 | `finance.jv.post` | Review / post / unpost / reverse UniOps-originated journal vouchers |
 | `finance.period.close` | Close / reopen fiscal periods (API only) |
 | `finance.bank.reconcile` | Import statements and payment files, match, sign off, reopen |
@@ -181,7 +189,7 @@ The permission matrix and role assignment are managed in Portal → Admin → Ac
 | Budget | Budget Dashboard · Budget Plans · Budget Actual · Account Catalog · Factor Library · Budget Config (see BUDGET.md; Budget Dashboard, Budget Plans and Account Catalog are EPMS pages embedded in a frame) |
 | Banking | Bank Reconciliation · Bank Settings (plus Statement Import (CSV), reached from the workbench) |
 | AI Financial Analysis | Separate PRD: AI-FINANCIAL-ANALYSIS.md |
-| Settings | Chart of Accounts · Tax Settings · QuickBooks (legacy archive) |
+| Settings | Chart of Accounts · Tax Settings · Exchange Rates · QuickBooks (legacy archive) |
 
 A failed permission load shows "Couldn't load your Finance permissions" with a retry, never an empty "no access" screen. The AI Assistant is available in Finance (see EPMS.md §3.19).
 
@@ -327,11 +335,12 @@ Budget planning, the dashboard, catalog, factors and budget settings (including 
 | FIN-AP-01 | EPMS (procurement) and OA (expense) push their vendor invoices into one AP table, keyed by source + source document. Statuses: draft, posted, partially paid, paid, void. |
 | FIN-AP-02 | A vendor + vendor invoice number is unique. A second one is refused with "duplicate vendor invoice". This is the anchor for reconciling against NC. |
 | FIN-AP-03 | When the source deletes an invoice: an AP row with no postings and no payment is removed; a posted one is voided and its accrual reversed. EPMS sends this on every delete path, Data Maintenance included, and does not delete when Finance does not confirm (EPMS.md INV-DEL-001…003). |
-| FIN-AP-04 | **Accounts Payable page:** paginated list with vendor and vendor-invoice-number search. Exported invoices are hidden by default. Aging tab: vendor × currency, five buckets by due date. |
-| FIN-AP-05 | **Export to NC** (any finance role): select invoices and download the NC payable-module import workbook. One summary row per invoice — except a **courier invoice** (EPMS → Freight), which has one row per cost center from its matched lines, budget item CRM0150102, and tax rate 0 on a row with no tax; a courier invoice whose lines are not all assigned to a cost center is refused with a reason. All enumerations are NC codes. Expense account comes from cost centre / department. Dimensions come from the PR (EPMS), from the Direct PA paying it for an EPMS Direct invoice (refused with a reason while no live Direct PA lists it), or from the PA (OA). Zero tax-excluded amount and tax are written explicitly. The file imports into NC without being re-saved in Excel. NC assigns the document number; the file is named after the AP number. |
-| FIN-AP-06 | Draft or void invoices, and invoices without an accrual, are refused with reasons. Exported invoices are stamped with a batch. The UI asks for confirmation before re-exporting. |
+| FIN-AP-04 | **Accounts Payable page:** paginated list with vendor and vendor-invoice-number search. Column **NC AP Doc** shows the NC payable bill(s) holding the invoice, each with its NC state (Saved / Approved, or Pushed until the hourly NC AP sync has seen it): the bill UniOps pushed, plus any bill in the NC AP mirror (§4.3) carrying the same invoice number for the vendor's ERP ID (compared ignoring case, spaces and hyphens), in any approval state. When the numbers match only once the hyphens are dropped (UniOps "IN-22-1014797", NC "IN-221014797"), the bill carries a **Hyphens ignored · NC: <NC number>** note, with both numbers on hover, so the clerk can check it is the same invoice; the push refusal for such a bill names the NC number the same way (FIN-AP-05). A bill UniOps pushed and later replaced is not shown. A failed push shows "Push failed" with NC's reason on hover. An invoice on a PO imported from NC (type 1, raw material / packaging; through the invoice's own PO or a multi-PO allocation) is tagged **NC flow** and has no tick box: NC makes that payable itself from its purchase invoice, so pushing it would book it twice (FIN-AP-06). **Hide in NC** (on by default) hides invoices that have an NC AP Doc and NC-flow invoices. Sorting by NC AP Doc orders by the pushed bill or, failing that, the first matched NC bill; invoices with neither sort last. Aging tab: vendor × currency, five buckets by due date. |
+| FIN-AP-05 | **Push to NC** (any finance role; design: docs/superpowers/specs/2026-10-27-ap-push-to-nc-xchange-design.md). Select invoices and click Push to NC; each AP invoice becomes **one NC F1 payable bill** (trade type F1-Cxx-017) in **saved** state, created through NC's XChange so NC assigns the bill number and builds its own tally rows. The person who clicks is the bill maker: their UniOps ERP ID (NC person code) is resolved to their enabled NC user; no ERP ID, no NC user, or more than one is refused. The push is manual only — nothing is pushed on posting. Mapping: supplier = vendor ERP ID; invoice number verbatim; amounts, tax and every local-currency amount sent explicitly (NC does not look up rates); rate per FIN-FX-04 on the issue date; tax code HST_ON / HST_NS → 001, GST → 005, QST → 004, no tax → 006, at the invoice's actual rate; buy/sell type 2 for a Canadian supplier or an invoice carrying Canadian tax (NC refuses tax on an import bill), else 4; a currency NC quotes inversely (CNY: 1 CAD = x) is sent as NC quotes it; budget item, department and cost centre from the PR of the dominant PO, the agreement, or the Direct PA (EPMS Direct and OA); NC cost centre parent (COSTCENTER) and actual cost centre (DEF5, sent as NC key); expense account by cost-centre prefix (MOH and GA-0105/GA-0107 → 510102, or 510101 for the fixed budget items and the QA lab; GA → 6602; SELL → 660101; RD → 5301; by department when there is no cost centre). A courier invoice has one row per cost centre (budget item CRM0150102); an invoice whose tax lines cover only part of it, or that carries several tax codes, has one row per rate (a tax line with no taxable base takes the pre-tax amount the other lines leave). Summary (摘要, up to 250 characters, also copied to DEF16 up to 101): one PO = PO number + title; several POs = the PO numbers; agreement = agreement number + title; Direct = PA number + title; courier = "Freight" + invoice number. |
+| FIN-AP-06 | A push is refused, with the reason on the row, for: draft or void; no accrual; issue date after the entry date or the due date (day and month probably swapped); vendor missing from the vendor master, without ERP ID, or not in NC; no exchange rate; a courier invoice not fully assigned to cost centres; a Direct invoice on no live Direct PA; tax lines adding up to more than the total; an invoice on a PO imported from NC (raw material / packaging — NC makes that payable from the purchase invoice, D1); a cost centre NC does not have; an invoice already in NC as a bill entered by hand. Pushing again uses the same external id (`UNIOPS-<AP number>`): NC replaces a bill that is still saved (the new bill gets a new number); once approved, NC refuses and the UI says to change it in NC — a failed re-push keeps the bill already recorded. Every request and NC's response are logged per invoice (GET `/ap/invoices/{id}/nc-push-log`). Invoices exported as Excel before 2026-10-27 keep their export stamp; the batches remain in the database. |
 | FIN-AP-07 | Under the positioning, **AP balances are read from NC** (§9.2–9.5). The UniOps paid amount is not used for balances or cash flow, because NC payments do not flow back. |
 | FIN-AP-08 | **Reconciliation with EPMS** (`python -m scripts.reconcile_epms_ap`, dry run unless `--apply`). Finds AP invoices whose EPMS invoice no longer exists (voided by FIN-AP-03's rule) and EPMS invoices (`INV-YYYY-NNNN`) with no AP invoice (created as the normal flow would have: posted with accrual if matched or later, and, if paid, settled by replaying the paying PA's writeback). Each item is independent; one that still clashes on vendor + invoice number (FIN-AP-02) is reported for a person. Repeat runs change nothing. |
+| FIN-AP-09 | **NC side of the push (production rollout, done by the NC administrator):** register external system `uniops` under 外部系统信息设置; raise the summary (`scomment`) length from 20 to 250 in both pfxx F1 bill definitions (`/home/nchome/pfxx/billdefine/arap/F1.xml` and `billdefine/F1.xml`); restrict access to `/service/XChangeServlet` to the UniOps server, because XChange itself has no authentication. Finance service settings: `NC_XCHANGE_URL` (empty = Push to NC answers "not configured"), account `0815`, group `0`, sender `uniops`; the NC read connection (`NC65_*`) must be the same NC. |
 
 ### 9.2 AP Reconciliation: where each UniOps invoice stands in NC
 
@@ -433,7 +442,7 @@ Recipient, line and blocking rules match EPMS.md §3.18.3 (REM-001 to REM-006).
 |---|---|
 | FIN-BANK-01 | Bank accounts and credit cards: name, bank / issuer, kind, masked number, currency, ledger account, active flag, CSV column-mapping template. |
 | FIN-BANK-02 | **Link to the NC bank account** (the bank-account auxiliary on 100201). The picker offers only this book's accounts. The link must be made for each account before it can be reconciled. Accounts are named the way finance names them. |
-| FIN-BANK-03 | Gated by `finance.bank.settings`. FX rates (currency pair + effective date) are maintained under `finance.coa.manage`. |
+| FIN-BANK-03 | Gated by `finance.bank.settings`. FX rates are kept on Finance → Exchange Rates (FIN-FX-01…05). |
 
 ### 12.2 Reconciliation workbench (v2)
 
@@ -453,6 +462,18 @@ Recipient, line and blocking rules match EPMS.md §3.18.3 (REM-001 to REM-006).
 
 ---
 
+### 12.3 Exchange Rates
+
+| FR ID | Requirement |
+|---|---|
+| FIN-FX-01 | **One rate history** (`exchange_rates`, one row per currency → CAD per day). Source is either **Bank of Canada** (daily average, Valet series `FX<CCY>CAD`) or **Manual**. RMB is stored and looked up as CNY. |
+| FIN-FX-02 | **Daily fetch:** every business day after 17:00 Toronto time the service fetches the last 14 days for USD, EUR, GBP, CNY and every other currency found on AP invoices (re-fetching is idempotent and fills a day a failed run missed); an empty table is backfilled from 2025-01-01. A Manual row is never overwritten. Each fetch is recorded with its outcome; a currency BoC does not publish is reported and must be set by hand. Any finance role can also fetch a date range (at most 400 days) from the page. |
+| FIN-FX-03 | **Manual rate** (`finance.coa.manage`): set a currency's rate for a day with a required note; it is kept as Manual. A Manual rate can be removed; the next fetch brings the BoC rate back. |
+| FIN-FX-04 | **Which rate a document gets:** the rate of its own date, else the latest within the 7 days before it (a weekend or holiday takes the previous business day — the usual practice, user decision 2026-10-27). Nothing found = no rate: the caller never falls back to 1. The page has a lookup showing exactly the rate a date gets. |
+| FIN-FX-05 | Consumers: Push to NC (FIN-AP-05, invoice issue date; refuses with no rate) and the internal payment postings (FIN-SPINE-01, payment date; with no rate the line keeps rate 1 and appears on the FX exception list, as before). |
+
+---
+
 ## 13. Accounts Receivable and Tax
 
 | FR ID | Requirement |
@@ -467,7 +488,7 @@ Recipient, line and blocking rules match EPMS.md §3.18.3 (REM-001 to REM-006).
 
 | FR ID | Requirement |
 |---|---|
-| FIN-SPINE-01 | UniOps still writes an internal posting event for AP accrual (invoice posted), payment, expense payment and AR events. Each event is idempotent per document + event type and debits and credits are kept separate. Each event also creates a draft UniOps voucher. **These records are an internal trail, not the book of record.** They are not exported to NC; the AP export in §9.1 is the handoff. |
+| FIN-SPINE-01 | UniOps still writes an internal posting event for AP accrual (invoice posted), payment, expense payment and AR events. Each event is idempotent per document + event type and debits and credits are kept separate. Each event also creates a draft UniOps voucher. **These records are an internal trail, not the book of record.** They are not exported to NC; Push to NC in §9.1 is the handoff. |
 | FIN-SPINE-02 | Under "Include unposted vouchers", UniOps' own draft vouchers are counted together with NC's untallied ones. They may duplicate amounts NC also books for the same invoice or payment. **To be confirmed** (FIN-OI-14). |
 | FIN-QBO-01 | **QuickBooks mirror:** an archive of the previous system (vendors, bills, payments, credits, journal entries, attachments), with sync, browse, export, and "Fill Remittance Emails" (copies QBO vendor emails into empty vendor remittance emails, fill-only). It is under Settings and is to be removed when QuickBooks is retired. |
 | FIN-LEG-01 | Legacy budget-ledger endpoints (balance / commit / release / actualize) are still present. Under the positioning, the budget ledger is to be removed and replaced by a derived commitments view (see BUDGET.md, FIN-OI-15). |
@@ -513,7 +534,7 @@ Recipient, line and blocking rules match EPMS.md §3.18.3 (REM-001 to REM-006).
 | FIN-OI-23 | Decision: whether a once-a-day position is enough for the Payment Officer, or bank data should be read directly | Open |
 | FIN-OI-24 | Customs-duty allocation (about 20k manual voucher lines a year): a separate project; manual PO references are not authoritative | Open |
 | FIN-OI-25 | Vendor-credit clearing (1123) has no matching debit posting in UniOps; confirm the treatment in NC | Open |
-| FIN-OI-26 | Server-side refusal of AP re-export to NC unless explicitly allowed (today the confirmation is in the browser only) | Not implemented |
+| FIN-OI-26 | Server-side refusal of AP re-export to NC unless explicitly allowed | **Closed 2026-10-27**: the Excel export is gone; NC refuses to overwrite an approved bill (FIN-AP-06) |
 | FIN-OI-27 | AR beyond the basic framework (credit control, statements, dunning) — waits for a sales source | Not implemented |
 
 ---

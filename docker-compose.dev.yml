@@ -298,6 +298,11 @@ services:
       # journal vouchers from production NC65 on production's schedule.
       # The Admin button still works.
       NC_SYNC_SCHEDULER_ENABLED: "false"
+      # Push to NC: leave EMPTY unless NC65_* point at the NC TEST database
+      # (10.10.95.39) — then use the NC test app server
+      # http://10.10.95.38/service/XChangeServlet. Pointing this at production
+      # NC from a dev machine creates real payable bills.
+      NC_XCHANGE_URL: ${DEV_NC_XCHANGE_URL:-}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8004/health').status==200 else 1)"]

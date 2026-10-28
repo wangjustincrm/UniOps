@@ -29,6 +29,21 @@ class Settings(BaseSettings):
     bank_anthropic_api_key: str = ""
     # file-api, for keeping the statement/advice PDFs and the signed-off report.
     file_server_url: str = "http://localhost:8010/api/v1"
+    # AP push to NC via XChange (spec 2026-10-27). URL blank = Push to NC answers
+    # 503 "not configured". Production NC app server is 10.10.95.66; dev points
+    # at the NC test server. account = NC business-centre code, groupcode = NC
+    # group code, sender = the external system registered in NC 外部系统信息设置.
+    nc_xchange_url: str | None = None
+    nc_xchange_account: str = "0815"
+    nc_xchange_group: str = "0"
+    nc_xchange_sender: str = "uniops"
+    nc_xchange_timeout_seconds: int = 120
+    # Bank of Canada Valet API — daily average rates (FX rate module).
+    boc_valet_url: str = "https://www.bankofcanada.ca/valet"
+    # Currencies fetched every day besides those found on AP invoices.
+    fx_currencies: list[str] = ["USD", "EUR", "GBP", "CNY"]
+    # 0 = no daily fetch in this process (the Fetch button still works).
+    fx_fetch_scheduler_enabled: bool = True
     # 部署级总开关。关掉 = 这个进程不起调度循环(手动触发不受影响)。
     # 与 epms-api 的同名设置一一对应。
     nc_sync_scheduler_enabled: bool = True

@@ -37,29 +37,29 @@ _INVOICE_SORT = {
          ApInvoice.total_amount - ApInvoice.paid_amount),
         else_=None),
     "status": ApInvoice.status,
-    "nc_exported_at": ApInvoice.nc_exported_at,
+    "nc_bill_no": crud.NC_DOC_SORT,   # pushed bill, else hand-entered match
 }
 
 
 async def _require_finance_role(db: AsyncSession, user: dict) -> None:
     """Any finance role (primary JWT role or an additional identity role
-    assignment) may run the NC export — it is a routine AP handoff to NC65,
+    assignment) may push AP to NC — it is a routine AP handoff to NC65,
     NOT chart-of-accounts management. This mirrors payments._authorize_read
     ("who may see finance data", `_FINANCE_ROLES`); the export was wrongly
     gated on coa._require_manage (finance.coa.manage → system_admin /
     finance_manager only), which 403'd every ap_clerk. CurrentUser only
     decodes the JWT, so this gate is what keeps a bare token (an OA-only
-    employee with no finance role) out of /ap/nc-export."""
+    employee with no finance role) out of /ap/nc-push."""
     role = user.get("role", "")
     if role in _FINANCE_ROLES:
         return
     try:
         user_id = uuid.UUID(str(user.get("sub", "")))
     except ValueError:
-        raise HTTPException(status_code=403, detail="Insufficient role to export AP invoices to NC")
+        raise HTTPException(status_code=403, detail="Insufficient role to push AP invoices to NC")
     codes = await payment_execute._user_role_codes(db, user_id, role)
     if not codes & _FINANCE_ROLES:
-        raise HTTPException(status_code=403, detail="Insufficient role to export AP invoices to NC")
+        raise HTTPException(status_code=403, detail="Insufficient role to push AP invoices to NC")
 
 
 class TaxLineIn(BaseModel):
@@ -112,6 +112,15 @@ class InvoiceOut(BaseModel):
     po_id: uuid.UUID | None
     po_number: str | None
     nc_exported_at: datetime | None = None
+    nc_bill_no: str | None = None
+    nc_push_status: str | None = None
+    nc_push_error: str | None = None
+    nc_pushed_at: datetime | None = None
+    # NC payable bills holding this AP (push result + NC AP mirror match);
+    # filled by the list endpoint only.
+    nc_docs: list[dict] = []
+    # On a PO imported from NC: NC makes this payable itself; never pushed.
+    nc_flow: bool = False
 
     @field_validator("amount", "tax_amount", "total_amount", "paid_amount", mode="before")
     @classmethod
@@ -168,6 +177,7 @@ async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         status: str | None = Query(default=None),
                         q: str | None = Query(default=None),
                         exported: bool | None = Query(default=None),
+                        in_nc: bool | None = Query(default=None),
                         limit: int = Query(default=50, le=200),
                         offset: int = Query(default=0, ge=0),
                         sort: str | None = Query(default=None),
@@ -175,58 +185,56 @@ async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
     order = order_by(sort, dir, _INVOICE_SORT, tiebreak=(ApInvoice.id,))
     total, rows = await crud.list_invoices(
         db, source=source, vendor_id=vendor_id, status=status, q=q,
-        exported=exported, limit=limit, offset=offset, order=order)
-    return {"total": total,
-            "items": [InvoiceOut.model_validate(r) for r in rows]}
+        exported=exported, in_nc=in_nc, limit=limit, offset=offset, order=order)
+    from app.services.nc_push import nc_docs_for
+    docs = await nc_docs_for(db, rows)
+    nc_flow = await crud.nc_flow_ids(db, [r.id for r in rows])
+    items = []
+    for r in rows:
+        out = InvoiceOut.model_validate(r)
+        found = docs.get(r.id, [])
+        # The push result is authoritative for our own bill; the mirror may not
+        # have synced it yet (hourly) — show it as pushed until it does.
+        if r.nc_bill_no and not any(d["bill_no"] == r.nc_bill_no for d in found):
+            found = [{"bill_no": r.nc_bill_no, "state": "pushed", "pushed": True,
+                      "bill_date": None, "money": None, "currency": None,
+                      "hyphen_match": False, "nc_invoice_no": None}] + found
+        out.nc_docs = found
+        out.nc_flow = r.id in nc_flow
+        items.append(out)
+    return {"total": total, "items": items}
 
 
-class NcExportIn(BaseModel):
-    ap_ids: list[uuid.UUID]
+class NcPushIn(BaseModel):
+    ap_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
 
 
-@router.post("/nc-export")
-async def nc_export(body: NcExportIn, user: CurrentUser,
-                    db: AsyncSession = Depends(get_db)):
-    """Generate the NC payable-module import xlsx for the chosen AP invoices,
-    record a batch, and stamp the invoices. 409 lists non-exportable ones."""
-    from fastapi.responses import Response
-    from app.models.nc_export import NcExportBatch
-    from app.services.nc_ap_export import build_export_rows, write_xlsx
+@router.post("/nc-push")
+async def nc_push(body: NcPushIn, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Push the chosen AP invoices to NC as saved payable bills (XChange).
+    The person who clicks is the NC bill maker. Returns one outcome per AP;
+    a refused or failed AP does not stop the others."""
+    from app.services import nc_push as svc
 
     await _require_finance_role(db, user)
-    heads, bodies, errors = await build_export_rows(db, body.ap_ids)
-    if errors:
-        raise HTTPException(status_code=409, detail={"errors": errors})
-    if not heads:
-        raise HTTPException(status_code=422, detail="no invoices to export")
-    data = write_xlsx(heads, bodies)
-
-    now = datetime.now(timezone.utc)
-    nums = [h["ap_number"] for h in heads]
-    fname = f"{nums[0]}.xlsx" if len(nums) == 1 else f"{nums[0]}+{len(nums) - 1}.xlsx"
-    batch = NcExportBatch(exported_by=uuid.UUID(user["sub"]), exported_at=now,
-                          ap_count=len(heads), filename=fname)
-    db.add(batch)
-    await db.flush()
-    for ap in (await db.execute(select(ApInvoice).where(
-            ApInvoice.id.in_(body.ap_ids)))).scalars():
-        ap.nc_exported_at = now
-        ap.nc_export_batch_id = batch.id
+    if not svc.xchange_configured():
+        raise HTTPException(status_code=503, detail="Push to NC is not configured on this server")
+    outcomes = await svc.push_invoices(db, body.ap_ids, uuid.UUID(user["sub"]))
     await db.commit()
-    return Response(
-        content=data,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+    return {"results": [{"ap_id": str(o.ap_id), "ap_number": o.ap_number, "ok": o.ok,
+                         "message": o.message, "nc_bill_no": o.nc_bill_no} for o in outcomes]}
 
 
-@router.get("/nc-export/batches")
-async def nc_export_batches(_: CurrentUser, db: AsyncSession = Depends(get_db)):
-    from app.models.nc_export import NcExportBatch
-    rows = (await db.execute(select(NcExportBatch)
-            .order_by(NcExportBatch.exported_at.desc()).limit(20))).scalars().all()
-    return [{"id": str(b.id), "exported_at": b.exported_at.isoformat(),
-             "exported_by": str(b.exported_by) if b.exported_by else None,
-             "ap_count": b.ap_count, "filename": b.filename} for b in rows]
+@router.get("/invoices/{invoice_id}/nc-push-log")
+async def nc_push_log(invoice_id: uuid.UUID, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    from app.models.nc_push import NcPushLog
+
+    await _require_finance_role(db, user)
+    rows = (await db.execute(select(NcPushLog).where(NcPushLog.ap_invoice_id == invoice_id)
+                             .order_by(NcPushLog.pushed_at.desc()).limit(50))).scalars().all()
+    return [{"pushed_at": r.pushed_at.isoformat(), "pushed_by": str(r.pushed_by) if r.pushed_by else None,
+             "ok": r.ok, "result_code": r.result_code, "nc_bill_no": r.nc_bill_no,
+             "nc_bill_pk": r.nc_bill_pk, "message": r.message} for r in rows]
 
 
 @router.get("/invoices/{invoice_id}")
