@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete as sa_delete, func, or_, select
+from sqlalchemy import delete as sa_delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
@@ -102,9 +102,20 @@ async def upsert(db: AsyncSession, *, source: str, source_invoice_id: uuid.UUID,
     return inv
 
 
+_IN_NC_SQL = r"""exists (
+    select 1 from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+      join vendors v on v.id = ap_invoices.vendor_id
+     where l.invoice_no_norm = nullif(upper(regexp_replace(
+               coalesce(ap_invoices.vendor_invoice_number, ''), '\s', '', 'g')), '')
+       and l.supplier_code = v.erp_id
+       and (b.src_syscode is distinct from 17 or b.bill_no = ap_invoices.nc_bill_no))"""
+
+
 async def list_invoices(db: AsyncSession, *, source: str | None = None,
                         vendor_id: uuid.UUID | None = None, status: str | None = None,
                         q: str | None = None, exported: bool | None = None,
+                        in_nc: bool | None = None,
                         limit: int = 50, offset: int = 0,
                         order: list | None = None) -> tuple[int, list[ApInvoice]]:
     """Paginated envelope (total, page). `q` matches vendor_invoice_number /
@@ -125,6 +136,13 @@ async def list_invoices(db: AsyncSession, *, source: str | None = None,
         base = base.where(ApInvoice.nc_exported_at.is_not(None))
     elif exported is False:
         base = base.where(ApInvoice.nc_exported_at.is_(None))
+    if in_nc is not None:
+        # "Hide in NC": an AP is in NC when UniOps pushed it, or the NC AP
+        # mirror holds its invoice number for its supplier (any approval
+        # state; our own replaced bills excluded) — same match as the list's
+        # NC AP Doc column (services/nc_push.nc_docs_for).
+        has = or_(ApInvoice.nc_bill_no.is_not(None), text(_IN_NC_SQL))
+        base = base.where(has if in_nc else ~has)
     total = (await db.execute(
         select(func.count()).select_from(base.subquery()))).scalar_one()
     rows = list((await db.execute(
