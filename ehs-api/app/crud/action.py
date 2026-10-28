@@ -13,6 +13,7 @@ from app.models.mirrors import Location, User
 from app.schemas.action import ActionCreate, ActionUpdateIn, ActionVerifyIn
 from app.services import tasks as task_service
 from app.services.numbering import next_number
+from app.services.day_range import ONTARIO
 
 OPEN_STATUSES = ("open", "in_progress", "pending_verification")
 
@@ -174,7 +175,7 @@ async def list_(
     if cause_id:
         stmt = stmt.where(Action.cause_id == cause_id)
     if overdue_only:
-        stamp = (today or datetime.now(timezone.utc)).date()
+        stamp = (today or datetime.now(timezone.utc)).astimezone(ONTARIO).date()
         stmt = stmt.where(Action.due_date < stamp, Action.status.in_(OPEN_STATUSES))
     stmt = stmt.order_by(Action.due_date).limit(limit).offset(offset)
     return list((await db.execute(stmt)).scalars())

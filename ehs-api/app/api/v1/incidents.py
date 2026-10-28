@@ -52,6 +52,7 @@ from app.schemas.investigation import (
     InvestigationOut,
     InvestigationSignIn,
 )
+from app.services.day_range import ONTARIO
 
 router = APIRouter()
 
@@ -710,7 +711,7 @@ async def mol_report_filed(
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"The Ministry report for {incident.incident_no} was already recorded "
-            f"on {deadline.satisfied_at.date().isoformat()}",
+            f"on {deadline.satisfied_at.astimezone(ONTARIO).date().isoformat()}",
         )
 
     await deadline_service.satisfy(
@@ -776,7 +777,7 @@ async def wsib_form7_filed(
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"Form 7 for {incident.incident_no} was already recorded as filed on "
-            f"{deadline.satisfied_at.date().isoformat()}",
+            f"{deadline.satisfied_at.astimezone(ONTARIO).date().isoformat()}",
         )
 
     await deadline_service.satisfy(

@@ -31,6 +31,7 @@ from app.models.training import Course, TrainingRecord
 from app.services import notify
 from app.services import tasks as task_service
 from app.services.numbering import next_number
+from app.services.day_range import plant_today
 
 DOC_COURSE = "ehs_crs"
 
@@ -465,7 +466,7 @@ async def remind_upcoming(db: AsyncSession, *, today: date | None = None) -> lis
     runs every few minutes, and a condition alone would raise a task on every
     tick of that day. Acting on the change makes it once.
     """
-    today = today or datetime.now(timezone.utc).date()
+    today = today or plant_today()
     tomorrow = today + timedelta(days=1)
 
     due = (await db.execute(

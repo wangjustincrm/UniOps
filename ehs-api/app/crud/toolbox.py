@@ -12,6 +12,7 @@ from app.models.toolbox import TbtDelivery, TbtSignature, ToolboxTalk
 from app.services import notify
 from app.services import tasks as task_service
 from app.services.numbering import next_number
+from app.services.day_range import plant_today
 
 # HSE: "Biweekly email reminders should be sent until the topic has been signed
 # off as completed."
@@ -231,7 +232,7 @@ async def chase_outstanding(db: AsyncSession, *, today: date | None = None) -> l
     sweep runs several times an hour, and anything based on "is it the 1st or
     the 15th" fires repeatedly on those days and never on the others.
     """
-    today = today or datetime.now(timezone.utc).date()
+    today = today or plant_today()
     cutoff = today - timedelta(days=REMINDER_EVERY_DAYS)
 
     due = (await db.execute(

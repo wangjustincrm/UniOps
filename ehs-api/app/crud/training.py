@@ -316,7 +316,7 @@ async def list_certifications(
     if user_id:
         stmt = stmt.where(WorkerCertification.user_id == user_id)
     if expiring_within_days is not None:
-        cutoff = (today or datetime.now(timezone.utc).date()) + timedelta(days=expiring_within_days)
+        cutoff = (today or plant_today()) + timedelta(days=expiring_within_days)
         stmt = stmt.where(
             WorkerCertification.expires_on.is_not(None),
             WorkerCertification.expires_on <= cutoff,
@@ -332,7 +332,7 @@ async def training_gaps(db: AsyncSession, *, today: date | None = None) -> GapRe
     an expired certificate is a gap, and is reported as a different reason from
     never having taken the course, because the two need different action.
     """
-    today = today or datetime.now(timezone.utc).date()
+    today = today or plant_today()
 
     workers = list((await db.execute(
         select(User).where(User.is_active.is_(True)).order_by(User.full_name)

@@ -214,7 +214,7 @@ async def _open_inspection(
 
 async def generate_due(db: AsyncSession, *, today: date | None = None) -> list[AssetInspection]:
     """Raise the checks that fall inside the lead window."""
-    today = today or datetime.now(timezone.utc).date()
+    today = today or plant_today()
     horizon = date.fromordinal(today.toordinal() + LEAD_DAYS)
 
     assets = (await db.execute(
@@ -247,7 +247,7 @@ async def generate_due(db: AsyncSession, *, today: date | None = None) -> list[A
 
 async def chase_overdue(db: AsyncSession, *, today: date | None = None) -> list[AssetInspection]:
     """Mark what nobody did. Acts on the change, so it says so once."""
-    today = today or datetime.now(timezone.utc).date()
+    today = today or plant_today()
     overdue = (await db.execute(
         select(AssetInspection).where(
             AssetInspection.result == "due",

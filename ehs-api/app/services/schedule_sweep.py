@@ -28,6 +28,7 @@ from app.models.schedule import FormSchedule, FormScheduleRun
 from app.services import notify
 from app.services import tasks as task_service
 from app.services.recurrence import due_occurrences, next_due, rotation_pick
+from app.services.day_range import plant_today
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ async def _department_name(db: AsyncSession, dept_id: uuid.UUID | None) -> str |
 
 async def generate_due(db: AsyncSession, *, today: date | None = None) -> list[FormScheduleRun]:
     """Create the occurrences that should exist by now."""
-    today = today or datetime.now(timezone.utc).date()
+    today = today or plant_today()
     created: list[FormScheduleRun] = []
 
     schedules = (await db.execute(
@@ -122,7 +123,7 @@ async def generate_due(db: AsyncSession, *, today: date | None = None) -> list[F
 
 async def chase_overdue(db: AsyncSession, *, today: date | None = None) -> list[FormScheduleRun]:
     """Mark anything past due as missed. Acts on the change, so it notifies once."""
-    today = today or datetime.now(timezone.utc).date()
+    today = today or plant_today()
 
     overdue = (await db.execute(
         select(FormScheduleRun).where(

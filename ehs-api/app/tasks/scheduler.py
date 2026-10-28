@@ -47,6 +47,7 @@ from app.crud import toolbox as toolbox_crud
 from app.services import expiry_notice, schedule_sweep
 from app.services.statutory import ONTARIO
 from app.services.escalation import CapaLadder, capa_level, statutory_level
+from app.services.day_range import ONTARIO
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,9 @@ async def sweep_actions(db: AsyncSession, now: datetime, ladder: CapaLadder) -> 
         select(Action).where(Action.status.in_(("open", "in_progress", "pending_verification")))
     )).scalars().all()
 
-    today = now.date()
+    # The plant's day: a due date is a day in Ontario, and after 8pm (EDT)
+    # the UTC date is already tomorrow — every action escalated four hours early.
+    today = now.astimezone(ONTARIO).date()
     raised = 0
     for action in rows:
         level = capa_level(action.due_date, today, ladder)
@@ -236,7 +239,7 @@ async def run_tick(now: datetime | None = None) -> SweepResult:
         # that are due and marking the ones that were not done. Both passes are
         # idempotent, so sharing a tick with the escalation sweeps is safe even
         # when the interval is shortened.
-        today = now.astimezone(timezone.utc).date()
+        today = now.astimezone(ONTARIO).date()
         generated = await schedule_sweep.generate_due(db, today=today)
         missed = await schedule_sweep.chase_overdue(db, today=today)
         # HSE: biweekly reminders until the toolbox talk is signed off.
