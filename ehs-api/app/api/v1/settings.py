@@ -135,16 +135,33 @@ async def list_items(
     ),
 ):
     await crud.get_vocabulary(db, code)
+    everything = await crud.list_items(db, code, include_inactive=True)
+    trails = crud.trails(everything)
     return [
-        VocabularyItemOut.model_validate(i)
-        for i in await crud.list_items(db, code, include_inactive=include_inactive)
+        VocabularyItemOut.model_validate(i).model_copy(update={"trail": trails[i.id]})
+        for i in everything if include_inactive or i.is_active
     ]
+
+
+async def _out(db, item) -> VocabularyItemOut:
+    return VocabularyItemOut.model_validate(item).model_copy(
+        update={"trail": await crud.trail(db, item)})
+
+
+@router.get("/vocabularies/{code}/items/{item_id}/usage")
+async def item_usage(code: str, item_id: uuid.UUID, db: SessionDep, user: CanManageSettings):  # noqa: ARG001
+    """What names this entry. Asked before something is added under it: an
+    entry with something under it is a heading and can no longer be chosen,
+    and the records already on it stay on it."""
+    item = await crud.get_item(db, code, item_id)
+    used = await crud.usage(db, item.id)
+    return {"total": sum(u["count"] for u in used), "by": used}
 
 
 @router.post("/vocabularies/{code}/items", response_model=VocabularyItemOut,
              status_code=status.HTTP_201_CREATED)
 async def add_item(code: str, payload: VocabularyItemIn, db: SessionDep, user: CanManageSettings):  # noqa: ARG001
-    return VocabularyItemOut.model_validate(await crud.add_item(db, code, payload))
+    return await _out(db, await crud.add_item(db, code, payload))
 
 
 @router.patch("/vocabularies/{code}/items/{item_id}", response_model=VocabularyItemOut)
@@ -152,7 +169,7 @@ async def patch_item(
     code: str, item_id: uuid.UUID, payload: VocabularyItemPatch,
     db: SessionDep, user: CanManageSettings,  # noqa: ARG001
 ):
-    return VocabularyItemOut.model_validate(await crud.patch_item(db, code, item_id, payload))
+    return await _out(db, await crud.patch_item(db, code, item_id, payload))
 
 
 @router.delete("/vocabularies/{code}/items/{item_id}", response_model=VocabularyItemOut)
@@ -164,7 +181,7 @@ async def retire_item(code: str, item_id: uuid.UUID, db: SessionDep, user: CanMa
     sense. Returns the retired entry rather than 204 so the caller can see it
     still exists.
     """
-    return VocabularyItemOut.model_validate(await crud.retire_item(db, code, item_id))
+    return await _out(db, await crud.retire_item(db, code, item_id))
 
 
 # ── Plant tree (read here, written through mdm-api, which owns the table) ───

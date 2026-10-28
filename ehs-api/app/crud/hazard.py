@@ -99,6 +99,10 @@ async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUI
     owner_id = payload.get("owner_id") or creator_id
     from app.services import equipment_ref
     await equipment_ref.check(db, payload.get("equipment_id"))
+    type_label = payload.get("hazard_type_label")
+    if payload.get("hazard_type_id"):
+        from app.crud.vocabulary import label_for
+        type_label = await label_for(db, "hazard", payload["hazard_type_id"])
     hazard = Hazard(
         id=uuid.uuid4(),
         hazard_no=await next_number(db, "hazard"),
@@ -111,7 +115,7 @@ async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUI
         # browser; the server test had only exercised PATCH.
         findings=payload.get("findings"),
         hazard_type_id=payload.get("hazard_type_id"),
-        hazard_type_label=payload.get("hazard_type_label"),
+        hazard_type_label=type_label,
         location_id=payload.get("location_id"),
         location_path=path, department_id=dept_id, department_name=dept_name,
         equipment_id=payload.get("equipment_id"),
@@ -142,6 +146,9 @@ async def update_hazard(db: AsyncSession, hazard: Hazard, fields: dict) -> Hazar
     if "equipment_id" in fields:
         from app.services import equipment_ref
         await equipment_ref.check(db, fields["equipment_id"], hazard.equipment_id)
+    if fields.get("hazard_type_id"):
+        from app.crud.vocabulary import label_for
+        fields["hazard_type_label"] = await label_for(db, "hazard", fields["hazard_type_id"])
     for key, value in fields.items():
         setattr(hazard, key, value)
     await db.flush()

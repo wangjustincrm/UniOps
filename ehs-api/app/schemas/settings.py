@@ -22,7 +22,8 @@ class VocabularyOut(BaseModel):
 
 
 class VocabularyItemIn(BaseModel):
-    code: str = Field(min_length=1, max_length=60, pattern=r"^[A-Za-z0-9_\-]+$")
+    # Left out: derived from the label (crud.vocabulary._derive_code).
+    code: str | None = Field(default=None, min_length=1, max_length=60, pattern=r"^[A-Za-z0-9_\-]+$")
     label: str = Field(min_length=1, max_length=200)
     parent_id: uuid.UUID | None = None
     sort_order: int = 0
@@ -57,6 +58,8 @@ class VocabularyItemOut(BaseModel):
     is_active: bool
     attrs: dict
     path: str | None
+    # Labels from the top down, " › "-joined — what a record snapshots.
+    trail: str | None = None
 
 
 class ConfigOut(BaseModel):

@@ -147,7 +147,8 @@ async def _snapshot(db, vocabulary: str, ids: list[uuid.UUID]) -> list[dict]:
     if missing:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             f"Not on the {vocabulary.replace('_', ' ')} list: {missing[0]}")
-    return [{"id": str(i), "label": rows[i].label} for i in dict.fromkeys(ids)]
+    from app.crud.vocabulary import label_for
+    return [{"id": str(i), "label": await label_for(db, vocabulary, i)} for i in dict.fromkeys(ids)]
 
 
 @router.get("/matrix", response_model=MatrixOut)

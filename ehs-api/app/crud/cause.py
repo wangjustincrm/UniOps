@@ -88,6 +88,12 @@ async def replace(
             await db.execute(select(Action.cause_id).where(Action.cause_id.is_not(None)))
         ).all()
     }
+    # ★ Matched on the entry first, the wording second: new snapshots are the
+    # whole trail ("Physical › Slips"), and a cause saved as "Slips" with an
+    # action on it would otherwise not match itself, be kept as a stray and
+    # appear twice.
+    keep_by_item = {c.vocabulary_item_id: c for c in existing
+                    if c.id in attached and c.vocabulary_item_id}
     keep_by_label = {c.label: c for c in existing if c.id in attached}
 
     for cause in existing:
@@ -96,11 +102,23 @@ async def replace(
     await db.flush()
 
     result: list[Cause] = []
+    from app.crud.vocabulary import label_for
     for order, item in enumerate(causes):
-        kept = keep_by_label.pop(item.label, None)
+        if item.vocabulary_item_id is not None:
+            item.label = await label_for(
+                db, "root_cause" if item.cause_type == "root" else "immediate_cause",
+                item.vocabulary_item_id)
+        kept = keep_by_item.pop(item.vocabulary_item_id, None) if item.vocabulary_item_id else None
+        if kept is not None:
+            keep_by_label.pop(kept.label, None)
+        else:
+            kept = keep_by_label.pop(item.label, None)
+            if kept is not None and kept.vocabulary_item_id:
+                keep_by_item.pop(kept.vocabulary_item_id, None)
         if kept is not None:
             kept.cause_type = item.cause_type
             kept.vocabulary_item_id = item.vocabulary_item_id
+            kept.label = item.label
             kept.note = item.note
             kept.sort_order = order
             result.append(kept)
@@ -120,7 +138,7 @@ async def replace(
 
     # Anything still here had an action attached but was dropped from the new
     # set. Keep it, so the action still points at something explaining itself.
-    result.extend(keep_by_label.values())
+    result.extend({c.id: c for c in [*keep_by_label.values(), *keep_by_item.values()]}.values())
     await db.flush()
 
     for cause, item in zip(result, causes, strict=False):

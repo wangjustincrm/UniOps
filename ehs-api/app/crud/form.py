@@ -254,6 +254,15 @@ async def save_answers(
                 f"'{key}' is not a question on this form",
             )
         row = form_engine.normalise(question, value)
+        if question.get("type") == "vocabulary" and row["value_ids"]:
+            # The wording kept is the list's, not what the client displayed.
+            from app.crud.vocabulary import label_for
+            try:
+                ids = [uuid.UUID(i) for i in row["value_ids"]]
+            except ValueError:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    f"'{key}' is not an entry on the list") from None
+            row["value_labels"] = [await label_for(db, question["vocabulary"], i) for i in ids]
         if not can_fail:
             row["is_failure"] = False
         target = existing.get(key)
