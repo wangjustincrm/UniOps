@@ -368,10 +368,16 @@ async def plan_bill(db: AsyncSession, ap: ApInvoice, ref: _Ref | None = None,
     if ap.invoice_date > max(created, today) or (ap.due_date and ap.invoice_date > ap.due_date):
         raise PushRefused(f"Check the invoice date ({ap.invoice_date.isoformat()} is after "
                           f"the entry or due date — day and month may be swapped)")
-    erp_id = None
+    vendor = None
     if ap.vendor_id:
-        erp_id = (await db.execute(text("select erp_id from vendors where id = :i"),
-                                   {"i": ap.vendor_id})).scalar_one_or_none()
+        vendor = (await db.execute(text("select erp_id from vendors where id = :i"),
+                                   {"i": ap.vendor_id})).one_or_none()
+    if vendor is None:
+        # Not the same fix as a blank ERP ID: the vendor row itself is gone
+        # (or the AP never had one), so there is nothing to fill in.
+        raise PushRefused(f"Vendor {ap.vendor_name or '(none)'} is not in the vendor master — "
+                          "the AP points at a vendor record that does not exist")
+    erp_id = vendor.erp_id
     if not erp_id:
         raise PushRefused("Vendor has no ERP ID (NC supplier code)")
 

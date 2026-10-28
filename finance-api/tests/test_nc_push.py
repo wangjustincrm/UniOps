@@ -371,6 +371,15 @@ async def test_plan_refuses_vendor_without_erp_id(db_session):
         await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
 
 
+async def test_plan_refuses_a_vendor_that_does_not_exist(db_session):
+    """dev1, 2026-10-28: an AP whose vendor_id has no vendors row said "no ERP ID",
+    though the vendor master shows the ERP ID — the row it points at is gone."""
+    _vendor()                                          # the master exists, just not this row
+    ap, *_ = await _ap(db_session, vendor_id=uuid.uuid4())
+    with pytest.raises(PushRefused, match="not in the vendor master"):
+        await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
+
+
 # ── XML ──────────────────────────────────────────────────────────────────────
 
 async def test_render_xml(db_session):
