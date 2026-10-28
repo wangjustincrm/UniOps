@@ -285,7 +285,10 @@ modules:
         already has. Invoice numbers are compared ignoring case, spaces and
         hyphens; a bill found only by dropping the hyphens is marked
         "Hyphens ignored" with NC's own number, to check it is the same
-        invoice. A push is refused, with the reason shown, when there is
+        invoice. Invoices on a PO imported from NC (type 1, raw material and
+        packaging) are tagged "NC flow" and cannot be ticked: NC creates
+        that payable itself from its purchase invoice, so they are never
+        pushed, and "Hide in NC" hides them too. A push is refused, with the reason shown, when there is
         no exchange rate, the vendor has no ERP ID, or the issue date is after
         the entry or due date (day and month probably swapped).
       - >-

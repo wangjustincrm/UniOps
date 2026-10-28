@@ -574,6 +574,32 @@ async def test_list_shows_nc_ap_doc_and_filters(client, db_session):
         assert [i["ap_invoice_number"] for i in r.json()["items"]] == want, d
 
 
+async def test_list_marks_nc_flow_aps_and_hides_them(client, db_session):
+    """User, 2026-10-28: an AP on a PO imported from NC (type 1) is booked by NC
+    from its own purchase invoice — the list says so, offers no push, and
+    "Hide in NC" hides it. Holds for a PO reached through an allocation too."""
+    vid = _vendor()
+    a1, inv1, *_ = await _ap(db_session, vendor_id=vid, number="AP-NC", inv_no="RM-1")
+    a2, *_ = await _ap(db_session, vendor_id=vid, number="AP-EXP", inv_no="EX-1",
+                       po_titles=(("PO-633-2610-09", "Expense"),))
+    po = (await db_session.execute(select(PurchaseOrder).where(PurchaseOrder.id == inv1.po_id))).scalar_one()
+    po.source = "nc"
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/ap/invoices", headers=_h())
+    flow = {i["ap_invoice_number"]: i["nc_flow"] for i in r.json()["items"]}
+    assert flow == {"AP-NC": True, "AP-EXP": False}
+    r = await client.get("/finance/v1/ap/invoices", params={"in_nc": "false"}, headers=_h())
+    assert [i["ap_invoice_number"] for i in r.json()["items"]] == ["AP-EXP"]
+
+    # reached only through a multi-PO allocation
+    inv1.po_id = None
+    db_session.add(InvoicePoAllocation(invoice_id=inv1.id, po_id=po.id, allocated_amount=Decimal("1"), allocated_tax=Decimal("0")))
+    await db_session.flush()
+    r = await client.get("/finance/v1/ap/invoices", headers=_h())
+    assert {i["ap_invoice_number"]: i["nc_flow"] for i in r.json()["items"]}["AP-NC"] is True
+
+
 async def test_match_ignores_hyphens_and_says_so(client, db_session):
     """User, 2026-10-28: "IN-22-1014797" in UniOps is "IN-221014797" in NC — match it,
     but flag that the hyphens were dropped; an exact match carries no flag."""

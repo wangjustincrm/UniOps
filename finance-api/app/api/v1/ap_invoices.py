@@ -119,6 +119,8 @@ class InvoiceOut(BaseModel):
     # NC payable bills holding this AP (push result + NC AP mirror match);
     # filled by the list endpoint only.
     nc_docs: list[dict] = []
+    # On a PO imported from NC: NC makes this payable itself; never pushed.
+    nc_flow: bool = False
 
     @field_validator("amount", "tax_amount", "total_amount", "paid_amount", mode="before")
     @classmethod
@@ -186,6 +188,7 @@ async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
         exported=exported, in_nc=in_nc, limit=limit, offset=offset, order=order)
     from app.services.nc_push import nc_docs_for
     docs = await nc_docs_for(db, rows)
+    nc_flow = await crud.nc_flow_ids(db, [r.id for r in rows])
     items = []
     for r in rows:
         out = InvoiceOut.model_validate(r)
@@ -197,6 +200,7 @@ async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
                       "bill_date": None, "money": None, "currency": None,
                       "hyphen_match": False, "nc_invoice_no": None}] + found
         out.nc_docs = found
+        out.nc_flow = r.id in nc_flow
         items.append(out)
     return {"total": total, "items": items}
 

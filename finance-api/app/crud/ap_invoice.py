@@ -112,6 +112,18 @@ _IN_NC_SQL = r"""exists (
        and (b.src_syscode is distinct from 17 or b.bill_no = ap_invoices.nc_bill_no))"""
 
 
+# An EPMS AP on a PO imported from NC (type 1, raw material / packaging): NC
+# makes that payable itself from its purchase invoice, so UniOps never pushes
+# it (nc_push refuses it too). Covers the invoice's own PO and multi-PO
+# allocations — the same POs nc_push.plan_bill looks at.
+NC_FLOW_SQL = """ap_invoices.source = 'epms' and exists (
+    select 1 from invoices i
+      join purchase_orders p on p.source = 'nc'
+       and (p.id = i.po_id or p.id in (select al.po_id from invoice_po_allocations al
+                                        where al.invoice_id = i.id))
+     where i.id = ap_invoices.source_invoice_id)"""
+
+
 # Sort key for the NC AP Doc column: our pushed bill, else the first mirror bill
 # that _IN_NC_SQL would match — so hand-entered bills sort with the rest.
 NC_DOC_SORT = literal_column(r"""coalesce(ap_invoices.nc_bill_no, (
@@ -152,8 +164,10 @@ async def list_invoices(db: AsyncSession, *, source: str | None = None,
         # "Hide in NC": an AP is in NC when UniOps pushed it, or the NC AP
         # mirror holds its invoice number for its supplier (any approval
         # state; our own replaced bills excluded) — same match as the list's
-        # NC AP Doc column (services/nc_push.nc_docs_for).
-        has = or_(ApInvoice.nc_bill_no.is_not(None), text(_IN_NC_SQL))
+        # NC AP Doc column (services/nc_push.nc_docs_for). An NC-flow AP is
+        # hidden too: NC books it itself, there is nothing to push.
+        has = or_(ApInvoice.nc_bill_no.is_not(None), text(_IN_NC_SQL),
+                  text(f"({NC_FLOW_SQL})"))
         base = base.where(has if in_nc else ~has)
     total = (await db.execute(
         select(func.count()).select_from(base.subquery()))).scalar_one()
@@ -162,6 +176,13 @@ async def list_invoices(db: AsyncSession, *, source: str | None = None,
                                   ApInvoice.ap_invoice_number.desc())))
         .offset(offset).limit(limit))).scalars().all())
     return total, rows
+
+
+async def nc_flow_ids(db: AsyncSession, ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    if not ids:
+        return set()
+    return set((await db.execute(select(ApInvoice.id).where(
+        ApInvoice.id.in_(ids), text(f"({NC_FLOW_SQL})")))).scalars().all())
 
 
 async def get(db: AsyncSession, invoice_id: uuid.UUID) -> ApInvoice | None:

@@ -41,6 +41,8 @@ interface ApInvoice {
   nc_push_status: 'pushed' | 'failed' | null
   nc_push_error: string | null
   nc_docs: NcDoc[]
+  /** On a PO imported from NC — NC makes this payable from its purchase invoice; never pushed. */
+  nc_flow: boolean
 }
 interface NcDoc {
   bill_no: string
@@ -89,6 +91,13 @@ const NC_STATE: Record<NcDoc['state'], { label: string; cls: string; tip: string
   pushed: { label: 'Pushed', cls: 'bg-blue-50 text-blue-700', tip: 'Pushed by UniOps; NC state shows after the next NC sync (hourly)' },
 }
 
+const NcFlowTag = () => (
+  <span className="w-fit rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600"
+        title="PO imported from NC — NC creates this payable from its purchase invoice. Not pushed from UniOps.">
+    NC flow
+  </span>
+)
+
 function NcDocCell({ inv }: { inv: ApInvoice }) {
   const docs = inv.nc_docs ?? []
   if (docs.length === 0) {
@@ -97,6 +106,7 @@ function NcDocCell({ inv }: { inv: ApInvoice }) {
         <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Push failed
       </span>
     }
+    if (inv.nc_flow) return <NcFlowTag />
     return <span className="text-xs text-neutral-400">—</span>
   }
   return (
@@ -122,6 +132,7 @@ function NcDocCell({ inv }: { inv: ApInvoice }) {
           </span>
         )
       })}
+      {inv.nc_flow && <NcFlowTag />}
       {inv.nc_push_error && (
         <span className="flex items-center gap-1 text-[11px] text-red-600" title={inv.nc_push_error}>
           <AlertTriangle className="h-3 w-3 shrink-0" /> Last push failed
@@ -151,7 +162,7 @@ export default function AccountsPayablePage() {
   const [sort, onSort] = useSort<ApSortKey>(null, resetPage)
   const gotoPage = (n: number) => { setPage(n); setSelected(new Set()) }
 
-  const pushable = (inv: ApInvoice) => inv.status !== 'draft' && inv.status !== 'void'
+  const pushable = (inv: ApInvoice) => inv.status !== 'draft' && inv.status !== 'void' && !inv.nc_flow
   const toggle = (id: string) => setSelected((p) => {
     const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
