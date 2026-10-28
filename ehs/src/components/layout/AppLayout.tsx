@@ -157,6 +157,8 @@ const NAV: NavGroup[] = [
       // The built-in auditor role already holds ehs.incident.read along with
       // read access to everything this counts, which is what that role is for.
       { label: 'Audit Evidence',     href: '/audit',         icon: ClipboardCheck,  permission: 'ehs.incident.read' },
+      // Round 10: HSE opens anybody's, a supervisor their reports', everybody their own.
+      { label: 'Staff File',         href: '/staff-file',    icon: Users,           permission: 'ehs.incident.report' },
     ],
   },
 ]

@@ -44,6 +44,7 @@ import AreaOwnersPage from '@/pages/settings/AreaOwnersPage'
 import RulesPage from '@/pages/settings/RulesPage'
 import PermitChecksPage from '@/pages/settings/PermitChecksPage'
 import ExpiryNoticesPage from '@/pages/settings/ExpiryNoticesPage'
+import StaffFilePage, { StaffFilePicker } from '@/pages/StaffFilePage'
 import UndeliveredEmailPage from '@/pages/settings/UndeliveredEmailPage'
 import NotifyGroupsPage from '@/pages/settings/NotifyGroupsPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
@@ -314,6 +315,16 @@ export const ehsRoutes: RouteDef[] = [
     path: '/settings/expiry-notices',
     element: <ExpiryNoticesPage />,
     tab: { title: 'Expiry notices', icon: 'Mail', keyStrategy: 'static' },
+  },
+  {
+    path: '/staff-file',
+    element: <StaffFilePicker />,
+    tab: { title: 'Staff file', icon: 'Users', keyStrategy: 'static' },
+  },
+  {
+    path: '/staff-file/:id',
+    element: <StaffFilePage />,
+    tab: { title: 'Staff file', icon: 'Users', keyStrategy: 'param', paramName: 'id' },
   },
   {
     path: '/settings/undelivered-email',
