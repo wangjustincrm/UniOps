@@ -1,0 +1,38 @@
+// One error shape from the back end: {"error": {"code", "message", "details"}}.
+// The business API client decides how a failed response becomes an Error;
+// this reads the shape from wherever that client put the body.
+
+export interface BusinessError {
+  code: string
+  message: string
+  details: Record<string, unknown>
+}
+
+function fromBody(body: unknown): BusinessError | null {
+  if (!body || typeof body !== 'object') return null
+  const e = (body as { error?: unknown }).error
+  if (!e || typeof e !== 'object') return null
+  const { code, message, details } = e as Record<string, unknown>
+  if (typeof code !== 'string') return null
+  return {
+    code,
+    message: typeof message === 'string' ? message : code,
+    details: details && typeof details === 'object' ? (details as Record<string, unknown>) : {},
+  }
+}
+
+/** The BusinessError carried by `err` (its `body`, `detail` or itself), or null. */
+export function businessErrorOf(err: unknown): BusinessError | null {
+  if (!err || typeof err !== 'object') return null
+  const o = err as { body?: unknown; detail?: unknown }
+  return fromBody(o.body) ?? fromBody(o.detail) ?? fromBody(err)
+}
+
+/** Text for an error: the module's message for its code, else the server's
+ *  message, else the Error's own message. */
+export function errorText(err: unknown, messages: Record<string, string> = {}): string {
+  const be = businessErrorOf(err)
+  if (be) return messages[be.code] ?? be.message
+  if (err instanceof Error) return err.message
+  return 'Something went wrong.'
+}
