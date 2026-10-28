@@ -30,7 +30,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, ApiError } from '@/lib/api'
 
 export interface VocabItem {
   id: string
@@ -127,7 +127,16 @@ const rowCls =
   'flex min-h-[44px] w-full items-center justify-between gap-2 px-3 text-left text-sm ' +
   'text-neutral-800 hover:bg-neutral-50'
 
-function Missing({ vocabulary }: { vocabulary: string }) {
+function Missing({ vocabulary, error }: { vocabulary: string; error: unknown }) {
+  // ★ Only a 404 means the list is not there. A refused or failed read said
+  // the same, and sent somebody to fix a form that was fine (uniops-8b).
+  if (!(error instanceof ApiError && error.status === 404)) {
+    return (
+      <p className="rounded-lg border border-danger-300 bg-danger-50 p-3 text-sm text-danger-700">
+        Could not load the list. Reload the page; if it keeps happening, tell HSE.
+      </p>
+    )
+  }
   // A question can point at a list that is not there — a form built when the
   // reference was typed by hand rather than chosen. Silently rendering an
   // empty dropdown is how an inspection becomes impossible to finish with
@@ -154,7 +163,7 @@ export function VocabularyMultiSelect({
   placeholder?: string
   emptyHint?: string
 }) {
-  const { data, isLoading, isError } = useVocabulary(vocabulary)
+  const { data, isLoading, isError, error } = useVocabulary(vocabulary)
   const [query, setQuery] = useState('')
   // The groups walked into, top first.
   const [at, setAt] = useState<string[]>([])
@@ -169,7 +178,7 @@ export function VocabularyMultiSelect({
   }, [tree, value, query])
 
   if (isLoading) return <p className="text-sm text-neutral-500">Loading…</p>
-  if (isError) return <Missing vocabulary={vocabulary} />
+  if (isError) return <Missing vocabulary={vocabulary} error={error} />
   if (tree.leaves.length === 0 && value.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-neutral-300 p-3 text-sm text-neutral-500">
@@ -294,13 +303,13 @@ export function VocabularySelect({
    *  record still said otherwise. */
   currentLabel?: string | null
 }) {
-  const { data, isError } = useVocabulary(vocabulary)
+  const { data, isError, error } = useVocabulary(vocabulary)
   const tree = useMemo(() => build(data ?? []), [data])
   // Groups opened by hand; null until the person touches the field, so it
   // opens where the saved value sits.
   const [opened, setOpened] = useState<string[] | null>(null)
 
-  if (isError) return <Missing vocabulary={vocabulary} />
+  if (isError) return <Missing vocabulary={vocabulary} error={error} />
 
   const selected = value ? tree.byId.get(value) : undefined
   const why = value && data ? (selected ? stale(tree, value) : 'retired') : null
@@ -312,23 +321,35 @@ export function VocabularySelect({
 
   // One select per level: the top, then under each opened group.
   const levels = ['', ...chain]
+  // ★ Opening a group changes nothing saved (uniops-8b): looking inside one
+  // used to clear the value, and saving then cleared the record's wording
+  // with it. The value changes only when an entry is picked, or when the top
+  // select is set back to empty — a deliberate clear.
   const pick = (depth: number, id: string) => {
     const item = id ? tree.byId.get(id) : undefined
     const kept = chain.slice(0, depth)
     if (item && tree.kids.has(item.id)) {
       setOpened([...kept, item.id])
-      onChange(null)
+    } else if (item) {
+      setOpened(kept)
+      onChange(snapshot(item))
     } else {
       setOpened(kept)
-      onChange(item ? snapshot(item) : null)
+      if (depth === 0) onChange(null)
     }
   }
+  const home = groupsAbove(tree, selected)
+  // Somewhere other than where the saved entry sits, with nothing picked yet.
+  const elsewhere = Boolean(value && data && opened &&
+    !(opened.length === home.length && opened.every((g, i) => g === home[i])))
+  const savedAs = selected ? trailOf(selected) : (currentLabel ?? 'an entry no longer on the list')
 
   return (
     <div className="flex flex-col gap-1.5">
-      {why && (
+      {(why || elsewhere) && (
         <p className="text-xs text-neutral-500">
-          Saved as {selected ? trailOf(selected) : (currentLabel ?? 'an entry no longer on the list')} ({why}).
+          {elsewhere ? 'Still saved as' : 'Saved as'} {savedAs}{why ? ` (${why})` : ''}
+          {elsewhere ? ' until you pick an entry under it.' : '.'}
         </p>
       )}
       {levels.map((parent, depth) => {

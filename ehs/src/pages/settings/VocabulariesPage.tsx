@@ -75,6 +75,8 @@ function UnderNote({ code, item, trail, hasChildren, onClear }: {
     queryFn: () => api.get<{ total: number; by: { what: string; count: number }[] }>(
       `/api/v1/settings/vocabularies/${code}/items/${item.id}/usage`),
     enabled: !hasChildren,
+    // Three silent retries left "Checking…" up for most of half a minute.
+    retry: 1,
   })
   return (
     <div className="mb-2 rounded-lg border border-primary-200 bg-primary-50/50 px-3 py-2 text-xs text-neutral-700">
@@ -89,6 +91,18 @@ function UnderNote({ code, item, trail, hasChildren, onClear }: {
       {!hasChildren && (
         <p className="mt-1 text-neutral-600">
           {item.label} becomes a heading: forms will offer what is inside it, not {item.label} itself.
+          {/* ★ Loading or failed is not "nobody uses it" (uniops-8b). */}
+          {usage.isPending && (
+            <span className="mt-1 block text-neutral-500">Checking which records use it…</span>
+          )}
+          {usage.isError && (
+            <span className="mt-1 block font-medium text-danger-700">
+              Could not check how many records use it. Adding still works; they keep it either way.
+            </span>
+          )}
+          {usage.data && usage.data.total === 0 && (
+            <span className="mt-1 block text-neutral-500">No record names it yet.</span>
+          )}
           {usage.data && usage.data.total > 0 && (
             <span className="mt-1 block font-medium text-warning-800">
               {usage.data.total} {usage.data.total === 1 ? 'record names' : 'records name'} {item.label} (
