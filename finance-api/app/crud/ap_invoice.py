@@ -106,8 +106,8 @@ _IN_NC_SQL = r"""exists (
     select 1 from nc_ap_bill_lines l
       join nc_ap_bills b on b.id = l.bill_id
       join vendors v on v.id = ap_invoices.vendor_id
-     where l.invoice_no_norm = nullif(upper(regexp_replace(
-               coalesce(ap_invoices.vendor_invoice_number, ''), '\s', '', 'g')), '')
+     where replace(l.invoice_no_norm, '-', '') = nullif(replace(upper(regexp_replace(
+               coalesce(ap_invoices.vendor_invoice_number, ''), '\s', '', 'g')), '-', ''), '')
        and l.supplier_code = v.erp_id
        and (b.src_syscode is distinct from 17 or b.bill_no = ap_invoices.nc_bill_no))"""
 

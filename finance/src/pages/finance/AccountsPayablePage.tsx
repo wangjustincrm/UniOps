@@ -49,6 +49,9 @@ interface NcDoc {
   bill_date: string | null
   money: string | null
   currency: string | null
+  /** Matched only after dropping hyphens ("IN-22-1014797" vs NC "IN-221014797"). */
+  hyphen_match: boolean
+  nc_invoice_no: string | null
 }
 interface PushResult { ap_id: string; ap_number: string; ok: boolean; message: string; nc_bill_no: string | null }
 interface ApListResp {
@@ -103,10 +106,19 @@ function NcDocCell({ inv }: { inv: ApInvoice }) {
         const tip = [st.tip, d.pushed ? 'Created by Push to NC' : 'Entered in NC by hand',
                      d.bill_date ? `Bill date ${d.bill_date.slice(0, 10)}` : null,
                      d.money ? `${fmtMoney(d.money, d.currency ?? undefined)}` : null].filter(Boolean).join(' · ')
+        const hyphenTip = `Matched ignoring hyphens: NC has invoice no. ${d.nc_invoice_no ?? '?'}, `
+          + `this AP has ${inv.vendor_invoice_number ?? '?'}. Check it is the same invoice.`
         return (
-          <span key={d.bill_no} className="flex items-center gap-1" title={tip}>
-            <span className="font-mono text-xs text-neutral-700">{d.bill_no}</span>
-            <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium', st.cls)}>{st.label}</span>
+          <span key={d.bill_no} className="flex flex-col">
+            <span className="flex items-center gap-1" title={tip}>
+              <span className="font-mono text-xs text-neutral-700">{d.bill_no}</span>
+              <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium', st.cls)}>{st.label}</span>
+            </span>
+            {d.hyphen_match && (
+              <span className="flex items-center gap-1 text-[11px] text-amber-700" title={hyphenTip}>
+                <AlertTriangle className="h-3 w-3 shrink-0" /> Hyphens ignored · NC: {d.nc_invoice_no}
+              </span>
+            )}
           </span>
         )
       })}

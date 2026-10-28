@@ -197,7 +197,7 @@ its NC state:
 | Source | When |
 |---|---|
 | Push result | The AP was pushed by UniOps: `nc_bill_no` / `nc_bill_pk` were stored from the XChange response; a re-push overwrites them. |
-| NC AP mirror (`nc_ap_bills` / `nc_ap_lines`) | Every other AP, including the clerks' historical manual entries: the same match `ap_reconciliation` already uses (normalised invoice number + `vendors.erp_id` = supplier code), **including saved/unapproved bills**. |
+| NC AP mirror (`nc_ap_bills` / `nc_ap_lines`) | Every other AP, including the clerks' historical manual entries: the same match `ap_reconciliation` already uses (normalised invoice number + `vendors.erp_id` = supplier code), **including saved/unapproved bills**. Numbers compare ignoring case, spaces **and hyphens** (user, 2026-10-28: "IN-22-1014797" vs NC "IN-221014797"; 1 of 258 dev1 APs); a match that needed the hyphens dropped is flagged (`hyphen_match`, with NC's raw number) in the column and in the push refusal. `invoice_no_norm` itself is unchanged — duplicate-invoice reviews are keyed on it. |
 
 - The state badge comes from the mirror: Saved (billstatus −1), Approved (1/1), Deleted (dr=1 —
   the stored number is shown struck through, so a bill deleted in NC is visible).

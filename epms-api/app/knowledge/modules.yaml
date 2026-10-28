@@ -282,7 +282,10 @@ modules:
         invoice already keyed into NC by hand is not pushed again. The NC AP
         Doc column shows the NC bill number and whether it is saved or
         approved (from the hourly NC sync); "Hide in NC" hides invoices NC
-        already has. A push is refused, with the reason shown, when there is
+        already has. Invoice numbers are compared ignoring case, spaces and
+        hyphens; a bill found only by dropping the hyphens is marked
+        "Hyphens ignored" with NC's own number, to check it is the same
+        invoice. A push is refused, with the reason shown, when there is
         no exchange rate, the vendor has no ERP ID, or the issue date is after
         the entry or due date (day and month probably swapped).
       - >-

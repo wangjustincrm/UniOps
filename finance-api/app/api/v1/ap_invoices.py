@@ -194,7 +194,8 @@ async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
         # have synced it yet (hourly) — show it as pushed until it does.
         if r.nc_bill_no and not any(d["bill_no"] == r.nc_bill_no for d in found):
             found = [{"bill_no": r.nc_bill_no, "state": "pushed", "pushed": True,
-                      "bill_date": None, "money": None, "currency": None}] + found
+                      "bill_date": None, "money": None, "currency": None,
+                      "hyphen_match": False, "nc_invoice_no": None}] + found
         out.nc_docs = found
         items.append(out)
     return {"total": total, "items": items}

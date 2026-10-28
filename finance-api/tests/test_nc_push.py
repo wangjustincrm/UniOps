@@ -506,7 +506,7 @@ async def test_push_refusal_sends_nothing(db_session):
     assert (await db_session.execute(select(NcPushLog))).scalars().all() == []
 
 
-def _nc_bill(bill_no, inv_norm, sup, *, src=1, status=1, approve=1):
+def _nc_bill(bill_no, inv_norm, sup, *, src=1, status=1, approve=1, raw=None):
     bid = uuid.uuid4()
     _exec("insert into nc_ap_bills (id, nc_pk, bill_no, trade_type, bill_status, approve_status, "
           "supplier_code, currency, money, src_syscode, nc_ts, synced_at, created_at, updated_at) "
@@ -515,7 +515,7 @@ def _nc_bill(bill_no, inv_norm, sup, *, src=1, status=1, approve=1):
     _exec("insert into nc_ap_bill_lines (id, bill_id, nc_pk, bill_no, money_cr, money_bal, invoice_no, "
           "invoice_no_norm, supplier_code, nc_ts, synced_at) values "
           "(%s,%s,%s,%s,722.64,722.64,%s,%s,%s,'2026-10-20 00:00:00',now())",
-          (str(uuid.uuid4()), str(bid), f"L{bill_no}", bill_no, inv_norm, inv_norm, sup))
+          (str(uuid.uuid4()), str(bid), f"L{bill_no}", bill_no, raw or inv_norm, inv_norm, sup))
 
 
 async def test_push_refuses_an_ap_already_entered_by_hand(db_session):
@@ -546,7 +546,8 @@ async def test_list_shows_nc_ap_doc_and_filters(client, db_session):
     assert r.status_code == 200, r.text
     docs = {i["ap_invoice_number"]: i["nc_docs"] for i in r.json()["items"]}
     assert docs["AP-1"] == [{"bill_no": "D1-HAND", "state": "saved", "pushed": False,
-                             "bill_date": None, "money": "722.64", "currency": "CAD"}]
+                             "bill_date": None, "money": "722.64", "currency": "CAD",
+                             "hyphen_match": False, "nc_invoice_no": "120542"}]
     assert [d["bill_no"] for d in docs["AP-2"]] == ["D1-PUSHED"] and docs["AP-2"][0]["state"] == "pushed"
     assert docs["AP-3"] == []                         # a replaced bill of ours is not shown
 
@@ -554,6 +555,46 @@ async def test_list_shows_nc_ap_doc_and_filters(client, db_session):
     assert [i["ap_invoice_number"] for i in r.json()["items"]] == ["AP-3"]
     r = await client.get("/finance/v1/ap/invoices", params={"in_nc": "true"}, headers=_h())
     assert sorted(i["ap_invoice_number"] for i in r.json()["items"]) == ["AP-1", "AP-2"]
+
+
+async def test_match_ignores_hyphens_and_says_so(client, db_session):
+    """User, 2026-10-28: "IN-22-1014797" in UniOps is "IN-221014797" in NC — match it,
+    but flag that the hyphens were dropped; an exact match carries no flag."""
+    vid = _vendor("0000119")
+    await _ap(db_session, vendor_id=vid, number="AP-H", inv_no="IN-22-1014797")
+    await _ap(db_session, vendor_id=vid, number="AP-E", inv_no="in-22 1014915",
+              po_titles=(("PO-633-2610-02", "Second"),))
+    v2 = _vendor("0000777")
+    await _ap(db_session, vendor_id=v2, number="AP-X", inv_no="IN-22-1014797",   # other supplier
+              po_titles=(("PO-633-2610-03", "Third"),))
+    _nc_bill("D1-H", "IN-221014797", "0000119")
+    _nc_bill("D1-E", "IN-221014915", "0000119", raw="IN-22 1014915")
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/ap/invoices", headers=_h())
+    docs = {i["ap_invoice_number"]: i["nc_docs"] for i in r.json()["items"]}
+    assert [(d["bill_no"], d["hyphen_match"], d["nc_invoice_no"]) for d in docs["AP-H"]] == [
+        ("D1-H", True, "IN-221014797")]
+    assert [(d["bill_no"], d["hyphen_match"]) for d in docs["AP-E"]] == [("D1-E", False)]
+    assert docs["AP-X"] == []
+    r = await client.get("/finance/v1/ap/invoices", params={"in_nc": "false"}, headers=_h())
+    assert [i["ap_invoice_number"] for i in r.json()["items"]] == ["AP-X"]
+
+
+async def test_push_refusal_names_a_hyphen_match(db_session):
+    vid = _vendor("0000119")
+    ap, *_ = await _ap(db_session, vendor_id=vid, inv_no="IN-22-1014797")
+    _nc_bill("D1-H", "IN-221014797", "0000119")
+    uid = await _pusher(db_session)
+    client = FakeClient()
+    [out] = await svc.push_invoices(db_session, [ap.id], uid, lookup=FakeLookup(), client=client)
+    assert not out.ok and client.sent == []
+    assert "D1-H" in out.message and "IN-221014797" in out.message and "ignoring hyphens" in out.message
+
+
+def test_match_invoice_no():
+    assert svc.match_invoice_no(" in-22 1014797 ") == "IN221014797"
+    assert svc.match_invoice_no("--") is None and svc.match_invoice_no(None) is None
 
 
 async def test_push_endpoint_gates(client, db_session, monkeypatch):

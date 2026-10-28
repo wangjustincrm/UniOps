@@ -650,9 +650,23 @@ def xchange_configured() -> bool:
 
 # ── NC docs already holding this AP (list column + duplicate guard) ─────────
 
+def match_invoice_no(raw: str | None) -> str | None:
+    """The AP <-> NC match form: the mirror's normalised number with hyphens
+    dropped too, so "IN-22-1014797" finds NC's "IN-221014797" (user, 2026-10-28).
+    Only this match uses it; invoice_no_norm itself is unchanged (duplicate
+    reviews are keyed on it)."""
+    norm = normalise_invoice_no(raw)
+    return (norm.replace("-", "") or None) if norm else None
+
+
+# SQL twin of match_invoice_no on the mirror column (see crud/ap_invoice._IN_NC_SQL).
+LINE_MATCH_SQL = "replace(l.invoice_no_norm, '-', '')"
+
+
 async def nc_docs_for(db: AsyncSession, aps: list[ApInvoice]) -> dict[uuid.UUID, list[dict]]:
     """AP id -> NC payable bills that carry its invoice number for its supplier,
     from the NC AP mirror (nc_ap_bills / nc_ap_bill_lines), any approval state.
+    Numbers match ignoring case, spaces and hyphens (match_invoice_no).
     A bill UniOps pushed and later replaced (src_syscode 17, not the stored
     number) is dropped: the mirror cannot see NC's soft delete until a full
     reload."""
@@ -669,7 +683,7 @@ async def nc_docs_for(db: AsyncSession, aps: list[ApInvoice]) -> dict[uuid.UUID,
             {"ids": vendor_ids})).all()}
     keys = {}
     for a in aps:
-        norm = normalise_invoice_no(a.vendor_invoice_number)
+        norm = match_invoice_no(a.vendor_invoice_number)
         sup = erp.get(a.vendor_id)
         if norm and sup:
             keys[a.id] = (norm, sup)
@@ -677,26 +691,34 @@ async def nc_docs_for(db: AsyncSession, aps: list[ApInvoice]) -> dict[uuid.UUID,
     if not keys:
         return out
     rows = (await db.execute(text(
-        "select distinct l.invoice_no_norm, l.supplier_code, b.bill_no, b.bill_status, "
+        f"select distinct {LINE_MATCH_SQL} as inv_key, l.invoice_no_norm, l.invoice_no, "
+        "       l.supplier_code, b.bill_no, b.bill_status, "
         "       b.approve_status, b.src_syscode, b.bill_date, b.money, b.currency "
         "  from nc_ap_bill_lines l join nc_ap_bills b on b.id = l.bill_id "
-        " where l.invoice_no_norm = any(:n)"),
+        f" where {LINE_MATCH_SQL} = any(:n)"),
         {"n": list({k[0] for k in keys.values()})})).all()
     by_key: dict = {}
     for r in rows:
-        by_key.setdefault((r.invoice_no_norm, r.supplier_code), []).append(r)
+        by_key.setdefault((r.inv_key, r.supplier_code), []).append(r)
     for a in aps:
         k = keys.get(a.id)
+        exact = normalise_invoice_no(a.vendor_invoice_number)
+        docs: dict[str, dict] = {}
         for r in by_key.get(k, []) if k else []:
             if r.src_syscode == SRC_SYSCODE and r.bill_no != a.nc_bill_no:
                 continue
             state = "approved" if (r.bill_status == 1 and r.approve_status == 1) else "saved"
-            out[a.id].append({"bill_no": r.bill_no, "state": state,
-                              "pushed": r.src_syscode == SRC_SYSCODE,
-                              "bill_date": r.bill_date.isoformat() if r.bill_date else None,
-                              "money": str(r.money) if r.money is not None else None,
-                              "currency": r.currency})
-        out[a.id].sort(key=lambda d: d["bill_no"])
+            d = docs.setdefault(r.bill_no, {
+                "bill_no": r.bill_no, "state": state, "pushed": r.src_syscode == SRC_SYSCODE,
+                "bill_date": r.bill_date.isoformat() if r.bill_date else None,
+                "money": str(r.money) if r.money is not None else None,
+                "currency": r.currency, "hyphen_match": True, "nc_invoice_no": r.invoice_no})
+            # Flag a bill only when no line on it matches with the hyphens kept
+            # (user, 2026-10-28: say when the match needed the hyphens dropped).
+            if r.invoice_no_norm == exact:
+                d["hyphen_match"] = False
+                d["nc_invoice_no"] = r.invoice_no
+        out[a.id] = sorted(docs.values(), key=lambda d: d["bill_no"])
     return out
 
 
@@ -739,7 +761,9 @@ async def push_invoices(db: AsyncSession, ap_ids: list[uuid.UUID], user_id: uuid
         try:
             others = [d for d in existing.get(ap.id, []) if not d["pushed"]]
             if others:
-                raise PushRefused("Already in NC as " + ", ".join(d["bill_no"] for d in others)
+                raise PushRefused("Already in NC as " + ", ".join(
+                    d["bill_no"] + (f" (NC invoice no. {d['nc_invoice_no']}, matched ignoring hyphens)"
+                                    if d["hyphen_match"] else "") for d in others)
                                   + " (entered by hand) — not pushed again")
             plan = await plan_bill(db, ap, ref)
             cc_codes = {c for r in plan.rows for c in (r.dims.cc_nc, r.dims.def5_code) if c}
