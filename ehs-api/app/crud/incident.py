@@ -76,6 +76,8 @@ async def create(
     db: AsyncSession, payload: IncidentCreate, *, reporter_id: uuid.UUID, now: datetime | None = None
 ) -> Incident:
     now = now or datetime.now(timezone.utc)
+    from app.services import equipment_ref
+    await equipment_ref.check(db, payload.equipment_id)
     incident = Incident(
         id=uuid.uuid4(),
         incident_no=await next_number(db, "incident", now=now),
@@ -90,6 +92,7 @@ async def create(
         category_id=payload.category_id,
         description=payload.description,
         equipment_involved=payload.equipment_involved,
+        equipment_id=payload.equipment_id,
         witnesses_note=payload.witnesses_note,
         immediate_action_taken=payload.immediate_action_taken,
         reported_by=reporter_id,
@@ -191,6 +194,7 @@ async def list_(
     statuses: list[str] | None = None,
     form_kind: str | None = None,
     location_id: uuid.UUID | None = None,
+    equipment_id: uuid.UUID | None = None,
     reported_by: uuid.UUID | None = None,
     occurred_from: date | None = None,
     occurred_to: date | None = None,
@@ -269,6 +273,8 @@ async def list_(
         stmt = stmt.where(Incident.form_kind == form_kind)
     if location_id:
         stmt = stmt.where(Incident.location_id == location_id)
+    if equipment_id:
+        stmt = stmt.where(Incident.equipment_id == equipment_id)
     if order == "status":
         # By how far along it is — the open ones first, the way somebody
         # working the register reads it — and newest first within each.

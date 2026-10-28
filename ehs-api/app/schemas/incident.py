@@ -50,6 +50,7 @@ class IncidentCreate(BaseModel):
     category_id: uuid.UUID | None = None
     description: str | None = None
     equipment_involved: str | None = None
+    equipment_id: uuid.UUID | None = None
     witnesses_note: str | None = None
     immediate_action_taken: str | None = None
     reported_to_id: uuid.UUID | None = None
@@ -122,6 +123,7 @@ class IncidentEdit(BaseModel):
     shift_code: str | None = Field(default=None, max_length=20)
     description: str | None = None
     equipment_involved: str | None = None
+    equipment_id: uuid.UUID | None = None
     witnesses_note: str | None = None
     immediate_action_taken: str | None = None
 
@@ -258,6 +260,7 @@ class IncidentOut(BaseModel):
     anonymous_reporter_name: str | None = None
     description: str | None
     equipment_involved: str | None
+    equipment_id: uuid.UUID | None = None
     witnesses_note: str | None
     immediate_action_taken: str | None
     reported_to_name: str | None

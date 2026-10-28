@@ -348,7 +348,11 @@ async def update_jsa(
     jsa_id: uuid.UUID, payload: JsaIn, db: SessionDep, user: CanWriteAction,  # noqa: ARG001
 ):
     jsa = await crud.get_jsa(db, jsa_id)
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    fields = payload.model_dump(exclude_unset=True)
+    if "equipment_id" in fields:
+        from app.services import equipment_ref
+        await equipment_ref.check(db, fields["equipment_id"], jsa.equipment_id)
+    for key, value in fields.items():
         setattr(jsa, key, value)
     await db.flush()
     return jsa

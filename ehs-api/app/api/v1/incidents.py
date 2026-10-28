@@ -193,6 +193,8 @@ async def list_incidents(
     status_in: list[str] | None = Query(default=None, alias="status"),
     form_kind: str | None = None,
     location_id: uuid.UUID | None = None,
+    equipment_id: uuid.UUID | None = Query(
+        default=None, description="Round 10: those naming this piece of equipment"),
     occurred_from: date | None = None,
     occurred_to: date | None = None,
     injury_class: list[str] | None = Query(default=None),
@@ -226,7 +228,7 @@ async def list_incidents(
         db, _user_id(user), user.get("role", ""), "ehs.incident.read")
     rows = await crud.list_(
         db, statuses=status_in, form_kind=form_kind,
-        location_id=location_id, limit=limit, offset=offset,
+        location_id=location_id, equipment_id=equipment_id, limit=limit, offset=offset,
         occurred_from=occurred_from, occurred_to=occurred_to,
         injury_classes=injury_class, department_id=department_id,
         no_department=no_department, body_part_label=body_part_label,
@@ -412,6 +414,9 @@ async def edit_incident(
         recount = True
     if "location_id" in fields:
         incident.location_path = await crud._resolve_location_path(db, fields["location_id"])
+    if "equipment_id" in fields:
+        from app.services import equipment_ref
+        await equipment_ref.check(db, fields["equipment_id"], incident.equipment_id)
     for key, value in fields.items():
         setattr(incident, key, value)
     if fields:

@@ -84,6 +84,11 @@ class Incident(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
     # ── Narrative ───────────────────────────────────────────────────────────
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     equipment_involved: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # From the equipment register (round 10); the text above is for anything
+    # the register does not list.
+    equipment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_equipment.id", ondelete="SET NULL"),
+        nullable=True, index=True)
     witnesses_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     immediate_action_taken: Mapped[str | None] = mapped_column(Text, nullable=True)
 

@@ -116,6 +116,8 @@ async def by_qr_token(db: AsyncSession, token: str) -> Permit | None:
 async def create_permit(db: AsyncSession, payload: dict, *, requester_id: uuid.UUID) -> Permit:
     permit_type = await get_type(db, payload["type_id"])
     path, dept_id, dept_name = await _place(db, payload.get("location_id"))
+    from app.services import equipment_ref
+    await equipment_ref.check(db, payload.get("equipment_id"))
 
     permit = Permit(
         id=uuid.uuid4(),
@@ -148,6 +150,9 @@ async def update_permit(db: AsyncSession, permit: Permit, fields: dict) -> Permi
     if "location_id" in fields:
         (permit.location_path, permit.department_id,
          permit.department_name) = await _place(db, fields["location_id"])
+    if "equipment_id" in fields:
+        from app.services import equipment_ref
+        await equipment_ref.check(db, fields["equipment_id"], permit.equipment_id)
     for key, value in fields.items():
         setattr(permit, key, value)
     await db.flush()

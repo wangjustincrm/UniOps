@@ -97,6 +97,8 @@ async def get_hazard(db: AsyncSession, hazard_id: uuid.UUID) -> Hazard:
 async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUID) -> Hazard:
     path, dept_id, dept_name = await _place(db, payload.get("location_id"))
     owner_id = payload.get("owner_id") or creator_id
+    from app.services import equipment_ref
+    await equipment_ref.check(db, payload.get("equipment_id"))
     hazard = Hazard(
         id=uuid.uuid4(),
         hazard_no=await next_number(db, "hazard"),
@@ -137,6 +139,9 @@ async def update_hazard(db: AsyncSession, hazard: Hazard, fields: dict) -> Hazar
          hazard.department_name) = await _place(db, fields["location_id"])
     if "owner_id" in fields:
         hazard.owner_name = await _name(db, fields["owner_id"])
+    if "equipment_id" in fields:
+        from app.services import equipment_ref
+        await equipment_ref.check(db, fields["equipment_id"], hazard.equipment_id)
     for key, value in fields.items():
         setattr(hazard, key, value)
     await db.flush()
@@ -194,6 +199,8 @@ async def get_jsa(db: AsyncSession, jsa_id: uuid.UUID) -> Jsa:
 
 
 async def create_jsa(db: AsyncSession, payload: dict, *, creator_id: uuid.UUID) -> Jsa:
+    from app.services import equipment_ref
+    await equipment_ref.check(db, payload.get("equipment_id"))
     path, dept_id, dept_name = await _place(db, payload.get("location_id"))
     jsa = Jsa(
         id=uuid.uuid4(),

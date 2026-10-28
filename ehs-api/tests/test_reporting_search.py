@@ -331,3 +331,85 @@ class TestADraftIsNotAnIncidentYet:
             {"i": sub["id"]})
         assert _counts((await client.get("/api/v1/reports/group", params=params)).json()) == {
             "submitted": 1}
+
+
+class TestByEquipment:
+    """★ Round 10 (open box): "Allow reports to be run against the equipment so
+    that we can track and report on the equipment that causes the most injuries
+    to staff." Incidents name equipment from the register; grouped on it and
+    narrowed to an injury class, each bar opens the incidents behind it."""
+
+    async def test_injuries_by_equipment_open_the_incidents(self, hse_manager, db_session):
+        from app.models.equipment import Equipment
+        _, client = hse_manager
+        area = _area()
+        press = Equipment(id=uuid.uuid4(), asset_no=f"EQ-{uuid.uuid4().hex[:5]}", name="Press 4")
+        filler = Equipment(id=uuid.uuid4(), asset_no=None, name="Filler")
+        db_session.add_all([press, filler])
+        await db_session.flush()
+        hurt = []
+        for eq, cls in ((press, "lost_time"), (press, "first_aid"), (filler, "first_aid"),
+                        (press, None), (None, "medical_aid")):
+            i = await _incident(db_session, area=area, kind="first_aid")
+            i.equipment_id = eq.id if eq else None
+            i.injury_class = cls
+            if eq is press and cls:
+                hurt.append(i.incident_no)
+        await db_session.flush()
+
+        got = await client.get("/api/v1/reports/group", params={
+            "entity": "incident", "dimension": "equipment",
+            "filter": [f"location:{area}", "injury_class:lost_time"]})
+        assert got.status_code == 200, got.text
+        assert _counts(got.json()) == {f"{press.asset_no} — Press 4": 1}
+
+        everything = _counts((await client.get("/api/v1/reports/group", params={
+            "entity": "incident", "dimension": "equipment",
+            "filter": f"location:{area}"})).json())
+        assert everything[f"{press.asset_no} — Press 4"] == 3
+        assert everything["Filler"] == 1
+        assert sum(everything.values()) == 5, "an incident naming none is still counted"
+
+        listed = (await client.get("/api/v1/reports/records", params={
+            "entity": "incident",
+            "filter": [f"location:{area}", f"equipment:{press.id}", "injury_class:lost_time"]})).json()
+        assert listed["total"] == 1 and listed["rows"][0]["path"].startswith("/incidents/")
+
+    async def test_a_hazard_opens_on_its_row(self, hse_manager, db_session):
+        from app.models.hazard import Hazard
+        _, client = hse_manager
+        area = _area()
+        h = Hazard(id=uuid.uuid4(), hazard_no=f"HAZ-T-{uuid.uuid4().hex[:5]}", title="Pinch point",
+                   location_path=area, status="open", identified_on=date(2026, 9, 1))
+        db_session.add(h)
+        await db_session.flush()
+        listed = (await client.get("/api/v1/reports/records", params={
+            "entity": "hazard", "filter": f"location:{area}"})).json()
+        assert listed["rows"][0]["path"] == f"/hazards?q={h.hazard_no}"
+
+    async def test_a_draft_permit_is_not_counted_until_sent(self, hse_manager, db_session):
+        """★ Review (uniops-8b): as for incidents, a draft is somebody's unsent
+        record — not counted, not listed."""
+        from app.models.permit import Permit, PermitType
+        _, client = hse_manager
+        area = _area()
+        ptype = PermitType(id=uuid.uuid4(), code=f"pt-{uuid.uuid4().hex[:5]}", name="Hot work",
+                           precautions=[], required_signatures=[])
+        db_session.add(ptype)
+        await db_session.flush()
+        p = Permit(id=uuid.uuid4(), permit_no=f"PTW-T-{uuid.uuid4().hex[:5]}", type_id=ptype.id,
+                   type_label="Hot work", work_description="Weld the rail", location_path=area,
+                   status="draft", qr_token=uuid.uuid4().hex)
+        db_session.add(p)
+        await db_session.flush()
+
+        async def counted():
+            rows = (await client.get("/api/v1/reports/group", params={
+                "entity": "permit", "dimension": "status", "filter": f"location:{area}"})).json()
+            listed = (await client.get("/api/v1/reports/records", params={
+                "entity": "permit", "filter": f"location:{area}"})).json()
+            return sum(r["count"] for r in rows), listed["total"]
+        assert await counted() == (0, 0)
+        p.status = "issued"
+        await db_session.flush()
+        assert await counted() == (1, 1)

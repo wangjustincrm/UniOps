@@ -79,7 +79,7 @@ ENTITIES: tuple[Entity, ...] = (
            # narrowed, so "where" follows "what kind" rather than the form,
            # which a type already decides.
            ("incident_type", "location", "department", "shift", "injury_class",
-            "status", "category", "form_kind", "month"),
+            "status", "category", "form_kind", "equipment", "month"),
            # ★ A draft is not an incident yet. Every form saves one (HSE's P0,
            # for the WiFi dead spots), so counting them inflates every bar, and
            # listing them shows the title of somebody's unsent report to anyone
@@ -96,7 +96,7 @@ ENTITIES: tuple[Entity, ...] = (
     # moved out of — a report that quietly returns nothing is worse than one
     # that is gone.
     Entity("first_aid", "First aid", "ehs_incidents", "occurred_at",
-           ("location", "department", "shift", "status", "month"),
+           ("location", "department", "shift", "status", "equipment", "month"),
            where=("injury_class = 'first_aid'", "status <> 'draft'"),
            ref="t.incident_no", title="t.title", path="/incidents/{id}"),
     # Drafts out for the same reason: 41 of 103 on dev were unsent forms.
@@ -126,6 +126,28 @@ ENTITIES: tuple[Entity, ...] = (
     Entity("equipment", "Equipment", "ehs_equipment", "created_at",
            ("location", "department", "in_service"),
            ref="t.asset_no", title="t.name", path="/equipment"),
+    # ★ Round 10 (open box): "Allow reports to be run against the equipment so
+    # that we can track and report on the equipment that causes the most
+    # injuries to staff" — incidents grouped by equipment, narrowed to an
+    # injury class, opening the incidents behind each bar. The other records
+    # that name equipment are here so the same question can be asked of them.
+    # A hazard has no page of its own; ?q= lands on its row in the register.
+    Entity("hazard", "Hazards", "ehs_hazards", "identified_on",
+           ("equipment", "location", "department", "status", "month"),
+           # ★ Review (uniops-8b): drafts are not counted or listed, as for
+           # incidents — somebody's unsent record is theirs.
+           where=("status <> 'draft'",),
+           ref="t.hazard_no", title="t.title", path="/hazards?q={ref}",
+           records_permission="ehs.action.read"),
+    Entity("jsa", "Job safety analyses", "ehs_jsa", "created_at",
+           ("equipment", "location", "department", "status", "month"),
+           where=("status <> 'draft'",),
+           ref="t.jsa_no", title="t.title", path="/jsa/{id}"),
+    Entity("permit", "Work permits", "ehs_permits", "created_at",
+           ("equipment", "location", "department", "permit_type", "status", "month"),
+           where=("status <> 'draft'",),
+           ref="t.permit_no", title="t.type_label || ' — ' || t.work_description",
+           path="/permits/{id}", records_permission="ehs.permit.read"),
 )
 
 BY_KEY = {e.key: e for e in ENTITIES}
@@ -170,6 +192,13 @@ DIMENSIONS: dict[str, Dimension] = {
     "talk": Dimension("talk", "Talk", "talk_id::text",
                       "(select title from ehs_toolbox_talks k where k.id = t.talk_id)"),
     "supervisor": Dimension("supervisor", "Supervisor", "supervisor_name"),
+    # Round 10: the equipment register. Named by its asset number and name as
+    # the register holds them now; none is "Not recorded" like any other gap.
+    "equipment": Dimension(
+        "equipment", "Equipment", "equipment_id::text",
+        "(select coalesce(e.asset_no || ' — ', '') || e.name"
+        " from ehs_equipment e where e.id = t.equipment_id)"),
+    "permit_type": Dimension("permit_type", "Kind of permit", "type_label"),
     "status": Dimension("status", "Status", "status"),
     "in_service": Dimension(
         "in_service", "In service", "is_active::text",
@@ -305,7 +334,7 @@ async def records(
         "rows": [
             {"id": str(i), "ref": ref, "title": title,
              "at": at.isoformat() if at is not None else None,
-             "path": ent.path.format(id=i) if ent.path else None}
+             "path": ent.path.format(id=i, ref=ref) if ent.path else None}
             for i, ref, title, at in rows
         ],
     }
