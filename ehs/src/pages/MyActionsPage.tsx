@@ -4,6 +4,8 @@
  * Card list rather than a table: this is read one-handed on a phone, and a
  * table hides the one thing that matters, which is how late something is.
  */
+import { NewsDesk, NewsTicker } from '@/components/News'
+import { usePermissions } from '@/hooks/usePermissions'
 import TabLink from '@/components/TabLink'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -116,6 +118,14 @@ export default function MyActionsPage() {
   // page rather than the URL because the tab shell keys a tab on its path —
   // putting it in the query string would open a second tab for a filter.
   const [only, setOnly] = useState<string | null>(null)
+  // Round 10: HSE writes the news on this page; everybody reads it at the top.
+  const { can } = usePermissions()
+  const news = (
+    <>
+      <NewsTicker />
+      {can('ehs.settings.manage') && <NewsDesk />}
+    </>
+  )
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['actions', 'mine'],
@@ -182,6 +192,7 @@ export default function MyActionsPage() {
     // exactly the page this was built to show.
     return (
       <div className="flex flex-col gap-2 p-4">
+        {news}
         <MonthPanel query={month} />
       <div className="flex flex-col items-center gap-2 p-10 text-center">
         <CheckCircle2 className="h-8 w-8 text-success-500" aria-hidden />
@@ -220,6 +231,7 @@ export default function MyActionsPage() {
   return (
     <div className="flex flex-col gap-2 p-4">
       {partial && <LoadFailedNote what="Some of your work" />}
+      {news}
       <MonthPanel query={month} />
       <section className="mb-1 rounded-xl border border-neutral-200 bg-white p-4">
         <p className="flex items-baseline gap-2.5">
