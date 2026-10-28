@@ -238,7 +238,7 @@ export default function ExchangeRatesPage() {
                 <th className="px-3 py-2 w-32">Date</th>
                 <th className="px-3 py-2 w-28">Currency</th>
                 <th className="px-3 py-2 w-36 text-right">CAD per unit</th>
-                <th className="px-3 py-2 w-28">Source</th>
+                <th className="px-3 py-2 w-40">Source</th>
                 <th className="px-3 py-2">Note</th>
                 <th className="px-3 py-2 w-16" />
               </tr>
@@ -256,7 +256,7 @@ export default function ExchangeRatesPage() {
                   <td className="px-3 py-2">{r.from_currency} → {r.to_currency}</td>
                   <td className="px-3 py-2 text-right font-mono">{Number(r.rate).toFixed(4)}</td>
                   <td className="px-3 py-2">
-                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium',
+                    <span className={cn('whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium',
                       r.source === 'manual' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700')}>
                       {r.source === 'manual' ? 'Manual' : 'Bank of Canada'}</span>
                   </td>
