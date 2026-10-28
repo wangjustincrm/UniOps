@@ -15,7 +15,9 @@ state no picker can show:
 - retiring an entry retires everything under it, and an entry cannot come
   back while the one above it is retired — a live child of a retired group
   is reachable by search and by nothing else;
-- renaming or moving an entry rewrites the path of everything under it.
+- renaming or moving an entry rewrites the path of everything under it. There
+  is no way back to the top: parent_id None in a PATCH means "unchanged", and
+  the Lists page offers no move at all (PRD SF-16).
 
 - an entry's trail, and every trail under it, fits TRAIL_MAX — the width
   of the columns a record snapshots it into (and so path's 500 too);
@@ -172,6 +174,7 @@ async def _check_parent(db: AsyncSession, vocab: Vocabulary, parent_id: uuid.UUI
 async def _derive_code(db: AsyncSession, code: str, label: str) -> str:
     """HSE name entries; a code typed by hand is one more thing to invent."""
     base = re.sub(r"[^A-Z0-9]+", "_", label.upper()).strip("_")[:50] or "ENTRY"
+    # '_' is a LIKE wildcard: this can fetch more than needed, never fewer.
     taken = set((await db.execute(select(VocabularyItem.code).where(
         VocabularyItem.vocabulary_code == code,
         VocabularyItem.code.like(f"{base}%")))).scalars())
@@ -230,6 +233,11 @@ _REFERENCES: tuple[tuple[str, str], ...] = (
      "select count(*) from ehs_jhsc_recommendations where status_item_id = :id"),
     ("Safety equipment (type)",
      "select count(*) from ehs_safety_assets where asset_type_id = :id"),
+    # GHS classes: a locked, flat list (nothing goes inside an entry, nothing
+    # is added), so its label is still the one the chemical form sends rather
+    # than label_for's — deliberately; the wording is the regulated class name.
+    ("Chemicals (GHS hazard class)",
+     "select count(*) from ehs_chemicals where hazard_classes @> jsonb_build_array(jsonb_build_object('id', cast(:sid as text)))"),
 )
 
 

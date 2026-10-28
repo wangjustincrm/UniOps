@@ -261,6 +261,25 @@ class TestSnapshot:
             "hazard_type_id": other["id"], "hazard_type_label": "typed"})).json()
         assert h2["hazard_type_label"] == "Bio group › Biological"
 
+    async def test_clearing_the_type_clears_its_wording(self, hse_manager, lists):
+        _, client = hse_manager
+        _, _, leaf = await _kirk(client)
+        h = (await client.post("/api/v1/hazards", json={
+            "title": "Filler", "hazard_type_id": leaf["id"]})).json()
+        # A label sent without the id changes nothing.
+        h = (await client.patch(f"/api/v1/hazards/{h['id']}", json={
+            "hazard_type_label": "typed"})).json()
+        assert h["hazard_type_label"] == "Quality › Sanitization process › Not followed"
+        h = (await client.patch(f"/api/v1/hazards/{h['id']}", json={
+            "hazard_type_id": None, "hazard_type_label": "still typed"})).json()
+        assert (h["hazard_type_id"], h["hazard_type_label"]) == (None, None)
+
+    async def test_a_label_without_an_id_is_not_kept_on_create(self, hse_manager, lists):
+        _, client = hse_manager
+        h = (await client.post("/api/v1/hazards", json={
+            "title": "Filler", "hazard_type_label": "typed"})).json()
+        assert h["hazard_type_label"] is None
+
 
 async def test_usage_counts_records_by_id(worker, hse_manager, lists):
     """Asked before something is added under an entry: it becomes a heading."""

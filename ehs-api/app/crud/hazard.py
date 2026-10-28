@@ -99,7 +99,8 @@ async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUI
     owner_id = payload.get("owner_id") or creator_id
     from app.services import equipment_ref
     await equipment_ref.check(db, payload.get("equipment_id"))
-    type_label = payload.get("hazard_type_label")
+    # The label follows the id and nothing else (crud.vocabulary.label_for).
+    type_label = None
     if payload.get("hazard_type_id"):
         from app.crud.vocabulary import label_for
         type_label = await label_for(db, "hazard", payload["hazard_type_id"])
@@ -146,9 +147,14 @@ async def update_hazard(db: AsyncSession, hazard: Hazard, fields: dict) -> Hazar
     if "equipment_id" in fields:
         from app.services import equipment_ref
         await equipment_ref.check(db, fields["equipment_id"], hazard.equipment_id)
-    if fields.get("hazard_type_id"):
+    if "hazard_type_id" in fields:
+        # Cleared with it, never left as the old wording or whatever was sent.
         from app.crud.vocabulary import label_for
-        fields["hazard_type_label"] = await label_for(db, "hazard", fields["hazard_type_id"])
+        fields["hazard_type_label"] = (
+            await label_for(db, "hazard", fields["hazard_type_id"])
+            if fields["hazard_type_id"] else None)
+    else:
+        fields.pop("hazard_type_label", None)
     for key, value in fields.items():
         setattr(hazard, key, value)
     await db.flush()
