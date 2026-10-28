@@ -351,13 +351,20 @@ function MonthPanel({ query }: {
 }) {
   // A failed read must not read as "you owe nothing this month".
   if (query.isError) {
-    return <LoadFailedNote what="Your toolbox talk, hazard assessment and near miss for this month" />
+    return (
+      <>
+        <LoadFailedNote what="Your toolbox talk, hazard assessment and near miss for this month" />
+        <section className="mb-1"><OutOfServiceBox /></section>
+      </>
+    )
   }
   const months = query.data ?? []
-  if (months.length === 0) return null
-
+  // ★ Round 10 (open box): "make the this month and next month graphic
+  // smaller and fit the out of service equipment graphic on the same line …
+  // this size box should scale as required." One row for everybody: the
+  // months where they apply (supervisors), and what is out of service.
   return (
-    <section className="mb-1 grid gap-2 sm:grid-cols-2">
+    <section className={`mb-1 grid gap-2 ${months.length ? 'sm:grid-cols-2 lg:grid-cols-3' : ''}`}>
       {months.map((m) => {
         const done = m.items.filter((i) => i.done).length
         return (
@@ -396,6 +403,50 @@ function MonthPanel({ query }: {
           </div>
         )
       })}
+      <OutOfServiceBox />
     </section>
+  )
+}
+
+interface OutOfService { id: string; asset_no: string; name: string; location_path: string | null; since: string | null }
+
+/** Round 10 (open box): "list the item as being out of service on the my
+ *  actions for all staff to read … List the equipment name and location." */
+function OutOfServiceBox() {
+  const out = useQuery({
+    queryKey: ['safety-assets', 'out-of-service'],
+    queryFn: () => api.get<OutOfService[]>('/api/v1/safety-assets/out-of-service'),
+  })
+  const rows = out.data ?? []
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-3.5" aria-label="Safety equipment out of service">
+      <p className="mb-2 flex items-baseline justify-between gap-2">
+        <span className="text-sm font-semibold text-neutral-900">Out of service</span>
+        {out.isSuccess && rows.length > 0 && (
+          <span className="rounded-full bg-danger-50 px-2 py-0.5 text-xs font-semibold tabular-nums text-danger-700">
+            {rows.length}
+          </span>
+        )}
+      </p>
+      {out.isPending && <p className="text-xs text-neutral-500">Loading…</p>}
+      {out.isError && <p className="text-xs text-warning-700">What is out of service could not be loaded.</p>}
+      {out.isSuccess && rows.length === 0 && (
+        <p className="text-xs text-neutral-500">All safety equipment is in service.</p>
+      )}
+      <ul className="flex flex-col gap-1.5">
+        {rows.map((r) => (
+          <li key={r.id} className="flex items-start gap-2 px-1.5 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger-600" aria-hidden />
+            <span className="min-w-0">
+              <span className="block text-neutral-800">{r.name}</span>
+              <span className="block text-xs text-neutral-500">
+                {r.location_path ? r.location_path.split('/').join(' › ') : 'Area not recorded'}
+                {r.since && ` · since ${formatDate(r.since)}`}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

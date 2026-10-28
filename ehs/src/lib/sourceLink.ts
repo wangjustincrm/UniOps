@@ -22,6 +22,8 @@ export function sourceLink(
     case 'inspection': return `/forms/submissions/${sourceId}`
     case 'permit': return `/permits/${sourceId}`
     case 'jhsc': return `/jhsc/meetings/${sourceId}`
+    // Round 10: a safety equipment check recorded without a checklist.
+    case 'asset': return `/equipment?asset=${sourceId}`
     // These two have a register but no page of their own. The reference is
     // what the register searches by, so it arrives filtered to the one row.
     case 'hazard': return sourceRef ? `/hazards?q=${encodeURIComponent(sourceRef)}` : null
@@ -38,6 +40,7 @@ export const SOURCE_NOUN: Record<string, string> = {
   jhsc: 'the JHSC meeting',
   hazard: 'the hazard',
   drill: 'the drill',
+  asset: 'the safety equipment',
   audit: 'the audit',
   observation: 'the observation',
 }

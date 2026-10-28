@@ -13,12 +13,12 @@
  */
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, ClipboardCheck, History, Plus, QrCode, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Pagination, SearchBox, useListView } from '@/components/ListView'
 import QrPanel from '@/components/QrPanel'
-import { formatDate } from '@/lib/formatDate'
+import { formatDate, formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { LocationSelect } from '@/components/LocationSelect'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
@@ -311,11 +311,16 @@ function RegisterTab({
     a.asset_no, a.name, a.asset_type_label, a.serial_no, a.location_path, a.status,
   ])
 
+  // Round 10: put back by hand says why; it is kept in the item's history
+  // beside the ones put back when their corrective actions were verified.
+  const [restoring, setRestoring] = useState<{ id: string; reason: string } | null>(null)
   const restore = useMutation({
-    mutationFn: (assetId: string) =>
-      api.post(`/api/v1/safety-assets/${assetId}/return-to-service`, {}),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.post(`/api/v1/safety-assets/${id}/return-to-service`, { reason }),
     onSuccess: () => {
+      setRestoring(null)
       queryClient.invalidateQueries({ queryKey: ['safety-assets'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-history'] })
       queryClient.invalidateQueries({ queryKey: ['asset-coverage'] })
     },
   })
@@ -434,10 +439,9 @@ function RegisterTab({
                       <span className="rounded-full bg-danger-50 px-2 py-0.5 text-[11px] font-semibold text-danger-700">
                         Out of service
                       </span>
-                      {mayManage && (
+                      {mayManage && restoring?.id !== a.id && (
                         <button type="button" className={secondaryButton}
-                                disabled={restore.isPending}
-                                onClick={() => { if (!restore.isPending) restore.mutate(a.id) }}>
+                                onClick={() => setRestoring({ id: a.id, reason: '' })}>
                           Back in service
                         </button>
                       )}
@@ -448,6 +452,27 @@ function RegisterTab({
                     </span>
                   )}
                 </div>
+                {restoring?.id === a.id && (
+                  <div className="mt-3 flex flex-col gap-2 border-t border-neutral-100 pt-3">
+                    <label className="text-xs font-medium text-neutral-700">
+                      Why is it back in service?
+                      <textarea rows={2} className={`${inputClass} mt-1 py-2`} value={restoring.reason}
+                                onChange={(e) => setRestoring({ id: a.id, reason: e.target.value })}
+                                placeholder="Repaired, replaced, or checked again and found sound" />
+                    </label>
+                    <div className="flex justify-end gap-2">
+                      <button type="button" className={secondaryButton} disabled={restore.isPending}
+                              onClick={() => setRestoring(null)}>Cancel</button>
+                      <button type="button" className={primaryButton}
+                              disabled={restoring.reason.trim().length < 5 || restore.isPending}
+                              onClick={() => {
+                                if (!restore.isPending) restore.mutate({ id: a.id, reason: restoring.reason.trim() })
+                              }}>
+                        {restore.isPending ? 'Saving…' : 'Put it back in service'}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {historyFor === a.id && <CheckHistory assetId={a.id} />}
                 {codeFor === a.id && (
                   <div className="mt-3 border-t border-neutral-100 pt-3">
@@ -534,9 +559,49 @@ function CheckHistory({ assetId }: { assetId: string }) {
           ))}
         </ul>
       )}
+      <ServiceHistory assetId={assetId} />
     </div>
   )
 }
+
+interface StatusEvent {
+  status: string; at: string; by_name: string | null; reason: string | null; action_id: string | null
+}
+
+/** ★ Round 10 (open box): "log the date and time and by whom on the equipment
+ *  register" — each time it went out of service and came back. */
+function ServiceHistory({ assetId }: { assetId: string }) {
+  const events = useQuery({
+    queryKey: ['asset-history', assetId],
+    queryFn: () => api.get<StatusEvent[]>(`/api/v1/safety-assets/${assetId}/history`),
+  })
+  if (events.isError) return <LoadFailedNote what="When this item was out of service" />
+  if (!events.data?.length) return null
+  return (
+    <div className="mt-3">
+      <p className="mb-1 text-xs font-semibold text-neutral-700">In and out of service</p>
+      <ul className="flex flex-col gap-1.5">
+        {events.data.map((e, n) => (
+          <li key={n} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+            <span className="font-medium tabular-nums text-neutral-800">{formatDateTime(e.at)}</span>
+            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+              e.status === 'in_service' ? 'bg-success-50 text-success-700' : 'bg-danger-50 text-danger-700'}`}>
+              {e.status === 'in_service' ? 'Back in service' : 'Out of service'}
+            </span>
+            {e.by_name && <span className="text-neutral-500">by {e.by_name}</span>}
+            {e.reason && <span className="min-w-0 text-neutral-600">— {e.reason}</span>}
+            {e.action_id && (
+              <Link to={`/actions/${e.action_id}`} className="font-medium text-primary-700 hover:underline">
+                the action
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 
 interface FormTemplate {
   id: string; name: string; code: string; published: boolean; fail_criteria: number
