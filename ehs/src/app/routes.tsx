@@ -46,6 +46,7 @@ import PermitChecksPage from '@/pages/settings/PermitChecksPage'
 import ExpiryNoticesPage from '@/pages/settings/ExpiryNoticesPage'
 import StaffFilePage, { StaffFilePicker } from '@/pages/StaffFilePage'
 import UndeliveredEmailPage from '@/pages/settings/UndeliveredEmailPage'
+import ReassignPage from '@/pages/settings/ReassignPage'
 import NotifyGroupsPage from '@/pages/settings/NotifyGroupsPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
 
@@ -325,6 +326,11 @@ export const ehsRoutes: RouteDef[] = [
     path: '/staff-file/:id',
     element: <StaffFilePage />,
     tab: { title: 'Staff file', icon: 'Users', keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    path: '/settings/reassign',
+    element: <ReassignPage />,
+    tab: { title: 'Reassign a leaver', icon: 'Users', keyStrategy: 'static' },
   },
   {
     path: '/settings/undelivered-email',

@@ -181,6 +181,7 @@ const SETTINGS_NAV: NavItem[] = [
   { label: 'Permit checks', href: '/settings/permit-checks', icon: ShieldCheck, permission: 'ehs.settings.manage' },
   // Round 8: an address emailed N days before training certificates expire.
   { label: 'Expiry notices', href: '/settings/expiry-notices', icon: Mail, permission: 'ehs.settings.manage' },
+  { label: 'Reassign a leaver', href: '/settings/reassign', icon: Users, permission: 'ehs.settings.manage' },
   { label: 'Undelivered email', href: '/settings/undelivered-email', icon: MailWarning, permission: 'ehs.settings.manage' },
 ]
 
