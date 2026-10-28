@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete as sa_delete, func, or_, select, text
+from sqlalchemy import delete as sa_delete, func, literal_column, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
@@ -110,6 +110,18 @@ _IN_NC_SQL = r"""exists (
                coalesce(ap_invoices.vendor_invoice_number, ''), '\s', '', 'g')), '-', ''), '')
        and l.supplier_code = v.erp_id
        and (b.src_syscode is distinct from 17 or b.bill_no = ap_invoices.nc_bill_no))"""
+
+
+# Sort key for the NC AP Doc column: our pushed bill, else the first mirror bill
+# that _IN_NC_SQL would match — so hand-entered bills sort with the rest.
+NC_DOC_SORT = literal_column(r"""coalesce(ap_invoices.nc_bill_no, (
+    select min(b.bill_no) from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+      join vendors v on v.id = ap_invoices.vendor_id
+     where replace(l.invoice_no_norm, '-', '') = nullif(replace(upper(regexp_replace(
+               coalesce(ap_invoices.vendor_invoice_number, ''), '\s', '', 'g')), '-', ''), '')
+       and l.supplier_code = v.erp_id
+       and (b.src_syscode is distinct from 17 or b.bill_no = ap_invoices.nc_bill_no)))""")
 
 
 async def list_invoices(db: AsyncSession, *, source: str | None = None,

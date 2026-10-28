@@ -556,6 +556,14 @@ async def test_list_shows_nc_ap_doc_and_filters(client, db_session):
     r = await client.get("/finance/v1/ap/invoices", params={"in_nc": "true"}, headers=_h())
     assert sorted(i["ap_invoice_number"] for i in r.json()["items"]) == ["AP-1", "AP-2"]
 
+    # Sorting the column counts hand-entered bills too, not only our pushes;
+    # an AP with no NC doc sinks to the bottom in both directions.
+    for d, want in (("asc", ["AP-1", "AP-2", "AP-3"]), ("desc", ["AP-2", "AP-1", "AP-3"])):
+        r = await client.get("/finance/v1/ap/invoices", headers=_h(),
+                             params={"sort": "nc_bill_no", "dir": d})
+        assert r.status_code == 200, r.text
+        assert [i["ap_invoice_number"] for i in r.json()["items"]] == want, d
+
 
 async def test_match_ignores_hyphens_and_says_so(client, db_session):
     """User, 2026-10-28: "IN-22-1014797" in UniOps is "IN-221014797" in NC — match it,

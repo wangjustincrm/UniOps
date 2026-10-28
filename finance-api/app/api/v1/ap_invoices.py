@@ -37,7 +37,7 @@ _INVOICE_SORT = {
          ApInvoice.total_amount - ApInvoice.paid_amount),
         else_=None),
     "status": ApInvoice.status,
-    "nc_bill_no": ApInvoice.nc_bill_no,
+    "nc_bill_no": crud.NC_DOC_SORT,   # pushed bill, else hand-entered match
 }
 
 
