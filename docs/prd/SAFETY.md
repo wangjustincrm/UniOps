@@ -1,12 +1,16 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.12
+**Version**: 0.13
 **Date**: 2026-10-28
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.11 → 0.12)**
+**What changed in this version (0.12 → 0.13)**
+- §1.6 "Round 10, third batch": hazard, hazard control, PPE type and root cause are trees HSE extends in Settings → Lists ("Add inside"), up to four levels; the pickers on incidents, investigations, hazards, risk assessments, drills and forms walk them level by level; records keep the entry's full trail.
+- §10: SF-15 narrowed (the lists are built); SF-16 added (an entry cannot be moved back to the top).
+
+**What changed in version 0.12 (0.11 → 0.12)**
 - §1.6 "Round 10, second batch": the equipment register on incidents, hazards, job analyses and permits, with reports by equipment; safety equipment out of service and back with its history, shown on My Actions; HSE news and its ticker; the Staff File; reassigning a leaver's open work. Also the review's further fixes (links into an already open tab, other people's draft forms, undelivered email, "today" as the plant's day).
 - §1.6: one more question for HSE (whose staff file a supervisor may open).
 - §10: SF-15 narrowed to what is still open from round 10.
@@ -201,6 +205,13 @@ Round 10, second batch (built)
 - Also from the review: links from the dashboard, My Actions, the calendar, reports and an action's source to a page told what to show by its address now move that page when it is already open in a tab; the form register no longer lists, opens or lets anyone fill in somebody else's draft (shared drafts — an equipment check, JHSC minutes, a scheduled round — stay shared); Settings → Undelivered email lists email Safety could not send, to send again; an expiry notice rule's days can be changed; "today" is the plant's day throughout, not the server's.
 - Questions for HSE (added): may a supervisor open the staff file of anybody, or only of their own reports (built: own reports)?
 
+Round 10, third batch (built)
+- Lists as trees. HSE asked for hazard, hazard control, PPE type and root cause to work like the plant areas: a master entry with entries inside it, their example three deep (Quality › Sanitization process › Not followed). In Settings → Lists each entry of those four lists has "Add inside"; the list shows as a tree, a group showing how many it holds. Up to four levels. A code is optional — it is made from the wording and does not change when the wording does. This answers "how do I add a new physical hazard": "Add inside" on Physical.
+- Only an entry with nothing inside it can be chosen; a group is a heading. Adding inside an entry that records already name says how many, and that they keep it — it simply cannot be chosen again. An entry's full trail must fit 200 characters, the width a record keeps it in.
+- Retiring a group retires everything inside it. Restoring brings back that entry only (what is inside may have been retired on its own before), and not while the group above it is retired.
+- The pickers walk the tree one level at a time: one dropdown per level on a single choice; on several choices (hazards and PPE on an investigation, controls on a risk assessment), step into a group and back. Search cuts across levels and shows the trail. Looking inside a group does not change what is saved. A saved entry that has since been retired, or has become a heading, is shown and marked, not dropped from the field.
+- What a record keeps is the entry's full trail ("Quality › Sanitization process › Not followed"), taken by the server from the list — not the words a page sent. It is taken when the entry is chosen: a record that keeps the same entry keeps the wording it was recorded with, through edits and renames. Records made before this keep theirs ("Not followed"); reports group by the entry, so old and new records count together.
+
 ---
 
 ## 2. Functional Requirements — 57 Items
@@ -380,12 +391,13 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.10 | 2026-10-27 | UAT round 10 first batch built (§1.6); SF-15 extended. |
 | 0.11 | 2026-10-27 | Code review fixes (§1.6, "Review of round 10"); two questions for HSE. |
 | 0.12 | 2026-10-28 | Round 10 second batch built (§1.6); SF-15 narrowed. |
+| 0.13 | 2026-10-28 | Round 10 third batch built: lists as trees (§1.6); SF-15 narrowed; SF-16. |
 
 ---
 
 ## 9. Implementation Status
 
-**Branch `feature/ehs-safety`**, local HEAD as of this version (2026-10-27), last checked against `775cab58`. `origin/main` was merged into the branch locally on 2026-10-08 (`6cb8c00b`, plus migration merge `8e033cec`). About 180 commits are ahead of `origin/main`. **None of this is on main or deployed.** The remote `origin/feature/ehs-safety` is stale: it stops at `6a0acc16` (2026-08-30, 21 commits, early Phase 1 only). Ten rounds of HSE UAT have been run on dev; round 10 (2026-10-27) recorded 6 pass / 6 fail, and every defect it reported has since been fixed on the branch, with the decisions in §1.6. Code: `ehs-api` (about 37 routers, 83 migrations) and the `ehs` front end (about 43 pages). The branch also carries identity, mdm, epms, file-api and portal changes that must ship with it.
+**Branch `feature/ehs-safety`**, local HEAD as of this version (2026-10-27), last checked against `c3509534`. `origin/main` was merged into the branch locally on 2026-10-08 (`6cb8c00b`, plus migration merge `8e033cec`). About 180 commits are ahead of `origin/main`. **None of this is on main or deployed.** The remote `origin/feature/ehs-safety` is stale: it stops at `6a0acc16` (2026-08-30, 21 commits, early Phase 1 only). Ten rounds of HSE UAT have been run on dev; round 10 (2026-10-27) recorded 6 pass / 6 fail, and every defect it reported has since been fixed on the branch, with the decisions in §1.6. Code: `ehs-api` (about 37 routers, 83 migrations) and the `ehs` front end (about 43 pages). The branch also carries identity, mdm, epms, file-api and portal changes that must ship with it.
 
 | Status | Requirements |
 |---|---|
@@ -408,7 +420,8 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | SF-07 | Contractor management via VMS (E43–E45) not designed or built. | Open |
 | SF-08 | UAT round 7 answers (2026-10-15): passing the document quiz stays mandatory; a new document version requires the quiz again. | Done (§1.6) |
 | SF-09 | UAT round 7 free-text requirements. **Built**: return-to-work and legal clocks hold the close, statutory/return-to-work sections on medical incidents, reclassification, default lead investigator, injury questions after a name, editable permit checks; the permit end-time defect is fixed. **For HSE in round 8**: "investigation completed" as a status (3); removing a stopped clock from My Actions and the calendar (4 — completed clocks already leave both; the request may mean a clock that no longer applies, now covered by "not required"); notification content with injury detail (9 — health information would go to the whole notification list, PHIPA); and the risk-assessment redesign. Round 8 answers: no new status (3), "not required" was meant (4), email content unchanged (9); the risk assessment is built as confirmed. | Done (§1.6) |
-| SF-15 | Waiting, from rounds 9 and 10. **Dashboard redesign** — five figures across the top, colours by thresholds and chart styles set by HSE in Settings, a body diagram shaded by injuries per part, average days to resolve by month, corrective actions raised and closed by month, near misses, hazard assessments by month, a stacked column by supervisor (supervisors and team leads from the reporting lines HSE sets up in Admin), the injury rate chart moved from Reports. **Lost time and cost**: three fields on the return-to-work form for a lost-time injury (hours per shift, hours missed on the first day, full shifts missed), four rates under Rules, and HSE's formula, which needs confirming (it multiplies lost hours by the investigator's rate). **Also requested**: two-level lists (hazard, hazard control, PPE type, root cause) used by the incident pickers; Safety installable on a phone from the browser. (The staff file, equipment on the forms and in reports, HSE news, out-of-service equipment and reassigning a leaver were built in round 10's second batch, §1.6.) | Open |
+| SF-15 | Waiting, from rounds 9 and 10. **Dashboard redesign** — five figures across the top, colours by thresholds and chart styles set by HSE in Settings, a body diagram shaded by injuries per part, average days to resolve by month, corrective actions raised and closed by month, near misses, hazard assessments by month, a stacked column by supervisor (supervisors and team leads from the reporting lines HSE sets up in Admin), the injury rate chart moved from Reports. **Lost time and cost**: three fields on the return-to-work form for a lost-time injury (hours per shift, hours missed on the first day, full shifts missed), four rates under Rules, and HSE's formula, which needs confirming (it multiplies lost hours by the investigator's rate). **Also requested**: Safety installable on a phone from the browser. (The lists as trees were built in round 10's third batch; the staff file, equipment on the forms and in reports, HSE news, out-of-service equipment and reassigning a leaver were built in round 10's second batch, §1.6.) | Open |
+| SF-16 | A list entry can be moved under another entry, but not back to the top, and Settings → Lists offers no move: entries are added where they belong. If HSE need to reorganise a list, a move tool is a separate piece of work. | Open — by design for now |
 | SF-13 | Label body text size. HSE chose 10 pt on the small label only (round 8); of 10 approved labels on dev, the standard size prints 9 again and "fit automatically" picks standard for 7. | Done (§1.6) |
 | SF-14 | After merging with main, the Task Inbox email sender may also email corrective-action tasks, depending on its per-type setting; Safety already emails the owner of an action raised on an incident. Check the setting for the corrective-action task type at release, or owners receive two emails. | Open — release check |
 | SF-10 | Before go-live: HSE must configure area owners (Settings → Area responsibility) and load the reference lists; the label and certificate PDF fonts need CJK-capable embedding checked in the production image. | Open |
