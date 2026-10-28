@@ -18,6 +18,7 @@
  * board still says ACTIVE" is how a crew re-enters a space on yesterday's
  * authorisation.
  */
+import EquipmentSelect, { EquipmentName } from '@/components/EquipmentSelect'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -47,6 +48,7 @@ interface PermitType {
 interface Permit {
   id: string; permit_no: string; type_id: string | null; type_label: string
   work_description: string; location_id: string | null; location_path: string | null
+  equipment_id?: string | null
   department_name: string | null; contractor_company: string | null
   requested_by: string | null; requested_by_name: string | null
   valid_from: string | null; valid_to: string | null
@@ -197,7 +199,7 @@ export default function PermitsPage() {
                     </span>
                     <span className="mt-0.5 block text-xs text-neutral-500">
                       {p.permit_no}
-                      {p.location_path && ` · ${p.location_path}`}
+                      {p.location_path && ` · ${p.location_path}`}<EquipmentName id={p.equipment_id} />
                       {p.contractor_company && ` · ${p.contractor_company}`}
                     </span>
                     <span className="mt-1 block text-sm text-neutral-700">
@@ -794,6 +796,7 @@ function NewPermitForm({ onClose }: { onClose: () => void }) {
   const [typeId, setTypeId] = useState('')
   const [description, setDescription] = useState('')
   const [locationId, setLocationId] = useState<string | null>(null)
+  const [equipmentId, setEquipmentId] = useState<string | null>(null)
   const [contractor, setContractor] = useState('')
   const [from, setFrom] = useState(() => new Date().toISOString().slice(0, 16))
   const [to, setTo] = useState('')
@@ -809,6 +812,7 @@ function NewPermitForm({ onClose }: { onClose: () => void }) {
       type_id: typeId,
       work_description: description,
       location_id: locationId,
+      equipment_id: equipmentId,
       contractor_company: contractor || null,
       valid_from: from ? new Date(from).toISOString() : null,
       valid_to: to ? new Date(to).toISOString() : null,
@@ -838,6 +842,10 @@ function NewPermitForm({ onClose }: { onClose: () => void }) {
         </Field>
         <Field label="Where">
           <LocationSelect value={locationId} onChange={(id) => setLocationId(id)} />
+        </Field>
+        {/* Round 10: the equipment register, as on the incident forms. */}
+        <Field label="Equipment">
+          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="What is being done">

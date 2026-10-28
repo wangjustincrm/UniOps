@@ -10,6 +10,7 @@
  * the rule is simple: somebody who has finished typing has never lost their
  * work.
  */
+import EquipmentSelect from '@/components/EquipmentSelect'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -77,6 +78,8 @@ interface FormState {
   date: string
   time: string
   locationId: string
+  /** From the equipment register, round 10. Absent on drafts saved before. */
+  equipmentId?: string | null
   incidentType: string
   injuryClass: string
   description: string
@@ -226,6 +229,7 @@ export default function IncidentReportPage() {
         title: form.title,
         occurred_at: occurredAt,
         location_id: form.locationId || null,
+        equipment_id: form.equipmentId ?? null,
         description: form.description || null,
         is_anonymous: form.anonymous,
         signature: form.signature,
@@ -538,6 +542,14 @@ export default function IncidentReportPage() {
           value={form.locationId || null}
           onChange={(id) => set('locationId', id ?? '')}
         />
+      </Field>
+      {/* ★ Round 10 (open box): "add this equipment as a picker on all forms so
+          that we can identify what piece of equipment contributed to the
+          incidents." Optional: plenty of incidents involve none. */}
+      <Field label="Which equipment was involved?"
+             help="From the equipment register. Leave it empty if none was, or it is not listed.">
+        <EquipmentSelect value={form.equipmentId ?? null}
+                         onChange={(id) => set('equipmentId', id)} />
       </Field>
 
       {form.kind === 'medical' && (

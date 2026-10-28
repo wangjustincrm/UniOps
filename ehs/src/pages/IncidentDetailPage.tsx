@@ -6,6 +6,7 @@
  * phone. A root cause with nothing under it is flagged by the API, and the
  * screen shows that rather than leaving a reader to notice the absence.
  */
+import EquipmentSelect, { useEquipmentName } from '@/components/EquipmentSelect'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -41,6 +42,7 @@ interface Incident {
   occurred_at: string | null; employer_aware_at: string | null; location_path: string | null
   injury_class: string | null; mol_reportable: boolean; mol_reportable_reason: string | null
   description: string | null; equipment_involved: string | null
+  equipment_id?: string | null
   witnesses_note: string | null; immediate_action_taken: string | null
   reported_by_name: string | null; reported_to_name: string | null; is_anonymous: boolean
   /** HSE only, on an anonymous report: who filed it. Round 6, box 4. */
@@ -273,6 +275,7 @@ export default function IncidentDetailPage() {
     onSuccess: () => { setConfirmation(''); touched() },
   })
 
+  const equipmentName = useEquipmentName(incident.data?.equipment_id)
   if (incident.isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
   if (incident.isError) {
     return <p className="p-4 text-sm text-danger-700">{(incident.error as ApiError).message}</p>
@@ -338,7 +341,8 @@ export default function IncidentDetailPage() {
                 else should we know" as not displayed, when it was, under a
                 heading nobody had typed anything under. */}
             <Row label="What else should we know" value={inc.description} block />
-            <Row label="Equipment" value={inc.equipment_involved} />
+            <Row label="Equipment" value={equipmentName} />
+            <Row label="Equipment, as described" value={inc.equipment_involved} />
             <Row label="Witnesses" value={inc.witnesses_note} block />
             <Row label="Action taken at the time" value={inc.immediate_action_taken} block />
             <Row label="Reported to" value={inc.reported_to_name} />
@@ -853,6 +857,7 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
     date: local ? `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())}` : '',
     time: local ? `${pad(local.getHours())}:${pad(local.getMinutes())}` : '',
     location_id: incident.location_id ?? '',
+    equipment_id: incident.equipment_id ?? '',
     description: incident.description ?? '',
     equipment_involved: incident.equipment_involved ?? '',
     witnesses_note: incident.witnesses_note ?? '',
@@ -880,7 +885,7 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
     mutationFn: () => {
       const body: Record<string, unknown> = {}
       for (const k of ['title', 'description', 'equipment_involved', 'witnesses_note',
-                       'immediate_action_taken', 'location_id'] as const) {
+                       'immediate_action_taken', 'location_id', 'equipment_id'] as const) {
         if (form[k] !== initial[k]) body[k] = form[k] === '' ? null : form[k]
       }
       if (form.date !== initial.date || form.time !== initial.time) {
@@ -928,7 +933,10 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
       <label className="sm:col-span-2 text-xs font-medium text-neutral-700">What happened
         <textarea className={area} value={form.description} onChange={(e) => set('description', e.target.value)} />
       </label>
-      <label className="text-xs font-medium text-neutral-700">Equipment involved
+      <div className="sm:col-span-2 text-xs font-medium text-neutral-700">Equipment, from the register
+        <EquipmentSelect value={form.equipment_id || null} onChange={(id) => set('equipment_id', id ?? '')} />
+      </div>
+      <label className="text-xs font-medium text-neutral-700">Equipment involved, in words
         <textarea className={area} value={form.equipment_involved} onChange={(e) => set('equipment_involved', e.target.value)} />
       </label>
       <label className="text-xs font-medium text-neutral-700">Witnesses

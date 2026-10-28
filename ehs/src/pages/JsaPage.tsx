@@ -9,6 +9,7 @@
  * finding is the one with a hazard and an empty control. Prose hides that; a
  * blank cell does not, and approving is refused while one exists.
  */
+import EquipmentSelect, { EquipmentName } from '@/components/EquipmentSelect'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -33,6 +34,7 @@ import { RatingBadge } from '@/components/RiskScoring'
 interface Jsa {
   id: string; jsa_no: string; title: string; job_description: string | null
   version: number; location_id: string | null; location_path: string | null
+  equipment_id?: string | null
   department_name: string | null; required_ppe: string | null
   status: string; approved_at: string | null; approved_by_name: string | null
   review_due_on: string | null; supersedes_id: string | null
@@ -110,7 +112,7 @@ export default function JsaPage() {
                   <span className="block text-sm font-semibold text-neutral-900">{j.title}</span>
                   <span className="mt-0.5 block text-xs text-neutral-500">
                     {j.jsa_no} · version {j.version}
-                    {j.location_path && ` · ${j.location_path}`}
+                    {j.location_path && ` · ${j.location_path}`}<EquipmentName id={j.equipment_id} />
                   </span>
                 </span>
                 <StatusPill status={j.status} />
@@ -147,12 +149,13 @@ function NewJsaForm({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [locationId, setLocationId] = useState<string | null>(null)
+  const [equipmentId, setEquipmentId] = useState<string | null>(null)
   const [ppe, setPpe] = useState('')
 
   const create = useMutation({
     mutationFn: () => api.post<Jsa>('/api/v1/jsa', {
       title, job_description: description || null,
-      location_id: locationId, required_ppe: ppe || null,
+      location_id: locationId, equipment_id: equipmentId, required_ppe: ppe || null,
     }),
     onSuccess: (jsa) => {
       queryClient.invalidateQueries({ queryKey: ['jsa'] })
@@ -173,6 +176,10 @@ function NewJsaForm({ onClose }: { onClose: () => void }) {
         </div>
         <Field label="Where">
           <LocationSelect value={locationId} onChange={setLocationId} />
+        </Field>
+        {/* Round 10: the equipment register, as on the incident forms. */}
+        <Field label="Equipment">
+          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} />
         </Field>
         <Field label="PPE for the whole job">
           <input className={inputClass} value={ppe} onChange={(e) => setPpe(e.target.value)}

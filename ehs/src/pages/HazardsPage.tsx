@@ -11,6 +11,7 @@
  * document and a register that let a number be entered beside a hazard would
  * drift from it within a month.
  */
+import EquipmentSelect, { EquipmentName } from '@/components/EquipmentSelect'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -36,6 +37,7 @@ export interface Hazard {
   findings: string | null
   hazard_type_id: string | null; hazard_type_label: string | null
   location_id: string | null; location_path: string | null; department_name: string | null
+  equipment_id?: string | null
   risk_assessment_id: string | null
   current_rating: string | null; residual_rating: string | null
   existing_controls: string | null; control_level: string | null
@@ -165,7 +167,7 @@ export default function HazardsPage() {
                     </span>
                     <span className="mt-0.5 block text-xs text-neutral-500">
                       {h.hazard_no}
-                      {h.location_path && ` · ${h.location_path}`}
+                      {h.location_path && ` · ${h.location_path}`}<EquipmentName id={h.equipment_id} />
                       {h.owner_name && ` · owned by ${h.owner_name}`}
                     </span>
                     {h.description && (
@@ -263,6 +265,7 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
       ? { id: existing.hazard_type_id, label: existing.hazard_type_label ?? '' } as VocabItem
       : null)
   const [locationId, setLocationId] = useState<string | null>(existing?.location_id ?? null)
+  const [equipmentId, setEquipmentId] = useState<string | null>(existing?.equipment_id ?? null)
   const [controls, setControls] = useState(existing?.existing_controls ?? '')
   const [level, setLevel] = useState(existing?.control_level ?? '')
   const [owner, setOwner] = useState<PersonValue>(existing?.owner_id
@@ -297,6 +300,7 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
     findings: findings || null,
     hazard_type_id: type?.id ?? null, hazard_type_label: type?.label ?? null,
     location_id: locationId,
+    equipment_id: equipmentId,
     existing_controls: controls || null,
     control_level: level || null,
     owner_id: owner.userId,
@@ -361,6 +365,10 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
         </Field>
         <Field label="Where">
           <LocationSelect value={locationId} onChange={setLocationId} />
+        </Field>
+        {/* Round 10: the equipment register, as on the incident forms. */}
+        <Field label="Equipment">
+          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="Description">
