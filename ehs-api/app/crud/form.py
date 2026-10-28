@@ -388,8 +388,16 @@ async def list_submissions(
     db: AsyncSession, *, template_id: uuid.UUID | None = None,
     status_in: list[str] | None = None, limit: int = 50, offset: int = 0,
     search: str | None = None,
+    viewer_id: uuid.UUID | None = None,
 ) -> list[FormSubmission]:
     q = select(FormSubmission)
+    # ★ Review (uniops-8b): a draft is the person filling it in, and nobody
+    # else's — the register listed everybody's unsent forms to every employee,
+    # as the incident register and reports did before 35f1a1e4. Your own drafts
+    # are still listed, so they can be found and finished.
+    if viewer_id is not None:
+        q = q.where(or_(FormSubmission.status != "draft",
+                        FormSubmission.submitted_by == viewer_id))
     if template_id:
         q = q.where(FormSubmission.template_id == template_id)
     if search and search.strip():

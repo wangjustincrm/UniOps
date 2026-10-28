@@ -329,7 +329,7 @@ async def start(
 
 @router.get("/submissions", response_model=list[SubmissionListItem])
 async def list_submissions(
-    db: SessionDep, user: CanReportIncident,  # noqa: ARG001
+    db: SessionDep, user: CanReportIncident,
     template_id: uuid.UUID | None = None,
     status_in: list[str] | None = Query(default=None, alias="status"),
     limit: int = Query(default=50, le=200), offset: int = 0,
@@ -337,7 +337,7 @@ async def list_submissions(
 ):
     return await crud.list_submissions(
         db, template_id=template_id, status_in=status_in, limit=limit, offset=offset,
-        search=search)
+        search=search, viewer_id=_user_id(user))
 
 
 @router.get("/submissions/{submission_id}", response_model=SubmissionOut)

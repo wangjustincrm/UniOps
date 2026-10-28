@@ -803,3 +803,24 @@ async def test_the_form_register_searches_by_name_number_area_and_filer(hse_mana
     assert await found(sub["status"]), "by its status"
     assert not await found("%"), "a % matched everything"
     assert not await found("JHSC_Monthly"), "an _ matched any character"
+
+
+async def test_a_draft_form_is_listed_to_its_owner_only(hse_manager, worker):
+    """★ Review (uniops-8b): the register listed everybody's unsent forms to
+    every employee. Mine are still listed to me."""
+    import uuid as _uuid
+    _, hse = hse_manager
+    _, me = worker
+    tpl = (await hse.post("/api/v1/forms/templates", json={
+        "code": f"d-{_uuid.uuid4().hex[:5]}", "name": "Draft check", "category": "inspection"})).json()
+    await hse.put(f"/api/v1/forms/templates/{tpl['id']}/schema", json={
+        "schema": [{"key": "a", "type": "text", "label": "A"}]})
+    await hse.post(f"/api/v1/forms/templates/{tpl['id']}/publish", json={"change_note": "v1"})
+    mine = (await me.post(f"/api/v1/forms/templates/{tpl['id']}/submissions", json={})).json()
+
+    async def listed(client):
+        rows = (await client.get("/api/v1/forms/submissions",
+                                 params={"template_id": tpl["id"], "limit": 200})).json()
+        return {r["id"] for r in rows}
+    assert mine["id"] in await listed(me), "my own draft is mine to find"
+    assert mine["id"] not in await listed(hse), "someone else's draft was listed"
