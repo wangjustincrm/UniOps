@@ -7,13 +7,13 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SOURCE_TYPES = ("incident", "inspection", "jhsc", "audit", "observation",
-                "hazard", "drill", "permit", "manual")
+                "hazard", "drill", "permit", "manual", "asset")
 HIERARCHY = ("elimination", "substitution", "engineering", "administrative", "ppe")
 
 
 class ActionCreate(BaseModel):
     source_type: str = Field(
-        pattern="^(incident|inspection|jhsc|audit|observation|hazard|drill|permit|manual)$")
+        pattern="^(incident|inspection|jhsc|audit|observation|hazard|drill|permit|manual|asset)$")
     source_id: uuid.UUID | None = None
     # The specific root cause this addresses, when it came from an
     # investigation. What lets the cause tree show whether anything is being
@@ -90,6 +90,8 @@ class ActionOut(BaseModel):
     source_type: str
     source_id: uuid.UUID | None
     source_ref: str | None
+    # Round 10: the safety equipment item it is about.
+    asset_id: uuid.UUID | None = None
     cause_id: uuid.UUID | None
     action_type: str
     title: str

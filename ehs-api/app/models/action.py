@@ -26,6 +26,8 @@ from app.models.common import EhsCommonDims
 _SOURCE_TYPES = (
     "incident", "inspection", "jhsc", "audit", "observation",
     "hazard", "drill", "permit", "manual",
+    # Round 10: a safety equipment check recorded without a checklist.
+    "asset",
 )
 
 
@@ -42,6 +44,12 @@ class Action(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
     action_no: Mapped[str] = mapped_column(String(20), nullable=False, unique=True, index=True)
 
     source_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    # Round 10: the safety equipment item this action is about, whatever raised
+    # it. Verified (or cancelled) with the others for the same item, it is put
+    # back in service.
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_safety_assets.id", ondelete="SET NULL"),
+        nullable=True, index=True)
     source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     # Document number of the source, copied in so the list can show where an
     # action came from without joining across six possible tables.

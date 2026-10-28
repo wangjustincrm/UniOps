@@ -45,6 +45,7 @@ _SOURCE_NUMBERS: dict[str, tuple[str, str]] = {
     "hazard": ("ehs_hazards", "hazard_no"),
     "drill": ("ehs_drills", "drill_no"),
     "jhsc": ("ehs_jhsc_meetings", "meeting_no"),
+    "asset": ("ehs_safety_assets", "asset_no"),
 }
 
 
@@ -272,6 +273,10 @@ async def verify(
         action.closed_at = stamp
         await task_service.close_tasks_for(
             db, doc_type=task_service.DOC_ACTION, doc_id=action.id, completed_by=user_id)
+        # Round 10: the safety equipment it was about goes back in service
+        # once every action on that item is done.
+        from app.crud.asset import back_in_service_if_done
+        await back_in_service_if_done(db, action, user_id=user_id)
     else:
         action.status = "in_progress"
         await task_service.close_tasks_for(

@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import secrets
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import AssetInspection, SafetyAsset
+from app.models.asset import AssetInspection, AssetStatusEvent, SafetyAsset
 from app.models.mirrors import Department, Location, User
 from app.services import tasks as task_service
 from app.services.numbering import next_number
@@ -284,7 +284,18 @@ async def record_inspection(
     if result == "failed":
         # Not a note on the inspection: this asset must stop being counted as
         # working equipment until somebody puts it back.
-        asset.status = "out_of_service"
+        if asset.status != "out_of_service":
+            asset.status = "out_of_service"
+            await status_event(
+                db, asset, "out_of_service", by_id=user_id,
+                reason=f"Failed its check on {inspection.performed_on:%-d %b %Y}"
+                       + (f": {notes}" if notes else ""))
+        # ★ Round 10 (open box): "Failing it … raises a corrective action." A
+        # check on a checklist raises one per failed answer (crud/form); one
+        # recorded without a checklist raised none. One is raised here, unless
+        # the item already has one open.
+        if submission_id is None:
+            await _raise_repair_action(db, asset, inspection, user_id=user_id, notes=notes)
 
     await task_service.close_tasks_for(
         db, doc_type=DOC_ASSET, doc_id=inspection.id, completed_by=user_id)
@@ -422,11 +433,85 @@ async def record_ad_hoc(
     return inspection
 
 
-async def return_to_service(db: AsyncSession, asset: SafetyAsset) -> SafetyAsset:
+async def status_event(db: AsyncSession, asset: SafetyAsset, new_status: str, *,
+                       by_id: uuid.UUID | None, reason: str | None,
+                       action_id: uuid.UUID | None = None) -> AssetStatusEvent:
+    """One row of the item's history: out of service or back, when, by whom, why."""
+    row = AssetStatusEvent(
+        id=uuid.uuid4(), asset_id=asset.id, status=new_status,
+        at=datetime.now(timezone.utc), by_id=by_id,
+        by_name=(await db.execute(select(User.full_name).where(User.id == by_id))).scalar()
+        if by_id else None,
+        reason=reason, action_id=action_id)
+    db.add(row)
+    await db.flush()
+    return row
+
+
+async def _raise_repair_action(db: AsyncSession, asset: SafetyAsset, inspection,
+                               *, user_id: uuid.UUID, notes: str | None) -> None:
+    from app.crud.action import OPEN_STATUSES, create as create_action
+    from app.models.action import Action
+    from app.schemas.action import ActionCreate
+    already = (await db.execute(select(Action.id).where(
+        Action.asset_id == asset.id, Action.status.in_(OPEN_STATUSES)).limit(1))).first()
+    if already:
+        return
+    action = await create_action(db, ActionCreate(
+        source_type="asset", source_id=asset.id,
+        title=f"Repair or replace {asset.name} — failed its check",
+        description=(f"{asset.asset_no} {asset.name}"
+                     + (f" at {asset.location_path}" if asset.location_path else "")
+                     + f" failed its check on {inspection.performed_on:%-d %b %Y}"
+                     + (f": {notes}" if notes else ".")
+                     + " It is out of service until this is verified."),
+        owner_id=asset.assigned_user_id or user_id,
+        due_date=plant_today() + timedelta(days=7),
+        priority="high"),
+        source_ref=asset.asset_no)
+    action.asset_id = asset.id
+    await db.flush()
+
+
+async def back_in_service_if_done(db: AsyncSession, action, *, user_id: uuid.UUID) -> None:
+    """★ Round 10 (open box): "when the safety equipment capa has been completed
+    and verified, put the equipment back into service and log the date and time
+    and by whom." Only once every corrective action on the item is closed (or
+    cancelled) — one fixed with another still open is not fixed (review,
+    uniops-8b).
+
+    Called on an effective verification. Actions cannot be cancelled today
+    (the update takes open, in progress or awaiting verification only); if
+    that is added, call this there too — but a cancelled action is not a
+    repair, so require at least one action on the item to have been verified
+    before putting it back automatically."""
+    from app.crud.action import OPEN_STATUSES
+    from app.models.action import Action
+    if action.asset_id is None:
+        return
+    asset = await db.get(SafetyAsset, action.asset_id)
+    if asset is None or asset.status != "out_of_service":
+        return
+    still = (await db.execute(select(Action.id).where(
+        Action.asset_id == asset.id, Action.status.in_(OPEN_STATUSES),
+        Action.id != action.id).limit(1))).first()
+    if still:
+        return
+    await return_to_service(
+        db, asset, user_id=user_id, action_id=action.id,
+        reason=f"Corrective action {action.action_no} verified")
+
+
+async def return_to_service(db: AsyncSession, asset: SafetyAsset, *,
+                            user_id: uuid.UUID | None = None, reason: str | None = None,
+                            action_id: uuid.UUID | None = None) -> SafetyAsset:
     """Put a repaired or replaced item back, and restart its cycle."""
     if asset.status == "retired":
         raise HTTPException(
             status.HTTP_409_CONFLICT, "A retired item is not returned to service")
+    if asset.status != "in_service":
+        await status_event(db, asset, "in_service", by_id=user_id, reason=reason,
+                           action_id=action_id)
     asset.status = "in_service"
     if asset.inspection_frequency:
         asset.next_due_on = next_due(plant_today(), asset.inspection_frequency)
@@ -454,3 +539,16 @@ async def coverage(db: AsyncSession) -> list[dict]:
     out = list(grouped.values())
     out.sort(key=lambda r: -(r["in_service"] + r["out_of_service"]))
     return out
+
+
+async def out_of_service(db: AsyncSession) -> list[dict]:
+    """Items out of service, and since when (the latest time each went out)."""
+    since = (select(AssetStatusEvent.asset_id, func.max(AssetStatusEvent.at).label("at"))
+             .where(AssetStatusEvent.status == "out_of_service")
+             .group_by(AssetStatusEvent.asset_id).subquery())
+    rows = (await db.execute(
+        select(SafetyAsset, since.c.at).outerjoin(since, since.c.asset_id == SafetyAsset.id)
+        .where(SafetyAsset.status == "out_of_service")
+        .order_by(SafetyAsset.location_path.nulls_last(), SafetyAsset.name))).all()
+    return [{"id": a.id, "asset_no": a.asset_no, "name": a.name,
+             "location_path": a.location_path, "since": at} for a, at in rows]

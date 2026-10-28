@@ -13,6 +13,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.action import create as create_action
+from app.services.day_range import plant_today
 from app.crud.incident import _resolve_location_path, _resolve_name
 from app.models.config import EhsConfig
 from app.models.form import FormAnswer, FormSubmission, FormTemplate, FormVersion
@@ -327,7 +328,9 @@ async def submit(
         item = await asset_crud.get_asset(db, submission.source_id)
         await asset_crud.record_ad_hoc(
             db, item,
-            result="fail" if failures else "pass",
+            # ★ Spelled as every other path spells them. "fail" was never
+            # "failed", so a failed checklist left its item in service.
+            result="failed" if failures else "passed",
             notes=(f"Recorded on {submission.submission_no}"
                    + (f" — {len(failures)} failed check(s)" if failures else "")),
             user_id=user_id,
@@ -335,7 +338,7 @@ async def submit(
         )
 
     if raise_actions:
-        due = (datetime.now(timezone.utc) + timedelta(days=FAILURE_DUE_DAYS)).date()
+        due = plant_today() + timedelta(days=FAILURE_DUE_DAYS)
         for a in failures:
             if a.action_id:
                 continue
@@ -354,6 +357,10 @@ async def submit(
                 department_id=submission.department_id,
             ), source_ref=submission.submission_no)
             a.action_id = action.id
+            # Round 10: a check of a safety equipment item — the action is
+            # about that item, and verifying it (with the others) puts it back.
+            if submission.source_type == "asset":
+                action.asset_id = submission.source_id
         await db.flush()
 
     # If this form came from a schedule, that occurrence is now done and its

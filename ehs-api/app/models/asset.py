@@ -105,3 +105,22 @@ class AssetInspection(UUIDPrimaryKey, TimestampMixin, Base):
     # same cycle even if the asset's frequency changed in between.
     cycle_index: Mapped[int] = mapped_column(Integer, nullable=False,
                                              default=0, server_default="0")
+
+
+class AssetStatusEvent(UUIDPrimaryKey, TimestampMixin, Base):
+    """Round 10: an item taken out of service or put back — when, by whom, why,
+    and the corrective action behind it ("log the date and time and by whom on
+    the equipment register")."""
+
+    __tablename__ = "ehs_asset_status_events"
+
+    asset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_safety_assets.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(15), nullable=False)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    action_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

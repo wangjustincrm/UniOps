@@ -6,7 +6,7 @@ is silently absent from migrations and from the test schema.
 """
 from app.models.area_owner import AreaOwner  # noqa: F401
 from app.models.action import Action, ActionUpdate, ActionVerification  # noqa: F401
-from app.models.asset import AssetInspection, SafetyAsset  # noqa: F401
+from app.models.asset import AssetInspection, AssetStatusEvent, SafetyAsset  # noqa: F401
 from app.models.chemical import Chemical, SafetyDataSheet  # noqa: F401
 from app.models.communication import Communication  # noqa: F401
 from app.models.course import CourseDelivery, CourseEnrolment  # noqa: F401

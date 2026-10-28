@@ -11,9 +11,11 @@ from datetime import date, datetime
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from sqlalchemy import select
+
 from app.api.v1.incidents import _user_id
 from app.core.deps import SessionDep
-from app.core.permissions import CanInspectAsset, CanManageAsset, CanReadAsset
+from app.core.permissions import CanInspectAsset, CanManageAsset, CanReadAsset, CanReportIncident
 from app.crud import asset as crud
 
 router = APIRouter(prefix="/safety-assets")
@@ -124,6 +126,42 @@ async def coverage(db: SessionDep, user: CanReadAsset):  # noqa: ARG001
     return await crud.coverage(db)
 
 
+class OutOfServiceRow(BaseModel):
+    id: uuid.UUID
+    asset_no: str
+    name: str
+    location_path: str | None
+    since: datetime | None
+
+
+@router.get("/out-of-service", response_model=list[OutOfServiceRow])
+async def out_of_service(db: SessionDep, user: CanReportIncident):  # noqa: ARG001
+    """★ Round 10 (open box): "list the item as being out of service on the my
+    actions for all staff to read … List the equipment name and location."
+    Every employee, so only what is posted on the item itself: its number,
+    name, where it is, and since when."""
+    return await crud.out_of_service(db)
+
+
+class StatusEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: str
+    at: datetime
+    by_name: str | None
+    reason: str | None
+    action_id: uuid.UUID | None
+
+
+@router.get("/{asset_id}/history", response_model=list[StatusEventOut])
+async def status_history(asset_id: uuid.UUID, db: SessionDep, user: CanReadAsset):  # noqa: ARG001
+    """When it went out of service and came back, by whom, and why."""
+    from app.models.asset import AssetStatusEvent
+    await crud.get_asset(db, asset_id)
+    return list((await db.execute(select(AssetStatusEvent).where(
+        AssetStatusEvent.asset_id == asset_id).order_by(AssetStatusEvent.at.desc()))).scalars())
+
+
 @router.get("/inspections", response_model=list[InspectionOut])
 async def list_inspections(
     db: SessionDep, user: CanReadAsset,  # noqa: ARG001
@@ -151,9 +189,18 @@ async def update_asset(
     return await crud.update_asset(db, asset, payload.model_dump(exclude_unset=True))
 
 
+class ReturnIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=500)
+
+
 @router.post("/{asset_id}/return-to-service", response_model=AssetOut)
-async def return_to_service(asset_id: uuid.UUID, db: SessionDep, user: CanManageAsset):  # noqa: ARG001
-    return await crud.return_to_service(db, await crud.get_asset(db, asset_id))
+async def return_to_service(
+    asset_id: uuid.UUID, payload: ReturnIn, db: SessionDep, user: CanManageAsset,
+):
+    """Put an item back by hand, saying why — recorded in its history beside the
+    ones put back when their corrective actions were verified (round 10)."""
+    return await crud.return_to_service(db, await crud.get_asset(db, asset_id),
+                                        user_id=_user_id(user), reason=payload.reason.strip())
 
 
 class InspectionFormOut(BaseModel):
