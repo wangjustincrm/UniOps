@@ -217,17 +217,21 @@ AP with "Check the invoice date" until it is corrected.
 ## 7. Security
 
 - The XChange servlet has **no authentication**: anyone who can reach the NC app port and knows a
-  registered sender code can create bills. Before production, restrict the NC app server so only
-  the UniOps app server (10.10.50.65) can reach `/service/XChangeServlet`, either by firewall or with
-  pfxx `<addresses effective="true">`.
+  registered sender code can create bills. Restricting `/service/XChangeServlet` to the UniOps app
+  server (10.10.50.65) by firewall or pfxx `<addresses effective="true">` was considered; **the user
+  decided on 2026-10-28 not to restrict it**. Bills arrive in saved state only, so a clerk still has
+  to approve each one in NC.
 - UniOps needs no NC database credentials for writing. The existing read-only mirror stays as it is.
 
 ## 8. Rollout checklist (production NC)
 
-1. NC admin registers the sender `uniops` in 外部系统信息设置.
-2. Raise scomment `maxLength` to 250 in both pfxx F1 billdefine files (back them up first).
+1. NC admin registers the sender `uniops` in 外部系统信息设置 (an external-system record, not an
+   NC user; bills are still made by the clicking clerk's own NC user, D9).
+2. Raise scomment `maxLength` to 250 in both pfxx F1 billdefine files (back them up first). A
+   script that does exactly the test-server edit, and refuses if it would change anything else, is
+   kept with the release notes.
 3. Make sure every AP clerk's ERP ID resolves to an enabled NC user (§6.1; Alex Ji currently does not).
-4. Restrict network access to XChangeServlet (§7).
+4. ~~Restrict network access to XChangeServlet~~ — not done, user decision 2026-10-28 (§7).
 5. Clean up vendor `erp_id` mismatches before go-live (Thermo Fisher 0000391 vs NC 0000153, plus
    Daltco, China Telecom, Nalco, JCI, NSF; four vendors with an empty erp_id).
 6. Backfill FX history.
