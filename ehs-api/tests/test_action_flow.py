@@ -12,6 +12,7 @@ import sqlalchemy
 
 from app.models.mirrors import User
 from app.services import tasks as task_service
+from app.services.day_range import plant_today
 
 TOMORROW = (datetime.now(timezone.utc).date() + timedelta(days=7)).isoformat()
 
@@ -391,7 +392,7 @@ async def test_the_work_request_number_is_set_and_never_silently_cleared(
         "source_type": "manual", "source_id": None,
         "title": "Guard the case sealer infeed",
         "owner_id": str(owner.id),
-        "due_date": (date.today() + timedelta(days=14)).isoformat(),
+        "due_date": (plant_today() + timedelta(days=14)).isoformat(),
     })).json()
     assert action["work_request_no"] is None
 

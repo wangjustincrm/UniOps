@@ -9,6 +9,7 @@ HSE review signed off as completed."
 from datetime import date, datetime, timedelta, timezone
 
 from tests.conftest import authed_client, make_token, make_user
+from app.services.day_range import plant_today
 
 SIGNATURE = "data:image/png;base64,iVBORw0KGgo="
 
@@ -74,7 +75,7 @@ async def test_an_active_return_to_work_plan_holds_the_close(test_engine, db_ses
         assert (await c.post(f"/api/v1/incidents/{iid}/submit")).status_code == 200
     plan = await hse.post(f"/api/v1/incidents/{iid}/return-to-work", json={
         "modified_duties": "Light packing only",
-        "start_date": date.today().isoformat()})
+        "start_date": plant_today().isoformat()})
     assert plan.status_code in (200, 201), plan.text
     assert (await hse.post(f"/api/v1/incidents/{iid}/hse-review")).status_code == 200
 

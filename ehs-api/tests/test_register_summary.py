@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from tests.conftest import authed_client, make_token, make_user
 from tests.test_incident_anonymity_and_edit import _report
+from app.services.day_range import plant_today
 
 CAUSES = {"causes": [
     {"cause_type": "immediate", "label": "Wet floor"},
@@ -25,7 +26,7 @@ async def test_the_figures_count_what_the_register_shows(test_engine, db_session
     owner = await make_user(test_engine, role="area_supervisor")
     action = {"source_type": "incident", "source_id": iid, "title": "Fit a drain",
               "hierarchy_of_control": "engineering", "owner_id": str(owner.id),
-              "due_date": (date.today() + timedelta(days=7)).isoformat()}
+              "due_date": (plant_today() + timedelta(days=7)).isoformat()}
     kept = await hse.post("/api/v1/actions", json=action)
     dropped = await hse.post("/api/v1/actions", json={**action, "title": "Mop more"})
     assert kept.status_code == 201 and dropped.status_code == 201
@@ -71,7 +72,7 @@ async def test_each_figure_opens_the_incidents_behind_it(test_engine, db_session
     assert (await hse.post("/api/v1/actions", json={
         "source_type": "incident", "source_id": with_both, "title": "Fit a drain",
         "hierarchy_of_control": "engineering", "owner_id": str(owner.id),
-        "due_date": (date.today() + timedelta(days=7)).isoformat()})).status_code == 201
+        "due_date": (plant_today() + timedelta(days=7)).isoformat()})).status_code == 201
 
     for flag in ("has_root_causes", "has_actions"):
         ids = {i["id"] for i in (await hse.get(
@@ -95,7 +96,7 @@ async def test_corrective_actions_raised_completed_and_outstanding(test_engine, 
     for iid in (done, waiting):
         r = await hse.post("/api/v1/actions", json={
             "source_type": "incident", "source_id": iid, "title": "Fix it",
-            "owner_id": str(owner.id), "due_date": (date.today() + timedelta(days=7)).isoformat()})
+            "owner_id": str(owner.id), "due_date": (plant_today() + timedelta(days=7)).isoformat()})
         assert r.status_code == 201, r.text
         made[iid] = r.json()["id"]
     row = await db_session.get(Action, _uuid.UUID(made[done]))

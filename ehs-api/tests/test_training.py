@@ -14,8 +14,9 @@ import sqlalchemy
 
 from app.models.training import Course
 from app.models.worker import JobPosition, PositionRequirement, WorkerPosition
+from app.services.day_range import plant_today
 
-TODAY = date.today()
+TODAY = plant_today()
 
 
 @pytest.fixture
@@ -441,9 +442,9 @@ async def test_the_training_register_answers_more_than_one_question(hse_manager,
     person, _ = worker
     course = (await client.post("/api/v1/training/courses", json={
         "code": "WHMIS2", "name": "WHMIS Refresher"})).json()
-    old_day = date.today() - timedelta(days=400)
+    old_day = plant_today() - timedelta(days=400)
 
-    for when in (old_day, date.today()):
+    for when in (old_day, plant_today()):
         created = await client.post("/api/v1/training/records", json={
             "user_id": str(person.id), "course_id": course["id"],
             "completed_on": when.isoformat(), "delivery": "external",
@@ -459,8 +460,8 @@ async def test_the_training_register_answers_more_than_one_question(hse_manager,
 
     # And by when, which is what a date range is for.
     recent = (await client.get(
-        f"/api/v1/training/records?completed_from={date.today().isoformat()}")).json()
-    assert all(r["completed_on"] >= date.today().isoformat() for r in recent)
+        f"/api/v1/training/records?completed_from={plant_today().isoformat()}")).json()
+    assert all(r["completed_on"] >= plant_today().isoformat() for r in recent)
     assert len(recent) < len(everything), (
         "a range that excludes the older record must return fewer rows — "
         "otherwise the filter is not applied and this test proves nothing")
@@ -481,7 +482,7 @@ async def test_a_certificate_from_outside_can_be_attached(hse_manager, worker):
         "code": "FORK", "name": "Forklift"})).json()
     record = (await client.post("/api/v1/training/records", json={
         "user_id": str(person.id), "course_id": course["id"],
-        "completed_on": date.today().isoformat(), "delivery": "external",
+        "completed_on": plant_today().isoformat(), "delivery": "external",
     })).json()
 
     assert "certificate_file_id" in record, (
@@ -516,7 +517,7 @@ class TestWhoeverIsRunningItCanRunIt:
             "course_id": str(courses["whmis"].id),
             "course_label": "WHMIS",
             "title": "WHMIS refresher",
-            "session_date": date.today().isoformat(),
+            "session_date": plant_today().isoformat(),
             "coordinator_id": str(wuser.id),
         })
         assert made.status_code in (200, 201), made.text
@@ -694,7 +695,7 @@ class TestWhoeverIsRunningItCanRunIt:
         assert named.json()["instructor_name"] == "A visiting trainer"
 
         moved = await wc.patch(f"/api/v1/course-sessions/{sid}", json={
-            "session_date": (date.today() + timedelta(days=3)).isoformat(),
+            "session_date": (plant_today() + timedelta(days=3)).isoformat(),
             "location_text": "Training Room 107",
             "notes": "Moved so the night shift can attend.",
         })
@@ -747,7 +748,7 @@ class TestWhoeverIsRunningItCanRunIt:
             "course_id": str(courses["forklift"].id),
             "course_label": "Forklift",
             "title": "Forklift",
-            "session_date": date.today().isoformat(),
+            "session_date": plant_today().isoformat(),
         })
         assert made.status_code in (200, 201), made.text
         sid = made.json()["id"]
@@ -770,7 +771,7 @@ class TestWhoeverIsRunningItCanRunIt:
             "course_id": str(courses["forklift"].id),
             "course_label": "Forklift",
             "title": "Forklift",
-            "session_date": date.today().isoformat(),
+            "session_date": plant_today().isoformat(),
         })
         assert made.status_code in (200, 201), made.text
         sid = made.json()["id"]
@@ -930,7 +931,7 @@ async def test_a_record_from_a_session_knows_who_ran_it(hse_manager, worker, cou
         "course_id": str(courses["whmis"].id),
         "course_label": "WHMIS",
         "title": "WHMIS for the night shift",
-        "session_date": date.today().isoformat(),
+        "session_date": plant_today().isoformat(),
         "coordinator_id": str(student.id),
     })
     assert made.status_code in (200, 201), made.text
@@ -964,7 +965,7 @@ async def test_a_record_entered_by_hand_has_no_session(hse_manager, worker, cour
     made = await client.post("/api/v1/training/records", json={
         "user_id": str(person.id),
         "course_id": str(courses["whmis"].id),
-        "completed_on": date.today().isoformat(),
+        "completed_on": plant_today().isoformat(),
         "delivery": "external",
     })
     assert made.status_code in (200, 201), made.text
@@ -993,7 +994,7 @@ async def test_a_read_only_role_cannot_change_a_session(
     _, hse = hse_manager
     made = await hse.post("/api/v1/course-sessions", json={
         "course_id": str(courses["whmis"].id), "course_label": "WHMIS",
-        "title": "WHMIS", "session_date": date.today().isoformat(),
+        "title": "WHMIS", "session_date": plant_today().isoformat(),
     })
     assert made.status_code in (200, 201), made.text
     sid = made.json()["id"]
@@ -1006,7 +1007,7 @@ async def test_a_read_only_role_cannot_change_a_session(
 
         # And may not change a word of it.
         for body in ({"title": "Renamed by an auditor"},
-                     {"session_date": (date.today() + timedelta(days=1)).isoformat()},
+                     {"session_date": (plant_today() + timedelta(days=1)).isoformat()},
                      {"instructor_name": "Someone"},
                      {"notes": "..."}):
             refused = await ac.patch(f"/api/v1/course-sessions/{sid}", json=body)
@@ -1031,7 +1032,7 @@ async def test_a_name_that_looks_like_a_formula_stays_text(hse_manager, worker, 
     student, _ = worker
     made = await client.post("/api/v1/course-sessions", json={
         "course_id": str(courses["whmis"].id), "course_label": "WHMIS",
-        "title": "WHMIS", "session_date": date.today().isoformat(),
+        "title": "WHMIS", "session_date": plant_today().isoformat(),
     })
     sid = made.json()["id"]
     await client.patch(f"/api/v1/course-sessions/{sid}", json={
@@ -1080,7 +1081,7 @@ async def test_the_length_of_a_session_is_on_the_report(hse_manager, worker, cou
     student, _ = worker
     made = await client.post("/api/v1/course-sessions", json={
         "course_id": str(courses["whmis"].id), "title": "WHMIS, timed",
-        "session_date": date.today().isoformat(),
+        "session_date": plant_today().isoformat(),
         "start_time": "09:00", "end_time": "10:30"})
     assert made.status_code in (200, 201), made.text
     sid = made.json()["id"]

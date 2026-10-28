@@ -20,11 +20,12 @@ from app.models.config import EhsConfig
 from app.models.mirrors import Task
 from app.services import tasks as task_service
 from tests.conftest import authed_client, make_token, make_user
+from app.services.day_range import plant_today
 
 
 async def _sent(hse, to) -> tuple[dict, dict]:
     meeting = (await hse.post("/api/v1/jhsc/meetings", json={
-        "held_on": date.today().isoformat(), "title": "Monthly meeting"})).json()
+        "held_on": plant_today().isoformat(), "title": "Monthly meeting"})).json()
     rec = await hse.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations", json={
         "recommendation": "Guard the auger", "send_to": [str(u.id) for u in to]})
     assert rec.status_code == 201, rec.text
@@ -33,7 +34,7 @@ async def _sent(hse, to) -> tuple[dict, dict]:
 
 def _answer(owner, **kw):
     return {"title": "Fit an interlocked guard", "description": "Order from the OEM",
-            "owner_id": str(owner.id), "due_date": (date.today() + timedelta(days=14)).isoformat(),
+            "owner_id": str(owner.id), "due_date": (plant_today() + timedelta(days=14)).isoformat(),
             "priority": "high", **kw}
 
 

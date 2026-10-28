@@ -24,11 +24,12 @@ from sqlalchemy import select
 from app.models.communication import Communication
 from app.models.mirrors import User
 from tests.conftest import authed_client, make_token, make_user
+from app.services.day_range import plant_today
 
 
 async def _a_meeting(client) -> dict:
     r = await client.post("/api/v1/jhsc/meetings", json={
-        "held_on": date.today().isoformat(), "title": "Monthly meeting"})
+        "held_on": plant_today().isoformat(), "title": "Monthly meeting"})
     assert r.status_code in (200, 201), r.text
     return r.json()
 

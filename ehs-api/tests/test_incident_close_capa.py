@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 import sqlalchemy
 
 from tests.conftest import make_user
+from app.services.day_range import plant_today
 
 
 async def _incident(client) -> str:
@@ -30,7 +31,7 @@ async def test_an_open_action_holds_the_incident_open(hse_manager, test_engine, 
         "source_type": "incident", "source_id": iid,
         "title": "Re-stripe the aisle", "hierarchy_of_control": "engineering",
         "owner_id": str(owner.id),
-        "due_date": (date.today() + timedelta(days=7)).isoformat()})).json()
+        "due_date": (plant_today() + timedelta(days=7)).isoformat()})).json()
     assert action["status"] == "open"
 
     refused = await client.post(f"/api/v1/incidents/{iid}/close")

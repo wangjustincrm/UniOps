@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select
+from app.services.day_range import plant_today
 
 ET = ZoneInfo("America/Toronto")
 
@@ -460,7 +461,7 @@ async def test_a_talk_can_go_to_some_supervisors_rather_than_all(hse_manager, te
 
     talk = (await client.post("/api/v1/toolbox-talks", json={
         "title": "Ladder inspection before use",
-        "period_month": date.today().replace(day=1).isoformat(),
+        "period_month": plant_today().replace(day=1).isoformat(),
     })).json()
 
     sent = await client.post(f"/api/v1/toolbox-talks/{talk['id']}/publish",

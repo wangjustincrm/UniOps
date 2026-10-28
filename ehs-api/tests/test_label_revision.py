@@ -11,6 +11,7 @@ import pytest
 
 from app.models.chemical import Chemical
 from app.models.label import ChemicalLabel
+from app.services.day_range import plant_today
 
 
 @pytest.fixture
@@ -61,7 +62,7 @@ async def test_a_new_data_sheet_stops_the_old_label_printing(
     assert first.status_code == 200, first.text
 
     filed = await client.post(f"/api/v1/chemicals/{chemical.id}/sds", json={
-        "revision": "4", "revision_date": date.today().isoformat(),
+        "revision": "4", "revision_date": plant_today().isoformat(),
     })
     assert filed.status_code in (200, 201), filed.text
 
@@ -127,7 +128,7 @@ async def test_a_draft_label_is_left_alone_by_a_revision(
     await db_session.commit()
 
     await client.post(f"/api/v1/chemicals/{chemical.id}/sds", json={
-        "revision": "5", "revision_date": date.today().isoformat(),
+        "revision": "5", "revision_date": plant_today().isoformat(),
     })
 
     back = (await client.get(f"/api/v1/labels/{draft.id}")).json()
@@ -622,7 +623,7 @@ async def test_the_small_label_leaves_statements_only_where_a_sheet_carries_them
         sds_id = None
         if with_sheet:
             filed = await client.post(f"/api/v1/chemicals/{chem.id}/sds", json={
-                "revision": "1", "revision_date": date.today().isoformat()})
+                "revision": "1", "revision_date": plant_today().isoformat()})
             assert filed.status_code in (200, 201), filed.text
             sds_id = uuid.UUID(filed.json()["id"])
         label = ChemicalLabel(

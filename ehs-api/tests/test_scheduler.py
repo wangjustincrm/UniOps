@@ -13,6 +13,7 @@ from app.models.config import EhsConfig
 from app.models.statutory import StatutoryDeadline
 from app.services import tasks as task_service
 from app.tasks import scheduler
+from app.services.day_range import plant_today
 
 NOW = datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc)
 
@@ -297,7 +298,7 @@ async def test_a_drill_records_its_cause_its_signature_and_its_actions(
     created = await client.post("/api/v1/drills", json={
         "drill_type": "evacuation",
         "scenario": "Fire in the dryer bay.",
-        "held_on": date.today().isoformat(),
+        "held_on": plant_today().isoformat(),
     })
     assert created.status_code in (200, 201), created.text
     drill_id = created.json()["id"]
@@ -327,7 +328,7 @@ async def test_a_drill_records_its_cause_its_signature_and_its_actions(
         "source_type": "drill", "source_id": drill_id,
         "title": "Clear the pallets from the north fire exit",
         "owner_id": str(user.id),
-        "due_date": date.today().isoformat(),
+        "due_date": plant_today().isoformat(),
     })
     assert raised.status_code in (200, 201), raised.text
 
@@ -346,7 +347,7 @@ async def test_clearing_a_drill_signature_clears_who_signed_it(hse_manager):
     _, client = hse_manager
     drill_id = (await client.post("/api/v1/drills", json={
         "drill_type": "evacuation", "scenario": "Spill in receiving.",
-        "held_on": date.today().isoformat(),
+        "held_on": plant_today().isoformat(),
     })).json()["id"]
 
     await client.patch(f"/api/v1/drills/{drill_id}",
@@ -368,7 +369,7 @@ async def test_a_month_can_carry_more_than_one_toolbox_talk(hse_manager):
     from datetime import date
 
     _, client = hse_manager
-    month = date.today().replace(day=1).isoformat()
+    month = plant_today().replace(day=1).isoformat()
 
     first = await client.post("/api/v1/toolbox-talks", json={
         "title": "Ladders", "period_month": month})
@@ -398,7 +399,7 @@ async def test_a_talk_can_be_handed_to_somebody_who_is_not_a_supervisor(
     _, client = hse_manager
     plain, _ = worker
     talk = (await client.post("/api/v1/toolbox-talks", json={
-        "title": "Housekeeping", "period_month": date.today().replace(day=1).isoformat(),
+        "title": "Housekeeping", "period_month": plant_today().replace(day=1).isoformat(),
     })).json()
 
     sent = await client.post(f"/api/v1/toolbox-talks/{talk['id']}/publish",
@@ -434,7 +435,7 @@ async def test_an_evaluated_drill_will_not_give_up_its_evidence(
     _, client = hse_manager
     drill_id = (await client.post("/api/v1/drills", json={
         "drill_type": "evacuation", "scenario": "Fire in the dryer bay.",
-        "held_on": date.today().isoformat(),
+        "held_on": plant_today().isoformat(),
     })).json()["id"]
 
     async def put_one(name: str) -> str:

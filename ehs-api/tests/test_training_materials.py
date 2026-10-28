@@ -16,6 +16,7 @@ import pytest
 from app.models.training import Course
 from app.services import materials
 from tests.conftest import authed_client, make_token, make_user
+from app.services.day_range import plant_today
 
 
 class FakeFileServer:
@@ -139,7 +140,7 @@ class TestLinks:
 class TestASessionStartsWithACopy:
     async def _session(self, client, course, runner=None):
         body = {"course_id": str(course.id), "title": "Ladders, Tuesday",
-                "session_date": date.today().isoformat()}
+                "session_date": plant_today().isoformat()}
         if runner is not None:
             body["coordinator_id"] = str(runner.id)
         made = await client.post("/api/v1/course-sessions", json=body)
@@ -204,7 +205,7 @@ class TestFilesOnATrainingRecord:
         person = await make_user(test_engine, role="requester")
         made = await client.post("/api/v1/training/records", json={
             "user_id": str(person.id), "course_id": str(course.id),
-            "completed_on": date.today().isoformat(), "delivery": "external"})
+            "completed_on": plant_today().isoformat(), "delivery": "external"})
         assert made.status_code in (200, 201), made.text
         return made.json()["id"], person
 

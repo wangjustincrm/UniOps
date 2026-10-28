@@ -10,6 +10,7 @@ from datetime import date
 import pytest
 
 from app.models.training import Course
+from app.services.day_range import plant_today
 
 
 @pytest.fixture
@@ -26,7 +27,7 @@ async def course(db_session) -> Course:
 async def _record(client, course, user_id, *, delivery="internal") -> dict:
     r = await client.post("/api/v1/training/records", json={
         "user_id": str(user_id), "course_id": str(course.id),
-        "completed_on": date.today().isoformat(), "delivery": delivery,
+        "completed_on": plant_today().isoformat(), "delivery": delivery,
     })
     assert r.status_code in (200, 201), r.text
     return r.json()
@@ -172,7 +173,7 @@ async def test_the_register_and_the_minutes_carry_the_logo_too(hse_manager, db_s
 
     _, client = hse_manager
     meeting = (await client.post("/api/v1/jhsc/meetings", json={
-        "held_on": _date.today().isoformat(), "title": "Monthly"})).json()
+        "held_on": plant_today().isoformat(), "title": "Monthly"})).json()
     urls = ("/api/v1/training/records/print", f"/api/v1/jhsc/meetings/{meeting['id']}/print")
     for url in urls:
         got = await client.get(url)
@@ -212,7 +213,7 @@ async def test_a_truncated_logo_is_left_off_every_printout(hse_manager, worker, 
     learner, _ = worker
     record = await _record(client, course, learner.id)
     meeting = (await client.post("/api/v1/jhsc/meetings", json={
-        "held_on": _date.today().isoformat(), "title": "Monthly"})).json()
+        "held_on": plant_today().isoformat(), "title": "Monthly"})).json()
     db_session.add(CompanyConfig(id=uuid.uuid4(), name="Canada Royal Milk",
                                  logo_data_url=_truncated_png()))
     await db_session.flush()

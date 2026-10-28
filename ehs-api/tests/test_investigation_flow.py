@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from zoneinfo import ZoneInfo
+from app.services.day_range import plant_today
 
 ET = ZoneInfo("America/Toronto")
 OCCURRED = datetime(2026, 8, 28, 22, 10, tzinfo=ET)
@@ -380,7 +381,7 @@ class TestACorrectiveActionRaisedWithItsCause:
     async def test_the_cause_and_its_action_are_saved_together(
             self, hse_manager, submitted_incident, an_owner):
         _, client = hse_manager
-        due = (date.today() + timedelta(days=14)).isoformat()
+        due = (plant_today() + timedelta(days=14)).isoformat()
 
         saved = await client.put(
             f"/api/v1/incidents/{submitted_incident}/causes", json={"causes": [
@@ -410,7 +411,7 @@ class TestACorrectiveActionRaisedWithItsCause:
         inbox task and its own escalation ladder.
         """
         _, client = hse_manager
-        due = (date.today() + timedelta(days=10)).isoformat()
+        due = (plant_today() + timedelta(days=10)).isoformat()
         body = {"causes": [
             {"cause_type": "root", "label": "Procedure not followed",
              "action": {"title": "Re-brief the crew", "owner_id": an_owner, "due_date": due}},

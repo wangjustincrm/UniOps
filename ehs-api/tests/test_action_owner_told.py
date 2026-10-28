@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.models.communication import Communication
 from tests.conftest import make_user
 from tests.test_incident_anonymity_and_edit import _report
+from app.services.day_range import plant_today
 
 
 async def _told(db, incident_id: str) -> list[Communication]:
@@ -24,7 +25,7 @@ async def _told(db, incident_id: str) -> list[Communication]:
 def _action(source_id, owner, **kw):
     return {"source_type": "incident", "source_id": source_id, "title": "Fit a drain",
             "hierarchy_of_control": "engineering", "owner_id": str(owner.id),
-            "due_date": (date.today() + timedelta(days=7)).isoformat(), **kw}
+            "due_date": (plant_today() + timedelta(days=7)).isoformat(), **kw}
 
 
 async def test_the_owner_is_told_and_it_is_on_the_incident(test_engine, db_session, hse_manager):

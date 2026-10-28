@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from app.models.incident import Incident
 from app.services import tasks as task_service
 from app.services.deadlines import DEADLINE_DOC_TYPE, clocks_for_incident
+from app.services.day_range import plant_today
 
 ET = ZoneInfo("America/Toronto")
 
@@ -121,7 +122,7 @@ async def test_sending_a_recommendation_records_who_and_when_without_moving_the_
     manager, _ = worker
 
     meeting = (await client.post("/api/v1/jhsc/meetings", json={
-        "held_on": date.today().isoformat(), "title": "Monthly"})).json()
+        "held_on": plant_today().isoformat(), "title": "Monthly"})).json()
     rec = (await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/recommendations",
                              json={"recommendation": "Guard the case sealer infeed."})).json()
     assert rec["sent_at"] is None and rec["sent_to"] == []

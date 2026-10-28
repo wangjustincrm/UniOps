@@ -1,4 +1,5 @@
 """The hazard register — what is known to be dangerous, and correcting it."""
+from app.services.day_range import plant_today
 
 
 async def test_correcting_a_hazard_leaves_the_rest_of_it_alone(hse_manager):
@@ -126,7 +127,7 @@ class TestCausesOnTheHazardRegister:
                     "title": "Add a guard check to the changeover sheet",
                     "description": "Signed off by the line lead before restart.",
                     "owner_id": str(owner.id),
-                    "due_date": (date.today() + timedelta(days=14)).isoformat(),
+                    "due_date": (plant_today() + timedelta(days=14)).isoformat(),
                 },
             }],
         })
@@ -157,7 +158,7 @@ class TestCausesOnTheHazardRegister:
                 "action": {
                     "title": "Add a guard check",
                     "owner_id": str(owner.id),
-                    "due_date": (date.today() + timedelta(days=14)).isoformat(),
+                    "due_date": (plant_today() + timedelta(days=14)).isoformat(),
                 },
             }],
         }
@@ -184,7 +185,7 @@ class TestCausesOnTheHazardRegister:
             "causes": [{
                 "cause_type": "root", "label": "Kept because it has work on it",
                 "action": {"title": "Do the thing", "owner_id": str(owner.id),
-                           "due_date": (date.today() + timedelta(days=7)).isoformat()},
+                           "due_date": (plant_today() + timedelta(days=7)).isoformat()},
             }],
         })
         after = await client.put(f"/api/v1/hazards/{hazard['id']}/causes", json={
@@ -243,7 +244,7 @@ async def test_an_action_raised_with_its_cause_keeps_its_priority(hse_manager, w
             "cause_type": "root", "label": "Door seal failed",
             "action": {"title": "Replace the dock door seal",
                        "owner_id": str(owner.id), "priority": "high",
-                       "due_date": (date.today() + timedelta(days=3)).isoformat()},
+                       "due_date": (plant_today() + timedelta(days=3)).isoformat()},
         }],
     })
     assert saved.status_code == 200, saved.text

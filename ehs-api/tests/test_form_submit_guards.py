@@ -21,6 +21,7 @@ from datetime import date
 import pytest
 
 from app.models.config import EhsConfig
+from app.services.day_range import plant_today
 
 
 @pytest.fixture
@@ -129,7 +130,7 @@ class TestTheMinutesSayWhatTheyAreFor:
         nothing, so an unfilled one looked like a fresh blank form."""
         _, client = hse_manager
         meeting = (await client.post("/api/v1/jhsc/meetings", json={
-            "held_on": date.today().isoformat(), "title": "Monthly meeting"})).json()
+            "held_on": plant_today().isoformat(), "title": "Monthly meeting"})).json()
 
         started = await client.post(
             f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")
@@ -146,7 +147,7 @@ class TestTheMinutesSayWhatTheyAreFor:
             self, hse_manager, minutes_form_configured):
         _, client = hse_manager
         meeting = (await client.post("/api/v1/jhsc/meetings", json={
-            "held_on": date.today().isoformat()})).json()
+            "held_on": plant_today().isoformat()})).json()
 
         first = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")
         second = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")
@@ -181,7 +182,7 @@ class TestPublishingMinutesWrittenOnTheForm:
             self, hse_manager, minutes_form_configured):
         _, client = hse_manager
         meeting = (await client.post("/api/v1/jhsc/meetings", json={
-            "held_on": date.today().isoformat()})).json()
+            "held_on": plant_today().isoformat()})).json()
 
         started = await client.post(
             f"/api/v1/jhsc/meetings/{meeting['id']}/minutes-form/start")
@@ -211,7 +212,7 @@ class TestPublishingMinutesWrittenOnTheForm:
         """The admission's opposite: widening the test must not remove it."""
         _, client = hse_manager
         meeting = (await client.post("/api/v1/jhsc/meetings", json={
-            "held_on": date.today().isoformat()})).json()
+            "held_on": plant_today().isoformat()})).json()
         refused = await client.post(f"/api/v1/jhsc/meetings/{meeting['id']}/publish")
         assert refused.status_code == 422, refused.text
 
@@ -279,7 +280,7 @@ class TestADateAnswerCanBeSaved:
         sub = await _a_submission(client, dated_template["id"])
         first = await client.put(
             f"/api/v1/forms/submissions/{sub['id']}/answers",
-            json={"values": {"when": date.today().isoformat(), "notes": "Checked."}})
+            json={"values": {"when": plant_today().isoformat(), "notes": "Checked."}})
         assert first.status_code == 200, first.text
 
         done = await client.post(f"/api/v1/forms/submissions/{sub['id']}/submit", json={})
@@ -619,11 +620,11 @@ class TestArchivingFinishesTheJob:
         template = await self._published(client)
         made = await client.post("/api/v1/forms/schedules", json={
             "template_id": template["id"], "name": "Every month",
-            "frequency": "monthly", "next_due_on": date.today().isoformat(),
+            "frequency": "monthly", "next_due_on": plant_today().isoformat(),
         })
         assert made.status_code in (200, 201), made.text
 
-        runs = await schedule_sweep.generate_due(db_session, today=date.today())
+        runs = await schedule_sweep.generate_due(db_session, today=plant_today())
         await db_session.commit()
         assert runs, "the sweep must have raised a round, or this proves nothing"
         run_id = runs[0].id
@@ -663,10 +664,10 @@ class TestArchivingFinishesTheJob:
         template = await self._published(client)
         made = await client.post("/api/v1/forms/schedules", json={
             "template_id": template["id"], "name": "Every month",
-            "frequency": "monthly", "next_due_on": date.today().isoformat(),
+            "frequency": "monthly", "next_due_on": plant_today().isoformat(),
         })
         assert made.status_code in (200, 201), made.text
-        runs = await schedule_sweep.generate_due(db_session, today=date.today())
+        runs = await schedule_sweep.generate_due(db_session, today=plant_today())
         await db_session.commit()
         assert runs
 
@@ -704,7 +705,7 @@ class TestArchivingFinishesTheJob:
         template = await self._published(client)
         await client.post("/api/v1/forms/schedules", json={
             "template_id": template["id"], "name": "Every month",
-            "frequency": "monthly", "next_due_on": date.today().isoformat(),
+            "frequency": "monthly", "next_due_on": plant_today().isoformat(),
         })
         await client.post(f"/api/v1/forms/templates/{template['id']}/archive")
         await client.post(f"/api/v1/forms/templates/{template['id']}/restore")

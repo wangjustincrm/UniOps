@@ -12,6 +12,7 @@ from datetime import date
 import pytest
 
 from app.models.config import EhsConfig
+from app.services.day_range import plant_today
 
 
 @pytest.fixture
@@ -54,7 +55,7 @@ async def minutes_template(hse_manager, db_session):
 
 async def _a_meeting(client) -> dict:
     r = await client.post("/api/v1/jhsc/meetings", json={
-        "held_on": date.today().isoformat(), "title": "Monthly meeting"})
+        "held_on": plant_today().isoformat(), "title": "Monthly meeting"})
     assert r.status_code in (200, 201), r.text
     return r.json()
 
