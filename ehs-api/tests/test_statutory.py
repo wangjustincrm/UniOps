@@ -552,8 +552,12 @@ class TestEquipmentCheckedOnItsOwnForm:
         checks = (await client.get(
             f"/api/v1/safety-assets/inspections?asset_id={ladder['id']}")).json()
         assert checks, "submitting the form recorded no check against the item"
-        assert checks[0]["result"] == "fail", checks[0]
+        # ★ "failed", as every other path writes it: this test used to pin
+        # "fail", which the out-of-service rule never matched (round 10).
+        assert checks[0]["result"] == "failed", checks[0]
         assert checks[0]["submission_id"] == sid
+        item = (await client.get(f"/api/v1/safety-assets/{ladder['id']}")).json()
+        assert item["status"] == "out_of_service"
 
     async def test_a_clean_answer_records_a_pass(self, hse_manager, ladder):
         """★ The admission. Recording everything as a failure would satisfy the
@@ -569,7 +573,9 @@ class TestEquipmentCheckedOnItsOwnForm:
 
         checks = (await client.get(
             f"/api/v1/safety-assets/inspections?asset_id={ladder['id']}")).json()
-        assert checks[0]["result"] == "pass", checks[0]
+        assert checks[0]["result"] == "passed", checks[0]
+        item = (await client.get(f"/api/v1/safety-assets/{ladder['id']}")).json()
+        assert item["status"] == "in_service"
 
     async def test_an_item_with_no_form_says_so(self, hse_manager):
         """Rather than opening something else. Recording a check against the
