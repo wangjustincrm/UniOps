@@ -17,6 +17,7 @@ from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
 from app.core.permissions import CanManageSettings, CanReportIncident
 from sqlalchemy import select
+from uniops_authz import has_permission
 
 from app.crud import form as crud
 from app.crud.incident import _resolve_name
@@ -340,29 +341,60 @@ async def list_submissions(
         search=search, viewer_id=_user_id(user))
 
 
+# ★ Review (uniops-8b): a draft is the person filling it in, and the routes
+# for one submission checked nothing beyond being an employee — anybody with
+# its id could read somebody's unsent form, fill in its answers and submit it
+# for them. Some drafts are shared on purpose and stay so: a safety equipment
+# item's check (a second inspector picks up where the first left off), a JHSC
+# meeting's minutes, and a scheduled occurrence's form (its task may be tapped
+# by whoever's turn it is). HSE may open any. A submitted form is unchanged.
+_SHARED_SOURCES = ("asset", "jhsc")
+
+
+async def _may_open_draft(db, user: dict, submission) -> None:
+    from app.models.schedule import FormScheduleRun
+    if submission.status != "draft" or submission.submitted_by == _user_id(user):
+        return
+    if submission.source_type in _SHARED_SOURCES:
+        return
+    if (await db.execute(select(FormScheduleRun.id).where(
+            FormScheduleRun.submission_id == submission.id).limit(1))).first():
+        return
+    if await has_permission(db, _user_id(user), user.get("role", ""), "ehs.settings.manage"):
+        return
+    raise HTTPException(status.HTTP_403_FORBIDDEN,
+                        "This form is somebody else's draft; it is theirs until it is submitted")
+
+
+async def _submission(db, user: dict, submission_id: uuid.UUID):
+    submission = await crud.get_submission(db, submission_id)
+    await _may_open_draft(db, user, submission)
+    return submission
+
+
 @router.get("/submissions/{submission_id}", response_model=SubmissionOut)
-async def get_submission(submission_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
-    return await crud.get_submission(db, submission_id)
+async def get_submission(submission_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    return await _submission(db, user, submission_id)
 
 
 @router.get("/submissions/{submission_id}/answers", response_model=list[AnswerOut])
-async def get_answers(submission_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
-    await crud.get_submission(db, submission_id)
+async def get_answers(submission_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    await _submission(db, user, submission_id)
     return await crud.answers_for(db, submission_id)
 
 
 @router.put("/submissions/{submission_id}/answers", response_model=list[AnswerOut])
 async def save_answers(
-    submission_id: uuid.UUID, payload: AnswersIn, db: SessionDep, user: CanReportIncident,  # noqa: ARG001
+    submission_id: uuid.UUID, payload: AnswersIn, db: SessionDep, user: CanReportIncident,
 ):
-    submission = await crud.get_submission(db, submission_id)
+    submission = await _submission(db, user, submission_id)
     return await crud.save_answers(db, submission, payload.values)
 
 
 @router.post("/submissions/{submission_id}/submit", response_model=SubmissionOut)
 async def submit(submission_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
     """Finish it. Every failed check raises a corrective action."""
-    submission = await crud.get_submission(db, submission_id)
+    submission = await _submission(db, user, submission_id)
     return await crud.submit(db, submission, user_id=_user_id(user))
 
 # ── Schedules and their occurrences ──────────────────────────────────────────
@@ -505,9 +537,9 @@ class FormAttachmentOut(BaseModel):
 @router.get("/submissions/{submission_id}/attachments",
             response_model=list[FormAttachmentOut])
 async def list_form_attachments(
-    submission_id: uuid.UUID, db: SessionDep, user: CanReportIncident,  # noqa: ARG001
+    submission_id: uuid.UUID, db: SessionDep, user: CanReportIncident,
 ):
-    await crud.get_submission(db, submission_id)
+    await _submission(db, user, submission_id)
     return list((await db.execute(
         select(FormAttachment)
         .where(FormAttachment.submission_id == submission_id)
@@ -521,7 +553,7 @@ async def upload_form_attachment(
     user: CanReportIncident, token: BearerToken,
     question_key: str | None = Query(default=None, max_length=80),
 ):
-    submission = await crud.get_submission(db, submission_id)
+    submission = await _submission(db, user, submission_id)
     if submission.status == "submitted":
         raise HTTPException(
             status.HTTP_409_CONFLICT, "This form has been submitted and cannot be changed")
@@ -553,7 +585,7 @@ async def download_form_attachment(
     submission_id: uuid.UUID, attachment_id: uuid.UUID, db: SessionDep,
     user: CanReportIncident, token: BearerToken,  # noqa: ARG001
 ):
-    await crud.get_submission(db, submission_id)
+    await _submission(db, user, submission_id)
     att = await db.get(FormAttachment, attachment_id)
     if att is None or att.submission_id != submission_id:
         raise HTTPException(404, "Attachment not found")

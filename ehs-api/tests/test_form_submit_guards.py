@@ -824,3 +824,57 @@ async def test_a_draft_form_is_listed_to_its_owner_only(hse_manager, worker):
         return {r["id"] for r in rows}
     assert mine["id"] in await listed(me), "my own draft is mine to find"
     assert mine["id"] not in await listed(hse), "someone else's draft was listed"
+
+
+async def _a_published_template(hse, category="inspection"):
+    import uuid as _uuid
+    tpl = (await hse.post("/api/v1/forms/templates", json={
+        "code": f"o-{_uuid.uuid4().hex[:5]}", "name": "Owned draft", "category": category})).json()
+    await hse.put(f"/api/v1/forms/templates/{tpl['id']}/schema", json={
+        "schema": [{"key": "a", "type": "text", "label": "A"}]})
+    await hse.post(f"/api/v1/forms/templates/{tpl['id']}/publish", json={"change_note": "v1"})
+    return tpl
+
+
+async def test_somebody_else_s_draft_cannot_be_read_written_or_submitted(
+        hse_manager, worker, test_engine, db_session):
+    """★ Review (uniops-8b): with its id, anybody could read somebody's unsent
+    form, fill it in and submit it for them."""
+    from tests.conftest import authed_client, make_token, make_user
+    _, hse = hse_manager
+    _, me = worker
+    tpl = await _a_published_template(hse)
+    draft = (await me.post(f"/api/v1/forms/templates/{tpl['id']}/submissions", json={})).json()
+    sid = draft["id"]
+    other = await make_user(test_engine, role="requester")
+    async with authed_client(make_token(other.id, other.role), db_session) as them:
+        assert (await them.get(f"/api/v1/forms/submissions/{sid}")).status_code == 403
+        assert (await them.get(f"/api/v1/forms/submissions/{sid}/answers")).status_code == 403
+        assert (await them.put(f"/api/v1/forms/submissions/{sid}/answers",
+                               json={"values": {"a": "x"}})).status_code == 403
+        assert (await them.post(f"/api/v1/forms/submissions/{sid}/submit", json={})).status_code == 403
+        assert (await them.get(f"/api/v1/forms/submissions/{sid}/attachments")).status_code == 403
+    # The owner, and HSE, can.
+    assert (await me.put(f"/api/v1/forms/submissions/{sid}/answers",
+                         json={"values": {"a": "mine"}})).status_code == 200
+    assert (await hse.get(f"/api/v1/forms/submissions/{sid}")).status_code == 200
+    done = await me.post(f"/api/v1/forms/submissions/{sid}/submit", json={})
+    assert done.status_code == 200, done.text
+    # Submitted, it reads as any submitted form does.
+    async with authed_client(make_token(other.id, other.role), db_session) as them:
+        assert (await them.get(f"/api/v1/forms/submissions/{sid}")).status_code == 200
+
+
+async def test_a_safety_equipment_check_is_picked_up_by_the_next_inspector(
+        hse_manager, worker, test_engine, db_session):
+    """Shared on purpose: the item's draft is reused for whoever checks it next."""
+    from tests.conftest import authed_client, make_token
+    _, hse = hse_manager
+    tpl = await _a_published_template(hse)
+    asset = (await hse.post("/api/v1/safety-assets", json={
+        "name": "Eyewash 12", "inspection_template_id": tpl["id"]})).json()
+    started = (await hse.post(f"/api/v1/safety-assets/{asset['id']}/inspection-form/start")).json()
+    inspector, _ = worker
+    async with authed_client(make_token(inspector.id, "ehs_coordinator"), db_session) as them:
+        assert (await them.put(f"/api/v1/forms/submissions/{started['submission_id']}/answers",
+                               json={"values": {"a": "carried on"}})).status_code == 200
