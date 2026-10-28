@@ -48,3 +48,4 @@ from app.models.worker import (  # noqa: F401
     JobPosition, PositionRequirement, WorkerPosition, WorkerProfile,
 )
 from app.models.news import NewsItem  # noqa: F401,E402
+from app.models.reassignment import Reassignment  # noqa: F401,E402
