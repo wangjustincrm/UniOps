@@ -247,7 +247,8 @@ class TestSnapshot:
             "title": "Write the method down", "owner_id": str(owner.id), "due_date": "2030-01-01"})
         again = (await mclient.put(f"/api/v1/incidents/{incident['id']}/causes", json={"causes": [
             {"cause_type": "root", "vocabulary_item_id": rc["id"], "label": "Not followed"}]})).json()
-        assert [(c["id"], c["label"]) for c in again["root"]] == [(cause_id, "Procedures › Not followed")]
+        # Matched to itself, and kept in the wording it was recorded with.
+        assert [(c["id"], c["label"]) for c in again["root"]] == [(cause_id, "Not followed")]
 
     async def test_a_hazard_keeps_the_trail(self, hse_manager, lists):
         _, client = hse_manager
@@ -301,3 +302,90 @@ async def test_usage_counts_records_by_id(worker, hse_manager, lists):
     assert (await mclient.get(f"{BASE}/ppe/items/{ppe['id']}/usage")).json()["total"] == 1
     # Settings only.
     assert (await wclient.get(f"{BASE}/hazard/items/{hz['id']}/usage")).status_code == 403
+
+
+class TestUnchangedKeepsItsWording:
+    """★ Review (uniops-8b): pages send the id on every save. An entry that is
+    still the one chosen keeps the wording it was recorded with; a newly
+    chosen one takes the list's. Each pair: unchanged keeps, changed moves —
+    "never recompute" would pass the first alone."""
+
+    async def _relabel(self, db, table, column, row_id, label):
+        from sqlalchemy import text
+        await db.execute(text(f"update {table} set {column} = :l where id = :i"),
+                         {"l": label, "i": uuid.UUID(row_id)})
+        await db.flush()
+
+    async def test_hazard(self, hse_manager, lists, db_session):
+        _, client = hse_manager
+        _, _, leaf = await _kirk(client)
+        bio = await _add(client, "Biological", (await _add(client, "Bio group"))["id"])
+        h = (await client.post("/api/v1/hazards", json={"title": "F", "hazard_type_id": leaf["id"]})).json()
+        await self._relabel(db_session, "ehs_hazards", "hazard_type_label", h["id"], "Not followed")
+        same = (await client.patch(f"/api/v1/hazards/{h['id']}", json={
+            "description": "Only this", "hazard_type_id": leaf["id"], "hazard_type_label": "x"})).json()
+        assert same["hazard_type_label"] == "Not followed"
+        moved = (await client.patch(f"/api/v1/hazards/{h['id']}", json={
+            "hazard_type_id": bio["id"], "hazard_type_label": "x"})).json()
+        assert moved["hazard_type_label"] == "Bio group › Biological"
+
+    async def test_cause_without_an_action(self, worker, hse_manager, lists, db_session):
+        _, wclient = worker
+        _, mclient = hse_manager
+        top = await _add(mclient, "Procedures", code="root_cause")
+        a = await _add(mclient, "Not followed", top["id"], code="root_cause")
+        b = await _add(mclient, "None written", top["id"], code="root_cause")
+        incident = await _reported_and_classified(wclient, mclient)
+        url = f"/api/v1/incidents/{incident['id']}/causes"
+        tree = (await mclient.put(url, json={"causes": [
+            {"cause_type": "root", "vocabulary_item_id": a["id"], "label": "x"}]})).json()
+        await self._relabel(db_session, "ehs_causes", "label", tree["root"][0]["id"], "Not followed")
+        again = (await mclient.put(url, json={"causes": [
+            {"cause_type": "root", "vocabulary_item_id": a["id"], "label": "x"},
+            {"cause_type": "root", "vocabulary_item_id": b["id"], "label": "x"}]})).json()
+        assert sorted(c["label"] for c in again["root"]) == ["Not followed", "Procedures › None written"]
+
+    async def test_drill(self, hse_manager, lists, db_session):
+        _, client = hse_manager
+        top = await _add(client, "Procedures", code="root_cause")
+        a = await _add(client, "Not followed", top["id"], code="root_cause")
+        b = await _add(client, "None written", top["id"], code="root_cause")
+        d = await client.post("/api/v1/drills", json={"drill_type": "fire", "scenario": "Probe"})
+        assert d.status_code in (200, 201), d.text
+        d = d.json()
+        first = (await client.patch(f"/api/v1/drills/{d['id']}", json={"root_cause_id": a["id"]})).json()
+        assert first["root_cause_label"] == "Procedures › Not followed"
+        await self._relabel(db_session, "ehs_drills", "root_cause_label", d["id"], "Not followed")
+        same = (await client.patch(f"/api/v1/drills/{d['id']}", json={
+            "root_cause_id": a["id"], "observations": "Slow", "root_cause_label": "x"})).json()
+        assert same["root_cause_label"] == "Not followed"
+        moved = (await client.patch(f"/api/v1/drills/{d['id']}", json={"root_cause_id": b["id"]})).json()
+        assert moved["root_cause_label"] == "Procedures › None written"
+        cleared = (await client.patch(f"/api/v1/drills/{d['id']}", json={"root_cause_id": None})).json()
+        assert cleared["root_cause_label"] is None
+
+    async def test_form_answer(self, hse_manager, lists, db_session):
+        _, client = hse_manager
+        top = await _add(client, "Quality")
+        a = await _add(client, "Not followed", top["id"])
+        b = await _add(client, "Biological", top["id"])
+        t = (await client.post("/api/v1/forms/templates", json={
+            "code": f"vocab-{uuid.uuid4().hex[:5]}", "name": "Hazard check", "category": "inspection"})).json()
+        r = await client.put(f"/api/v1/forms/templates/{t['id']}/schema", json={"schema": [
+            {"key": "h", "type": "vocabulary", "vocabulary": "hazard", "label": "Hazard", "required": False}]})
+        assert r.status_code in (200, 201), r.text
+        r = await client.post(f"/api/v1/forms/templates/{t['id']}/publish", json={"change_note": "v1"})
+        assert r.status_code in (200, 201), r.text
+        sub = (await client.post(f"/api/v1/forms/templates/{t['id']}/submissions", json={})).json()
+        url = f"/api/v1/forms/submissions/{sub['id']}/answers"
+        first = (await client.put(url, json={"values": {"h": [{"id": a["id"], "label": "x"}]}})).json()
+        row = next(x for x in first if x["question_key"] == "h")
+        assert row["value_labels"] == ["Quality › Not followed"]
+        from sqlalchemy import text
+        await db_session.execute(text("update ehs_form_answers set value_labels = '[\"Not followed\"]'::jsonb "
+                                      "where submission_id = :s and question_key = 'h'"), {"s": uuid.UUID(sub["id"])})
+        await db_session.flush()
+        again = (await client.put(url, json={"values": {"h": [
+            {"id": a["id"], "label": "x"}, {"id": b["id"], "label": "y"}]}})).json()
+        row = next(x for x in again if x["question_key"] == "h")
+        assert row["value_labels"] == ["Not followed", "Quality › Biological"]

@@ -129,7 +129,8 @@ async def update_drill(db: AsyncSession, drill: Drill, fields: dict) -> Drill:
                 areas.append({"id": str(loc.id), "path": loc.path})
         drill.areas = areas
 
-    if "root_cause_id" in fields:
+    if "root_cause_id" in fields and fields["root_cause_id"] != drill.root_cause_id:
+        # Unchanged keeps its recorded wording, as on a hazard.
         from app.crud.vocabulary import label_for
         fields["root_cause_label"] = (
             await label_for(db, "root_cause", fields["root_cause_id"])

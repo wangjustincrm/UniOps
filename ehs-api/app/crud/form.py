@@ -262,7 +262,14 @@ async def save_answers(
             except ValueError:
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                                     f"'{key}' is not an entry on the list") from None
-            row["value_labels"] = [await label_for(db, question["vocabulary"], i) for i in ids]
+            # An entry already in the answer keeps the wording it was given
+            # then; only a newly chosen one takes the list's (uniops-8b).
+            before = existing.get(key)
+            kept = (dict(zip(before.value_ids or [], before.value_labels or []))
+                    if before is not None and len(before.value_ids or []) == len(before.value_labels or [])
+                    else {})
+            row["value_labels"] = [kept.get(str(i)) or await label_for(db, question["vocabulary"], i)
+                                   for i in ids]
         if not can_fail:
             row["is_failure"] = False
         target = existing.get(key)

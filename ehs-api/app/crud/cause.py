@@ -96,6 +96,11 @@ async def replace(
                     if c.id in attached and c.vocabulary_item_id}
     keep_by_label = {c.label: c for c in existing if c.id in attached}
 
+    # ★ The wording each entry was recorded with. A save rewrites every row,
+    # and an entry still chosen keeps that wording rather than today's
+    # (review, uniops-8b); only a newly chosen one takes the list's.
+    recorded = {c.vocabulary_item_id: c.label for c in existing if c.vocabulary_item_id}
+
     for cause in existing:
         if cause.id not in attached:
             await db.delete(cause)
@@ -104,7 +109,9 @@ async def replace(
     result: list[Cause] = []
     from app.crud.vocabulary import label_for
     for order, item in enumerate(causes):
-        if item.vocabulary_item_id is not None:
+        if item.vocabulary_item_id in recorded:
+            item.label = recorded[item.vocabulary_item_id]
+        elif item.vocabulary_item_id is not None:
             item.label = await label_for(
                 db, "root_cause" if item.cause_type == "root" else "immediate_cause",
                 item.vocabulary_item_id)

@@ -147,13 +147,16 @@ async def update_hazard(db: AsyncSession, hazard: Hazard, fields: dict) -> Hazar
     if "equipment_id" in fields:
         from app.services import equipment_ref
         await equipment_ref.check(db, fields["equipment_id"], hazard.equipment_id)
-    if "hazard_type_id" in fields:
-        # Cleared with it, never left as the old wording or whatever was sent.
+    if "hazard_type_id" in fields and fields["hazard_type_id"] != hazard.hazard_type_id:
+        # A new kind takes the list's wording; a cleared one takes none.
         from app.crud.vocabulary import label_for
         fields["hazard_type_label"] = (
             await label_for(db, "hazard", fields["hazard_type_id"])
             if fields["hazard_type_id"] else None)
     else:
+        # ★ The same kind keeps the wording it was recorded with (review,
+        # uniops-8b): the edit form sends the id on every save, and an old
+        # hazard edited for its description must not take today's wording.
         fields.pop("hazard_type_label", None)
     for key, value in fields.items():
         setattr(hazard, key, value)
