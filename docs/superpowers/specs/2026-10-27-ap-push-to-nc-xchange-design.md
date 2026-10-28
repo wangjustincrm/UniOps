@@ -57,6 +57,21 @@ NC database.
 | Body `pk_fiorg` | A code is translated to the *version* PK (wrong). The metadata marks the field "deprecated". | Omit it. |
 | `rate` / `local_*` | **NC does not look up a rate**: its rate table was last maintained in 2020-09, and a missing rate means 1.0. | Send the rate and every local-currency amount (§5). |
 
+### Found in the end-to-end run (production AP data → NC test server, 2026-10-27)
+
+13 real invoices of every route were planned from production (read-only) and pushed to the NC test
+server; 10 were created, 3 were refused by UniOps for data reasons. Four rules came out of it:
+
+| Finding | Rule |
+|---|---|
+| An **import** bill (buysellflag 4) may carry no tax in XChange: "组织本币无税金额不等于价税合计". Clerks key 73 such rows a year by hand (a US supplier charging HST). | A foreign supplier that charges Canadian tax is booked as **domestic (2)**; untaxed foreign bills stay 4. **To confirm with finance.** |
+| **CNY is quoted inversely** in NC (`bd_currinfo.convmode = 1`: 1 CAD = x CNY), and NC re-derives local amounts with zero tolerance: "本币变动超过最大折算误差". | Rate sent = 1 / BoC rate (8 dp); local = amount ÷ rate. USD / EUR / GBP multiply. |
+| 11 of 642 tax lines carry the tax but a **0 taxable base**. | The base is the pre-tax amount less the other lines' bases (two such lines → refused). |
+| An EPMS PO **imported from NC** (raw material / packaging, `purchase_orders.source = 'nc'`) gets its payable in NC from the purchase invoice (D1). | Refused: an F1 on top would book it twice. |
+
+A row's tax rate is snapped to the statutory rate when rounding puts it within 0.1 (3.90 on 29.98 =
+13.01 % → 13); the explicit amounts are unchanged.
+
 ## 4. Field mapping (one AP → one F1 bill)
 
 ### 4.1 Header
@@ -81,7 +96,7 @@ NC database.
 | money_cr, money_bal, occupationmny | AP total (credit note negative) | 93% / 99% |
 | notax_cr, local_tax_cr, caltaxmny, def1 | AP amount / tax (× rate for local) | — |
 | taxcodeid / taxrate | HST_ON, HST_NS → `001`@13; GST → `005`@5; no tax → `006`@0 | 99% (today's export sends 001@13 for zero tax — **wrong**) |
-| buysellflag | Supplier country CA → `2`, else `4` | 100% (today's export uses currency — **wrong**) |
+| buysellflag | Supplier country CA, **or the invoice carries Canadian tax** → `2`, else `4` | 100% on country (today's export uses currency — **wrong**); the taxed-foreign case is forced by XChange (§3) |
 | pk_subjcode (收支项目) | PR budget code → Agreement → Direct PA; leaf only; courier `CRM0150102` | 82% |
 | pk_deptid | PR department (Direct: PA department) | 92% |
 | costcenter | NC parent CC code (ENG / QA / SC …) | — |

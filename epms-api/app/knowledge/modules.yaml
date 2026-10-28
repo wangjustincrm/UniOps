@@ -228,6 +228,8 @@ modules:
     typical:
       - Execute approved payments and issue remittance advice
       - Reconcile accounts payable against what EPMS says is owed
+      - Send AP invoices to NC as saved payable bills, and see which NC payable document each invoice already has (Finance → Accounts Payable → Push to NC, NC AP Doc column)
+      - Look up the exchange rate a document of a given date takes, fetch Bank of Canada rates, or set a day's rate by hand (Finance → Exchange Rates)
       - Find an invoice keyed into NC more than once, before the extra copy is approved or paid
       - Post and review journal vouchers
       - Find a voucher across several months, or by the item, project or party it was booked against
@@ -263,6 +265,32 @@ modules:
         cleared group still holds an unposted line (unmatch it first). A period
         signed off before this change stays on posted vouchers only. Vouchers NC
         has discarded or deleted are never counted.
+      - >-
+        Push to NC (Finance → Accounts Payable) replaced the Excel "Export to
+        NC" file. Tick invoices and click Push to NC: each one becomes its own
+        payable bill in NC, in saved state, with the person who clicked as the
+        bill maker — their ERP ID on their UniOps user must match an NC user.
+        The AP clerk then checks, approves and makes the voucher in NC as
+        before. The NC summary is the PO number and title (several POs: the PO
+        numbers only), the agreement number and title, or for a Direct invoice
+        the PA number and title; a courier bill is "Freight" plus its invoice
+        number. A foreign-currency invoice takes the Bank of Canada rate of its
+        issue date (a weekend or holiday: the previous business day). An
+        invoice with more than one tax rate becomes one row per rate. Pushing
+        the same invoice again replaces the NC bill while it is still saved;
+        once approved in NC it is refused and must be changed in NC. An
+        invoice already keyed into NC by hand is not pushed again. The NC AP
+        Doc column shows the NC bill number and whether it is saved or
+        approved (from the hourly NC sync); "Hide in NC" hides invoices NC
+        already has. A push is refused, with the reason shown, when there is
+        no exchange rate, the vendor has no ERP ID, or the issue date is after
+        the entry or due date (day and month probably swapped).
+      - >-
+        Finance → Exchange Rates holds every rate the system uses: Bank of
+        Canada daily averages, fetched each business day after BoC publishes,
+        plus any rate a finance manager typed in (marked Manual, with a note,
+        and never overwritten by the daily fetch). The rate a document gets is
+        the one of its own date, else the latest within the week before it.
       - >-
         A vendor's invoice number must be unique (vendor name + invoice
         number), and NC itself does not check it. Finance → AP Duplicate
