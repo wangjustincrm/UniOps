@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.news import router as news_router
 from app.api.v1.actions import router as actions_router
 from app.api.v1.assets import router as assets_router
 from app.api.v1.audit import router as audit_router
@@ -92,5 +93,6 @@ api_router.include_router(qr_router, tags=["qr"])
 api_router.include_router(communications_router, tags=["communications"])
 api_router.include_router(toolbox_router, tags=["toolbox"])
 api_router.include_router(feedback_router, tags=["feedback"])
+api_router.include_router(news_router, tags=["news"])
 api_router.include_router(forms_router, tags=["forms"])
 api_router.include_router(deadlines_router, prefix="/deadlines", tags=["statutory"])

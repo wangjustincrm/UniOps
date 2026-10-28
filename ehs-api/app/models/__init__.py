@@ -47,3 +47,4 @@ from app.models.vocabulary import Vocabulary, VocabularyItem  # noqa: F401
 from app.models.worker import (  # noqa: F401
     JobPosition, PositionRequirement, WorkerPosition, WorkerProfile,
 )
+from app.models.news import NewsItem  # noqa: F401,E402
