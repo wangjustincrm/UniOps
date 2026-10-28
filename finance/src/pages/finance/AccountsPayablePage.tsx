@@ -15,7 +15,7 @@
  * is the NC bill maker. "NC AP Doc" shows the NC bill(s) holding each AP —
  * our push result, or the NC AP mirror match for bills entered by hand.
  */
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Upload, AlertTriangle } from 'lucide-react'
@@ -235,6 +235,19 @@ export default function AccountsPayablePage() {
     })
   }
 
+  // Toolbar + table header stay on screen while a long page scrolls, so the
+  // Push button is in reach after ticking a row. The header sits right under
+  // the toolbar, whose height changes when it wraps or a banner shows.
+  const barRef = useRef<HTMLDivElement>(null)
+  const [barH, setBarH] = useState(0)
+  useLayoutEffect(() => {
+    const el = barRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setBarH(el.offsetHeight))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [tab])
+
   if (!user) return <Navigate to="/login" replace />
 
   return (
@@ -257,7 +270,8 @@ export default function AccountsPayablePage() {
 
         {tab === 'invoices' ? (
           <>
-            <div className="mb-3 flex flex-wrap items-center gap-3">
+            <div ref={barRef} className="sticky top-0 z-20 -mx-1 bg-[#FAFBFC] px-1 pb-3 pt-1">
+            <div className="flex flex-wrap items-center gap-3">
               <select value={source} onChange={(e) => { setSource(e.target.value); resetPage() }} className={cn(inputCls, 'w-40')}>
                 <option value="">All sources</option>
                 {SOURCES.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}
@@ -286,7 +300,7 @@ export default function AccountsPayablePage() {
             </div>
 
             {banner && (
-              <div className={cn('mb-3 rounded-md px-3 py-2 text-sm',
+              <div className={cn('mt-3 rounded-md px-3 py-2 text-sm',
                 banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
                 <div>{banner.text}</div>
                 {banner.lines && banner.lines.length > 0 && (
@@ -296,10 +310,12 @@ export default function AccountsPayablePage() {
                 )}
               </div>
             )}
+            </div>
 
-            <div className="overflow-hidden rounded-lg border border-neutral-200">
+            <div className="overflow-clip rounded-lg border border-neutral-200">
               <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                <thead className="sticky z-10 bg-neutral-50 text-left text-xs text-neutral-500 shadow-[0_1px_0_#e5e5e5]"
+                       style={{ top: barH }}>
                   <tr>
                     <th className="w-9 px-3 py-2" />
                     <SortTh label="AP No." sortKey="ap_invoice_number" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
