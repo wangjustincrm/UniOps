@@ -367,6 +367,12 @@ export default function InvoiceDetailPage() {
   // tolerance never applies to it, so "within 5% tolerance" was wrong for, say,
   // -23%. Not an exception either: nothing to review, no justification.
   const partiallyInvoiced = !hasException && !exceptionAccepted && Number(inv.variance ?? 0) < 0
+  // "Three-way" needs a linked goods receipt (INV-3WM-006). Matching itself
+  // compares amounts only and runs without one (ISS-0138: such invoices read
+  // "✓ Passed" with a "Fully delivered" GR row while nothing was received).
+  const hasGr = inv.gr_id != null
+  const matchLabel = hasGr ? '3-Way Match' : '2-Way Match'
+  const awaitingGr = !hasGr && !hasException && !exceptionAccepted
   const resolutionNoteLabel = inv.exception_resolution === 'accepted' ? 'Justification' : 'Instructions'
   // Agreement route: no PO/GR, so the PO-vs-GR-vs-Invoice 3-way table doesn't
   // apply — there is nothing to reconcile against but the agreement itself.
@@ -1269,25 +1275,32 @@ export default function InvoiceDetailPage() {
                   <div className={cn('rounded-xl border p-5 flex items-center gap-4',
                     hasException ? 'border-danger-200 bg-danger-50'
                       : exceptionAccepted ? 'border-warning-200 bg-warning-50'
-                      : partiallyInvoiced ? 'border-primary-200 bg-primary-50'
+                      : partiallyInvoiced || awaitingGr ? 'border-primary-200 bg-primary-50'
                       : 'border-success-200 bg-success-50')}>
                     {hasException || exceptionAccepted
                       ? <AlertTriangle className={cn('h-8 w-8 flex-shrink-0', hasException ? 'text-danger-600' : 'text-warning-600')} />
-                      : partiallyInvoiced
+                      : partiallyInvoiced || awaitingGr
                       ? <Info className="h-8 w-8 text-primary-600 flex-shrink-0" />
                       : <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />
                     }
                     <div>
                       <p className={cn('text-sm font-semibold',
                         hasException ? 'text-danger-700' : exceptionAccepted ? 'text-warning-700'
-                          : partiallyInvoiced ? 'text-primary-700' : 'text-success-700')}>
+                          : partiallyInvoiced || awaitingGr ? 'text-primary-700' : 'text-success-700')}>
                         {hasException || exceptionAccepted
-                          ? `3-Way Match: ${hasException ? 'Exception' : 'Exception accepted'} — Variance ${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% (${inv.currency} ${formatAmount(Number(inv.variance ?? 0), inv.currency)})`
+                          ? `${matchLabel}: ${hasException ? 'Exception' : 'Exception accepted'} — Variance ${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% (${inv.currency} ${formatAmount(Number(inv.variance ?? 0), inv.currency)})`
                           : partiallyInvoiced
-                          ? `3-Way Match: Partially invoiced — ${inv.currency} ${formatAmount(varianceAbs, inv.currency)} (${variancePctAbs.toFixed(1)}%) below PO`
+                          ? `${matchLabel}: Partially invoiced — ${inv.currency} ${formatAmount(varianceAbs, inv.currency)} (${variancePctAbs.toFixed(1)}%) below PO${awaitingGr ? ' · awaiting goods receipt' : ''}`
+                          : awaitingGr
+                          ? `2-Way Match: Invoice within ${matchTolerancePct}% tolerance of PO · awaiting goods receipt`
                           : `3-Way Match: ✓ Passed — Invoice within ${matchTolerancePct}% tolerance of PO`
                         }
                       </p>
+                      {awaitingGr && (
+                        <p className="text-xs text-primary-700 mt-0.5">
+                          No goods receipt is linked yet, so receipt has not been checked. A payment application needs proof of receipt.
+                        </p>
+                      )}
                       {partiallyInvoiced && (
                         <p className="text-xs text-primary-700 mt-0.5">
                           Billing less than the PO always passes — the rest may be billed on later invoices. No review is required.
@@ -1339,7 +1352,8 @@ export default function InvoiceDetailPage() {
                           href={`/gr/${inv.gr_id}`}
                           amount={inv.gr_value}
                           currency={inv.currency}
-                          note={inv.gr_value != null && inv.po_total != null && Number(inv.gr_value) < Number(inv.po_total)
+                          note={!hasGr ? 'Not received'
+                            : inv.gr_value != null && inv.po_total != null && Number(inv.gr_value) < Number(inv.po_total)
                             ? 'Partial delivery' : 'Fully delivered'}
                           ok={inv.gr_value != null}
                           action={canUnmatch && inv.gr_id != null && (
@@ -1460,7 +1474,8 @@ export default function InvoiceDetailPage() {
                       ? 'Matched for a Direct PA — no PO or agreement'
                       : isAgreementRoute
                       ? `Matched to Agreement ${inv.agreement_number ?? inv.agreement_id?.slice(0, 8) ?? ''} — ${agreementEvidenceSummary}`
-                      : `Matched to ${inv.po_number}${hasException || exceptionAccepted ? ' — Exception raised' : partiallyInvoiced ? ' — partially invoiced' : ' — 3-way match passed'}`,
+                      : `Matched to ${inv.po_number}${hasException || exceptionAccepted ? ' — Exception raised'
+                          : `${partiallyInvoiced ? ' — partially invoiced' : hasGr ? ' — 3-way match passed' : ' — 2-way matched'}${awaitingGr ? ', awaiting goods receipt' : ''}`}`,
                     color: hasException || exceptionAccepted ? 'bg-danger-600' : 'bg-success-600',
                   },
                   {
