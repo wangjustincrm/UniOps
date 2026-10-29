@@ -76,7 +76,7 @@ finance.canadaroyalmilk.com {
 	reverse_proxy finance-web:80
 }
 safety.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy ehs-web:80
 }
 
@@ -115,7 +115,7 @@ mdm-api.canadaroyalmilk.com {
 	reverse_proxy mdm-api:8002
 }
 safety-api.canadaroyalmilk.com {
-	import wildcard
+	import site_tls
 	reverse_proxy ehs-api:8012
 }
 
